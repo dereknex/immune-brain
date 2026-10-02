@@ -1769,7 +1769,7 @@ class AssuranceCoordinator {
     return this.withRecovery(taskId, ctx, diagnostics.length ? { ...result, diagnostics } : result);
   }
   async withRecovery(taskId, ctx, enriched) {
-    if (!["failed", "blocked", "rework", "review_preparation_failed"].includes(enriched.state))
+    if (enriched.recovery_error || !["failed", "blocked", "rework", "review_preparation_failed"].includes(enriched.state))
       return enriched;
     try {
       const fresh = await this.ports.projectTask(ctx.cwd, taskId);
@@ -1794,7 +1794,7 @@ class AssuranceCoordinator {
       try {
         projection = await this.ports.projectTask(ctx.cwd, taskId);
       } catch (error) {
-        return { state: "blocked", reason: `cannot validate Review reservation: ${boundedAssuranceError(error)}` };
+        return { state: "blocked", reason: `cannot validate Review reservation: ${boundedAssuranceError(error)}`, recovery_error: "fresh_kernel_projection_unavailable" };
       }
       const matches = reservationStillValid(reservation, projection, taskId);
       if (matches)
@@ -1802,6 +1802,8 @@ class AssuranceCoordinator {
       if (reservation)
         this.releaseReviewReservation(taskId, reservation);
       this.rejectedReviewOperations.delete(taskId);
+      if (projection.error || projection.projection.lifecycle !== "done" && projection.projection.lifecycle !== "stopped" && (!projection.claim || projection.claim.task_id !== taskId))
+        return { state: "blocked", reason: projection.error ?? "no active backend claim for this task", recovery_error: "fresh_kernel_projection_unavailable" };
     }
     const refreshed = this.active(taskId);
     if (refreshed?.state === "running")
@@ -1820,6 +1822,7 @@ class AssuranceCoordinator {
     let authorityBoundaryStarted = false;
     let boundaryBaseline = null;
     let reviewPreparationStarted = false;
+    let initialProjectionAvailable = false;
     let qaJobBudgetExceeded = false;
     let phase = "preparing";
     const operationLive = () => this.sessionActive && this.sessionGeneration === operationGeneration && this.activeOperations.get(taskId) === operationId && !operationController.signal.aborted;
@@ -1856,15 +1859,16 @@ class AssuranceCoordinator {
       }
       ensureOperationLive();
       if (projection.error)
-        return { state: "blocked", reason: projection.error };
+        return { state: "blocked", reason: projection.error, recovery_error: "fresh_kernel_projection_unavailable" };
       if (projection.projection.lifecycle === "done" || projection.projection.lifecycle === "stopped") {
         this.unknownOperations.delete(taskId);
         return { state: projection.projection.lifecycle === "done" ? "completed" : "stopped" };
       }
       if (!projection.claim)
-        return { state: "blocked", reason: "no active backend claim" };
+        return { state: "blocked", reason: "no active backend claim", recovery_error: "fresh_kernel_projection_unavailable" };
       if (projection.claim.task_id !== taskId)
-        return { state: "blocked", reason: `backend claim belongs to ${projection.claim.task_id}, not ${taskId}` };
+        return { state: "blocked", reason: `backend claim belongs to ${projection.claim.task_id}, not ${taskId}`, recovery_error: "fresh_kernel_projection_unavailable" };
+      initialProjectionAvailable = true;
       if (projection.projection.lifecycle === "active")
         this.unknownOperations.delete(taskId);
       const parked = await this.ports.readTaskRecord(ctx.cwd, taskId);
@@ -2078,6 +2082,14 @@ class AssuranceCoordinator {
       progress("review_ready", "QA passed; invoke the reserved foreground Agent, then call submit_review", { snapshot_digest: snapshotDigest(review.snapshot), review_bundle_digest: review.snapshot.review_bundle_digest ?? "", agent_params: hostReservation.dispatch });
       return { state: "review_ready", operation: "review", operation_id: operationId, snapshot_digest: snapshotDigest(review.snapshot), review_bundle_digest: review.snapshot.review_bundle_digest ?? "", agent_params: hostReservation.dispatch };
     } catch (error) {
+      if (!initialProjectionAvailable && !aborted() && !(error instanceof VerificationAbortedError))
+        return {
+          state: "failed",
+          operation: "qa",
+          operation_id: operationId,
+          reason: `${phase}: ${boundedAssuranceError(error)}`,
+          recovery_error: "fresh_kernel_projection_unavailable"
+        };
       if (error instanceof QaPreparationError && !authorityCommitted && !authorityBoundaryStarted && !aborted())
         return {
           state: "failed",
@@ -2138,12 +2150,12 @@ class AssuranceCoordinator {
     } catch (error) {
       const reason = boundedAssuranceError(error);
       this.releaseReviewReservation(taskId, reservation, reason);
-      return { state: "blocked", reason };
+      return { state: "blocked", reason, recovery_error: "fresh_kernel_projection_unavailable" };
     }
     if (fresh.error || !fresh.claim || fresh.claim.task_id !== taskId || compareReservationSnapshot(reservation.snapshot, fresh.projection).length > 0 || fresh.projection.lifecycle !== reservation.snapshot.lifecycle || fresh.projection.artifact_state !== reservation.snapshot.artifact_state) {
       const reason = fresh.error ?? "assurance snapshot changed before Review submission";
       this.releaseReviewReservation(taskId, reservation, reason);
-      return { state: "blocked", reason };
+      return { state: "blocked", reason, ...fresh.error || !fresh.claim || fresh.claim.task_id !== taskId ? { recovery_error: "fresh_kernel_projection_unavailable" } : {} };
     }
     if (reservation.snapshot.review_revision) {
       try {

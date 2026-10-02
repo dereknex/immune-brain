@@ -1,6 +1,6 @@
 // Phase 3 foreground Tool and native Review bridge contract.
 
-import { afterAll, describe, expect, mock, setDefaultTimeout, test } from "bun:test";
+import { afterAll, describe, expect, mock, setDefaultTimeout, spyOn, test } from "bun:test";
 
 // Several of these tests drive real git repositories and full Kernel flows and
 // run 3-4s interactively, so bun's 5s default makes them flake under load (a CI
@@ -26,6 +26,7 @@ import { PLUGIN_VERSION } from "../plugins/immune-brain/runtime/plugin_version";
 import { createMcpRuntime } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { captureReviewManifest } from "../plugins/immune-brain/.pi-extension/pi-canary-review-bundle";
 import { snapshotDigest, type SnapshotDescriptor } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
+import { QaPreparationError } from "../plugins/immune-brain/runtime/assurance/qa";
 import { readRunRowByTask, updateRunRecord, withKernelRead, withKernelTransaction } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 
 async function hostPackagesAvailable(): Promise<boolean> {
@@ -1318,9 +1319,41 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		}
 	});
 
+	for (const [failure, attempts] of [["EINTR", 2], ["EAGAIN", 2], ["EACCES", 1], ["semantic", 1], ["foreign-claim", 1]] as const) {
+		test(`registered Tool stops after ${attempts} initial projections on ${failure}`, async () => {
+			const root = makeEnrolledRoot();
+			const runtime = require("../plugins/immune-brain/.pi-extension/runtime-stub.ts");
+			const project = runtime.projectAssurance;
+			const before = await readTaskRecord(root, TASK);
+			let qaCalls = 0;
+			const probe = spyOn(runtime, "projectAssurance").mockImplementation(async (...args: any[]) => {
+				if (failure === "semantic") return { ...await project(...args), error: "authority conflict" };
+				if (failure === "foreign-claim") {
+					const fresh = await project(...args);
+					return { ...fresh, claim: { ...fresh.claim, task_id: "another-task" } };
+				}
+				throw Object.assign(new Error("read failed"), { code: failure });
+			});
+			try {
+				const tool = loadSurface({ runQa: async () => { qaCalls++; throw new Error("QA must not start"); } }).tools[0];
+				const blocked = await capturedToolFailure(tool.execute("advance", {
+					task_id: TASK, action: { op: "advance_assurance" },
+				}, undefined, undefined, makeCtx(root, makeUI())));
+				expect(probe).toHaveBeenCalledTimes(attempts);
+				expect(blocked).toMatchObject({ recovery_error: "fresh_kernel_projection_unavailable", next_action: "inspect authority state" });
+				expect(blocked.recovery).toBeUndefined();
+				expect(qaCalls).toBe(0);
+				expect((await readTaskRecord(root, TASK)).revision).toBe(before.revision);
+			} finally {
+				probe.mockRestore();
+				rmSync(root, { recursive: true, force: true });
+			}
+		});
+	}
+
 	test("registered Tool returns prerequisite-changing recovery actions", { timeout: 15000 }, async () => {
 		const unstagedRoot = makeEnrolledRoot();
-		const resolutionReasons = ["executable_or_cwd_unavailable", "process_launch_failed", "process_cleanup_failed"];
+		const resolutionReasons = ["executable_or_cwd_unavailable", "process_launch_failed", "process_cleanup_failed"] as const;
 		const resolutionRoots = resolutionReasons.map(() => makeEnrolledRoot());
 		try {
 			writeFileSync(join(unstagedRoot, "plugins", "immune-brain", ".pi-extension", "task.ts"), "export const task = 'changed';\n");
@@ -1338,7 +1371,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 
 			for (const [index, reason] of resolutionReasons.entries()) {
 				const resolutionTool = loadSurface({
-					runQa: async () => { throw new Error(`QA resolution failed (${reason}); affected checks=A1`); },
+					runQa: async () => { throw new QaPreparationError("resolution", ["A1"], reason); },
 				}).tools[0];
 				const resolution = await capturedToolFailure(resolutionTool.execute(
 					"advance",
@@ -1347,7 +1380,11 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 					undefined,
 					makeCtx(resolutionRoots[index], makeUI()),
 				));
-				expect(resolution.next_action).toBe("repair the verification command or delivery environment, then retry advance_assurance");
+				expect(resolution.next_action).toBe("Repair the identified verification environment, then call advance_assurance; a local check is non-attesting.");
+				expect(resolution).toMatchObject({ environment_failure: true, recovery: {
+					category: "environment", task_id: TASK, acceptance_ids: ["A1"], finding_ids: [],
+				} });
+				expect((await readTaskRecord(resolutionRoots[index], TASK)).record?.attestations).toHaveLength(0);
 			}
 		} finally {
 			rmSync(unstagedRoot, { recursive: true, force: true });

@@ -1,0 +1,24 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "batch-execution-recovery-release-repair",
+  "goal": "Repair the local release regressions exposed after batch-execution-recovery: recovery decoration must respect the initial authority read retry limit and preserve actionable scope errors, while Pi QA failure assertions cover the structured recovery contract.",
+  "acceptance": [
+    {
+      "id": "BER-R-A1",
+      "assertion": "Recovery decoration cannot re-read failed or semantically invalid initial authority projections, create a misleading recovered projection, replay QA or mutate authority. Explicit EINTR/EAGAIN initial reads remain bounded to one retry; EACCES and semantic conflicts stop after one read. Pi preserves the existing legal path reconciliation action when a delivery envelope is invalid rather than overriding it with a generic authority inspection. Typed QA preparation failures return fresh, exact task/acceptance recovery identities with a non-attesting environment repair action and no raw verifier output. Existing foreground, finding and Review preparation behavior remains covered by the focused regression tests.",
+      "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v2\",\"command\":{\"executable\":\"bun\",\"argv\":[\"test\",\"tests/pi-canary-work-extension.test.ts\",\"tests/pi-canary-assurance-continuation.test.ts\",\"tests/host-neutral-assurance-coordinator.test.ts\"],\"cwd\":\".\",\"timeout_ms\":180000,\"max_output_bytes\":196608},\"environment\":{\"prepare\":null,\"writable_paths\":[]}}"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/batch-execution-recovery-release-repair.intent.json",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-tool-failure.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "tests/pi-canary-assurance-continuation.test.ts",
+    "tests/pi-canary-work-extension.test.ts"
+  ],
+  "risk": "material",
+  "revision": 2,
+  "owner": "user"
+}

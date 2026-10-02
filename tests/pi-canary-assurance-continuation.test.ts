@@ -41,7 +41,7 @@ for (const [code, attempts] of [["EAGAIN", 2], ["EACCES", 1]] as const) {
 			reads++;
 			throw Object.assign(new Error("read failed"), { code });
 		} });
-		expect((await h.progression.advance(TASK, ctx)).state).toBe("failed");
+		expect(await h.progression.advance(TASK, ctx)).toMatchObject({ state: "failed", recovery_error: "fresh_kernel_projection_unavailable" });
 		expect(reads).toBe(attempts);
 		expect(h.counts().applyCount).toBe(0);
 	});
@@ -83,10 +83,35 @@ test("semantic projection errors are not retried", async () => {
 		reads++;
 		return { ...projection(), error: "authority conflict" };
 	} });
-	expect(await h.progression.advance(TASK, ctx)).toMatchObject({ state: "blocked", reason: "authority conflict" });
+	expect(await h.progression.advance(TASK, ctx)).toMatchObject({ state: "blocked", reason: "authority conflict", recovery_error: "fresh_kernel_projection_unavailable" });
 	expect(reads).toBe(1);
 	expect(h.counts().applyCount).toBe(0);
 });
+
+for (const operation of ["advance", "submitReview"] as const) {
+	for (const failure of ["EACCES", "semantic", "foreign-claim", "missing-claim"] as const) {
+		test(`${operation} with a Review reservation stops after one ${failure} projection`, async () => {
+			const h = makeAssuranceHarness();
+			expect((await h.progression.advance(TASK, ctx)).state).toBe("review_ready");
+			const original = h.ports.projectTask;
+			const before = h.counts().applyCount;
+			let reads = 0;
+			h.ports.projectTask = async (...args) => {
+				reads++;
+				if (failure === "EACCES") throw Object.assign(new Error("read failed"), { code: failure });
+				const fresh = await original(...args);
+				if (failure === "semantic") return { ...fresh, error: "authority conflict" };
+				return { ...fresh, claim: failure === "missing-claim" ? null : { ...fresh.claim!, task_id: "another-task" } };
+			};
+			const result = operation === "advance"
+				? await h.progression.advance(TASK, ctx)
+				: await h.progression.submitReview(TASK, ctx, passVerdict(snapshot("review")));
+			expect(result).toMatchObject({ state: "blocked", recovery_error: "fresh_kernel_projection_unavailable" });
+			expect(reads).toBe(1);
+			expect(h.counts().applyCount).toBe(before);
+		});
+	}
+}
 
 test("QA continuation hands one foreground Review envelope to the Parent turn", () => {
 	const params = reservedAgentParams({ taskId: "continuation-task", operationId: "operation-1", prompt: "review immutable bundle" });

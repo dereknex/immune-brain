@@ -64,7 +64,7 @@ import {
 	type UserAttentionEventV1,
 	type UserAttentionReason,
 } from "./pi-canary-interaction";
-import { isToolFailureState, throwToolFailure, type ToolFailureV1 } from "./pi-canary-tool-failure";
+import { isToolFailureState, throwToolFailure, type AssuranceFailureDetails, type ToolFailureV1 } from "./pi-canary-tool-failure";
 import { resolveUxLanguage, uxText } from "./ux-language";
 
 /** Host-native UI language; see ux-language.ts. Resolved once per process. */
@@ -1737,6 +1737,11 @@ async function enrichAssuranceResult(
 	taskId: string,
 	result: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
+	if (result.recovery_error) {
+		// Do not replay a failed observation for Host decoration or tracker hygiene.
+		const taskState = { error: typeof result.reason === "string" ? result.reason : "authority projection unavailable" };
+		return { ...result, task_state: taskState, next_action: nextActionForAssuranceResult(result, taskState) };
+	}
 	const projection = await projectAssuranceState(ctx.cwd, taskId);
 	const taskState: AssuranceTaskState = projection.error
 		? { error: projection.error }
@@ -1761,14 +1766,13 @@ async function enrichAssuranceResult(
 }
 
 function nextActionForAssuranceResult(result: Record<string, unknown>, taskState: AssuranceTaskState): string {
-	if (result.recovery_error) return "inspect authority state";
 	const derived = result.recovery as { next_action: string } | undefined;
 	if (derived) return derived.next_action;
 	const recovery = recoveryActionForAssuranceFailure(
 		"error" in taskState ? taskState.error : result.reason,
 	);
 	if (recovery) return recovery;
-	if ("error" in taskState) return "inspect authority state";
+	if (result.recovery_error || "error" in taskState) return "inspect authority state";
 	if (result.state === "review_preparation_failed") return "repair Review preparation, then retry advance_assurance; QA is already committed";
 	if (result.code === "verdict_invalid") return "fix the verdict payload and resubmit submit_review; the Review reservation remains active; do not re-dispatch the reviewer";
 	if (taskState.lifecycle === "done" || taskState.lifecycle === "stopped") return "none";
@@ -1875,6 +1879,7 @@ function failCanaryTool(
 	code: string,
 	message: string,
 	nextAction: string,
+	details: AssuranceFailureDetails = {},
 ): never {
 	return throwToolFailure({
 		tool: "imm_kernel_canary",
@@ -1884,6 +1889,7 @@ function failCanaryTool(
 		code,
 		message,
 		next_action: nextAction,
+		...details,
 	});
 }
 
@@ -1893,6 +1899,7 @@ function throwIfCanaryToolFailure(
 	result: Record<string, unknown>,
 ): void {
 	if (!isToolFailureState(result.state)) return;
+	const details = result as AssuranceFailureDetails;
 	failCanaryTool(
 		taskId,
 		operation,
@@ -1906,6 +1913,13 @@ function throwIfCanaryToolFailure(
 		typeof result.next_action === "string"
 			? result.next_action
 			: "inspect authority state",
+		// Preserve only the coordinator's bounded observation metadata.
+		{
+			...(details.diagnostics ? { diagnostics: details.diagnostics } : {}),
+			...(details.environment_failure ? { environment_failure: true } : {}),
+			...(details.recovery ? { recovery: details.recovery } : {}),
+			...(details.recovery_error ? { recovery_error: details.recovery_error } : {}),
+		},
 	);
 }
 

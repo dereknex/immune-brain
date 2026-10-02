@@ -1,0 +1,315 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "batch-execution-recovery-release-repair",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "batch-execution-recovery-release-repair",
+    "goal": "Repair the local release regressions exposed after batch-execution-recovery: recovery decoration must respect the initial authority read retry limit and preserve actionable scope errors, while Pi QA failure assertions cover the structured recovery contract.",
+    "acceptance": [
+      {
+        "id": "BER-R-A1",
+        "assertion": "Recovery decoration cannot re-read failed or semantically invalid initial authority projections, create a misleading recovered projection, replay QA or mutate authority. Explicit EINTR/EAGAIN initial reads remain bounded to one retry; EACCES and semantic conflicts stop after one read. Pi preserves the existing legal path reconciliation action when a delivery envelope is invalid rather than overriding it with a generic authority inspection. Typed QA preparation failures return fresh, exact task/acceptance recovery identities with a non-attesting environment repair action and no raw verifier output. Existing foreground, finding and Review preparation behavior remains covered by the focused regression tests.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v2\",\"command\":{\"executable\":\"bun\",\"argv\":[\"test\",\"tests/pi-canary-work-extension.test.ts\",\"tests/pi-canary-assurance-continuation.test.ts\",\"tests/host-neutral-assurance-coordinator.test.ts\"],\"cwd\":\".\",\"timeout_ms\":180000,\"max_output_bytes\":196608},\"environment\":{\"prepare\":null,\"writable_paths\":[]}}"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/batch-execution-recovery-release-repair.intent.json",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-tool-failure.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "tests/pi-canary-assurance-continuation.test.ts",
+      "tests/pi-canary-work-extension.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/batch-execution-recovery-release-repair.intent.json",
+    "content_hash": "sha256:b9b1aa3daa872566c973855bece79a161844a6772efeadb0ecd76dd39fc56fa7"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:fd0c57c0035844e23890ee1a9b421a435fc9846b94489841e77e1777d29f04ac",
+  "git_base_head": "1e797a47f72f7139b7bb8e308fd504aff1ac37ee",
+  "attestations": [
+    {
+      "id": "approval-qa-0ea6412b",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:b9b1aa3daa872566c973855bece79a161844a6772efeadb0ecd76dd39fc56fa7",
+      "diff_hash": "sha256:2543e0521809dc55fef184173eab04e16a38ceb86f790606eb920a4ea230d5ef",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:fc8a84da38a462c502ed81ee2bc0e495418e808807896c978538ebbe43be701a",
+      "acceptance_results": [
+        {
+          "acceptance_id": "BER-R-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:fc8a84da38a462c502ed81ee2bc0e495418e808807896c978538ebbe43be701a"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-d1fc0ddb",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:b9b1aa3daa872566c973855bece79a161844a6772efeadb0ecd76dd39fc56fa7",
+      "diff_hash": "sha256:fe048483343c44f7f24cd1b179e821291551a716b2c0bac3dd237bf28fb67553",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:69c8a15987ebff458bafc524074b45dac47792813e200eb8ea59c5afc952396a",
+      "acceptance_results": [
+        {
+          "acceptance_id": "BER-R-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:69c8a15987ebff458bafc524074b45dac47792813e200eb8ea59c5afc952396a"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-cd2d8f35",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:b9b1aa3daa872566c973855bece79a161844a6772efeadb0ecd76dd39fc56fa7",
+      "diff_hash": "sha256:169c8318d9acd65bc54b3577b7928646b22c9aa4bca0bea8356cc2fd75ce1046",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:032c3ea37a28dfd42836278fbace87ac07654763df8c5339e183ea1d5adf3f11",
+      "acceptance_results": [
+        {
+          "acceptance_id": "BER-R-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:032c3ea37a28dfd42836278fbace87ac07654763df8c5339e183ea1d5adf3f11"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-0714f6ea",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:b9b1aa3daa872566c973855bece79a161844a6772efeadb0ecd76dd39fc56fa7",
+      "diff_hash": "sha256:169c8318d9acd65bc54b3577b7928646b22c9aa4bca0bea8356cc2fd75ce1046",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 immutable revision 的唯一父提交、tree、manifest_digest、snapshot_digest 及全部变更路径；恢复装饰遵守初始读取重试边界，Pi 保留路径协调动作和安全的结构化 QA 失败元数据，结合 Kernel 已通过的 focused QA，未发现阻断问题。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "1e797a47f72f7139b7bb8e308fd504aff1ac37ee",
+        "review_commit": "9e374f3352ad2d43571eee0f6b648ecc6af1e30d",
+        "review_tree": "da5951f71665e300df6260b85b57de0212bfbd5a",
+        "manifest_digest": "sha256:d8ea75c945495cc86e736a79c88fb1d18823582d68763b14be2f9db384869c3a"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-a0081df14803-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "BER-R-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/.pi-extension/imm-canary-work.ts:584、1740：Pi 的 enrichAssuranceResult 无条件再次调用 projectAssuranceState，未遵守 coordinator 返回的 recovery_error。因此初始 authority projection 存在 semantic conflict 时，注册 Tool 仍会读取两次，违反一次读取后停止的契约。最小修复是在 recovery_error 存在时跳过 Host 的 projection、tracker 等后续观察，并保留原始错误及合法路径 reconciliation action；补充注册 Tool 层的读取次数回归测试。",
+      "anchor": "sha256:73e036d64c840f779920515d6518f734063cc00f14e5c427e4388f332ce22a56",
+      "evidence": {
+        "trigger": "不变量类别：失败或语义无效的初始 authority observation 不得由后续 decoration 重新读取。调用 Pi 注册 Tool 的 advance_assurance，初始 projection 返回 backend claim belongs to another-task 的 semantic conflict：advanceOnce 返回 blocked 和 recovery_error，withRecovery 正确跳过读取，但 Tool 随后调用 enrichAssuranceResult，1740 行再次读取同一 authority projection。当前修复仅覆盖 coordinator.withRecovery，未覆盖外层 Host decoration，所以它不是对已有触发点的独立新缺陷，而是同一读取预算不变量的修复范围缺口。",
+        "caller_chain": [
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:registered imm_kernel_canary.execute(advance_assurance)",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.advance",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.advanceOnce",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.withRecovery",
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:enrichAssuranceResult",
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:projectAssuranceState"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "BER-R-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-2097cc713579-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "BER-R-A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "初始 authority observation 失败即停止这一 invariant 尚未覆盖 review_ready 入口：coordinator.ts:796-802 的 Review reservation 校验读取失败后返回不带 recovery_error 的 blocked，导致 :780-782 的 recovery decoration 再次读取，EACCES 因而至少读取两次。最小修复是在该失败返回中携带 recovery_error，并增加已有 Review reservation 下的读取次数回归测试；同步更新发布 bundle。",
+      "anchor": "sha256:891b4ce4b269e5b04b0236d1a82afb403e1fee948fec1b86d2c842bcb61a3bba",
+      "evidence": {
+        "trigger": "QA 已成功提交且 coordinator 保有 Review reservation；再次调用 advance_assurance 时，reservation 校验的首次 projectTask 抛出带 code=EACCES 的 Error。advanceOnce 在主 preparation 分支之前返回 blocked，随后 advance 调用 withRecovery，再次调用 projectTask。Invariant class 是所有 advance 入口状态下失败初始 authority observation 的终止性；现有修复仅在后续主 preparation 分支设置 recovery_error，无法覆盖更早的 Review reservation 校验分支，因此这是该修复覆盖范围的缺口，而非新的单一触发缺陷。",
+        "caller_chain": [
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:imm_kernel_canary.execute(advance_assurance)",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.advance",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.advanceOnce(review_ready reservation validation)",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.withRecovery",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinatorPorts.projectTask"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "BER-R-A1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:batch-execution-recovery-release-repair:2026-10-02T12:26:19.028Z",
+      "at": "2026-10-02T12:26:19.028Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:8d7178db7aa5f05e0e7ef011f0c32e745a4e200f26aac1a71207f6e6544558ca",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-9f3c1ae1d33f9b21",
+        "issued_at": "2026-10-02T12:26:19.394Z",
+        "expires_at": "2026-10-02T12:36:19.394Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:batch-execution-recovery-release-repair:2026-10-02T12:35:09.160Z",
+      "at": "2026-10-02T12:35:09.160Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-execution-recovery-release-repair.intent.json"
+    },
+    {
+      "id": "record_approval:batch-execution-recovery-release-repair:2026-10-02T12:36:04.010Z",
+      "at": "2026-10-02T12:36:04.010Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-0ea6412b\naction_v2_sha256:b73d8fa939b3b7613f59c5ad65fab7c430b61ab899127d34d4adb188b6a6faeb",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-0ea50f96ae44cd4a",
+        "issued_at": "2026-10-02T12:36:04.011Z",
+        "expires_at": "2026-10-02T12:46:04.011Z"
+      }
+    },
+    {
+      "id": "request_rework:batch-execution-recovery-release-repair:2026-10-02T12:40:57.856Z",
+      "at": "2026-10-02T12:40:57.856Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:9e6fc179ab26d2aaaa6978c53201a684468490c1cce114dfd35ad74b69b60d7b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-9acaee525d4711f1",
+        "issued_at": "2026-10-02T12:40:57.856Z",
+        "expires_at": "2026-10-02T12:50:57.856Z"
+      }
+    },
+    {
+      "id": "resolve_finding:batch-execution-recovery-release-repair:2026-10-02T12:51:58.667Z",
+      "at": "2026-10-02T12:51:58.667Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a0081df14803-1-review-1\naction_v2_sha256:f8eb2d133d5ec21b964ec4179907ec2377d16d4df669da83b2e347b9cc53497d"
+    },
+    {
+      "id": "freeze_artifacts:batch-execution-recovery-release-repair:2026-10-02T12:52:07.345Z",
+      "at": "2026-10-02T12:52:07.345Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-execution-recovery-release-repair.intent.json"
+    },
+    {
+      "id": "record_approval:batch-execution-recovery-release-repair:2026-10-02T12:52:58.050Z",
+      "at": "2026-10-02T12:52:58.050Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-d1fc0ddb\naction_v2_sha256:a4b83ed2084adc0e6ec29ea5f5e5949cd3c258856833a4864e573074b9ff7c2d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-e67beec41b8fe974",
+        "issued_at": "2026-10-02T12:52:58.050Z",
+        "expires_at": "2026-10-02T13:02:58.050Z"
+      }
+    },
+    {
+      "id": "request_rework:batch-execution-recovery-release-repair:2026-10-02T12:57:33.218Z",
+      "at": "2026-10-02T12:57:33.218Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:c21cfac7b9fa49338e659bbbcf01da405d06d13d0b63766a59cf60cc3e064fce",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-ebc81c3b1e4e7bcb",
+        "issued_at": "2026-10-02T12:57:33.218Z",
+        "expires_at": "2026-10-02T13:07:33.218Z"
+      }
+    },
+    {
+      "id": "resolve_finding:batch-execution-recovery-release-repair:2026-10-02T13:13:01.307Z",
+      "at": "2026-10-02T13:13:01.307Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-2097cc713579-1-review-1\naction_v2_sha256:a5dcaa6549bd27f8fc15aa0db8b81f5529e6f7fe0c8181c812920f7fdc5b7c3a"
+    },
+    {
+      "id": "freeze_artifacts:batch-execution-recovery-release-repair:2026-10-02T13:13:09.226Z",
+      "at": "2026-10-02T13:13:09.226Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-execution-recovery-release-repair.intent.json"
+    },
+    {
+      "id": "record_approval:batch-execution-recovery-release-repair:2026-10-02T13:14:02.881Z",
+      "at": "2026-10-02T13:14:02.881Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-cd2d8f35\naction_v2_sha256:f535b6fd16fe7be7d01e3b4ecf34bf468d066fa90f576054b12b458d6d81de39",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-9f933e96b7fcdf28",
+        "issued_at": "2026-10-02T13:14:02.881Z",
+        "expires_at": "2026-10-02T13:24:02.881Z"
+      }
+    },
+    {
+      "id": "record_approval:batch-execution-recovery-release-repair:2026-10-02T13:16:29.049Z",
+      "at": "2026-10-02T13:16:29.049Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-0714f6ea\naction_v2_sha256:572e50e4b99985411fe1d815b9c8dc42ebe36ecca509e0686573c754b36f7fd9",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-9f42d9059e3f0fca",
+        "issued_at": "2026-10-02T13:16:29.049Z",
+        "expires_at": "2026-10-02T13:26:29.049Z"
+      }
+    },
+    {
+      "id": "complete:batch-execution-recovery-release-repair:2026-10-02T13:16:30.129Z",
+      "at": "2026-10-02T13:16:30.129Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:7f9dc9ef8bb3f6174ba3abefe502f652454dbcab04aaa62c7ad282828a57e5cc"
+    }
+  ]
+}
