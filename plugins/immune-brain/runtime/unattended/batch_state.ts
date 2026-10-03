@@ -243,12 +243,18 @@ export function prepareBatchRunState(input: {
 	return prepared;
 }
 
+/** Validate a captured snapshot without reading or writing filesystem state. */
+export function parseBatchRunState(raw: string, batchId: string): BatchRunStateRecord {
+	validateBatchId(batchId);
+	const parsed: unknown = JSON.parse(raw);
+	validateRecordShape(parsed, batchId);
+	return parsed;
+}
+
 export function readBatchRunState(root: string, batchId: string): BatchRunStateRecord | null {
 	const path = statePath(batchId);
 	if (!existsSync(join(root, path))) return null;
-	const parsed: unknown = JSON.parse(readSecureProjectFile(root, path));
-	validateRecordShape(parsed, batchId);
-	return parsed;
+	return parseBatchRunState(readSecureProjectFile(root, path), batchId);
 }
 
 function ensureSecureDirectory(root: string, relative: string): string {

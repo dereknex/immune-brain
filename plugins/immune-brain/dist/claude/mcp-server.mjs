@@ -5728,6 +5728,9 @@ function ensureSecureDirectory(root, relativePath) {
   return target.path;
 }
 function readSecureProjectFile(root, relativePath) {
+  return readSecureProjectBytes(root, relativePath).toString("utf8");
+}
+function readSecureProjectBytes(root, relativePath) {
   const candidate = safeCandidate(root, relativePath);
   assertNoSymlinkSegments(candidate.root, candidate.path);
   const before = pathStatOrNull(candidate.path);
@@ -5743,7 +5746,7 @@ function readSecureProjectFile(root, relativePath) {
     const opened = fstatSync4(fd);
     if (opened.dev !== before.dev || opened.ino !== before.ino)
       throw new KernelStoreSecurityError(`source identity changed: ${relativePath}`);
-    const content = readFileSync8(fd, "utf8");
+    const content = readFileSync8(fd);
     const after = lstatSync7(candidate.path);
     if (after.dev !== opened.dev || after.ino !== opened.ino)
       throw new KernelStoreSecurityError(`source identity changed: ${relativePath}`);
@@ -10550,13 +10553,17 @@ function prepareBatchRunState(input) {
   };
   return prepared;
 }
+function parseBatchRunState(raw, batchId) {
+  validateBatchId(batchId);
+  const parsed = JSON.parse(raw);
+  validateRecordShape(parsed, batchId);
+  return parsed;
+}
 function readBatchRunState(root, batchId) {
   const path = statePath(batchId);
   if (!existsSync6(join11(root, path)))
     return null;
-  const parsed = JSON.parse(readSecureProjectFile(root, path));
-  validateRecordShape(parsed, batchId);
-  return parsed;
+  return parseBatchRunState(readSecureProjectFile(root, path), batchId);
 }
 function ensureSecureDirectory2(root, relative) {
   const target = join11(root, relative);
