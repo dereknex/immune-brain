@@ -74,8 +74,12 @@ Continue while the current projection has a valid action:
 4. Follow the returned Kernel obligation. Fresh QA suffices for routine work;
    material and critical work additionally require fresh independent Review.
    Normal completion does not require a second user confirmation.
-5. For rework, follow the projected artifact state before editing. Resolve
-   findings only after fixing and verifying their cause. Changed snapshots
+5. For rework, follow the projected artifact state before editing. Submit the
+   rework verdict first, then edit: staging an in-scope change while the
+   artifacts are frozen invalidates the snapshot and discards that verdict,
+   forcing a fresh QA round. After the Kernel returns the artifacts to active,
+   make the fix, resolve findings only after fixing and verifying their cause,
+   then run the newly required obligations. Changed snapshots
    invalidate old evidence; run the newly required obligations. On the second
    rework of one acceptance id or anchor, the fix response must either state why
    it covers every known trigger class of the violated invariant — the shared
@@ -140,6 +144,27 @@ per completed child.
 
 ## Decisions and Recovery
 
+- Resume from authority facts, not prose. After an uncertain interruption, bind
+the exact `task_id`, `run_id`, record revision, lifecycle, artifact state,
+obligation, and claim from the Kernel projection before acting. A compaction
+heading, a Handoff summary, an Issue state, or any other prose summary is not
+authority and can be stale or wrong: when it conflicts with the projection,
+correct the prose and resume the existing owner instead of trusting the summary.
+- The workflow stages are distinct and never inferred from one another:
+authored, validated, published, enrolled, assured, and completed each require
+their own evidence. An open or closed Issue is not Enrollment or completion; a
+published Issue is not Enrollment; a plan-only delivery is not execution
+readiness.
+- Consume a successful operation's fresh projection directly. Do not add a
+status read after an operation that already returned the current projection, and
+never repeat a mutation merely to re-observe its result. Kernel CAS and
+freshness checks remain mandatory, and reducing Parent reads does not bypass
+them.
+- A falsely claimed later-Slice enrollment is a summary defect, not authority.
+Retain the actual owner, and do not create or replay a mutation, gate, or
+completion to match the prose. Summary production outside this repository is not
+locally fixed; the consumer-side protection is these rules, and a producer bug
+is recorded as a separate follow-up rather than resolved here.
 - Scope expansion returns to Planner's Enrolled Intent Revision route. Planner
   prepares the complete proposed revision without replacing the active owner;
   the current Loop submits it through Kernel revision authority. Collect all
@@ -247,6 +272,12 @@ Review:
 Stop reason:
 Next action:
 ```
+
+Every line reports authority evidence, not prose inference: name the exact
+task/run identity and the observed lifecycle, artifact, obligation, and claim
+facts that decided the exit. If a summary claimed more than the projection
+proves — for example a later Slice as enrolled or the task as completed — report
+the projection instead and correct the prose.
 
 ## Failure Output
 
