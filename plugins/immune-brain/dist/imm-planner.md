@@ -485,6 +485,17 @@ preparation does not apply the revision or authorize expanded execution.
 - **Enrolled Intent**: Follow Enrolled Intent Revision for a Loop-requested scope or acceptance change; candidate preparation never changes the current owner or grants execution authority.
 - **CONTEXT.md Vocabulary**: Consult the relevant `CONTEXT.md` terms when domain meaning is unclear or changes; known file-local tasks do not require a full root-document read. `CONTEXT.md` is vocabulary and architecture navigation, not execution state.
 - **Discovery Protocol**: Read `CONTEXT.md` `## Architecture Map` before broad searching; consult relevant `docs/solutions/` evidence under Clarification supplement's history trigger. Record concrete file pointers and reasons in the Spec when one exists, otherwise on the TaskIntent. Do not read or write a legacy Step discovery cache.
+
+**Bounded discovery.** State the question, the named paths, the expected evidence,
+and the stop condition before an investigation expands. Read known paths directly,
+expand only along proved callers and state owners, and stop once the question is
+closed instead of continuing into nearby unrelated paths. Keep project-specific
+log or history searches inside the named project paths. Reads or investigation
+output that is truncated continue in bounded pages only while still needed, and an
+operation that may have partially succeeded is inspected before it is retried for
+only its unfinished part. Telemetry and tool-call counts are observational: they
+never justify dropping evidence the question requires, and they are not comparable
+to another session's numbers unless the inputs and environment match.
 - **Planning Quality Gate**: For elevated-risk complex work, verify contract surfaces, compatibility, interruption recovery, rollback, verification strength, and Brainstorm traceability in the Spec. Simple TaskIntent-only work verifies those properties on the Intent. Do not invoke retired Plan mutation or State Ledger synchronization.
 - **Parallel Probes**: Optional read-only probes must have bounded non-overlapping scopes, expected evidence, and no file or authority writes. They are advisory discovery, not persisted Step annotations. Probe failure falls back to inline investigation with a recorded reason.
 
