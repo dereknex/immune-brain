@@ -346,6 +346,32 @@ before execution. Report `valid` and `enrollment_ready` only as structural and
 Enrollment readiness; only a completed deterministic QA result proves that a
 descriptor executed and passed.
 
+**Acceptance-to-invariant mapping.** Trace each acceptance assertion to an
+observable invariant at a real seam, then name the positive, negative, and bound
+controls that exercise it. Name the controls explicitly instead of relying on
+the happy path: a happy path alone never proves a guard. The six generalized
+motivating classes to check for are: normalization precedes retrieval (an input
+is normalized before it is used to retrieve); validation precedes merge (a
+rejected input never enters the merged state); the deadline covers the whole
+lifecycle including cleanup; ranking tolerates missing embeddings (an absent
+signal is ranked, not silently skipped); the budget covers the complete
+serialized request; and each success, failure, and timeout outcome carries its
+own duration evidence. These are workflow-quality input patterns, not requests
+to edit the original applications that motivated the audit.
+
+**Environment and prerequisite discipline.** A descriptor that needs a
+prerequisite states its provenance and how it is obtained. Preparation must not
+hide a download, credential use, production write, or system change: authorize
+it explicitly, or redesign the check to avoid it. Require cleanup on failure and
+interruption, and restoration of any explicitly authorized setting. An absent
+dependency, a missing simulator, or a preparation failure is a failed check, not
+a pass. Zero matched checks and skipped required checks are failures: a required
+check that selects no test, or that is skipped, must fail the acceptance rather
+than silently succeed. Separate automated behavioral or geometry evidence from
+human judgment of motion quality; a descriptor can assert only the automated
+half. Textual presence in a contract string is not proof that a provider obeyed
+it, and structural Enrollment readiness is not proof that a descriptor executed.
+
 ## Core Responsibilities
 
 - **Decomposition**: Convert requirements into one or more TaskIntents. Add a Spec under `docs/specs/` only for complex work. Treat Technical Design as one TaskIntent decomposition dimension alongside outcome, Verification, dependency, risk, rollback, compatibility, and authority.
@@ -360,7 +386,7 @@ descriptor executed and passed.
 - **Technical Design Authority**: The Spec is the single Technical Design baseline. TaskIntent acceptance and scope reference the applicable design decisions or invariants without copying Technical Design prose. If discovery invalidates the baseline, stop execution and return to Planner to update the Spec and decide whether `replan` is required. TaskIntent and Initiative text do not duplicate Technical Design prose or become a prose Plan substitute.
 - **TaskIntent decomposition**: Use the selected design boundaries as one retain/split criterion for TaskIntent slices. Keep work in one TaskIntent when the selected views describe one coherent executable slice with shared acceptance, risk treatment, rollback, and authority. Split a successor TaskIntent when a service boundary, state-machine owner, migration/compatibility boundary, independently promotable layer, or sequence dependency needs independent verification, rollback, authorization, or settlement. Do not split merely because the design names several layers, files, or services. Treat trust-boundary changes as the same kind of decomposition evidence: a TaskIntent should normally change one primary trust-boundary invariant, while merely traversing several boundaries or updating both sides of one end-to-end authority chain does not require a split. Split separate trust invariants when they can be independently verified, rolled back, authorized, migrated, or settled. Keep multiple trust-boundary changes together only when they form one atomic security outcome and splitting would create an unsafe or unusable intermediate state; record that reason in the Spec. This is Planner judgment, not a TaskIntent schema field or an Enrollment counting rule. This does not revive prose Plan, Roadmap, or Phase authority.
 - **Mermaid Use**: Mermaid is required only when a medium/high-risk design contains structure, sequence, data flow, or state transition relationships that a diagram materially clarifies. Mermaid is not a universal gate; a diagram supplements adjacent prose and never becomes a second design authority. Medium/High risk Specs record `**Diagram decision**: required|not_required` and a non-empty `**Diagram reason**:`. A `required` decision must have a Mermaid block; `not_required` explains why prose is sufficient. Low-risk Specs omit the empty ceremony and record neither field.
-- **Verification**: Every acceptance assertion has a concrete focused descriptor that can fail on the intended regression. Hypothetical evidence is not execution-ready.
+- **Verification**: Every acceptance assertion has a concrete focused descriptor that can fail on the intended regression, and every named invariant has positive, negative, and bound controls at an observable seam. Hypothetical evidence is not execution-ready; a check that matches zero tests, is skipped, or lacks its prerequisite is a failure rather than a pass.
 - **Executable Scope**: `scope_hint` is the mutation envelope, not discovery context. Close references across callers, tests, generated mirrors, and state-machine owners before authoring. Simple tasks are TaskIntent-only. A complex task binds at most one active Spec by content identity; do not add archive paths for freeze, and do not relocate artifacts. Collect all known scope gaps in one revision request; ask again only when new evidence changes the boundary.
 - **Devil's Advocate Preplan Audit**: Medium/High risk work records a `Devil's Advocate Audit` in its Spec covering rollback resilience, verification vanity, and spec dilution detection. Explain recovery from partial implementation, why verification detects the regression, and how accepted requirements remain covered. Simple TaskIntent-only work records outcome, boundary, and concrete verification on the Intent. Low-risk work omits the empty template.
 - **Execution posture**: Record `test-first` or `characterization-first` on the Spec when the work is complex, otherwise on the TaskIntent, when explicitly requested or justified by fragile untested behavior. The Executor owns the local choreography; do not create prototype or RED/GREEN/REFACTOR authority Steps. Throwaway probes must have a cleanup condition and a durable decision output.
@@ -522,6 +548,8 @@ a State Ledger. Keep historical Plan validation strictly read-only.
 ## Red Flags
 
 - Acceptance verification names only hypothetical evidence with no runnable descriptor.
+- An acceptance descriptor names no negative or bound control for its invariant, or its required prerequisite (dependency, simulator, preparation) is absent and still counted as a pass.
+- A required check matches zero tests or is skipped and the run is reported as passing.
 - New work depends on a prose Plan validator, Step activation, or State Ledger.
 - A Brainstorm manifest lacks complete `BR-*` coverage on the Spec (complex) or TaskIntent (simple).
 - The handoff completeness check passed while a required phase or upstream item is unmapped, or while the plan delivers only part of the confirmed outcome.

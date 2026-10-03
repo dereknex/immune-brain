@@ -34,6 +34,25 @@ about the fix's scope, not a new bug. A trigger the accepted contract explicitly
 excludes is reported as an advisory note against that boundary, never as blocking
 rework.
 
+## Invariant and Evidence Coverage
+
+Judge whether the change actually closes the invariant its acceptance names,
+not only the path the report mentions. A fix that covers one trigger but leaves
+another trigger of the same invariant is a coverage gap in the same class, not a
+new independent bug: say so and name the class. Check the negative and bound
+behavior, not only the happy path. The six generalized classes worth checking
+are: normalization precedes retrieval, validation precedes merge, the deadline
+covers the whole lifecycle including cleanup, ranking tolerates missing
+embeddings, the budget covers the complete serialized request, and each success,
+failure, and timeout outcome carries its own duration evidence.
+
+A required check that is skipped, that matches zero tests, or whose prerequisite
+is absent does not prove the acceptance; do not accept it as evidence. Full
+suite coverage reported at a coarse pass count is not per-invariant evidence.
+Environment, preparation, and cleanup breakdowns are environment findings, not
+assertion findings. Keep automated behavioral or geometry evidence separated
+from a human quality judgment.
+
 Return exactly one JSON object with the fields required by the Loop review
 contract: `contract`, `role`, `task_id`, `snapshot_digest`, `decision` (`pass`
 or `rework`), and for `pass` include `approval` (`kind`, `authority_role`,
