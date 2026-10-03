@@ -19,11 +19,13 @@ export interface GitWorkspaceSnapshot {
 }
 
 function git(root: string, args: string[]): string | null {
-	const result = spawnSync("git", ["-C", root, ...args], {
+	const diff = args[0] === "diff";
+	const command = diff ? ["diff", "--exit-code", ...args.slice(1)] : args;
+	const result = spawnSync("git", ["--no-optional-locks", "-c", "diff.autoRefreshIndex=false", "-C", root, ...command], {
 		encoding: "utf8",
 		stdio: ["ignore", "pipe", "pipe"],
 	});
-	return result.status === 0 ? result.stdout : null;
+	return result.status === 0 || (diff && result.status === 1) ? result.stdout : null;
 }
 
 function splitNull(value: string): string[] {
@@ -217,12 +219,14 @@ export function setGitTaskSnapshotTestHook(hook: () => void): () => void {
 }
 
 function gitBytes(root: string, args: string[]): Buffer {
-	const result = spawnSync("git", ["-C", root, ...args], {
+	const diff = args[0] === "diff";
+	const command = diff ? ["diff", "--exit-code", ...args.slice(1)] : args;
+	const result = spawnSync("git", ["--no-optional-locks", "-c", "diff.autoRefreshIndex=false", "-C", root, ...command], {
 		encoding: null,
 		stdio: ["ignore", "pipe", "pipe"],
 		maxBuffer: 8 * 1024 * 1024,
 	});
-	if (result.status !== 0 || !Buffer.isBuffer(result.stdout)) {
+	if ((result.status !== 0 && !(diff && result.status === 1)) || !Buffer.isBuffer(result.stdout)) {
 		throw new Error(`Git task snapshot command failed: git ${args.join(" ")}`);
 	}
 	return result.stdout;
@@ -629,6 +633,29 @@ export function taskRevisionIdentity(
 		diff_hash: hashTaskSnapshot(snapshot),
 		changed_paths: Object.keys(snapshot.changed_paths).sort(comparePaths),
 	};
+}
+
+/** The same v4 identity for an immutable delivered commit, without touching the index. */
+export function taskCommitRevisionIdentity(projectRoot: string, scopeHint: unknown, baseHead: string, commit: string): GitTaskDiffIdentity {
+	const requested = resolve(projectRoot);
+	if (lstatSync(requested).isSymbolicLink()) throw new Error("task commit root must be a real directory");
+	const root = realpathSync(requested), scope = assertCanonicalTaskScope(scopeHint);
+	if (!GIT_OBJECT_ID.test(baseHead) || !GIT_OBJECT_ID.test(commit)) throw new Error("invalid task commit identity");
+	if (gitRequired(root, ["cat-file", "-t", baseHead], "unreadable task base") !== "commit" ||
+		gitRequired(root, ["cat-file", "-t", commit], "unreadable task commit") !== "commit" ||
+		git(root, ["merge-base", "--is-ancestor", baseHead, commit]) === null) throw new Error("invalid task commit ancestry");
+	const paths = decodeNullPaths(gitBytes(root, ["diff", "--no-renames", "--name-only", "-z", baseHead, commit, "--"]), "task commit paths")
+		.filter(path => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope)).sort(comparePaths);
+	assertNoCaseFoldCollisions(paths, "task commit paths");
+	const changed_paths: Record<string, GitTaskIndexEntry> = {};
+	for (const path of paths) {
+		const current = headEntry(root, commit, path), base = headEntry(root, baseHead, path);
+		changed_paths[path] = { status: !base ? "added" : !current ? "deleted" : "modified",
+			mode: current?.mode ?? null, oid: current?.oid ?? null, base_mode: base?.mode ?? null, base_oid: base?.oid ?? null };
+	}
+	const snapshot: GitTaskRevisionSnapshot = { kind: "git-task-revision-v1", repository_root: root, base_head: baseHead,
+		base_tree: gitRequired(root, ["rev-parse", `${baseHead}^{tree}`], "unreadable task base tree"), scope, changed_paths };
+	return { diff_hash: hashTaskSnapshot(snapshot), changed_paths: paths };
 }
 
 /** The single v4 freshness identity shared by QA, Review, authorization, and completion. */

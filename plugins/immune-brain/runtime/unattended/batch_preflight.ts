@@ -22,6 +22,7 @@ import { readGitHead } from "../kernel/pi_canary_prepare";
 import { readTaskIntent } from "../kernel/intent";
 import { localRunId, readAuditTaskPair, readTaskRecordRaw, readWorkspaceStateRaw, reconcileKernelAuthority } from "../kernel/storage";
 import { pathMatchesScope } from "../workspace_scope";
+import { captureBatchReconfirmation, retainReconfirmation, ownUnpersistedBatchHead, type ReconfirmationSnapshot } from "./batch_reconfirmation";
 import { DEFAULT_DEADLINE_MS, projectBatchPlan } from "./batch_plan";
 import { batchReason, type BatchReasonKey } from "./batch_reasons";
 import { isTerminalBatchState, readBatchRunState, type BatchRunStateRecord } from "./batch_state";
@@ -44,6 +45,8 @@ export interface BatchPreflightOptions {
 }
 
 export interface BatchPreflightProjection {
+	/** Captured observations only; never serialized or used as capability. */
+	reconfirmation?: ReconfirmationSnapshot;
 	initiative_slug: string;
 	batch_branch: string;
 	is_resuming: boolean;
@@ -291,8 +294,8 @@ function porcelainEntries(root: string): Array<{ code: string; path: string }> |
 	// an unstaged modification (" M path") and silently mis-scoped the path.
 	const statusProc = spawnSync(
 		"git",
-		["-C", root, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all"],
-		{ encoding: "utf8" },
+		["-C", root, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all", "--ignore-submodules=none"],
+		{ encoding: "utf8", env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } },
 	);
 	if (statusProc.status !== 0) return null;
 	const entries: Array<{ code: string; path: string }> = [];
@@ -552,22 +555,26 @@ export async function projectBatchPreflight(
 	});
 	if (!planSurface.ok)
 		return reject(planSurface.key, planSurface.detail);
+	let reconfirmation: ReconfirmationSnapshot | undefined;
+	if (activeRecord && activeRecord.plan_digest !== planSurface.surface.plan_digest) {
+		try { reconfirmation = await captureBatchReconfirmation(root, activeRecord, planSurface.surface.recovery_children); }
+		catch { return reject("plan_projection_failed", "batch plan reconfirmation is not eligible"); }
+	}
 
-	return {
-		ok: true,
-		projection: {
-			initiative_slug: initiativeSlug,
-			batch_branch: batchBranch,
-			is_resuming: isResuming,
-			existing_batch: existingBatch,
-			base_head: baseHead,
-			budget: planSurface.surface.budget,
-			plan_digest: planSurface.surface.plan_digest,
-			recovery_children: planSurface.surface.recovery_children,
-			risk_by_task: planSurface.surface.risk_by_task,
-			excluded: planSurface.surface.excluded,
-		},
+	const projection: BatchPreflightProjection = {
+		initiative_slug: initiativeSlug,
+		batch_branch: batchBranch,
+		is_resuming: isResuming,
+		existing_batch: existingBatch,
+		base_head: baseHead,
+		budget: planSurface.surface.budget,
+		plan_digest: planSurface.surface.plan_digest,
+		recovery_children: planSurface.surface.recovery_children,
+		risk_by_task: planSurface.surface.risk_by_task,
+		excluded: planSurface.surface.excluded,
 	};
+	if (reconfirmation) Object.defineProperty(projection, "reconfirmation", { value: reconfirmation });
+	return { ok: true, projection };
 }
 
 /**
@@ -700,6 +707,11 @@ export async function authorizeBatch<HostRejection>(
 	// ADR-0005 Decision 1: a resume of an intact, still-binding authorization
 	// reuses it instead of opening a second native gate. Anything that no longer
 	// binds falls through to the gate below, which names the reason.
+	const ownsUnpersistedHead = isResuming && existingBatch !== null && existingBatch.plan_digest === planDigest &&
+		expectedBatchHead(existingBatch) !== baseHead && ownUnpersistedBatchHead(root, existingBatch, baseHead);
+	if (isResuming && existingBatch && !existingBatch.commits.length && existingBatch.children[0]?.state === "settled" &&
+		expectedBatchHead(existingBatch) !== baseHead && !ownsUnpersistedHead)
+		return { outcome: "rejected", rejection: batchRejection("head_moved", "first unpersisted commit provenance is invalid") };
 	const reuseBlockers: string[] = [];
 	if (isResuming && existingBatch) {
 		if (isExistingExpired) reuseBlockers.push("batch_authorization_expired");
@@ -707,7 +719,7 @@ export async function authorizeBatch<HostRejection>(
 		if (existingBatch.batch_state !== "running") reuseBlockers.push("batch_not_running");
 		if (existingBatch.plan_digest !== planDigest) reuseBlockers.push("batch_plan_digest_changed");
 		if (existingBatch.branch !== batchBranch) reuseBlockers.push("batch_branch_changed");
-		if (expectedBatchHead(existingBatch) !== baseHead) reuseBlockers.push("batch_head_lineage_moved");
+		if (expectedBatchHead(existingBatch) !== baseHead && !ownsUnpersistedHead) reuseBlockers.push("batch_head_lineage_moved");
 	}
 	const reuseAuthorization = isResuming && reuseBlockers.length === 0;
 	const expiresAt = reuseAuthorization ? existingBatch!.authorization_expires_at : budget.deadline_at;
@@ -753,7 +765,7 @@ export async function authorizeBatch<HostRejection>(
 	if (drift.plan_digest !== planDigest)
 		return { outcome: "rejected", rejection: batchRejection("plan_changed", drift.plan_digest) };
 	if (drift.base_head === null) return { outcome: "rejected", rejection: batchRejection("repository_became_unreadable") };
-	if (drift.base_head !== baseHead)
+	if (drift.base_head !== baseHead || (ownsUnpersistedHead && !ownUnpersistedBatchHead(root, existingBatch!, baseHead)))
 		return { outcome: "rejected", rejection: batchRejection("head_moved", drift.base_head) };
 
 	// The drift projection's own claim read happened before its plan read; this
@@ -778,6 +790,10 @@ export async function authorizeBatch<HostRejection>(
 	if (Date.parse(expiresAt) <= Date.now())
 		return { outcome: "rejected", rejection: batchRejection("confirmation_failed", "confirmed batch deadline expired before authorization issuance") };
 
+	if (projection.reconfirmation) {
+		try { projection.reconfirmation.assertUnchanged(); }
+		catch { return { outcome: "rejected", rejection: batchRejection("plan_changed") }; }
+	}
 	const binding: BatchAuthorizationBinding = {
 		batch_id: batchId,
 		initiative_slug: initiativeSlug,
@@ -790,6 +806,7 @@ export async function authorizeBatch<HostRejection>(
 		expires_at: expiresAt,
 		nonce: options.nonce,
 	};
+	if (projection.reconfirmation) retainReconfirmation(binding.nonce, binding.expires_at, projection.reconfirmation);
 	return {
 		outcome: "authorized",
 		batch_id: batchId,

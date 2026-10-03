@@ -23,6 +23,7 @@ export function batchQaFailureFacts(record: Pick<TaskRecord, "history"> & { find
 		recovery_findings: record.findings.filter(f => f.status === "open").map(f => ({ id: f.id, kind: f.kind, status: f.status, acceptance_id: f.acceptance_id })) };
 }
 import type { BatchPlanChild } from "./types";
+import { ownUnpersistedBatchHead, takeReconfirmation } from "./batch_reconfirmation";
 import {
 	type BatchRunnerGitPort,
 	type BatchGitPreflightResult,
@@ -38,6 +39,7 @@ import {
 	prepareBatchRunState,
 	readBatchRunState,
 	writeBatchRunState,
+	replaceBatchRunState,
 	writeBatchRunReport,
 } from "./batch_state";
 
@@ -322,6 +324,11 @@ function externalHeadDriftMessage(root: string, record: BatchRunStateRecord): st
 }
 
 async function validatePersistedRun(input: StartBatchInput, record: BatchRunStateRecord): Promise<void> {
+	if (!record.commits.length && record.children[0]?.state === "settled" && existsSync(join(input.root, ".git"))) {
+		const head = spawnSync("git", ["-C", input.root, "rev-parse", "HEAD"], { encoding: "utf8" });
+		if (head.status !== 0 || (head.stdout.trim() !== record.base_head && !ownUnpersistedBatchHead(input.root, record, head.stdout.trim())))
+			throw new Error("first unpersisted batch commit provenance is invalid");
+	}
 	const plan = input.registry.children(input.capability);
 	if (record.plan_digest !== computeBatchPlanDigest(plan) ||
 		record.children.length !== plan.length || record.children.some((child, index) => {
@@ -384,7 +391,7 @@ function replayTerminal(
 	);
 }
 
-function validateRunAuthorization(input: StartBatchInput, existing: BatchRunStateRecord | null): void {
+function validateRunAuthorization(input: StartBatchInput, existing: BatchRunStateRecord | null): ValidatedBatchAuthorization {
 	const authorized = input.kernel.validateBatchAuthorization({
 		registry: input.registry,
 		capability: input.capability,
@@ -409,6 +416,32 @@ function validateRunAuthorization(input: StartBatchInput, existing: BatchRunStat
 	if (computeBatchPlanDigest(children) !== authorized.plan_digest ||
 		input.plan_digest !== authorized.plan_digest || input.base_head !== authorized.base_head)
 		throw new Error("batch run input does not match the authorized plan or base_head");
+	return authorized;
+}
+
+function applyPlanReconfirmation(input: StartBatchInput, existing: BatchRunStateRecord): BatchRunStateRecord {
+	if (existing.plan_digest === input.plan_digest) return existing;
+	const next = { ...existing, plan_digest: input.plan_digest, confirmation_time: input.confirmation_time,
+		authorization_expires_at: input.authorization_expires_at, budget: input.budget };
+	if (!existing.branch || input.batch_id !== existing.batch_id || input.initiative_slug !== existing.initiative_slug || input.base_head !== existing.base_head ||
+		input.budget.max_children !== existing.budget.max_children || input.budget.qa_failure_limit !== existing.budget.qa_failure_limit)
+		throw new Error("plan_digest mismatch: reconfirmation binding changed");
+	const validate = () => {
+		const plan = input.registry.children(input.capability);
+		if (existing.children.length !== plan.length || plan.some((child, index) => {
+			const old = existing.children[index]!, nextChild = input.children[index];
+			return !nextChild || old.task_id !== child.task_id || old.slice_id !== nextChild.slice_id ||
+				JSON.stringify(old.blocked_by) !== JSON.stringify(child.blocked_by) || JSON.stringify(nextChild.blocked_by) !== JSON.stringify(child.blocked_by);
+		})) throw new Error("plan_digest mismatch: reconfirmation topology changed");
+		const { issued_at: _issuedAt, ...binding } = validateRunAuthorization(input, { ...existing, plan_digest: input.plan_digest });
+		if (binding.branch !== existing.branch) throw new Error("plan_digest mismatch: reconfirmation branch changed");
+		prepareBatchRunState(input);
+		return input.registry.inspect(input.capability, binding);
+	};
+	const authority = validate();
+	const captured = takeReconfirmation(authority.nonce);
+	if (captured.root !== input.root || captured.plan_digest !== input.plan_digest) throw new Error("plan_digest mismatch: captured reconfirmation does not match run input");
+	return replaceBatchRunState(input.root, captured.stateBytes, next, () => { captured.assertUnchanged(); validate(); });
 }
 
 export async function startBatch(input: StartBatchInput): Promise<BatchRunReport> {
@@ -460,7 +493,9 @@ async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport>
 	}
 
 	let existing = readBatchRunState(input.root, input.batch_id);
+	const reconfirmed = existing !== null && existing.plan_digest !== input.plan_digest;
 	if (existing) {
+		existing = applyPlanReconfirmation(input, existing);
 		try {
 			await validatePersistedRun(input, existing);
 		} catch (error) {
@@ -487,7 +522,7 @@ async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport>
 			nextConfirmation > priorConfirmation &&
 			Number.isFinite(nextExpiry) &&
 			nextExpiry > Date.now();
-		if (!freshAuthorization) {
+		if (!freshAuthorization && !reconfirmed) {
 			return finalize(
 				input.root,
 				existing,
@@ -496,7 +531,7 @@ async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport>
 			);
 		}
 
-		validateRunAuthorization(input, existing);
+		if (!reconfirmed) validateRunAuthorization(input, existing);
 		prepareBatchRunState({ ...input, now: input.now });
 		const remapped = await Promise.all(
 			existing.children.map(async (child) => {
@@ -863,7 +898,8 @@ export async function resumeBatch(
 	projection: (root: string, taskId: string) => Promise<AssuranceProjectionResult>,
 ): Promise<BatchRunReport> {
 	let existing = readBatchRunState(input.root, input.batch_id);
-	if (!existing) return startBatch(input);
+	if (!existing || existing.batch_state === "needs_human") return startBatch(input);
+	existing = applyPlanReconfirmation(input, existing);
 	try {
 		await validatePersistedRun(input, existing);
 	} catch (error) {
@@ -877,7 +913,6 @@ export async function resumeBatch(
 	}
 	if (isTerminalBatchState(existing.batch_state))
 		return replayTerminal(input.root, existing);
-	if (existing.batch_state === "needs_human") return startBatch(input);
 
 	// An enrolled-but-unsettled child must reach its own Kernel terminal
 	// settlement before anything else, even under an expired authorization:
@@ -1103,6 +1138,8 @@ async function driveInterruptedChild(
 					intentPath,
 				});
 			};
+			if (existing && !record.commits.length && existsSync(join(input.root, ".git")) && !ownUnpersistedBatchHead(input.root, record, existing.commit))
+				throw new Error("first unpersisted batch commit provenance is invalid");
 			const adopted =
 				existing ??
 				(await doCommit().catch((error: unknown) => {

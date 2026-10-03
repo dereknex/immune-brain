@@ -36,7 +36,25 @@ strictly newer confirmation than the one it replaces.
    live claim, the plan digest, and the HEAD lineage after the literal user
    confirmed. Both Host adapters call that shared flow and supply only their own
    gate, confirmation reference, and nonce; rendering stays Host-specific.
-2. **The expiry is the deadline the literal user confirmed.** An intact running
+2. **A changed plan is not repaired by confirmation alone.** A first
+   reconfirmation is eligible only before any batch commit, with the original
+   ordered tasks/Slices/dependencies and branch/HEAD unchanged. The committed
+   base Intents must reconstruct the old digest; a revised, already-settled
+   in-flight child must have exact local-run terminal evidence and fresh
+   assurance matching its current reviewed delivery. Pending children remain
+   unchanged. Corrupt, historical, moved-HEAD and committed cases still refuse.
+   Preflight captures read-only observations and rechecks them after the native
+   answer. Those observations live only in the current process, associated with
+   the fresh nonce; they grant no authority and expire/disappear on application
+   or process exit. The runner independently validates the capability and a
+   strictly newer confirmation, then the existing state owner compares expected
+   state bytes under its lock and atomically replaces only the orchestration
+   binding. Completion reconciliation and the scope-bound commit follow that
+   replacement. There is no durable receipt, authority reset, replayed
+   Enrollment, or permission to widen topology or child/failure limits. A crash
+   before replacement requires a new confirmation; after replacement, ordinary
+   same-digest resume applies. This does not recover any prior failed live run.
+3. **The expiry is the deadline the literal user confirmed.** An intact running
    authorization keeps its own expiry, so a child parked on a foreground Review
    does not spend the budget twice; every other path takes the budget deadline
    confirmed by the gate it just opened.

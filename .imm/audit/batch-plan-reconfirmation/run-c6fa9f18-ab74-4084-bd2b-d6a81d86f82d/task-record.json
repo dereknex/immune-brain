@@ -1,0 +1,661 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "batch-plan-reconfirmation",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "batch-plan-reconfirmation",
+    "goal": "Repair bounded zero-commit batch plan reconfirmation through the existing native authority and shared runtime, preserving lineage, exact completed-child evidence and serial progress without recovering the original failed live batch.",
+    "acceptance": [
+      {
+        "id": "BPR-A1",
+        "assertion": "Implement docs/specs/batch-plan-reconfirmation.spec.md: only a fresh native-confirmed capability may replace the plan binding of a nonterminal, zero-commit batch whose ordered tasks/Slices/dependencies, branch/base and current HEAD are unchanged. Reconstruct the old digest from canonical baseline Intents; require an actual monotonic revised, same-goal/owner child that is done in its exact local run with matching Intent, fresh QA/required Review and intact reviewed delivery. Pending children remain unchanged. Atomically compare expected state bytes and recheck binding/evidence/clock/claim before replacing only digest and confirmed authorization timing/budget, retaining all progress and limits. Shared entry paths reconcile settlement, commit once and continue without replaying Enrollment or Assurance. Real temporary Kernel/Git/public-entry tests prove this and refusal/replay behavior; corrupted digests, topology/HEAD/commit drift, ambiguous/stale/foreign evidence, mixed dirty work, forged/expired authority and declined/cancelled or drifting confirmation fail closed with raw-byte zero-write controls. Preserve existing negative and same-digest behavior, both Host seams and generated bundle parity. No repair of the original pi-batch-acceptance batch, S1 execution, manual authority/state edits, new schema or weakened commit guard. Typecheck and focused delivery checks must pass before Review; fixture evidence does not certify live user interaction.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-plan-reconfirmation.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/unattended-batch-commit.test.ts\",\n      \"tests/managed-task-snapshot-isolation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 360000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/adr/0008-batch-capability-rehydration.md",
+      "docs/specs/batch-plan-reconfirmation.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/workspace_scope.ts",
+      "tests/batch-plan-reconfirmation.test.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/unattended-batch-commit.test.ts",
+      "tests/unattended-batch-run.test.ts"
+    ],
+    "risk": "material",
+    "revision": 4,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/batch-plan-reconfirmation.intent.json",
+    "content_hash": "sha256:c32f0f72da91b1f116c3298fe3abf8e88e29c396bf29d9b6942a17e0065a6607"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:1b752e5fee26ba187b50c0b23769e4211518360b1784eee19ca2f0692a363242",
+  "git_base_head": "6f65bb73d81566c9e44880f930e5aed36e48a754",
+  "attestations": [
+    {
+      "id": "approval-qa-701cd16f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:eb1157e77aa1d88f3f096b05c06efbc66ae459e61d2cb993b6fff8bf6edb1185",
+      "diff_hash": "sha256:7bd8c853bdf24d30a000b656891ce1c113adbb3779830fd0d2b09be7b4363d1b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:6e64deca060d7febca90ae4472da449c991b9e14ddc6c4032b4aa91b48c76394",
+      "acceptance_results": [
+        {
+          "acceptance_id": "BPR-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:6e64deca060d7febca90ae4472da449c991b9e14ddc6c4032b4aa91b48c76394"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-298a5986",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:eb1157e77aa1d88f3f096b05c06efbc66ae459e61d2cb993b6fff8bf6edb1185",
+      "diff_hash": "sha256:f96c950924238b38a625db3803a39e01c51856d64f3df75917fadf4250536b1a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:562e3e311d1e160af2196054865e1240d63c44105efe1c43fa2d2cee67be192e",
+      "acceptance_results": [
+        {
+          "acceptance_id": "BPR-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:562e3e311d1e160af2196054865e1240d63c44105efe1c43fa2d2cee67be192e"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-19de60ee",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:ca11d3e673a51a591f17a96301b06684df7a22acfd94b8de0ec73719f4abf265",
+      "diff_hash": "sha256:563ed7fd0f1b79092e10096b9730fdcc13bf4f28af781f1ddbdd8e44b8d44706",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:241c77671cba2869b64b7f8a2213b3c21c6c166033a1c49552d5f393b9c21c5b",
+      "acceptance_results": [
+        {
+          "acceptance_id": "BPR-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:241c77671cba2869b64b7f8a2213b3c21c6c166033a1c49552d5f393b9c21c5b"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-4fa8ef09",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:ca11d3e673a51a591f17a96301b06684df7a22acfd94b8de0ec73719f4abf265",
+      "diff_hash": "sha256:73b015d502dfb619499ba0470f72d5192d304b0e753c40f68a30ed6f6a910eea",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:ec52eddcf4a972fb57cb6c9b452c8d8ea5861a90de2e3f9cc9f10faa9cfd167a",
+      "acceptance_results": [
+        {
+          "acceptance_id": "BPR-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:ec52eddcf4a972fb57cb6c9b452c8d8ea5861a90de2e3f9cc9f10faa9cfd167a"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-f7562978",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:c32f0f72da91b1f116c3298fe3abf8e88e29c396bf29d9b6942a17e0065a6607",
+      "diff_hash": "sha256:9eacbb72079bfa7cc6350b0793a519afa054e6e30781b157cca4c22cb787da06",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:3b242217fcdf564ed285a54d36b5a6ca1f500fa3a32f5d6970fd913f2f62bb67",
+      "acceptance_results": [
+        {
+          "acceptance_id": "BPR-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:3b242217fcdf564ed285a54d36b5a6ca1f500fa3a32f5d6970fd913f2f62bb67"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-9b53e609",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:c32f0f72da91b1f116c3298fe3abf8e88e29c396bf29d9b6942a17e0065a6607",
+      "diff_hash": "sha256:9eacbb72079bfa7cc6350b0793a519afa054e6e30781b157cca4c22cb787da06",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 immutable revision 的单一 parent、tree、manifest digest 与全部 changed_paths；结合 Kernel QA 通过证据，未发现阻断性正确性、安全或回归问题。测试证据仅覆盖 fixture，不认证 live native interaction。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "6f65bb73d81566c9e44880f930e5aed36e48a754",
+        "review_commit": "450fd21ab45720403447294dca4644d6d1d56fe7",
+        "review_tree": "e9ea32ebbbe4f327e808468b8d0b35b256bac3a0",
+        "manifest_digest": "sha256:ddd6841f4b2bc18fbd77078ebe64cefc41694a55b8d6c850004b593eaba23e3c"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-BPR-A1-a758fe33-68eabd",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "BPR-A1",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1, timed out) stdout=28B stderr=34674B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "review-89823db1036d-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "BPR-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "[P2] plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts:132-133 将 capturedProof 与从同一 audit 文件解析出的 pair.proof 比较，而没有与 local.terminal_proof_json 比较。预先损坏的 terminalized_at 因而仍可通过 reconfirmation，并被提交为终态证据，违反 exact local-run proof 一致性要求。最小修复是将捕获的 proof 与本地 run 保存的 terminal_proof_json 做一致性校验，并补充确认前篡改 proof 的零写入测试。",
+      "anchor": "sha256:b1d376ab27dc4cd3dd284014605ab4bd4408bb8ef9d531c0fe4956efab2abeca",
+      "evidence": {
+        "trigger": "Invariant class: terminal-proof provenance. Start with an otherwise eligible genuinely revised and completed child; change only .imm/audit/<task>/<local-run>/terminal-proof.json terminalized_at to another nonempty ISO timestamp and stage that file before preflight, retaining terminal_event_id and final_record_hash. Existing event-id/record-hash checks and post-confirmation unchanged-byte checks do not cover a proof already inconsistent when captured: capturedProof and pair.proof describe the same altered file. The directly called unchanged storage.ts:959-1023 was inspected because it owns audit-pair validation; it validates the record hash but does not compare this proof with the committed local proof. The directly called unchanged assurance_projection.ts was inspected because it supplies eligibility freshness; its terminal projection uses readCommittedRecord and does not establish exported-proof equality. Therefore captureBatchReconfirmation accepts the altered proof despite local.terminal_proof_json retaining the original, allowing authorized state replacement and subsequent commit.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_preflight.ts:projectBatchPreflight",
+          "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts:captureBatchReconfirmation",
+          "plugins/immune-brain/runtime/kernel/storage.ts:readAuditTaskPair",
+          "plugins/immune-brain/runtime/kernel/assurance_projection.ts:projectAssurance",
+          "plugins/immune-brain/runtime/kernel/storage.ts:readCommittedRecord"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "BPR-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-000d3f4e7b91-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "BPR-A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "[P1] reconfirmation 的只读检查仍可能刷新 Git index。batch_reconfirmation.ts:136、169 调用 taskRevisionIdentity，但其直接依赖 workspace_scope.ts:138、548 的 git diff subprocess 未禁用 optional locks。Git 默认的 diff.autoRefreshIndex 可以更新 index 的 stat 信息，因此确认被拒绝时仍可能留下 index 写入。tests/batch-plan-reconfirmation.test.ts:52-56 全局设置 GIT_OPTIONAL_LOCKS=0，掩盖了生产环境中的这条路径。应保证整条 capture/recheck 调用链的 Git subprocess 禁用 optional locks，并在正常 Host 环境下验证 raw-index 零写入。",
+      "anchor": "sha256:5f921cd54fa234d32dfb66d8157ae92c9dece431cd5d2304b448d1a119aa7a19",
+      "evidence": {
+        "trigger": "Invariant class: transitive read-only preflight. 在未设置 GIT_OPTIONAL_LOCKS、diff.autoRefreshIndex 使用默认值的 Host 中，准备一个真实 revised/done child，并让任一 tracked 文件的 stat 信息过期但内容与 index 相同；随后调用公开 batch entry 并 decline。新 helper 在 native gate 前调用 taskRevisionIdentity，内部 git diff 可以刷新 .git/index。当前对 batch_preflight.ts 和 batch_reconfirmation.ts 直接 Git 调用的 optional-lock 修复未覆盖这些传递调用；测试全局关闭 optional locks，不能验证该类零写入保证。读取 unchanged workspace_scope.ts 是为了追踪 changed helper 直接调用的 taskRevisionIdentity。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_preflight.ts:projectBatchPreflight",
+          "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts:captureBatchReconfirmation",
+          "plugins/immune-brain/runtime/workspace_scope.ts:taskRevisionIdentity",
+          "plugins/immune-brain/runtime/workspace_scope.ts:taskRevisionSnapshotOnce",
+          "plugins/immune-brain/runtime/workspace_scope.ts:git"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "BPR-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-000d3f4e7b91-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "BPR-A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "[P2] eligibility 允许现有 commit guard 必然拒绝的 Intent sidecar。batch_reconfirmation.ts:162 无条件放行 docs/plans/<task>.intent.json，即使它不在 settled child's scope_hint 内；随后 runner 已替换 digest，batch_git.ts:261-277、515-519 却会以 dirty_outside_scope 拒绝提交，并将 batch 写成 failed。应在授权应用前要求 staged sidecar 满足现有 commit envelope，不削弱 Git guard；增加 scope_hint 不包含 sidecar 的真实 fixture，证明拒绝保持原始状态字节。",
+      "anchor": "sha256:c45faa91c34b889877bff6731f3859c13d6de877b24ef4364160b4a298b50b00",
+      "evidence": {
+        "trigger": "Invariant class: pre-application commit eligibility. 原始和 revised Intent 的 scope_hint 均为 ['src/**']，同 goal/owner 的 revision 2 在真实 local run 中完成 fresh QA/required Review，HEAD/topology 不变，且 revised docs/plans/<task>.intent.json 与 scoped delivery、own audit 已 staged。captureBatchReconfirmation 对 sidecar 的特例使候选通过，但现有 commitBatchChild 不将 sidecar 视为隐含授权路径；native confirm 后 applyPlanReconfirmation 先持久化新 digest，commit 才失败。现有 baseline/proof 校验不证明 sidecar 的 commit 权限，positive fixture 将 sidecar 显式加入 scope_hint，未覆盖此边界。读取 unchanged batch_git.ts 是为了核实 changed runner 随后调用的实际 commit guard。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_preflight.ts:projectBatchPreflight",
+          "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts:captureBatchReconfirmation",
+          "plugins/immune-brain/runtime/unattended/batch_runner.ts:applyPlanReconfirmation",
+          "plugins/immune-brain/runtime/unattended/batch_runner.ts:driveInterruptedChild",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:commitBatchChild",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:isPathAllowedForChild"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "BPR-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-fc8f40ce327a-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "BPR-A1",
+      "source": "review",
+      "review_round": 3,
+      "summary": "首次 commit 恢复的 terminal-proof provenance 校验可以被重新确认绕过。plugins/immune-brain/runtime/unattended/batch_preflight.ts:710-719 将 ownUnpersistedBatchHead=false 仅转为要求新 gate，而非拒绝；:765 也只在原结果为 true 时重查。因此确认后，batch_runner.ts:1078-1095、1155-1161 仍能采用未经该校验的 commit 并写入进度。最小修复是在该首次 commit/persist 恢复窗口把 provenance 校验作为必要条件，在公共授权及共享 runner 采用 commit 前失败即拒绝，并增加两种 Host 的公共入口零写入测试。现有 tests/batch-plan-reconfirmation.test.ts:424-431 只断言 helper 返回 false，没有验证后续公共入口确实拒绝。",
+      "anchor": "sha256:34eab006ec91d35910cc7955ff8d8ee3b2f9bd32c1469109bb38662cd1725471",
+      "evidence": {
+        "trigger": "不变量类：首次 commit 恢复的端到端 terminal-proof provenance。完成真实 reconfirmation 和首个 runner commit 后，在 committed-state 持久化前中断：record.children[0].state='settled'、record.commits=[]、当前 HEAD 为已有 runner commit、plan_digest 已匹配新 Intent。保留有效 commit evidence，仅把导出的 .imm/audit/<task>/<run>/terminal-proof.json 的 terminalized_at 改为另一非空时间并 stage，保持 final_record_hash 不变，然后通过任一公共 Host 入口接受新 confirmation。readAuditTaskPair 仍接受这份 proof，而 ownUnpersistedBatchHead 因其不匹配本地 terminal_proof_json 返回 false；authorizeBatch 却继续开 gate 并授权，runner 随后采用已有 commit、持久化 committed 进度。当前 exact-proof 修复没有覆盖这个不变量类：它只阻止授权复用，未阻止 fresh-gate 分支继续采用证据。直接读取未修改的 batch_git.ts 是为追踪 runner 调用的 lookupBatchCommit：其采用路径只验证 audit pair、lifecycle、parent、author 和 scope；读取未修改的 storage.ts 是为确认 readAuditTaskPair 不比较 proof 与本地 terminal_proof_json。两者均不会拦截上述时间字段漂移。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_preflight.ts::authorizeBatch",
+          "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts::ownUnpersistedBatchHead",
+          "plugins/immune-brain/runtime/unattended/batch_runner.ts::startBatch",
+          "plugins/immune-brain/runtime/unattended/batch_runner.ts::resumeBatch",
+          "plugins/immune-brain/runtime/unattended/batch_runner.ts::driveInterruptedChild",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts::lookupBatchCommit",
+          "plugins/immune-brain/runtime/kernel/storage.ts::readAuditTaskPair"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "BPR-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "qa-BPR-A1-1aeec2d9-8817df",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "BPR-A1",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=43409B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "review-c4589b9ad8d9-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "BPR-A1",
+      "source": "review",
+      "review_round": 4,
+      "summary": "[P1] plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts:47-54 的 first-commit recognition 只验证 committed audit bytes 和路径范围，没有验证 committed source 的 reviewed delivery identity。带有真实且未变的 terminal proof、正确 metadata 和匹配 receipt 的替换 commit，即使修改了已审核的 scoped source，也会被识别为 own HEAD，随后直接 adopted。最小修复是对候选 immutable commit tree 相对实际 Enrollment base 的 scoped blob/mode delta 验证 QA/required Review identity，并增加两种 Host 的零写入拒绝测试。",
+      "anchor": "sha256:e14a571df7e8a7db875f56b529a6e4d6ea8a045b06b6ef0230873cb5923d966c",
+      "evidence": {
+        "trigger": "不变量类：first commit/persist recovery 必须保留 independently reviewed delivery。真实 revised child 已完成 QA/Review，reconfirmation 已替换 binding，首次 commit 后在 committed-state persistence 前中断；将该 commit 替换为同一 baseline parent、相同 runner author/subject/trailer、完全相同 audit pair，但 src/child-1.txt 内容不同的 commit，并使 mutable commit receipt 指向它。当前 terminal-proof equality 修复只绑定 audit record/proof，未绑定候选 commit 的 source blob/mode，因此不能覆盖这类完整性破坏。ownUnpersistedBatchHead 的所有检查仍通过。读取 unchanged plugins/immune-brain/runtime/unattended/batch_git.ts:lookupBatchCommit 的原因是 changed runner 用它执行最终 adoption；该调用同样只检查 metadata、parent 和 scope，不比较 QA delivery digest，因而不能补足此检查。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_preflight.ts:authorizeBatch",
+          "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts:ownUnpersistedBatchHead"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "BPR-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-c4589b9ad8d9-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "BPR-A1",
+      "source": "review",
+      "review_round": 4,
+      "summary": "[P1] plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts:154 的 status capture/recheck 未指定 --ignore-submodules=none；batch_preflight.ts:295-298 的入口检查也一样。配置为 ignore=all 的无关 dirty submodule 会漏过 eligibility、confirmation 和 CAS，直到既有 commit guard 才拒绝，此时 plan binding 已被写入，batch 随后被写为 failed，违反 mixed dirty work 的 raw-byte zero-write 要求。最小修复是两处 status 都显式禁用 submodule ignoring，并覆盖确认前及确认期间出现这类 dirty work 的拒绝测试。",
+      "anchor": "sha256:f651abeb3fd9b1521b9d6f93b10b70665daec678caf80f28e195b9bb5b3acbcf",
+      "evidence": {
+        "trigger": "不变量类：dirty-envelope refusal 必须独立于 Git presentation configuration。在真实 zero-commit batch 中，revised child 已经完成 matching QA/required Review，且 delivery 保持不变；仓库另有一个 scope 外的既有 submodule，其 submodule.<name>.ignore=all，而其内部 tracked file 已修改。两个 git status 调用均继承 ignore configuration；workspace_scope.ts 的身份读取也未覆盖它，因此 capture/assertUnchanged 通过并允许 replaceBatchRunState 写入。当前普通 staged-file/Intent-sidecar dirty controls 不能覆盖被 Git configuration 隐藏的路径。读取 unchanged plugins/immune-brain/runtime/unattended/batch_git.ts:getChangedProjectPaths 的原因是 changed runner 在 replacement 后调用 commitBatchChild；它显式使用 --ignore-submodules=none，在此时才发现 scope 外 submodule 并抛出 dirty_outside_scope，触发后续 failed state/report 写入。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_preflight.ts:projectBatchPreflight",
+          "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts:captureBatchReconfirmation"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "BPR-A1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:batch-plan-reconfirmation:2026-10-03T05:07:39.522Z",
+      "at": "2026-10-03T05:07:39.522Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-plan-reconfirmation.intent.json"
+    },
+    {
+      "id": "request_rework:batch-plan-reconfirmation:2026-10-03T05:10:54.339Z",
+      "at": "2026-10-03T05:10:54.339Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:f544e2ea85b9c71ae57b1c378d2db6b66389948c8ffb2f78dce710c4998e1407",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f0503ae2655f87b3",
+        "issued_at": "2026-10-03T05:10:54.340Z",
+        "expires_at": "2026-10-03T05:20:54.339Z"
+      }
+    },
+    {
+      "id": "revise_intent:batch-plan-reconfirmation:2026-10-03T05:35:36.994Z",
+      "at": "2026-10-03T05:35:36.994Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:3409e630da582c4d2177ccf84eb4382998305ee3587e8132506e4c1a0f95307d"
+    },
+    {
+      "id": "resolve_finding:batch-plan-reconfirmation:2026-10-03T05:36:47.262Z",
+      "at": "2026-10-03T05:36:47.262Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-BPR-A1-a758fe33-68eabd\naction_v2_sha256:2199680aff544535539e0368bb5974be50e5efe8efcac5a0f80fea665ea516a1"
+    },
+    {
+      "id": "freeze_artifacts:batch-plan-reconfirmation:2026-10-03T05:36:56.258Z",
+      "at": "2026-10-03T05:36:56.258Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-plan-reconfirmation.intent.json"
+    },
+    {
+      "id": "record_approval:batch-plan-reconfirmation:2026-10-03T05:40:44.794Z",
+      "at": "2026-10-03T05:40:44.794Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-701cd16f\naction_v2_sha256:98f03e3609193bf3096e56f6db8364ff95a4f823da8498cfb12aaa2257514c8f",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-85a99ea9008c8b16",
+        "issued_at": "2026-10-03T05:40:44.794Z",
+        "expires_at": "2026-10-03T05:50:44.794Z"
+      }
+    },
+    {
+      "id": "request_rework:batch-plan-reconfirmation:2026-10-03T05:47:03.742Z",
+      "at": "2026-10-03T05:47:03.742Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:1f3eba3fbbc9977944b2d82da9ddfe839589dd793f3b992c36bed54d231f5069",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-f47562bf280eba08",
+        "issued_at": "2026-10-03T05:47:03.743Z",
+        "expires_at": "2026-10-03T05:57:03.743Z"
+      }
+    },
+    {
+      "id": "resolve_finding:batch-plan-reconfirmation:2026-10-03T05:55:37.548Z",
+      "at": "2026-10-03T05:55:37.548Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-89823db1036d-1-review-1\naction_v2_sha256:dd637ccab684a27948960aaba722b08a7eea112f7bee7f2dff3848510cbb2673"
+    },
+    {
+      "id": "freeze_artifacts:batch-plan-reconfirmation:2026-10-03T05:55:59.529Z",
+      "at": "2026-10-03T05:55:59.529Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-plan-reconfirmation.intent.json"
+    },
+    {
+      "id": "record_approval:batch-plan-reconfirmation:2026-10-03T06:00:04.442Z",
+      "at": "2026-10-03T06:00:04.442Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-298a5986\naction_v2_sha256:1271380798d43371ab756ead93c45ded4f556e59b05b68ccbe16971e9bca84d5",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-dff5f6666e7e8504",
+        "issued_at": "2026-10-03T06:00:04.442Z",
+        "expires_at": "2026-10-03T06:10:04.442Z"
+      }
+    },
+    {
+      "id": "request_rework:batch-plan-reconfirmation:2026-10-03T06:08:47.357Z",
+      "at": "2026-10-03T06:08:47.357Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:ad99b8ca19da112d30972e3a3ac7da002cc075c6d349de87c743e3d6c9a8355a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-8c1c21dd7fd24a5c",
+        "issued_at": "2026-10-03T06:08:47.357Z",
+        "expires_at": "2026-10-03T06:18:47.357Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:batch-plan-reconfirmation:2026-10-03T08:09:46.389Z",
+      "at": "2026-10-03T08:09:46.389Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\naction_v2_sha256:fdf30f2105ec3e43bce53a51853b5590ce36b5016a668a32164f6d72991af8d5",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-85e793ba5bb93f9d",
+        "issued_at": "2026-10-03T08:09:46.797Z",
+        "expires_at": "2026-10-03T08:19:46.797Z"
+      }
+    },
+    {
+      "id": "resolve_finding:batch-plan-reconfirmation:2026-10-03T08:35:58.793Z",
+      "at": "2026-10-03T08:35:58.793Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-000d3f4e7b91-1-review-1\naction_v2_sha256:b83faf28e67c9809b815f78bf2de2b8df3116bfd1879376cf5ad157614354af1"
+    },
+    {
+      "id": "resolve_finding:batch-plan-reconfirmation:2026-10-03T08:36:00.603Z",
+      "at": "2026-10-03T08:36:00.603Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-000d3f4e7b91-2-review-2\naction_v2_sha256:5fd19deb1a8222a92e48a57cce5ad5973427ef5dedbd9717c4fc185b7475d92e"
+    },
+    {
+      "id": "freeze_artifacts:batch-plan-reconfirmation:2026-10-03T08:36:02.371Z",
+      "at": "2026-10-03T08:36:02.371Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-plan-reconfirmation.intent.json"
+    },
+    {
+      "id": "record_approval:batch-plan-reconfirmation:2026-10-03T08:40:18.786Z",
+      "at": "2026-10-03T08:40:18.786Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-19de60ee\naction_v2_sha256:1e25ae25bac98bdfc6906b348cb88994007252fb09514334dad775c75185f0fc",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-6a67187ef9807482",
+        "issued_at": "2026-10-03T08:40:18.787Z",
+        "expires_at": "2026-10-03T08:50:18.787Z"
+      }
+    },
+    {
+      "id": "request_rework:batch-plan-reconfirmation:2026-10-03T08:46:34.109Z",
+      "at": "2026-10-03T08:46:34.109Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_3\naction_v2_sha256:01ceaf27863948a138601a2e01d4d7e7131d2e201199a60035c4faa971407cb0",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-9cb2ae11ade5de2b",
+        "issued_at": "2026-10-03T08:46:34.109Z",
+        "expires_at": "2026-10-03T08:56:34.109Z"
+      }
+    },
+    {
+      "id": "resolve_finding:batch-plan-reconfirmation:2026-10-03T08:56:38.791Z",
+      "at": "2026-10-03T08:56:38.791Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-fc8f40ce327a-1-review-1\naction_v2_sha256:9f7e0591be4f856472f421dac84a6427d81488fce647bba7f9e21bfbc7091df7"
+    },
+    {
+      "id": "freeze_artifacts:batch-plan-reconfirmation:2026-10-03T08:56:40.573Z",
+      "at": "2026-10-03T08:56:40.573Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-plan-reconfirmation.intent.json"
+    },
+    {
+      "id": "request_rework:batch-plan-reconfirmation:2026-10-03T09:01:05.756Z",
+      "at": "2026-10-03T09:01:05.756Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_4\naction_v2_sha256:5f9b334576dcc65f7a991018b58a35d6a79ff2ed2384c1255e460dc5b7ff6f2f",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-62705115d9987833",
+        "issued_at": "2026-10-03T09:01:05.756Z",
+        "expires_at": "2026-10-03T09:11:05.756Z"
+      }
+    },
+    {
+      "id": "resolve_finding:batch-plan-reconfirmation:2026-10-03T09:19:00.656Z",
+      "at": "2026-10-03T09:19:00.656Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-BPR-A1-1aeec2d9-8817df\naction_v2_sha256:95a9cb404b50abe741adf6e080337e857d8863391a4721e2751d98b6ca5d110b"
+    },
+    {
+      "id": "freeze_artifacts:batch-plan-reconfirmation:2026-10-03T09:19:02.545Z",
+      "at": "2026-10-03T09:19:02.545Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-plan-reconfirmation.intent.json"
+    },
+    {
+      "id": "record_approval:batch-plan-reconfirmation:2026-10-03T09:23:44.680Z",
+      "at": "2026-10-03T09:23:44.680Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-4fa8ef09\naction_v2_sha256:b89d5a054a68dc7cf0359588ab45bc21d93ff59081de1c05e6e5608fbe4c4eb5",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-4a7ee5c44c2eb88a",
+        "issued_at": "2026-10-03T09:23:44.681Z",
+        "expires_at": "2026-10-03T09:33:44.681Z"
+      }
+    },
+    {
+      "id": "request_rework:batch-plan-reconfirmation:2026-10-03T09:33:53.841Z",
+      "at": "2026-10-03T09:33:53.841Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_4\naction_v2_sha256:5fed72d9a639f45a509767ea6d84d9f601a242866397c3cb0fa4917c229c4874",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-09300118b2403a1e",
+        "issued_at": "2026-10-03T09:33:53.842Z",
+        "expires_at": "2026-10-03T09:43:53.842Z"
+      }
+    },
+    {
+      "id": "revise_intent:batch-plan-reconfirmation:2026-10-03T10:02:40.262Z",
+      "at": "2026-10-03T10:02:40.262Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_4\naction_v2_sha256:9f58018de8186a12f2e3dbf3fda9cf93e82881d6cb6440f48f17f6b4555180fa"
+    },
+    {
+      "id": "resolve_finding:batch-plan-reconfirmation:2026-10-03T10:06:42.562Z",
+      "at": "2026-10-03T10:06:42.562Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c4589b9ad8d9-1-review-1\naction_v2_sha256:52403d17b978ea517d47087e6dc027d7f633922e92dd95f8373bded262f1e124"
+    },
+    {
+      "id": "resolve_finding:batch-plan-reconfirmation:2026-10-03T10:06:44.387Z",
+      "at": "2026-10-03T10:06:44.387Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c4589b9ad8d9-2-review-2\naction_v2_sha256:d4af0645731469ff97d70ddad6ca873e6676382f4f47b081860c2a95d3cb4233"
+    },
+    {
+      "id": "freeze_artifacts:batch-plan-reconfirmation:2026-10-03T10:06:46.213Z",
+      "at": "2026-10-03T10:06:46.213Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-plan-reconfirmation.intent.json"
+    },
+    {
+      "id": "record_approval:batch-plan-reconfirmation:2026-10-03T10:11:11.922Z",
+      "at": "2026-10-03T10:11:11.922Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-f7562978\naction_v2_sha256:224f0ec48c1de29bdc1013bb116f94f2f508b1655574de7be22457756c7131a9",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-e84bb57d3440256d",
+        "issued_at": "2026-10-03T10:11:11.922Z",
+        "expires_at": "2026-10-03T10:21:11.922Z"
+      }
+    },
+    {
+      "id": "record_approval:batch-plan-reconfirmation:2026-10-03T10:23:28.503Z",
+      "at": "2026-10-03T10:23:28.503Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-9b53e609\naction_v2_sha256:1b222e287112c59f6016ddba1b9040e229609b90bca464ea531ad22b1b7fb686",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-ae881893389813ed",
+        "issued_at": "2026-10-03T10:23:28.503Z",
+        "expires_at": "2026-10-03T10:33:28.503Z"
+      }
+    },
+    {
+      "id": "complete:batch-plan-reconfirmation:2026-10-03T10:23:29.851Z",
+      "at": "2026-10-03T10:23:29.851Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:e38c86a66bf1a045211d73eb41ea82e0b98308d1399f80ae092f55d005f60f8d"
+    }
+  ]
+}

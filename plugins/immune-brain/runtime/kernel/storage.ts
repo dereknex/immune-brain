@@ -480,10 +480,15 @@ function ensureSecureDirectory(root: string, relativePath: string): string {
 	return target.path;
 }
 
-export function readSecureProjectFile(
+export function readSecureProjectFile(root: string, relativePath: string): string {
+	return readSecureProjectBytes(root, relativePath).toString("utf8");
+}
+
+/** Preserve byte identity while retaining the same secure filesystem checks. */
+export function readSecureProjectBytes(
 	root: string,
 	relativePath: string,
-): string {
+): Buffer {
 	const candidate = safeCandidate(root, relativePath);
 	assertNoSymlinkSegments(candidate.root, candidate.path);
 	const before = pathStatOrNull(candidate.path);
@@ -498,7 +503,7 @@ export function readSecureProjectFile(
 		const opened = fstatSync(fd);
 		if (opened.dev !== before.dev || opened.ino !== before.ino)
 			throw new KernelStoreSecurityError(`source identity changed: ${relativePath}`);
-		const content = readFileSync(fd, "utf8");
+		const content = readFileSync(fd);
 		const after = lstatSync(candidate.path);
 		if (after.dev !== opened.dev || after.ino !== opened.ino)
 			throw new KernelStoreSecurityError(`source identity changed: ${relativePath}`);

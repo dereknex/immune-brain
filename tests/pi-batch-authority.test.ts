@@ -1477,7 +1477,7 @@ describe("batch authorization reuse (ADR-0005 Decision 1)", () => {
 		expect(String(resumed.report.reason)).toContain("lineage");
 	});
 
-	it("demands a fresh gate when the persisted plan digest no longer binds", async () => {
+	it("rejects a corrupted persisted digest before opening a reconfirmation gate", async () => {
 		const { fixture, batchId } = await startRunningBatch("reuse-digest");
 		rewriteBatchState(fixture.root, batchId, (state) => {
 			state.plan_digest = `sha256:${"0".repeat(64)}`;
@@ -1495,9 +1495,8 @@ describe("batch authorization reuse (ADR-0005 Decision 1)", () => {
 			failure = error instanceof Error ? error.message : String(error);
 		}
 
-		expect(gates).toHaveLength(1);
-		expect(gates[0]).toContain("batch_plan_digest_changed");
-		expect(String(failure)).toContain("plan_digest mismatch");
+		expect(gates).toHaveLength(0);
+		expect(String(failure)).toContain("batch plan reconfirmation is not eligible");
 	});
 
 	it("demands a fresh gate for a parked batch, which then resumes on the newer confirmation", async () => {
