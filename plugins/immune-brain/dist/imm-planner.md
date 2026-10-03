@@ -49,6 +49,25 @@ decisions. Resolve a local delta here. If the answer reopens multiple product
 branches or changes the overall goal or Scope, stop and return to
 `imm-brainstorm`.
 
+Before handoff, run one handoff completeness check over the closed-world
+manifest: map every upstream item and every required phase exactly once, report
+each Slice's closable result plus the remaining gap, and confirm the complete
+confirmed outcome and its phases are actually delivered. Upstream items close as
+covered, decisioned, deferred, or out with a reason; a required phase is the
+confirmed outcome itself, so it must be delivered rather than closed out with a
+reason. A reason excuses an upstream item, never a still-required phase: dropping
+one is exactly the silent narrowing this check exists to catch, and the genuine
+reduction is a user decision that returns to `imm-brainstorm` and changes what
+was required. The check fails, and the candidate is not handoff-ready, when a
+required phase or upstream item has no mapping, or when the plan conserves a
+smaller deliverable than the confirmed outcome. An outcome-narrowing
+substitution is such a failure: a confirmed full integration presented as one
+pairwise CLI, or a `prototype first` dependency presented as `prototype only`.
+Both are conservation failures, not scope decisions, and the checker rejects
+them instead of accepting the reduced deliverable. Coverage is independent of
+question count, so a clear request and an already-confirmed decision still pass
+the same check without acquiring an extra confirmation.
+
 Direct Planner entry remains valid for a clear request and does not require a
 Brainstorm pass. Resolve facts and derive technical design; if an unresolved
 user-owned product decision appears, return to `imm-brainstorm` rather than
@@ -330,6 +349,7 @@ descriptor executed and passed.
 ## Core Responsibilities
 
 - **Decomposition**: Convert requirements into one or more TaskIntents. Add a Spec under `docs/specs/` only for complex work. Treat Technical Design as one TaskIntent decomposition dimension alongside outcome, Verification, dependency, risk, rollback, compatibility, and authority.
+- **Outcome Conservation**: The plan conserves the complete confirmed outcome and its required phases. A required phase is delivered, not closed out with a reason; a genuine reduction changes what the user confirmed and returns to `imm-brainstorm`. A generalized substitution such as full integration becoming a pairwise CLI, or `prototype first` becoming `prototype only`, is a completeness-check failure rather than a valid plan. Each Slice reports its closable result and the remaining gap so an omitted phase is visible instead of implied.
 - **Outcome Focus**: Each TaskIntent owns one independently verifiable outcome. Implementation batches are Executor work, not separately authorized read/edit/run Steps.
 - **Planning granularity**: Keep a coherent outcome together when acceptance, risk, rollback, and authority can settle together. Use the TaskIntent decomposition rules below for independent outcomes. File count, tokens, compactions, elapsed time, and review rounds are evidence for judgment, not universal gates.
 - **Historical artifacts**: v3 prose Plan mutation is retired. `imm-plan` is a read-only validator for archived Plans; create no new Roadmap, Phase, successor Plan, or State Ledger.
@@ -433,6 +453,7 @@ preparation does not apply the revision or authorize expanded execution.
   verification descriptors or add a mandatory user confirmation.
 - **Review Mapping**: In-scope rework stays with the enrolled TaskIntent and explicit `imm-loop` entry. Cross-scope findings become a Planner decision delta with concrete missing paths and verification evidence; do not create a successor prose Plan.
 - **Brainstorm Manifest Mapping**: Record every upstream `BR-*` item in a Spec `Brainstorm Trace` when the work is complex, otherwise on the TaskIntent, mapped to acceptance, a captured decision, or an explicit reason for deferral or exclusion. Resolve every `BR-Q-*` item before handoff. Do not silently narrow confirmed framing.
+- **Handoff Completeness Check**: Before reporting a candidate as handoff-ready, confirm every upstream item and required phase is mapped exactly once, that required phases are delivered rather than excused by a reason, and that no confirmed outcome was conserved as a smaller deliverable. Reject a narrowed deliverable as a completeness failure; ask again only for a new material delta, never to reconfirm an unchanged clear request or an already-confirmed decision.
 - **Session Lifecycle Ownership**: The user chooses the current or a new session. Tokens, compactions, tool counts, elapsed time, and review rounds never trigger automatic session creation or termination. Recovery uses TaskRecord and the fresh Kernel projection.
 - **Subagents**: Only when optional research is needed, read Research Dispatch and its shared dispatch reference. Default to inline evidence gathering. Plan conditional reviewers such as `security-reviewer` only if their trigger surfaces are explicit; do not manufacture them.
 - **Enrolled Intent**: Follow Enrolled Intent Revision for a Loop-requested scope or acceptance change; candidate preparation never changes the current owner or grants execution authority.
@@ -492,6 +513,7 @@ a State Ledger. Keep historical Plan validation strictly read-only.
 | Split one outcome into read/edit/run micro-steps | One TaskIntent owns one closable outcome; Executor owns implementation batches. |
 | Append repair outside scope | Return the complete known scope delta for Kernel revision; do not widen execution. |
 | Drop a brainstorm-confirmed item as "out of scope" without saying so | Closed-world handoff: every `BR-*` ID must be covered, decisioned, deferred, scoped out with reason, or resolved as an assumption. |
+| Conserve a narrower deliverable than the confirmed outcome | **Conservation failure**: a full integration is not a pairwise CLI and `prototype first` is not `prototype only`; the handoff completeness check rejects the reduced deliverable instead of accepting a reason for it. |
 | Finalize dependent planning while brainstorm questions are open | **Clarification Barrier**: Finalization and dependent commitments are blocked until required `BR-Q-*` items are answered. Independent investigation and explicitly unapproved alternative drafts may continue; silence is not consent. |
 | Skip adversarial self-review on Medium/High risk because the plan is small | **Devil's Advocate** audit still checks rollback resilience, verification vanity, and spec dilution before the plan is treated as execution-ready. |
 
@@ -500,6 +522,7 @@ a State Ledger. Keep historical Plan validation strictly read-only.
 - Acceptance verification names only hypothetical evidence with no runnable descriptor.
 - New work depends on a prose Plan validator, Step activation, or State Ledger.
 - A Brainstorm manifest lacks complete `BR-*` coverage on the Spec (complex) or TaskIntent (simple).
+- The handoff completeness check passed while a required phase or upstream item is unmapped, or while the plan delivers only part of the confirmed outcome.
 - A Medium/High risk Spec lacks a `Devil's Advocate Audit` covering rollback resilience, verification vanity, and spec dilution detection.
 - New Spec prose ignores the document-language policy.
 - Candidate artifacts escape the approved planning scope.

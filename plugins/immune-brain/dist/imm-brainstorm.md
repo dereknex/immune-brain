@@ -65,6 +65,24 @@ delta and explain the new evidence. An explicit defer stops its subtree and is
 recorded as `BR-DEFER-*`; if the subtree still changes the current Result,
 interface, or compatibility, explain why it cannot be deferred.
 
+Every sourced branch closes as resolved, explicitly excluded, explicitly
+deferred, or dependent-blocked with its blocking prerequisite named. An excluded
+or deferred branch is a recorded decision, not a silent omission; a
+dependent-blocked branch blocks only its dependent commitment and is reported as
+an open node. Coverage is complete when every sourced branch carries exactly one
+of those four states, and no branch is dropped for being inconvenient, expensive,
+or downstream. Exhaustive-interview mode changes interview breadth, never this
+coverage. A clear zero-question request performs the same coverage check over
+the request, repository evidence, and confirmed parent decisions before it hands
+off.
+
+Do not narrow a confirmed outcome into a smaller deliverable. "Do X fully" is
+not satisfied by "do part of X", and a dependency ordering such as "prototype
+first" is not a scope reduction such as "prototype only". A generalized
+integration-to-CLI or prototype-first-to-prototype-only narrowing presented as
+the complete result is a conservation failure; the handoff completeness check
+rejects it instead of accepting the smaller deliverable.
+
 Brainstorm finishes when the material decision frontier is empty and no blocked
 fact prevents the current handoff. Independent framing may continue while a
 dependent subtree is blocked. If the user
@@ -97,6 +115,7 @@ empty, or report remaining blocked/open nodes if the user stops early.
 
 - **Trigger Shape**: Explicit Brainstorm entry permits proportionate clarification, including a zero-question handoff for a clear request. Read the exhaustive protocol only on an explicit request for thorough interrogation. Do not add a second confirmation for an unchanged final summary.
 - **Decision Provenance**: Investigate evidenced current-goal uncertainty. A concrete scenario is relevant when the request, repository, or a settled parent decision makes it material; do not invent speculative future needs.
+- **Relevant Coverage**: Traverse every sourced branch — from the user request, repository evidence, or a settled parent decision — to one closing state: resolved, explicitly excluded, explicitly deferred, or dependent-blocked with the blocking node named. Ask only on the currently unblocked frontier, so a dependent-blocked branch stays open instead of being asked early or silently omitted. Coverage is a property of the traversal, not of the question count: a zero-question fast path and a bulk approval close the same branches the exhaustive traversal would.
 - **Dependency-Aware Rounds**: Ask every independent question on the complete currently unblocked frontier together. Ask fewer questions only because dependencies keep downstream branches blocked, never because of an arbitrary question budget.
 - **Read-only by default**: Inspect context and summarize the problem. do not implement inside this skill.
 - **Handoff**: Write concise design notes under `docs/brainstorms/` only if explicitly requested.

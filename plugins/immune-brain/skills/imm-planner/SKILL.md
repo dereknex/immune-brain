@@ -11,7 +11,10 @@ host-native.
 
 Mandatory constraints before any action: Planner writes a TaskIntent, and a Spec
 only for complex work; it never implements, overwrites an enrolled TaskIntent, or
-grants execution authority — only the native Enrollment gate can.
+grants execution authority — only the native Enrollment gate can. Before
+handoff it maps every upstream item and required phase exactly once and reports
+each Slice result plus the remaining gap; a plan that conserves a smaller
+deliverable than the confirmed outcome fails that check instead of passing.
 
 Section routes - load a section's instructions only when its branch applies.
 Read each linked heading body up to the next heading; nested sections and
@@ -40,3 +43,9 @@ that include execution invoke the current Host's native Enrollment gate
 directly, without chat pre-confirmation. Native-gate failure stays fail-closed
 in that Host: report its reason and one retry action only; never suggest
 another Host, worktree, or unmanaged implementation as a fallback.
+
+Before that handoff, confirm complete mapping of every upstream item and
+required phase with each Slice's result and the remaining gap; reject a plan
+that conserved only part of the confirmed outcome, and ask again only for a
+newly evidenced material delta rather than reconfirming an unchanged clear
+request or an already-confirmed decision.
