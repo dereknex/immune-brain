@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { describe, expect, it, spyOn } from "bun:test";
 import { mkdtempSync, rmSync, existsSync, writeFileSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync } from "node:fs";
@@ -1903,7 +1904,10 @@ describe("shared batch preflight projection", () => {
 				contract: "assurance_kernel/batch_run_state/v1",
 				batch_id: "batch-1",
 				initiative_slug: SLUG,
-				plan_digest: computeBatchPlanDigest([child("child-a", "S1"), child("child-b", "S2", ["child-a"])]),
+				plan_digest: computeBatchPlanDigest([child("child-a", "S1"), child("child-b", "S2", ["child-a"])].map(c => {
+					const identity = readTaskIntent(root, c.task_id, `docs/plans/${c.task_id}.intent.json`);
+					return { ...c, intent_revision: identity.intent.revision, intent_content_hash: identity.content_hash };
+				})),
 				batch_state: batchState,
 				branch: `imm/${SLUG}`,
 				base_head: headOf(root),

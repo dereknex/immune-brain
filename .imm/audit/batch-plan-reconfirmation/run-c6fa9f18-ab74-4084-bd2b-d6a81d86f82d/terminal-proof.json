@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "batch-plan-reconfirmation",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:batch-plan-reconfirmation:2026-10-03T10:23:29.851Z",
+  "final_record_hash": "sha256:fbdb649837e7c2724d8aefff20770686eaaa2976cb7246d74bde1ea13b480ad8",
+  "terminalized_at": "2026-10-03T10:23:29.851Z"
+}

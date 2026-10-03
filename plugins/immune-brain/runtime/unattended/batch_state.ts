@@ -4,7 +4,7 @@
 import { existsSync, mkdirSync, openSync, closeSync, writeFileSync, renameSync, lstatSync, constants, rmSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
-import { readSecureProjectFile, withKernelStoreLock } from "../kernel/storage";
+import { readSecureProjectFile, readSecureProjectBytes, withKernelStoreLock } from "../kernel/storage";
 import type { BatchPlanChild } from "./types";
 
 export type BatchRunState =
@@ -291,6 +291,19 @@ function writeFileAtomically(root: string, relative: string, bytes: string): voi
 		if (fd !== null) closeSync(fd);
 		if (existsSync(tempPath)) { try { rmSync(tempPath); } catch { /* temp already moved */ } }
 	}
+}
+
+/** Replace an existing authorization only after a locked expected-byte check. */
+export function replaceBatchRunState(root: string, expected: Buffer, next: BatchRunStateRecord, validate: () => void): BatchRunStateRecord {
+	const path = statePath(next.batch_id);
+	validateRecordShape(next, next.batch_id);
+	return withKernelStoreLock(root, () => {
+		if (!readSecureProjectBytes(root, path).equals(expected)) throw new Error("batch state CAS mismatch");
+		validate();
+		const stored = { ...next, updated_at: new Date().toISOString() };
+		writeFileAtomically(root, path, canonicalBytes(stored));
+		return stored;
+	});
 }
 
 export function writeBatchRunState(

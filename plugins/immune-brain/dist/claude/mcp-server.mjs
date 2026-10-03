@@ -2323,11 +2323,13 @@ import {
 } from "node:fs";
 import { dirname as dirname3, join as join4, resolve as resolve2 } from "node:path";
 function git(root, args) {
-  const result = spawnSync("git", ["-C", root, ...args], {
+  const diff = args[0] === "diff";
+  const command = diff ? ["diff", "--exit-code", ...args.slice(1)] : args;
+  const result = spawnSync("git", ["--no-optional-locks", "-c", "diff.autoRefreshIndex=false", "-C", root, ...command], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
-  return result.status === 0 ? result.stdout : null;
+  return result.status === 0 || diff && result.status === 1 ? result.stdout : null;
 }
 function splitNull(value) {
   return value.split("\x00").filter((entry) => entry.length > 0);
@@ -2446,12 +2448,14 @@ var portablePathCollator = new Intl.Collator("und", {
 });
 var gitTaskSnapshotTestHook;
 function gitBytes(root, args) {
-  const result = spawnSync("git", ["-C", root, ...args], {
+  const diff = args[0] === "diff";
+  const command = diff ? ["diff", "--exit-code", ...args.slice(1)] : args;
+  const result = spawnSync("git", ["--no-optional-locks", "-c", "diff.autoRefreshIndex=false", "-C", root, ...command], {
     encoding: null,
     stdio: ["ignore", "pipe", "pipe"],
     maxBuffer: 8 * 1024 * 1024
   });
-  if (result.status !== 0 || !Buffer.isBuffer(result.stdout)) {
+  if (result.status !== 0 && !(diff && result.status === 1) || !Buffer.isBuffer(result.stdout)) {
     throw new Error(`Git task snapshot command failed: git ${args.join(" ")}`);
   }
   return result.stdout;
@@ -2740,6 +2744,38 @@ function taskRevisionIdentity(projectRoot, scopeHint, baseHead, taskId) {
     diff_hash: hashTaskSnapshot(snapshot),
     changed_paths: Object.keys(snapshot.changed_paths).sort(comparePaths)
   };
+}
+function taskCommitRevisionIdentity(projectRoot, scopeHint, baseHead, commit) {
+  const requested = resolve2(projectRoot);
+  if (lstatSync2(requested).isSymbolicLink())
+    throw new Error("task commit root must be a real directory");
+  const root = realpathSync3(requested), scope = assertCanonicalTaskScope(scopeHint);
+  if (!GIT_OBJECT_ID.test(baseHead) || !GIT_OBJECT_ID.test(commit))
+    throw new Error("invalid task commit identity");
+  if (gitRequired(root, ["cat-file", "-t", baseHead], "unreadable task base") !== "commit" || gitRequired(root, ["cat-file", "-t", commit], "unreadable task commit") !== "commit" || git(root, ["merge-base", "--is-ancestor", baseHead, commit]) === null)
+    throw new Error("invalid task commit ancestry");
+  const paths = decodeNullPaths(gitBytes(root, ["diff", "--no-renames", "--name-only", "-z", baseHead, commit, "--"]), "task commit paths").filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope)).sort(comparePaths);
+  assertNoCaseFoldCollisions(paths, "task commit paths");
+  const changed_paths = {};
+  for (const path of paths) {
+    const current = headEntry(root, commit, path), base = headEntry(root, baseHead, path);
+    changed_paths[path] = {
+      status: !base ? "added" : !current ? "deleted" : "modified",
+      mode: current?.mode ?? null,
+      oid: current?.oid ?? null,
+      base_mode: base?.mode ?? null,
+      base_oid: base?.oid ?? null
+    };
+  }
+  const snapshot = {
+    kind: "git-task-revision-v1",
+    repository_root: root,
+    base_head: baseHead,
+    base_tree: gitRequired(root, ["rev-parse", `${baseHead}^{tree}`], "unreadable task base tree"),
+    scope,
+    changed_paths
+  };
+  return { diff_hash: hashTaskSnapshot(snapshot), changed_paths: paths };
 }
 function isGitWorkspaceSnapshot(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value) && value.kind === "git-workspace-v1" && typeof value.repository_root === "string" && typeof value.head === "string" && typeof value.dirty_files === "object" && value.dirty_files !== null;
@@ -9969,7 +10005,7 @@ async function revalidatePendingChildBeforeWrite(root, gh, childNumber, childTas
 import { existsSync as existsSync7, readdirSync as readdirSync6, readFileSync as readFileSync13 } from "node:fs";
 import { randomUUID as randomUUID7 } from "node:crypto";
 import { join as join12 } from "node:path";
-import { spawnSync as spawnSync5 } from "node:child_process";
+import { spawnSync as spawnSync6 } from "node:child_process";
 
 // plugins/immune-brain/runtime/kernel/batch_authority.ts
 import { createHash as createHash18 } from "node:crypto";
@@ -10218,6 +10254,463 @@ function deriveChildEnrollment(root, registry, input) {
   };
 }
 
+// plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts
+import { spawnSync as spawnSync5 } from "node:child_process";
+
+// plugins/immune-brain/runtime/unattended/batch_state.ts
+import { existsSync as existsSync6, mkdirSync as mkdirSync6, openSync as openSync6, closeSync as closeSync6, writeFileSync as writeFileSync6, renameSync as renameSync3, lstatSync as lstatSync9, constants as constants5, rmSync as rmSync6 } from "node:fs";
+import { randomUUID as randomUUID6 } from "node:crypto";
+import { dirname as dirname7, join as join11 } from "node:path";
+var BATCH_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+var CHILD_RUN_STATES = new Set([
+  "pending",
+  "enrolled",
+  "settled",
+  "committed",
+  "needs_human",
+  "skipped_blocked"
+]);
+var BATCH_RUN_STATES = new Set([
+  "prepared",
+  "running",
+  "needs_human",
+  "completed",
+  "budget_stopped",
+  "failed",
+  "rejected"
+]);
+var ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+function isCanonicalTimestamp(value) {
+  if (typeof value !== "string" || !ISO_TIMESTAMP_PATTERN.test(value))
+    return false;
+  const milliseconds = Date.parse(value);
+  return Number.isFinite(milliseconds) && new Date(milliseconds).toISOString() === value;
+}
+function validateBatchId(batchId) {
+  if (typeof batchId !== "string" || !BATCH_ID_PATTERN.test(batchId))
+    throw new Error("batch id is not a safe file identity");
+}
+function statePath(batchId) {
+  validateBatchId(batchId);
+  return join11(".imm", "state", "batches", `${batchId}.json`);
+}
+function canonicalBytes(record) {
+  return `${JSON.stringify(record, null, 2)}
+`;
+}
+function validateRecordShape(value, batchId) {
+  if (typeof value !== "object" || value === null)
+    throw new Error(`batch run state ${batchId} is not an object`);
+  const record = value;
+  if (record.contract !== "assurance_kernel/batch_run_state/v1")
+    throw new Error(`batch run state ${batchId} has an unknown contract`);
+  if (record.batch_id !== batchId)
+    throw new Error(`batch run state ${batchId} carries batch_id ${String(record.batch_id)}`);
+  if (typeof record.plan_digest !== "string" || !record.plan_digest)
+    throw new Error(`batch run state ${batchId} has an invalid plan_digest`);
+  if (typeof record.base_head !== "string" || !record.base_head)
+    throw new Error(`batch run state ${batchId} has an invalid base_head`);
+  if (record.branch !== undefined && (typeof record.branch !== "string" || !record.branch))
+    throw new Error(`batch run state ${batchId} has an invalid branch`);
+  if (!isCanonicalTimestamp(record.confirmation_time))
+    throw new Error(`batch run state ${batchId} has an invalid confirmation_time`);
+  if (!isCanonicalTimestamp(record.authorization_expires_at))
+    throw new Error(`batch run state ${batchId} has an invalid authorization_expires_at`);
+  if (!isCanonicalTimestamp(record.created_at) || !isCanonicalTimestamp(record.updated_at))
+    throw new Error(`batch run state ${batchId} has invalid state timestamps`);
+  if (!Array.isArray(record.children) || record.children.length === 0)
+    throw new Error(`batch run state ${batchId} has no children`);
+  if (!BATCH_RUN_STATES.has(String(record.batch_state)))
+    throw new Error(`batch run state ${batchId} has an invalid batch_state`);
+  if (typeof record.consecutive_qa_failures !== "number" || !Number.isInteger(record.consecutive_qa_failures) || record.consecutive_qa_failures < 0)
+    throw new Error(`batch run state ${batchId} has an invalid consecutive_qa_failures`);
+  const budget = record.budget;
+  if (typeof record.budget !== "object" || record.budget === null || typeof budget.max_children !== "number" || !Number.isInteger(budget.max_children) || budget.max_children <= 0 || !isCanonicalTimestamp(budget.deadline_at) || typeof budget.qa_failure_limit !== "number" || !Number.isInteger(budget.qa_failure_limit) || budget.qa_failure_limit <= 0)
+    throw new Error(`batch run state ${batchId} has an invalid budget`);
+  if (!Array.isArray(record.commits) || record.commits.some((c) => typeof c !== "string"))
+    throw new Error(`batch run state ${batchId} has an invalid commits list`);
+  const seenTaskIds = new Set;
+  for (const child of record.children) {
+    if (typeof child !== "object" || child === null || typeof child.task_id !== "string" || !child.task_id || typeof child.slice_id !== "string" || !child.slice_id)
+      throw new Error(`batch run state ${batchId} has an invalid child entry`);
+    if (!CHILD_RUN_STATES.has(String(child.state)))
+      throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid state`);
+    if (!Array.isArray(child.blocked_by) || child.blocked_by.some((b) => typeof b !== "string"))
+      throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid blocked_by`);
+    if (child.reason !== null && typeof child.reason !== "string" || child.commit !== null && typeof child.commit !== "string")
+      throw new Error(`batch run state ${batchId} child ${child.task_id} has invalid terminal fields`);
+    if (child.state === "committed" && child.commit === null)
+      throw new Error(`batch run state ${batchId} child ${child.task_id} is committed without a commit`);
+    if (child.state !== "committed" && child.commit !== null)
+      throw new Error(`batch run state ${batchId} child ${child.task_id} has a commit but is not committed`);
+    if ((child.state === "needs_human" || child.state === "skipped_blocked") && child.reason === null)
+      throw new Error(`batch run state ${batchId} child ${child.task_id} needs a terminal reason`);
+    if (seenTaskIds.has(child.task_id))
+      throw new Error(`batch run state ${batchId} has a duplicate child ${child.task_id}`);
+    seenTaskIds.add(child.task_id);
+  }
+  for (const child of record.children) {
+    if (child.state === "committed" && child.commit !== null && !record.commits.includes(child.commit))
+      throw new Error(`batch run state ${batchId} child ${child.task_id} commit is missing from commits`);
+  }
+  if ((record.batch_state === "budget_stopped" || record.batch_state === "failed" || record.batch_state === "rejected") && record.children.some((child) => child.state === "enrolled" || child.state === "settled"))
+    throw new Error(`batch run state ${batchId} is ${String(record.batch_state)} but a child is still mid-flight`);
+  if (record.batch_state === "completed" && record.children.some((child) => child.state !== "committed"))
+    throw new Error(`batch run state ${batchId} is completed but a child is not committed`);
+}
+function prepareBatchRunState(input) {
+  validateBatchId(input.batch_id);
+  const prepared = {
+    contract: "assurance_kernel/batch_run_state/v1",
+    batch_id: input.batch_id,
+    initiative_slug: input.initiative_slug,
+    plan_digest: input.plan_digest,
+    base_head: input.base_head,
+    branch: input.branch ?? `imm/${input.initiative_slug}`,
+    confirmation_time: input.confirmation_time,
+    authorization_expires_at: input.authorization_expires_at,
+    budget: input.budget,
+    batch_state: "prepared",
+    children: input.children.map((child) => ({
+      task_id: child.task_id,
+      slice_id: child.slice_id,
+      blocked_by: [...child.blocked_by],
+      state: "pending",
+      reason: null,
+      commit: null
+    })),
+    consecutive_qa_failures: 0,
+    commits: [],
+    created_at: input.now,
+    updated_at: input.now
+  };
+  return prepared;
+}
+function parseBatchRunState(raw, batchId) {
+  validateBatchId(batchId);
+  const parsed = JSON.parse(raw);
+  validateRecordShape(parsed, batchId);
+  return parsed;
+}
+function readBatchRunState(root, batchId) {
+  const path = statePath(batchId);
+  if (!existsSync6(join11(root, path)))
+    return null;
+  return parseBatchRunState(readSecureProjectFile(root, path), batchId);
+}
+function ensureSecureDirectory2(root, relative) {
+  const target = join11(root, relative);
+  const parent = dirname7(target);
+  if (!existsSync6(parent))
+    mkdirSync6(parent, { recursive: true });
+  if (existsSync6(target)) {
+    const stats = lstatSync9(target);
+    if (!stats.isDirectory())
+      throw new Error(`${relative} exists but is not a directory`);
+  } else {
+    mkdirSync6(target);
+  }
+  return target;
+}
+function writeFileAtomically(root, relative, bytes) {
+  const target = join11(root, relative);
+  const targetDir = dirname7(target);
+  const stats = lstatSync9(targetDir);
+  if (!stats.isDirectory())
+    throw new Error(`${dirname7(relative)} is not a directory`);
+  const tempPath = `${target}.${randomUUID6()}.tmp`;
+  let fd = null;
+  try {
+    fd = openSync6(tempPath, constants5.O_WRONLY | constants5.O_CREAT | constants5.O_EXCL, 384);
+    writeFileSync6(fd, bytes, "utf8");
+    closeSync6(fd);
+    fd = null;
+    renameSync3(tempPath, target);
+  } finally {
+    if (fd !== null)
+      closeSync6(fd);
+    if (existsSync6(tempPath)) {
+      try {
+        rmSync6(tempPath);
+      } catch {}
+    }
+  }
+}
+function replaceBatchRunState(root, expected, next, validate) {
+  const path = statePath(next.batch_id);
+  validateRecordShape(next, next.batch_id);
+  return withKernelStoreLock(root, () => {
+    if (!readSecureProjectBytes(root, path).equals(expected))
+      throw new Error("batch state CAS mismatch");
+    validate();
+    const stored = { ...next, updated_at: new Date().toISOString() };
+    writeFileAtomically(root, path, canonicalBytes(stored));
+    return stored;
+  });
+}
+function writeBatchRunState(root, record) {
+  const path = statePath(record.batch_id);
+  validateRecordShape(record, record.batch_id);
+  return withKernelStoreLock(root, () => {
+    const existing = existsSync6(join11(root, path)) ? readSecureProjectFile(root, path) : null;
+    if (existing !== null && existing === canonicalBytes(record))
+      return record;
+    const stored = {
+      ...record,
+      updated_at: new Date().toISOString()
+    };
+    ensureSecureDirectory2(root, join11(".imm", "state", "batches"));
+    writeFileAtomically(root, path, canonicalBytes(stored));
+    return stored;
+  });
+}
+function reportPath(batchId) {
+  validateBatchId(batchId);
+  return join11(".imm", "state", "batches", `${batchId}.report.json`);
+}
+function writeBatchRunReport(root, report) {
+  const relative = reportPath(report.batch_id);
+  return withKernelStoreLock(root, () => {
+    const path = join11(root, relative);
+    if (existsSync6(path)) {
+      const original = JSON.parse(readSecureProjectFile(root, relative));
+      if (typeof original !== "object" || original === null || original.contract !== "assurance_kernel/batch_run_report/v1")
+        throw new Error(`batch run report ${report.batch_id} has an unknown contract`);
+      const prior = original;
+      if (canonicalReportBytes(prior) === canonicalReportBytes(report))
+        return prior;
+      if (prior.batch_state !== "needs_human")
+        return prior;
+    }
+    ensureSecureDirectory2(root, join11(".imm", "state", "batches"));
+    writeFileAtomically(root, relative, canonicalReportBytes(report));
+    return report;
+  });
+}
+function canonicalReportBytes(report) {
+  return `${JSON.stringify(report, null, 2)}
+`;
+}
+function isTerminalBatchState(state) {
+  return state === "completed" || state === "budget_stopped" || state === "failed" || state === "rejected";
+}
+
+// plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts
+var oid = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
+var id = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+var batchAuthor = process.env.GIT_AUTHOR_NAME || "Immune-Brain Batch";
+var decode = (bytes) => new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+function refuse() {
+  throw new Error("plan_digest mismatch: batch plan reconfirmation is not eligible");
+}
+function matchesLocalProof(localJson, exported) {
+  return localJson !== null && JSON.stringify(Object.entries(JSON.parse(localJson)).sort()) === JSON.stringify(Object.entries(exported).sort());
+}
+function git4(root, args) {
+  const r = spawnSync5("git", ["-C", root, ...args], { encoding: "buffer", maxBuffer: 262144, env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } });
+  if (r.status !== 0)
+    refuse();
+  return decode(r.stdout);
+}
+function ownUnpersistedBatchHead(root, record, head) {
+  try {
+    if (!oid.test(head) || !oid.test(record.base_head) || !id.test(record.batch_id) || record.commits.length || record.children[0]?.state !== "settled" || record.children.some((c) => c.commit !== null))
+      return false;
+    const task = record.children[0].task_id;
+    if (!id.test(task))
+      return false;
+    const evidence = JSON.parse(decode(readSecureProjectBytes(root, `.imm/state/batches/commits/${record.batch_id}-${task}.json`)));
+    if (evidence.contract !== "assurance_kernel/batch_commit_evidence/v1" || evidence.batch_id !== record.batch_id || evidence.task_id !== task || evidence.commit !== head || evidence.parent_head !== record.base_head)
+      return false;
+    if (git4(root, ["symbolic-ref", "--short", "HEAD"]).trim() !== record.branch)
+      return false;
+    const parents = git4(root, ["rev-list", "--parents", "-n", "1", head]).trim().split(/\s+/).slice(1);
+    if (parents.length !== 1 || parents[0] !== record.base_head)
+      return false;
+    const metadata = git4(root, ["show", "-s", "--format=%an%x00%s%x00%(trailers:key=Immune-Brain-Batch,valueonly)", head]).split("\x00");
+    if (metadata[0] !== batchAuthor || !metadata[1]?.startsWith(`imm(${task}):`) || metadata[2]?.trim() !== record.batch_id)
+      return false;
+    const run = localRunId(root, task);
+    if (!run || !id.test(run))
+      return false;
+    const pair = readAuditTaskPair(root, task, run);
+    if (!pair || pair.record.contract !== "assurance_kernel/task_record/v4" || pair.record.lifecycle !== "done" || pair.proof.terminal_lifecycle !== "done")
+      return false;
+    const local = withKernelRead(root, (db) => readRunRowByTask(db, task));
+    if (!local || local.run_id !== run || local.state !== "done" || !matchesLocalProof(local.terminal_proof_json, pair.proof))
+      return false;
+    for (const file of ["task-record.json", "terminal-proof.json"]) {
+      const path = `.imm/audit/${task}/${run}/${file}`;
+      if (!readSecureProjectBytes(root, path).equals(Buffer.from(git4(root, ["show", `${head}:${path}`]))))
+        return false;
+    }
+    const paths = git4(root, ["diff-tree", "--no-commit-id", "--name-only", "--no-renames", "-z", "-r", head]).split("\x00").filter(Boolean);
+    if (!paths.length || paths.some((path) => !path.startsWith(`.imm/audit/${task}/${run}/`) && !pair.record.intent_snapshot.scope_hint.some((s) => pathMatchesScope(path, s))))
+      return false;
+    const identity = taskCommitRevisionIdentity(root, pair.record.intent_snapshot.scope_hint, pair.record.git_base_head, head);
+    if (!projectTask(pair.record.intent_snapshot, pair.record, identity.diff_hash, pair.record.intent_ref.content_hash, identity.changed_paths).complete)
+      return false;
+    return git4(root, ["rev-parse", "HEAD"]).trim() === head;
+  } catch {
+    return false;
+  }
+}
+var confirmations = new Map;
+function retainReconfirmation(nonce, expires, snapshot) {
+  for (const [key, value] of confirmations)
+    if (value.expires <= Date.now())
+      confirmations.delete(key);
+  if (confirmations.has(nonce))
+    refuse();
+  confirmations.set(nonce, { snapshot, expires: Date.parse(expires) });
+}
+function takeReconfirmation(nonce) {
+  const found = confirmations.get(nonce);
+  confirmations.delete(nonce);
+  if (!found || found.expires <= Date.now())
+    refuse();
+  return found.snapshot;
+}
+async function captureBatchReconfirmation(root, record, children) {
+  if (!id.test(record.batch_id) || !oid.test(record.base_head) || isTerminalBatchState(record.batch_state) || record.commits.length || record.children.some((c) => c.commit !== null || c.state === "committed") || record.children.length !== children.length || !children.length)
+    refuse();
+  const assertNoCommitEvidence = () => {
+    for (const child of record.children) {
+      if (!id.test(child.task_id))
+        refuse();
+      const path = `.imm/state/batches/commits/${record.batch_id}-${child.task_id}.json`;
+      let missing = false;
+      try {
+        readSecureProjectBytes(root, path);
+      } catch (error) {
+        if (error instanceof Error && error.message === `source_missing: ${path}`)
+          missing = true;
+        else
+          refuse();
+      }
+      if (!missing)
+        refuse();
+    }
+  };
+  assertNoCommitEvidence();
+  const statePath = `.imm/state/batches/${record.batch_id}.json`;
+  const stateBytes = readSecureProjectBytes(root, statePath);
+  if (JSON.stringify(JSON.parse(decode(stateBytes))) !== JSON.stringify(record))
+    refuse();
+  const files = new Map;
+  const capture = (path) => {
+    const bytes = readSecureProjectBytes(root, path);
+    files.set(path, bytes);
+    return bytes;
+  };
+  const oldChildren = [];
+  const changed = [];
+  let scope = null;
+  const workspace = readWorkspaceStateRaw(root);
+  if (workspace.state.current_working !== null)
+    refuse();
+  for (const [index, child] of children.entries()) {
+    const previous = record.children[index];
+    if (!id.test(child.task_id) || child.task_id !== previous.task_id || child.slice_id !== previous.slice_id || JSON.stringify(child.blocked_by) !== JSON.stringify(previous.blocked_by) || child.intent_path !== `docs/plans/${child.task_id}.intent.json`)
+      refuse();
+    const old = parseTaskIntentV1(JSON.parse(git4(root, ["show", `${record.base_head}:${child.intent_path}`])));
+    if (old.task_id !== child.task_id)
+      refuse();
+    const oldHash = canonicalIntentHash(old);
+    oldChildren.push({ task_id: child.task_id, blocked_by: [...child.blocked_by], intent_path: child.intent_path, intent_revision: old.revision, intent_content_hash: oldHash });
+    const currentBytes = capture(child.intent_path);
+    const current = parseTaskIntentV1(JSON.parse(decode(currentBytes)));
+    const currentHash = canonicalIntentHash(current);
+    const tracked = readTaskIntent(root, child.task_id, child.intent_path);
+    if (currentHash !== tracked.content_hash || currentHash !== child.intent_content_hash || current.revision !== child.intent_revision)
+      refuse();
+    if (currentHash === oldHash)
+      continue;
+    if (scope !== null || previous.state === "pending" || previous.state === "skipped_blocked" || current.revision <= old.revision || current.goal !== old.goal || current.owner !== old.owner)
+      refuse();
+    const run = localRunId(root, child.task_id);
+    if (!run || !id.test(run))
+      refuse();
+    const local = withKernelRead(root, (db) => readRunRowByTask(db, child.task_id));
+    if (!local || local.run_id !== run || local.state !== "done" || local.enrollment_event_id !== `enroll-${child.task_id}-${local.created_at}` || Date.parse(local.created_at) > Date.parse(record.updated_at))
+      refuse();
+    const pair = readAuditTaskPair(root, child.task_id, run);
+    if (!pair || pair.record.contract !== "assurance_kernel/task_record/v4")
+      refuse();
+    const r = pair.record;
+    if (r.lifecycle !== "done" || r.intent_ref.content_hash !== currentHash || canonicalIntentHash(r.intent_snapshot) !== currentHash || r.git_base_head !== record.base_head || pair.proof.terminal_lifecycle !== "done")
+      refuse();
+    const terminal = r.history.at(-1);
+    if (terminal?.type !== "complete" || terminal.from_state !== "active:frozen" || terminal.to_state !== "done:frozen" || terminal.id !== pair.proof.terminal_event_id)
+      refuse();
+    const recordPath = `.imm/audit/${child.task_id}/${run}/task-record.json`;
+    const proofPath = `.imm/audit/${child.task_id}/${run}/terminal-proof.json`;
+    if (!capture(recordPath).equals(Buffer.from(local.record_json)))
+      refuse();
+    const capturedProof = JSON.parse(decode(capture(proofPath)));
+    if (!matchesLocalProof(local.terminal_proof_json, capturedProof) || !matchesLocalProof(local.terminal_proof_json, pair.proof))
+      refuse();
+    const identity = taskRevisionIdentity(root, r.intent_snapshot.scope_hint, r.git_base_head, r.task_id);
+    const projection = await projectAssurance(root, child.task_id, (cwd, task) => {
+      if (task.contract !== "assurance_kernel/task_record/v4" || !task.git_base_head)
+        refuse();
+      return taskRevisionIdentity(cwd, task.intent_snapshot.scope_hint, task.git_base_head, task.task_id);
+    });
+    if (projection.error || projection.claim || projection.projection.run_id !== run || projection.projection.lifecycle !== "done" || !projection.projection.completion_ready || projection.projection.intent_content_hash !== currentHash || projection.projection.diff_hash !== identity.diff_hash || !projection.projection.fresh_approval_kinds.includes("qa") || projection.projection.risk !== "routine" && !projection.projection.fresh_approval_kinds.includes("review"))
+      refuse();
+    scope = r.intent_snapshot.scope_hint;
+    changed.push({ task: child.task_id, run, identity: JSON.stringify(identity), local: JSON.stringify(local) });
+  }
+  if (computeBatchPlanDigest(oldChildren) !== record.plan_digest || changed.length !== 1 || scope === null)
+    refuse();
+  const confirmedScope = scope;
+  const owner = changed[0];
+  const status = () => git4(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none"]);
+  const statusBytes = status();
+  const entries = statusBytes.split("\x00").filter(Boolean);
+  for (const entry of entries) {
+    const code = entry.slice(0, 2), path = entry.slice(3);
+    if (code[1] !== " " || !["A", "M", "D"].includes(code[0]) || !path.startsWith(`.imm/audit/${owner.task}/${owner.run}/`) && !confirmedScope.some((s) => pathMatchesScope(path, s)))
+      refuse();
+  }
+  const flagsBytes = git4(root, ["ls-files", "-v"]);
+  const flags = flagsBytes.split(`
+`).filter(Boolean);
+  if (flags.some((line) => line[0] === "S" || line[0] !== line[0]?.toUpperCase()))
+    refuse();
+  const head = () => git4(root, ["rev-parse", "HEAD"]).trim();
+  const branch = () => git4(root, ["symbolic-ref", "--short", "HEAD"]).trim();
+  if (head() !== record.base_head || branch() !== record.branch)
+    refuse();
+  const assertDeliveryUnchanged = () => {
+    for (const c of changed) {
+      const pair = readAuditTaskPair(root, c.task, c.run);
+      if (!pair || pair.record.contract !== "assurance_kernel/task_record/v4" || !pair.record.git_base_head)
+        refuse();
+      const local = withKernelRead(root, (db) => readRunRowByTask(db, c.task));
+      const diff = taskRevisionIdentity(root, pair.record.intent_snapshot.scope_hint, pair.record.git_base_head, c.task);
+      if (localRunId(root, c.task) !== c.run || JSON.stringify(local) !== c.local || JSON.stringify(diff) !== c.identity)
+        refuse();
+    }
+  };
+  const assertUnchanged = () => {
+    assertNoCommitEvidence();
+    if (!readSecureProjectBytes(root, statePath).equals(stateBytes) || head() !== record.base_head || branch() !== record.branch || status() !== statusBytes || git4(root, ["ls-files", "-v"]) !== flagsBytes || readWorkspaceStateRaw(root).revision !== workspace.revision)
+      refuse();
+    for (const [path, bytes] of files)
+      if (!readSecureProjectBytes(root, path).equals(bytes))
+        refuse();
+    assertDeliveryUnchanged();
+  };
+  assertUnchanged();
+  const plan_digest = computeBatchPlanDigest(oldChildren.map((old, index) => ({
+    ...old,
+    intent_revision: children[index].intent_revision,
+    intent_content_hash: children[index].intent_content_hash
+  })));
+  return { root, plan_digest, stateBytes, assertUnchanged };
+}
+
 // plugins/immune-brain/runtime/unattended/batch_plan.ts
 import { createHash as createHash19 } from "node:crypto";
 var ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -10236,9 +10729,9 @@ function positiveSafeInteger(value, name) {
     throw new Error(`${name} must be a positive safe integer`);
   return value;
 }
-var ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+var ISO_TIMESTAMP_PATTERN2 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 function timestamp(value, name) {
-  if (typeof value !== "string" || !ISO_TIMESTAMP_PATTERN.test(value))
+  if (typeof value !== "string" || !ISO_TIMESTAMP_PATTERN2.test(value))
     throw new Error(`${name} must be an ISO timestamp`);
   const milliseconds = Date.parse(value);
   if (!Number.isFinite(milliseconds))
@@ -10424,232 +10917,6 @@ async function projectBatchPlan(root, initiativeSlug, input, readInitiative = ob
   };
 }
 
-// plugins/immune-brain/runtime/unattended/batch_state.ts
-import { existsSync as existsSync6, mkdirSync as mkdirSync6, openSync as openSync6, closeSync as closeSync6, writeFileSync as writeFileSync6, renameSync as renameSync3, lstatSync as lstatSync9, constants as constants5, rmSync as rmSync6 } from "node:fs";
-import { randomUUID as randomUUID6 } from "node:crypto";
-import { dirname as dirname7, join as join11 } from "node:path";
-var BATCH_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-var CHILD_RUN_STATES = new Set([
-  "pending",
-  "enrolled",
-  "settled",
-  "committed",
-  "needs_human",
-  "skipped_blocked"
-]);
-var BATCH_RUN_STATES = new Set([
-  "prepared",
-  "running",
-  "needs_human",
-  "completed",
-  "budget_stopped",
-  "failed",
-  "rejected"
-]);
-var ISO_TIMESTAMP_PATTERN2 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
-function isCanonicalTimestamp(value) {
-  if (typeof value !== "string" || !ISO_TIMESTAMP_PATTERN2.test(value))
-    return false;
-  const milliseconds = Date.parse(value);
-  return Number.isFinite(milliseconds) && new Date(milliseconds).toISOString() === value;
-}
-function validateBatchId(batchId) {
-  if (typeof batchId !== "string" || !BATCH_ID_PATTERN.test(batchId))
-    throw new Error("batch id is not a safe file identity");
-}
-function statePath(batchId) {
-  validateBatchId(batchId);
-  return join11(".imm", "state", "batches", `${batchId}.json`);
-}
-function canonicalBytes(record) {
-  return `${JSON.stringify(record, null, 2)}
-`;
-}
-function validateRecordShape(value, batchId) {
-  if (typeof value !== "object" || value === null)
-    throw new Error(`batch run state ${batchId} is not an object`);
-  const record = value;
-  if (record.contract !== "assurance_kernel/batch_run_state/v1")
-    throw new Error(`batch run state ${batchId} has an unknown contract`);
-  if (record.batch_id !== batchId)
-    throw new Error(`batch run state ${batchId} carries batch_id ${String(record.batch_id)}`);
-  if (typeof record.plan_digest !== "string" || !record.plan_digest)
-    throw new Error(`batch run state ${batchId} has an invalid plan_digest`);
-  if (typeof record.base_head !== "string" || !record.base_head)
-    throw new Error(`batch run state ${batchId} has an invalid base_head`);
-  if (record.branch !== undefined && (typeof record.branch !== "string" || !record.branch))
-    throw new Error(`batch run state ${batchId} has an invalid branch`);
-  if (!isCanonicalTimestamp(record.confirmation_time))
-    throw new Error(`batch run state ${batchId} has an invalid confirmation_time`);
-  if (!isCanonicalTimestamp(record.authorization_expires_at))
-    throw new Error(`batch run state ${batchId} has an invalid authorization_expires_at`);
-  if (!isCanonicalTimestamp(record.created_at) || !isCanonicalTimestamp(record.updated_at))
-    throw new Error(`batch run state ${batchId} has invalid state timestamps`);
-  if (!Array.isArray(record.children) || record.children.length === 0)
-    throw new Error(`batch run state ${batchId} has no children`);
-  if (!BATCH_RUN_STATES.has(String(record.batch_state)))
-    throw new Error(`batch run state ${batchId} has an invalid batch_state`);
-  if (typeof record.consecutive_qa_failures !== "number" || !Number.isInteger(record.consecutive_qa_failures) || record.consecutive_qa_failures < 0)
-    throw new Error(`batch run state ${batchId} has an invalid consecutive_qa_failures`);
-  const budget = record.budget;
-  if (typeof record.budget !== "object" || record.budget === null || typeof budget.max_children !== "number" || !Number.isInteger(budget.max_children) || budget.max_children <= 0 || !isCanonicalTimestamp(budget.deadline_at) || typeof budget.qa_failure_limit !== "number" || !Number.isInteger(budget.qa_failure_limit) || budget.qa_failure_limit <= 0)
-    throw new Error(`batch run state ${batchId} has an invalid budget`);
-  if (!Array.isArray(record.commits) || record.commits.some((c) => typeof c !== "string"))
-    throw new Error(`batch run state ${batchId} has an invalid commits list`);
-  const seenTaskIds = new Set;
-  for (const child of record.children) {
-    if (typeof child !== "object" || child === null || typeof child.task_id !== "string" || !child.task_id || typeof child.slice_id !== "string" || !child.slice_id)
-      throw new Error(`batch run state ${batchId} has an invalid child entry`);
-    if (!CHILD_RUN_STATES.has(String(child.state)))
-      throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid state`);
-    if (!Array.isArray(child.blocked_by) || child.blocked_by.some((b) => typeof b !== "string"))
-      throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid blocked_by`);
-    if (child.reason !== null && typeof child.reason !== "string" || child.commit !== null && typeof child.commit !== "string")
-      throw new Error(`batch run state ${batchId} child ${child.task_id} has invalid terminal fields`);
-    if (child.state === "committed" && child.commit === null)
-      throw new Error(`batch run state ${batchId} child ${child.task_id} is committed without a commit`);
-    if (child.state !== "committed" && child.commit !== null)
-      throw new Error(`batch run state ${batchId} child ${child.task_id} has a commit but is not committed`);
-    if ((child.state === "needs_human" || child.state === "skipped_blocked") && child.reason === null)
-      throw new Error(`batch run state ${batchId} child ${child.task_id} needs a terminal reason`);
-    if (seenTaskIds.has(child.task_id))
-      throw new Error(`batch run state ${batchId} has a duplicate child ${child.task_id}`);
-    seenTaskIds.add(child.task_id);
-  }
-  for (const child of record.children) {
-    if (child.state === "committed" && child.commit !== null && !record.commits.includes(child.commit))
-      throw new Error(`batch run state ${batchId} child ${child.task_id} commit is missing from commits`);
-  }
-  if ((record.batch_state === "budget_stopped" || record.batch_state === "failed" || record.batch_state === "rejected") && record.children.some((child) => child.state === "enrolled" || child.state === "settled"))
-    throw new Error(`batch run state ${batchId} is ${String(record.batch_state)} but a child is still mid-flight`);
-  if (record.batch_state === "completed" && record.children.some((child) => child.state !== "committed"))
-    throw new Error(`batch run state ${batchId} is completed but a child is not committed`);
-}
-function prepareBatchRunState(input) {
-  validateBatchId(input.batch_id);
-  const prepared = {
-    contract: "assurance_kernel/batch_run_state/v1",
-    batch_id: input.batch_id,
-    initiative_slug: input.initiative_slug,
-    plan_digest: input.plan_digest,
-    base_head: input.base_head,
-    branch: input.branch ?? `imm/${input.initiative_slug}`,
-    confirmation_time: input.confirmation_time,
-    authorization_expires_at: input.authorization_expires_at,
-    budget: input.budget,
-    batch_state: "prepared",
-    children: input.children.map((child) => ({
-      task_id: child.task_id,
-      slice_id: child.slice_id,
-      blocked_by: [...child.blocked_by],
-      state: "pending",
-      reason: null,
-      commit: null
-    })),
-    consecutive_qa_failures: 0,
-    commits: [],
-    created_at: input.now,
-    updated_at: input.now
-  };
-  return prepared;
-}
-function parseBatchRunState(raw, batchId) {
-  validateBatchId(batchId);
-  const parsed = JSON.parse(raw);
-  validateRecordShape(parsed, batchId);
-  return parsed;
-}
-function readBatchRunState(root, batchId) {
-  const path = statePath(batchId);
-  if (!existsSync6(join11(root, path)))
-    return null;
-  return parseBatchRunState(readSecureProjectFile(root, path), batchId);
-}
-function ensureSecureDirectory2(root, relative) {
-  const target = join11(root, relative);
-  const parent = dirname7(target);
-  if (!existsSync6(parent))
-    mkdirSync6(parent, { recursive: true });
-  if (existsSync6(target)) {
-    const stats = lstatSync9(target);
-    if (!stats.isDirectory())
-      throw new Error(`${relative} exists but is not a directory`);
-  } else {
-    mkdirSync6(target);
-  }
-  return target;
-}
-function writeFileAtomically(root, relative, bytes) {
-  const target = join11(root, relative);
-  const targetDir = dirname7(target);
-  const stats = lstatSync9(targetDir);
-  if (!stats.isDirectory())
-    throw new Error(`${dirname7(relative)} is not a directory`);
-  const tempPath = `${target}.${randomUUID6()}.tmp`;
-  let fd = null;
-  try {
-    fd = openSync6(tempPath, constants5.O_WRONLY | constants5.O_CREAT | constants5.O_EXCL, 384);
-    writeFileSync6(fd, bytes, "utf8");
-    closeSync6(fd);
-    fd = null;
-    renameSync3(tempPath, target);
-  } finally {
-    if (fd !== null)
-      closeSync6(fd);
-    if (existsSync6(tempPath)) {
-      try {
-        rmSync6(tempPath);
-      } catch {}
-    }
-  }
-}
-function writeBatchRunState(root, record) {
-  const path = statePath(record.batch_id);
-  validateRecordShape(record, record.batch_id);
-  return withKernelStoreLock(root, () => {
-    const existing = existsSync6(join11(root, path)) ? readSecureProjectFile(root, path) : null;
-    if (existing !== null && existing === canonicalBytes(record))
-      return record;
-    const stored = {
-      ...record,
-      updated_at: new Date().toISOString()
-    };
-    ensureSecureDirectory2(root, join11(".imm", "state", "batches"));
-    writeFileAtomically(root, path, canonicalBytes(stored));
-    return stored;
-  });
-}
-function reportPath(batchId) {
-  validateBatchId(batchId);
-  return join11(".imm", "state", "batches", `${batchId}.report.json`);
-}
-function writeBatchRunReport(root, report) {
-  const relative = reportPath(report.batch_id);
-  return withKernelStoreLock(root, () => {
-    const path = join11(root, relative);
-    if (existsSync6(path)) {
-      const original = JSON.parse(readSecureProjectFile(root, relative));
-      if (typeof original !== "object" || original === null || original.contract !== "assurance_kernel/batch_run_report/v1")
-        throw new Error(`batch run report ${report.batch_id} has an unknown contract`);
-      const prior = original;
-      if (canonicalReportBytes(prior) === canonicalReportBytes(report))
-        return prior;
-      if (prior.batch_state !== "needs_human")
-        return prior;
-    }
-    ensureSecureDirectory2(root, join11(".imm", "state", "batches"));
-    writeFileAtomically(root, relative, canonicalReportBytes(report));
-    return report;
-  });
-}
-function canonicalReportBytes(report) {
-  return `${JSON.stringify(report, null, 2)}
-`;
-}
-function isTerminalBatchState(state) {
-  return state === "completed" || state === "budget_stopped" || state === "failed" || state === "rejected";
-}
-
 // plugins/immune-brain/runtime/unattended/batch_preflight.ts
 var INITIATIVE_SLUG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 function batchRejection(key, detail = "") {
@@ -10755,7 +11022,7 @@ function isOwnBatchClaim(root, existingBatch, taskId, batchBranch) {
   const currentTaskId = workspaceOwner || (claim?.lifecycle_status === "active" ? claim?.task_id : null);
   if (currentTaskId !== taskId || !claim)
     return false;
-  const branch = spawnSync5("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" }).stdout.trim();
+  const branch = spawnSync6("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" }).stdout.trim();
   if (branch !== batchBranch)
     return false;
   const childInBatch = existingBatch.children.find((c) => c.task_id === taskId);
@@ -10812,7 +11079,7 @@ function authorizedScopeOf(root, taskId, state) {
   return scope;
 }
 function porcelainEntries(root) {
-  const statusProc = spawnSync5("git", ["-C", root, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all"], { encoding: "utf8" });
+  const statusProc = spawnSync6("git", ["-C", root, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all", "--ignore-submodules=none"], { encoding: "utf8", env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } });
   if (statusProc.status !== 0)
     return null;
   const entries = [];
@@ -10950,7 +11217,7 @@ async function projectBatchPreflight(options) {
   } catch (err) {
     return reject("git_head_unreadable", err instanceof Error ? err.message : String(err));
   }
-  const branchExists = spawnSync5("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${batchBranch}`]);
+  const branchExists = spawnSync6("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${batchBranch}`]);
   if (branchExists.status === 0 && !existingBatch)
     return reject("branch_already_exists", batchBranch);
   const statusEntries = porcelainEntries(root);
@@ -10999,21 +11266,29 @@ async function projectBatchPreflight(options) {
   });
   if (!planSurface.ok)
     return reject(planSurface.key, planSurface.detail);
-  return {
-    ok: true,
-    projection: {
-      initiative_slug: initiativeSlug,
-      batch_branch: batchBranch,
-      is_resuming: isResuming,
-      existing_batch: existingBatch,
-      base_head: baseHead,
-      budget: planSurface.surface.budget,
-      plan_digest: planSurface.surface.plan_digest,
-      recovery_children: planSurface.surface.recovery_children,
-      risk_by_task: planSurface.surface.risk_by_task,
-      excluded: planSurface.surface.excluded
+  let reconfirmation;
+  if (activeRecord && activeRecord.plan_digest !== planSurface.surface.plan_digest) {
+    try {
+      reconfirmation = await captureBatchReconfirmation(root, activeRecord, planSurface.surface.recovery_children);
+    } catch {
+      return reject("plan_projection_failed", "batch plan reconfirmation is not eligible");
     }
+  }
+  const projection = {
+    initiative_slug: initiativeSlug,
+    batch_branch: batchBranch,
+    is_resuming: isResuming,
+    existing_batch: existingBatch,
+    base_head: baseHead,
+    budget: planSurface.surface.budget,
+    plan_digest: planSurface.surface.plan_digest,
+    recovery_children: planSurface.surface.recovery_children,
+    risk_by_task: planSurface.surface.risk_by_task,
+    excluded: planSurface.surface.excluded
   };
+  if (reconfirmation)
+    Object.defineProperty(projection, "reconfirmation", { value: reconfirmation });
+  return { ok: true, projection };
 }
 async function projectBatchDrift(options) {
   const { root, initiative_slug: initiativeSlug, readInitiative } = options;
@@ -11054,9 +11329,12 @@ async function authorizeBatch(options) {
   } = projection;
   const existingBatch = projection.existing_batch;
   const isExistingExpired = isResuming && Date.parse(existingBatch.authorization_expires_at) <= Date.now();
-  const branchBefore = spawnSync5("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
+  const branchBefore = spawnSync6("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
   if (branchBefore.status !== 0)
     return { outcome: "rejected", rejection: batchRejection("repository_became_unreadable") };
+  const ownsUnpersistedHead = isResuming && existingBatch !== null && existingBatch.plan_digest === planDigest && expectedBatchHead(existingBatch) !== baseHead && ownUnpersistedBatchHead(root, existingBatch, baseHead);
+  if (isResuming && existingBatch && !existingBatch.commits.length && existingBatch.children[0]?.state === "settled" && expectedBatchHead(existingBatch) !== baseHead && !ownsUnpersistedHead)
+    return { outcome: "rejected", rejection: batchRejection("head_moved", "first unpersisted commit provenance is invalid") };
   const reuseBlockers = [];
   if (isResuming && existingBatch) {
     if (isExistingExpired)
@@ -11069,7 +11347,7 @@ async function authorizeBatch(options) {
       reuseBlockers.push("batch_plan_digest_changed");
     if (existingBatch.branch !== batchBranch)
       reuseBlockers.push("batch_branch_changed");
-    if (expectedBatchHead(existingBatch) !== baseHead)
+    if (expectedBatchHead(existingBatch) !== baseHead && !ownsUnpersistedHead)
       reuseBlockers.push("batch_head_lineage_moved");
   }
   const reuseAuthorization = isResuming && reuseBlockers.length === 0;
@@ -11111,7 +11389,7 @@ async function authorizeBatch(options) {
     return { outcome: "rejected", rejection: batchRejection("plan_changed", drift.plan_digest) };
   if (drift.base_head === null)
     return { outcome: "rejected", rejection: batchRejection("repository_became_unreadable") };
-  if (drift.base_head !== baseHead)
+  if (drift.base_head !== baseHead || ownsUnpersistedHead && !ownUnpersistedBatchHead(root, existingBatch, baseHead))
     return { outcome: "rejected", rejection: batchRejection("head_moved", drift.base_head) };
   const finalClaimTaskId = readActiveClaimTaskId(root);
   const finalOwnClaim = isResuming && finalClaimTaskId !== null && isOwnBatchClaim(root, existingBatch, finalClaimTaskId, batchBranch);
@@ -11122,11 +11400,18 @@ async function authorizeBatch(options) {
     if (!current || current.corrupt || JSON.stringify(current.record) !== JSON.stringify(existingBatch))
       return { outcome: "rejected", rejection: batchRejection("plan_changed") };
   }
-  const branchAfter = spawnSync5("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
+  const branchAfter = spawnSync6("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
   if (branchAfter.status !== 0 || branchAfter.stdout !== branchBefore.stdout)
     return { outcome: "rejected", rejection: batchRejection("confirmation_failed", "Git branch moved after native confirmation") };
   if (Date.parse(expiresAt) <= Date.now())
     return { outcome: "rejected", rejection: batchRejection("confirmation_failed", "confirmed batch deadline expired before authorization issuance") };
+  if (projection.reconfirmation) {
+    try {
+      projection.reconfirmation.assertUnchanged();
+    } catch {
+      return { outcome: "rejected", rejection: batchRejection("plan_changed") };
+    }
+  }
   const binding = {
     batch_id: batchId,
     initiative_slug: initiativeSlug,
@@ -11139,6 +11424,8 @@ async function authorizeBatch(options) {
     expires_at: expiresAt,
     nonce: options.nonce
   };
+  if (projection.reconfirmation)
+    retainReconfirmation(binding.nonce, binding.expires_at, projection.reconfirmation);
   return {
     outcome: "authorized",
     batch_id: batchId,
@@ -11150,12 +11437,12 @@ async function authorizeBatch(options) {
 }
 
 // plugins/immune-brain/runtime/unattended/batch_runner.ts
-import { spawnSync as spawnSync7 } from "node:child_process";
+import { spawnSync as spawnSync8 } from "node:child_process";
 import { existsSync as existsSync9 } from "node:fs";
 import { join as join14 } from "node:path";
 
 // plugins/immune-brain/runtime/unattended/batch_git.ts
-import { spawnSync as spawnSync6 } from "node:child_process";
+import { spawnSync as spawnSync7 } from "node:child_process";
 import { createHash as createHash20, randomUUID as randomUUID8 } from "node:crypto";
 import {
   constants as constants6,
@@ -11180,7 +11467,7 @@ var DEFAULT_GIT_ENV = {
 function runBatchGitPreflight(input) {
   const { root, initiative_slug: initiativeSlug, base_head: baseHead } = input;
   const branch = `imm/${initiativeSlug}`;
-  const toplevelResult = spawnSync6("git", ["-C", root, "rev-parse", "--show-toplevel"], {
+  const toplevelResult = spawnSync7("git", ["-C", root, "rev-parse", "--show-toplevel"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -11218,7 +11505,7 @@ function runBatchGitPreflight(input) {
       message: `unsupported index flags (assume-unchanged/skip-worktree) detected: ${flaggedPreflight.join(", ")}`
     };
   }
-  const statusResult = spawnSync6("git", ["-C", root, "status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none"], {
+  const statusResult = spawnSync7("git", ["-C", root, "status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -11236,7 +11523,7 @@ function runBatchGitPreflight(input) {
       message: "working tree is dirty before batch preflight"
     };
   }
-  const headResult = spawnSync6("git", ["-C", root, "rev-parse", "--verify", "HEAD^{commit}"], {
+  const headResult = spawnSync7("git", ["-C", root, "rev-parse", "--verify", "HEAD^{commit}"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -11247,11 +11534,11 @@ function runBatchGitPreflight(input) {
       message: "HEAD is uncommitted or not a valid commit"
     };
   }
-  const branchCheck = spawnSync6("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`], { stdio: ["ignore", "ignore", "ignore"] });
+  const branchCheck = spawnSync7("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`], { stdio: ["ignore", "ignore", "ignore"] });
   if (branchCheck.status === 0) {
     const settled = findSettledBatchRecord(root, initiativeSlug);
-    const currentBranch = spawnSync6("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], { encoding: "utf8" });
-    if (findExistingActiveBatch(root, initiativeSlug) === null && settled?.branch === branch && currentBranch.status === 0 && currentBranch.stdout.trim() === branch && headResult.stdout.trim() === baseHead && spawnSync6("git", ["-C", root, "merge-base", "--is-ancestor", expectedBatchHead(settled), baseHead]).status === 0)
+    const currentBranch = spawnSync7("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], { encoding: "utf8" });
+    if (findExistingActiveBatch(root, initiativeSlug) === null && settled?.branch === branch && currentBranch.status === 0 && currentBranch.stdout.trim() === branch && headResult.stdout.trim() === baseHead && spawnSync7("git", ["-C", root, "merge-base", "--is-ancestor", expectedBatchHead(settled), baseHead]).status === 0)
       return { ok: true, branch };
     return {
       ok: false,
@@ -11259,25 +11546,25 @@ function runBatchGitPreflight(input) {
       message: `branch refs/heads/${branch} already exists`
     };
   }
-  const originalBranchResult = spawnSync6("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
+  const originalBranchResult = spawnSync7("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
   const originalBranch = originalBranchResult.stdout.trim();
-  const checkoutResult = spawnSync6("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "checkout", "-b", branch, baseHead], {
+  const checkoutResult = spawnSync7("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "checkout", "-b", branch, baseHead], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     env: DEFAULT_GIT_ENV
   });
   if (checkoutResult.status !== 0) {
     const stderr = checkoutResult.stderr?.trim() || "";
-    const branchExists = stderr.includes("already exists") || spawnSync6("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`]).status === 0;
-    const currentBranchCheck = spawnSync6("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
+    const branchExists = stderr.includes("already exists") || spawnSync7("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`]).status === 0;
+    const currentBranchCheck = spawnSync7("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     }).stdout.trim();
     if (currentBranchCheck === branch && originalBranch && originalBranch !== branch) {
-      spawnSync6("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "checkout", originalBranch], {
+      spawnSync7("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "checkout", originalBranch], {
         stdio: ["ignore", "ignore", "ignore"]
       });
     }
@@ -11300,7 +11587,7 @@ function hasBoundaryWhitespace(path) {
   return path.split("/").some((segment) => segment.trim() !== segment || segment.length === 0);
 }
 function getUnsupportedIndexFlags(root) {
-  const result = spawnSync6("git", ["-C", root, "ls-files", "-v", "-z", "--"], {
+  const result = spawnSync7("git", ["-C", root, "ls-files", "-v", "-z", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -11334,13 +11621,13 @@ function isPathAllowedForChild(path, taskId, scopeHint) {
   });
 }
 function getChangedProjectPaths(root) {
-  const tracked = spawnSync6("git", ["-C", root, "diff-index", "--name-only", "-z", "--ignore-submodules=none", "HEAD", "--"], {
+  const tracked = spawnSync7("git", ["-C", root, "diff-index", "--name-only", "-z", "--ignore-submodules=none", "HEAD", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
   if (tracked.status !== 0)
     throw new Error("failed to inspect tracked diff vs HEAD");
-  const untracked = spawnSync6("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--"], {
+  const untracked = spawnSync7("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -11350,7 +11637,7 @@ function getChangedProjectPaths(root) {
   return [...new Set([...splitZ(tracked.stdout), ...splitZ(untracked.stdout)])];
 }
 function getStagedProjectPaths(root) {
-  const staged = spawnSync6("git", ["-C", root, "diff-index", "--cached", "--name-only", "-z", "--ignore-submodules=none", "HEAD", "--"], {
+  const staged = spawnSync7("git", ["-C", root, "diff-index", "--cached", "--name-only", "-z", "--ignore-submodules=none", "HEAD", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -11359,13 +11646,13 @@ function getStagedProjectPaths(root) {
   return staged.stdout.split("\x00").filter((p) => p.length > 0);
 }
 function getUnstagedProjectPaths(root) {
-  const diffFiles = spawnSync6("git", ["-C", root, "diff-files", "--name-only", "-z", "--ignore-submodules=none", "--"], {
+  const diffFiles = spawnSync7("git", ["-C", root, "diff-files", "--name-only", "-z", "--ignore-submodules=none", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
   if (diffFiles.status !== 0)
     throw new Error("failed to inspect unstaged tracked changes");
-  const untracked = spawnSync6("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--"], {
+  const untracked = spawnSync7("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -11375,7 +11662,7 @@ function getUnstagedProjectPaths(root) {
   return [...new Set([...splitZ(diffFiles.stdout), ...splitZ(untracked.stdout)])];
 }
 function getCommittedDeltaPaths(root) {
-  const delta = spawnSync6("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", "HEAD~1", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const delta = spawnSync7("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", "HEAD~1", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   if (delta.status !== 0)
     throw new Error("failed to inspect committed tree delta");
   return delta.stdout.split("\x00").filter((p) => p.length > 0);
@@ -11481,7 +11768,7 @@ async function commitBatchChild(input) {
   const goal = typeof intentSnapshot.goal === "string" ? intentSnapshot.goal : "";
   const scopeHint = Array.isArray(intentSnapshot.scope_hint) ? intentSnapshot.scope_hint.filter((s) => typeof s === "string") : [];
   if (expectedBranch !== undefined) {
-    const currentBranchResult = spawnSync6("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
+    const currentBranchResult = spawnSync7("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -11490,7 +11777,7 @@ async function commitBatchChild(input) {
       throw new Error(`batch_head_lineage_broken: current branch ${currentBranch} does not match expected branch ${expectedBranch}`);
     }
   }
-  const currentHeadResult = spawnSync6("git", ["-C", root, "rev-parse", "HEAD"], {
+  const currentHeadResult = spawnSync7("git", ["-C", root, "rev-parse", "HEAD"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -11509,7 +11796,7 @@ async function commitBatchChild(input) {
   }
   const pathsToStage = getUnstagedProjectPaths(root);
   if (pathsToStage.length > 0) {
-    const addResult = spawnSync6("git", ["-C", root, "--literal-pathspecs", "add", "-A", "--", ...pathsToStage], {
+    const addResult = spawnSync7("git", ["-C", root, "--literal-pathspecs", "add", "-A", "--", ...pathsToStage], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -11524,7 +11811,7 @@ async function commitBatchChild(input) {
   const staged = getStagedProjectPaths(root);
   const stagedOutside = staged.filter((p) => !isPathAllowedForChild(p, taskId, scopeHint));
   if (stagedOutside.length > 0) {
-    spawnSync6("git", ["-C", root, "reset", "--quiet"], { stdio: ["ignore", "ignore", "ignore"] });
+    spawnSync7("git", ["-C", root, "reset", "--quiet"], { stdio: ["ignore", "ignore", "ignore"] });
     throw new Error("dirty_outside_scope");
   }
   const record = auditPair.record;
@@ -11542,7 +11829,7 @@ async function commitBatchChild(input) {
 
 Immune-Brain-Batch: ${batchId}
 `;
-  const commitResult = spawnSync6("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "commit", "--no-verify", "-F", "-"], {
+  const commitResult = spawnSync7("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "commit", "--no-verify", "-F", "-"], {
     input: commitMessage,
     encoding: "utf8",
     stdio: ["pipe", "pipe", "pipe"],
@@ -11551,7 +11838,7 @@ Immune-Brain-Batch: ${batchId}
   if (commitResult.status !== 0) {
     throw new Error(`commit failed for child ${taskId}: ${commitResult.stderr?.trim() || "git commit failed"}`);
   }
-  const newHeadResult = spawnSync6("git", ["-C", root, "rev-parse", "HEAD"], {
+  const newHeadResult = spawnSync7("git", ["-C", root, "rev-parse", "HEAD"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -11559,7 +11846,7 @@ Immune-Brain-Batch: ${batchId}
   if (newHeadResult.status !== 0 || !newHead || newHead === expectedHead) {
     throw new Error("commit_failed");
   }
-  const parentsResult = spawnSync6("git", ["-C", root, "rev-parse", "HEAD^@"], {
+  const parentsResult = spawnSync7("git", ["-C", root, "rev-parse", "HEAD^@"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -11592,7 +11879,7 @@ async function lookupBatchCommit(input) {
   let candidates = [];
   let evidenceBacked = false;
   if (evidence && evidence.commit) {
-    const direct = spawnSync6("git", ["-C", root, "log", "-n", "1", `--format=${FORMAT}`, evidence.commit, "--"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    const direct = spawnSync7("git", ["-C", root, "log", "-n", "1", `--format=${FORMAT}`, evidence.commit, "--"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     if (direct.status !== 0) {
       throw new Error(`failed to inspect batch commit for ${taskId}: ${direct.stderr?.trim() || "git log failed"}`);
     }
@@ -11605,7 +11892,7 @@ async function lookupBatchCommit(input) {
     }
   }
   if (!candidates.length) {
-    const result = spawnSync6("git", [
+    const result = spawnSync7("git", [
       "-C",
       root,
       "log",
@@ -11642,7 +11929,7 @@ async function lookupBatchCommit(input) {
     throw new Error(`batch_head_lineage_broken: adopted commit author ${match.authorName} does not match batch authority ${DEFAULT_GIT_ENV.GIT_AUTHOR_NAME}`);
   }
   if (expectedBranch !== undefined) {
-    const currentBranchResult = spawnSync6("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
+    const currentBranchResult = spawnSync7("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -11652,7 +11939,7 @@ async function lookupBatchCommit(input) {
     }
   }
   if (expectedHead !== undefined) {
-    const currentHeadResult = spawnSync6("git", ["-C", root, "rev-parse", "HEAD"], {
+    const currentHeadResult = spawnSync7("git", ["-C", root, "rev-parse", "HEAD"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -11660,7 +11947,7 @@ async function lookupBatchCommit(input) {
     if (currentHead !== commit) {
       throw new Error(`batch_head_lineage_broken: current HEAD ${currentHead} diverged from adopted commit ${commit}`);
     }
-    const parentsResult = spawnSync6("git", ["-C", root, "rev-parse", `${commit}^@`], {
+    const parentsResult = spawnSync7("git", ["-C", root, "rev-parse", `${commit}^@`], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -11678,7 +11965,7 @@ async function lookupBatchCommit(input) {
       throw new Error(`batch_head_lineage_broken: adopted commit task lifecycle is not done: ${lifecycle}`);
     }
     const scopeHint = Array.isArray(auditPair.record.intent_snapshot.scope_hint) ? auditPair.record.intent_snapshot.scope_hint.filter((s) => typeof s === "string") : [];
-    const deltaResult = spawnSync6("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", expectedHead, commit], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    const deltaResult = spawnSync7("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", expectedHead, commit], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     if (deltaResult.status !== 0) {
       throw new Error("batch_head_lineage_broken: failed to inspect adopted commit delta");
     }
@@ -11798,14 +12085,14 @@ function externalHeadDriftMessage(root, record) {
   if (!existsSync9(join14(root, ".git")))
     return null;
   const head = record.commits.length ? record.commits[record.commits.length - 1] : record.base_head;
-  const headCheck = spawnSync7("git", ["-C", root, "rev-parse", "HEAD"], {
+  const headCheck = spawnSync8("git", ["-C", root, "rev-parse", "HEAD"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
   if (headCheck.status === 0 && headCheck.stdout.trim() && headCheck.stdout.trim() !== head) {
     return `batch_head_lineage_broken: current HEAD ${headCheck.stdout.trim()} does not match expected batch head ${head}`;
   }
-  const branchCheck = spawnSync7("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
+  const branchCheck = spawnSync8("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -11816,6 +12103,11 @@ function externalHeadDriftMessage(root, record) {
   return null;
 }
 async function validatePersistedRun(input, record) {
+  if (!record.commits.length && record.children[0]?.state === "settled" && existsSync9(join14(input.root, ".git"))) {
+    const head = spawnSync8("git", ["-C", input.root, "rev-parse", "HEAD"], { encoding: "utf8" });
+    if (head.status !== 0 || head.stdout.trim() !== record.base_head && !ownUnpersistedBatchHead(input.root, record, head.stdout.trim()))
+      throw new Error("first unpersisted batch commit provenance is invalid");
+  }
   const plan = input.registry.children(input.capability);
   if (record.plan_digest !== computeBatchPlanDigest(plan) || record.children.length !== plan.length || record.children.some((child, index) => {
     const expected = plan[index];
@@ -11837,7 +12129,7 @@ async function validatePersistedRun(input, record) {
     });
     if (!evidence || evidence.commit !== child.commit) {
       if (evidence === null && typeof child.commit === "string" && child.commit.length > 0 && existsSync9(join14(input.root, ".git"))) {
-        const reach = spawnSync7("git", ["-C", input.root, "merge-base", "--is-ancestor", child.commit, "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+        const reach = spawnSync8("git", ["-C", input.root, "merge-base", "--is-ancestor", child.commit, "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
         if (reach.status !== 0) {
           throw new Error(`batch_head_lineage_broken: recorded commit ${child.commit} for ${child.task_id} is no longer reachable from HEAD`);
         }
@@ -11875,6 +12167,41 @@ function validateRunAuthorization(input, existing) {
   });
   if (computeBatchPlanDigest(children) !== authorized.plan_digest || input.plan_digest !== authorized.plan_digest || input.base_head !== authorized.base_head)
     throw new Error("batch run input does not match the authorized plan or base_head");
+  return authorized;
+}
+function applyPlanReconfirmation(input, existing) {
+  if (existing.plan_digest === input.plan_digest)
+    return existing;
+  const next = {
+    ...existing,
+    plan_digest: input.plan_digest,
+    confirmation_time: input.confirmation_time,
+    authorization_expires_at: input.authorization_expires_at,
+    budget: input.budget
+  };
+  if (!existing.branch || input.batch_id !== existing.batch_id || input.initiative_slug !== existing.initiative_slug || input.base_head !== existing.base_head || input.budget.max_children !== existing.budget.max_children || input.budget.qa_failure_limit !== existing.budget.qa_failure_limit)
+    throw new Error("plan_digest mismatch: reconfirmation binding changed");
+  const validate = () => {
+    const plan = input.registry.children(input.capability);
+    if (existing.children.length !== plan.length || plan.some((child, index) => {
+      const old = existing.children[index], nextChild = input.children[index];
+      return !nextChild || old.task_id !== child.task_id || old.slice_id !== nextChild.slice_id || JSON.stringify(old.blocked_by) !== JSON.stringify(child.blocked_by) || JSON.stringify(nextChild.blocked_by) !== JSON.stringify(child.blocked_by);
+    }))
+      throw new Error("plan_digest mismatch: reconfirmation topology changed");
+    const { issued_at: _issuedAt, ...binding } = validateRunAuthorization(input, { ...existing, plan_digest: input.plan_digest });
+    if (binding.branch !== existing.branch)
+      throw new Error("plan_digest mismatch: reconfirmation branch changed");
+    prepareBatchRunState(input);
+    return input.registry.inspect(input.capability, binding);
+  };
+  const authority = validate();
+  const captured = takeReconfirmation(authority.nonce);
+  if (captured.root !== input.root || captured.plan_digest !== input.plan_digest)
+    throw new Error("plan_digest mismatch: captured reconfirmation does not match run input");
+  return replaceBatchRunState(input.root, captured.stateBytes, next, () => {
+    captured.assertUnchanged();
+    validate();
+  });
 }
 async function startBatch(input) {
   try {
@@ -11905,7 +12232,9 @@ async function startBatchLocked(input) {
     return reportFor({ ...rejected, batch_state: "rejected" }, "batch plan is empty", "Provide a non-empty enrollable child plan.");
   }
   let existing = readBatchRunState(input.root, input.batch_id);
+  const reconfirmed = existing !== null && existing.plan_digest !== input.plan_digest;
   if (existing) {
+    existing = applyPlanReconfirmation(input, existing);
     try {
       await validatePersistedRun(input, existing);
     } catch (error) {
@@ -11927,10 +12256,11 @@ async function startBatchLocked(input) {
     const nextConfirmation = Date.parse(input.confirmation_time);
     const nextExpiry = Date.parse(input.authorization_expires_at);
     const freshAuthorization = Number.isFinite(nextConfirmation) && nextConfirmation > priorConfirmation && Number.isFinite(nextExpiry) && nextExpiry > Date.now();
-    if (!freshAuthorization) {
+    if (!freshAuthorization && !reconfirmed) {
       return finalize(input.root, existing, "the parked batch requires a fresh literal-user confirmation", "Resolve the parked child, then re-confirm the batch to continue.");
     }
-    validateRunAuthorization(input, existing);
+    if (!reconfirmed)
+      validateRunAuthorization(input, existing);
     prepareBatchRunState({ ...input, now: input.now });
     const remapped = await Promise.all(existing.children.map(async (child) => {
       if (child.state !== "needs_human")
@@ -12145,8 +12475,9 @@ function stopReasonFor(record) {
 }
 async function resumeBatch(input, projection) {
   let existing = readBatchRunState(input.root, input.batch_id);
-  if (!existing)
+  if (!existing || existing.batch_state === "needs_human")
     return startBatch(input);
+  existing = applyPlanReconfirmation(input, existing);
   try {
     await validatePersistedRun(input, existing);
   } catch (error) {
@@ -12161,8 +12492,6 @@ async function resumeBatch(input, projection) {
   }
   if (isTerminalBatchState(existing.batch_state))
     return replayTerminal(input.root, existing);
-  if (existing.batch_state === "needs_human")
-    return startBatch(input);
   const driven = existing.children.find((child) => child.state === "enrolled" || child.state === "settled");
   if (driven) {
     if (driven.state === "enrolled") {
@@ -12287,6 +12616,8 @@ async function driveInterruptedChild(input, child) {
           intentPath
         });
       };
+      if (existing && !record.commits.length && existsSync9(join14(input.root, ".git")) && !ownUnpersistedBatchHead(input.root, record, existing.commit))
+        throw new Error("first unpersisted batch commit provenance is invalid");
       const adopted = existing ?? await doCommit().catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
         record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: message } : c);

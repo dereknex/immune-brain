@@ -41,6 +41,19 @@ async function finishScriptedHandoffs(input: StartBatchInput, report: Awaited<Re
 	return report;
 }
 
+// Synthetic commit fixtures have no matching current Kernel run authority.
+// Real settlement/adoption is covered by both public Hosts in batch-plan-reconfirmation.test.ts.
+async function expectProvenanceRefusal(input: StartBatchInput): Promise<void> {
+	const capture = () => ({
+		state: readFileSync(join(input.root, ".imm/state/batches", `${input.batch_id}.json`)),
+		index: readFileSync(join(input.root, ".git/index")),
+		head: git(input.root, ["rev-parse", "HEAD"]),
+	});
+	const before = capture();
+	await expect(resumeBatch(input, input.kernel.projectTask.bind(input.kernel))).rejects.toThrow("provenance");
+	expect(capture()).toEqual(before);
+}
+
 const CONFIRMATION_TIME = "2026-01-01T00:00:00.000Z";
 const FAR_FUTURE = "2099-01-01T00:00:00.000Z";
 
@@ -1248,7 +1261,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 		expect(git(repo.root, ["symbolic-ref", "--short", "HEAD"])).toBe(originalBranch);
 	});
 
-	it("Finding 3: resumeBatch terminates as failed when external HEAD drift occurs before commit lookup", async () => {
+	it("Finding 3: resumeBatch refuses external HEAD drift before commit lookup without writes", async () => {
 		const slug = "drift-flow";
 		const taskA = "task-drift-a";
 		const intentPathA = writeTaskIntent(repo.root, taskA, "Goal", [
@@ -1358,16 +1371,11 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 		const { writeBatchRunState } = await import("../plugins/immune-brain/runtime/unattended/batch_state");
 		writeBatchRunState(repo.root, stateRecord);
 
-		const report = await resumeBatch(batchInput, kernel.projectTask.bind(kernel));
-
-		expect(report.batch_state).toBe("failed");
-		expect(report.reason).toContain("batch_head_lineage_broken");
-
-		const stored = readBatchRunState(repo.root, "batch-drift-1");
-		expect(stored!.batch_state).toBe("failed");
+		await expectProvenanceRefusal(batchInput);
+		expect(readBatchRunState(repo.root, "batch-drift-1")!.batch_state).toBe("running");
 	});
 
-	it("Finding 3: resumeBatch rejects a forged commit containing out-of-scope changes as failed", async () => {
+	it("Finding 3: resumeBatch refuses a forged out-of-scope commit without writes", async () => {
 		const slug = "forged-flow";
 		const taskA = "task-forged-a";
 		const intentPathA = writeTaskIntent(repo.root, taskA, "Goal", [
@@ -1467,13 +1475,8 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 		const { writeBatchRunState } = await import("../plugins/immune-brain/runtime/unattended/batch_state");
 		writeBatchRunState(repo.root, stateRecord);
 
-		const report = await resumeBatch(batchInput, kernel.projectTask.bind(kernel));
-
-		expect(report.batch_state).toBe("failed");
-		expect(report.reason).toContain("batch_head_lineage_broken");
-
-		const stored = readBatchRunState(repo.root, "batch-forged-1");
-		expect(stored!.batch_state).toBe("failed");
+		await expectProvenanceRefusal(batchInput);
+		expect(readBatchRunState(repo.root, "batch-forged-1")!.batch_state).toBe("running");
 	});
 
 	it("Finding 1: symlink attack on commit evidence is rejected and target remains untouched", async () => {
@@ -1535,7 +1538,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 		expect(branchCommitAfter).toBe(branchCommitBefore);
 	});
 
-	it("Finding 1: resumeBatch rejects an in-scope external commit lacking durable batch evidence as failed", async () => {
+	it("Finding 1: resumeBatch refuses an in-scope external commit without durable evidence or writes", async () => {
 		const slug = "fake-inscope-flow";
 		const taskA = "task-fake-inscope";
 		const intentPathA = writeTaskIntent(repo.root, taskA, "Goal", [
@@ -1642,13 +1645,8 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 		const { writeBatchRunState } = await import("../plugins/immune-brain/runtime/unattended/batch_state");
 		writeBatchRunState(repo.root, stateRecord);
 
-		const report = await resumeBatch(batchInput, kernel.projectTask.bind(kernel));
-
-		expect(report.batch_state).toBe("failed");
-		expect(report.reason).toContain("batch_head_lineage_broken");
-
-		const stored = readBatchRunState(repo.root, "batch-fake-inscope-1");
-		expect(stored!.batch_state).toBe("failed");
+		await expectProvenanceRefusal(batchInput);
+		expect(readBatchRunState(repo.root, "batch-fake-inscope-1")!.batch_state).toBe("running");
 	});
 
 	it("Finding 1: startBatch terminates as failed on post-commit persistence window external HEAD drift", async () => {
@@ -2687,7 +2685,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 		expect(stored!.children.find((c) => c.task_id === taskA)!.state).toBe("needs_human");
 	});
 
-	it("review round 12: resumeBatch adopts a verified own commit for a settled child without external drift", async () => {
+	it("review round 12: fabricated settlement cannot authorize first-commit adoption", async () => {
 		const slug = "adopt-flow";
 		const taskA = "task-adopt-a";
 		const taskB = "task-adopt-b";
@@ -2829,15 +2827,12 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 		const { writeBatchRunState } = await import("../plugins/immune-brain/runtime/unattended/batch_state");
 		writeBatchRunState(repo.root, stateRecord);
 
-		const report = await finishScriptedHandoffs(batchInput, await resumeBatch(batchInput, kernel.projectTask.bind(kernel)));
-
-		expect(report.batch_state).toBe("completed");
+		await expectProvenanceRefusal(batchInput);
 		const stored = readBatchRunState(repo.root, "batch-adopt-1");
-		expect(stored!.batch_state).toBe("completed");
-		// The original SHA is adopted, never re-committed
-		expect(stored!.children.find((c) => c.task_id === taskA)!.commit).toBe(shaA);
-		expect(stored!.commits).toEqual([shaA, stored!.children.find((c) => c.task_id === taskB)!.commit]);
-		expect(git(repo.root, ["rev-list", "HEAD"]).split("\n")).toContain(shaA);
+		expect(stored!.batch_state).toBe("running");
+		expect(stored!.children.find((c) => c.task_id === taskA)!.state).toBe("settled");
+		expect(stored!.commits).toEqual([]);
+		expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(shaA);
 	});
 
 	it("review round 13: lookupBatchCommit finds its own commit under grep.extendedRegexp=true", async () => {

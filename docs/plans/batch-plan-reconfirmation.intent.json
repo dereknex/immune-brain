@@ -1,0 +1,30 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "batch-plan-reconfirmation",
+  "goal": "Repair bounded zero-commit batch plan reconfirmation through the existing native authority and shared runtime, preserving lineage, exact completed-child evidence and serial progress without recovering the original failed live batch.",
+  "acceptance": [
+    {
+      "id": "BPR-A1",
+      "assertion": "Implement docs/specs/batch-plan-reconfirmation.spec.md: only a fresh native-confirmed capability may replace the plan binding of a nonterminal, zero-commit batch whose ordered tasks/Slices/dependencies, branch/base and current HEAD are unchanged. Reconstruct the old digest from canonical baseline Intents; require an actual monotonic revised, same-goal/owner child that is done in its exact local run with matching Intent, fresh QA/required Review and intact reviewed delivery. Pending children remain unchanged. Atomically compare expected state bytes and recheck binding/evidence/clock/claim before replacing only digest and confirmed authorization timing/budget, retaining all progress and limits. Shared entry paths reconcile settlement, commit once and continue without replaying Enrollment or Assurance. Real temporary Kernel/Git/public-entry tests prove this and refusal/replay behavior; corrupted digests, topology/HEAD/commit drift, ambiguous/stale/foreign evidence, mixed dirty work, forged/expired authority and declined/cancelled or drifting confirmation fail closed with raw-byte zero-write controls. Preserve existing negative and same-digest behavior, both Host seams and generated bundle parity. No repair of the original pi-batch-acceptance batch, S1 execution, manual authority/state edits, new schema or weakened commit guard. Typecheck and focused delivery checks must pass before Review; fixture evidence does not certify live user interaction.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-plan-reconfirmation.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/unattended-batch-commit.test.ts\",\n      \"tests/managed-task-snapshot-isolation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 360000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/adr/0008-batch-capability-rehydration.md",
+    "docs/specs/batch-plan-reconfirmation.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/workspace_scope.ts",
+    "tests/batch-plan-reconfirmation.test.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/unattended-batch-commit.test.ts",
+    "tests/unattended-batch-run.test.ts"
+  ],
+  "risk": "material",
+  "revision": 4,
+  "owner": "user"
+}
