@@ -1,0 +1,31 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "workflow-decision-closure-s5",
+  "owner": "user",
+  "goal": "Make canonical Intent authoring discoverable and complete GitHub publication safely recover from confirmed partial writes or uncertain responses within a whole-operation deadline.",
+  "acceptance": [
+    {
+      "id": "WDC-S5-A1",
+      "assertion": "Implement S5 of docs/specs/workflow-decision-closure.spec.md in existing public command guidance and GitHub tracker transport/publication seams, preserving strict v2 parsing and exclusive canonical authoring. State destination/stdin/example structure before error probing. Report confirmed writes, unfinished steps and uncertain outcomes truthfully; read back exact ownership/topology and intent hashes before same-manifest idempotent recovery. Bound the entire publication without a blind outer shell loop. Fake-transport tests cover partial success, lost response, stale or ambiguous ownership/hash, timeout/cancellation and repeat publication, proving no duplicate or wrong-owner mutation and no execution handoff before complete success. Preserve existing negative controls and one specific recovery action. Regenerate the Claude bundle and pass focused runtime/package checks and typecheck before Review. No real remote test writes, authority schema/reducer/store changes, new scheduler or automatic native-gate retry.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/github-initiative-recovery.test.ts\",\n      \"tests/kernel-intent-authoring.test.ts\",\n      \"tests/v4-runtime-launchers.test.ts\",\n      \"tests/github-issue-projection-contract.test.ts\",\n      \"tests/carrier-enrollment-gate-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/workflow-decision-closure-s5.intent.json",
+    "docs/specs/workflow-decision-closure.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/runtime/commands/kernel.ts",
+    "plugins/immune-brain/runtime/github_issue_tracker.ts",
+    "plugins/immune-brain/runtime/v4_runtime.ts",
+    "tests/carrier-enrollment-gate-contract.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/github-initiative-recovery.test.ts",
+    "tests/github-issue-projection-contract.test.ts",
+    "tests/kernel-intent-authoring.test.ts",
+    "tests/plugin-package-runtime.test.ts",
+    "tests/v4-runtime-launchers.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

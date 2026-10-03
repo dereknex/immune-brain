@@ -1,0 +1,29 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "workflow-decision-closure-s4",
+  "owner": "user",
+  "goal": "Tie acceptance verification to observable invariant seams, combination/boundary controls and executable isolated-environment prerequisites rather than test counts or local tool availability.",
+  "acceptance": [
+    {
+      "id": "WDC-S4-A1",
+      "assertion": "Implement S4 of docs/specs/workflow-decision-closure.spec.md through Planner and existing QA/Review role contracts. Map acceptance to positive/negative/bound controls for the six generalized normalization, merge-validation, lifecycle deadline, missing-signal ranking, serialized-budget and duration-evidence classes. Descriptors must state focused paths, prerequisite provenance, preparation and writable outputs; absent/skipped/zero-match required checks fail, structural Enrollment readiness never proves execution. Require authorized preparation and failure/interruption cleanup, separate automated behavior/geometry from human motion judgment, and retain Role/Kernel evidence boundaries. Update packaged role mirrors and focused tests. Do not edit original app code, change the QA engine/Kernel core, install browser/simulator infrastructure or claim provider compliance from contract strings.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-verification-invariants.test.ts\",\n      \"tests/imm-planner-kernel-intent-contract.test.ts\",\n      \"tests/role-prompt-bundled-layout.test.ts\",\n      \"tests/kernel-verification-descriptor.test.ts\",\n      \"tests/pi-canary-verification-descriptor.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/workflow-decision-closure-s4.intent.json",
+    "docs/specs/workflow-decision-closure.spec.md",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/dist/role-prompts/code-review.md",
+    "plugins/immune-brain/dist/role-prompts/qa.md",
+    "plugins/immune-brain/runtime/prompts/code-review.md",
+    "plugins/immune-brain/runtime/prompts/qa.md",
+    "tests/imm-planner-kernel-intent-contract.test.ts",
+    "tests/kernel-verification-descriptor.test.ts",
+    "tests/pi-canary-verification-descriptor.test.ts",
+    "tests/role-prompt-bundled-layout.test.ts",
+    "tests/workflow-verification-invariants.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
