@@ -1,0 +1,20 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "pi-batch-acceptance-s0-completion-verifier",
+  "owner": "user",
+  "goal": "Deliver the read-only batch completion verifier defined by S0 in docs/specs/pi-batch-acceptance.spec.md, with exact terminal-run attribution and fail-closed state, report, commit, and scope consistency checks.",
+  "acceptance": [
+    {
+      "id": "PBA-S0-A1",
+      "assertion": "Meet S0 in docs/specs/pi-batch-acceptance.spec.md: the project-owned read-only command verifies matching completed batch state/report, the exact committed task/run terminal audit pair, runner-produced commit evidence, ordered single-parent HEAD Lineage and each child Scope Envelope. Incomplete, contradictory, malformed, unsafe or unstable evidence cannot return success. Positive and targeted negative behavioral controls use canonical terminal evidence and real Git; success and failure leave state, audit, authority, index and refs unchanged. Its output is a bounded non-authoritative observation, never proof of native interaction or loaded build identity.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-completion-verifier.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/specs/pi-batch-acceptance.spec.md",
+    "scripts/verify-batch-completion.ts",
+    "tests/batch-completion-verifier.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

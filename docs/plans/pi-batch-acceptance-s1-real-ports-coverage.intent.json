@@ -1,0 +1,22 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "pi-batch-acceptance-s1-real-ports-coverage",
+  "owner": "user",
+  "goal": "Deliver the real registered Pi-entry acceptance coverage and operator runbook defined by S1 in docs/specs/pi-batch-acceptance.spec.md, separating deterministic integration evidence from actual native-Host batch completion observations.",
+  "acceptance": [
+    {
+      "id": "PBA-S1-A1",
+      "assertion": "Meet S1 in docs/specs/pi-batch-acceptance.spec.md: invoke the actual registered Pi batch Tool with real Kernel ownership, tracked implementation, deterministic QA materialization/process execution, settlement/export and scope-bound Git commits, without scripted completed ports, auto-frozen Parent snapshots or synthetic successful QA. Behavioral fixtures verify implementation handoff before QA, exactly-once serial continuation, real check failure and finding-specific repair, fresh-obligation interruption recovery, and confirmed renewal/refusal without losing progress. Verify the runbook executable examples and S0 final consistency checks; retain useful unit/refusal coverage and correct misleading integration pointers. Routine fixtures do not claim Review coverage; fixtures and local green do not certify live build, Review or native interaction, and no descriptor requires its own future batch settlement.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-batch-acceptance-integration.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/unattended-batch-run.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/agents/pi-batch-acceptance.md",
+    "docs/specs/pi-batch-acceptance.spec.md",
+    "tests/pi-batch-acceptance-integration.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/unattended-batch-run.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
