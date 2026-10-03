@@ -130,6 +130,8 @@ empty, or report remaining blocked/open nodes if the user stops early.
 
 Follow [`docs/reference/subagent-dispatch-protocol.md`](docs/reference/subagent-dispatch-protocol.md) for the full dispatch lifecycle. This section defines brainstorm-specific optional research dispatch.
 
+Before any research path that leaves the repository — an external model or provider call, a fetch of non-project content, or sending project data off-host — check the project's existing research channel and data scope. Documentation, mocks, and local read-only reads are not real-channel evidence, and a public article does not select or authorize a provider. Consume the existing channel; a genuinely new channel or data scope is a material delta that needs its own authorization. Report documentation, mock, real-channel, and model-quality evidence as distinct claims rather than one undifferentiated "verified".
+
 Runtime helpers: `imm_core.buildBrainstormEnsembleRequest`, `imm_core.buildBrainstormEnsembleDispatchEnvelopes`, `imm_core.normalizePiBrainstormAgentResults`, and `imm_core.normalizeBrainstormEnsemblePacket`.
 
 ### Brainstorm Ensemble Advisory

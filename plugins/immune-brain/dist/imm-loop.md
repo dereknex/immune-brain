@@ -147,6 +147,14 @@ per completed child.
   reasons in one request. Do not edit outside scope while waiting or widen it
   piecemeal without new evidence. Bounded test or PR repair stays inside the same
   TaskIntent.
+- Effects are separate grants. A stage-only recovery restores staging and grants
+  no commit, push, or publication; an existing exact approval, including a valid
+  batch capability bounded to one child, stays usable without another chat gate.
+  Before a new outbound research call, check the project's existing channel and
+  data scope; a public article, a mock, or a local read-only database authorizes
+  no new provider or data effect.
+- Text instructions are contracts, not a hard bash sandbox. They guide and are
+  reviewed; the Kernel authority gates remain the real boundary.
 - Invoke `approve_breaking_intent_revision` with the complete next intent
   directly; the native Host gate is the single user decision. Do not overwrite
   enrolled intent sidecars or ask for chat pre-confirmation.

@@ -466,6 +466,8 @@ preparation does not apply the revision or authorize expanded execution.
 
 Follow [`docs/reference/subagent-dispatch-protocol.md`](docs/reference/subagent-dispatch-protocol.md) for the full dispatch lifecycle. This section defines planner-specific optional research dispatch.
 
+A discovery path that leaves the repository — an external model/provider call or sending project data off-host — first checks the project's existing research channel and data scope. Architecture exploration and local reads stay on the existing channel; a new channel or data scope is a material delta with its own authorization, and documentation, mock, or local read-only evidence never substitutes for real-channel evidence.
+
 Use the invoking Host's read-only role-boundary route for bounded
 `arch-explorer` and explicit-lens `advisory-reviewer` routing. Invoke the returned foreground Agent envelope
 exactly. The Parent owns Spec/TaskIntent synthesis, Brainstorm traceability,

@@ -1,0 +1,159 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "workflow-decision-closure-s2",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "workflow-decision-closure-s2",
+    "goal": "Keep staging recovery and outbound research within exact existing operation, target and impact grants while preserving already-authorized operations and batch capabilities.",
+    "acceptance": [
+      {
+        "id": "WDC-S2-A1",
+        "assertion": "Implement S2 of docs/specs/workflow-decision-closure.spec.md in existing BASELINE and Skill research/recovery instructions. Separate staging, commit, push, publication and outbound model/data effects; a stage-only recovery must not inherit commit authority. Preserve exact pre-existing approvals, valid batch commit capabilities and mandatory native gates without redundant chat confirmation. Check project research channel and data scope before a new outbound effect; public articles do not authorize arbitrary providers. Distinguish documentation, mock, real-channel and model-quality evidence. Add positive/negative contract and scenario controls, update generated BASELINE mirror and packaging coverage. Text rules must not be advertised as an absolute bash sandbox. No credential changes, provider routing, external model run, Git commit or production write belongs to this Slice.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-effect-boundaries.test.ts\",\n      \"tests/baseline-packaging-contract.test.ts\",\n      \"tests/plugin-package-runtime.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/workflow-decision-closure-s2.intent.json",
+      "docs/specs/workflow-decision-closure.spec.md",
+      "plugins/immune-brain/BASELINE.md",
+      "plugins/immune-brain/dist/BASELINE.md",
+      "plugins/immune-brain/dist/imm-brainstorm.md",
+      "plugins/immune-brain/dist/imm-loop.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/skills/BASELINE.md",
+      "tests/baseline-packaging-contract.test.ts",
+      "tests/fixtures/imm-brainstorm-behavior-benchmark.json",
+      "tests/plugin-package-runtime.test.ts",
+      "tests/workflow-effect-boundaries.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/workflow-decision-closure-s2.intent.json",
+    "content_hash": "sha256:672e8c9d71a5e101a80ec34763daf0436d379c923539f29e4954262518fca609"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:672e8c9d71a5e101a80ec34763daf0436d379c923539f29e4954262518fca609",
+  "git_base_head": "03cad992382758cc0d6eb34e54a5c6b5994f0a11",
+  "attestations": [
+    {
+      "id": "approval-qa-acf27aff",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:672e8c9d71a5e101a80ec34763daf0436d379c923539f29e4954262518fca609",
+      "diff_hash": "sha256:75f466d5bf11ccc118088e7721951806ca7bab8258868dd96fa1e6b5ae3d79e6",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:d5df928644c088057058e43bb71fe6dc201cd2b9320b364923ad6677efcd4523",
+      "acceptance_results": [
+        {
+          "acceptance_id": "WDC-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:d5df928644c088057058e43bb71fe6dc201cd2b9320b364923ad6677efcd4523"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-8d510a6c",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:672e8c9d71a5e101a80ec34763daf0436d379c923539f29e4954262518fca609",
+      "diff_hash": "sha256:d51921b647b6f82ed1fcb83e23e09a2b071d4cb13794b45c29d145787d613c03",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:397aae97929adeee94fb18385704f1469526b6e3f545ecd14f4194e674695826",
+      "acceptance_results": [
+        {
+          "acceptance_id": "WDC-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:397aae97929adeee94fb18385704f1469526b6e3f545ecd14f4194e674695826"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-dc73fe78",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:672e8c9d71a5e101a80ec34763daf0436d379c923539f29e4954262518fca609",
+      "diff_hash": "sha256:d51921b647b6f82ed1fcb83e23e09a2b071d4cb13794b45c29d145787d613c03",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 base_head、review_commit、唯一父提交、review_tree、manifest_digest 和全部 changed_paths；授权分离、既有批准复用、native gates、研究渠道及数据范围检查、证据分类与 BASELINE 镜像符合 S2，未发现阻断问题；采信 Kernel QA 通过结果，真实模型行为验证仍归 S7。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "03cad992382758cc0d6eb34e54a5c6b5994f0a11",
+        "review_commit": "1c3a927e98131ba059c46679a7799f48b5d31e4d",
+        "review_tree": "55122afe7bd6d18c06bc528807eb691412d2b576",
+        "manifest_digest": "sha256:88fc15fe87557a7d492e5531ca866d7c84240209f7d3fbd9cac400f1ce80cafe"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:workflow-decision-closure-s2:2026-10-03T13:10:04.113Z",
+      "at": "2026-10-03T13:10:04.113Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-decision-closure-s2.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s2:2026-10-03T13:10:13.807Z",
+      "at": "2026-10-03T13:10:13.807Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-acf27aff\naction_v2_sha256:be3999c9adbc9bb1892a0c8d5157b517276df6435201bf9e07e3158abefc8141",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f1da0d787b2af357",
+        "issued_at": "2026-10-03T13:10:13.807Z",
+        "expires_at": "2026-10-03T13:20:13.807Z"
+      }
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s2:2026-10-03T13:19:25.375Z",
+      "at": "2026-10-03T13:19:25.375Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-8d510a6c\naction_v2_sha256:b1e097ee98ec656accd9cdcf7d0d25870376095da89fd32679adeed8b718acf1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-61abf8a20cf341d1",
+        "issued_at": "2026-10-03T13:19:25.375Z",
+        "expires_at": "2026-10-03T13:29:25.375Z"
+      }
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s2:2026-10-03T13:25:37.550Z",
+      "at": "2026-10-03T13:25:37.550Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-dc73fe78\naction_v2_sha256:5db8a517cf04df4827642c42c14bf074fd8f0bcdb64765a24aac7146aa4f54aa",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-616fa4efdae57424",
+        "issued_at": "2026-10-03T13:25:37.550Z",
+        "expires_at": "2026-10-03T13:35:37.550Z"
+      }
+    },
+    {
+      "id": "complete:workflow-decision-closure-s2:2026-10-03T13:25:38.695Z",
+      "at": "2026-10-03T13:25:38.695Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:73e2fd8ff989196ba01300fc4e1cda2953ee317946ddb6b2f44107d3694c2fba"
+    }
+  ]
+}
