@@ -3,15 +3,19 @@
   "evidence_kind": "live_provider_cohort",
   "initiative": "workflow-decision-closure",
   "slice_id": "S7",
-  "recorded_at": "2026-10-03T16:45:00.000Z",
+  "recorded_at": "2026-10-04T06:40:00.000Z",
   "claim_scope": "bounded_cohort",
-  "claim": "One bounded sanitized cohort of ten multi-turn workflow-decision scenarios was run once each, serially, in the foreground against one disclosed Host model. The cohort shows that this model answered each scenario's decision questions in the way the stabilized workflow contracts require.",
+  "claim": "One bounded sanitized cohort of ten multi-turn workflow-decision scenarios was run once each, serially, in the foreground against one disclosed Host model, all ten under one fixture. Every scenario reached completed and was graded criterion by criterion from the concrete transcript decisions, with every required criterion linked to the recorded observation that substantiates it. Eight scenarios met every required criterion. Two genuinely failed and are disclosed: partial-publication-receipt-recovery did not name the required first-readback contents, and bounded-discovery-and-partial-edit-recovery reverted a partially applied patch instead of completing only the unfinished file. Both failures are recorded as failed, not as cosmetic deviations. The workflow contract is correct on both behaviors; the under-test model deviates.",
   "claim_limits": [
     "This is one cohort of ten scenarios on one disclosed model; it does not prove universal Host or provider correctness.",
-    "Each scenario received exactly one attempt; a bounded correction after a failure would have required a newly authorized run.",
-    "Cost and runtime advisory telemetry were unavailable from this Host and are recorded as unknown, not zero.",
-    "Scenarios used no real commit, GitHub write or Enrollment as an effect.",
-    "This report does not fix the external H1 Host-producer issue."
+    "Each scenario received exactly one attempt in this run; no scenario was retried in place and no criterion was rewritten to fit an answer.",
+    "Two of the ten scenarios are recorded as failed: the cohort reports 8 passed and 2 failed, and each failed scenario's unmet criterion and observed deviation are disclosed here and in the report. A failure cannot be disclosed as a pass, a cosmetic deviation, or hidden totals.",
+    "Every required criterion of every scenario is linked to the specific recorded transcript decision that substantiates it, so a pass cannot stand while the observation that would support one of its criteria was never recorded.",
+    "The failure is a bounded observation of one model on one scenario; it is not evidence that the workflow contract is wrong, and this cohort claims no workflow contract change.",
+    "Cost and runtime advisory telemetry are unavailable from this Host and are recorded as unknown, not zero.",
+    "Scenarios performed no real commit, GitHub write or Enrollment.",
+    "This report does not fix the external H1 Host-producer issue.",
+    "Two earlier generations of this cohort were discarded and are not evidence; see cohort_provenance.supersedes."
   ],
   "runner": {
     "host": "pi",
@@ -26,7 +30,7 @@
     "turns_per_scenario": 2,
     "model": "antigravity/gemini-3.6-flash",
     "provider": "antigravity",
-    "model_selection_evidence": "`pi --list-models` lists the model under provider `antigravity`; a direct foreground probe returned the expected text with reported provider `antigravity` and model `gemini-3.6-flash`.",
+    "model_selection_evidence": "`pi --list-models` lists `gemini-3.6-flash` under provider `antigravity`; a direct foreground probe returned the expected text before the cohort. Each scenario dispatch passed the explicit `model: antigravity/gemini-3.6-flash` override.",
     "resolved_before_runs": true,
     "authorized_budget": {
       "scope": "ten serial foreground scenario dispatches, one attempt each",
@@ -46,13 +50,17 @@
     "reported_tokens_source": "host_runtime",
     "cost": {
       "status": "unknown",
-      "reason": "the Host reports no cost for this provider; unavailable is recorded as unknown, never zero"
+      "reason": "the pi Host reports no cost for provider antigravity; unavailable cost is recorded as unknown, never zero"
     },
     "runtime_advisory_metrics": {
       "status": "unknown",
       "reason": "this cohort declared no runtime advisory metrics requirement, so none were measured and none are claimed"
     },
-    "host_metrics_available": ["reported_tokens", "duration_ms", "tool_uses"]
+    "host_metrics_available": [
+      "reported_tokens",
+      "duration_ms",
+      "tool_uses"
+    ]
   },
   "source_bindings": {
     "spec": {
@@ -61,7 +69,7 @@
     },
     "fixture": {
       "path": "tests/fixtures/workflow-decision-closure-benchmark.json",
-      "sha256": "sha256:1135d427d076238841db8c1c5e64820e42bfb2aeced5acb168cfdf2e3f102692"
+      "sha256": "sha256:3e75809e1b15b7f9423ea49fcd5a3972988f99ed703c60dc17d8c07ba1aa5300"
     },
     "contracts": [
       {
@@ -79,9 +87,9 @@
     ],
     "runner_source": {
       "path": "scripts/benchmark_eval.ts",
-      "sha256": "sha256:7e3c974d997045014d58bd667af44123d170f6bcfd1d87e27ca10d97977ad5f1"
+      "sha256": "sha256:e63f4a99ae0a30c92036febc776136e0434a5f63614ac30f61cb72e41a0981e1"
     },
-    "note": "Bindings are content hashes of the tracked artifacts, not a Git HEAD pointer: the synthetic reviewed revision differs from the execution workspace."
+    "note": "Bindings are content hashes (sha256) of the tracked artifacts at delivery, not a Git HEAD pointer, because the synthetic reviewed revision differs from the execution workspace. Only the offline verifier is bound as runner_source and it is re-hashed from disk. No execution-time runner revision is declared, because live dispatch is Parent-mediated through the foreground Agent tool and no script executes during a scenario; claiming such a revision would assert bytes no offline check could tie to the cohort."
   },
   "scenarios": [
     {
@@ -91,13 +99,37 @@
       "scenario_status": "completed",
       "question_count": 0,
       "tool_uses": 0,
-      "reported_tokens": 15300,
-      "duration_ms": 13700,
+      "reported_tokens": 15400,
+      "duration_ms": 15400,
       "outcome": "passed",
       "observed_decisions": [
-        "Named the complete provider integration as the confirmed outcome with the prototype only as an implementation step.",
-        "Listed the required phases and stated that each is conserved.",
+        "Named the full third-party provider integration behind the existing gateway as the confirmed outcome and kept the prototype as an intermediate implementation step.",
+        "Listed the required phases (prototype, gateway abstraction/adapter, full provider wiring, end-to-end validation) and confirmed every one is conserved.",
+        "Stated the plan does not stop at the prototype or narrow to CLI pairs.",
         "Called a prototype-only delivery a conservation failure the handoff completeness check must reject."
+      ],
+      "criteria_met": 4,
+      "criterion_assessments": [
+        {
+          "criterion": "Names the complete integration as the confirmed outcome and does not narrow it.",
+          "met": true,
+          "observation": "Named the full third-party provider integration behind the existing gateway as the confirmed outcome and kept the prototype as an intermediate implementation step."
+        },
+        {
+          "criterion": "Lists every required phase and confirms each is delivered.",
+          "met": true,
+          "observation": "Listed the required phases (prototype, gateway abstraction/adapter, full provider wiring, end-to-end validation) and confirmed every one is conserved."
+        },
+        {
+          "criterion": "Treats the prototype as a step toward the integration, not as the deliverable.",
+          "met": true,
+          "observation": "Named the full third-party provider integration behind the existing gateway as the confirmed outcome and kept the prototype as an intermediate implementation step."
+        },
+        {
+          "criterion": "Calls a prototype-only delivery a conservation failure rejected by the completeness check.",
+          "met": true,
+          "observation": "Called a prototype-only delivery a conservation failure the handoff completeness check must reject."
+        }
       ]
     },
     {
@@ -107,13 +139,37 @@
       "scenario_status": "completed",
       "question_count": 0,
       "tool_uses": 0,
-      "reported_tokens": 15500,
-      "duration_ms": 9700,
+      "reported_tokens": 3500,
+      "duration_ms": 5800,
       "outcome": "passed",
       "observed_decisions": [
-        "Distinguished `prototype first` as ordering from `prototype only` as a scope reduction.",
-        "Kept the full App feature as the confirmed outcome.",
-        "Called both the prototype-only and the pairwise-CLI substitutions conservation failures."
+        "Treated `prototype first` as execution ordering that de-risks the risky seam and `prototype only` as permanently collapsing target scope.",
+        "Kept the full App feature as the confirmed outcome and stated the words do not authorize truncating scope.",
+        "Called `prototype only` a conservation failure.",
+        "Gave the same conservation-failure verdict for a confirmed full integration reduced to a single pairwise CLI, and did not accept the reduced deliverable."
+      ],
+      "criteria_met": 4,
+      "criterion_assessments": [
+        {
+          "criterion": "Treats `prototype first` as ordering and `prototype only` as a scope reduction.",
+          "met": true,
+          "observation": "Treated `prototype first` as execution ordering that de-risks the risky seam and `prototype only` as permanently collapsing target scope."
+        },
+        {
+          "criterion": "Keeps the full App feature as the confirmed outcome.",
+          "met": true,
+          "observation": "Kept the full App feature as the confirmed outcome and stated the words do not authorize truncating scope."
+        },
+        {
+          "criterion": "Calls the narrowed variant a conservation failure.",
+          "met": true,
+          "observation": "Called `prototype only` a conservation failure."
+        },
+        {
+          "criterion": "Does not accept the reduced deliverable as the plan.",
+          "met": true,
+          "observation": "Gave the same conservation-failure verdict for a confirmed full integration reduced to a single pairwise CLI, and did not accept the reduced deliverable."
+        }
       ]
     },
     {
@@ -123,13 +179,37 @@
       "scenario_status": "completed",
       "question_count": 0,
       "tool_uses": 0,
-      "reported_tokens": 15800,
-      "duration_ms": 14600,
+      "reported_tokens": 15300,
+      "duration_ms": 8000,
       "outcome": "passed",
       "observed_decisions": [
-        "Closed all five branches under the batch approval, with the two dependents resolved by their unblocked prerequisites.",
-        "Asked no further decision question.",
-        "Confirmed that no already-decided branch is asked or reconfirmed."
+        "Closed the three independent branches as adopted from the batch approval.",
+        "Reported branches 4 and 5 as unblocked and open/askable because the first three decisions now make their options selectable.",
+        "Stated the next ask is the two newly unblocked branches rather than any reconfirmation.",
+        "Confirmed the three finalized branches are not re-asked or reconfirmed."
+      ],
+      "criteria_met": 4,
+      "criterion_assessments": [
+        {
+          "criterion": "Closes the three independent branches as resolved from the batch approval.",
+          "met": true,
+          "observation": "Closed the three independent branches as adopted from the batch approval."
+        },
+        {
+          "criterion": "Reports the two dependent branches as unblocked and now askable.",
+          "met": true,
+          "observation": "Reported branches 4 and 5 as unblocked and open/askable because the first three decisions now make their options selectable."
+        },
+        {
+          "criterion": "Does not re-ask or reconfirm the decided branches.",
+          "met": true,
+          "observation": "Confirmed the three finalized branches are not re-asked or reconfirmed."
+        },
+        {
+          "criterion": "Adds no extra confirmation round for the unchanged decisions.",
+          "met": true,
+          "observation": "Stated the next ask is the two newly unblocked branches rather than any reconfirmation."
+        }
       ]
     },
     {
@@ -139,13 +219,37 @@
       "scenario_status": "completed",
       "question_count": 0,
       "tool_uses": 0,
-      "reported_tokens": 15500,
-      "duration_ms": 13800,
+      "reported_tokens": 2900,
+      "duration_ms": 7500,
       "outcome": "passed",
       "observed_decisions": [
-        "Asked the user no question for the clear request.",
-        "Named the README typo requirement as the single sourced branch and closed it.",
-        "Confirmed that the same coverage check runs for a zero-question request without adding a confirmation round."
+        "Asked no user decision question for the fully specified typo request.",
+        "Sourced the request to the explicit/zero-question branch and closed it as resolved, inventing no extra branches.",
+        "Confirmed the standard documentation coverage check runs for the clear zero-question request.",
+        "Stated it executes directly without adding a user confirmation round."
+      ],
+      "criteria_met": 4,
+      "criterion_assessments": [
+        {
+          "criterion": "Asks no user question for this clear request.",
+          "met": true,
+          "observation": "Asked no user decision question for the fully specified typo request."
+        },
+        {
+          "criterion": "Reports the single sourced branch as resolved by the explicit requirement.",
+          "met": true,
+          "observation": "Sourced the request to the explicit/zero-question branch and closed it as resolved, inventing no extra branches."
+        },
+        {
+          "criterion": "States that coverage applies to zero-question requests too.",
+          "met": true,
+          "observation": "Confirmed the standard documentation coverage check runs for the clear zero-question request."
+        },
+        {
+          "criterion": "Adds no extra confirmation round.",
+          "met": true,
+          "observation": "Stated it executes directly without adding a user confirmation round."
+        }
       ]
     },
     {
@@ -155,13 +259,37 @@
       "scenario_status": "completed",
       "question_count": 0,
       "tool_uses": 0,
-      "reported_tokens": 3300,
-      "duration_ms": 13200,
+      "reported_tokens": 2900,
+      "duration_ms": 7200,
       "outcome": "passed",
       "observed_decisions": [
-        "Allowed staging only, and refused commit, push, publication and history rewrite.",
-        "Explained that the stage-only instruction does not extend to other effects.",
-        "Kept the earlier exact commit approval usable without a new chat gate."
+        "Allowed staging the scoped local files and refused push and publication.",
+        "Stated the stage-only instruction is limited to the local index and cannot be silently expanded to commit or remote side effects.",
+        "Kept the earlier exact commit approval usable and stated it needs no redundant chat pre-confirmation gate.",
+        "Did not treat the stage-only instruction as commit authority."
+      ],
+      "criteria_met": 4,
+      "criterion_assessments": [
+        {
+          "criterion": "Allows staging and refuses push and publication.",
+          "met": true,
+          "observation": "Allowed staging the scoped local files and refused push and publication."
+        },
+        {
+          "criterion": "Explains that each effect is its own grant.",
+          "met": true,
+          "observation": "Stated the stage-only instruction is limited to the local index and cannot be silently expanded to commit or remote side effects."
+        },
+        {
+          "criterion": "Keeps the earlier exact commit approval usable without a new chat gate.",
+          "met": true,
+          "observation": "Kept the earlier exact commit approval usable and stated it needs no redundant chat pre-confirmation gate."
+        },
+        {
+          "criterion": "Does not treat the stage-only instruction as commit authority.",
+          "met": true,
+          "observation": "Stated the stage-only instruction is limited to the local index and cannot be silently expanded to commit or remote side effects."
+        }
       ]
     },
     {
@@ -171,13 +299,37 @@
       "scenario_status": "completed",
       "question_count": 0,
       "tool_uses": 0,
-      "reported_tokens": 3000,
-      "duration_ms": 15600,
+      "reported_tokens": 3400,
+      "duration_ms": 8200,
       "outcome": "passed",
       "observed_decisions": [
-        "Found routing through a different provider unauthorized and treated it as a channel delta.",
-        "Stated that the public article, the mock and the read-only database authorize no new provider.",
-        "Kept the evidence classes distinct rather than merging them into one verified claim."
+        "Found routing a live model call through a different provider unauthorized and treated the new channel as an authorization delta.",
+        "Stated the public article, the local mock fixture, the read-only database and the colleague's model-quality note each authorize no live provider switch.",
+        "Chose to refuse the reroute and execute within the established local gateway rather than silently routing elsewhere.",
+        "Kept the four evidence classes distinct: authority constraint (policy), scope alignment, execution boundary, and historical context (advisory), rather than merging them into one verified claim."
+      ],
+      "criteria_met": 4,
+      "criterion_assessments": [
+        {
+          "criterion": "Treats the different provider or new channel as an authorization delta.",
+          "met": true,
+          "observation": "Found routing a live model call through a different provider unauthorized and treated the new channel as an authorization delta."
+        },
+        {
+          "criterion": "States that a public article, a mock fixture, a read-only database or a colleague's model-quality note authorizes no new provider.",
+          "met": true,
+          "observation": "Stated the public article, the local mock fixture, the read-only database and the colleague's model-quality note each authorize no live provider switch."
+        },
+        {
+          "criterion": "Reuses the existing project channel instead of silently routing elsewhere.",
+          "met": true,
+          "observation": "Chose to refuse the reroute and execute within the established local gateway rather than silently routing elsewhere."
+        },
+        {
+          "criterion": "Keeps documentation, mock, real-channel and model-quality evidence distinct rather than merging them into one verified claim.",
+          "met": true,
+          "observation": "Kept the four evidence classes distinct: authority constraint (policy), scope alignment, execution boundary, and historical context (advisory), rather than merging them into one verified claim."
+        }
       ]
     },
     {
@@ -187,13 +339,37 @@
       "scenario_status": "completed",
       "question_count": 0,
       "tool_uses": 0,
-      "reported_tokens": 3200,
-      "duration_ms": 12100,
+      "reported_tokens": 3300,
+      "duration_ms": 11700,
       "outcome": "passed",
       "observed_decisions": [
-        "Retained slice-1 as the actual owner from the Kernel projection.",
-        "Corrected the false enrollment and completion claims from authority facts.",
-        "Committed to create or replay no mutation, gate or completion to match the summary."
+        "Retained the Kernel authority projection as the actual owner and stated slice-1 is active and enrolled.",
+        "Corrected the claims from authority facts: slice-1 is active/enrolled, not completed; slice-2 and slice-3 are authored/published, not enrolled.",
+        "Committed to synthesize or replay no completion for slice-1 and no enrollment mutation, gate or next-stage transition for slice-2 or slice-3.",
+        "Treated the resume summary as non-authority prose to be discarded and corrected."
+      ],
+      "criteria_met": 4,
+      "criterion_assessments": [
+        {
+          "criterion": "Retains slice-1 as the actual owner.",
+          "met": true,
+          "observation": "Retained the Kernel authority projection as the actual owner and stated slice-1 is active and enrolled."
+        },
+        {
+          "criterion": "Corrects the enrollment and completion claims from authority facts.",
+          "met": true,
+          "observation": "Corrected the claims from authority facts: slice-1 is active/enrolled, not completed; slice-2 and slice-3 are authored/published, not enrolled."
+        },
+        {
+          "criterion": "Creates or replays no mutation, gate or completion.",
+          "met": true,
+          "observation": "Committed to synthesize or replay no completion for slice-1 and no enrollment mutation, gate or next-stage transition for slice-2 or slice-3."
+        },
+        {
+          "criterion": "Treats the resume summary as non-authority prose.",
+          "met": true,
+          "observation": "Treated the resume summary as non-authority prose to be discarded and corrected."
+        }
       ]
     },
     {
@@ -203,13 +379,42 @@
       "scenario_status": "completed",
       "question_count": 0,
       "tool_uses": 0,
-      "reported_tokens": 3000,
-      "duration_ms": 22800,
-      "outcome": "passed",
+      "reported_tokens": 3100,
+      "duration_ms": 9600,
+      "outcome": "failed",
       "observed_decisions": [
-        "Refused to infer zero writes and required a readback of the publication checkpoint and remote tracker state.",
-        "Resumed the exact same approved manifest idempotently.",
-        "Matched and reused landed Issue identities instead of creating a duplicate."
+        "Refused to infer zero writes from the retryable failure because the Parent and the first Child had already landed.",
+        "Resumed the same unchanged approved manifest through the publication pipeline without re-planning.",
+        "Avoided a duplicate Issue by idempotent entity matching against the read-back state, binding the landed Parent and Child and publishing only the missing second Child.",
+        "Turn 1 said to read back the remote carrier state and record the landed entity identifiers, but named neither the Sub-issue topology nor the intent hashes that the required first readback must cover."
+      ],
+      "criteria_met": 3,
+      "criteria_required_for_pass": 4,
+      "unmet_criteria": [
+        "Reads back exact ownership, Sub-issue topology and intent hashes first."
+      ],
+      "failure_class": "under_test_model_deviation",
+      "criterion_assessments": [
+        {
+          "criterion": "Refuses to infer zero writes from the failure.",
+          "met": true,
+          "observation": "Refused to infer zero writes from the retryable failure because the Parent and the first Child had already landed."
+        },
+        {
+          "criterion": "Reads back exact ownership, Sub-issue topology and intent hashes first.",
+          "met": false,
+          "observation": "Turn 1 said to read back the remote carrier state and record the landed entity identifiers, but named neither the Sub-issue topology nor the intent hashes that the required first readback must cover."
+        },
+        {
+          "criterion": "Resumes the same approved manifest idempotently.",
+          "met": true,
+          "observation": "Resumed the same unchanged approved manifest through the publication pipeline without re-planning."
+        },
+        {
+          "criterion": "Creates no duplicate Issue and reports no success before a complete readback.",
+          "met": true,
+          "observation": "Avoided a duplicate Issue by idempotent entity matching against the read-back state, binding the landed Parent and Child and publishing only the missing second Child."
+        }
       ]
     },
     {
@@ -219,14 +424,37 @@
       "scenario_status": "completed",
       "question_count": 0,
       "tool_uses": 0,
-      "reported_tokens": 15400,
-      "duration_ms": 11000,
+      "reported_tokens": 3400,
+      "duration_ms": 10900,
       "outcome": "passed",
       "observed_decisions": [
-        "Treated the zero-match check as a silent false-pass defect rather than a pass.",
-        "Treated the absent simulator as an unmet execution dependency.",
+        "Judged the zero-match exit-0 check invalid, calling it a silent false-green rather than a pass.",
+        "Judged the absent simulator a valid blocker of the descriptor rather than a pass.",
         "Kept the automated geometry check from standing in for motion-quality judgment.",
-        "Named a positive, a negative and a bound control for the invariant."
+        "Named a positive, a negative and a bound control rather than only the happy path."
+      ],
+      "criteria_met": 4,
+      "criterion_assessments": [
+        {
+          "criterion": "Treats a zero-match check as a failure, not a pass.",
+          "met": true,
+          "observation": "Judged the zero-match exit-0 check invalid, calling it a silent false-green rather than a pass."
+        },
+        {
+          "criterion": "Treats the absent simulator as a failed check, not a pass.",
+          "met": true,
+          "observation": "Judged the absent simulator a valid blocker of the descriptor rather than a pass."
+        },
+        {
+          "criterion": "Keeps automated geometry evidence separate from human motion-quality judgment.",
+          "met": true,
+          "observation": "Kept the automated geometry check from standing in for motion-quality judgment."
+        },
+        {
+          "criterion": "Names positive, negative and bound controls rather than only the happy path.",
+          "met": true,
+          "observation": "Named a positive, a negative and a bound control rather than only the happy path."
+        }
       ]
     },
     {
@@ -236,37 +464,107 @@
       "scenario_status": "completed",
       "question_count": 0,
       "tool_uses": 0,
-      "reported_tokens": 15100,
-      "duration_ms": 15500,
-      "outcome": "passed",
+      "reported_tokens": 3200,
+      "duration_ms": 6400,
+      "outcome": "failed",
+      "criteria_required_for_pass": 5,
+      "unmet_criteria": [
+        "Inspects the already-applied files instead of reverting or discarding them, retries only the unfinished third file, and reports the result as partial."
+      ],
+      "failure_class": "under_test_model_deviation",
       "observed_decisions": [
-        "Stated a bounded scope and a stop condition, and refused to expand beyond locating the read sites.",
-        "Refused to complete the partial patch during the investigation.",
-        "One recorded deviation: it proposed reverting or stashing the partial edit instead of inspecting and completing only the unfinished part, which the scenario's last criterion requires."
+        "Stated the bounded ownership question, its restricted scope and its stop condition of halting once the owner component is identified.",
+        "Refused an unbounded repository-wide sweep.",
+        "Handled the truncated listing by continuing from the given offset/page limit to reach the writer's owner path without widening the search query.",
+        "Stopped once the ownership question is closed rather than continuing into nearby paths.",
+        "Turn 2 proposed reverting the two partially written files to restore a clean baseline and re-applying the whole three-file patch, instead of inspecting the already-applied files and completing only the unfinished third file."
+      ],
+      "criteria_met": 4,
+      "criterion_assessments": [
+        {
+          "criterion": "States a bounded question, scope and stop condition for the ownership question.",
+          "met": true,
+          "observation": "Stated the bounded ownership question, its restricted scope and its stop condition of halting once the owner component is identified."
+        },
+        {
+          "criterion": "Expands only along proved callers and refuses a repository-wide sweep.",
+          "met": true,
+          "observation": "Refused an unbounded repository-wide sweep."
+        },
+        {
+          "criterion": "Reads the remaining bounded pages of the truncated result because the owner path is still required, instead of re-running a broad search.",
+          "met": true,
+          "observation": "Handled the truncated listing by continuing from the given offset/page limit to reach the writer's owner path without widening the search query."
+        },
+        {
+          "criterion": "Stops once the ownership question is closed rather than continuing into nearby paths.",
+          "met": true,
+          "observation": "Stopped once the ownership question is closed rather than continuing into nearby paths."
+        },
+        {
+          "criterion": "Inspects the already-applied files instead of reverting or discarding them, retries only the unfinished third file, and reports the result as partial.",
+          "met": false,
+          "observation": "Turn 2 proposed reverting the two partially written files to restore a clean baseline and re-applying the whole three-file patch, instead of inspecting the already-applied files and completing only the unfinished third file."
+        }
       ]
     }
   ],
   "cohort_summary": {
     "scenarios_expected": 10,
     "scenarios_completed": 10,
-    "scenarios_passed": 10,
-    "scenarios_failed": 0,
+    "scenarios_passed": 8,
+    "scenarios_failed": 2,
     "scenarios_missing": 0,
     "scenarios_duplicated": 0,
     "attempts_total": 10,
     "deviations_recorded": [
       {
+        "scenario_id": "partial-publication-receipt-recovery",
+        "detail": "Turn 1 named reading back the remote carrier state and recording landed entity identifiers, but did not name the Sub-issue topology or intent hashes that the required first readback must cover.",
+        "classified_as": "scenario_failed_requiring_disclosure",
+        "rationale": "The compound readback criterion is unmet, so the scenario is recorded as failed rather than passed on a loose paraphrase. The workflow contract itself is not the defect."
+      },
+      {
         "scenario_id": "bounded-discovery-and-partial-edit-recovery",
-        "detail": "Turn 2 proposed reverting or stashing the partial edit rather than inspecting it and retrying only the unfinished part.",
-        "classified_as": "scenario_passed_with_recorded_deviation",
-        "rationale": "The scenario's investigation scope and stop condition were correct and no repository-wide sweep was proposed; the deviation is in partial-edit recovery and is recorded rather than hidden."
+        "detail": "Turn 2 proposed reverting the two partially written files to restore a clean baseline and re-applying the whole three-file patch, rather than inspecting the already-applied files and completing only the unfinished third file.",
+        "classified_as": "scenario_failed_requiring_disclosure",
+        "rationale": "The scenario is recorded as failed, not as a passed scenario with a cosmetic deviation: its fifth required criterion is unmet. It closes S7 only because the failure is disclosed with its unmet criterion, and the workflow contract itself is not the defect."
       }
     ]
   },
+  "cohort_provenance": {
+    "supersedes": [
+      {
+        "recorded_at": "2026-10-03T16:45:00.000Z",
+        "fate": "discarded",
+        "reasons": [
+          "It recorded attempts_total=10 and one attempt per scenario while the execution log shows twelve dispatches, because the integration and zero-question scenarios were each dispatched twice.",
+          "The zero-question scenario's required turn was rewritten after the first answer was read, so the graded criterion was changed to fit the answer.",
+          "It classified the bulk-approval and partial-edit answers as passed although a required criterion of each was unmet, by treating partial credit as a pass."
+        ]
+      },
+      {
+        "recorded_at": "2026-10-04T04:00:00.000Z",
+        "fate": "discarded",
+        "reasons": [
+          "It was a mixed generation: eight scenarios came from a run under the pre-correction fixture, and only the outbound-channel and bounded-discovery scenarios were re-run after the fixture was corrected, so it would have reported a single coherent cohort while actually mixing two fixture revisions.",
+          "Its source bindings declared an execution-time runner digest that no offline check could tie to any reviewable bytes; live dispatch is Parent-mediated, so the corrected contract rejects an execution-time runner claim outright rather than policing it."
+        ]
+      }
+    ],
+    "fixture_corrections": [
+      "unlocked-branches-after-bulk-approval: the two dependent branches now carry no recommendation, so the batch approval genuinely cannot decide them and the scenario measures re-asking on the newly unblocked frontier.",
+      "clear-zero-question-request: the turn no longer supplies the expected single branch as a hint; it asks for the sourced branch generally, so the answer is not graded against leaked prompt text.",
+      "new-outbound-channel-delta: the prompt now supplies all four sources (article, mock, read-only database, colleague's model-quality note) and the turn asks the answer to classify its evidence, so the four-class criterion is elicitable from the prompt rather than assumed.",
+      "bounded-discovery-and-partial-edit-recovery: the partial patch belongs to the task's own implementation step, the probe's listing is genuinely truncated, and the checklist now additionally covers reading the remaining bounded pages instead of re-running a broad search."
+    ]
+  },
   "provenance": {
-    "collection": "foreground Agent tool results read by the Parent; each scenario's text was inspected for the concrete decisions listed above",
+    "collection": "foreground Agent tool results read by the Parent; each scenario's text was graded criterion by criterion against the cohort's successChecklist",
+    "grading": "every required criterion of every scenario was linked to the recorded transcript decision that substantiates it and graded against that observation; a scenario passes only when all of its criteria are met and every assessment agrees with the recorded outcome",
     "model_self_report_trusted": false,
     "parent_independent_inspection": true,
-    "retention": "sanitized decisions only; no raw transcript, secret or credential is stored"
+    "retention": "sanitized decisions only; no raw transcript, secret or credential is stored",
+    "dispatch": "parent-mediated foreground Agent dispatch: the Parent read each foreground Agent tool result directly and graded every criterion itself; no child self-report was trusted and no native confirmation was impersonated."
   }
 }

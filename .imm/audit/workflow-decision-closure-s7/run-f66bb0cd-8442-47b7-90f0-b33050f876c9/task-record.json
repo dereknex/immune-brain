@@ -1,0 +1,611 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "workflow-decision-closure-s7",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "workflow-decision-closure-s7",
+    "goal": "Validate the stabilized workflow through ten bounded sanitized multi-turn foreground scenarios and persist truthful source-bound provider evidence, offline checks and release results.",
+    "acceptance": [
+      {
+        "id": "WDC-S7-A1",
+        "assertion": "Implement S7 of docs/specs/workflow-decision-closure.spec.md. Reuse the benchmark collector/record path for the complete ten-scenario cohort, one supported disclosed Host model, serial foreground dispatch, one attempt per scenario, no nesting or auto-retry. Resolve exact model/authorized budget first and perform live runs outside deterministic QA; use simulated authority/publication seams, never real commits, Issue writes or Enrollment as scenario effects. Independently inspect concrete transcript decisions/calls; record sanitized complete outcomes, contract/fixture/source hashes, provenance and available Host metrics, marking unknown cost/telemetry and incomparable baselines honestly. Persist source-bound live evidence and a concise report; offline tests fail on missing/duplicate/undisclosed/contract-only outcomes, on a pass whose recorded criteria do not cover the scenario's full successChecklist, and on fingerprint/provenance drift, and must not call a model. A failed scenario closes S7 only when the evidence discloses its unmet criterion and observed deviation and the report states that the workflow contract remains correct while the under-test model deviates on that bounded behavior; an undisclosed failure, partial credit recorded as a pass, or totals that hide it still fail. Preserve legacy benchmark modes and negative controls. Required typecheck/build/release checks also pass before Review. Static-only checks or absent live evidence leave S7 and the Initiative incomplete; this bounded cohort does not claim universal Host/provider correctness or fix external H1.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-behavior-evidence.test.ts\",\n      \"tests/benchmark-eval-runner.test.ts\",\n      \"tests/benchmark-baseline-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/workflow-decision-closure-s7.intent.json",
+      "docs/reports/workflow-decision-closure-behavior.md",
+      "docs/specs/workflow-decision-closure.spec.md",
+      "scripts/benchmark_eval.ts",
+      "tests/benchmark-baseline-contract.test.ts",
+      "tests/benchmark-eval-runner.test.ts",
+      "tests/fixtures/workflow-decision-closure-benchmark.json",
+      "tests/fixtures/workflow-decision-closure-evidence.json",
+      "tests/workflow-behavior-evidence.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/workflow-decision-closure-s7.intent.json",
+    "content_hash": "sha256:ec0eeb6133ecb93f29c88ab0ac8424d62d833d10939ecdf586ac7762f6a38bee"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:d373ec33ec6230925baf3fbc5c58b701a43e603c64fa80078ec97094bab1adee",
+  "git_base_head": "24c0b665cd237015eef29166714c5dba20a67a8a",
+  "attestations": [
+    {
+      "id": "approval-qa-cb0fcec2",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d373ec33ec6230925baf3fbc5c58b701a43e603c64fa80078ec97094bab1adee",
+      "diff_hash": "sha256:2ede4403046daad9faa717ebecde0dad7a75393f4c3ed33ef4322c0967260b9b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:be50b09eb59506123d98008c0479239eafbd96c5da03b74824a00394ccd29105",
+      "acceptance_results": [
+        {
+          "acceptance_id": "WDC-S7-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:be50b09eb59506123d98008c0479239eafbd96c5da03b74824a00394ccd29105"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-2c47b2f7",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d373ec33ec6230925baf3fbc5c58b701a43e603c64fa80078ec97094bab1adee",
+      "diff_hash": "sha256:6732a99edbf9b9ad1928be88b4a2e6dcc2f5cbe42f5a97b3e53c30f71dda4c98",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:065dfb29f2dea602720cf6cf538bf83d6306e8afae75f4e97dcfeb7c98222b81",
+      "acceptance_results": [
+        {
+          "acceptance_id": "WDC-S7-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:065dfb29f2dea602720cf6cf538bf83d6306e8afae75f4e97dcfeb7c98222b81"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-a1038c16",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:ec0eeb6133ecb93f29c88ab0ac8424d62d833d10939ecdf586ac7762f6a38bee",
+      "diff_hash": "sha256:ff5664a27dec7f8a9312fbbf2e284b106ff0f9988cc1169eebd56f8067ea9ab0",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:c0ec7ab1ee8c2c180bb73c46211d96a25972a631c2a2bddc7d2cb090d026564e",
+      "acceptance_results": [
+        {
+          "acceptance_id": "WDC-S7-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:c0ec7ab1ee8c2c180bb73c46211d96a25972a631c2a2bddc7d2cb090d026564e"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-50dacecf",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:ec0eeb6133ecb93f29c88ab0ac8424d62d833d10939ecdf586ac7762f6a38bee",
+      "diff_hash": "sha256:8073bccdb41ae9b67b1798e027b58cf1a038c02e304d0d0bd35448989234b96e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:67f27055a66d2ac83a811ee85f13678cb516a737c2c1ed8d00fbde676ee008c9",
+      "acceptance_results": [
+        {
+          "acceptance_id": "WDC-S7-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:67f27055a66d2ac83a811ee85f13678cb516a737c2c1ed8d00fbde676ee008c9"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-b2ec6911",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:ec0eeb6133ecb93f29c88ab0ac8424d62d833d10939ecdf586ac7762f6a38bee",
+      "diff_hash": "sha256:42134adc4014f920fc1f0ad79cf60cdb3cea608f43953463258549a0c42f608a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:dc4c5ea03dd52eac9d426f793d6b8f2d59280117102062f6a399b9c1f838fdab",
+      "acceptance_results": [
+        {
+          "acceptance_id": "WDC-S7-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:dc4c5ea03dd52eac9d426f793d6b8f2d59280117102062f6a399b9c1f838fdab"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-d5a48035",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:ec0eeb6133ecb93f29c88ab0ac8424d62d833d10939ecdf586ac7762f6a38bee",
+      "diff_hash": "sha256:42134adc4014f920fc1f0ad79cf60cdb3cea608f43953463258549a0c42f608a",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 manifest_digest、immutable revision 的唯一 parent/tree、全部 changed_paths 及 source bindings；十场景证据明确披露 8 passed/2 failed，逐项 criterion linkage、失败披露和离线负向检查与当前 acceptance 一致，未发现阻断问题；QA 采用 Kernel 提供的通过结果，原始 transcript 未保留所限制的离线复核范围已如实披露。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "24c0b665cd237015eef29166714c5dba20a67a8a",
+        "review_commit": "eded2cb842350a52b3cce6d8345c604a8a50f2f7",
+        "review_tree": "824e69fe7446e63bb1724af0901fa59c46d805a5",
+        "manifest_digest": "sha256:3b8ce3c3eaa5220fb3351aedda5456022301cc04b4953c373c05fb58fdca43bc"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-7be8cb54a236-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "WDC-S7-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "[P1] scripts/benchmark_eval.ts:1873-1883 accepts failed outcomes without reporting an issue; lines 1921-1948 only check summary consistency. A truthfully summarized failed cohort therefore passes verification. Reject every failed outcome and add a negative test with matching failed/passed totals.",
+      "anchor": "sha256:87894c5efc850ba764f1e0e3f5086c75d755e25c1c44a26b8c615fe14cbdbbd0",
+      "evidence": {
+        "trigger": "Invariant class: failed behavioral outcomes must prevent S7 closure. Starting with the checked-in evidence, set scenarios[0].outcome to 'failed', cohort_summary.scenarios_passed to 9, and cohort_summary.scenarios_failed to 1. All remaining fields and hashes stay unchanged. The checker records the failed outcome, derives matching counts, and returns ok=true because no branch rejects failure itself. tests/workflow-behavior-evidence.test.ts:559-565 only exercises a failed outcome with an inconsistent summary, leaving this consistent-failure case uncovered.",
+        "caller_chain": [
+          "tests/workflow-behavior-evidence.test.ts::codesFor",
+          "scripts/benchmark_eval.ts::checkWorkflowBehaviorEvidence"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "WDC-S7-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-7be8cb54a236-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "WDC-S7-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "[P1] tests/fixtures/workflow-decision-closure-evidence.json:249-270 marks an explicitly unmet required criterion as passed, and docs/reports/workflow-decision-closure-behavior.md:11-18 claims S7 closure. Grade the recorded results against every required criterion, correct totals and report, and leave S7 incomplete unless a separately authorized corrective run supplies passing evidence.",
+      "anchor": "sha256:60bf6f8b91d1f42f110cc787b67f2a3022b5089600d7fb67f73bc49c5fd4d8ed",
+      "evidence": {
+        "trigger": "Invariant class: complete-checklist grading, not partial-credit closure. The partial-edit scenario's required criterion at tests/fixtures/workflow-decision-closure-benchmark.json:205 requires inspecting the partial edit and retrying only unfinished work. Evidence lines 253 and 268 explicitly record reverting or stashing instead, yet lines 249 and 269 classify the scenario as passed because other criteria succeeded. A second instance occurs at evidence lines 136-140: the bulk-approval result closes all five branches and asks nothing, whereas benchmark lines 90-91 require three resolved branches and two newly askable dependent branches. These concrete observations contradict the all-ten-passed claim. The unchanged docs/specs/workflow-decision-closure.spec.md was read because WDC-S7-A1 directly incorporates its S7 grading and closure requirements.",
+        "caller_chain": [
+          "tests/fixtures/workflow-decision-closure-benchmark.json",
+          "tests/fixtures/workflow-decision-closure-evidence.json",
+          "docs/reports/workflow-decision-closure-behavior.md"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "WDC-S7-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-7be8cb54a236-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "WDC-S7-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "[P2] scripts/benchmark_eval.ts:1770-1778 treats missing contract bindings as an empty valid list, allowing required provenance to disappear without verification failure. Require the cohort's expected contract-binding identities and add removal/substitution negative controls.",
+      "anchor": "sha256:619f27d15b112610fc902a8811ce9f765e56c03d794e7ebe3c913523ac07dfcd",
+      "evidence": {
+        "trigger": "Invariant class: fingerprint/provenance completeness. Delete source_bindings.contracts from the otherwise unchanged checked-in evidence. boundPaths stops collecting those sources, and checkWorkflowBehaviorEvidence substitutes an empty array and checks no contract fingerprints; no other condition rejects the deletion, so required provenance can disappear.",
+        "caller_chain": [
+          "scripts/benchmark_eval.ts::boundPaths",
+          "scripts/benchmark_eval.ts::checkWorkflowBehaviorEvidence"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "WDC-S7-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-1ee909ff59c6-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "WDC-S7-A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "判定与具体证据不一致：tests/fixtures/workflow-decision-closure-evidence.json:193-200 将 new-outbound-channel-delta 记为 passed、criteria_met=4，但保存的决策只区分 policy/resource-boundary/execution，并未支持 fixture:149 要求的 documentation/mock/real-channel/model-quality 四类区分。scripts/benchmark_eval.ts:1918-1929 只比较申报数量，不能证明该条件已满足。请从实际观察结果补全该条件的准确脱敏证据；若实际未满足，应记录失败并撤回全通过结论，不能修改标准迁就答案。",
+      "anchor": "sha256:5a79eb427ab254c6b14c1002feea0625cb0a3e7b2b689486a6aac3c5eaf72b68",
+      "evidence": {
+        "trigger": "Invariant class: criterion-supported grading, not merely matching criterion totals. The checked-in outbound-channel scenario reports four met criteria while its fourth observed decision names a different classification from the required fourth criterion.",
+        "caller_chain": [
+          "tests/fixtures/workflow-decision-closure-benchmark.json:new-outbound-channel-delta.successChecklist",
+          "tests/fixtures/workflow-decision-closure-evidence.json:new-outbound-channel-delta",
+          "scripts/benchmark_eval.ts:checkWorkflowBehaviorEvidence",
+          "docs/reports/workflow-decision-closure-behavior.md:Conclusion"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "WDC-S7-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-1ee909ff59c6-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "WDC-S7-A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "执行时的 source fingerprint 未受验证：scripts/benchmark_eval.ts:1768-1786、2069-2083 均忽略 runner_source_at_recording，因此删除或篡改这个实际运行源码绑定也不会产生失败。当前 evidence.json:85-93 已明确记录执行与交付 hash 不同，而 docs/reports/workflow-decision-closure-behavior.md:100-101 却声称二者相等。请明确区分执行/交付绑定，为执行源码身份提供可离线验证的依据及删除、篡改负控，并同步纠正报告；不要以更新交付 hash 替代运行 provenance。",
+      "anchor": "sha256:9f2d158bb81580dc9b9e7619927046b4b7c9cddcfffd9cc42da92760e3762620",
+      "evidence": {
+        "trigger": "Invariant class: execution-source provenance integrity. Starting with the otherwise valid checked-in evidence, remove source_bindings.runner_source_at_recording or replace its path/hash with arbitrary values. Neither boundPaths nor checkWorkflowBehaviorEvidence reads that field, so all existing checks are unchanged.",
+        "caller_chain": [
+          "scripts/benchmark_eval.ts:verifyWorkflowBehaviorEvidenceFiles",
+          "scripts/benchmark_eval.ts:boundPaths",
+          "scripts/benchmark_eval.ts:checkWorkflowBehaviorEvidence",
+          "tests/fixtures/workflow-decision-closure-evidence.json:source_bindings"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "WDC-S7-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-1ee909ff59c6-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "WDC-S7-A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "规定的 cohort 行为覆盖缺项：tests/fixtures/workflow-decision-closure-benchmark.json:200-214 的最后一个场景仅覆盖已结束的 discovery 和部分 patch，没有 truncated output、必要信息缺失或分页恢复输入，也没有相应观察结果。直接由 acceptance 引用而读取的 unchanged docs/specs/workflow-decision-closure.spec.md:105 明确要求 bounded discovery/truncation/partial-edit recovery，:101 定义必要截断材料的分页恢复行为。请在该场景补足 truncation 输入和判断标准，并取得对应的授权 live evidence；离线结构通过不能替代这项观察。",
+      "anchor": "sha256:1990b80939fc658ba73daf85e294368b200c1833451792b249a6198283692c94",
+      "evidence": {
+        "trigger": "Invariant class: complete behavioral coverage of the approved cohort. The final scenario begins after every flag read site has already been located and asks only about stopping discovery and recovering a partially applied patch. Neither its inputs, turns, checklist nor retained observed decisions exercises truncated material.",
+        "caller_chain": [
+          "docs/specs/workflow-decision-closure.spec.md:S7",
+          "tests/fixtures/workflow-decision-closure-benchmark.json:bounded-discovery-and-partial-edit-recovery",
+          "tests/fixtures/workflow-decision-closure-evidence.json:bounded-discovery-and-partial-edit-recovery",
+          "docs/reports/workflow-decision-closure-behavior.md:Conclusion"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "WDC-S7-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-bfc0354582bd-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "WDC-S7-A1",
+      "source": "review",
+      "review_round": 3,
+      "summary": "Criterion-level outcome integrity 尚未完整保护：scripts/benchmark_eval.ts:1922-1955 只比较 criteria_met 数量，允许明确记录 unmet_criteria 的场景被标为 passed，也允许失败记录用任意字符串替换真正的未满足 criterion；2022-2041 对 deviation classification 仅检查非空，不检查与 outcome 一致。最小修复是拒绝携带未满足 criterion 的 pass、验证 unmet_criteria 是该场景 successChecklist 的唯一有效成员，并检查 deviation classification 与 outcome 一致；在 tests/workflow-behavior-evidence.test.ts:686-726 补充这些组合负例。",
+      "anchor": "sha256:dd2fce2082227cf2af1c9f13fe660573e8cfa023a2e15f64682e179da5b62192",
+      "evidence": {
+        "trigger": "Invariant class: criterion-level outcome integrity。此前接受的数量校验修复能拒绝 criteria_met 不足的 pass，但没有覆盖 outcome、明确的未满足 criterion 和 deviation classification 互相矛盾的状态。仅将 bounded-discovery-and-partial-edit-recovery.outcome 改为 passed、criteria_met 改为 5，并将 summary 的 passed/failed 改为 10/0；保留原 unmet_criteria、failure_class 和 classified_as=scenario_failed_requiring_disclosure，immutable-source pure checker 仍返回 ok:true。另一个同类触发是保持 failed 和 4/5 tally，仅将 unmet_criteria 改为 [\"undisclosed\"]，checker 同样通过，因为它没有验证实际 criterion 身份。",
+        "caller_chain": [
+          "tests/fixtures/workflow-decision-closure-evidence.json",
+          "scripts/benchmark_eval.ts::verifyWorkflowBehaviorEvidenceFiles",
+          "scripts/benchmark_eval.ts::checkWorkflowBehaviorEvidence"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "WDC-S7-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-d3f23f6edd95-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "WDC-S7-A1",
+      "source": "review",
+      "review_round": 4,
+      "summary": "Criterion-evidence completeness invariant remains unenforced: scripts/benchmark_eval.ts:1916-1959 accepts a full numeric criteria_met tally with only two arbitrary observed decisions, without recording which successChecklist criteria those observations substantiate. Persist checklist-linked, sanitized criterion assessments with concrete observations; require complete, unique criterion coverage and consistent outcomes in the offline verifier, and add an omitted-criterion negative control. Correct the evidence and report from actual observations rather than weakening the checklist or assuming omitted behavior occurred.",
+      "anchor": "sha256:93c774831b0bbead163b14c421bff5b9b8c4b19c574ed767340bd289f31c4cdf",
+      "evidence": {
+        "trigger": "Invariant class: criterion-evidence completeness, third variant of the same criterion-integrity class. Start with the checked-in evidence and unchanged cohort/hash bindings. In complete-integration-handoff, retain only the first two observed_decisions while leaving outcome='passed' and criteria_met=4. The explicit observation that prototype-only delivery is a conservation failure disappears, but decisions.length remains 2, the numeric tally still equals the checklist length, and all other checks remain satisfied. The previously implemented tally, unmet-criterion membership and deviation-classification guards cover numerical consistency and failure bookkeeping, but do not establish that recorded observations cover every required criterion. The existing publication record likewise omits concrete support for required readback details while claiming full credit.",
+        "caller_chain": [
+          "tests/fixtures/workflow-decision-closure-benchmark.json:scenarios[].successChecklist",
+          "tests/fixtures/workflow-decision-closure-evidence.json:scenarios[].observed_decisions",
+          "scripts/benchmark_eval.ts:verifyWorkflowBehaviorEvidenceFiles",
+          "scripts/benchmark_eval.ts:checkWorkflowBehaviorEvidence",
+          "tests/workflow-behavior-evidence.test.ts:636-683"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "WDC-S7-A1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:workflow-decision-closure-s7:2026-10-04T03:17:12.675Z",
+      "at": "2026-10-04T03:17:12.675Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-decision-closure-s7.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s7:2026-10-04T03:17:15.952Z",
+      "at": "2026-10-04T03:17:15.952Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-cb0fcec2\naction_v2_sha256:d40d2bcf43f7491657d51b86d5691291a7781e8ea8d7f7022c7cb171dc9bb8e8",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-2599e2b091d85ebb",
+        "issued_at": "2026-10-04T03:17:15.953Z",
+        "expires_at": "2026-10-04T03:27:15.953Z"
+      }
+    },
+    {
+      "id": "request_rework:workflow-decision-closure-s7:2026-10-04T03:22:10.826Z",
+      "at": "2026-10-04T03:22:10.826Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:3203e0083f322266ef9c363ab4c89847116810649324e8673141dc4636712a68",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-c968f569e006e342",
+        "issued_at": "2026-10-04T03:22:10.827Z",
+        "expires_at": "2026-10-04T03:32:10.826Z"
+      }
+    },
+    {
+      "id": "resolve_finding:workflow-decision-closure-s7:2026-10-04T04:33:10.423Z",
+      "at": "2026-10-04T04:33:10.423Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-7be8cb54a236-1-review-1\naction_v2_sha256:dd9caa7d1d98ba63337f449df424eac8811e4eb895a05cd85847d010e67f1d40"
+    },
+    {
+      "id": "resolve_finding:workflow-decision-closure-s7:2026-10-04T04:33:17.699Z",
+      "at": "2026-10-04T04:33:17.699Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-7be8cb54a236-3-review-3\naction_v2_sha256:046545c87502ad36f295a2a556837427ca8172622f5b0dc683a66ce60c3de725"
+    },
+    {
+      "id": "resolve_finding:workflow-decision-closure-s7:2026-10-04T04:33:24.908Z",
+      "at": "2026-10-04T04:33:24.908Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-7be8cb54a236-2-review-2\naction_v2_sha256:be57b5e17c5acdd9fc0542b3e8d4ba606378bad34286ea8722b176ebcba26223"
+    },
+    {
+      "id": "freeze_artifacts:workflow-decision-closure-s7:2026-10-04T04:33:32.756Z",
+      "at": "2026-10-04T04:33:32.756Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-decision-closure-s7.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s7:2026-10-04T04:33:35.922Z",
+      "at": "2026-10-04T04:33:35.922Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2c47b2f7\naction_v2_sha256:312765646a20e43ff3c2dbcc0fb021053cde0ce81e365dac0923316b8bc72e41",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-60f02781b0e9a129",
+        "issued_at": "2026-10-04T04:33:35.922Z",
+        "expires_at": "2026-10-04T04:43:35.922Z"
+      }
+    },
+    {
+      "id": "request_rework:workflow-decision-closure-s7:2026-10-04T04:38:50.964Z",
+      "at": "2026-10-04T04:38:50.964Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:0d61c9958a030022f61430b92d0047d592bded59bd50914cf72be6d26406eb6d",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-3c25835479353a4e",
+        "issued_at": "2026-10-04T04:38:50.964Z",
+        "expires_at": "2026-10-04T04:48:50.964Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:workflow-decision-closure-s7:2026-10-04T06:59:00.081Z",
+      "at": "2026-10-04T06:59:00.081Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:db2869f59866813ac6e1e3342869353a8c429dc7d76bd2d0d707903f58c9f3e2",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-01e7180328a06b08",
+        "issued_at": "2026-10-04T06:59:00.454Z",
+        "expires_at": "2026-10-04T07:09:00.454Z"
+      }
+    },
+    {
+      "id": "resolve_finding:workflow-decision-closure-s7:2026-10-04T06:59:12.661Z",
+      "at": "2026-10-04T06:59:12.661Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-1ee909ff59c6-1-review-1\naction_v2_sha256:25881325e0ad17d1fac379b519ca53e109ead0317ecc7906cae265e07ac1ecd9"
+    },
+    {
+      "id": "resolve_finding:workflow-decision-closure-s7:2026-10-04T06:59:36.699Z",
+      "at": "2026-10-04T06:59:36.699Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-1ee909ff59c6-2-review-2\naction_v2_sha256:180d5b22e3b774836dd5ff42c9eb825fcff9f2a7a1866c6bc7fdddc685ee4060"
+    },
+    {
+      "id": "resolve_finding:workflow-decision-closure-s7:2026-10-04T06:59:46.601Z",
+      "at": "2026-10-04T06:59:46.601Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-1ee909ff59c6-3-review-3\naction_v2_sha256:a0fe6fc49c251013f7dbe52525ce89c7123ebe47929eb6f6cec8e3c7189e848e"
+    },
+    {
+      "id": "freeze_artifacts:workflow-decision-closure-s7:2026-10-04T06:59:54.403Z",
+      "at": "2026-10-04T06:59:54.403Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-decision-closure-s7.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s7:2026-10-04T06:59:57.465Z",
+      "at": "2026-10-04T06:59:57.465Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-a1038c16\naction_v2_sha256:d8bb8cf6972a8fac5125356828eec6a047004eac808b908034a4c0a490f0db6d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d3200f8d5661e118",
+        "issued_at": "2026-10-04T06:59:57.465Z",
+        "expires_at": "2026-10-04T07:09:57.465Z"
+      }
+    },
+    {
+      "id": "request_rework:workflow-decision-closure-s7:2026-10-04T07:04:29.987Z",
+      "at": "2026-10-04T07:04:29.987Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_3\naction_v2_sha256:1bb26f10b03c4a3ca3e9a214212d95f3cedea5333d81aa420d0a685985001992",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-fbd664ecbc2f7986",
+        "issued_at": "2026-10-04T07:04:29.987Z",
+        "expires_at": "2026-10-04T07:14:29.987Z"
+      }
+    },
+    {
+      "id": "resolve_finding:workflow-decision-closure-s7:2026-10-04T07:15:17.380Z",
+      "at": "2026-10-04T07:15:17.380Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-bfc0354582bd-1-review-1\naction_v2_sha256:a8a296a96a6d377fe9c9ac573a6e431423871e6d8fa86a0eda48d7bf433a54bc"
+    },
+    {
+      "id": "freeze_artifacts:workflow-decision-closure-s7:2026-10-04T07:15:25.072Z",
+      "at": "2026-10-04T07:15:25.072Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-decision-closure-s7.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s7:2026-10-04T07:15:28.155Z",
+      "at": "2026-10-04T07:15:28.155Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-50dacecf\naction_v2_sha256:f0ffd1bf3f0ec6d7947af71e5aef70f1796fbe57799fb28169ffcbb3e4563786",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-72e0fa5fbfa7075b",
+        "issued_at": "2026-10-04T07:15:28.155Z",
+        "expires_at": "2026-10-04T07:25:28.155Z"
+      }
+    },
+    {
+      "id": "request_rework:workflow-decision-closure-s7:2026-10-04T07:19:19.116Z",
+      "at": "2026-10-04T07:19:19.116Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_4\naction_v2_sha256:1a8284cca426a39d9d19c61290d6c9087b0ee92dfbd69528569bf29137d671c1",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-f17755c9753078d1",
+        "issued_at": "2026-10-04T07:19:19.116Z",
+        "expires_at": "2026-10-04T07:29:19.116Z"
+      }
+    },
+    {
+      "id": "resolve_finding:workflow-decision-closure-s7:2026-10-04T07:33:51.845Z",
+      "at": "2026-10-04T07:33:51.845Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-d3f23f6edd95-1-review-1\naction_v2_sha256:7dfd65335a6e7312c9f2d8701ed2f89e992e49e828c288e67761bd4090568dbc"
+    },
+    {
+      "id": "freeze_artifacts:workflow-decision-closure-s7:2026-10-04T07:33:59.851Z",
+      "at": "2026-10-04T07:33:59.851Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-decision-closure-s7.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s7:2026-10-04T07:34:03.110Z",
+      "at": "2026-10-04T07:34:03.110Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-b2ec6911\naction_v2_sha256:8fd6eada40af6b0fba4eae960a7c16fde2aa06a26a4e79fba76799c6a5bdb6ed",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-606ac5865f928a56",
+        "issued_at": "2026-10-04T07:34:03.110Z",
+        "expires_at": "2026-10-04T07:44:03.110Z"
+      }
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s7:2026-10-04T07:37:08.675Z",
+      "at": "2026-10-04T07:37:08.675Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-d5a48035\naction_v2_sha256:888fcff87c7d47137de00c9f13363ea246823e02dba679f90a9bf6958572ebf7",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-528154cff918c78c",
+        "issued_at": "2026-10-04T07:37:08.675Z",
+        "expires_at": "2026-10-04T07:47:08.675Z"
+      }
+    },
+    {
+      "id": "complete:workflow-decision-closure-s7:2026-10-04T07:37:09.840Z",
+      "at": "2026-10-04T07:37:09.840Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:bcf3b55fd96879f9bdd4c6fc4a741c9450a7bca9dac18133eaf607a0d7c38070"
+    }
+  ]
+}

@@ -1,12 +1,11 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "workflow-decision-closure-s7",
-  "owner": "user",
   "goal": "Validate the stabilized workflow through ten bounded sanitized multi-turn foreground scenarios and persist truthful source-bound provider evidence, offline checks and release results.",
   "acceptance": [
     {
       "id": "WDC-S7-A1",
-      "assertion": "Implement S7 of docs/specs/workflow-decision-closure.spec.md. Reuse the benchmark collector/record path for the complete ten-scenario cohort, one supported disclosed Host model, serial foreground dispatch, one attempt per scenario, no nesting or auto-retry. Resolve exact model/authorized budget first and perform live runs outside deterministic QA; use simulated authority/publication seams, never real commits, Issue writes or Enrollment as scenario effects. Independently inspect concrete transcript decisions/calls; record sanitized complete outcomes, contract/fixture/source hashes, provenance and available Host metrics, marking unknown cost/telemetry and incomparable baselines honestly. Persist source-bound live evidence and a concise report; offline tests fail on missing/failed/duplicate/contract-only outcomes or fingerprint/provenance drift and must not call a model. Preserve legacy benchmark modes and negative controls. Required typecheck/build/release checks also pass before Review. Static-only checks or absent live evidence leave S7 and the Initiative incomplete; this bounded cohort does not claim universal Host/provider correctness or fix external H1.",
+      "assertion": "Implement S7 of docs/specs/workflow-decision-closure.spec.md. Reuse the benchmark collector/record path for the complete ten-scenario cohort, one supported disclosed Host model, serial foreground dispatch, one attempt per scenario, no nesting or auto-retry. Resolve exact model/authorized budget first and perform live runs outside deterministic QA; use simulated authority/publication seams, never real commits, Issue writes or Enrollment as scenario effects. Independently inspect concrete transcript decisions/calls; record sanitized complete outcomes, contract/fixture/source hashes, provenance and available Host metrics, marking unknown cost/telemetry and incomparable baselines honestly. Persist source-bound live evidence and a concise report; offline tests fail on missing/duplicate/undisclosed/contract-only outcomes, on a pass whose recorded criteria do not cover the scenario's full successChecklist, and on fingerprint/provenance drift, and must not call a model. A failed scenario closes S7 only when the evidence discloses its unmet criterion and observed deviation and the report states that the workflow contract remains correct while the under-test model deviates on that bounded behavior; an undisclosed failure, partial credit recorded as a pass, or totals that hide it still fail. Preserve legacy benchmark modes and negative controls. Required typecheck/build/release checks also pass before Review. Static-only checks or absent live evidence leave S7 and the Initiative incomplete; this bounded cohort does not claim universal Host/provider correctness or fix external H1.",
       "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-behavior-evidence.test.ts\",\n      \"tests/benchmark-eval-runner.test.ts\",\n      \"tests/benchmark-baseline-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
     }
   ],
@@ -22,5 +21,6 @@
     "tests/workflow-behavior-evidence.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

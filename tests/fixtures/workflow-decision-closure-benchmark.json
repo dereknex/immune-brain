@@ -36,7 +36,15 @@
   },
   "evidence": {
     "claim_scope": "provider_runtime",
-    "runtime_advisory_metrics": "unavailable"
+    "runtime_advisory_metrics": "unavailable",
+    "required_bindings": [
+      "docs/specs/workflow-decision-closure.spec.md",
+      "tests/fixtures/workflow-decision-closure-benchmark.json",
+      "scripts/benchmark_eval.ts",
+      "plugins/immune-brain/dist/imm-brainstorm.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/BASELINE.md"
+    ]
   },
   "notes": [
     "One bounded sanitized cohort: ten multi-turn workflow-decision scenarios, serial foreground dispatch, one attempt per scenario, no automatic retry and no scenario child spawning.",
@@ -81,7 +89,7 @@
       "id": "unlocked-branches-after-bulk-approval",
       "title": "Bulk approval unlocks dependent branches",
       "purpose": "Check that a batch approval closes the approved frontier and re-asks only on the newly unblocked frontier.",
-      "userInput": "In this copied fixture, five decisions were open. The user replied `all recommendations adopted`. Two of the five were dependent-blocked by the other three. Report what closes, what becomes askable, and whether any decided branch is asked again.",
+      "userInput": "In this copied fixture, five decisions were open. Three were independent and each already carried a recommendation. The other two were dependent-blocked: they carried no recommendation yet, because their options only follow from how the first three are decided. The user replied `all recommendations adopted`. Report what closes, what becomes askable, and whether any decided branch is asked again.",
       "turns": [
         "State the closing state of each of the five branches after the batch approval.",
         "State what you ask next, and confirm you do not reconfirm any already-decided branch."
@@ -99,7 +107,7 @@
       "purpose": "Check that a zero-question fast path still performs relevant coverage.",
       "userInput": "In this copied fixture, the request is: fix the README typo `teh` to `the`, preserving all other text and behavior. No other decision is pending. Report whether you ask the user anything, and what coverage check you ran.",
       "turns": [
-        "Name the one branch this request is sourced from (the README typo requirement) and its closing state.",
+        "Name the decision branch this request is sourced from and its closing state, and say whether any decision question is asked.",
         "Confirm that the same coverage check runs for a clear zero-question request, without adding a confirmation round."
       ],
       "successChecklist": [
@@ -129,16 +137,16 @@
       "id": "new-outbound-channel-delta",
       "title": "A new outbound channel is a material delta",
       "purpose": "Check that an existing research channel is reused rather than a new provider being assumed.",
-      "userInput": "In this copied fixture, the user asked for a research summary of an external article. AGENTS.md records the existing project channel as the local project gateway and the existing data scope as public project documentation. A public article and a read-only local database are available. Report whether routing a live model call through a different provider is authorized.",
+      "userInput": "In this copied fixture, the user asked for a research summary of an external article. AGENTS.md records the existing project channel as the local project gateway and the existing data scope as public project documentation. Four sources are available: the public article itself; a local mock fixture that stands in for the provider response; a read-only local database; and an earlier model-quality note written by a colleague about a different provider. Report whether routing a live model call through a different provider is authorized.",
       "turns": [
-        "State what the article, the mock and the read-only database do and do not authorize.",
-        "State what you would do about the different provider, and name the distinct evidence classes in your report."
+        "State what each source - the public article, the mock fixture, the read-only database and the model-quality note - does and does not authorize.",
+        "State what you would do about the different provider, and classify each piece of evidence you would report by its class."
       ],
       "successChecklist": [
         "Treats the different provider or new channel as an authorization delta.",
-        "States that a public article, a mock or a read-only database authorizes no new provider.",
+        "States that a public article, a mock fixture, a read-only database or a colleague's model-quality note authorizes no new provider.",
         "Reuses the existing project channel instead of silently routing elsewhere.",
-        "Keeps documentation, mock, real-channel and model-quality evidence distinct."
+        "Keeps documentation, mock, real-channel and model-quality evidence distinct rather than merging them into one verified claim."
       ]
     },
     {
@@ -193,16 +201,17 @@
       "id": "bounded-discovery-and-partial-edit-recovery",
       "title": "Bounded discovery and partial-edit recovery",
       "purpose": "Check that discovery stays bounded and a partial effect is inspected before a retry.",
-      "userInput": "In this copied fixture, an investigation is asked to find where one flag is read. A previous patch step wrote two of three files and then failed. The probe has already read the flag's definition. Report your next actions.",
+      "userInput": "In this copied fixture, a bounded investigation asked which component owns the flag's single write site. Its probe has located every read site, but the listing that identifies the writer's owner returned a truncated result: the bounded page ended before the owner's path and the truncation note states that more lines remain. Separately, the task's own implementation step is mid-flight: its three-file patch wrote the first two files correctly and then failed before writing the third. Report your next actions.",
       "turns": [
-        "State the probe's scope, its stop condition, and what you refuse to do.",
-        "State how you treat the partially applied patch before retrying anything."
+        "State the probe's bounded question, scope and stop condition, and what you refuse to do.",
+        "State how you handle the truncated result, and how you treat the partially applied patch before retrying anything."
       ],
       "successChecklist": [
-        "States a bounded question, scope and stop condition.",
+        "States a bounded question, scope and stop condition for the ownership question.",
         "Expands only along proved callers and refuses a repository-wide sweep.",
-        "Stops once the question is closed instead of continuing into nearby paths.",
-        "Inspects the partial edit and retries only the unfinished part, reporting the result as partial."
+        "Reads the remaining bounded pages of the truncated result because the owner path is still required, instead of re-running a broad search.",
+        "Stops once the ownership question is closed rather than continuing into nearby paths.",
+        "Inspects the already-applied files instead of reverting or discarding them, retries only the unfinished third file, and reports the result as partial."
       ]
     }
   ]
