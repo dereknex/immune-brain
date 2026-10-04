@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "workflow-decision-closure-s6",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:workflow-decision-closure-s6:2026-10-03T14:41:48.331Z",
+  "final_record_hash": "sha256:ea06ef144d9830831387d2facd98c64ae601afe0125f0609cd1f1fa4fcfcade5",
+  "terminalized_at": "2026-10-03T14:41:48.331Z"
+}

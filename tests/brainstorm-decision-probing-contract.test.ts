@@ -177,6 +177,8 @@ describe("Brainstorm decision probing contracts", () => {
 			"clear-request-zero-questions",
 			"bulk-approval-no-new-delta",
 			"delegated-technical-choice-resolves-without-asking",
+			"multi-turn-relevant-coverage-complete",
+			"full-outcome-conserved-not-narrowed",
 		]);
 		expect(new Set(focusedIds).size).toBe(focusedIds.length);
 		expect(focusedIds.some((id: string) => generalIds.includes(id))).toBe(

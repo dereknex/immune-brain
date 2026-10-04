@@ -4,6 +4,18 @@
 
 ## Eligibility
 
+Before any dispatch, state the bounded question and scope: the question being
+investigated, the named paths the probe may read, the expected evidence, and the
+stop condition that closes the probe. A probe without a stated stop condition is
+an open-ended sweep, not a bounded one.
+
+Read known paths directly first. Expand along proved callers, dependencies, and
+state owners only when a concrete missing fact requires it, and stop once the
+question is closed; do not continue reading because a path is nearby. Repository-wide
+listings, unrelated directories, and other projects' session logs are out of
+scope. Project-specific log or history searches stay inside the named project
+paths; do not scan external session directories unless the user explicitly asks.
+
 派发前依次执行：
 
 1. 从任务摘要、changed paths 和显式请求分类为 `trivial`、`single_domain`、`multi_domain` 或 `high_risk`。
@@ -12,6 +24,23 @@
 4. 只有边界清晰、Pi 暴露 `Agent` 工具且满足 authorization 时才派发。
 
 常用 fallback reason：`cost_scope_mismatch`、`unavailable_environment`、`host_authorization_required`、`trigger_not_hit`、`unclear_boundary`。
+
+### Parallel Local Calls And Partial Results
+
+Independent local calls may be issued together and their results inspected
+together, `Promise.allSettled`-style, so one failure does not discard the other
+results. Dependent actions stay ordered: an action that needs another's output
+waits for it. Do not use a settled-all barrier for work that has a real sequence
+dependency.
+
+When output is truncated, continue in bounded pages only while the material is
+still needed for the question; do not restart the read from the top or expand it
+into a full-file sweep. Before retrying an operation that may have partially
+succeeded, inspect what it already produced: a partial edit or partial write is
+retried only for the part that is actually unfinished, never replayed wholesale.
+Telemetry and tool-call counts are observational; they never justify omitting
+evidence the question still requires, and they are not comparable to another
+session's numbers unless the inputs and environment match.
 
 ## Authorization
 
@@ -103,6 +132,7 @@ Parent workflow role 必须：
 3. 保留 source lens 和 candidate attribution。
 4. 把 partial/error 标记为 `degraded`。
 5. 保留自身 baseline review，不把最终判断权交给 child。
+6. 报告 partial 结果时说明哪些部分已完成、哪些仍未完成，不把部分结果当作完整结果。
 
 普通 advisory/discovery 的每次启动都消耗一个 candidate budget slot；失败、取消、timeout 或 result_untrusted 均丢弃该输出且不得自动重试。Parent 仅在剩余候选仍独立有用且 evidence budget 仍需要时继续，否则转 solo/fail-closed fallback，并记录 `dispatch_failed` 或 `child_timeout`。Read-only eligibility 与 Pi 的 one-foreground-child 调度限制是两回事：只读调查可同时存在多个待派发候选，但实际执行仍逐个 foreground child 串行消费，不得把多个 foreground Agent 假定为并发 batch。该规则不改变 Kernel authority Review 的显式恢复协议。Child 永远不获得实现、Plan write、workflow mutation 或 QA closure authority。
 

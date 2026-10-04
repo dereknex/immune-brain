@@ -8885,6 +8885,17 @@ function createGhTransport(binary = "gh") {
       return new Promise((complete) => {
         let stdout = Buffer.alloc(0);
         let stderr = Buffer.alloc(0);
+        const remaining = options.budget === undefined ? GH_TIMEOUT_MS : Math.min(GH_TIMEOUT_MS, options.budget.deadline_ms - Date.now());
+        if (options.budget && (options.budget.signal?.aborted || remaining <= 0)) {
+          complete({
+            exit_code: 1,
+            stdout: "",
+            stderr: options.budget.signal?.aborted ? "operation cancelled by the caller" : "publication deadline exceeded before the next remote call",
+            timed_out: true,
+            output_exceeded: false
+          });
+          return;
+        }
         let timedOut = false;
         let outputExceeded = false;
         let timer;
@@ -8942,7 +8953,7 @@ function createGhTransport(binary = "gh") {
         timer = setTimeout(() => {
           timedOut = true;
           child.kill("SIGKILL");
-        }, GH_TIMEOUT_MS);
+        }, remaining);
         child.once("close", (code) => {
           finish(code ?? 1);
         });
@@ -9045,6 +9056,33 @@ function findIssue(issues, primary, required) {
 function initiativeLookup(issues, repositoryId, initiativeId) {
   const initiative = marker("initiative-id", initiativeId);
   return findIssue(issues, [initiative, KIND_INITIATIVE_MARKER], [marker("repo-id", repositoryId), initiative]);
+}
+function publishedIntentHashMarkers(body) {
+  return [...body.matchAll(/<!-- immune-brain:intent-hash=([A-Za-z0-9][A-Za-z0-9._:-]{0,127}) -->/g)].map((match) => match[1]);
+}
+function publishedIntentIdentity(body) {
+  const hashes = publishedIntentHashMarkers(body);
+  if (hashes.length === 0)
+    return { kind: "absent" };
+  if (hashes.length === 1)
+    return { kind: "bound", hash: hashes[0] };
+  return { kind: "ambiguous", hashes };
+}
+function publishedIntentMismatch(body, taskId, expected) {
+  const identity = publishedIntentIdentity(body);
+  if (identity.kind === "ambiguous")
+    return `published Task ${taskId} carries ${identity.hashes.length} conflicting intent-hash markers; its published Intent identity is ambiguous`;
+  if (identity.kind === "absent" || expected === undefined)
+    return null;
+  if (identity.hash !== expected)
+    return `published Task ${taskId} was published from a different TaskIntent revision; the published identity no longer matches the Intent being published`;
+  return null;
+}
+function sameTrackedBody(current, expected) {
+  return stripPublishedIntentHash(current) === stripPublishedIntentHash(expected);
+}
+function stripPublishedIntentHash(body) {
+  return body.replace(/<!-- immune-brain:intent-hash=[A-Za-z0-9][A-Za-z0-9._:-]{0,127} -->\n?/g, "");
 }
 function ownershipMarkerValue(body, name) {
   const values = [...body.matchAll(new RegExp(`<!-- immune-brain:${name}=([A-Za-z0-9][A-Za-z0-9._-]{0,127}) -->`, "g"))];
@@ -9346,7 +9384,8 @@ function childBody(repository, operation, parent) {
     marker("repo-id", repository.id),
     marker("initiative-id", operation.initiative_id),
     marker("slice-id", operation.slice_id),
-    marker("task-id", operation.task_id)
+    marker("task-id", operation.task_id),
+    ...operation.intent_hash ? [marker("intent-hash", operation.intent_hash)] : []
   ].join(`
 `)}
 
@@ -9515,8 +9554,11 @@ async function upsertTask(root, gh, operation, source, pendingBinding = null, am
         return result(operation.op, "ambiguous_remote_state", `new pending Task ${operation.task_id} is unbound but Issue #${child.number} already exists with divergent content; bind it to amend`, found.issue);
       return updatePendingChild(root, gh, source, operation, child, undefined, blockers, approvedFinal, amendmentContext);
     }
-    if (found.issue.body !== body || found.issue.title !== title)
+    if (!sameTrackedBody(found.issue.body, body) || found.issue.title !== title)
       return result(operation.op, "permanent_failure", "Task Issue already exists with a different title or Agent Brief; edit the GitHub source or retry the original projection before changing native relations", found.issue);
+    const intentMismatch = publishedIntentMismatch(found.issue.body, operation.task_id, operation.intent_hash);
+    if (intentMismatch)
+      return result(operation.op, "ambiguous_remote_state", intentMismatch, found.issue);
     const observedLabelArgs = labelMutationArgs(child.labels, desiredTaskLabels(operation));
     if (observedLabelArgs.length) {
       const edited = await gh.run([
@@ -9552,8 +9594,11 @@ async function upsertTask(root, gh, operation, source, pendingBinding = null, am
   if ("contract" in finalSource)
     return finalSource;
   const finalChild = ownedTaskLookup(finalSource.issues, finalSource.repository.id, operation.task_id, operation.initiative_id, operation.slice_id);
-  if (finalChild.kind !== "found" || finalChild.issue.id !== child.id || finalChild.issue.title !== title || finalChild.issue.body !== body)
+  if (finalChild.kind !== "found" || finalChild.issue.id !== child.id || finalChild.issue.title !== title || !sameTrackedBody(finalChild.issue.body, body))
     return result(operation.op, "ambiguous_remote_state", "Task Issue changed identity, title, or body during dependency publication", child);
+  const finalIdentityMismatch = publishedIntentMismatch(finalChild.issue.body, operation.task_id, operation.intent_hash);
+  if (finalIdentityMismatch)
+    return result(operation.op, "ambiguous_remote_state", finalIdentityMismatch, child);
   const finalChildOwnership = await confirmTerminalOwnership(root, gh, operation.op, finalSource, finalChild.issue);
   if (!("owned" in finalChildOwnership))
     return finalChildOwnership;

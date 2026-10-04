@@ -9,6 +9,20 @@
 - Stage only explicit task-owned paths. This staging authority does not grant
   commit, push, broad staging, or authority over pre-existing user changes.
   Never use `git add .` or `git add -A` in a dirty worktree.
+- Grant effects separately: staging, commit, push, publication, and outbound
+  model/data calls are distinct operations. Recovering a stage-only instruction
+  restores staging and nothing more; commit, push, and publication each keep
+  their own existing grant. An explicit approval already covering the same
+  operation, target, and impact — including a valid batch capability — stays
+  usable without another gate.
+- Before a new outbound effect, check the project's existing research channel and
+data scope. A public article, a mock, a documentation example, or a local
+read-only database gives no authority to call an arbitrary provider or send new
+data; authorize only a genuinely new channel/data/effect delta. Distinguish
+documentation, mock, real-channel, and model-quality evidence when reporting.
+- These text rules are instruction contracts, not a hard bash sandbox. They
+guide behavior and are checked as contracts; they do not technically prevent an
+arbitrary shell command, so authority gates and review remain the real boundary.
 - Do not create, switch, or delete Git worktrees; operate only in the Host launch directory.
 - Record reproducible evidence before reporting closure.
 - Required verification must pass before reporting completion; disclosing a gap is not a substitute. Autonomously diagnose, repair, and rerun failing conventional local checks within the authorized scope; never delete, skip, or weaken a valid check to manufacture a pass. If a required check remains failing or cannot run, report the work as incomplete with the concrete blocker.
@@ -81,7 +95,6 @@ non-Kernel operations, an explicit user approval already covering the same
 operation, target, and impact is sufficient; ask again only for a material delta.
 A generic continuation or configured preference is not blanket authorization.
 Mandatory native gates and hash-bound manifest approvals still apply.
-
 Privileged effects include:
 
 - publish, release, deployment, or remote-system mutation;
@@ -90,6 +103,10 @@ Privileged effects include:
 - authority discard, task stop, breaking intent revision, or risk/policy
   override; and
 - external writes whose target or impact cannot be safely reversed locally.
+
+An existing grant for one of these never inherits another: a stage-only
+instruction stays stage-only, a commit is not push or publication authority,
+and a valid batch capability commits only its own scope-bounded child.
 
 Routine Managed enrollment uses one current-Host native confirmation bound to the TaskIntent content hash after Planner validation. Explicit Plan-only requests stop with candidate artifacts and do not invoke Enrollment; execution-bearing requests open the native gate directly without chat pre-confirmation. Enrollment validates intent, Git ownership, scope, workspace claim, and final authority preconditions without executing acceptance descriptors; deterministic QA executes them after implementation. The routine task proceeds from that single confirmation through enrollment, execution, and QA without a second human stop. Do not request confirmation for local in-scope edits, local verification, ordinary Direct rework, scoped diff review, or completion reporting. Managed evidence, QA, Review, and completion authority remain governed by their Managed contracts; R2 does not weaken them. Managed native-authority failures fail closed with one stable reason and exactly one same-Host recovery action; never offer a Pi, Direct Path, cross-Host/worktree, unmanaged, or automatic-retry fallback.
 
