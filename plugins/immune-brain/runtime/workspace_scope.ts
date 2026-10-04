@@ -137,7 +137,9 @@ function fileFingerprint(root: string, relativePath: string): string {
 }
 
 function dirtyPaths(root: string): string[] | null {
-	const tracked = git(root, ["diff", "--name-only", "-z", "HEAD", "--"]);
+	// --no-renames, like the task-path derivations: rename detection would list
+	// only the destination and hide the source path's deletion.
+	const tracked = git(root, ["diff", "--name-only", "--no-renames", "-z", "HEAD", "--"]);
 	const untracked = git(root, [
 		"ls-files",
 		"--others",
@@ -390,6 +392,41 @@ function taskPathMatchesScope(path: string, scope: string[]): boolean {
 	return scope.some((scopePath) => pathMatchesScope(path, scopePath));
 }
 
+/**
+ * A staged in-scope path that still equals the Enrollment baseline predates the
+ * task. Dropping it silently let QA attest workspace bytes that the Review
+ * revision did not carry, so it is a hard stop instead: reverting and reapplying
+ * yields the same bytes, and only a fresh Enrollment from a clean scope recovers.
+ */
+function assertNoPreEnrollmentScopeChanges(root: string, scopedStagedPaths: readonly string[]): void {
+	const baseline = readEnrollmentBaseline(root);
+	if (!baseline) return;
+	const current = captureGitWorkspaceSnapshot(root);
+	if (!current) throw new Error("enrollment baseline cannot be compared because Git is unavailable");
+	const withheld = [...new Set(scopedStagedPaths)]
+		.filter((path) => baseline.dirty_files[path] !== undefined && baseline.dirty_files[path] === current.dirty_files[path])
+		.sort(comparePaths);
+	if (withheld.length > 0)
+		throw new Error(
+			`task scope contains staged changes that predate Enrollment and cannot become task work: ${withheld.join(", ")}; stop the task and re-enroll from a clean scope`,
+		);
+}
+
+/**
+ * In-scope paths that are already staged, modified or untracked relative to
+ * HEAD. Enrollment refuses these: the baseline would record them as user dirt
+ * and they could never be delivered by the task.
+ */
+export function dirtyScopePaths(projectRoot: string, scopeHint: unknown, taskId?: string): string[] {
+	const root = realpathSync(resolve(projectRoot));
+	const scope = assertCanonicalTaskScope(scopeHint);
+	const paths = dirtyPaths(root);
+	if (!paths) throw new Error("cannot inspect the task scope outside a committed Git workspace");
+	return paths.filter(
+		(path) => !isNonDeliveryPath(path) && !isOwnPlanningSidecar(path, taskId) && taskPathMatchesScope(path, scope),
+	);
+}
+
 function taskSnapshotOnce(root: string, scope: string[], taskId?: string): GitTaskSnapshot {
 	const repositoryRoot = git(root, ["rev-parse", "--show-toplevel"])?.trim();
 	const head = git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
@@ -425,12 +462,10 @@ function taskSnapshotOnce(root: string, scope: string[], taskId?: string): GitTa
 	if (uncommittedInScope.length > 0)
 		throw new Error(`task scope contains unstaged or untracked changes: ${uncommittedInScope.join(", ")}`);
 
-	const baseline = readEnrollmentBaseline(root);
-	const current = baseline ? captureGitWorkspaceSnapshot(root) : null;
 	const taskPaths = [...new Set(stagedPaths)]
 		.filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope))
-		.filter((path) => !(baseline && current && baseline.dirty_files[path] === current.dirty_files[path] && baseline.dirty_files[path] !== undefined))
 		.sort(comparePaths);
+	assertNoPreEnrollmentScopeChanges(root, taskPaths);
 	const stagedFiles: Record<string, GitTaskIndexEntry> = {};
 	for (const path of taskPaths) {
 		const current = indexEntry(root, path);
@@ -559,10 +594,8 @@ function taskRevisionSnapshotOnce(
 		"untracked task revision paths",
 	);
 	assertNoEnvelopeEscape(root, stagedPaths, scope, taskId);
-	const baseline = readEnrollmentBaseline(root);
-	const current = baseline ? captureGitWorkspaceSnapshot(root) : null;
-	const scopedStagedPaths = stagedPaths.filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope))
-		.filter((path) => !(baseline && current && baseline.dirty_files[path] === current.dirty_files[path] && baseline.dirty_files[path] !== undefined));
+	const scopedStagedPaths = stagedPaths.filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope));
+	assertNoPreEnrollmentScopeChanges(root, scopedStagedPaths);
 	const scopedUnstagedPaths = unstagedPaths.filter((path) => taskPathMatchesScope(path, scope));
 	const scopedUntrackedPaths = untrackedPaths.filter((path) => taskPathMatchesScope(path, scope));
 	assertNoCaseFoldCollisions(

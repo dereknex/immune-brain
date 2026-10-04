@@ -463,6 +463,10 @@ function publishInput(
 	const recomputed = `sha256:${createHash("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
 	if (recomputed !== input.expectedDiffHash)
 		throw new Error("review task revision does not match assurance snapshot");
+	// A revision whose tree equals the base carries nothing to review; reserving
+	// Review for it would settle QA outcomes against bytes it does not contain.
+	if (Object.keys(snapshot.changed_paths).length === 0)
+		throw new Error("review revision carries no task change; stage the task's in-scope work before Review");
 	return { snapshot, revision: publishReviewRevision(snapshot.repository_root, snapshot, recomputed, input.taskId) };
 }
 

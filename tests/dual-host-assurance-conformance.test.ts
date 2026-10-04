@@ -584,6 +584,9 @@ esac
 			attestations: [], findings: [], history: [],
 		},
 	});
+	// The task's own work: a Review revision that carries no in-scope change is refused.
+	writeFileSync(tool, `${readFileSync(tool, "utf8")}# delivered\n`);
+	execFileSync("git", ["add", "--", "tools/future-pm"], { cwd: root });
 	return root;
 }
 

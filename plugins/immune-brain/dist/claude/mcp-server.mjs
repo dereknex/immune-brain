@@ -2460,7 +2460,7 @@ function fileFingerprint(root, relativePath) {
   return `file:${stat.mode}:${createHash7("sha256").update(readFileSync3(absolutePath)).digest("hex")}`;
 }
 function dirtyPaths(root) {
-  const tracked = git(root, ["diff", "--name-only", "-z", "HEAD", "--"]);
+  const tracked = git(root, ["diff", "--name-only", "--no-renames", "-z", "HEAD", "--"]);
   const untracked = git(root, [
     "ls-files",
     "--others",
@@ -2635,6 +2635,25 @@ function headEntry(root, head, path) {
 function taskPathMatchesScope(path, scope) {
   return scope.some((scopePath) => pathMatchesScope(path, scopePath));
 }
+function assertNoPreEnrollmentScopeChanges(root, scopedStagedPaths) {
+  const baseline = readEnrollmentBaseline(root);
+  if (!baseline)
+    return;
+  const current = captureGitWorkspaceSnapshot(root);
+  if (!current)
+    throw new Error("enrollment baseline cannot be compared because Git is unavailable");
+  const withheld = [...new Set(scopedStagedPaths)].filter((path) => baseline.dirty_files[path] !== undefined && baseline.dirty_files[path] === current.dirty_files[path]).sort(comparePaths);
+  if (withheld.length > 0)
+    throw new Error(`task scope contains staged changes that predate Enrollment and cannot become task work: ${withheld.join(", ")}; stop the task and re-enroll from a clean scope`);
+}
+function dirtyScopePaths(projectRoot, scopeHint, taskId) {
+  const root = realpathSync3(resolve2(projectRoot));
+  const scope = assertCanonicalTaskScope(scopeHint);
+  const paths = dirtyPaths(root);
+  if (!paths)
+    throw new Error("cannot inspect the task scope outside a committed Git workspace");
+  return paths.filter((path) => !isNonDeliveryPath(path) && !isOwnPlanningSidecar(path, taskId) && taskPathMatchesScope(path, scope));
+}
 function taskSnapshotOnce(root, scope, taskId) {
   const repositoryRoot = git(root, ["rev-parse", "--show-toplevel"])?.trim();
   const head = git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
@@ -2657,9 +2676,8 @@ function taskSnapshotOnce(root, scope, taskId) {
   const uncommittedInScope = [...new Set([...unstagedPaths, ...untrackedPaths])].filter((path) => taskPathMatchesScope(path, scope)).sort(comparePaths);
   if (uncommittedInScope.length > 0)
     throw new Error(`task scope contains unstaged or untracked changes: ${uncommittedInScope.join(", ")}`);
-  const baseline = readEnrollmentBaseline(root);
-  const current = baseline ? captureGitWorkspaceSnapshot(root) : null;
-  const taskPaths = [...new Set(stagedPaths)].filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope)).filter((path) => !(baseline && current && baseline.dirty_files[path] === current.dirty_files[path] && baseline.dirty_files[path] !== undefined)).sort(comparePaths);
+  const taskPaths = [...new Set(stagedPaths)].filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope)).sort(comparePaths);
+  assertNoPreEnrollmentScopeChanges(root, taskPaths);
   const stagedFiles = {};
   for (const path of taskPaths) {
     const current = indexEntry(root, path);
@@ -2737,9 +2755,8 @@ function taskRevisionSnapshotOnce(root, scope, baseHead, taskId) {
   const unstagedPaths = decodeNullPaths(gitBytes(root, ["diff", "--no-renames", "--name-only", "-z", "--"]), "unstaged task revision paths");
   const untrackedPaths = decodeNullPaths(gitBytes(root, ["ls-files", "--others", "--exclude-standard", "-z", "--"]), "untracked task revision paths");
   assertNoEnvelopeEscape(root, stagedPaths, scope, taskId);
-  const baseline = readEnrollmentBaseline(root);
-  const current = baseline ? captureGitWorkspaceSnapshot(root) : null;
-  const scopedStagedPaths = stagedPaths.filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope)).filter((path) => !(baseline && current && baseline.dirty_files[path] === current.dirty_files[path] && baseline.dirty_files[path] !== undefined));
+  const scopedStagedPaths = stagedPaths.filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope));
+  assertNoPreEnrollmentScopeChanges(root, scopedStagedPaths);
   const scopedUnstagedPaths = unstagedPaths.filter((path) => taskPathMatchesScope(path, scope));
   const scopedUntrackedPaths = untrackedPaths.filter((path) => taskPathMatchesScope(path, scope));
   assertNoCaseFoldCollisions([...scopedStagedPaths, ...scopedUnstagedPaths, ...scopedUntrackedPaths], "Git task revision paths");
@@ -6769,6 +6786,8 @@ function publishInput(root, input) {
   const recomputed = `sha256:${createHash13("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
   if (recomputed !== input.expectedDiffHash)
     throw new Error("review task revision does not match assurance snapshot");
+  if (Object.keys(snapshot.changed_paths).length === 0)
+    throw new Error("review revision carries no task change; stage the task's in-scope work before Review");
   return { snapshot, revision: publishReviewRevision(snapshot.repository_root, snapshot, recomputed, input.taskId) };
 }
 function captureReviewManifest(root, input) {
@@ -7859,6 +7878,17 @@ function runEnrollmentPreconditionChecks(root, input, capability, registry, mode
       gitBaseHead = readGitHead(root);
     } catch (error) {
       fail(`git base: ${error instanceof Error ? error.message : String(error)}`, error);
+    }
+    if (intent && gitBaseHead) {
+      try {
+        const dirty = dirtyScopePaths(root, intent.intent.scope_hint, input.task_id);
+        if (dirty.length > 0) {
+          const message = `task scope is already dirty before Enrollment: ${dirty.join(", ")}; commit, stash or revert these paths first`;
+          fail(message, new Error(message));
+        }
+      } catch (error) {
+        fail(`scope: ${error instanceof Error ? error.message : String(error)}`, error);
+      }
     }
     const state = {
       validated,

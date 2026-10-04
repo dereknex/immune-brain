@@ -16,7 +16,7 @@ import type {
 } from "./batch_authority";
 import type { BackendClaim } from "./backend_claim";
 import { preparePiCanary, readGitHead } from "./pi_canary_prepare";
-import { writeEnrollmentBaseline } from "../workspace_scope";
+import { dirtyScopePaths, writeEnrollmentBaseline } from "../workspace_scope";
 import { enrollmentRequestDigest } from "./run_identity";
 import {
 	commitEnrollmentLocked,
@@ -162,6 +162,20 @@ function runEnrollmentPreconditionChecks<T>(
 			gitBaseHead = readGitHead(root);
 		} catch (error) {
 			fail(`git base: ${error instanceof Error ? error.message : String(error)}`, error);
+		}
+		// In-scope dirt present now would be recorded in the Enrollment baseline as
+		// user dirt and withheld from every later task snapshot, so the task could
+		// never deliver it. Refuse before the capability is consumed.
+		if (intent && gitBaseHead) {
+			try {
+				const dirty = dirtyScopePaths(root, intent.intent.scope_hint, input.task_id);
+				if (dirty.length > 0) {
+					const message = `task scope is already dirty before Enrollment: ${dirty.join(", ")}; commit, stash or revert these paths first`;
+					fail(message, new Error(message));
+				}
+			} catch (error) {
+				fail(`scope: ${error instanceof Error ? error.message : String(error)}`, error);
+			}
 		}
 
 		const state: EnrollmentPreconditionState = {

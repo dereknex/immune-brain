@@ -268,6 +268,10 @@ function makeEnrolledRoot(): string {
 		capability_binding: binding,
 		now: "2026-08-12T10:00:00.000Z",
 	}, registry);
+	// The task's own work, staged after Enrollment: a Review revision that
+	// carries no in-scope change is refused.
+	writeFileSync(join(root, "plugins", "immune-brain", ".pi-extension", "task.ts"), "export const task = 'delivered';\n");
+	execFileSync("git", ["add", "--", "plugins/immune-brain/.pi-extension/task.ts"], { cwd: root });
 	return root;
 }
 

@@ -65,10 +65,12 @@ describe("managed task snapshot isolation", () => {
 	test("preserves out-of-scope worktree edits and rejects staged envelope escape", () => {
 		const root = repo();
 		try {
-			writeFileSync(join(root, "task.ts"), "export const task = 'staged';\n");
-			git(root, ["add", "task.ts"]);
+			// The baseline is written over a clean scope, as Enrollment requires;
+			// the task's own work is staged afterwards.
 			writeFileSync(join(root, "outside.ts"), "export const outside = 'dirty-one';\n");
 			writeEnrollmentBaseline(root);
+			writeFileSync(join(root, "task.ts"), "export const task = 'staged';\n");
+			git(root, ["add", "task.ts"]);
 			const initial = taskDiffHash(root, ["task.ts"]);
 
 			expect(taskDiffHash(root, ["task.ts"])).toBe(initial);

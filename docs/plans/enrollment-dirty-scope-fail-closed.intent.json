@@ -1,0 +1,30 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "enrollment-dirty-scope-fail-closed",
+  "goal": "Close GitHub Issue #140: in-scope edits that predate Enrollment can no longer yield a passing QA attestation next to an empty Review revision. Enrollment refuses a scope that is already dirty, and task-path derivation fails closed instead of silently dropping in-scope staged paths.",
+  "acceptance": [
+    {
+      "id": "EDS-A1",
+      "assertion": "Enrollment refuses, before consuming the capability or writing any Kernel state, when a path inside the TaskIntent scope_hint is already staged, modified or untracked relative to HEAD; the error names the paths and the rehearsal reports the same condition as a blocker. Dirt outside the scope, the task's own planning sidecar and runtime authority or delivery-attachment paths do not block Enrollment, and a clean scope enrolls exactly as before.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/enrollment-dirty-scope.test.ts\",\n      \"tests/kernel-enrollment-transaction.test.ts\",\n      \"tests/kernel-canary-rehearsal.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "EDS-A2",
+      "assertion": "Both task-path derivations (the task index snapshot and the task revision snapshot that QA delivery and the Review revision are built from) throw, naming the paths, when a staged in-scope path is withheld because it equals the Enrollment baseline, so neither QA nor Review can proceed on a path set that omits staged in-scope bytes. Publishing a Review revision with an empty changed-path set is refused. Out-of-scope baseline dirt is still preserved and ignored as before, and an in-scope path changed after Enrollment is still task work. The generated Claude bundle matches the runtime source.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/enrollment-dirty-scope.test.ts\",\n      \"tests/managed-task-snapshot-isolation.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/assurance/review_evidence.ts",
+    "plugins/immune-brain/runtime/kernel/enrollment.ts",
+    "plugins/immune-brain/runtime/workspace_scope.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/enrollment-dirty-scope.test.ts",
+    "tests/managed-task-snapshot-isolation.test.ts",
+    "tests/pi-canary-work-extension.test.ts"
+  ],
+  "risk": "material",
+  "revision": 2,
+  "owner": "user"
+}

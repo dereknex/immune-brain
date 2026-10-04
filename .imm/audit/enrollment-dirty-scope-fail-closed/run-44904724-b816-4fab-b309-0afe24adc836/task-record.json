@@ -1,0 +1,285 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "enrollment-dirty-scope-fail-closed",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "enrollment-dirty-scope-fail-closed",
+    "goal": "Close GitHub Issue #140: in-scope edits that predate Enrollment can no longer yield a passing QA attestation next to an empty Review revision. Enrollment refuses a scope that is already dirty, and task-path derivation fails closed instead of silently dropping in-scope staged paths.",
+    "acceptance": [
+      {
+        "id": "EDS-A1",
+        "assertion": "Enrollment refuses, before consuming the capability or writing any Kernel state, when a path inside the TaskIntent scope_hint is already staged, modified or untracked relative to HEAD; the error names the paths and the rehearsal reports the same condition as a blocker. Dirt outside the scope, the task's own planning sidecar and runtime authority or delivery-attachment paths do not block Enrollment, and a clean scope enrolls exactly as before.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/enrollment-dirty-scope.test.ts\",\n      \"tests/kernel-enrollment-transaction.test.ts\",\n      \"tests/kernel-canary-rehearsal.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "EDS-A2",
+        "assertion": "Both task-path derivations (the task index snapshot and the task revision snapshot that QA delivery and the Review revision are built from) throw, naming the paths, when a staged in-scope path is withheld because it equals the Enrollment baseline, so neither QA nor Review can proceed on a path set that omits staged in-scope bytes. Publishing a Review revision with an empty changed-path set is refused. Out-of-scope baseline dirt is still preserved and ignored as before, and an in-scope path changed after Enrollment is still task work. The generated Claude bundle matches the runtime source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/enrollment-dirty-scope.test.ts\",\n      \"tests/managed-task-snapshot-isolation.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/assurance/review_evidence.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment.ts",
+      "plugins/immune-brain/runtime/workspace_scope.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/enrollment-dirty-scope.test.ts",
+      "tests/managed-task-snapshot-isolation.test.ts",
+      "tests/pi-canary-work-extension.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/enrollment-dirty-scope-fail-closed.intent.json",
+    "content_hash": "sha256:bdfa293cada4a3c1079ef7965a24668565e278065cab098267f0521d34f5dc9f"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:0f386788baa9f531674fefe3490eabc292484b3e366319c3736b9f64497a2a43",
+  "git_base_head": "3c43e7b8effbbabb7ac6744336e7d2928140f753",
+  "attestations": [
+    {
+      "id": "approval-qa-653e260b",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:bdfa293cada4a3c1079ef7965a24668565e278065cab098267f0521d34f5dc9f",
+      "diff_hash": "sha256:794c1814b424be0a2a37d95db5a404640b1246cf4a23997fb6f1d2d358a02576",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:641ce3b07c537d632585b3b61373c638fccda66b8deb51fa47184278ca66dd37",
+      "acceptance_results": [
+        {
+          "acceptance_id": "EDS-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:641ce3b07c537d632585b3b61373c638fccda66b8deb51fa47184278ca66dd37"
+        },
+        {
+          "acceptance_id": "EDS-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:641ce3b07c537d632585b3b61373c638fccda66b8deb51fa47184278ca66dd37"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-34c53aa3",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:bdfa293cada4a3c1079ef7965a24668565e278065cab098267f0521d34f5dc9f",
+      "diff_hash": "sha256:908a3b4f5accf19cd84426a9c0f76745731ba762a4b2336cb3b49d9cdedb5d73",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:c325a66923f1ea17c8c130dd873e32b7f6c761508004bed43477aa3cf0968426",
+      "acceptance_results": [
+        {
+          "acceptance_id": "EDS-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:c325a66923f1ea17c8c130dd873e32b7f6c761508004bed43477aa3cf0968426"
+        },
+        {
+          "acceptance_id": "EDS-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:c325a66923f1ea17c8c130dd873e32b7f6c761508004bed43477aa3cf0968426"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-4007fde8",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:bdfa293cada4a3c1079ef7965a24668565e278065cab098267f0521d34f5dc9f",
+      "diff_hash": "sha256:908a3b4f5accf19cd84426a9c0f76745731ba762a4b2336cb3b49d9cdedb5d73",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (22b5a0f is a commit with single parent 3c43e7b and tree 5e3c883; manifest oids and manifest_digest match the request; the digest itself was not independently recomputed). Enrollment refuses in-scope dirt before the capability is consumed, both task-path derivations hard-stop on baseline-equal staged scope paths, empty Review revisions are refused, and the Claude bundle hunks mirror the runtime source. One advisory on an in-scope own-sidecar asymmetry.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "3c43e7b8effbbabb7ac6744336e7d2928140f753",
+        "review_commit": "22b5a0fd494087c035d2e715b6eaa9e325a38789",
+        "review_tree": "5e3c883acf356854ddd8b99305affc533c911ee4",
+        "manifest_digest": "sha256:cdd0b59150a11e09452927ab26770ebc5aca527e51ee16ad06dda9029ae0ed93"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-162c7f40c0c9-1-review-1",
+          "acceptance_id": "EDS-A2",
+          "summary": "Enrollment exempts the task's own planning sidecar from the dirty-scope refusal, but the two task-path derivations do not: a staged own sidecar that falls inside scope_hint enrolls, then hard-stops QA and Review after the capability is spent. Before this change that path was silently withheld and the task proceeded. Both behaviours follow the literal EDS-A1 and EDS-A2 wording, so this is a note against that boundary rather than rework; no test covers the combination. Established by reading the code, not by execution.",
+          "anchor": "sha256:526d93c7e318a32e4ff6334dc106bf5f51f1c38c5f681b521e74132159c2d64a",
+          "evidence": {
+            "trigger": "scope_hint covers the own sidecar (for example [\"docs/plans\"], the scope tests/enrollment-dirty-scope.test.ts itself uses with dirtyScopePaths) and docs/plans/<task>.intent.json is staged but uncommitted at Enrollment. dirtyScopePaths filters it out via isOwnPlanningSidecar, so Enrollment succeeds and writeEnrollmentBaseline records it in dirty_files. On the first QA or Review derivation the path is staged, in scope, not an isNonDeliveryPath, and its fingerprint equals the baseline, so assertNoPreEnrollmentScopeChanges throws 'staged changes that predate Enrollment ... re-enroll from a clean scope'. Re-enrolling does not flag the sidecar either, so the only recovery is committing the sidecar first.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/kernel/enrollment.ts:runEnrollmentPreconditionChecks",
+              "plugins/immune-brain/runtime/workspace_scope.ts:dirtyScopePaths",
+              "plugins/immune-brain/runtime/workspace_scope.ts:writeEnrollmentBaseline",
+              "plugins/immune-brain/runtime/workspace_scope.ts:taskSnapshotOnce",
+              "plugins/immune-brain/runtime/workspace_scope.ts:taskRevisionSnapshotOnce",
+              "plugins/immune-brain/runtime/workspace_scope.ts:assertNoPreEnrollmentScopeChanges"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "EDS-A2"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-5170f09b83bb-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "EDS-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Enrollment does not refuse a staged in-scope path when it is the source of a staged rename to an out-of-scope destination: dirtyScopePaths relies on dirtyPaths, whose `git diff --name-only -z HEAD --` runs with default rename detection and lists only the destination, so the in-scope deletion is invisible to the refusal, absent from the Enrollment baseline, and later delivered as task work; no test covers a rename/deletion variant.",
+      "anchor": "sha256:a566e557815dcdb78327e123a65c21b1d0fc3e46c3e649853f7bd3e43e996c6e",
+      "evidence": {
+        "trigger": "Before Enrollment, with scope_hint [\"src\"], run `git mv src/task.ts outside/task.ts` (staged rename, similarity >= 50%, diff.renames unset so Git's default rename detection applies). dirtyPaths (plugins/immune-brain/runtime/workspace_scope.ts, unchanged helper read because the new dirtyScopePaths calls it directly) returns only outside/task.ts, so dirtyScopePaths(root, [\"src\"], taskId) returns [] and runEnrollmentPreconditionChecks neither fails nor reports a blocker; the capability is consumed and writeEnrollmentBaseline records only outside/task.ts. Afterwards taskSnapshotOnce and taskRevisionSnapshotOnce list staged paths with --no-renames, see src/task.ts as a staged in-scope deletion, and assertNoPreEnrollmentScopeChanges does not throw because baseline.dirty_files[\"src/task.ts\"] is undefined, so the pre-Enrollment staged in-scope change becomes a `deleted` entry in changed_paths. Rename-hiding confirmed read-only on this repository (git 2.56.0, diff.renames unset): `git diff --name-only 33cbf84^ 33cbf84` lists 4 paths while `--no-renames` lists 6; the two R100 sources are omitted. Class: normalization precedes retrieval (the Enrollment path listing is not normalized with --no-renames like the task-path derivations it guards). tests/enrollment-dirty-scope.test.ts exercises only staged-modify, unstaged-modify and untracked-add.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/enrollment.ts:runEnrollmentPreconditionChecks",
+          "plugins/immune-brain/runtime/workspace_scope.ts:dirtyScopePaths",
+          "plugins/immune-brain/runtime/workspace_scope.ts:dirtyPaths"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "EDS-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-5170f09b83bb-2-review-2",
+      "kind": "advisory",
+      "status": "open",
+      "acceptance_id": null,
+      "source": "review",
+      "review_round": 1,
+      "summary": "Provenance verified for base_head, review_commit, single parent and review_tree; manifest_digest could not be independently recomputed because the canonicalization is not part of the supplied evidence (the raw file sha256 is c11a3960..., which is expected to differ from a digest computed over the manifest without its own digest field).",
+      "anchor": "sha256:4c63ee3540cff25fe059c04bdd9c53a826a56e5d49a3f88ce0479aabb48f43c9",
+      "evidence": {
+        "trigger": "git rev-parse of 3c43e7b8effbbabb7ac6744336e7d2928140f753 and 1cb699980878414fa194793da9942a087297d67d both resolve; 1cb6999 is a commit with sole parent 3c43e7b and tree b61cf746758e1741054786f1a3f926b415f926a9; changed paths in git diff match the manifest's 8 changed_paths; manifest_digest sha256:3dd4d0fd... matches the value stated in the request but was not recomputed.",
+        "caller_chain": [
+          "/private/var/folders/zf/31fnphh957jc1gw0tmpsnl6h0000gn/T/imm-canary-native-review-N6t62F/evidence.json",
+          "plugins/immune-brain/runtime/assurance/review_evidence.ts:captureReviewManifest"
+        ],
+        "violated": {
+          "kind": "security_boundary",
+          "ref": "review_manifest/v5 manifest_digest provenance"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:enrollment-dirty-scope-fail-closed:2026-10-04T15:52:04.551Z",
+      "at": "2026-10-04T15:52:04.551Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:2862abece02fede9636850dfb9bf9be5a9a068a3d0d85f208afc6a2de7a43701",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-dfb0e1f6ec0bb7f3",
+        "issued_at": "2026-10-04T15:52:09.433Z",
+        "expires_at": "2026-10-04T16:02:09.433Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:enrollment-dirty-scope-fail-closed:2026-10-04T15:59:51.532Z",
+      "at": "2026-10-04T15:59:51.532Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/enrollment-dirty-scope-fail-closed.intent.json"
+    },
+    {
+      "id": "record_approval:enrollment-dirty-scope-fail-closed:2026-10-04T16:00:07.244Z",
+      "at": "2026-10-04T16:00:07.244Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-653e260b\naction_v2_sha256:57e477fcb7cb98dab2aeb52acfa1aa4444a811c139bd36309a40ff369f909368",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-04T16:00:07.244Z",
+        "expires_at": "2026-10-04T16:10:07.244Z"
+      }
+    },
+    {
+      "id": "request_rework:enrollment-dirty-scope-fail-closed:2026-10-04T16:02:14.345Z",
+      "at": "2026-10-04T16:02:14.345Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:b6eafc829b168bdb9172cb349b9ba90cdf366748d218c959b5611bb1af823820",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-04T16:02:14.345Z",
+        "expires_at": "2026-10-04T16:12:14.345Z"
+      }
+    },
+    {
+      "id": "resolve_finding:enrollment-dirty-scope-fail-closed:2026-10-04T16:10:14.681Z",
+      "at": "2026-10-04T16:10:14.681Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-5170f09b83bb-1-review-1\naction_v2_sha256:e7039e0ce9c55372193735e2c3952af96d00882d911723d23ae55f875bf985f1"
+    },
+    {
+      "id": "freeze_artifacts:enrollment-dirty-scope-fail-closed:2026-10-04T16:10:18.003Z",
+      "at": "2026-10-04T16:10:18.003Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/enrollment-dirty-scope-fail-closed.intent.json"
+    },
+    {
+      "id": "record_approval:enrollment-dirty-scope-fail-closed:2026-10-04T16:10:32.955Z",
+      "at": "2026-10-04T16:10:32.955Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-34c53aa3\naction_v2_sha256:68382b706560fee3d33dcf87532fa1ae751b66b3f6ec605a4a5693bf61b85fcd",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-04T16:10:32.955Z",
+        "expires_at": "2026-10-04T16:20:32.955Z"
+      }
+    },
+    {
+      "id": "record_approval:enrollment-dirty-scope-fail-closed:2026-10-04T16:12:28.531Z",
+      "at": "2026-10-04T16:12:28.531Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-4007fde8\naction_v2_sha256:eac348832add3fe9bb14580953010877adee55312f3dd26df50b778be2b91d2d",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-04T16:12:28.531Z",
+        "expires_at": "2026-10-04T16:22:28.531Z"
+      }
+    },
+    {
+      "id": "complete:enrollment-dirty-scope-fail-closed:2026-10-04T16:12:29.584Z",
+      "at": "2026-10-04T16:12:29.584Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:b799aedeff2d2b4bd6aaac9b0a4a44c8d3671ffe9827929f3463e47f16b2ac4f"
+    }
+  ]
+}
