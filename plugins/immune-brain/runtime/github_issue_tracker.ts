@@ -1187,58 +1187,6 @@ function baselineHistoricalSlices(parentBaselineBody: string, amendedSliceIds: S
 	return lines;
 }
 
-/** Edit an open Initiative Parent's title/body to the approved amendment content. */
-async function amendInitiativeParent(
-	root: string,
-	gh: GhTransport,
-	operation: Extract<TrackerOperation, { op: "create-initiative" }>,
-	source: RepositorySnapshot,
-	binding: InitiativeAmendmentBinding,
-	context: AmendmentExecutionContext,
-): Promise<GithubTrackerResult> {
-	const lookup = (issues: GithubIssue[]) => initiativeLookup(issues, source.repository.id, operation.initiative_id);
-	const body = context.parent.body;
-	const oversized = bodyLimitFailure(operation.op, body);
-	if (oversized) return oversized;
-	const title = context.parent.title;
-	// Re-read the Parent immediately before writing: earlier topology and
-	// historical-dependency reads may have raced a concurrent user edit.
-	const reread = await snapshot(root, gh, operation.op);
-	if ("contract" in reread) return reread;
-	const found = lookup(reread.issues);
-	if (found.kind !== "found")
-		return result(operation.op, "permanent_failure", "an amendment requires the Initiative Parent to already exist");
-	if (found.issue.state !== "open")
-		return result(operation.op, "ambiguous_remote_state", "an amendment requires the Initiative Parent to remain open", found.issue);
-	if (binding.issue_number !== found.issue.number)
-		return result(operation.op, "ambiguous_remote_state", `amendment Parent is bound to Issue #${binding.issue_number} but observed Issue #${found.issue.number}`, found.issue);
-	if (found.issue.body === body && found.issue.title === title && !labelMutationArgs(found.issue.labels, []).length)
-		return result(operation.op, "already_current", "Initiative Issue already carries the requested amended content", found.issue);
-	// Content that already matches the approved final bytes still converges labels;
-	// anything else must still be the approved amendment baseline.
-	if ((found.issue.body !== body || found.issue.title !== title)
-		&& (found.issue.body !== binding.body || found.issue.title !== binding.title))
-		return result(operation.op, "ambiguous_remote_state", "Initiative Parent changed since the approved amendment baseline", found.issue);
-	// The Parent carries no Task state labels: any managed label observed on it is
-	// drift and is removed by the same edit that writes the amended content.
-	const labelArgs = labelMutationArgs(found.issue.labels, []);
-	const edited = await gh.run([
-		"issue", "edit", String(found.issue.number), "--repo", source.repository.name_with_owner,
-		"--title", title,
-		"--body-file", "-",
-		...labelArgs,
-	], { cwd: root, stdin: body });
-	if (edited.exit_code !== 0 || edited.output_exceeded) return ghFailure(operation.op, edited, "Initiative amendment edit failed");
-	const refreshed = await snapshot(root, gh, operation.op);
-	if ("contract" in refreshed) return refreshed;
-	const confirmed = lookup(refreshed.issues);
-	if (confirmed.kind !== "found") return result(operation.op, "ambiguous_remote_state", "Initiative Parent became ambiguous after amendment", found.issue);
-	if (MANAGED_ISSUE_LABELS.some((label) => confirmed.issue.labels.includes(label)))
-		return result(operation.op, "retryable_failure", "Initiative amendment did not converge to an unlabeled Parent", confirmed.issue);
-	return confirmed.issue.body === body && confirmed.issue.title === title
-		? result(operation.op, "updated", "Initiative Issue updated with approved amendment content", confirmed.issue)
-		: result(operation.op, "retryable_failure", "Initiative amendment did not converge to the requested title and body", confirmed.issue);
-}
 
 async function upsertTask(
 	root: string,
@@ -1661,19 +1609,6 @@ function validateOperation(operation: TrackerOperation): TrackerOperation {
 	};
 }
 
-/** Run one amendment pending Task: create unbound new Children, amend bound drift. */
-async function runAmendmentTaskOperation(
-	root: string,
-	gh: GhTransport,
-	operation: Extract<TrackerOperation, { op: "upsert-task" }>,
-	pendingBinding: InitiativeAmendmentBinding | undefined | null,
-	context: AmendmentExecutionContext | undefined,
-): Promise<GithubTrackerResult> {
-	const absoluteRoot = resolve(root);
-	const source = await snapshot(absoluteRoot, gh, operation.op);
-	if ("contract" in source) return source;
-	return upsertTask(absoluteRoot, gh, operation, source, pendingBinding, context);
-}
 
 export async function runGithubTrackerOperation(
 	root: string,
@@ -1914,35 +1849,6 @@ function publicationIntentDrift(
 	return null;
 }
 
-function publicationIssueDrift(expected: {
-	issue_number?: number;
-	issue_url?: string;
-	node_id?: string;
-}, actual: GithubIssue, title: string, body: string, label: string, options?: { allowTerminalSuffix?: boolean; taskId?: string; expectedIntentHash?: string }): string | null {
-	if (expected.issue_number !== actual.number || expected.issue_url !== actual.url || expected.node_id !== String(actual.id))
-		return `${label} identity changed during Initiative publication`;
-	if (actual.state !== "open") return `${label} is no longer open`;
-	// The published Intent identity is verified on the final readback as well:
-	// a Child whose hash changed only after the earlier per-Child check would
-	// otherwise be reported as a confirmed success.
-	if (options?.taskId)
-		return publishedIntentMismatch(actual.body, options.taskId, options.expectedIntentHash) ?? driftOnContent(actual, title, body, label, options);
-	// The published-identity marker is additive and compared separately, so a Child
-	// published before it existed is still the same tracked content here.
-	return driftOnContent(actual, title, body, label, options);
-}
-
-function driftOnContent(actual: GithubIssue, title: string, body: string, label: string, options?: { allowTerminalSuffix?: boolean }): string | null {
-	if (actual.title !== title || !sameTrackedBody(actual.body, body)) {
-		// Only a pending amendment Child left open with a validated terminal suffix
-		// (failed terminal close) matches its suffix-free expected content. The
-		// Parent and the strict non-amendment path have no terminal-suffix
-		// lifecycle: byte-exact comparison, any extra suffix is real drift.
-		if (options?.allowTerminalSuffix && carriesApprovedContent(actual.title, actual.body, { title, body })) return null;
-		return `${label} content changed during Initiative publication`;
-	}
-	return null;
-}
 
 /** One bound Issue's expected remote identity and content. */
 function validateAmendmentBinding(binding: unknown, label: string): InitiativeAmendmentBinding {
@@ -2834,6 +2740,241 @@ async function addBlockedByDirect(
 	return { complete: true };
 }
 
+/**
+ * Direct amendment: S2 of docs/specs/tracker-direct-publication.spec.md.
+ *
+ * The approved baseline is verified once at the start, against the start listing
+ * plus Issue-scoped reads (the Parent's Sub-issue list and each adopted Child's
+ * `blocked_by` set). Then the Parent is edited at most once, each pending brief is
+ * edited at most once, absent pending Children are created as in S1, and each
+ * pending Child's `blocked_by` set is converged to the approved set from the
+ * start read. Nothing is re-read after a write and no closing recheck runs, so a
+ * baseline drift that appears after the start listing is not detected in this
+ * run; it surfaces at the start of the next run.
+ */
+async function publishAmendmentDirect(
+	root: string,
+	gh: GhTransport,
+	prepared: ReturnType<typeof preflightPublication>,
+	initial: RepositorySnapshot,
+	amendment: ReturnType<typeof validateAmendment>,
+	context: AmendmentExecutionContext,
+): Promise<GithubInitiativePublicationResult> {
+	const plannedTaskIds = prepared.order.map((operation) => operation.task_id);
+	const initiativeId = prepared.initiative.initiative_id;
+	const repository = initial.repository;
+	const taskResults: GithubInitiativePublicationResult["tasks"] = [];
+	// The confirmed Parent result, when it exists, must survive a later Child or
+	// relation failure: a step whose response was already received is not lost just
+	// because a later step failed. Set once the Parent write has been confirmed.
+	let confirmedParent: GithubTrackerResult | undefined;
+	const failed = (failure: GithubTrackerResult): GithubInitiativePublicationResult =>
+		publicationResultWithPlan(plannedTaskIds, failure.status, failure.message, confirmedParent, taskResults);
+
+	const parentLookup = initiativeLookup(initial.issues, repository.id, initiativeId);
+	if (parentLookup.kind !== "found")
+		return publicationResultWithPlan(plannedTaskIds, "permanent_failure", "an amendment requires the Initiative Parent to already exist");
+	const parentIssue = parentLookup.issue;
+
+	// Baseline verification, once, before any write: membership, bound identity,
+	// baseline-or-approved-final content, native attachment and terminal ownership.
+	const topology = await validateAmendmentTopology(
+		root, gh, initial, initiativeId, parentIssue,
+		amendment.tasks, amendment.historical,
+		prepared.foreign_dependers,
+		{ pendingContent: context.pendingContent, parent: context.parent, historicalSlices: context.historicalSlices },
+		prepared.order,
+	);
+	if (!("get" in topology)) return failed(topology);
+	const bound = topology;
+
+	// The only reads besides the start listing; all before the first write. They
+	// exist to find MISSING relations, so an unapproved relation already present
+	// fails closed here instead of being reported as already_current.
+	const attached = await readSubIssueNumbers(root, gh, "upsert-task", repository, parentIssue.number);
+	if (!Array.isArray(attached)) return failed(attached);
+	if (new Set(attached).size !== attached.length)
+		return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", "the Initiative Parent lists the same Sub-issue more than once");
+	const attachedNumbers = new Set(attached);
+	const blockerIdsByTask = new Map<string, number[]>();
+	for (const operation of prepared.order) {
+		const issue = bound.get(operation.task_id);
+		if (!issue) continue;
+		const ids = await readBlockedByIds(root, gh, "upsert-task", repository, issue.number);
+		if (!Array.isArray(ids)) return failed(ids);
+		// The approved set is the convergence target, so an unapproved edge present at
+		// start is simply removed by the same run; it is state this run owns, not drift.
+		blockerIdsByTask.set(operation.task_id, ids);
+	}
+	const beforeWrite = publicationIntentDrift(root, prepared.intent_bindings);
+	if (beforeWrite) return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", beforeWrite);
+
+	// One Parent edit at most, and only when the approved bytes or labels differ.
+	const parentNeedsEdit = parentIssue.title !== context.parent.title
+		|| parentIssue.body !== context.parent.body
+		|| labelMutationArgs(parentIssue.labels, []).length > 0;
+	let parentResult: GithubTrackerResult;
+	if (!parentNeedsEdit) {
+		parentResult = result("create-initiative", "already_current", "Initiative Issue already carries the requested amended content", parentIssue);
+	} else {
+		const edited = await gh.run(
+			[
+				"issue", "edit", String(parentIssue.number), "--repo", repository.name_with_owner,
+				"--title", context.parent.title,
+				"--body-file", "-",
+				...labelMutationArgs(parentIssue.labels, []),
+			],
+			{ cwd: root, stdin: context.parent.body },
+		);
+		if (edited.exit_code !== 0 || edited.output_exceeded)
+			return failed(ghFailure("create-initiative", edited, "Initiative amendment edit failed"));
+		parentResult = result("create-initiative", "updated", "Initiative Issue updated with approved amendment content", {
+			...parentIssue,
+			title: context.parent.title,
+			body: context.parent.body,
+			labels: [],
+		});
+	}
+	confirmedParent = parentResult;
+
+	const numberByTask = new Map<string, number>();
+	const idByTask = new Map<string, number>();
+	const blockerRef = (blockerId: string): { number: number; id: number } | undefined => {
+		const number = numberByTask.get(blockerId) ?? bound.get(blockerId)?.number;
+		if (number === undefined) return undefined;
+		const observedBlocker = taskLookup(initial.issues, repository.id, blockerId);
+		const id = idByTask.get(blockerId) ?? bound.get(blockerId)?.id
+			?? (observedBlocker.kind === "found" ? observedBlocker.issue.id : undefined);
+		if (id === undefined || !Number.isSafeInteger(id)) return undefined;
+		return { number, id };
+	};
+
+	for (const operation of prepared.order) {
+		const intentDrift = publicationIntentDrift(root, prepared.intent_bindings, [operation.task_id]);
+		if (intentDrift) return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", intentDrift, parentResult, taskResults);
+		const approved = context.pendingContent.get(operation.task_id);
+		if (!approved) return failed(result("upsert-task", "permanent_failure", `pending Task ${operation.task_id} has no approved amendment content`));
+		const desiredBlockers: Array<{ number: number; id: number }> = [];
+		for (const blockerId of operation.projection?.blocked_by ?? []) {
+			if (blockerId === operation.task_id)
+				return failed(result("upsert-task", "ambiguous_remote_state", "a Task cannot block itself"));
+			const resolved = blockerRef(blockerId);
+			if (!resolved)
+				return failed(result("upsert-task", "permanent_failure", `blocking Task ${blockerId} has not been published`));
+			desiredBlockers.push(resolved);
+		}
+
+		const observed = bound.get(operation.task_id);
+		let number: number;
+		let id: number;
+		// Content/label mutation decides the reported status; relation convergence
+		// alone leaves an already-current pending brief as already_current.
+		let contentMutated = false;
+		if (observed) {
+			number = observed.number;
+			id = observed.id;
+		} else {
+			// Absent pending Child: one create, number from the create response and id
+			// resolved once for the relation endpoints (Assumption A1).
+			const created = await gh.run(
+				[
+					"issue", "create", "--repo", repository.name_with_owner,
+					"--title", approved.title,
+					"--body-file", "-",
+					...desiredTaskLabels(operation).flatMap((label) => ["--label", label]),
+				],
+				{ cwd: root, stdin: approved.body },
+			);
+			if (created.exit_code !== 0 || created.output_exceeded)
+				return failed(ghFailure("upsert-task", created, `Task Issue creation failed for ${operation.task_id}`));
+			const parsed = parseCreatedIssueNumber(created.stdout);
+			if (parsed === null)
+				return publicationResultWithPlan(plannedTaskIds, "retryable_failure", `Task ${operation.task_id} creation could not be confirmed`, parentResult, taskResults);
+			number = parsed;
+			const resolvedId = await resolveIssueId(root, gh, repository, number);
+			if (typeof resolvedId !== "number") return failed(resolvedId);
+			id = resolvedId;
+		}
+
+		if (!attachedNumbers.has(number)) {
+			const attach = await attachChildDirect(root, gh, repository, parentIssue.number, id, number);
+			if ("contract" in attach) return failed(attach);
+			attachedNumbers.add(number);
+		}
+
+		if (observed) {
+			// One edit at most, and only when the approved content or labels differ. A
+			// validated terminal suffix observed in the start listing is terminal
+			// evidence, so it is preserved by the rewrite instead of being dropped.
+			const suffixEvent = issueTerminalEventId(observed.body);
+			if (suffixEvent === "multiple")
+				return failed(result("upsert-task", "ambiguous_remote_state", `pending Task ${operation.task_id} has multiple terminal markers`, observed));
+			if (suffixEvent === "malformed")
+				return failed(result("upsert-task", "ambiguous_remote_state", `pending Task ${operation.task_id} carries a malformed terminal marker (marker without its exact canonical suffix)`, observed));
+			const writeBody = suffixEvent !== null ? `${approved.body.trimEnd()}${terminalSuffix(suffixEvent)}` : approved.body;
+			const labelArgs = labelMutationArgs(observed.labels, desiredTaskLabels(operation));
+			if (!carriesApprovedContent(observed.title, observed.body, approved) || labelArgs.length) {
+				const edited = await gh.run(
+					[
+						"issue", "edit", String(number), "--repo", repository.name_with_owner,
+						"--title", approved.title,
+						"--body-file", "-",
+						...labelArgs,
+					],
+					{ cwd: root, stdin: writeBody },
+				);
+				if (edited.exit_code !== 0 || edited.output_exceeded)
+					return failed(ghFailure("upsert-task", edited, `pending Task Issue #${number} update failed`));
+				contentMutated = true;
+			}
+		}
+
+		// Converge the approved dependency set from the start read: no read follows
+		// the relation writes, and only the missing or unapproved edges are touched.
+		const current = blockerIdsByTask.get(operation.task_id) ?? [];
+		const expected = desiredBlockers.map((blocker) => blocker.id);
+		for (const removedId of current.filter((currentId) => !expected.includes(currentId))) {
+			const mutation = await gh.run(
+				["api", "--method", "DELETE", `repos/${repository.name_with_owner}/issues/${number}/dependencies/blocked_by/${removedId}`],
+				{ cwd: root },
+			);
+			if (mutation.exit_code !== 0 || mutation.output_exceeded)
+				return failed(ghFailure("upsert-task", mutation, `native blocked_by removal failed for Issue #${number}`));
+		}
+		for (const blocker of desiredBlockers.filter((candidate) => !current.includes(candidate.id))) {
+			const added = await addBlockedByDirect(root, gh, repository, number, blocker.id, blocker.number);
+			if ("contract" in added) return failed(added);
+		}
+
+		numberByTask.set(operation.task_id, number);
+		idByTask.set(operation.task_id, id);
+		taskResults.push({
+			task_id: operation.task_id,
+			slice_id: operation.slice_id,
+			status: !observed ? "created" : contentMutated ? "updated" : "already_current",
+			issue_number: number,
+			issue_url: observed?.url ?? `https://github.com/${repository.name_with_owner}/issues/${number}`,
+		});
+	}
+
+	const finalIntentDrift = publicationIntentDrift(root, prepared.intent_bindings);
+	if (finalIntentDrift) return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", finalIntentDrift, parentResult, taskResults);
+	const statuses = [parentResult.status, ...taskResults.map((task) => task.status)];
+	const status: TrackerStatus = statuses.every((item) => item === "created")
+		? "created"
+		: statuses.every((item) => item === "already_current") ? "already_current" : "updated";
+	const issueNumber = (taskId: string): number => numberByTask.get(taskId) ?? bound.get(taskId)!.number;
+	const firstTaskId = prepared.order[0].task_id;
+	return publicationResultWithPlan(plannedTaskIds, status, "complete Initiative Parent, Children, and dependency graph published", parentResult, taskResults, {
+		recommended_first_task_id: firstTaskId,
+		recommended_first_issue_number: issueNumber(firstTaskId),
+		order: prepared.order.map((operation) => operation.task_id),
+		issue_order: prepared.order.map((operation) => issueNumber(operation.task_id)),
+		parallel_groups: prepared.parallel_groups,
+		parallel_issue_groups: prepared.parallel_groups.map((group) => group.map(issueNumber)),
+	});
+}
+
 export async function runGithubInitiativePublication(
 	root: string,
 	input: InitiativePublicationInput,
@@ -2852,7 +2993,6 @@ export async function runGithubInitiativePublication(
 	// early Child failure still names each unfinished Task.
 	let prepared: ReturnType<typeof preflightPublication>;
 	let amendment: ReturnType<typeof validateAmendment> | undefined;
-	let amendmentContext: AmendmentExecutionContext | undefined;
 	// Assigned the moment the plan exists. Every result built after that point
 	// reports the same planned Task set, including the error paths.
 	let plannedTaskIds: string[] = [];
@@ -2920,246 +3060,62 @@ export async function runGithubInitiativePublication(
 		const childFailure = bodyLimitFailure("upsert-task", childBody(initial.repository, operation, parentForPreflight), MAX_TERMINAL_SUFFIX_BYTES);
 		if (childFailure) return publicationResultWithPlan(plannedTaskIds, childFailure.status, childFailure.message, childFailure);
 	}
-	// Ordinary publication uses the direct write flow; only the amendment path
-	// still converges through read-back confirmation.
+	// Ordinary publication and amendment share the direct write flow: neither
+	// re-reads after a write.
 	if (!amendment) return publishInitiativeDirect(absoluteRoot, gh, prepared, initial);
 
-	if (amendment) {
-		if (initialParent.kind !== "found")
-			return publicationResultWithPlan(plannedTaskIds, "permanent_failure", "an amendment requires the Initiative Parent to already exist");
-		// Caller-controlled binding constraints (missing or duplicate historical
-		// Slice markers) must surface as structured fail-closed publication results,
-		// never as thrown exceptions escaping the guarded validation boundary.
-		let approvedFinalParent: ReturnType<typeof approvedAmendmentContent>;
-		try {
-			approvedFinalParent = approvedAmendmentContent(absoluteRoot, initial.repository, initialParent.issue, prepared, amendment);
-		} catch (error) {
-			return publicationResultWithPlan(
-				plannedTaskIds,
-				"permanent_failure",
-				error instanceof Error ? error.message : String(error),
-			);
-		}
-		// Slice identity collisions are deterministic input contract violations (the
-		// batch itself declares two Children with one Slice id), not remote drift.
-		if (typeof approvedFinalParent === "string" && approvedFinalParent.includes("collides with a historical Task Slice"))
-			return publicationResultWithPlan(plannedTaskIds, "permanent_failure", approvedFinalParent);
-		if (typeof approvedFinalParent === "string") return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", approvedFinalParent);
-		const { parent, pendingContent, historicalSlices } = approvedFinalParent;
-		// Deterministic prerequisite completion is validated before any write: a
-		// historical prerequisite already closed without state_reason "completed"
-		// (e.g. not_planned) makes the batch permanently unfulfillable, so it must
-		// fail closed in preflight with zero mutations instead of after the Parent
-		// and Child writes (the final check still guards concurrent races).
-		for (const operation of prepared.order) {
-			for (const blockerId of operation.projection?.blocked_by ?? []) {
-				if (!amendment.historical.has(blockerId)) continue;
-				const blocker = taskLookup(initial.issues, initial.repository.id, blockerId);
-				if (blocker.kind === "found" && (blocker.issue.state !== "closed" || blocker.issue.state_reason !== "completed"))
-					return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", `Task ${operation.task_id} depends on stopped historical prerequisite ${blockerId}`);
-			}
-		}
-		const parentBaseline = amendment.parent.body !== initialParent.issue.body || amendment.parent.title !== initialParent.issue.title;
-		const parentApproved = initialParent.issue.title === parent.title && initialParent.issue.body === parent.body;
-		if (parentBaseline && !parentApproved) return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", `amendment Parent changed since the approved amendment baseline`);
-		if (amendment.parent.issue_number !== initialParent.issue.number)
-			return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", `amendment Parent is bound to Issue #${amendment.parent.issue_number} but observed Issue #${initialParent.issue.number}`);
-		if (initialParent.issue.state !== "open")
-			return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", "an amendment requires the Initiative Parent to remain open");
-		const topology = await validateAmendmentTopology(
-			absoluteRoot, gh, initial, prepared.initiative.initiative_id, initialParent.issue,
-			amendment.tasks, amendment.historical,
-			prepared.foreign_dependers,
-			{ pendingContent, parent, historicalSlices },
-			prepared.order,
+	if (initialParent.kind !== "found")
+		return publicationResultWithPlan(plannedTaskIds, "permanent_failure", "an amendment requires the Initiative Parent to already exist");
+	// Caller-controlled binding constraints (missing or duplicate historical
+	// Slice markers) must surface as structured fail-closed publication results,
+	// never as thrown exceptions escaping the guarded validation boundary.
+	let approvedFinalParent: ReturnType<typeof approvedAmendmentContent>;
+	try {
+		approvedFinalParent = approvedAmendmentContent(absoluteRoot, initial.repository, initialParent.issue, prepared, amendment);
+	} catch (error) {
+		return publicationResultWithPlan(
+			plannedTaskIds,
+			"permanent_failure",
+			error instanceof Error ? error.message : String(error),
 		);
-		if (!("get" in topology)) return publicationResultWithPlan(plannedTaskIds, topology.status, topology.message, topology);
-		const historicalRelations = new Map<string, { blocked_by: number[]; state_reason: string | null }>();
-		for (const [taskId] of amendment.historical) {
-			const issue = topology.get(taskId)!;
-			const observed = await readBlockedByIds(absoluteRoot, gh, "upsert-task", initial.repository, issue.number);
-			if (!Array.isArray(observed)) return publicationResultWithPlan(plannedTaskIds, observed.status, observed.message, observed);
-			historicalRelations.set(taskId, { blocked_by: observed, state_reason: issue.state_reason });
-		}
-		amendmentContext = {
-			pendingContent,
-			parent,
-			parentIssueNumber: amendment.parent.issue_number,
-			historicalSlices,
-			historicalRelations,
-		};
 	}
-
-	const beforeParentWrite = publicationIntentDrift(absoluteRoot, prepared.intent_bindings);
-	if (beforeParentWrite) return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", beforeParentWrite);
-	let parentResult: GithubTrackerResult;
-	if (amendment && amendmentContext) {
-		parentResult = await amendInitiativeParent(absoluteRoot, gh, prepared.initiative, initial, amendment.parent, amendmentContext);
-	} else {
-		parentResult = await runGithubTrackerOperation(absoluteRoot, prepared.initiative, gh);
-	}
-	if (!isSuccessfulTrackerStatus(parentResult.status))
-		return publicationResultWithPlan(plannedTaskIds, parentResult.status, parentResult.message, parentResult);
-	const taskResults: GithubInitiativePublicationResult["tasks"] = [];
+	// Slice identity collisions are deterministic input contract violations (the
+	// batch itself declares two Children with one Slice id), not remote drift.
+	if (typeof approvedFinalParent === "string" && approvedFinalParent.includes("collides with a historical Task Slice"))
+		return publicationResultWithPlan(plannedTaskIds, "permanent_failure", approvedFinalParent);
+	if (typeof approvedFinalParent === "string") return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", approvedFinalParent);
+	const { parent, pendingContent, historicalSlices } = approvedFinalParent;
+	// Deterministic prerequisite completion is validated before any write: a
+	// historical prerequisite already closed without state_reason "completed"
+	// (e.g. not_planned) makes the batch permanently unfulfillable.
 	for (const operation of prepared.order) {
-		const intentDrift = publicationIntentDrift(absoluteRoot, prepared.intent_bindings, [operation.task_id]);
-		if (intentDrift) return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", intentDrift, parentResult, taskResults);
-		const taskResult = amendment
-			? await runAmendmentTaskOperation(absoluteRoot, gh, operation, amendment.tasks.get(operation.task_id), amendmentContext)
-			: await runGithubTrackerOperation(absoluteRoot, operation, gh);
-		taskResults.push({
-			task_id: operation.task_id,
-			slice_id: operation.slice_id,
-			status: taskResult.status,
-			...(taskResult.issue_number === undefined ? {} : { issue_number: taskResult.issue_number }),
-			...(taskResult.issue_url === undefined ? {} : { issue_url: taskResult.issue_url }),
-			...(taskResult.node_id === undefined ? {} : { node_id: taskResult.node_id }),
-		});
-		if (!isSuccessfulTrackerStatus(taskResult.status))
-			return publicationResultWithPlan(plannedTaskIds, taskResult.status, taskResult.message, parentResult, taskResults);
-	}
-
-	const finalIntentDrift = publicationIntentDrift(absoluteRoot, prepared.intent_bindings);
-	if (finalIntentDrift) return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", finalIntentDrift, parentResult, taskResults);
-	const finalSource = await snapshot(absoluteRoot, gh, "upsert-task");
-	if ("contract" in finalSource) return publicationResultWithPlan(plannedTaskIds, finalSource.status, finalSource.message, parentResult, taskResults);
-	if (amendment) {
-		// Repeat complete observed-membership classification on the final snapshot:
-		// an undeclared closed Task carrying this Initiative's markers that becomes
-		// observable only after preflight (detached, so the Sub-issue parity check
-		// cannot see it) must still fail the publication, not report success.
-		const finalClassified = classifyObservedChildren(finalSource, prepared.initiative.initiative_id, amendment.tasks, amendment.historical);
-		if (typeof finalClassified === "string") return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", finalClassified, parentResult, taskResults);
-	}
-	const parent = initiativeLookup(finalSource.issues, finalSource.repository.id, prepared.initiative.initiative_id);
-	if (parent.kind !== "found") return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", parent.kind === "ambiguous" ? parent.message : "published Initiative Parent disappeared", parentResult, taskResults);
-	const amendedFinalSliceIds = new Set(prepared.initiative.slices.map((slice) => slice.id));
-	const parentDrift = publicationIssueDrift(
-		parentResult,
-		parent.issue,
-		amendmentContext ? amendmentContext.parent.title : initiativeIssueTitle(prepared.initiative.initiative_id, prepared.initiative.projection),
-		amendmentContext
-			? amendmentContext.parent.body
-			: createInitiativeBody(finalSource.repository, prepared.initiative),
-		"Initiative Parent",
-	);
-	if (parentDrift) return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", parentDrift, parentResult, taskResults);
-	if (amendmentContext) {
-		// The rewritten Parent must carry each declared historical Slice marker
-		// exactly once: generation drops or duplicates would break terminal
-		// ownership without failing any other final check.
-		for (const line of amendmentContext.historicalSlices) {
-			const sliceId = ownershipMarkerValue(line, "slice-id");
-			if (!sliceId || countLiteral(parent.issue.body, marker("slice-id", sliceId)) !== 1)
-				return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", `regenerated Parent does not carry historical Slice ${sliceId ?? "?"} exactly once`, parentResult, taskResults);
-		}
-	}
-	const resultByTask = new Map(taskResults.map((task) => [task.task_id, task]));
-	const expectedNumbers: number[] = [];
-	for (const operation of prepared.order) {
-		const child = ownedTaskLookup(finalSource.issues, finalSource.repository.id, operation.task_id, operation.initiative_id, operation.slice_id);
-		if (child.kind !== "found") return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", child.kind === "ambiguous" ? child.message : `published Task ${operation.task_id} disappeared`, parentResult, taskResults);
-		const childResult = resultByTask.get(operation.task_id);
-		if (!childResult) return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", `published Task ${operation.task_id} has no batch result`, parentResult, taskResults);
-		const childDrift = publicationIssueDrift(
-			childResult,
-			child.issue,
-			taskIssueTitle(operation, sliceOrdinalFromChecklist(parent.issue.body, operation.slice_id, operation.projection?.slice_ordinal ?? 1)),
-			childBody(finalSource.repository, operation, parent.issue),
-			`Task ${operation.task_id}`,
-			{
-				allowTerminalSuffix: amendmentContext !== undefined,
-				taskId: operation.task_id,
-				expectedIntentHash: operation.intent_hash,
-			},
-		);
-		if (childDrift) return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", childDrift, parentResult, taskResults);
-		const expectedLabels = desiredTaskLabels(operation);
-		if (childResult.status !== "already_current" && expectedLabels.some((label) => !child.issue.labels.includes(label)))
-			return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", `Task ${operation.task_id} is missing publication labels after publication`, parentResult, taskResults);
-		expectedNumbers.push(child.issue.number);
-		const ownership = await confirmTerminalOwnership(absoluteRoot, gh, "upsert-task", finalSource, child.issue);
-		if (!("owned" in ownership)) return publicationResultWithPlan(plannedTaskIds, ownership.status, ownership.message, parentResult, taskResults);
-		const blockers: GithubIssue[] = [];
 		for (const blockerId of operation.projection?.blocked_by ?? []) {
-			const blocker = taskLookup(finalSource.issues, finalSource.repository.id, blockerId);
-			if (blocker.kind !== "found") return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", `published blocker ${blockerId} disappeared`, parentResult, taskResults);
-			blockers.push(blocker.issue);
-		}
-		const dependencies = await confirmBlockedBy(absoluteRoot, gh, "upsert-task", finalSource.repository, child.issue.number, blockers);
-		if (!("complete" in dependencies)) return publicationResultWithPlan(plannedTaskIds, dependencies.status, dependencies.message, parentResult, taskResults);
-		if (!dependencies.complete) return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", `Task ${operation.task_id} has incomplete blocking relations`, parentResult, taskResults);
-	}
-	const attached = await readSubIssueNumbers(absoluteRoot, gh, "upsert-task", finalSource.repository, parent.issue.number);
-	if (!Array.isArray(attached)) return publicationResultWithPlan(plannedTaskIds, attached.status, attached.message, parentResult, taskResults);
-	if (amendment) {
-		for (const [taskId, binding] of amendment.historical) {
-			// Full ownership lookup: repository, protocol, marker uniqueness, and
-			// repo-wide Task identity must resolve the exact bound Issue.
-			const owned = taskLookup(finalSource.issues, finalSource.repository.id, taskId);
-			if (owned.kind !== "found" || owned.issue.number !== binding.issue_number)
-				return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", `historical Task ${taskId} ownership failed after publication`, parentResult, taskResults);
-			const historical = owned.issue;
-			const drift = amendmentBindingDrift(binding, historical, `historical Task ${taskId}`);
-			if (drift) return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", drift, parentResult, taskResults);
-			if (!attached.includes(historical.number))
-				return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", `historical Task ${taskId} lost its native Sub-issue attachment`, parentResult, taskResults);
-			// R1 final check: historical Slice identities must not collide with any
-			// pending Slice published by this batch — two Children must never share
-			// one Slice identity, including historical Children whose Parent lines are
-			// carried over rather than re-rendered.
-			const historicalSliceId = ownershipMarkerValue(historical.body, "slice-id");
-			if (historicalSliceId && amendedFinalSliceIds.has(historicalSliceId))
-				return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", `historical Task ${taskId} Slice ${historicalSliceId} collides with a pending Task Slice of the same id`, parentResult, taskResults);
-			const snapshotRelations = amendmentContext?.historicalRelations.get(taskId);
-			if (snapshotRelations) {
-				if (historical.state_reason !== snapshotRelations.state_reason)
-					return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", `historical Task ${taskId} terminal state_reason changed during amendment`, parentResult, taskResults);
-				const finalBlockedBy = await readBlockedByIds(absoluteRoot, gh, "upsert-task", finalSource.repository, historical.number);
-				if (!Array.isArray(finalBlockedBy)) return publicationResultWithPlan(plannedTaskIds, finalBlockedBy.status, finalBlockedBy.message, parentResult, taskResults);
-				if (finalBlockedBy.length !== snapshotRelations.blocked_by.length || finalBlockedBy.some((id, index) => id !== snapshotRelations.blocked_by[index]))
-					return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", `historical Task ${taskId} native blocked_by relations changed during amendment`, parentResult, taskResults);
-			}
-		}
-		const attachedNumbers = new Set(attached);
-		for (const number of attachedNumbers) {
-			const issue = finalSource.issues.find((candidate) => candidate.number === number);
-			const taskId = issue ? ownershipMarkerValue(issue.body, "task-id") : null;
-		if (!taskId || (!amendment.tasks.has(taskId) && !amendment.historical.has(taskId)))
-				return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", `Parent Sub-issue #${number} is not part of the declared amendment membership`, parentResult, taskResults);
-		}
-		for (const operation of prepared.order) {
-			for (const blockerId of operation.projection?.blocked_by ?? []) {
-				if (amendment.historical.has(blockerId)) {
-					const blocker = taskLookup(finalSource.issues, finalSource.repository.id, blockerId);
-					if (blocker.kind !== "found" || blocker.issue.state_reason !== "completed")
-						return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", `Task ${operation.task_id} depends on stopped historical prerequisite ${blockerId}`, parentResult, taskResults);
-				}
-			}
+			if (!amendment.historical.has(blockerId)) continue;
+			const blocker = taskLookup(initial.issues, initial.repository.id, blockerId);
+			if (blocker.kind === "found" && (blocker.issue.state !== "closed" || blocker.issue.state_reason !== "completed"))
+				return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", `Task ${operation.task_id} depends on stopped historical prerequisite ${blockerId}`);
 		}
 	}
-	const sortedAttached = [...attached].sort((left, right) => left - right);
-	const sortedExpected = [...expectedNumbers, ...(amendment ? [...amendment.historical.values()].map((binding) => binding.issue_number) : [])].sort((left, right) => left - right);
-	if (sortedAttached.length !== sortedExpected.length || sortedAttached.some((number, index) => number !== sortedExpected[index]))
-		return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", "Initiative Parent Sub-issues do not match the complete publication batch", parentResult, taskResults);
-	const statuses = [parentResult.status, ...taskResults.map((task) => task.status)];
-	const status: TrackerStatus = statuses.every((item) => item === "created")
-		? "created"
-		: statuses.every((item) => item === "already_current") ? "already_current" : "updated";
-	const issueByTask = new Map(taskResults.map((task) => [task.task_id, task.issue_number]));
-	if ([...issueByTask.values()].some((number) => number === undefined))
-		return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", "published Task result is missing an Issue number", parentResult, taskResults);
-	const issueNumber = (taskId: string): number => issueByTask.get(taskId)!;
-	const firstTaskId = prepared.order[0].task_id;
-	return publicationResultWithPlan(plannedTaskIds, status, "complete Initiative Parent, Children, and dependency graph published", parentResult, taskResults, {
-		recommended_first_task_id: firstTaskId,
-		recommended_first_issue_number: issueNumber(firstTaskId),
-		order: prepared.order.map((operation) => operation.task_id),
-		issue_order: prepared.order.map((operation) => issueNumber(operation.task_id)),
-		parallel_groups: prepared.parallel_groups,
-		parallel_issue_groups: prepared.parallel_groups.map((group) => group.map(issueNumber)),
-	});
+	// The approved baseline is the only accepted starting point. Every fact here
+	// comes from the start listing, before any write.
+	const parentBaseline = amendment.parent.body !== initialParent.issue.body || amendment.parent.title !== initialParent.issue.title;
+	const parentApproved = initialParent.issue.title === parent.title && initialParent.issue.body === parent.body;
+	if (parentBaseline && !parentApproved)
+		return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", "amendment Parent changed since the approved amendment baseline");
+	if (amendment.parent.issue_number !== initialParent.issue.number)
+		return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", `amendment Parent is bound to Issue #${amendment.parent.issue_number} but observed Issue #${initialParent.issue.number}`);
+	if (initialParent.issue.state !== "open")
+		return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", "an amendment requires the Initiative Parent to remain open");
+	const amendmentContextValue: AmendmentExecutionContext = {
+		pendingContent,
+		parent,
+		parentIssueNumber: amendment.parent.issue_number,
+		historicalSlices,
+		historicalRelations: new Map(),
+	};
+	return publishAmendmentDirect(absoluteRoot, gh, prepared, initial, amendment, amendmentContextValue);
 }
+
 
 function isSuccessfulTrackerStatus(status: TrackerStatus): boolean {
 	return status === "created" || status === "updated" || status === "already_current";

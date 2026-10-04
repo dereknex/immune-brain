@@ -277,8 +277,11 @@ Child as a native Sub-issue, creates native `blocked_by` relations, and takes
 every Issue number from its own create response. The write flow is direct: one
 start-of-run read of the repository identity, the Issue listing, and the label
 listing, then one create per absent Issue in dependency order, one attach per
-Child, and one relation write per edge. No read follows a write, and no
-cumulative deadline exists; each call keeps its own per-call timeout and
+Child, and one relation write per edge. No repository listing, attachment,
+dependency or ownership confirmation follows a write; one Issue-scoped read
+follows each create to resolve the database id the relation endpoints need,
+because `gh issue create` returns only the Issue URL. No cumulative deadline
+exists either; each call keeps its own per-call timeout and
 the caller's cancellation. Deduplication is start-only: a rerun of the same
 approved batch adopts whatever the start listing already carries and writes only
 the missing relations, so it never creates a duplicate Issue and never repeats a
@@ -325,13 +328,18 @@ For amending an already-published Initiative, the same
 `amendment` input after the literal user approves the changed pending frontier.
 Provide the complete approved pending Tasks plus the complete read-only
 historical Child list, each binding the observed `issue_number`, title, body,
-and state at approval. The tracker verifies every bound Issue against that
-baseline before any write, updates only approved pending briefs, converges the
-exact approved pending `blocked_by` set, creates newly added pending Children,
-and preserves historical Children byte-for-byte with their native Sub-issue
-links and dependency relations. Omitted membership, baseline drift, or a
-stopped historical prerequisite fails closed with zero or bounded mutations
-and an exact retry action; the strict no-amendment default is unchanged.
+and state at approval. The amendment uses the same direct write flow: one start
+listing (plus Issue-scoped Sub-issue and `blocked_by` reads) verifies every bound
+Issue against its baseline, then the Parent is edited at most once, each approved
+pending brief is edited at most once, newly added pending Children are created as
+in ordinary publication, and each pending Child's `blocked_by` set is converged
+to the approved set. Historical Children are never written and keep their
+byte-exact content, native Sub-issue links and dependency relations. No read
+follows a write and no closing recheck runs, so baseline drift that appears after
+the start listing is not detected in that run; it surfaces at the start of the
+next run. Omitted membership, baseline drift present at start, and a stopped
+historical prerequisite fail closed before any write with an exact retry action;
+the strict no-amendment default is unchanged.
 
 ### Verification Descriptor Discipline
 

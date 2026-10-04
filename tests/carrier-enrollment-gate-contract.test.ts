@@ -48,7 +48,7 @@ describe("Initiative carrier Enrollment gate", () => {
 		// complete-topology reread or a whole-publication deadline.
 		expect(PLANNER).toContain("takes\nevery Issue number from its own create response");
 		expect(PLANNER).toContain("Deduplication is start-only");
-		expect(PLANNER).toContain("No read follows a write");
+		expect(PLANNER).toContain("No repository listing, attachment,\ndependency or ownership confirmation follows a write");
 		expect(PLANNER).not.toContain("rereads\nthe complete topology");
 		expect(PLANNER).not.toContain("whole-operation deadline");
 	});

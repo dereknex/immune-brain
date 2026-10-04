@@ -1,0 +1,343 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "tracker-direct-publication-s2-direct",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "tracker-direct-publication-s2-direct",
+    "goal": "Finish the S2 amendment deliverable of docs/specs/tracker-direct-publication.spec.md as a successor TaskIntent: make GitHub Initiative amendment use the direct write flow, verifying the approved baseline once at start and removing every post-write reread while leaving historical Children untouched.",
+    "acceptance": [
+      {
+        "id": "TDP-S2-A1",
+        "assertion": "Implement S2 of docs/specs/tracker-direct-publication.spec.md in the existing amendment path, test-first. With the fake gh transport, an amendment verifies every bound Issue against its approved baseline once, from the start listing plus Issue-scoped relation reads, before any write; then performs one edit per changed pending brief, one create plus relations per new pending Child as in S1, and converges each pending Child's blocked_by set to the approved set. No repository listing follows the first write, no per-Child revalidation listing precedes a write and no closing recheck runs. Historical Children receive zero writes and keep their title, body, Sub-issue link and dependency relations. Omitted membership, baseline drift present at start and a stopped historical prerequisite still fail closed before any write with their existing failure class and one retry action. Rerunning the same approved amendment after a partial run creates no duplicate Issue and repeats no completed edit. The no-amendment publication behavior delivered by S1 and the mark-terminal path are unchanged. The Claude bundle is regenerated, the Planner amendment prose matches the behavior, the evidence fixture that hash-binds the Planner contract is re-hashed, and the carrier-gate test that asserts the Planner prose reflects the direct flow. No real remote writes in tests.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/plugin-package-runtime.test.ts\",\n      \"tests/github-initiative-recovery.test.ts\",\n      \"tests/github-issue-projection-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\",\n      \"tests/carrier-enrollment-gate-contract.test.ts\",\n      \"tests/workflow-behavior-evidence.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 262144\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/tracker-direct-publication.md",
+      "docs/plans/tracker-direct-publication-s2-direct.intent.json",
+      "docs/specs/tracker-direct-publication.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/runtime/github_issue_tracker.ts",
+      "tests/carrier-enrollment-gate-contract.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/fixtures/workflow-decision-closure-evidence.json",
+      "tests/github-initiative-recovery.test.ts",
+      "tests/github-issue-projection-contract.test.ts",
+      "tests/plugin-package-runtime.test.ts",
+      "tests/skill-dist-consistency.test.ts",
+      "tests/workflow-behavior-evidence.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/tracker-direct-publication-s2-direct.intent.json",
+    "content_hash": "sha256:711f876d5850beae73ebfe01151ea8940ebb1679e75e04a46a8383d0ac97aade"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:aaed29a4fc92d5abc26aafb56471ac4595fc21f28d143eec04b57d9927921e0e",
+  "git_base_head": "076004a10081f40ee16883e36b769248bd74ac54",
+  "attestations": [
+    {
+      "id": "approval-qa-88322706",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:aaed29a4fc92d5abc26aafb56471ac4595fc21f28d143eec04b57d9927921e0e",
+      "diff_hash": "sha256:5a41f58ac59218557199d667326cccccbb86cd296c32383a5442793812d9ec88",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:c24a203a4d6dd7615fdf86d194175dccad974207c2c4db176e2590e65910023c",
+      "acceptance_results": [
+        {
+          "acceptance_id": "TDP-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:c24a203a4d6dd7615fdf86d194175dccad974207c2c4db176e2590e65910023c"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-2c9516af",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:aaed29a4fc92d5abc26aafb56471ac4595fc21f28d143eec04b57d9927921e0e",
+      "diff_hash": "sha256:95b69a8079661beb834ecc9641ad904380037e0267b06fde39b5e01bcae404e4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:23aa1eaa280b020c7f7bd05e804b2243079133bf5feb27208128dc33317d0897",
+      "acceptance_results": [
+        {
+          "acceptance_id": "TDP-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:23aa1eaa280b020c7f7bd05e804b2243079133bf5feb27208128dc33317d0897"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-3c984776",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:711f876d5850beae73ebfe01151ea8940ebb1679e75e04a46a8383d0ac97aade",
+      "diff_hash": "sha256:eb2297ca429402842bf70dee34ac52e67ba37ffde601456554a1cca4149e116b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:03ff96a2c95dc94cd7a65b8b131b41ba41e601a18cfacb4ad27eed648de5e83b",
+      "acceptance_results": [
+        {
+          "acceptance_id": "TDP-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:03ff96a2c95dc94cd7a65b8b131b41ba41e601a18cfacb4ad27eed648de5e83b"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-731e5770",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:711f876d5850beae73ebfe01151ea8940ebb1679e75e04a46a8383d0ac97aade",
+      "diff_hash": "sha256:eb2297ca429402842bf70dee34ac52e67ba37ffde601456554a1cca4149e116b",
+      "actor_id": "parent-mediated-review",
+      "summary": "已验证 immutable revision 的唯一 parent、tree、manifest_digest 和全部 changed_paths OID；结合 Kernel QA 通过证据，S2 的启动时基线验证、直接写入、历史 Child 保护及幂等恢复未发现阻断问题，Planner hash binding 与 regenerated bundle 一致。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "076004a10081f40ee16883e36b769248bd74ac54",
+        "review_commit": "eb8718dbb5a94944ee619e4f2a8956c7a4dd44f2",
+        "review_tree": "ac5eba0fa3c60ae4bedf998a22954379f22f41f3",
+        "manifest_digest": "sha256:f18bfa0d9a74a416451f57b46917b71c43961e832e6b2013273da9ebe3ef2ed8"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-0aaa67031c96-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "TDP-S2-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/dist/claude/mcp-server.mjs:1973-1978 引入了与 S2 无关的 QA 重试阻断：同一 snapshot 连续失败两次后，即使环境已修复，下一次 advance 也不会执行 QA。Spec 明确将 Kernel 行为排除在本次变更之外；应移除本次 bundle 中新增的 QA failure-streak 行为，或将其拆为独立授权并验证的任务。",
+      "anchor": "sha256:bd766e5144728b465bd80bf0ad1275f2396d0a1c62325a11b2f4b01e4dd548c1",
+      "evidence": {
+        "trigger": "Claude Host 在同一 session 对 record_revision、intent_content_hash 和 diff_hash 均未变化的任务执行 QA，两次失败后修复测试环境，再次调用 advance。新生成的 bundle 在 runQa 前返回 blocked，要求修改 diff/intent 或重启 session；base revision 的 bundle 没有该限制。已核验 manifest digest、commit 的唯一 parent、tree 及全部 changed_paths 的 blob identity。读取未修改的 plugins/immune-brain/runtime/assurance/coordinator.ts，是为了沿 bundle 中变更的同一 AssuranceCoordinator 状态机核实生成来源，而非将该源文件纳入任务修改范围。",
+        "caller_chain": [
+          "plugins/immune-brain/dist/claude/mcp-server.mjs:ClaudeKernelPorts.advance",
+          "plugins/immune-brain/dist/claude/mcp-server.mjs:AssuranceCoordinator.advance",
+          "plugins/immune-brain/dist/claude/mcp-server.mjs:AssuranceCoordinator.recordQaAttempt",
+          "plugins/immune-brain/dist/claude/mcp-server.mjs:AssuranceCoordinator.advanceOnce"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "TDP-S2-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-0aaa67031c96-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "TDP-S2-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts:2771-2772 的 failed helper 固定传入 undefined，导致 Parent 已成功编辑后，Child create/edit 或 relation 失败时丢失已确认的 initiative result。旧 amendment 路径及现有 S1 helper 都保留该结果；应让 failed helper 传递当前 parentResult，并增加 Parent 成功、后续 Child 调用失败的回归测试。",
+      "anchor": "sha256:52f2cf7049a79969565d4ea64f59e196479a1c44f0879d3a56db49f26c5404b3",
+      "evidence": {
+        "trigger": "approved amendment 的 Parent 内容需要更新；Parent 的 gh issue edit 成功，随后 pending Child 的 gh issue edit、gh issue create、Sub-issue attachment 或 blocked_by mutation 返回非零 exit_code。publishAmendmentDirect 调用 failed，把 initiative 参数置为 undefined，publicationResultWithPlan 因而省略已经成功落地的 Parent Issue identity/status，破坏失败结果保留已确认步骤的契约。该问题不是被明确退休的中途漂移检测，而是已收到成功响应的步骤在失败报告中被丢弃。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:runGithubInitiativePublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:publishAmendmentDirect",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:publishAmendmentDirect.failed",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:publicationResultWithPlan"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "TDP-S2-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-20746aa66705-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "TDP-S2-A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "验收 descriptor 未执行新增的 S2 行为测试：tests/plugin-package-runtime.test.ts:1579–1658 的 amendment 调用序列、重复执行及恢复检查，以及 :2017 的 Parent 成功后 Child 失败检查，均不在所列六个测试文件中。请将该文件加入 verification descriptor，或将 focused tests 移入已执行的文件，再重新取得 QA attestation。",
+      "anchor": "sha256:9c8147b392fde5ff73f9f6e127ec737c2778d8543c83242d4b0c8deb80c9c550",
+      "evidence": {
+        "trigger": "执行 manifest 中 TDP-S2-A1 的 bun test descriptor 时，只选择 github-initiative-recovery、github-issue-projection-contract、claude-host-package、skill-dist-consistency、carrier-enrollment-gate-contract 和 workflow-behavior-evidence 六个文件，未选择或导入 plugin-package-runtime.test.ts。直接 amendment 调用序列和新增恢复检查因此未执行；embedded passed outcome 不能证明这些具体 invariant。读取未修改的上述测试文件仅用于核实 acceptance descriptor 的覆盖关系，并非因缺少本地重跑而提出此 finding。",
+        "caller_chain": [
+          "TDP-S2-A1.verification.command.argv",
+          "tests/plugin-package-runtime.test.ts:1579",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:publishAmendmentDirect"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "TDP-S2-A1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:tracker-direct-publication-s2-direct:2026-10-04T13:55:09.735Z",
+      "at": "2026-10-04T13:55:09.735Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/tracker-direct-publication-s2-direct.intent.json"
+    },
+    {
+      "id": "record_approval:tracker-direct-publication-s2-direct:2026-10-04T13:55:17.041Z",
+      "at": "2026-10-04T13:55:17.041Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-88322706\naction_v2_sha256:b0e6859b2687461087d2d75f04f0449fc359f153eb14cef21afd0a1d4b95f89b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-782b3e1d597e2976",
+        "issued_at": "2026-10-04T13:55:17.041Z",
+        "expires_at": "2026-10-04T14:05:17.041Z"
+      }
+    },
+    {
+      "id": "request_rework:tracker-direct-publication-s2-direct:2026-10-04T14:00:22.132Z",
+      "at": "2026-10-04T14:00:22.132Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:2dbd1e1bde73c03341112ff9f0e906c208d18aa4879b0514371f43493da28953",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-9e18339660e13538",
+        "issued_at": "2026-10-04T14:00:22.132Z",
+        "expires_at": "2026-10-04T14:10:22.132Z"
+      }
+    },
+    {
+      "id": "resolve_finding:tracker-direct-publication-s2-direct:2026-10-04T14:24:33.924Z",
+      "at": "2026-10-04T14:24:33.924Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-0aaa67031c96-1-review-1\naction_v2_sha256:5fcff28824b30b0d5f291c298adb3c2ea3c391451a81fd22e817067ad91934aa"
+    },
+    {
+      "id": "resolve_finding:tracker-direct-publication-s2-direct:2026-10-04T14:24:54.612Z",
+      "at": "2026-10-04T14:24:54.612Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-0aaa67031c96-2-review-2\naction_v2_sha256:6eb5adbafaa7e283157d69ff3a17393372863f588f16ca3d94f015d154f282e5"
+    },
+    {
+      "id": "freeze_artifacts:tracker-direct-publication-s2-direct:2026-10-04T14:25:13.207Z",
+      "at": "2026-10-04T14:25:13.207Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/tracker-direct-publication-s2-direct.intent.json"
+    },
+    {
+      "id": "record_approval:tracker-direct-publication-s2-direct:2026-10-04T14:25:21.597Z",
+      "at": "2026-10-04T14:25:21.597Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2c9516af\naction_v2_sha256:0fdbe0a6423bed081ed1164c428fbfe7d5a17f09456e4d2af5f362b8e0c8b624",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-1fafad903aa1ff2f",
+        "issued_at": "2026-10-04T14:25:21.597Z",
+        "expires_at": "2026-10-04T14:35:21.597Z"
+      }
+    },
+    {
+      "id": "request_rework:tracker-direct-publication-s2-direct:2026-10-04T14:28:55.680Z",
+      "at": "2026-10-04T14:28:55.680Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:f62b6b6aaaa0a2f3fc89960dae3856fc971a26ee96bcc3e6386b04d8a6ae0d41",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-56a18e630ca09081",
+        "issued_at": "2026-10-04T14:28:55.680Z",
+        "expires_at": "2026-10-04T14:38:55.680Z"
+      }
+    },
+    {
+      "id": "revise_intent:tracker-direct-publication-s2-direct:2026-10-04T14:33:10.535Z",
+      "at": "2026-10-04T14:33:10.535Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:d7cc9f2ea758ec3acdc81a79f369beecd1528a74ff3b4dc378bdc3c7ddd2490d"
+    },
+    {
+      "id": "resolve_finding:tracker-direct-publication-s2-direct:2026-10-04T14:33:36.782Z",
+      "at": "2026-10-04T14:33:36.782Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-20746aa66705-1-review-1\naction_v2_sha256:9557516814c27c06b0b66f02a893ffa0617e1655a3ac8acb543bbb41dc42bc66"
+    },
+    {
+      "id": "freeze_artifacts:tracker-direct-publication-s2-direct:2026-10-04T14:33:48.948Z",
+      "at": "2026-10-04T14:33:48.948Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/tracker-direct-publication-s2-direct.intent.json"
+    },
+    {
+      "id": "record_approval:tracker-direct-publication-s2-direct:2026-10-04T14:34:01.992Z",
+      "at": "2026-10-04T14:34:01.992Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-3c984776\naction_v2_sha256:5ad7c4aa3e876c30ec729c1872eff3f69a6e4cbc3b377ac454a452edc68cc44b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d88723abbbfe4c34",
+        "issued_at": "2026-10-04T14:34:01.992Z",
+        "expires_at": "2026-10-04T14:44:01.992Z"
+      }
+    },
+    {
+      "id": "record_approval:tracker-direct-publication-s2-direct:2026-10-04T14:38:13.413Z",
+      "at": "2026-10-04T14:38:13.413Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-731e5770\naction_v2_sha256:e523b34c3be76e710c100a180db06df06ea4a62bcfe8c75f94b39e203abb1872",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-df5a3b33473a6b70",
+        "issued_at": "2026-10-04T14:38:13.413Z",
+        "expires_at": "2026-10-04T14:48:13.413Z"
+      }
+    },
+    {
+      "id": "complete:tracker-direct-publication-s2-direct:2026-10-04T14:38:17.077Z",
+      "at": "2026-10-04T14:38:17.077Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:bffd49226ed4d2a8b73586f0b885e21c0b9414c4092586f46c08041616306c64"
+    }
+  ]
+}

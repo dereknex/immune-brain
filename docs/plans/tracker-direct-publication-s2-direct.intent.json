@@ -1,0 +1,31 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "tracker-direct-publication-s2-direct",
+  "goal": "Finish the S2 amendment deliverable of docs/specs/tracker-direct-publication.spec.md as a successor TaskIntent: make GitHub Initiative amendment use the direct write flow, verifying the approved baseline once at start and removing every post-write reread while leaving historical Children untouched.",
+  "acceptance": [
+    {
+      "id": "TDP-S2-A1",
+      "assertion": "Implement S2 of docs/specs/tracker-direct-publication.spec.md in the existing amendment path, test-first. With the fake gh transport, an amendment verifies every bound Issue against its approved baseline once, from the start listing plus Issue-scoped relation reads, before any write; then performs one edit per changed pending brief, one create plus relations per new pending Child as in S1, and converges each pending Child's blocked_by set to the approved set. No repository listing follows the first write, no per-Child revalidation listing precedes a write and no closing recheck runs. Historical Children receive zero writes and keep their title, body, Sub-issue link and dependency relations. Omitted membership, baseline drift present at start and a stopped historical prerequisite still fail closed before any write with their existing failure class and one retry action. Rerunning the same approved amendment after a partial run creates no duplicate Issue and repeats no completed edit. The no-amendment publication behavior delivered by S1 and the mark-terminal path are unchanged. The Claude bundle is regenerated, the Planner amendment prose matches the behavior, the evidence fixture that hash-binds the Planner contract is re-hashed, and the carrier-gate test that asserts the Planner prose reflects the direct flow. No real remote writes in tests.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/plugin-package-runtime.test.ts\",\n      \"tests/github-initiative-recovery.test.ts\",\n      \"tests/github-issue-projection-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\",\n      \"tests/carrier-enrollment-gate-contract.test.ts\",\n      \"tests/workflow-behavior-evidence.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 262144\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/tracker-direct-publication.md",
+    "docs/plans/tracker-direct-publication-s2-direct.intent.json",
+    "docs/specs/tracker-direct-publication.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/runtime/github_issue_tracker.ts",
+    "tests/carrier-enrollment-gate-contract.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/fixtures/workflow-decision-closure-evidence.json",
+    "tests/github-initiative-recovery.test.ts",
+    "tests/github-issue-projection-contract.test.ts",
+    "tests/plugin-package-runtime.test.ts",
+    "tests/skill-dist-consistency.test.ts",
+    "tests/workflow-behavior-evidence.test.ts"
+  ],
+  "risk": "material",
+  "revision": 2,
+  "owner": "user"
+}

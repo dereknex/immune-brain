@@ -100,7 +100,7 @@ by start-of-run equivalents:
 
 ## Slice decomposition, dependencies, and acceptance mapping
 
-Both Children are `material`. Task IDs are `tracker-direct-publication-s1` and `tracker-direct-publication-s2`.
+Both Children are `material`. Task IDs are `tracker-direct-publication-s1` and `tracker-direct-publication-s2-direct` (the successor that finishes S2 after the original `tracker-direct-publication-s2` enrollment was stopped).
 
 | Slice | Closable result | Blockers | Acceptance | Focused verification |
 | --- | --- | --- | --- | --- |

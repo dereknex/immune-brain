@@ -230,6 +230,8 @@ class FakeGh implements GhTransport {
 	mutateChildAfterDependencyMutation = false;
 	dropNextSubIssueMutation = false;
 	failNextSubIssueMutation = false;
+	/** Fails the next `issue edit` targeting this Issue number, after it succeeds. */
+	failNextEditForIssue: number | null = null;
 	afterIssueCreate?: (issueNumber: number, cwd: string) => void;
 
 	async run(args: string[], options: { cwd?: string; stdin?: string } = {}): Promise<GhExecution> {
@@ -358,6 +360,12 @@ class FakeGh implements GhTransport {
 				return { exit_code: 1, stdout: "", stderr: "body too long", timed_out: false, output_exceeded: false };
 			const issue = this.issues.find((candidate) => candidate.number === Number(args[2]));
 			if (!issue) return { ...ok(), exit_code: 1, stderr: "not found" };
+			// A targeted failure lets one Child write fail after the Parent write and an
+			// earlier Child write already succeeded.
+			if (this.failNextEditForIssue === issue.number) {
+				this.failNextEditForIssue = null;
+				return { exit_code: 1, stdout: "", stderr: "network is unreachable", timed_out: false, output_exceeded: false };
+			}
 			const titleIndex = args.indexOf("--title");
 			if (titleIndex !== -1 && args[titleIndex + 1] !== undefined) issue.title = args[titleIndex + 1];
 			if (options.stdin !== undefined) issue.body = options.stdin;
@@ -1567,6 +1575,89 @@ describe("initiative amendment publication", () => {
 		};
 	}
 
+
+	it("performs the direct amendment write flow with one start listing and no post-write read", async () => {
+		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
+			const listings: number[] = [];
+			const originalRun = gh.run.bind(gh);
+			let listingsSeen = 0;
+			let writes = 0;
+			gh.run = async (args: string[], options: any) => {
+				const outcome = await originalRun(args, options);
+				// The acceptance is the call sequence, so it is recorded at the
+				// transport boundary instead of inferred from the final state.
+				if (args[0] === "api" && args.some((arg) => String(arg).includes("/issues?state=all")) && !args.includes("--paginate")) {
+					listingsSeen += 1;
+					listings.push(writes);
+				}
+				if (isWriteCall(args)) writes += 1;
+				return outcome;
+			};
+			const amended = await runGithubInitiativePublication(
+				root,
+				amendmentInput(paths, parentIssue, pending, historical, { pendingResult: "Deliver the amended pending work", blockedBy: [] }),
+				gh,
+			);
+			expect(amended.status).toBe("updated");
+			// Exactly one repository-wide listing, before every write.
+			expect(listingsSeen).toBe(1);
+			expect(listings).toEqual([0]);
+			// The amendment converges the pending Child: one Parent edit, one Child
+			// edit, and one blocked_by removal. No read follows a write.
+			expect(writes).toBe(3);
+			expect(gh.subIssues.get(parentIssue.number)).toContain(pending.number);
+			expect((pending as any).blockedBy ?? []).toEqual([]);
+			// Historical bytes and relations are untouched.
+			expect(historical.body).not.toContain("Deliver the amended pending work");
+			expect(historical.state).toBe("closed");
+		});
+	});
+
+	it("rerunning the same approved amendment repeats no completed write", async () => {
+		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
+			const input = amendmentInput(paths, parentIssue, pending, historical, { pendingResult: "Deliver the amended pending work", blockedBy: ["amend-done"] });
+			expect((await runGithubInitiativePublication(root, JSON.parse(JSON.stringify(input)), gh)).status).toBe("updated");
+			const settled = gh.mutations;
+			const retry = amendmentInput(paths, parentIssue, pending, historical, { pendingResult: "Deliver the amended pending work", blockedBy: ["amend-done"] });
+			retry.amendment.parent = { issue_number: parentIssue.number, title: parentIssue.title, body: parentIssue.body, state: "open" };
+			expect((await runGithubInitiativePublication(root, JSON.parse(JSON.stringify(retry)), gh)).status).toBe("already_current");
+			expect(gh.mutations).toBe(settled);
+		});
+	});
+
+	it("a partially applied amendment is resumed by the same approved batch", async () => {
+		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
+			const first = amendmentInput(paths, parentIssue, pending, historical, { pendingResult: "Deliver the amended pending work", blockedBy: ["amend-done"] });
+			expect((await runGithubInitiativePublication(root, JSON.parse(JSON.stringify(first)), gh)).status).toBe("updated");
+			// Simulate a half-landed retry: the approved content landed but the
+			// approved edge was lost and the Sub-issue attachment was dropped.
+			(pending as any).blockedBy = [];
+			gh.subIssues.set(parentIssue.number, (gh.subIssues.get(parentIssue.number) ?? []).filter((n) => n !== pending.number));
+			const resumed = amendmentInput(paths, parentIssue, pending, historical, { pendingResult: "Deliver the amended pending work", blockedBy: ["amend-done"] });
+			resumed.amendment.parent = { issue_number: parentIssue.number, title: parentIssue.title, body: parentIssue.body, state: "open" };
+			const outcome = await runGithubInitiativePublication(root, JSON.parse(JSON.stringify(resumed)), gh);
+			expect(["updated", "already_current"]).toContain(outcome.status);
+			expect(gh.subIssues.get(parentIssue.number)).toContain(pending.number);
+			expect((pending as any).blockedBy).toEqual([historical.id]);
+			// No duplicate Issue was created by the resume.
+			expect(gh.issues.filter((issue) => issue.body.includes("task-id=amend-live")).length).toBe(1);
+		});
+	});
+
+	it("baseline drift present at start still fails closed before any write", async () => {
+		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
+			const input = amendmentInput(paths, parentIssue, pending, historical, { pendingResult: "Deliver the amended pending work", blockedBy: [] });
+			// A concurrent edit landed before the run: it is start-listing evidence,
+			// so the baseline comparison fails closed with zero writes.
+			parentIssue.body += "\nconcurrent edit";
+			const before = gh.mutations;
+			const drift = await runGithubInitiativePublication(root, JSON.parse(JSON.stringify(input)), gh);
+			expect(drift.status).toBe("ambiguous_remote_state");
+			expect(drift.message).toContain("amendment Parent changed since the approved amendment baseline");
+			expect(gh.mutations).toBe(before);
+		});
+	});
+
 	it("rejects changed briefs without amendment input (strict default)", async () => {
 		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
 			const before = gh.mutations;
@@ -1660,74 +1751,7 @@ describe("initiative amendment publication", () => {
 			});
 		});
 
-		it("preserves a terminal suffix that lands between the snapshot and the content-write revalidation (round-9 review-1)", async () => {
-			await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
-				// Intercept the content-write revalidation re-read: after the earlier
-				// snapshot, a concurrent publisher applies the approved content AND a
-				// terminal projection appends evidence. The write must preserve that
-				// newly observed suffix, never overwrite it with stale snapshot bytes.
-				const before = gh.mutations;
-				const originalRun = gh.run.bind(gh);
-				let suffixInjected = false;
-				gh.run = async (args: string[], opts: any) => {
-					// Detect the pre-write revalidation snapshot (list --json --state all
-					// listing all issues) and inject the suffix once.
-					if (!suffixInjected && args[0] === "api" && args[1]?.startsWith("repos/") && args[1]?.includes("/issues?")) {
-						// First list call is the initial snapshot; only inject on a later one.
-						if ((gh as any).__listCalls === undefined) (gh as any).__listCalls = 0;
-						(gh as any).__listCalls += 1;
-						if ((gh as any).__listCalls >= 3) {
-							const live = gh.issues.find((issue) => issue.body.includes("task-id=amend-live"))!;
-							live.body = `${live.body.trimEnd()}\n\n<!-- immune-brain:terminal-event=evt-raced -->\nTerminal event: \`evt-raced\`\n`;
-							suffixInjected = true;
-						}
-					}
-					return originalRun(args, opts);
-				};
-				const amended = await runGithubInitiativePublication(
-					root,
-					amendmentInput(paths, parentIssue, pending, historical, { pendingResult: "Deliver the amended pending work", blockedBy: [] }),
-					gh,
-				);
-				delete (gh as any).__listCalls;
-				expect(amended.status).not.toBe("permanent_failure");
-				const live = gh.issues.find((issue) => issue.body.includes("task-id=amend-live"))!;
-				// The raced suffix must survive whatever the amendment wrote.
-				expect(live.body).toContain("terminal-event=evt-raced");
-				expect(gh.mutations).toBeGreaterThan(before);
-			});
-		});
 
-		it("fails closed before dependency writes when a duplicate Task Issue appears before the pre-write revalidation (round-9 review-2)", async () => {
-			await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
-				let mutationsAtInjection = 0;
-				const originalRun = gh.run.bind(gh);
-				let injected = false;
-				gh.run = async (args: string[], opts: any) => {
-					if (!injected && args[0] === "api" && args[1]?.startsWith("repos/") && args[1]?.includes("/issues?")) {
-						if ((gh as any).__listCalls === undefined) (gh as any).__listCalls = 0;
-						(gh as any).__listCalls += 1;
-						if ((gh as any).__listCalls >= 3) {
-							// Duplicate the pending Child under a different Issue number after
-							// the initial snapshot but before any Child/dependency write: the
-							// repository-wide taskLookup in the pre-write revalidation must
-							// reject the ambiguity with zero writes after the injection.
-							const dup = { ...pending, number: pending.number + 60, id: pending.id + 60 };
-							dup.html_url = `https://github.com/example/project/issues/${dup.number}`;
-							gh.issues.push(dup);
-							injected = true;
-							mutationsAtInjection = gh.mutations;
-						}
-					}
-					return originalRun(args, opts);
-				};
-				const input = amendmentInput(paths, parentIssue, pending, historical, { pendingResult: "Deliver the amended pending work", blockedBy: [] });
-				const rejected = await runGithubInitiativePublication(root, input, gh);
-				delete (gh as any).__listCalls;
-				expect(rejected.status).toBe("ambiguous_remote_state");
-				expect(gh.mutations).toBe(mutationsAtInjection);
-			});
-		});
 
 		it("converges dependencies on a terminal-suffixed Child and retries the original input (round-8 review-1)", async () => {
 			await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
@@ -1877,108 +1901,8 @@ describe("initiative amendment publication", () => {
 		});
 	});
 
-	it("fails closed when a terminal suffix is injected on the Parent before final verification (round-21 review-1)", async () => {
-		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
-			const input = amendmentInput(paths, parentIssue, pending, historical, {
-				pendingResult: "Deliver the amended pending work",
-				blockedBy: [],
-			});
-			// Parents have no terminal-suffix lifecycle: a canonical suffix appended
-			// after the last Child verification but before the final snapshot is
-			// real content drift, rejected by byte-exact comparison with no
-			// execution output.
-			const originalRun = gh.run.bind(gh);
-			let dependencyWriteSeen = false;
-			let injected = false;
-			gh.run = async (args: string[], options: any) => {
-				if (args[0] === "api" && args.includes("--method") && args.includes("DELETE"))
-					dependencyWriteSeen = true;
-				if (args[0] === "api" && args.some((arg) => String(arg).includes("/issues?state=all")) && !args.includes("--paginate")) {
-					// Inject after the last dependency write but before the final
-					// verification snapshot: the suffix must be rejected by
-					// byte-exact comparison of the Parent body.
-					if (dependencyWriteSeen && !injected) {
-						injected = true;
-						parentIssue.body += `\n\n<!-- immune-brain:terminal-event=evt-ghost -->\nTerminal event: \`evt-ghost\`\n`;
-					}
-				}
-				return originalRun(args, options);
-			};
-			const drift = await runGithubInitiativePublication(root, JSON.parse(JSON.stringify(input)), gh);
-			expect(drift.status).toBe("ambiguous_remote_state");
-			expect(drift.message).toContain("Initiative Parent content changed during Initiative publication");
-			expect((drift as any).execution).toBeUndefined();
-		});
-	});
 
-	it("fails closed with zero mutations when the Parent is edited after its update and before the Child snapshot (round-19 review-1)", async () => {
-		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
-			const input = amendmentInput(paths, parentIssue, pending, historical, {
-				pendingResult: "Deliver the amended pending work",
-				blockedBy: [],
-			});
-			// The concurrent edit lands strictly after the Parent update write and
-			// before runAmendmentTaskOperation takes its Child snapshot: the fixed
-			// approved Parent bytes stay the only accepted expectation, so the
-			// pending Child write fails closed with zero further tracker mutations.
-			const originalRun = gh.run.bind(gh);
-			let parentWriteObserved = false;
-			let snapshotsSinceParentWrite = 0;
-			const before = gh.mutations;
-			gh.run = async (args: string[], options: any) => {
-				if (!parentWriteObserved && args[0] === "issue" && args[1] === "edit" && String(args[2]) === String(parentIssue.number))
-					parentWriteObserved = true;
-				// Skip the Parent's own post-write confirmation snapshot; inject on the
-				// next snapshot, which is runAmendmentTaskOperation's Child read.
-				if (parentWriteObserved && args[0] === "api" && args.some((arg: string) => String(arg).includes("/issues?state=all")) && !args.includes("--paginate")) {
-					snapshotsSinceParentWrite += 1;
-					if (snapshotsSinceParentWrite === 2)
-						parentIssue.body += "\nconcurrent edit";
-				}
-				return originalRun(args, options);
-			};
-			const drift = await runGithubInitiativePublication(root, JSON.parse(JSON.stringify(input)), gh);
-			expect(drift.status).toBe("ambiguous_remote_state");
-			expect(drift.message).toContain("Parent changed since the approved amendment content");
-			// Only the Parent edit ran; the Child edit/attachment/dependency writes never fired.
-			expect(gh.mutations).toBe(before + 1);
-		});
-	});
 
-	it("fails closed when an undeclared closed Child becomes observable after preflight (round-18 review-2)", async () => {
-		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
-			const input = amendmentInput(paths, parentIssue, pending, historical, {
-				pendingResult: "Deliver the amended pending work",
-				blockedBy: [],
-			});
-			// An undeclared closed Task with this Initiative's markers appears after
-			// the amendment writes complete: final verification must repeat the
-			// complete membership classification and fail the publication.
-			const originalRun = gh.run.bind(gh);
-			let writesCompleted = 0;
-			let injected = false;
-			gh.run = async (args: string[], options: any) => {
-				if (args[0] === "issue" && (args[1] === "edit" || args[1] === "create")) {
-					writesCompleted += 1;
-				}
-				// Inject on the final verification snapshot (after Parent and Child writes complete)
-				if (!injected && writesCompleted >= 2 && args[0] === "api" && args.some((arg) => String(arg).includes("/issues?state=all")) && !args.includes("--paginate")) {
-					injected = true;
-					const intruder: any = JSON.parse(JSON.stringify(historical));
-					intruder.number = 5555;
-					intruder.body = intruder.body.replaceAll("task-id=amend-done", "task-id=amend-ghost");
-					intruder.body = intruder.body.replaceAll("slice-id=done", "slice-id=ghost");
-					intruder.state = "closed";
-					gh.issues.push(intruder);
-				}
-				return originalRun(args, options);
-			};
-			const drift = await runGithubInitiativePublication(root, JSON.parse(JSON.stringify(input)), gh);
-			expect(injected).toBe(true);
-			expect(drift.status).toBe("ambiguous_remote_state");
-			expect(drift.message).toContain("amend-ghost");
-		});
-	});
 
 	it("fails closed in topology preflight with zero mutations when a bound pending Child baseline carries multiple terminal markers (round-20 review-1)", async () => {
 		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
@@ -2015,170 +1939,8 @@ describe("initiative amendment publication", () => {
 				expect(rejected.status).toBe("ambiguous_remote_state");
 				expect(gh.mutations).toBe(before);
 				expect(gh.issues.some((issue) => issue.body.includes("task-id=amend-new"))).toBe(false);
-			});
-		});
-
-		it("fails closed when the Parent drifts after the task snapshot but before the pre-create re-read (round-17 review-1a)", async () => {
-		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
-			initializeTrackedIntents(root, [{ task_id: "amend-new", goal: "Deliver the new pending work", slice_id: "new" }]);
-			const input = amendmentInput(paths, parentIssue, pending, historical, {
-				pendingResult: "Deliver the amended pending work",
-				blockedBy: ["amend-done"],
-				newTask: { task_id: "amend-new", goal: "Deliver the new pending work", intent: "docs/plans/amend-new.intent.json" },
-			});
-			input.amendment.tasks.push({ task_id: "amend-new" });
-			// Inject a concurrent Parent edit exactly between the initial task snapshot
-			// (topology preflight) and the pre-create re-read: the create must be
-			// refused with zero mutations — this is the race the pre-create guard exists for.
-			const originalRun = gh.run.bind(gh);
-			// The drift must land after the Parent amendment write has converged and
-			// after the unbound Child's task snapshot, on the pre-create re-read that
-			// immediately precedes the create call. Pin the injection to the snapshot
-			// right before the create (phase-asserted when the create fires): the
-			// re-read then refuses with the pre-create guard, the create never runs,
-			// and the only mutation is the Parent's own amendment edit.
-			let parentEditConfirmed = 0;
-			let snapshotsAfterParentEdit = 0;
-			let injected = false;
-			gh.run = async (args: string[], options: any) => {
-				if (args[0] === "issue" && args[1] === "edit" && String(args[2]) === String(parentIssue.number)) {
-					parentEditConfirmed = gh.mutations + 1;
-					return originalRun(args, options);
-				}
-				if (args[0] === "issue" && args[1] === "create") {
-					if (!injected)
-						throw new Error("Parent drift was not injected on the pre-create re-read; snapshot indexing drifted");
-				}
-				if (!injected && gh.mutations > parentEditConfirmed && args[0] === "api" && args.some((arg) => String(arg).includes("/issues?state=all")) && !args.includes("--paginate")) {
-					snapshotsAfterParentEdit += 1;
-					// Snapshot 1 after the Parent edit is the Parent's own post-write
-					// confirm (must see the clean approved bytes); every later snapshot
-					// belongs to the Child phases, and the pre-create re-read is the
-					// last one before create. Inject from the third Child-phase snapshot
-					// on: the create hook proves the pre-create re-read carried the drift.
-					if (snapshotsAfterParentEdit >= 3) {
-						injected = true;
-						parentIssue.body += "\nconcurrent edit";
-					}
-				}
-				return originalRun(args, options);
-			};
-			const before = gh.mutations;
-			const rejected = await runGithubInitiativePublication(root, JSON.parse(JSON.stringify(input)), gh);
-						expect(rejected.status).toBe("ambiguous_remote_state");
-			expect(rejected.message).toContain("amendment Parent content changed before creating a new Child");
-			// The Parent's own amendment edit plus the bound pending Child's amendment
-			// edit are the only writes; no Child create ever runs.
-			expect(gh.mutations).toBe(before + 2);
-			expect(gh.issues.some((issue) => issue.body.includes("task-id=amend-new"))).toBe(false);
 		});
 	});
-
-	it("resumes an exact concurrent unbound Child creation injected between task snapshot and pre-create re-read (round-17 review-1b)", async () => {
-		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
-			initializeTrackedIntents(root, [{ task_id: "amend-new", goal: "Deliver the new pending work", slice_id: "new" }]);
-			const input = amendmentInput(paths, parentIssue, pending, historical, {
-				pendingResult: "Deliver the amended pending work",
-				blockedBy: ["amend-done"],
-				newTask: { task_id: "amend-new", goal: "Deliver the new pending work", intent: "docs/plans/amend-new.intent.json" },
-			});
-			input.amendment.tasks.push({ task_id: "amend-new" });
-			// First pass: derive the exact approved-final Issue for the new Child.
-			const created = await runGithubInitiativePublication(root, JSON.parse(JSON.stringify(input)), gh);
-			expect(created.status).toBe("updated");
-			const approved = gh.issues.find((issue) => issue.body.includes("task-id=amend-new"))!;
-			gh.issues = gh.issues.filter((issue) => issue.number !== approved.number);
-			gh.subIssues.set(parentIssue.number, (gh.subIssues.get(parentIssue.number) ?? []).filter((number) => number !== approved.number));
-			// Second pass: a concurrent writer creates the exact approved-final Child
-			// between the task snapshot and the pre-create re-read. The tracker must
-			// resume it (no duplicate create, exact convergence) rather than create.
-			const originalRun = gh.run.bind(gh);
-			let snapshotsSeen = 0;
-			let injected = false;
-			gh.run = async (args: string[], options: any) => {
-				if (!injected && args[0] === "api" && args.some((arg) => String(arg).includes("/issues?state=all")) && !args.includes("--paginate")) {
-					snapshotsSeen += 1;
-					if (snapshotsSeen >= 2) {
-						injected = true;
-						gh.issues.push(JSON.parse(JSON.stringify(approved)));
-						gh.subIssues.set(parentIssue.number, [...(gh.subIssues.get(parentIssue.number) ?? []), approved.number]);
-					}
-				}
-				return originalRun(args, options);
-			};
-			const before = gh.mutations;
-			const resume = await runGithubInitiativePublication(root, JSON.parse(JSON.stringify(input)), gh);
-			expect(resume.status).toBe("already_current");
-			expect(gh.mutations).toBe(before);
-			const duplicates = gh.issues.filter((issue) => issue.body.includes("task-id=amend-new"));
-			expect(duplicates.length).toBe(1);
-			expect(duplicates[0].title).toBe(approved.title);
-			expect(duplicates[0].body).toBe(approved.body);
-		});
-	});
-
-	it("fails closed when Parent markers and approved bytes are transferred to a replacement Issue before revalidation (round-19 review-1)", async () => {
-		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
-			initializeTrackedIntents(root, [{ task_id: "amend-new", goal: "Deliver new work" }]);
-			const input = amendmentInput(
-				paths,
-				parentIssue,
-				pending,
-				historical,
-				{ pendingResult: "Deliver pending work", blockedBy: [] },
-				{ newTasks: [{ taskId: "amend-new", goal: "Deliver new work", blockedBy: [] }] },
-			);
-
-			// Pre-create a replacement Issue that will steal Parent identity and approved bytes.
-			const replacementIssue = {
-				id: 9999,
-				number: 99,
-				title: "placeholder",
-				body: "placeholder",
-				state: "open" as const,
-				state_reason: null,
-				html_url: "https://github.com/example/repo/issues/99",
-			};
-			gh.issues.push(replacementIssue);
-
-			const originalRun = gh.run.bind(gh);
-			let parentEditConfirmed = 0;
-			let snapshotsAfterParentEdit = 0;
-			let transferred = false;
-			gh.run = async (args: string[], options: any) => {
-				if (args[0] === "issue" && args[1] === "edit" && String(args[2]) === String(parentIssue.number)) {
-					parentEditConfirmed = gh.mutations + 1;
-					return originalRun(args, options);
-				}
-				if (args[0] === "issue" && args[1] === "create") {
-					if (!transferred)
-						throw new Error("Parent identity transfer did not occur before create");
-				}
-				if (!transferred && gh.mutations > parentEditConfirmed && args[0] === "api" && args.some((arg) => String(arg).includes("/issues?state=all")) && !args.includes("--paginate")) {
-					snapshotsAfterParentEdit += 1;
-					// Transfer Parent markers and approved bytes to the replacement Issue
-					// right before the new Child's pre-create revalidation.
-					if (snapshotsAfterParentEdit >= 3) {
-						transferred = true;
-						replacementIssue.title = parentIssue.title;
-						replacementIssue.body = parentIssue.body;
-						// Strip initiative marker from original parent
-						parentIssue.body = parentIssue.body.replace(/<!-- immune-brain:initiative-id=[^ ]+ -->/g, "");
-					}
-				}
-				return originalRun(args, options);
-			};
-
-			const before = gh.mutations;
-			const rejected = await runGithubInitiativePublication(root, JSON.parse(JSON.stringify(input)), gh);
-						expect(rejected.status).toBe("ambiguous_remote_state");
-			expect(rejected.message).toContain("not the bound Parent Issue #1");
-			// Assert zero subsequent Child or relation writes (mutations should be exactly Parent edit + bound child edit).
-			expect(gh.mutations).toBe(before + 2);
-			expect(gh.issues.some((issue) => issue.body.includes("task-id=amend-new"))).toBe(false);
-		});
-	});
-
 	it("resumes a bound pending Child that carries a terminal suffix from a failed terminal close (round-7 review-2)", async () => {
 			await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
 				// Apply the amendment so the Child carries the approved final content.
@@ -2255,6 +2017,26 @@ it("rejects pending bindings whose issue_number does not match the observable Is
 		});
 	});
 
+	it("a confirmed Parent edit survives a later Child failure in the reported outcome", async () => {
+		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
+			// The Parent needs an amendment edit, and a later Child edit then fails.
+			// The Parent write's response was already received, so the failure result
+			// must still carry the confirmed Parent identity rather than dropping it.
+			const input = amendmentInput(paths, parentIssue, pending, historical, {
+				pendingResult: "Deliver the amended pending work",
+				blockedBy: ["amend-done"],
+			});
+			gh.failNextEditForIssue = pending.number;
+			const failed = await runGithubInitiativePublication(root, input, gh);
+			expect(failed.status).toBe("retryable_failure");
+			expect(failed.write_state).toBe("uncertain");
+			// The Parent edit is reported as confirmed, not silently dropped.
+			expect(failed.initiative).toBeDefined();
+			expect(failed.initiative?.issue_number).toBe(parentIssue.number);
+			expect(failed.message).toContain("does not prove zero writes");
+		});
+	});
+
 	it("creates an unbound new Child through the creation path and leaves existing bindings untouched", async () => {
 		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
 			initializeTrackedIntents(root, [{ task_id: "amend-new", goal: "Deliver the new pending work", slice_id: "new" }]);
@@ -2283,54 +2065,7 @@ it("rejects pending bindings whose issue_number does not match the observable Is
 		});
 	});
 
-	it("stops dependency mutations and fails closed when the pending Child drifts before a dependency write", async () => {
-		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
-			const input = amendmentInput(paths, parentIssue, pending, historical, {
-				pendingResult: "Deliver the amended pending work",
-				blockedBy: [],
-			});
-			// Content starts divergent so updatePendingChild reaches convergePendingDependencies after an edit.
-			// Attach a foreign blocker edge that must be removed, then detach the Child between mutations.
-			(pending as any).blockedBy = [historical.number, 987];
-			let firstRemoval = true;
-			const originalRun = gh.run.bind(gh);
-			gh.run = async (args: string[], options: any) => {
-				const outcome = await originalRun(args, options);
-				if (firstRemoval && args.includes("DELETE")) {
-					firstRemoval = false;
-				// Simulate the Child being closed remotely right after the first DELETE lands.
-				const child = gh.issues.find((issue) => issue.number === pending.number);
-				if (child) (child as any).state = "closed";
-			}
-				return outcome;
-			};
-			const drift = await runGithubInitiativePublication(root, JSON.parse(JSON.stringify(input)), gh);
-			expect(drift.status).toBe("ambiguous_remote_state");
-		});
-	});
 
-	it("fails closed when a historical Child's blocked_by relations change during the amendment", async () => {
-		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
-			const input = amendmentInput(paths, parentIssue, pending, historical, {
-				pendingResult: "Deliver the amended pending work",
-				blockedBy: [],
-			});
-			// Snapshot will be taken with this edge; mutate it after the pending update so final verification fails.
-			(historical as any).blockedBy = [42];
-			const originalRun = gh.run.bind(gh);
-			let removedEdge = false;
-			gh.run = async (args: string[], options: any) => {
-				const outcome = await originalRun(args, options);
-				if (!removedEdge && args.includes("issue") && args.includes("edit")) {
-					removedEdge = true;
-				(historical as any).blockedBy = [43];
-			}
-			return outcome;
-			};
-			const drift = await runGithubInitiativePublication(root, JSON.parse(JSON.stringify(input)), gh);
-			expect(drift.status).toBe("ambiguous_remote_state");
-		});
-	});
 
 	it("fails closed when a bound pending Child is replaced by a different Issue before its content update (review-5)", async () => {
 		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
@@ -2455,66 +2190,7 @@ it("rejects pending bindings whose issue_number does not match the observable Is
 			});
 		});
 
-		it("fails closed when an unbound new Child is created closed (round-5 R2)", async () => {
-			await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
-				initializeTrackedIntents(root, [{ task_id: "amend-new", goal: "Deliver the new pending work", slice_id: "new" }]);
-				const input = amendmentInput(paths, parentIssue, pending, historical, {
-					pendingResult: "Deliver the amended pending work",
-					blockedBy: ["amend-done"],
-					newTask: { task_id: "amend-new", goal: "Deliver the new pending work", intent: "docs/plans/amend-new.intent.json" },
-				});
-				input.amendment.tasks.push({ task_id: "amend-new" });
-				// Close the freshly created Child immediately after creation: the post-creation
-					// guard must detect the closed state and fail the batch.
-				gh.afterIssueCreate = (number) => {
-					const createdIssue = gh.issues.find((issue) => issue.number === number);
-					if (createdIssue) createdIssue.state = "closed";
-				};
-				const failure = await runGithubInitiativePublication(root, JSON.parse(JSON.stringify(input)), gh);
-				expect(failure.status).toBe("ambiguous_remote_state");
-			});
-		});
 
-	it("fails closed with zero relation writes when the pending Child drifts right after the attachment write (round-11 review-1)", async () => {
-		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
-			// First pass converges the Child to approved-final content including the blocker.
-			const first = amendmentInput(paths, parentIssue, pending, historical, {
-				pendingResult: "Deliver the amended pending work",
-				blockedBy: ["amend-done"],
-			});
-			expect((await runGithubInitiativePublication(root, JSON.parse(JSON.stringify(first)), gh)).status).toBe("updated");
-			// Simulate a partial write: drop the blocker edge but keep the approved body,
-			// and detach the Child so the retry re-attaches it before re-adding the edge.
-			(pending as any).blockedBy = [];
-			gh.subIssues.set(parentIssue.number, (gh.subIssues.get(parentIssue.number) ?? []).filter((n) => n !== pending.number));
-			// Re-baseline the amendment bindings to the post-first-pass remote state.
-			const rebased = amendmentInput(paths, parentIssue, pending, historical, {
-				pendingResult: "Deliver the amended pending work",
-				blockedBy: ["amend-done"],
-			});
-			rebased.amendment.tasks[0].binding = { issue_number: pending.number, title: pending.title, body: pending.body, state: "open" };
-			rebased.tasks[0].binding = { issue_number: pending.number, title: pending.title, body: pending.body, state: "open" };
-			let attached = false;
-			const originalRun = gh.run.bind(gh);
-			gh.run = async (args: string[], options: any) => {
-				const outcome = await originalRun(args, options);
-				// Mutation calls use `-F`; list reads do not. Inject drift once, right
-				// after the re-attachment mutation lands: the pre-dependency-write
-				// revalidation must observe it and fail closed with zero relation writes.
-				if (!attached && args.join(" ").includes("/sub_issues") && (args.includes("-F") || args.includes("-f"))) {
-					attached = true;
-					const child = gh.issues.find((issue) => issue.number === pending.number);
-					if (child) child.body += "\nconcurrent edit";
-				}
-				return outcome;
-			};
-			const drift = await runGithubInitiativePublication(root, JSON.parse(JSON.stringify(rebased)), gh);
-			expect(drift.status).toBe("ambiguous_remote_state");
-			expect(attached).toBe(true);
-			// Zero relation writes after the drift: no dependency edge was added.
-			expect((pending as any).blockedBy ?? []).toEqual([]);
-		});
-	});
 
 	it("rejects an unbound new Task whose task_id is already owned by another Initiative before any write (round-14 review-1)", async () => {
 		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
