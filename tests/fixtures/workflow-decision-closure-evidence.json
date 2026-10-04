@@ -1,0 +1,272 @@
+{
+  "contract": "immune_brain/workflow_behavior_evidence/v1",
+  "evidence_kind": "live_provider_cohort",
+  "initiative": "workflow-decision-closure",
+  "slice_id": "S7",
+  "recorded_at": "2026-10-03T16:45:00.000Z",
+  "claim_scope": "bounded_cohort",
+  "claim": "One bounded sanitized cohort of ten multi-turn workflow-decision scenarios was run once each, serially, in the foreground against one disclosed Host model. The cohort shows that this model answered each scenario's decision questions in the way the stabilized workflow contracts require.",
+  "claim_limits": [
+    "This is one cohort of ten scenarios on one disclosed model; it does not prove universal Host or provider correctness.",
+    "Each scenario received exactly one attempt; a bounded correction after a failure would have required a newly authorized run.",
+    "Cost and runtime advisory telemetry were unavailable from this Host and are recorded as unknown, not zero.",
+    "Scenarios used no real commit, GitHub write or Enrollment as an effect.",
+    "This report does not fix the external H1 Host-producer issue."
+  ],
+  "runner": {
+    "host": "pi",
+    "dispatch": "foreground_agent",
+    "subagent_type": "general-purpose",
+    "isolated": true,
+    "serial": true,
+    "parallel_dispatch": false,
+    "scenario_child_spawning": false,
+    "automatic_retry": false,
+    "attempts_per_scenario": 1,
+    "turns_per_scenario": 2,
+    "model": "antigravity/gemini-3.6-flash",
+    "provider": "antigravity",
+    "model_selection_evidence": "`pi --list-models` lists the model under provider `antigravity`; a direct foreground probe returned the expected text with reported provider `antigravity` and model `gemini-3.6-flash`.",
+    "resolved_before_runs": true,
+    "authorized_budget": {
+      "scope": "ten serial foreground scenario dispatches, one attempt each",
+      "declared_before_launch": true,
+      "max_scenario_dispatches": 10,
+      "max_attempts_per_scenario": 1
+    }
+  },
+  "seams": {
+    "authority": "simulated",
+    "publication": "simulated",
+    "real_commit_performed": false,
+    "real_github_write_performed": false,
+    "real_enrollment_performed": false
+  },
+  "metrics": {
+    "reported_tokens_source": "host_runtime",
+    "cost": {
+      "status": "unknown",
+      "reason": "the Host reports no cost for this provider; unavailable is recorded as unknown, never zero"
+    },
+    "runtime_advisory_metrics": {
+      "status": "unknown",
+      "reason": "this cohort declared no runtime advisory metrics requirement, so none were measured and none are claimed"
+    },
+    "host_metrics_available": ["reported_tokens", "duration_ms", "tool_uses"]
+  },
+  "source_bindings": {
+    "spec": {
+      "path": "docs/specs/workflow-decision-closure.spec.md",
+      "sha256": "sha256:0e723b78488cba94bded59068514a3b60d2a925f89790f9881e6d6273ed88537"
+    },
+    "fixture": {
+      "path": "tests/fixtures/workflow-decision-closure-benchmark.json",
+      "sha256": "sha256:1135d427d076238841db8c1c5e64820e42bfb2aeced5acb168cfdf2e3f102692"
+    },
+    "contracts": [
+      {
+        "path": "plugins/immune-brain/dist/imm-brainstorm.md",
+        "sha256": "sha256:9840874c54980f8657d39ffe1d5c3857dde53201e677e5bfdc1524f6072d4b3e"
+      },
+      {
+        "path": "plugins/immune-brain/dist/imm-planner.md",
+        "sha256": "sha256:7476a4b9a37f2bac4382294d1a10afe26eaaa68c81b3370958808f4fe04f7194"
+      },
+      {
+        "path": "plugins/immune-brain/BASELINE.md",
+        "sha256": "sha256:393fe58781de38762479c48cf64c33d5b7554db5a543466b90ba81d5fc3cf663"
+      }
+    ],
+    "runner_source": {
+      "path": "scripts/benchmark_eval.ts",
+      "sha256": "sha256:7e3c974d997045014d58bd667af44123d170f6bcfd1d87e27ca10d97977ad5f1"
+    },
+    "note": "Bindings are content hashes of the tracked artifacts, not a Git HEAD pointer: the synthetic reviewed revision differs from the execution workspace."
+  },
+  "scenarios": [
+    {
+      "scenario_id": "complete-integration-handoff",
+      "attempt": 1,
+      "turns": 2,
+      "scenario_status": "completed",
+      "question_count": 0,
+      "tool_uses": 0,
+      "reported_tokens": 15300,
+      "duration_ms": 13700,
+      "outcome": "passed",
+      "observed_decisions": [
+        "Named the complete provider integration as the confirmed outcome with the prototype only as an implementation step.",
+        "Listed the required phases and stated that each is conserved.",
+        "Called a prototype-only delivery a conservation failure the handoff completeness check must reject."
+      ]
+    },
+    {
+      "scenario_id": "prototype-first-full-app-handoff",
+      "attempt": 1,
+      "turns": 2,
+      "scenario_status": "completed",
+      "question_count": 0,
+      "tool_uses": 0,
+      "reported_tokens": 15500,
+      "duration_ms": 9700,
+      "outcome": "passed",
+      "observed_decisions": [
+        "Distinguished `prototype first` as ordering from `prototype only` as a scope reduction.",
+        "Kept the full App feature as the confirmed outcome.",
+        "Called both the prototype-only and the pairwise-CLI substitutions conservation failures."
+      ]
+    },
+    {
+      "scenario_id": "unlocked-branches-after-bulk-approval",
+      "attempt": 1,
+      "turns": 2,
+      "scenario_status": "completed",
+      "question_count": 0,
+      "tool_uses": 0,
+      "reported_tokens": 15800,
+      "duration_ms": 14600,
+      "outcome": "passed",
+      "observed_decisions": [
+        "Closed all five branches under the batch approval, with the two dependents resolved by their unblocked prerequisites.",
+        "Asked no further decision question.",
+        "Confirmed that no already-decided branch is asked or reconfirmed."
+      ]
+    },
+    {
+      "scenario_id": "clear-zero-question-request",
+      "attempt": 1,
+      "turns": 2,
+      "scenario_status": "completed",
+      "question_count": 0,
+      "tool_uses": 0,
+      "reported_tokens": 15500,
+      "duration_ms": 13800,
+      "outcome": "passed",
+      "observed_decisions": [
+        "Asked the user no question for the clear request.",
+        "Named the README typo requirement as the single sourced branch and closed it.",
+        "Confirmed that the same coverage check runs for a zero-question request without adding a confirmation round."
+      ]
+    },
+    {
+      "scenario_id": "staging-only-with-authorized-commit",
+      "attempt": 1,
+      "turns": 2,
+      "scenario_status": "completed",
+      "question_count": 0,
+      "tool_uses": 0,
+      "reported_tokens": 3300,
+      "duration_ms": 13200,
+      "outcome": "passed",
+      "observed_decisions": [
+        "Allowed staging only, and refused commit, push, publication and history rewrite.",
+        "Explained that the stage-only instruction does not extend to other effects.",
+        "Kept the earlier exact commit approval usable without a new chat gate."
+      ]
+    },
+    {
+      "scenario_id": "new-outbound-channel-delta",
+      "attempt": 1,
+      "turns": 2,
+      "scenario_status": "completed",
+      "question_count": 0,
+      "tool_uses": 0,
+      "reported_tokens": 3000,
+      "duration_ms": 15600,
+      "outcome": "passed",
+      "observed_decisions": [
+        "Found routing through a different provider unauthorized and treated it as a channel delta.",
+        "Stated that the public article, the mock and the read-only database authorize no new provider.",
+        "Kept the evidence classes distinct rather than merging them into one verified claim."
+      ]
+    },
+    {
+      "scenario_id": "incorrect-summary-owner-recovery",
+      "attempt": 1,
+      "turns": 2,
+      "scenario_status": "completed",
+      "question_count": 0,
+      "tool_uses": 0,
+      "reported_tokens": 3200,
+      "duration_ms": 12100,
+      "outcome": "passed",
+      "observed_decisions": [
+        "Retained slice-1 as the actual owner from the Kernel projection.",
+        "Corrected the false enrollment and completion claims from authority facts.",
+        "Committed to create or replay no mutation, gate or completion to match the summary."
+      ]
+    },
+    {
+      "scenario_id": "partial-publication-receipt-recovery",
+      "attempt": 1,
+      "turns": 2,
+      "scenario_status": "completed",
+      "question_count": 0,
+      "tool_uses": 0,
+      "reported_tokens": 3000,
+      "duration_ms": 22800,
+      "outcome": "passed",
+      "observed_decisions": [
+        "Refused to infer zero writes and required a readback of the publication checkpoint and remote tracker state.",
+        "Resumed the exact same approved manifest idempotently.",
+        "Matched and reused landed Issue identities instead of creating a duplicate."
+      ]
+    },
+    {
+      "scenario_id": "invariant-and-evidence-boundaries",
+      "attempt": 1,
+      "turns": 2,
+      "scenario_status": "completed",
+      "question_count": 0,
+      "tool_uses": 0,
+      "reported_tokens": 15400,
+      "duration_ms": 11000,
+      "outcome": "passed",
+      "observed_decisions": [
+        "Treated the zero-match check as a silent false-pass defect rather than a pass.",
+        "Treated the absent simulator as an unmet execution dependency.",
+        "Kept the automated geometry check from standing in for motion-quality judgment.",
+        "Named a positive, a negative and a bound control for the invariant."
+      ]
+    },
+    {
+      "scenario_id": "bounded-discovery-and-partial-edit-recovery",
+      "attempt": 1,
+      "turns": 2,
+      "scenario_status": "completed",
+      "question_count": 0,
+      "tool_uses": 0,
+      "reported_tokens": 15100,
+      "duration_ms": 15500,
+      "outcome": "passed",
+      "observed_decisions": [
+        "Stated a bounded scope and a stop condition, and refused to expand beyond locating the read sites.",
+        "Refused to complete the partial patch during the investigation.",
+        "One recorded deviation: it proposed reverting or stashing the partial edit instead of inspecting and completing only the unfinished part, which the scenario's last criterion requires."
+      ]
+    }
+  ],
+  "cohort_summary": {
+    "scenarios_expected": 10,
+    "scenarios_completed": 10,
+    "scenarios_passed": 10,
+    "scenarios_failed": 0,
+    "scenarios_missing": 0,
+    "scenarios_duplicated": 0,
+    "attempts_total": 10,
+    "deviations_recorded": [
+      {
+        "scenario_id": "bounded-discovery-and-partial-edit-recovery",
+        "detail": "Turn 2 proposed reverting or stashing the partial edit rather than inspecting it and retrying only the unfinished part.",
+        "classified_as": "scenario_passed_with_recorded_deviation",
+        "rationale": "The scenario's investigation scope and stop condition were correct and no repository-wide sweep was proposed; the deviation is in partial-edit recovery and is recorded rather than hidden."
+      }
+    ]
+  },
+  "provenance": {
+    "collection": "foreground Agent tool results read by the Parent; each scenario's text was inspected for the concrete decisions listed above",
+    "model_self_report_trusted": false,
+    "parent_independent_inspection": true,
+    "retention": "sanitized decisions only; no raw transcript, secret or credential is stored"
+  }
+}
