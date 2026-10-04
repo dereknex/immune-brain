@@ -1,0 +1,85 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "tracker-direct-publication-s2",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "tracker-direct-publication-s2",
+    "goal": "Make GitHub Initiative amendment use the direct write flow, verifying the approved baseline once at start and removing every post-write reread while leaving historical Children untouched.",
+    "acceptance": [
+      {
+        "id": "TDP-S2-A1",
+        "assertion": "Implement S2 of docs/specs/tracker-direct-publication.spec.md in the existing amendment path, test-first. With the fake gh transport, an amendment verifies every bound Issue against its approved baseline once, from the start listing plus Issue-scoped relation reads, before any write; then performs one edit per changed pending brief, one create plus relations per new pending Child as in S1, and converges each pending Child's blocked_by set to the approved set. No repository listing follows the first write, no per-Child revalidation listing precedes a write and no closing recheck runs. Historical Children receive zero writes and keep their title, body, Sub-issue link and dependency relations. Omitted membership, baseline drift present at start and a stopped historical prerequisite still fail closed before any write with their existing failure class and one retry action. Rerunning the same approved amendment after a partial run creates no duplicate Issue and repeats no completed edit. The no-amendment publication behavior delivered by S1 and the mark-terminal path are unchanged. The Claude bundle is regenerated, the Planner amendment prose matches the behavior, the evidence fixture that hash-binds the Planner contract is re-hashed, and the carrier-gate test that asserts the Planner prose reflects the direct flow. No real remote writes in tests.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/github-initiative-recovery.test.ts\",\n      \"tests/github-issue-projection-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\",\n      \"tests/carrier-enrollment-gate-contract.test.ts\",\n      \"tests/workflow-behavior-evidence.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/tracker-direct-publication.md",
+      "docs/plans/tracker-direct-publication-s2.intent.json",
+      "docs/specs/tracker-direct-publication.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/runtime/github_issue_tracker.ts",
+      "tests/carrier-enrollment-gate-contract.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/fixtures/workflow-decision-closure-evidence.json",
+      "tests/github-initiative-recovery.test.ts",
+      "tests/github-issue-projection-contract.test.ts",
+      "tests/plugin-package-runtime.test.ts",
+      "tests/skill-dist-consistency.test.ts",
+      "tests/workflow-behavior-evidence.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/tracker-direct-publication-s2.intent.json",
+    "content_hash": "sha256:72f394133301dfe082e1db3eaff8c2c893ee8bccd358a6697dbfe247ad731ec0"
+  },
+  "lifecycle": "stopped",
+  "artifact_state": "frozen",
+  "baseline": "sha256:7d94580c166682d8fe472bbb59de6349bd9489bee9a8d6a9ab2b2c0980d9e811",
+  "git_base_head": "0567223c0ef09793dd598627d2a5f4b53cfa49e1",
+  "attestations": [],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:tracker-direct-publication-s2:2026-10-04T11:54:23.784Z",
+      "at": "2026-10-04T11:54:23.784Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:686a11247b9fc5a147bcb0fa132ad19550a6cf2609e636042ad807f2efda744a",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-be3d1e4fabb88de3",
+        "issued_at": "2026-10-04T11:54:24.143Z",
+        "expires_at": "2026-10-04T12:04:24.143Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:tracker-direct-publication-s2:2026-10-04T11:55:31.848Z",
+      "at": "2026-10-04T11:55:31.848Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/tracker-direct-publication-s2.intent.json"
+    },
+    {
+      "id": "stop:tracker-direct-publication-s2:2026-10-04T12:47:10.644Z",
+      "at": "2026-10-04T12:47:10.644Z",
+      "type": "stop",
+      "from_state": "active:frozen",
+      "to_state": "stopped:frozen",
+      "reason": "literal user requested task stop\naction_v2_sha256:7b8e2375febacf12d1f2844d2874b492c08883fa2c34b89840e3aab037186b4b",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-5be7cb48e5f4f988",
+        "issued_at": "2026-10-04T12:47:10.645Z",
+        "expires_at": "2026-10-04T12:57:10.645Z"
+      }
+    }
+  ]
+}

@@ -42,6 +42,17 @@ describe("Initiative carrier Enrollment gate", () => {
 		expect(LOOP).toContain("Before the first Enrollment of a candidate TaskIntent");
 	});
 
+	it("the Planner states the direct flow and drops the retired readback claims", () => {
+		// The Planner contract is the canonical description of what the tracker
+		// does, so it must carry the direct write flow and must not still promise a
+		// complete-topology reread or a whole-publication deadline.
+		expect(PLANNER).toContain("takes\nevery Issue number from its own create response");
+		expect(PLANNER).toContain("Deduplication is start-only");
+		expect(PLANNER).toContain("No read follows a write");
+		expect(PLANNER).not.toContain("rereads\nthe complete topology");
+		expect(PLANNER).not.toContain("whole-operation deadline");
+	});
+
 	it("a later Loop entry does not clear a failed carrier batch", () => {
 		expect(LOOP).toContain("a later `imm-loop` entry does not\nclear it");
 	});

@@ -202,6 +202,12 @@ function immKernel(root: string, args: string[]) {
 	});
 }
 
+/** A remote write call, as opposed to a read-only listing or relation read. */
+function isWriteCall(args: string[]): boolean {
+	if (args[0] === "issue" && (args[1] === "create" || args[1] === "edit" || args[1] === "close")) return true;
+	return args[0] === "api" && (args.includes("--method") || args.some((arg) => arg === "-F" || arg === "-f"));
+}
+
 type FakeIssue = {
 	id: number;
 	number: number;
@@ -223,16 +229,30 @@ class FakeGh implements GhTransport {
 	detachBlockerAfterDependencyMutation = false;
 	mutateChildAfterDependencyMutation = false;
 	dropNextSubIssueMutation = false;
+	failNextSubIssueMutation = false;
 	afterIssueCreate?: (issueNumber: number, cwd: string) => void;
 
 	async run(args: string[], options: { cwd?: string; stdin?: string } = {}): Promise<GhExecution> {
 		const ok = (stdout = ""): GhExecution => ({ exit_code: 0, stdout, stderr: "", timed_out: false, output_exceeded: false });
+		// One public hook per publication, fired immediately before its first write.
+		const write = isWriteCall(args);
+		if (write && !this.firstWriteSeen) {
+			this.firstWriteSeen = true;
+			this.beforeFirstWrite?.(options.cwd ?? "");
+		}
 		if (args[0] === "label" && args[1] === "list")
 			return ok(JSON.stringify(this.repositoryLabels.map((name) => ({ name }))));
 		if (args[0] === "api" && args[1] === "repos/{owner}/{repo}")
 			return ok(JSON.stringify({ id: 4242, full_name: "example/project" }));
 		if (args[0] === "api") {
 			const endpoint = args.at(-1) as string;
+			// The direct write flow resolves one created Issue's database id by its
+			// number, then attaches relations from that id.
+			const detail = endpoint.match(/^repos\/[^/]+\/[^/]+\/issues\/(\d+)$/);
+			if (detail) {
+				const issue = this.issues.find((candidate) => candidate.number === Number(detail[1]));
+				return issue ? ok(String(issue.id)) : { ...ok(), exit_code: 1, stderr: "not found" };
+			}
 			if (endpoint.includes("/issues?state=all")) {
 				if (args.includes("--paginate") && args.includes("--slurp"))
 					return ok(JSON.stringify([this.issues]));
@@ -296,6 +316,10 @@ class FakeGh implements GhTransport {
 				if (this.dropNextSubIssueMutation) {
 					this.dropNextSubIssueMutation = false;
 					return ok();
+				}
+				if (this.failNextSubIssueMutation) {
+					this.failNextSubIssueMutation = false;
+					return { exit_code: 1, stdout: "", stderr: "network is unreachable", timed_out: false, output_exceeded: false };
 				}
 				const existingParent = [...this.subIssues.entries()].find(([, children]) => children.includes(child.number));
 				if (existingParent && existingParent[0] !== parent)
@@ -1083,7 +1107,7 @@ describe("plugin package runtime cutover parity", () => {
 					{ slice_id: "b", intent: paths[1], acceptance: publicAcceptance("retry-b"), projection: { title: "Ship retry B", result: "Ship retry B", blocked_by: ["retry-a"] } },
 				],
 			};
-			gh.dropNextSubIssueMutation = true;
+			gh.failNextSubIssueMutation = true;
 			const partial = await runGithubInitiativePublication(root, input, gh);
 			expect(partial).toMatchObject({ status: "retryable_failure", initiative: { issue_number: 1 } });
 			expect(gh.issues).toHaveLength(2);
@@ -1095,23 +1119,20 @@ describe("plugin package runtime cutover parity", () => {
 		});
 	});
 
-	it("fails closed when an early Child drifts before final topology verification", async () => {
+	it("refuses concurrent drift at the start of the next run with zero writes", async () => {
 		await withIsolatedRootAsync(async (root) => {
 			const gh = new FakeGh();
 			const paths = initializeTrackedIntents(root, [
 				{ task_id: "issue-drift-a", goal: "Ship issue drift A" },
 				{ task_id: "issue-drift-b", goal: "Ship issue drift B" },
 			]);
-			gh.afterIssueCreate = (issueNumber) => {
-				if (issueNumber === 3) gh.issues[1].body += "\nconcurrent edit";
-			};
-			const published = await runGithubInitiativePublication(root, {
+			const input = {
 				initiative_id: "issue-drift",
 				goal: "Detect Issue drift",
 				projection: {
 					short_name: "tracking",
 					title: "Track a large delivery",
-					problem: "An early Child can drift during a long publication.",
+					problem: "An early Child can drift after a run.",
 					result: "Detect Issue drift",
 					design: "Both Children must remain exact and open.",
 				},
@@ -1119,10 +1140,20 @@ describe("plugin package runtime cutover parity", () => {
 					{ slice_id: "a", intent: paths[0], acceptance: publicAcceptance("issue-drift-a"), projection: { title: "Issue drift A" } },
 					{ slice_id: "b", intent: paths[1], acceptance: publicAcceptance("issue-drift-b"), projection: { title: "Issue drift B" } },
 				],
-			}, gh);
-			expect(published).toMatchObject({ status: "ambiguous_remote_state" });
-			expect(published.message).toContain("content changed during Initiative publication");
-			expect(published.execution).toBeUndefined();
+			};
+			const published = await runGithubInitiativePublication(root, input, gh);
+			expect(published.status).toBe("created");
+
+			// A concurrent edit lands after the run. Publication has no post-write
+			// readback, so the drift is caught where it can still be: the start of the
+			// next run's whole-batch validation, before any write.
+			gh.issues[1].body += "\nconcurrent edit";
+			const before = gh.mutations;
+			const drift = await runGithubInitiativePublication(root, input, gh);
+			expect(drift).toMatchObject({ status: "ambiguous_remote_state" });
+			expect(drift.message).toContain("published content no longer matches");
+			expect(drift.execution).toBeUndefined();
+			expect(gh.mutations).toBe(before);
 		});
 	});
 

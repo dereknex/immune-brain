@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "tracker-direct-publication-s2",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "stopped",
+  "terminal_event_id": "stop:tracker-direct-publication-s2:2026-10-04T12:47:10.644Z",
+  "final_record_hash": "sha256:116d83da0749241a5a37c9f0d85cc5ce182c33d1a31416073be17a1e7c3ac725",
+  "terminalized_at": "2026-10-04T12:47:10.644Z"
+}

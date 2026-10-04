@@ -1,18 +1,18 @@
-// S5 of docs/specs/workflow-decision-closure.spec.md: discoverable commands and
-// bounded publication.
+// S5 of docs/specs/workflow-decision-closure.spec.md: discoverable commands.
+// S1 of docs/specs/tracker-direct-publication.spec.md: the direct write flow.
 //
-// The tracker already owns strict v2 parsing, exclusive canonical authoring,
-// idempotent markers and native top-level readback. This file proves the two
-// properties S5 adds on top of that machinery, against one fake transport:
+// The tracker already owns strict v2 parsing, exclusive canonical authoring and
+// idempotent markers. This file proves the publication properties on top of that
+// machinery, against one fake transport:
 //
-//   1. Truthful effect reporting. A caller can tell a confirmed, read-back write
+//   1. Truthful effect reporting. A caller can tell a confirmed write
 //      (`write_state: "confirmed"`) from an outcome it may not treat as zero
 //      writes (`"uncertain"`, carrying exactly one recovery action). No
-//      execution handoff happens before a complete readback.
+//      execution handoff happens before a complete run.
 //   2. A bounded call. One publication call is one finite remote step sequence
-//      with no internal retry loop, so a lost response or partial success is
-//      recovered by re-reading exact ownership/topology/hash state on the next
-//      approved call.
+//      with no internal retry loop and no whole-operation deadline, so a lost
+//      response or partial success is recovered by rerunning the same approved
+//      manifest: the next start listing adopts whatever landed.
 //
 // Fake transport only: no real remote write, no credential, no test-side loop.
 
@@ -21,7 +21,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import type { GhExecution, GhTransport, OperationBudget } from "../plugins/immune-brain/runtime/github_issue_tracker.ts";
+import type { GhExecution, GhTransport, OperationCancellation } from "../plugins/immune-brain/runtime/github_issue_tracker.ts";
 import { runGithubInitiativePublication } from "../plugins/immune-brain/runtime/github_issue_tracker.ts";
 import { intentAuthorHelp } from "../plugins/immune-brain/runtime/v4_runtime.ts";
 
@@ -109,7 +109,11 @@ class RecoveryGh implements GhTransport {
 	subIssues = new Map<number, number[]>();
 	/** Counted at the transport boundary, the only place a call is a real fact. */
 	writeCalls = 0;
+	/** Repository-wide Issue listings observed, so read count can be asserted. */
+	issueListings = 0;
 	mutationLog: string[] = [];
+	/** Every call in order, so the read/write sequence itself can be asserted. */
+	callLog: string[] = [];
 	createdNumbers: number[] = [];
 	fault: Fault | null = null;
 	/** Matching calls seen per fault kind, so `atCount` can target one of them. */
@@ -136,21 +140,21 @@ class RecoveryGh implements GhTransport {
 		return null;
 	}
 
-	async run(args: string[], options: { cwd?: string; stdin?: string; budget?: OperationBudget } = {}): Promise<GhExecution> {
-		// Mirror the real transport's operation budget: a spent or cancelled budget
-		// refuses the call instead of starting another remote write.
-		if (options.budget && (options.budget.signal?.aborted || options.budget.deadline_ms - Date.now() <= 0)) {
+	async run(args: string[], options: { cwd?: string; stdin?: string; signal?: { readonly aborted: boolean } } = {}): Promise<GhExecution> {
+		// Mirror the real transport's cancellation boundary: an aborted caller
+		// refuses the call instead of starting another remote write. There is no
+		// whole-operation deadline any more -- only the per-call timeout remains.
+		if (options.signal?.aborted) {
 			return {
 				exit_code: 1,
 				stdout: "",
-				stderr: options.budget.signal?.aborted
-					? "operation cancelled by the caller"
-					: "publication deadline exceeded before the next remote call",
+				stderr: "operation cancelled by the caller",
 				timed_out: true,
 				output_exceeded: false,
 			};
 		}
 		const write = isWriteCall(args);
+		this.callLog.push(args.join(" "));
 		const kind = faultKind(args) ?? (args[0] === "api" && !write ? "issue_list" : null);
 		if (kind) this.callCounts.set(kind, (this.callCounts.get(kind) ?? 0) + 1);
 		const result = await this.dispatch(args, options);
@@ -168,7 +172,13 @@ class RecoveryGh implements GhTransport {
 			return this.ok(JSON.stringify({ id: 77, full_name: "example/project" }));
 		if (args[0] === "api") {
 			const endpoint = args.at(-1) as string;
+			const issueDetail = endpoint.match(/^repos\/[^/]+\/[^/]+\/issues\/(\d+)$/);
+			if (issueDetail) {
+				const issue = this.issues.find((candidate) => candidate.number === Number(issueDetail[1]));
+				return issue ? this.ok(String(issue.id)) : { ...this.ok(), exit_code: 1, stderr: "not found" };
+			}
 			if (endpoint.includes("/issues?state=all")) {
+				this.issueListings += 1;
 				const short = this.fireFault("issue_list");
 				if (short) return short;
 				return this.ok(JSON.stringify(this.issues));
@@ -290,6 +300,29 @@ function writeIntent(root: string, taskId: string, goal: string) {
 	return path;
 }
 
+/** A six-Child chain: Children 2-6 are each blocked by the previous one. */
+function sixBatch(root: string) {
+	const ids = ["s1", "s2", "s3", "s4", "s5", "s6"];
+	const paths = ids.map((id) => writeIntent(root, `chain-${id}`, `Deliver chain Slice ${id}`));
+	return {
+		initiative_id: "chain-tracker",
+		goal: "Deliver six chained Slices",
+		projection: {
+			short_name: "chain",
+			title: "Track chained delivery",
+			problem: "Chained work is untracked.",
+			result: "Chained delivery is tracked end to end.",
+			design: "One Parent Issue and one Child per Slice.",
+		},
+		tasks: ids.map((id, index) => ({
+			slice_id: id,
+			intent: paths[index],
+			acceptance: [{ id: `acc-chain-${id}`, summary: `Slice ${id} is delivered` }],
+			projection: { title: `Ship ${id}`, ...(index === 0 ? {} : { blocked_by: [`chain-${ids[index - 1]}`] }) },
+		})),
+	};
+}
+
 /** A two-Slice batch: the second Slice is blocked by the first. */
 function batch(root: string) {
 	const paths = [writeIntent(root, "widget-a", "Deliver widget Slice A"), writeIntent(root, "widget-b", "Deliver widget Slice B")];
@@ -319,6 +352,83 @@ function batch(root: string) {
 }
 
 describe("S5 bounded publication recovery", () => {
+	it("performs the direct write flow with one start listing and no post-write read", async () => {
+		await withRoot(async (root, gh) => {
+			const published = await runGithubInitiativePublication(root, batch(root), gh);
+			expect(published.status).toBe("created");
+			// Exactly one repository-wide listing, and it precedes every write: no
+			// attachment, dependency or ownership confirmation follows a write.
+			expect(gh.issueListings).toBe(1);
+			const startListing = gh.callLog.findIndex((call) => call.includes("/issues?state=all"));
+			const firstWrite = gh.callLog.findIndex((call) => call.startsWith("issue create") || call.startsWith("api -F"));
+			expect(startListing).toBeGreaterThanOrEqual(0);
+			expect(firstWrite).toBeGreaterThan(startListing);
+			expect(gh.callLog.slice(firstWrite).filter((call) => call.includes("/issues?state=all"))).toEqual([]);
+			// Three creates (Parent + two Children), two attaches, one blocked_by.
+			expect(gh.mutationLog).toEqual([
+				"issue:create", "issue:create", "api:-F", "issue:create", "api:-F", "api:-F",
+			]);
+		});
+	});
+
+	it("the repository-wide read count does not grow with the number of Children", async () => {
+		await withRoot(async (root, gh) => {
+			expect((await runGithubInitiativePublication(root, batch(root), gh)).status).toBe("created");
+			expect(gh.issueListings).toBe(1);
+
+			const sixGh = new RecoveryGh();
+			const six = await runGithubInitiativePublication(root, sixBatch(root), sixGh);
+			expect(six.message).toBe("complete Initiative Parent, Children, and dependency graph published");
+			expect(six.status).toBe("created");
+			// Six Children in a chain: the same single start listing, and one write per
+			// Issue plus one per relation -- 7 creates, 6 attaches, 5 dependencies.
+			expect(sixGh.issueListings).toBe(1);
+			expect(sixGh.mutationLog.filter((call) => call === "issue:create").length).toBe(7);
+			expect(sixGh.mutationLog.length).toBe(7 + 6 + 5);
+		});
+	});
+
+	it("an owned Child without its Parent is refused before any write", async () => {
+		await withRoot(async (root, gh) => {
+			const input = batch(root);
+			expect((await runGithubInitiativePublication(root, input, gh)).status).toBe("created");
+			// The Parent disappears from the repository while both Children remain. A
+			// direct flow must not create a replacement Parent over Children that still
+			// link the old one.
+			gh.issues = gh.issues.filter((issue) => !issue.body?.includes("kind=initiative"));
+			const writes = gh.writeCalls;
+			const result = await runGithubInitiativePublication(root, input, gh);
+			expect(result.status).toBe("ambiguous_remote_state");
+			expect(result.message).toContain("its Parent Issue is missing");
+			expect(gh.writeCalls).toBe(writes);
+		});
+	});
+
+	it("a closed Issue and an unapproved relation are refused before any write", async () => {
+		await withRoot(async (root, gh) => {
+			const input = batch(root);
+			expect((await runGithubInitiativePublication(root, input, gh)).status).toBe("created");
+
+			// Start-of-run drift that the listing already reveals: a closed Child.
+			const childA = gh.issues.find((issue) => issue.body?.includes("task-id=widget-a"))!;
+			childA.state = "closed";
+			let writes = gh.writeCalls;
+			const closed = await runGithubInitiativePublication(root, input, gh);
+			expect(closed.status).toBe("ambiguous_remote_state");
+			expect(closed.message).toContain("no longer open");
+			expect(gh.writeCalls).toBe(writes);
+
+			// A relation present at start that this Intent never approved.
+			childA.state = "open";
+			(childA.blockedBy ??= []).push(9999);
+			writes = gh.writeCalls;
+			const unapproved = await runGithubInitiativePublication(root, input, gh);
+			expect(unapproved.status).toBe("ambiguous_remote_state");
+			expect(unapproved.message).toContain("this Intent does not approve");
+			expect(gh.writeCalls).toBe(writes);
+		});
+	});
+
 	it("reports a confirmed, complete publication with no pending step", async () => {
 		await withRoot(async (root, gh) => {
 			const published = await runGithubInitiativePublication(root, batch(root), gh);
@@ -366,52 +476,58 @@ describe("S5 bounded publication recovery", () => {
 		});
 	});
 
-	it("a lost response that landed is adopted, never duplicated", async () => {
+	it("a lost create response leaves the outcome uncertain and the rerun adopts the landed write", async () => {
 		await withRoot(async (root, gh) => {
 			const input = batch(root);
-			// The Parent creation lands, then the transport reports failure. The
-			// tracker re-reads and converges, so the caller is not told to redo it.
+			// The Parent creation lands, then the transport loses the response, so the
+			// direct flow cannot learn the Issue number and must report the batch
+			// uncertain instead of claiming a confirmation it never performed.
 			gh.fault = { at: "issue_create", after: "applied", execution: retryable("connection reset by peer") };
 			const lost = await runGithubInitiativePublication(root, input, gh);
-			expect(lost.status).toBe("created");
-			expect(lost.write_state).toBe("confirmed");
-			// The landed write was adopted, not repeated: three Issues, one each.
+			expect(lost.status).toBe("retryable_failure");
+			expect(lost.write_state).toBe("uncertain");
+			expect(lost.execution).toBeUndefined();
+			expect(lost.message).toContain("does not prove zero writes");
+			// The landed write exists exactly once: no retry loop duplicated it.
+			expect(gh.issues.length).toBe(1);
+			expect(gh.writeCalls).toBe(1);
+
+			// The next approved call reads the live state at its own start and adopts it.
+			const resumed = await runGithubInitiativePublication(root, input, gh);
+			expect(resumed.status).toBe("updated");
+			expect(resumed.write_state).toBe("confirmed");
+			expect(resumed.execution).toBeDefined();
 			expect(gh.issues.length).toBe(3);
 			expect(new Set(gh.createdNumbers).size).toBe(3);
 		});
 	});
 
-	it("an unconfirmed readback is uncertain and the replay adopts the landed write", async () => {
+	it("a rerun adopts every Issue of a partial run and writes only the missing relations", async () => {
 		await withRoot(async (root, gh) => {
 			const input = batch(root);
-			// The Parent write lands, but a later post-write snapshot fails with a
-			// retryable transport error: the tracker cannot confirm convergence, so the
-			// outcome is uncertain rather than "confirmed" or "zero writes".
-			let lists = 0;
-			const unconfirmedTransport: GhTransport = {
-				run: async (args, options) => {
-					if (args[0] === "api" && (args.at(-1) as string).includes("/issues?state=all")) {
-						lists += 1;
-						if (lists === 3) return retryable();
-					}
-					return gh.run(args, options);
-				},
-			};
-			const unconfirmed = await runGithubInitiativePublication(root, input, unconfirmedTransport);
-			expect(unconfirmed.status).toBe("retryable_failure");
-			expect(unconfirmed.write_state).toBe("uncertain");
-			expect(unconfirmed.execution).toBeUndefined();
-			expect(unconfirmed.message).toContain("does not prove zero writes");
-			// Exactly one Issue landed, and it was never duplicated by a retry.
-			expect(gh.issues.length).toBe(1);
-			expect(gh.writeCalls).toBe(1);
-
-			// The next approved call reads the live state back and adopts it.
-			const resumed = await runGithubInitiativePublication(root, input, gh);
-			expect(resumed.status).toBe("updated");
-			expect(resumed.write_state).toBe("confirmed");
+			// The Parent and both Children land; the first blocked_by write then fails,
+			// so the dependency graph is unfinished.
+			gh.fault = { at: "blocked_by_add", after: "none", execution: retryable(), atCount: 1 };
+			const partial = await runGithubInitiativePublication(root, input, gh);
+			expect(partial.status).toBe("retryable_failure");
+			expect(partial.write_state).toBe("uncertain");
+			expect(partial.message).toContain("does not prove zero writes");
+			expect(partial.pending_steps).toEqual(["widget-b"]);
+			expect(partial.execution).toBeUndefined();
 			expect(gh.issues.length).toBe(3);
-			expect(new Set(gh.createdNumbers).size).toBe(3);
+			const created = gh.createdNumbers.length;
+			const writes = gh.writeCalls;
+
+			// The rerun creates nothing, adopts the three already-published Issues from
+			// its start listing, and writes only the one missing relation.
+			const converged = await runGithubInitiativePublication(root, input, gh);
+			expect(converged.status).toBe("updated");
+			expect(converged.write_state).toBe("confirmed");
+			expect(converged.message).not.toContain("does not prove zero writes");
+			expect(gh.createdNumbers.length).toBe(created);
+			expect(new Set(gh.createdNumbers).size).toBe(gh.createdNumbers.length);
+			expect(gh.issues.length).toBe(3);
+			expect(gh.writeCalls - writes).toBe(1);
 		});
 	});
 
@@ -530,23 +646,6 @@ describe("S5 bounded publication recovery", () => {
 		});
 	});
 
-	it("a spent whole-publication budget refuses the next remote write", async () => {
-		await withRoot(async (root, gh) => {
-			const input = batch(root);
-			// The first remote write consumes the operation budget. A per-call timeout
-			// would let the remaining writes start anyway; the shared deadline must not.
-			gh.fault = { at: "issue_create", after: "applied", execution: retryable("publication deadline exceeded"), atCount: 1 };
-			const expired: OperationBudget = { deadline_ms: Date.now() - 1 };
-			const result = await runGithubInitiativePublication(root, input, gh, expired);
-			expect(result.status).toBe("retryable_failure");
-			expect(result.write_state).toBe("uncertain");
-			// No write was started: an expired budget refuses the very first call.
-			expect(gh.writeCalls).toBe(0);
-			expect(gh.issues).toEqual([]);
-			expect(result.pending_steps).toEqual(["widget-a", "widget-b"]);
-		});
-	});
-
 	it("a cancelled publication stops before its next write and keeps the landed steps visible", async () => {
 		await withRoot(async (root, gh) => {
 			const input = batch(root);
@@ -560,10 +659,7 @@ describe("S5 bounded publication recovery", () => {
 					return execution;
 				},
 			};
-			const result = await runGithubInitiativePublication(root, input, cancelling, {
-				deadline_ms: Date.now() + 60_000,
-				signal,
-			});
+			const result = await runGithubInitiativePublication(root, input, cancelling, { signal });
 			expect(result.status).toBe("retryable_failure");
 			expect(result.write_state).toBe("uncertain");
 			expect(result.execution).toBeUndefined();
@@ -726,7 +822,9 @@ describe("S5 bounded publication recovery", () => {
 		});
 	});
 
-	it("an identity change on the final readback is not reported as success", async () => {
+	it("an identity change is caught by the start-of-run check", async () => {
+		// The final readback is retired, so identity mismatch is covered where it
+		// still can be: the start listing of the next run.
 		await withRoot(async (root, gh) => {
 			const input = batch(root);
 			await runGithubInitiativePublication(root, input, gh);
@@ -735,36 +833,24 @@ describe("S5 bounded publication recovery", () => {
 				const childB = gh.issues.find((issue) => issue.body?.includes("task-id=widget-b"))!;
 				childB.body = childB.body!.replace(/intent-hash=[A-Za-z0-9._:-]+/, "intent-hash=stale0000000000");
 			};
-			// First pass: count the read-only snapshots of a converging replay, so the
-			// drift below lands on the very last one instead of a hardcoded index.
-			let snapshots = 0;
-			const counting: GhTransport = {
-				run: async (args, options) => {
-					if (args[0] === "api" && (args.at(-1) as string).includes("/issues?state=all")) snapshots += 1;
-					return gh.run(args, options);
-				},
-			};
-			await runGithubInitiativePublication(root, input, counting);
-			expect(snapshots).toBeGreaterThan(0);
-
-			// Second pass: rewrite the published identity only on the final snapshot, so
-			// every earlier check has already seen the correct value.
-			let call = 0;
+			// Rewrite the published identity during the start listing, so the batch is
+			// refused from the only repository-wide read the direct flow performs.
+			let listing = 0;
 			const drifting: GhTransport = {
 				run: async (args, options) => {
 					if (args[0] === "api" && (args.at(-1) as string).includes("/issues?state=all")) {
-						call += 1;
-						if (call === snapshots) corrupt();
+						listing += 1;
+						if (listing === 1) corrupt();
 					}
 					return gh.run(args, options);
 				},
 			};
+			const writes = gh.writeCalls;
 			const result = await runGithubInitiativePublication(root, input, drifting);
-			// A confirmed handoff would mean the final readback missed the change.
 			expect(result.status).toBe("ambiguous_remote_state");
 			expect(result.message).toContain("different TaskIntent revision");
 			expect(result.execution).toBeUndefined();
-			expect(result.write_state).toBe("uncertain");
+			expect(gh.writeCalls).toBe(writes);
 			expect(gh.issues.find((issue) => issue.body?.includes("task-id=widget-b"))!.body).not.toBe(snapshot);
 		});
 	});

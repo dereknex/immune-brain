@@ -1448,7 +1448,6 @@ var QA_MIN_JOB_TIMEOUT_SECONDS = 15 * 60;
 var QA_MAX_JOB_TIMEOUT_SECONDS = 60 * 60;
 var QA_JOB_OVERHEAD_SECONDS = 2 * 60;
 var QA_JOB_TIMEOUT_SECONDS = QA_MIN_JOB_TIMEOUT_SECONDS;
-var QA_MAX_IDENTICAL_FAILURES = 2;
 var REVIEW_TIMING_PROFILES = {
   quick: { softDeadlineSeconds: 5 * 60, stopThresholdSeconds: 15 * 60 },
   standard: { softDeadlineSeconds: 10 * 60, stopThresholdSeconds: 30 * 60 },
@@ -1683,8 +1682,6 @@ class AssuranceCoordinator {
   operationControllers = new Map;
   reviewReservations = new Map;
   rejectedReviewOperations = new Map;
-  qaFailureStreaks = new Map;
-  qaAttemptKeys = new Map;
   unknownOperations = new Map;
   sessionInvocations = new Set;
   sessionActive = true;
@@ -1713,8 +1710,6 @@ class AssuranceCoordinator {
       this.removeEvidence(reservation);
     }
     this.reviewReservations.clear();
-    this.qaFailureStreaks.clear();
-    this.qaAttemptKeys.clear();
     for (const invocation of [...this.sessionInvocations])
       this.closeSessionInvocation(invocation);
   }
@@ -1761,21 +1756,7 @@ class AssuranceCoordinator {
   }
   async advance(taskId, ctx, signal, onUpdate) {
     const checks = new Map;
-    const started = performance.now();
-    const stageMs = {};
-    let stage = "preparing";
-    let stageStarted = started;
-    const closeStage = (now) => {
-      stageMs[stage] = (stageMs[stage] ?? 0) + Math.round(now - stageStarted);
-    };
     const result = await this.advanceOnce(taskId, ctx, signal, (update) => {
-      const next = update.details.stage;
-      if (typeof next === "string" && next !== stage) {
-        const now = performance.now();
-        closeStage(now);
-        stage = next;
-        stageStarted = now;
-      }
       const diagnostic = update.details.diagnostic;
       if (diagnostic) {
         checks.set(diagnostic.descriptor_ref, diagnostic);
@@ -1784,26 +1765,8 @@ class AssuranceCoordinator {
       }
       onUpdate?.(update);
     });
-    this.recordQaAttempt(taskId, result);
     const diagnostics = result.diagnostics ?? [...checks.values()];
-    const enriched = diagnostics.length ? { ...result, diagnostics } : result;
-    if (!(this.ports.reportTimings ?? process.env.IMM_ASSURANCE_TIMINGS === "1"))
-      return this.withRecovery(taskId, ctx, enriched);
-    const finished = performance.now();
-    closeStage(finished);
-    return this.withRecovery(taskId, ctx, { ...enriched, timings: { total_ms: Math.round(finished - started), stage_ms: stageMs } });
-  }
-  recordQaAttempt(taskId, result) {
-    const key = this.qaAttemptKeys.get(taskId);
-    this.qaAttemptKeys.delete(taskId);
-    if (!key || result.state === "cancelled")
-      return;
-    if (result.state !== "failed" || result.operation !== "qa") {
-      this.qaFailureStreaks.delete(taskId);
-      return;
-    }
-    const streak = this.qaFailureStreaks.get(taskId);
-    this.qaFailureStreaks.set(taskId, { key, count: streak?.key === key ? streak.count + 1 : 1 });
+    return this.withRecovery(taskId, ctx, diagnostics.length ? { ...result, diagnostics } : result);
   }
   async withRecovery(taskId, ctx, enriched) {
     if (enriched.recovery_error || !["failed", "blocked", "rework", "review_preparation_failed"].includes(enriched.state))
@@ -1970,12 +1933,6 @@ class AssuranceCoordinator {
         ensureOperationLive();
         const assurance = await this.ports.buildAssurance(ctx.cwd, taskId, "qa", projection);
         ensureOperationLive();
-        const qaKey = `${assurance.snapshot.record_revision}|${assurance.snapshot.intent_content_hash}|${assurance.snapshot.diff_hash}`;
-        const streak = this.qaFailureStreaks.get(taskId);
-        const maxFailures = this.ports.qaMaxIdenticalFailures ?? QA_MAX_IDENTICAL_FAILURES;
-        if (streak?.key === qaKey && streak.count >= maxFailures)
-          return { state: "blocked", reason: `deterministic QA already failed ${streak.count} times on this exact snapshot; change the workspace diff or intent, or restart the session after fixing the environment, before retrying` };
-        this.qaAttemptKeys.set(taskId, qaKey);
         const declaredQaJobMs = deriveQaJobTimeoutMs(assurance.descriptors.values());
         const qaJobTimeoutMs = Math.min(declaredQaJobMs, this.ports.qaJobTimeoutMs ?? declaredQaJobMs);
         const qaJobDeadline = setTimeout(() => {
@@ -8928,17 +8885,17 @@ function createGhTransport(binary = "gh") {
       return new Promise((complete) => {
         let stdout = Buffer.alloc(0);
         let stderr = Buffer.alloc(0);
-        const remaining = options.budget === undefined ? GH_TIMEOUT_MS : Math.min(GH_TIMEOUT_MS, options.budget.deadline_ms - Date.now());
-        if (options.budget && (options.budget.signal?.aborted || remaining <= 0)) {
+        if (options.signal?.aborted) {
           complete({
             exit_code: 1,
             stdout: "",
-            stderr: options.budget.signal?.aborted ? "operation cancelled by the caller" : "publication deadline exceeded before the next remote call",
+            stderr: "operation cancelled by the caller",
             timed_out: true,
             output_exceeded: false
           });
           return;
         }
+        const remaining = GH_TIMEOUT_MS;
         let timedOut = false;
         let outputExceeded = false;
         let timer;

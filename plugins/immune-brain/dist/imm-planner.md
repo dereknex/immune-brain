@@ -273,8 +273,18 @@ goal prose and never truncates a title. The tracker rereads every canonical
 TaskIntent for identity, risk, and acceptance IDs; projection fields and public
 summaries never widen TaskIntent scope or authority. It validates the complete dependency graph before
 remote writes, creates the Parent once, creates all Children, attaches every
-Child as a native Sub-issue, creates native `blocked_by` relations, and rereads
-the complete topology. Every Child carries `ready-for-agent`, blocked Children
+Child as a native Sub-issue, creates native `blocked_by` relations, and takes
+every Issue number from its own create response. The write flow is direct: one
+start-of-run read of the repository identity, the Issue listing, and the label
+listing, then one create per absent Issue in dependency order, one attach per
+Child, and one relation write per edge. No read follows a write, and no
+cumulative deadline exists; each call keeps its own per-call timeout and
+the caller's cancellation. Deduplication is start-only: a rerun of the same
+approved batch adopts whatever the start listing already carries and writes only
+the missing relations, so it never creates a duplicate Issue and never repeats a
+completed write. Concurrent edits made during a run are not detected in that
+run; they surface as drift at the start of the next run. Every Child carries
+`ready-for-agent`, blocked Children
 additionally carry `blocked`, and the Parent carries neither; the tracker never
 creates labels, so a repository missing a required label fails the batch closed
 before any remote write. The Child Agent Brief includes a direct Parent Issue link.
@@ -298,7 +308,10 @@ complete-decomposition decision; or `tracker_projection_failed` with the returne
 failure and exact retry action. A candidate Initiative or partial Issue set
 recorded only in the Spec or final summary is neither user confirmation nor a
 completed carrier outcome. Report `retryable_failure`, `permanent_failure`, or
-`ambiguous_remote_state` and the exact batch retry action. This does not invalidate
+`ambiguous_remote_state` and the exact batch retry action. A failure after the
+request may have landed is reported as uncertain with its confirmed steps, its
+pending steps, and one recovery action: rerun the same approved batch, whose
+start listing adopts whatever landed. This does not invalidate
 already-authored planning files, but it blocks `tracker_associated` and every
 Enrollment or execution handoff for that Initiative until the same complete
 batch succeeds. Do not infer opt-in from tracker output or Issue state, auto-close the Parent,

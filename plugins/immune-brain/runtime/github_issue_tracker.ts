@@ -208,26 +208,19 @@ export interface GhExecution {
 }
 
 export interface GhTransport {
-	run(args: string[], options?: { cwd?: string; stdin?: string; budget?: OperationBudget }): Promise<GhExecution>;
+	run(args: string[], options?: { cwd?: string; stdin?: string; signal?: { readonly aborted: boolean } }): Promise<GhExecution>;
 }
 
 /**
- * One shared deadline and cancellation boundary for a whole operation. A
- * per-call timeout alone cannot bound a multi-step publication: several calls
- * that each finish inside their own limit still add up past the operation's
- * budget. The entry point creates the budget once and passes it to every
- * transport call, so a spent budget refuses the next remote write instead of
- * starting one more.
+ * External cancellation for a multi-step operation. There is no cumulative
+ * deadline: one publication call is a finite step sequence that stops at its
+ * first failed call, and each call keeps its own per-call timeout. Only the
+ * caller's abort signal is forwarded to every call.
  */
-export interface OperationBudget {
-	/** Wall-clock time by which the whole operation must have finished. */
-	deadline_ms: number;
+export interface OperationCancellation {
 	/** Optional external cancellation signal (user cancel / host abort). */
 	signal?: { readonly aborted: boolean };
 }
-
-/** Default whole-operation publication budget: two minutes. */
-export const PUBLICATION_BUDGET_MS = 120_000;
 
 interface RepositoryInfo {
 	id: number;
@@ -492,22 +485,18 @@ export function createGhTransport(binary = "gh"): GhTransport {
 			return new Promise((complete) => {
 				let stdout: Buffer = Buffer.alloc(0);
 				let stderr: Buffer = Buffer.alloc(0);
-				// A spent or cancelled operation budget never starts another remote call.
-				const remaining = options.budget === undefined
-					? GH_TIMEOUT_MS
-					: Math.min(GH_TIMEOUT_MS, options.budget.deadline_ms - Date.now());
-				if (options.budget && (options.budget.signal?.aborted || remaining <= 0)) {
+				// A cancelled operation never starts another remote call.
+				if (options.signal?.aborted) {
 					complete({
 						exit_code: 1,
 						stdout: "",
-						stderr: options.budget.signal?.aborted
-							? "operation cancelled by the caller"
-							: "publication deadline exceeded before the next remote call",
+						stderr: "operation cancelled by the caller",
 						timed_out: true,
 						output_exceeded: false,
 					});
 					return;
 				}
+				const remaining = GH_TIMEOUT_MS;
 				let timedOut = false;
 				let outputExceeded = false;
 				let timer: ReturnType<typeof setTimeout> | undefined;
@@ -2465,21 +2454,399 @@ async function revalidatePendingChildBeforeWrite(
 	return child;
 }
 
+/**
+ * The Issue number at the end of a `gh issue create` response URL, or null.
+ * Creation takes its number from the create response: no read-back follows a
+ * write, so a response that cannot be parsed leaves the outcome uncertain
+ * rather than asking the repository what landed.
+ */
+function parseCreatedIssueNumber(stdout: string): number | null {
+	const match = stdout.trim().match(/\/issues\/(\d+)\/?$/);
+	if (!match) return null;
+	const number = Number(match[1]);
+	return Number.isSafeInteger(number) && number > 0 ? number : null;
+}
+
+/**
+ * Resolve one Issue's database id. Assumption A1 fallback: `gh issue create`
+ * returns only the Issue URL, so the id the relation endpoints require is read
+ * once per created Issue immediately after its create. The id is never
+ * re-resolved for an Issue the start listing already carries.
+ */
+async function resolveIssueId(
+	root: string,
+	gh: GhTransport,
+	repository: RepositoryInfo,
+	number: number,
+): Promise<GithubTrackerResult | number> {
+	const read = await gh.run(
+		["api", "--jq", ".id", `repos/${repository.name_with_owner}/issues/${number}`],
+		{ cwd: root },
+	);
+	if (read.exit_code !== 0 || read.output_exceeded)
+		return ghFailure("upsert-task", read, `cannot resolve the database id of Issue #${number}`);
+	const id = Number(read.stdout.trim());
+	return Number.isSafeInteger(id) && id > 0
+		? id
+		: result("upsert-task", "retryable_failure", `Issue #${number} identity could not be resolved`);
+}
+
+/**
+ * Direct publication: S1 of docs/specs/tracker-direct-publication.spec.md.
+ *
+ * Mirrors the `to-spec`/`to-tickets` write flow. One start-of-run read of the
+ * repository identity and the Issue listing (plus the label list, resolved by
+ * the caller), then one create per absent Issue in dependency order, one native
+ * Sub-issue attach per Child, and one `blocked_by` write per dependency edge --
+ * every Issue number and id taken from its create response. Nothing is re-read
+ * after a write, so a half-landed batch is recovered by rerunning the same
+ * approved manifest: the next start listing adopts whatever landed and only the
+ * missing relations are written. The reads that are not the start listing -- the
+ * Parent's native Sub-issue list, each adopted Child's `blocked_by` set, and one
+ * id resolution per created Issue -- are targeted at Issues the batch itself
+ * owns and all happen before the relation write they inform.
+ */
+async function publishInitiativeDirect(
+	root: string,
+	gh: GhTransport,
+	prepared: ReturnType<typeof preflightPublication>,
+	initial: RepositorySnapshot,
+): Promise<GithubInitiativePublicationResult> {
+	const plannedTaskIds = prepared.order.map((operation) => operation.task_id);
+	const initiativeId = prepared.initiative.initiative_id;
+	const repository = initial.repository;
+	const desiredParentTitle = initiativeIssueTitle(initiativeId, prepared.initiative.projection);
+	const desiredParentBody = createInitiativeBody(repository, prepared.initiative);
+	let initiativeResult: GithubTrackerResult | undefined;
+	const taskResults: GithubInitiativePublicationResult["tasks"] = [];
+	const failed = (failure: GithubTrackerResult): GithubInitiativePublicationResult =>
+		publicationResultWithPlan(plannedTaskIds, failure.status, failure.message, initiativeResult, taskResults);
+
+	const parentLookup = initiativeLookup(initial.issues, repository.id, initiativeId);
+	if (parentLookup.kind === "ambiguous")
+		return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", parentLookup.message);
+	const existingParent = parentLookup.kind === "found" ? parentLookup.issue : null;
+	// A closed Parent is start-of-run drift: it is state the listing already
+	// reveals, so it fails closed here rather than being adopted as current.
+	if (existingParent && existingParent.state !== "open")
+		return publicationResultWithPlan(
+			plannedTaskIds,
+			"ambiguous_remote_state",
+			"Initiative Parent is no longer open",
+			result("create-initiative", "ambiguous_remote_state", "Initiative Parent is no longer open", existingParent),
+		);
+	// Whole-batch validation before the first write: every already-published
+	// Child of this batch must still be the one this Intent approves, including
+	// its published Intent identity. This runs before the Parent content check
+	// because the Parent body embeds the Child goal prose, so a stale Intent must
+	// be reported as the identity mismatch it is, not as Parent drift.
+	const batchDrift = publicationBatchDrift(
+		initial,
+		initiativeId,
+		prepared.order as Extract<TrackerOperation, { op: "upsert-task" }>[],
+	);
+	if (batchDrift) return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", batchDrift);
+	// The Parent is never rewritten: an existing Parent that no longer carries
+	// the exact approved bytes is a permanent, caller-fixable drift.
+	if (existingParent && (existingParent.title !== desiredParentTitle || existingParent.body !== desiredParentBody))
+		return publicationResultWithPlan(
+			plannedTaskIds,
+			"permanent_failure",
+			"Initiative Issue already exists and the tracker never rewrites it; edit the GitHub source directly for later planning changes",
+			result("create-initiative", "permanent_failure", "Initiative Issue already exists and the tracker never rewrites it", existingParent),
+		);
+
+	const existingChildren = new Map<string, GithubIssue>();
+	for (const operation of prepared.order) {
+		const owned = ownedTaskLookup(initial.issues, repository.id, operation.task_id, initiativeId, operation.slice_id);
+		if (owned.kind === "ambiguous")
+			return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", owned.message);
+		if (owned.kind === "found") existingChildren.set(operation.task_id, owned.issue);
+	}
+	// An owned Child whose Parent is gone cannot be adopted under a new Parent:
+	// the Child still carries the old Parent link, so recreating the Parent would
+	// silently re-home it. This is caller-fixable remote drift, not a create path.
+	if (!existingParent && existingChildren.size > 0)
+		return publicationResultWithPlan(
+			plannedTaskIds,
+			"ambiguous_remote_state",
+			"an owned Child of this Initiative exists but its Parent Issue is missing; the tracker never recreates a Parent over its existing Children",
+		);
+	// A closed Child is start-of-run drift for the same reason as a closed Parent.
+	for (const operation of prepared.order) {
+		const issue = existingChildren.get(operation.task_id);
+		if (issue && issue.state !== "open")
+			return publicationResultWithPlan(
+				plannedTaskIds,
+				"ambiguous_remote_state",
+				`Task ${operation.task_id} is no longer open`,
+				result("upsert-task", "ambiguous_remote_state", `Task ${operation.task_id} is no longer open`, issue),
+			);
+	}
+	if (existingParent) {
+		for (const operation of prepared.order) {
+			const issue = existingChildren.get(operation.task_id);
+			if (!issue) continue;
+			const title = taskIssueTitle(operation, sliceOrdinalFromChecklist(desiredParentBody, operation.slice_id, operation.projection?.slice_ordinal ?? 1));
+			const body = childBody(repository, operation, existingParent);
+			if (issue.title !== title || !sameTrackedBody(issue.body, body))
+				return publicationResultWithPlan(
+					plannedTaskIds,
+					"ambiguous_remote_state",
+					`Task ${operation.task_id} published content no longer matches the approved Intent publication`,
+					result("upsert-task", "ambiguous_remote_state", `Task ${operation.task_id} published content drifted`, issue),
+				);
+		}
+	}
+
+	// The only reads besides the start listing; all before the first write. They
+	// exist to find MISSING relations. A relation that is already present but not
+	// approved by this Intent is drift the listing makes visible, so it fails
+	// closed here instead of being reported as already_current.
+	const attachedNumbers: number[] = [];
+	if (existingParent) {
+		const attached = await readSubIssueNumbers(root, gh, "upsert-task", repository, existingParent.number);
+		if (!Array.isArray(attached))
+			return publicationResultWithPlan(plannedTaskIds, attached.status, attached.message);
+		if (new Set(attached).size !== attached.length)
+			return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", "the Initiative Parent lists the same Sub-issue more than once");
+		const ownedNumbers = new Set([...existingChildren.values()].map((issue) => issue.number));
+		if (attached.some((number) => !ownedNumbers.has(number)))
+			return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", "the Initiative Parent carries Sub-issues this batch does not own");
+		attachedNumbers.push(...attached);
+	}
+	const existingBlockerIds = new Map<string, number[]>();
+	for (const operation of prepared.order) {
+		const issue = existingChildren.get(operation.task_id);
+		if (!issue) continue;
+		const ids = await readBlockedByIds(root, gh, "upsert-task", repository, issue.number);
+		if (!Array.isArray(ids))
+			return publicationResultWithPlan(plannedTaskIds, ids.status, ids.message);
+		const approved = new Set<number>();
+		for (const blockerId of operation.projection?.blocked_by ?? []) {
+			const blocker = taskLookup(initial.issues, repository.id, blockerId);
+			if (blocker.kind === "found") approved.add(blocker.issue.id);
+		}
+		if (ids.some((id) => !approved.has(id)))
+			return publicationResultWithPlan(
+				plannedTaskIds,
+				"ambiguous_remote_state",
+				`Task ${operation.task_id} carries native blocked_by relations this Intent does not approve`,
+			);
+		existingBlockerIds.set(operation.task_id, ids);
+	}
+	const beforeParentWrite = publicationIntentDrift(root, prepared.intent_bindings);
+	if (beforeParentWrite)
+		return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", beforeParentWrite);
+
+	let parentNumber: number;
+	if (existingParent) {
+		parentNumber = existingParent.number;
+		const labelArgs = labelMutationArgs(existingParent.labels, []);
+		if (labelArgs.length === 0) {
+			initiativeResult = result("create-initiative", "already_current", "Initiative Issue already carries the requested initial source", existingParent);
+		} else {
+			const edited = await gh.run(
+				["issue", "edit", String(parentNumber), "--repo", repository.name_with_owner, ...labelArgs],
+				{ cwd: root },
+			);
+			if (edited.exit_code !== 0 || edited.output_exceeded)
+				return failed(ghFailure("create-initiative", edited, "Initiative Parent label convergence failed"));
+			initiativeResult = result(
+				"create-initiative",
+				"updated",
+				"Initiative Issue managed labels converged",
+				{ ...existingParent, labels: [] },
+			);
+		}
+	} else {
+		const created = await gh.run(
+			["issue", "create", "--repo", repository.name_with_owner, "--title", desiredParentTitle, "--body-file", "-"],
+			{ cwd: root, stdin: desiredParentBody },
+		);
+		if (created.exit_code !== 0 || created.output_exceeded)
+			return failed(ghFailure("create-initiative", created, "Initiative Issue creation failed"));
+		const number = parseCreatedIssueNumber(created.stdout);
+		if (number === null)
+			return publicationResultWithPlan(plannedTaskIds, "retryable_failure", "Initiative creation could not be confirmed", initiativeResult, taskResults);
+		parentNumber = number;
+		initiativeResult = {
+			contract: CONTRACT,
+			operation: "create-initiative",
+			status: "created",
+			association_found: true,
+			issue_number: number,
+			issue_url: created.stdout.trim(),
+			message: "Initiative Issue created as the single GitHub source",
+		};
+	}
+	const parentReference: GithubIssue = existingParent ?? {
+		id: 0,
+		number: parentNumber,
+		url: initiativeResult.issue_url ?? `https://github.com/${repository.name_with_owner}/issues/${parentNumber}`,
+		title: desiredParentTitle,
+		body: desiredParentBody,
+		state: "open",
+		state_reason: null,
+		labels: [],
+	};
+	const numberByTask = new Map<string, number>();
+	const numberByTaskId = new Map<string, number>();
+	const blockerNumber = (blockerId: string): number | undefined =>
+		numberByTask.get(blockerId) ?? existingChildren.get(blockerId)?.number;
+
+	for (const operation of prepared.order) {
+		const intentDrift = publicationIntentDrift(root, prepared.intent_bindings, [operation.task_id]);
+		if (intentDrift) return failed(result("upsert-task", "ambiguous_remote_state", intentDrift));
+		const blockers: Array<{ taskId: string; number: number; id: number | undefined }> = [];
+		for (const blockerId of operation.projection?.blocked_by ?? []) {
+			if (blockerId === operation.task_id)
+				return failed(result("upsert-task", "ambiguous_remote_state", "a Task cannot block itself"));
+			const number = blockerNumber(blockerId);
+			if (number === undefined)
+				return failed(result("upsert-task", "permanent_failure", `blocking Task ${blockerId} has not been published`));
+			blockers.push({ taskId: blockerId, number, id: numberByTaskId.get(blockerId) ?? existingChildren.get(blockerId)?.id });
+		}
+		const existing = existingChildren.get(operation.task_id);
+		if (existing) {
+			let mutated = false;
+			const labelArgs = labelMutationArgs(existing.labels, desiredTaskLabels(operation));
+			if (labelArgs.length) {
+				const edited = await gh.run(
+					["issue", "edit", String(existing.number), "--repo", repository.name_with_owner, ...labelArgs],
+					{ cwd: root },
+				);
+				if (edited.exit_code !== 0 || edited.output_exceeded)
+					return failed(ghFailure("upsert-task", edited, `Task Issue #${existing.number} label convergence failed`));
+				mutated = true;
+			}
+			if (!attachedNumbers.includes(existing.number)) {
+				const attach = await attachChildDirect(root, gh, repository, parentNumber, existing.id, existing.number);
+				if ("contract" in attach) return failed(attach);
+				attachedNumbers.push(existing.number);
+				mutated = true;
+			}
+			const currentIds = existingBlockerIds.get(operation.task_id) ?? [];
+			for (const blocker of blockers) {
+				if (blocker.id !== undefined && currentIds.includes(blocker.id)) continue;
+				const added = await addBlockedByDirect(root, gh, repository, existing.number, blocker.id, blocker.number);
+				if ("contract" in added) return failed(added);
+				mutated = true;
+			}
+			taskResults.push({
+				task_id: operation.task_id,
+				slice_id: operation.slice_id,
+				status: mutated ? "updated" : "already_current",
+				issue_number: existing.number,
+				issue_url: existing.url,
+				node_id: String(existing.id),
+			});
+			continue;
+		}
+		const title = taskIssueTitle(operation, sliceOrdinalFromChecklist(desiredParentBody, operation.slice_id, operation.projection?.slice_ordinal ?? 1));
+		const body = childBody(repository, operation, parentReference);
+		const created = await gh.run(
+			[
+				"issue", "create", "--repo", repository.name_with_owner,
+				"--title", title,
+				"--body-file", "-",
+				...desiredTaskLabels(operation).flatMap((label) => ["--label", label]),
+			],
+			{ cwd: root, stdin: body },
+		);
+		if (created.exit_code !== 0 || created.output_exceeded)
+			return failed(ghFailure("upsert-task", created, "Task Issue creation failed"));
+		const number = parseCreatedIssueNumber(created.stdout);
+		if (number === null)
+			return publicationResultWithPlan(plannedTaskIds, "retryable_failure", "Task creation could not be confirmed", initiativeResult, taskResults);
+		const id = await resolveIssueId(root, gh, repository, number);
+		if (typeof id !== "number") return failed(id);
+		const attach = await attachChildDirect(root, gh, repository, parentNumber, id, number);
+		if ("contract" in attach) return failed(attach);
+		for (const blocker of blockers) {
+			const added = await addBlockedByDirect(root, gh, repository, number, blocker.id, blocker.number);
+			if ("contract" in added) return failed(added);
+		}
+		numberByTask.set(operation.task_id, number);
+		numberByTaskId.set(operation.task_id, id);
+		taskResults.push({
+			task_id: operation.task_id,
+			slice_id: operation.slice_id,
+			status: "created",
+			issue_number: number,
+			issue_url: created.stdout.trim(),
+		});
+	}
+
+	const finalIntentDrift = publicationIntentDrift(root, prepared.intent_bindings);
+	if (finalIntentDrift) return failed(result("upsert-task", "ambiguous_remote_state", finalIntentDrift));
+	const statuses = [initiativeResult.status, ...taskResults.map((task) => task.status)];
+	const status: TrackerStatus = statuses.every((item) => item === "created")
+		? "created"
+		: statuses.every((item) => item === "already_current") ? "already_current" : "updated";
+	const issueNumber = (taskId: string): number => numberByTask.get(taskId) ?? existingChildren.get(taskId)!.number;
+	const firstTaskId = prepared.order[0].task_id;
+	return publicationResultWithPlan(plannedTaskIds, status, "complete Initiative Parent, Children, and dependency graph published", initiativeResult, taskResults, {
+		recommended_first_task_id: firstTaskId,
+		recommended_first_issue_number: issueNumber(firstTaskId),
+		order: prepared.order.map((operation) => operation.task_id),
+		issue_order: prepared.order.map((operation) => issueNumber(operation.task_id)),
+		parallel_groups: prepared.parallel_groups,
+		parallel_issue_groups: prepared.parallel_groups.map((group) => group.map(issueNumber)),
+	});
+}
+
+/** Attach one Child as a native Sub-issue of the Parent. */
+async function attachChildDirect(
+	root: string,
+	gh: GhTransport,
+	repository: RepositoryInfo,
+	parentNumber: number,
+	childId: number,
+	childNumber: number,
+): Promise<GithubTrackerResult | { attached: true }> {
+	const mutation = await gh.run(
+		["api", "-F", `sub_issue_id=${childId}`, `repos/${repository.name_with_owner}/issues/${parentNumber}/sub_issues`],
+		{ cwd: root },
+	);
+	if (mutation.exit_code !== 0 || mutation.output_exceeded)
+		return ghFailure("upsert-task", mutation, `native Sub-issue attachment failed for Issue #${childNumber}`);
+	return { attached: true };
+}
+
+/** Create one native `blocked_by` edge; the blocker id is already known. */
+async function addBlockedByDirect(
+	root: string,
+	gh: GhTransport,
+	repository: RepositoryInfo,
+	childNumber: number,
+	blockerId: number | undefined,
+	blockerNumber: number,
+): Promise<GithubTrackerResult | { complete: true }> {
+	const resolved = blockerId ?? await resolveIssueId(root, gh, repository, blockerNumber);
+	if (typeof resolved !== "number") return resolved;
+	const mutation = await gh.run(
+		["api", "-F", `issue_id=${resolved}`, `repos/${repository.name_with_owner}/issues/${childNumber}/dependencies/blocked_by`],
+		{ cwd: root },
+	);
+	if (mutation.exit_code !== 0 || mutation.output_exceeded)
+		return ghFailure("upsert-task", mutation, `native blocked_by attachment failed for Issue #${childNumber}`);
+	return { complete: true };
+}
+
 export async function runGithubInitiativePublication(
 	root: string,
 	input: InitiativePublicationInput,
 	rawGh: GhTransport = createGhTransport(),
-	budget: OperationBudget = { deadline_ms: Date.now() + PUBLICATION_BUDGET_MS },
+	budget?: OperationCancellation,
 ): Promise<GithubInitiativePublicationResult> {
 	const absoluteRoot = resolve(root);
-	// The whole publication shares one deadline and cancellation signal, supplied
-	// by the caller so one entry point owns the budget. The incoming transport is
-	// shadowed by this budget-carrying adapter, so *every* remote call in the
-	// publication -- including the nested label and amendment helpers -- carries
-	// the same budget by construction instead of by remembering to pass it.
-	const gh: GhTransport = {
-		run: (args, options = {}) => rawGh.run(args, { ...options, budget }),
-	};
+	// One publication call is a finite remote step sequence with no cumulative
+	// deadline: the caller may still supply a cancellation signal, which is
+	// forwarded to every call, and each call keeps its own per-call timeout.
+	const gh: GhTransport = budget?.signal === undefined
+		? rawGh
+		: { run: (args, options = {}) => rawGh.run(args, { ...options, signal: budget.signal }) };
 	// The complete planned step set, known before the first remote write. Every
 	// unconfirmed Task from this set is a pending step, so a Parent failure or an
 	// early Child failure still names each unfinished Task.
@@ -2527,17 +2894,6 @@ export async function runGithubInitiativePublication(
 	if (conflict) return publicationResultWithPlan(plannedTaskIds, conflict.status, conflict.message, conflict);
 	const initial = await snapshot(absoluteRoot, gh, "create-initiative");
 	if ("contract" in initial) return publicationResultWithPlan(plannedTaskIds, initial.status, initial.message, initial);
-	if (!amendment) {
-		// Whole-batch prevalidation: every already published Child of this batch must
-		// still match the Intent being published, and the check happens before the
-		// first recovery write rather than after earlier Children were written.
-		const batchDrift = publicationBatchDrift(
-			initial,
-			prepared.initiative.initiative_id,
-			prepared.order as Extract<TrackerOperation, { op: "upsert-task" }>[],
-		);
-		if (batchDrift) return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", batchDrift);
-	}
 	const initialParent = initiativeLookup(initial.issues, initial.repository.id, prepared.initiative.initiative_id);
 	if (initialParent.kind === "ambiguous") return publicationResultWithPlan(plannedTaskIds, "ambiguous_remote_state", initialParent.message);
 	if (amendment && initialParent.kind === "missing")
@@ -2564,6 +2920,9 @@ export async function runGithubInitiativePublication(
 		const childFailure = bodyLimitFailure("upsert-task", childBody(initial.repository, operation, parentForPreflight), MAX_TERMINAL_SUFFIX_BYTES);
 		if (childFailure) return publicationResultWithPlan(plannedTaskIds, childFailure.status, childFailure.message, childFailure);
 	}
+	// Ordinary publication uses the direct write flow; only the amendment path
+	// still converges through read-back confirmation.
+	if (!amendment) return publishInitiativeDirect(absoluteRoot, gh, prepared, initial);
 
 	if (amendment) {
 		if (initialParent.kind !== "found")

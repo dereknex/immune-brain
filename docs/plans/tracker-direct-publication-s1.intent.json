@@ -1,0 +1,36 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "tracker-direct-publication-s1",
+  "goal": "Make ordinary GitHub Initiative publication follow the direct create-then-relate write flow with start-only marker deduplication, no read-after-write and no whole-operation budget.",
+  "acceptance": [
+    {
+      "id": "TDP-S1-A1",
+      "assertion": "Implement S1 of docs/specs/tracker-direct-publication.spec.md in the existing tracker publication path, test-first. With the fake gh transport, a fresh publication performs the start reads once, then exactly one create per absent Issue in dependency order, one native Sub-issue attach per Child and one blocked_by write per dependency edge, using ids from create responses; no repository listing, attachment, dependency or ownership confirmation follows any write and no closing topology pass runs. The count of repository-wide reads is identical for two and six Children. Rerunning the same approved batch after a complete run, a partial run or a lost create response creates no duplicate Issue and writes only missing relations found by Issue-scoped reads. Duplicate or ambiguous markers, intent-hash mismatch, published-content drift and missing labels still fail closed before the first write. The whole-operation budget constant and its deadline refusal are deleted; the per-call timeout and cancellation still stop the run at the next call. A failed or timed-out call reports confirmed steps, pending steps, uncertainty and one recovery action without claiming confirmation. mark-terminal, observeGithubInitiative, Issue body and marker format and all local preflight checks are unchanged and their existing tests pass unmodified. Retire or rewrite only the tests named in the Spec. No real remote writes in tests.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/github-initiative-recovery.test.ts\",\n      \"tests/github-issue-projection-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "TDP-S1-A2",
+      "assertion": "The canonical Planner contract and the packaged delivery describe the S1 behavior of docs/specs/tracker-direct-publication.spec.md: the Initiative Carrier Preference prose no longer states a complete-topology reread or a whole-publication deadline and states start-only deduplication and rerun-the-same-batch recovery; the Claude bundle is regenerated with bun scripts/build-claude-plugin.ts and matches the runtime; the evidence fixture that hash-binds the Planner contract is re-hashed; a changeset records the behavior change. Planner outcome names, the tracker result contract identifier and the fail-closed carrier rules are unchanged.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/carrier-enrollment-gate-contract.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/plugin-package-runtime.test.ts\",\n      \"tests/workflow-behavior-evidence.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/tracker-direct-publication.md",
+    "docs/plans/tracker-direct-publication-s1.intent.json",
+    "docs/specs/tracker-direct-publication.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/runtime/github_issue_tracker.ts",
+    "tests/carrier-enrollment-gate-contract.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/fixtures/workflow-decision-closure-evidence.json",
+    "tests/github-initiative-recovery.test.ts",
+    "tests/github-issue-projection-contract.test.ts",
+    "tests/plugin-package-runtime.test.ts",
+    "tests/skill-dist-consistency.test.ts",
+    "tests/workflow-behavior-evidence.test.ts"
+  ],
+  "risk": "material",
+  "revision": 2,
+  "owner": "user"
+}

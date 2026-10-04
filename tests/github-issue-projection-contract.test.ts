@@ -46,6 +46,13 @@ class ProjectionGh implements GhTransport {
 			return ok(JSON.stringify({ id: 77, full_name: "example/project" }));
 		if (args[0] === "api") {
 			const endpoint = args.at(-1) as string;
+			// The direct write flow resolves one created Issue's database id by its
+			// number, then attaches relations from that id.
+			const detail = endpoint.match(/^repos\/[^/]+\/[^/]+\/issues\/(\d+)$/);
+			if (detail) {
+				const issue = this.issues.find((candidate) => candidate.number === Number(detail[1]));
+				return issue ? ok(String(issue.id)) : { ...ok(), exit_code: 1, stderr: "not found" };
+			}
 			if (endpoint.includes("/issues?state=all"))
 				return ok(JSON.stringify(this.issues));
 			const dependencyList = endpoint.match(/issues\/(\d+)\/dependencies\/blocked_by/);

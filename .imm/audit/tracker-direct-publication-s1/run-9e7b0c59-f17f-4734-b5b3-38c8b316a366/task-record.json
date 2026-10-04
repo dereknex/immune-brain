@@ -1,0 +1,362 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "tracker-direct-publication-s1",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "tracker-direct-publication-s1",
+    "goal": "Make ordinary GitHub Initiative publication follow the direct create-then-relate write flow with start-only marker deduplication, no read-after-write and no whole-operation budget.",
+    "acceptance": [
+      {
+        "id": "TDP-S1-A1",
+        "assertion": "Implement S1 of docs/specs/tracker-direct-publication.spec.md in the existing tracker publication path, test-first. With the fake gh transport, a fresh publication performs the start reads once, then exactly one create per absent Issue in dependency order, one native Sub-issue attach per Child and one blocked_by write per dependency edge, using ids from create responses; no repository listing, attachment, dependency or ownership confirmation follows any write and no closing topology pass runs. The count of repository-wide reads is identical for two and six Children. Rerunning the same approved batch after a complete run, a partial run or a lost create response creates no duplicate Issue and writes only missing relations found by Issue-scoped reads. Duplicate or ambiguous markers, intent-hash mismatch, published-content drift and missing labels still fail closed before the first write. The whole-operation budget constant and its deadline refusal are deleted; the per-call timeout and cancellation still stop the run at the next call. A failed or timed-out call reports confirmed steps, pending steps, uncertainty and one recovery action without claiming confirmation. mark-terminal, observeGithubInitiative, Issue body and marker format and all local preflight checks are unchanged and their existing tests pass unmodified. Retire or rewrite only the tests named in the Spec. No real remote writes in tests.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/github-initiative-recovery.test.ts\",\n      \"tests/github-issue-projection-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "TDP-S1-A2",
+        "assertion": "The canonical Planner contract and the packaged delivery describe the S1 behavior of docs/specs/tracker-direct-publication.spec.md: the Initiative Carrier Preference prose no longer states a complete-topology reread or a whole-publication deadline and states start-only deduplication and rerun-the-same-batch recovery; the Claude bundle is regenerated with bun scripts/build-claude-plugin.ts and matches the runtime; the evidence fixture that hash-binds the Planner contract is re-hashed; a changeset records the behavior change. Planner outcome names, the tracker result contract identifier and the fail-closed carrier rules are unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/carrier-enrollment-gate-contract.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/plugin-package-runtime.test.ts\",\n      \"tests/workflow-behavior-evidence.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/tracker-direct-publication.md",
+      "docs/plans/tracker-direct-publication-s1.intent.json",
+      "docs/specs/tracker-direct-publication.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/runtime/github_issue_tracker.ts",
+      "tests/carrier-enrollment-gate-contract.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/fixtures/workflow-decision-closure-evidence.json",
+      "tests/github-initiative-recovery.test.ts",
+      "tests/github-issue-projection-contract.test.ts",
+      "tests/plugin-package-runtime.test.ts",
+      "tests/skill-dist-consistency.test.ts",
+      "tests/workflow-behavior-evidence.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/tracker-direct-publication-s1.intent.json",
+    "content_hash": "sha256:5197022db1f483c0e4e64ba28d6e81cced8181a8a314e6c8de2415ea017ab079"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:2bdd4478b872dc5932416bf5fb1d28e1925402f27304d807d2088a61f4fd499d",
+  "git_base_head": "0567223c0ef09793dd598627d2a5f4b53cfa49e1",
+  "attestations": [
+    {
+      "id": "approval-qa-73fac516",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:5197022db1f483c0e4e64ba28d6e81cced8181a8a314e6c8de2415ea017ab079",
+      "diff_hash": "sha256:0917a6fc04f4e694ae7d1d778c583ae4aaaac66fe6b5ebf81df620f4bf696838",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:917d1e0555e07c0803d866779ded66d03e1bc3a9c635af775cde994d5f030c23",
+      "acceptance_results": [
+        {
+          "acceptance_id": "TDP-S1-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:917d1e0555e07c0803d866779ded66d03e1bc3a9c635af775cde994d5f030c23"
+        },
+        {
+          "acceptance_id": "TDP-S1-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:917d1e0555e07c0803d866779ded66d03e1bc3a9c635af775cde994d5f030c23"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-937d3698",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:5197022db1f483c0e4e64ba28d6e81cced8181a8a314e6c8de2415ea017ab079",
+      "diff_hash": "sha256:9edf2765c6c2876b14129e9c71d736186d82631f53883064bd27a7e242b5b348",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:e37f987dc561be4d2b270d76790f5e008a0f65e916f1d5bcc36e7b334247408d",
+      "acceptance_results": [
+        {
+          "acceptance_id": "TDP-S1-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:e37f987dc561be4d2b270d76790f5e008a0f65e916f1d5bcc36e7b334247408d"
+        },
+        {
+          "acceptance_id": "TDP-S1-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:e37f987dc561be4d2b270d76790f5e008a0f65e916f1d5bcc36e7b334247408d"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-b39ce878",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:5197022db1f483c0e4e64ba28d6e81cced8181a8a314e6c8de2415ea017ab079",
+      "diff_hash": "sha256:9edf2765c6c2876b14129e9c71d736186d82631f53883064bd27a7e242b5b348",
+      "actor_id": "parent-mediated-review",
+      "summary": "Revision identity verified; the direct create-then-relate flow, start-only deduplication, deleted budget, retained per-call timeout/cancellation, fail-closed preflight, and regenerated contract surfaces match both acceptances with host-attested QA outcomes.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "0567223c0ef09793dd598627d2a5f4b53cfa49e1",
+        "review_commit": "ca9e989ded29bae5ef12cbe21135bf37e2406d7c",
+        "review_tree": "198dbc82344bc59775d381b09abd741466b285b6",
+        "manifest_digest": "sha256:770d343005840d9de52398d1800eb2afdf7c1a3af396ab1be68d1d1833451b9b"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-fbf58659eab2-1-review-1",
+          "acceptance_id": "TDP-S1-A2",
+          "summary": "dist/imm-planner.md states 'No read follows a write', which literally over-claims: the runtime performs one Issue-scoped id-resolution read after each created Issue's create write.",
+          "anchor": "sha256:3d62f1e1099fdcbc7e4f9d0626c778b25c609aecd70b1b1c131bf1dfaa0abd6c",
+          "evidence": {
+            "trigger": "A fresh direct publication with at least one absent Child: publishInitiativeDirect runs 'issue create' (a write) and then resolveIssueId, which performs a remote 'gh api repos/{owner}/{repo}/issues/{n}' read before the Sub-issue attach, so a remote read does follow a write; the four prohibited post-write reads (repository listing, attachment, dependency, ownership confirmation) are all absent, and the Issue-scoped read is documented in the code as the Assumption A1 fallback because 'gh issue create' returns only the Issue URL.",
+            "caller_chain": [
+              "plugins/immune-brain/dist/imm-planner.md#Initiative-Carrier-Preference",
+              "plugins/immune-brain/runtime/github_issue_tracker.ts#publishInitiativeDirect",
+              "plugins/immune-brain/runtime/github_issue_tracker.ts#resolveIssueId"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "TDP-S1-A2"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-f1fa37ddcf80-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "TDP-S1-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts:2534-2571: when the Parent is missing but owned Children still exist, publicationBatchDrift returns early and the Child content check is skipped, so an already-published intent-hash mismatch or content drift is not blocked before the first write. Deleting the published Parent and rerunning also creates a new Parent while adopting Children that still link the old one. Minimal fix: fail closed before the first write whenever an existing Child is present but its Parent is missing, and add a regression test.",
+      "anchor": "sha256:f63b203c067e2e0dbb58ef36b617b3cbdbff7abf6a03e8fd53ab16be31edaa63",
+      "evidence": {
+        "trigger": "The published batch's Parent Issue is deleted while at least one Child still carries correct repository/initiative/slice/task ownership markers but its intent-hash does not match this Intent, or its body has drifted; the same batch is rerun. publicationBatchDrift returns null when the Parent is missing, publishInitiativeDirect skips the Child content validation, then creates a new Parent and performs the relation writes.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::runGithubInitiativePublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::publishInitiativeDirect",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::publicationBatchDrift",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::attachChildDirect"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "TDP-S1-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-f1fa37ddcf80-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "TDP-S1-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts:2574-2588, 2681-2695: relations read at start are used only to fill gaps; already-present unapproved blocked_by edges, extra Sub-issues, and duplicate Sub-issues are never rejected. A complete batch rerun can therefore report a wrong graph as already_current with write_state=confirmed and return execution. Minimal fix: before any write, verify the start relations contain no unapproved or duplicate membership, allowing only missing approved relations into the repair path.",
+      "anchor": "sha256:06e5169f1ae117945a0ba4097cc0999c62a86402c80bd2f151e0b69a36f8a505",
+      "evidence": {
+        "trigger": "A completed approved 2-Child batch is followed, before the next run's start, by adding blocked_by=[9999] to the Child that has no dependencies, keeping titles, bodies, hashes, labels and approved relations unchanged. readBlockedByIds returns the extra edge, but the direct path never checks unexpected ids; an empty blockers loop marks that Child already_current. Extra or duplicate Parent Sub-issues likewise only enter attachedNumbers and are not rejected. The drift already exists at start, so it is not the runtime concurrent edit the contract excludes.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::runGithubInitiativePublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::publishInitiativeDirect",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::readBlockedByIds",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::publicationResultWithPlan"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "TDP-S1-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-f1fa37ddcf80-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "TDP-S1-A2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts:2542-2571, 2691, 2741: the start validation of existing Parent and Children never checks Issue.state. Manually closing an Issue while keeping its original content lets a rerun confirm the complete batch and recommend closed work; the original path's publicationIssueDrift explicitly rejected non-open state. Minimal fix: move that state check before the first write instead of deleting it with the closing pass.",
+      "anchor": "sha256:89e7c25b0541f248cfa7d6551ab65bb35c716624c79354650d6c6805b11d7931",
+      "evidence": {
+        "trigger": "After a complete batch publishes, the Parent or one Child is manually closed before the next run, with no terminal suffix and no change to title, body, markers, labels or relations. The start snapshot already contains state=closed, yet publishInitiativeDirect treats it as already_current and finally returns confirmed with execution. This is state known at start, not the runtime concurrent change the contract explicitly excludes.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::runGithubInitiativePublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::publishInitiativeDirect",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::publicationResultWithPlan"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "TDP-S1-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-f1fa37ddcf80-4-review-4",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "TDP-S1-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "tests/github-initiative-recovery.test.ts:113, 177-181: the added issueListings counter is never asserted by any test, and there is no two-versus-six Children read-count comparison nor a fresh-run call-sequence assertion. The fake still accepts repository, attachment and dependency confirmation reads, so restoring those retired reads would not fail the current tests. Minimal fix: add transport call-recording assertions for two and six Children that verify the fixed start reads, the exact write count, and no forbidden confirmation read after the first write.",
+      "anchor": "sha256:d0abf6017b35f642a2707645ad6338110219ba108ed7f37ed475c28fba0784c2",
+      "evidence": {
+        "trigger": "A fresh publication is given two and then six Children, or a repository listing, attachment confirmation or dependency confirmation is reintroduced after any successful production write. The current tests only check final state and partial write outcomes; issueListings is never asserted and mutationLog has no call-sequence assertion, so a regression of the core S1 read boundary still passes.",
+        "caller_chain": [
+          "tests/github-initiative-recovery.test.ts::RecoveryGh.run",
+          "tests/github-initiative-recovery.test.ts::RecoveryGh.dispatch",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::runGithubInitiativePublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::publishInitiativeDirect"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "TDP-S1-A1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:tracker-direct-publication-s1:2026-10-04T10:07:53.587Z",
+      "at": "2026-10-04T10:07:53.587Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:2a91ab8ffc75cc1386fb23d355ea2912e7753d73639e4d5e380655a947044aaa",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-1bd3b3a9be6899a2",
+        "issued_at": "2026-10-04T10:07:54.001Z",
+        "expires_at": "2026-10-04T10:17:54.001Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:tracker-direct-publication-s1:2026-10-04T10:08:49.742Z",
+      "at": "2026-10-04T10:08:49.742Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/tracker-direct-publication-s1.intent.json"
+    },
+    {
+      "id": "record_approval:tracker-direct-publication-s1:2026-10-04T10:09:09.199Z",
+      "at": "2026-10-04T10:09:09.199Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-73fac516\naction_v2_sha256:4547de28ce6bce71116df9dd00385bbe549a19937c9e35eb1dd872d518bf8c6e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-e7fc444169f20dff",
+        "issued_at": "2026-10-04T10:09:09.200Z",
+        "expires_at": "2026-10-04T10:19:09.200Z"
+      }
+    },
+    {
+      "id": "request_rework:tracker-direct-publication-s1:2026-10-04T10:13:58.999Z",
+      "at": "2026-10-04T10:13:58.999Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:22bae3ddb322d17eb35fa4cb812dc9aae4bf4859823161744c0aaf7ca02aba0b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-1f20a4062b649836",
+        "issued_at": "2026-10-04T10:13:58.999Z",
+        "expires_at": "2026-10-04T10:23:58.999Z"
+      }
+    },
+    {
+      "id": "resolve_finding:tracker-direct-publication-s1:2026-10-04T10:29:30.596Z",
+      "at": "2026-10-04T10:29:30.596Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f1fa37ddcf80-1-review-1\naction_v2_sha256:3a887ce38a3f7e64c71ca1e692b5545bd8de2f8dcd3b16d53f5ee6f9ec7354ed"
+    },
+    {
+      "id": "resolve_finding:tracker-direct-publication-s1:2026-10-04T10:29:45.395Z",
+      "at": "2026-10-04T10:29:45.395Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f1fa37ddcf80-2-review-2\naction_v2_sha256:93dc19b1a4d279629d9334d151074a171d8487bd1461976f033f3bb222e470bc"
+    },
+    {
+      "id": "resolve_finding:tracker-direct-publication-s1:2026-10-04T10:29:59.803Z",
+      "at": "2026-10-04T10:29:59.803Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f1fa37ddcf80-3-review-3\naction_v2_sha256:15c1d5c75fe3193ef7dc1bd0401310ea2774686b3ea5b75589d58b6484ca5e07"
+    },
+    {
+      "id": "resolve_finding:tracker-direct-publication-s1:2026-10-04T10:30:14.130Z",
+      "at": "2026-10-04T10:30:14.130Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f1fa37ddcf80-4-review-4\naction_v2_sha256:928cd07f75e6b42b3a1588d0787216194a912e387b6fdd4c8f15a6856fd4a347"
+    },
+    {
+      "id": "freeze_artifacts:tracker-direct-publication-s1:2026-10-04T10:30:45.527Z",
+      "at": "2026-10-04T10:30:45.527Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/tracker-direct-publication-s1.intent.json"
+    },
+    {
+      "id": "record_approval:tracker-direct-publication-s1:2026-10-04T10:31:06.888Z",
+      "at": "2026-10-04T10:31:06.888Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-937d3698\naction_v2_sha256:1b932e29c5a2523be1183719e7e89b90363d2ed66f583ace6fccbc1747b837d5",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-c5520de3c70ca335",
+        "issued_at": "2026-10-04T10:31:06.888Z",
+        "expires_at": "2026-10-04T10:41:06.888Z"
+      }
+    },
+    {
+      "id": "record_approval:tracker-direct-publication-s1:2026-10-04T10:37:31.913Z",
+      "at": "2026-10-04T10:37:31.913Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-b39ce878\naction_v2_sha256:afaa2fd8a4f834a8d85ebab8452eb0eb59cff59a1eb1e869f0c9786e7752b259",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-84a3411d8d88f1b1",
+        "issued_at": "2026-10-04T10:37:31.913Z",
+        "expires_at": "2026-10-04T10:47:31.913Z"
+      }
+    },
+    {
+      "id": "complete:tracker-direct-publication-s1:2026-10-04T10:37:33.207Z",
+      "at": "2026-10-04T10:37:33.207Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:81b28e3c80b7df62d2c9dd1e5541a43b9efd9d01fcd084a7d594030f5a2215c7"
+    }
+  ]
+}
