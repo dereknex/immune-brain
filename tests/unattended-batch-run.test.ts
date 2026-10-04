@@ -49,7 +49,9 @@ function projectionFacts(): AssuranceProjectionResult["projection"] {
 }
 
 // Scripted unit fixtures model a Parent-ready snapshot between foreground calls.
-// The implementation/QA integration below uses the raw driver instead.
+// The handoff tests below call the raw driver against scripted projections; real
+// implementation, QA and Git through the registered entry are covered by
+// tests/pi-batch-acceptance-integration.test.ts.
 async function consumeScriptedHandoffs(request: StartBatchInput, report: Awaited<ReturnType<typeof startBatchOnce>>) {
 	while (report.handoff) {
 		const taskId = report.handoff.task_id;

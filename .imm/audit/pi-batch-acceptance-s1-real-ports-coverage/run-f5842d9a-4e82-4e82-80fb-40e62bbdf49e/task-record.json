@@ -1,0 +1,158 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "pi-batch-acceptance-s1-real-ports-coverage",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "pi-batch-acceptance-s1-real-ports-coverage",
+    "goal": "Deliver the real registered Pi-entry acceptance coverage and operator runbook defined by S1 in docs/specs/pi-batch-acceptance.spec.md, separating deterministic integration evidence from actual native-Host batch completion observations.",
+    "acceptance": [
+      {
+        "id": "PBA-S1-A1",
+        "assertion": "Meet S1 in docs/specs/pi-batch-acceptance.spec.md: invoke the actual registered Pi batch Tool with real Kernel ownership, tracked implementation, deterministic QA materialization/process execution, settlement/export and scope-bound Git commits, without scripted completed ports, auto-frozen Parent snapshots or synthetic successful QA. Behavioral fixtures verify implementation handoff before QA, exactly-once serial continuation, real check failure and finding-specific repair, fresh-obligation interruption recovery, and confirmed renewal/refusal without losing progress. Verify the runbook executable examples and S0 final consistency checks; retain useful unit/refusal coverage and correct misleading integration pointers. Routine fixtures do not claim Review coverage; fixtures and local green do not certify live build, Review or native interaction, and no descriptor requires its own future batch settlement.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-batch-acceptance-integration.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/unattended-batch-run.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/agents/pi-batch-acceptance.md",
+      "docs/specs/pi-batch-acceptance.spec.md",
+      "tests/pi-batch-acceptance-integration.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/unattended-batch-run.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/pi-batch-acceptance-s1-real-ports-coverage.intent.json",
+    "content_hash": "sha256:8eed66f3e3077b61d30dfeef037c5c408711e8598777aefc62bdb5f689771f4d"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:8eed66f3e3077b61d30dfeef037c5c408711e8598777aefc62bdb5f689771f4d",
+  "git_base_head": "0ef21b4d1637c9318341db9ac196f9220257932e",
+  "attestations": [
+    {
+      "id": "approval-qa-24941c5b",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8eed66f3e3077b61d30dfeef037c5c408711e8598777aefc62bdb5f689771f4d",
+      "diff_hash": "sha256:9e49e2062a6a2e3239fc01c8b0132a42ac1744de5b7b3b9b4df387b9d196f02b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:5a7b5f79760ea8a55cc4df3878fbe3e1e13e2e591c6729565714eaba6a109ec3",
+      "acceptance_results": [
+        {
+          "acceptance_id": "PBA-S1-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:5a7b5f79760ea8a55cc4df3878fbe3e1e13e2e591c6729565714eaba6a109ec3"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-44430dd1",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8eed66f3e3077b61d30dfeef037c5c408711e8598777aefc62bdb5f689771f4d",
+      "diff_hash": "sha256:9e49e2062a6a2e3239fc01c8b0132a42ac1744de5b7b3b9b4df387b9d196f02b",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (base/commit/single parent/tree, manifest_digest recomputed, changed blob oids match); the new integration test drives the registered start_unattended_batch and imm_kernel_canary Tools with only the Initiative observation and native-dialog seams injected, covering handoff before QA, exactly-once serial commits, real failing check with exact-finding repair, adapter-recreation recovery, and both-expired renewal/refusals, and it executes all four runbook sh examples against the fixture; fixtures are labeled routine with no Review or live claim, and the two pointer comments are corrected without weakening existing tests.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "0ef21b4d1637c9318341db9ac196f9220257932e",
+        "review_commit": "14298b920be9648e6cfccfbdf19988b0a64e540a",
+        "review_tree": "1243bc4b467d774bd03631001129ad5445189f32",
+        "manifest_digest": "sha256:4b9755044eb16053f39321ca95f9ebfeb672ca7f554bed0a95e915b2cc411fe0"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-9d5b0a02afa4-1-review-1",
+          "acceptance_id": "PBA-S1-A1",
+          "summary": "Three runbook prose claims are not asserted by any fixture: the committed child's reason text 'crash after settlement; resuming at commit', the material-child 'review_ready' step, and the status 'plugin_version' loaded-build check. They match unchanged source (batch_runner.ts line 1002 and imm-canary-work.ts line 608, read only to check these runbook claims) but would drift silently if that source changes.",
+          "anchor": "sha256:2419ad3000083c0559d24b8ef8afeb9e8de36eb6b9f2e8324b8a0e586462013e",
+          "evidence": {
+            "trigger": "A future change to the settled-child reason string in batch_runner.ts or to the status projection in imm-canary-work.ts; the integration test only matches children state/commit and never reads reason, plugin_version or review_ready, so the runbook text would go stale with a green run.",
+            "caller_chain": [
+              "docs/agents/pi-batch-acceptance.md",
+              "tests/pi-batch-acceptance-integration.test.ts",
+              "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+              "plugins/immune-brain/.pi-extension/imm-canary-work.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "PBA-S1-A1"
+            }
+          }
+        },
+        {
+          "id": "review-9d5b0a02afa4-2-review-2",
+          "acceptance_id": "PBA-S1-A1",
+          "summary": "When Host peer packages are absent (the delivery QA materialization), the test substitutes mock.module doubles for typebox, @earendil-works/pi-coding-agent and @earendil-works/pi-tui, so the Tool parameter schema and TUI widgets are not the real ones in that environment. Execution, Kernel, QA and Git paths are unaffected and the file states the seam, but the pattern constraint on initiative_slug is not exercised there.",
+          "anchor": "sha256:b3408c70495f59946e42aa628eccad32cad9476f2e4606ac020fa35b8f82263c",
+          "evidence": {
+            "trigger": "Running tests/pi-batch-acceptance-integration.test.ts where 'typebox' cannot be imported: Type.Object/Type.String come from the inline double and tool.execute is called directly, bypassing schema validation.",
+            "caller_chain": [
+              "tests/pi-batch-acceptance-integration.test.ts",
+              "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "PBA-S1-A1"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:pi-batch-acceptance-s1-real-ports-coverage:2026-10-04T15:03:24.858Z",
+      "at": "2026-10-04T15:03:24.858Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/pi-batch-acceptance-s1-real-ports-coverage.intent.json"
+    },
+    {
+      "id": "record_approval:pi-batch-acceptance-s1-real-ports-coverage:2026-10-04T15:04:26.349Z",
+      "at": "2026-10-04T15:04:26.349Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-24941c5b\naction_v2_sha256:76e55bdee5921648416dcbd77ba84016d7c668b162c5b62e120cd0d0f8337458",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-04T15:04:26.349Z",
+        "expires_at": "2026-10-04T15:14:26.349Z"
+      }
+    },
+    {
+      "id": "record_approval:pi-batch-acceptance-s1-real-ports-coverage:2026-10-04T15:18:05.230Z",
+      "at": "2026-10-04T15:18:05.230Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-44430dd1\naction_v2_sha256:3ffbb2ca3dc80b1816b5f675b35baef2c81014306bd1912725b3d8ea850dcfdf",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-04T15:18:05.230Z",
+        "expires_at": "2026-10-04T15:28:05.230Z"
+      }
+    },
+    {
+      "id": "complete:pi-batch-acceptance-s1-real-ports-coverage:2026-10-04T15:18:06.075Z",
+      "at": "2026-10-04T15:18:06.075Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:6a5744ba88675ed01d48f93acd3fc84affbd7449bc7d5cc86103945085001edf"
+    }
+  ]
+}

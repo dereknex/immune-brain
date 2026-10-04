@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "pi-batch-acceptance-s1-real-ports-coverage",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:pi-batch-acceptance-s1-real-ports-coverage:2026-10-04T15:18:06.075Z",
+  "final_record_hash": "sha256:708d5e5474a0bf38654e6c0633d201991975720acf072b2cc0eb26e191fb2e47",
+  "terminalized_at": "2026-10-04T15:18:06.075Z"
+}

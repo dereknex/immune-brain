@@ -76,7 +76,9 @@ import { projectAssurance } from "../plugins/immune-brain/runtime/kernel/assuran
 import { diffSnapshotOf } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 
 // These authority fixtures script Assurance. Model the explicit Parent turn
-// between Tool returns; integration coverage uses real QA instead of this seam.
+// between Tool returns. Nothing in this file runs real QA or real batch commits;
+// tests/pi-batch-acceptance-integration.test.ts drives the registered entry
+// through real Kernel ownership, QA and Git instead of this seam.
 async function executePiUnattendedBatch(options: Parameters<typeof executePiBatchOnce>[0]) {
 	if (!options.batchKernel?.advanceTask || options.batchKernel.enrollTask) return executePiBatchOnce(options);
 	const ready = new Set<string>();
