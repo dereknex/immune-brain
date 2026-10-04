@@ -169,12 +169,20 @@ export function parseAsyncAgentLaunch(result: string): AsyncAgentLaunch | null {
 	return { agentId, outputFile };
 }
 
+const HANDBACK_TOOL = "SubagentHandback";
+
 /**
  * Extract the reviewer's terminal message from its own transcript.
  *
  * Each record carries the `agentId` that wrote it, so the caller's independently
  * observed id is matched per record rather than trusted for the file as a whole;
  * a transcript that interleaves another agent cannot contribute its text.
+ *
+ * A subagent ends its run either with an assistant text message or, on Hosts
+ * that hand the report back through a tool, with a `SubagentHandback` call whose
+ * `input.message` is that same report and which leaves no text block behind.
+ * Both are the reviewer's own record in its own transcript, so whichever the
+ * observed agent wrote last is its result.
  */
 export function readAgentTranscriptResult(transcript: string, agentId: string): string | null {
 	let last: string | null = null;
@@ -192,6 +200,10 @@ export function readAgentTranscriptResult(transcript: string, agentId: string): 
 			if (!block || typeof block !== "object") continue;
 			const part = block as Record<string, unknown>;
 			if (part.type === "text" && typeof part.text === "string") text += part.text;
+			if (part.type === "tool_use" && part.name === HANDBACK_TOOL && part.input && typeof part.input === "object") {
+				const report = (part.input as Record<string, unknown>).message;
+				if (typeof report === "string" && report.trim()) last = report;
+			}
 		}
 		if (text.trim()) last = text;
 	}

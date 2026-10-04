@@ -1,0 +1,137 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "review-host-subagent-handback",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "review-host-subagent-handback",
+    "goal": "Let the Claude Review Host settle a reservation when the observed reviewer hands its report back through the SubagentHandback tool and leaves no assistant text block in its transcript.",
+    "acceptance": [
+      {
+        "id": "RHSH-A1",
+        "assertion": "readAgentTranscriptResult returns the report carried in input.message of a SubagentHandback tool_use record written by the observed agent, and whichever of that report or an assistant text message the agent wrote last is its result. A record from another agentId, a tool_use with any other name, and a non-string or blank message never answer for the reviewer. A reservation whose transcript holds only a handed-back report settles through consumeReview with the observed agent as actor. Existing per-record agentId matching, transcript path and identity checks, and all prior text-message behavior are unchanged; no new authority path, schema or Kernel change. The generated Claude bundle matches the runtime source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-review-host-async-agent.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/claude/review_host.ts",
+      "tests/claude-review-host-async-agent.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/review-host-subagent-handback.intent.json",
+    "content_hash": "sha256:90e6ffeb4af0b5db5f981b1ddc32a7fd98a1d4d7359d5c201f707bd11ef82e5c"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:90e6ffeb4af0b5db5f981b1ddc32a7fd98a1d4d7359d5c201f707bd11ef82e5c",
+  "git_base_head": "95f66bba06c2d2c9884d92138d6999e544e2dcdd",
+  "attestations": [
+    {
+      "id": "approval-qa-ff7515d0",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:90e6ffeb4af0b5db5f981b1ddc32a7fd98a1d4d7359d5c201f707bd11ef82e5c",
+      "diff_hash": "sha256:7a1030306f94377cb12675fa453cb5ca8fa9e35fcb5156cf00c78dfd673ea503",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:462854df92aa8946c029c9c0fd9a7e9196e4c87adce325fde1fd0406f50d4f3b",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RHSH-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:462854df92aa8946c029c9c0fd9a7e9196e4c87adce325fde1fd0406f50d4f3b"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-252a5438",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:90e6ffeb4af0b5db5f981b1ddc32a7fd98a1d4d7359d5c201f707bd11ef82e5c",
+      "diff_hash": "sha256:7a1030306f94377cb12675fa453cb5ca8fa9e35fcb5156cf00c78dfd673ea503",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (review commit a3b08a2 has sole parent 95f66bb, tree c9a6976, all three changed blob oids match the manifest); readAgentTranscriptResult takes a non-blank string input.message from a SubagentHandback tool_use only on records already matched to the observed agentId, last record wins across records, text-message behavior and path/identity checks are untouched, the dist bundle mirrors the runtime source, and tests cover the positive, ordering, foreign-agent, other-tool, non-string, blank and consumeReview settlement cases. manifest_digest and diff_hash were not independently recomputed because their canonicalization is not in the evidence.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "95f66bba06c2d2c9884d92138d6999e544e2dcdd",
+        "review_commit": "a3b08a239ce4eb48ac02af76bdc2a9e3eef7b9c0",
+        "review_tree": "c9a697613563e0465e0303ada81afba4a7f93a87",
+        "manifest_digest": "sha256:c5293feead24d87b6d8e3af1f28cecac11b3b9bf53d42921f53cc1f9b6a56729"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-1bfa1a03bf59-1-review-1",
+          "acceptance_id": "RHSH-A1",
+          "summary": "Within a single transcript record that holds both a text block and a SubagentHandback tool_use, the text always wins regardless of block order, so 'whichever was written last' holds only across records; this case is untested and fails closed (an unparseable preamble instead of the verdict), and is not reached when the Host writes one content block per record as in the recorded fixture.",
+          "anchor": "sha256:093e7b49e0f8d9ae43d6cbe7d8a7b7ddf8e85e79a36411e7f9726723244c72c0",
+          "evidence": {
+            "trigger": "One assistant record for the observed agentId whose message.content is [{type:'text',text:'Delivering the report.'},{type:'tool_use',name:'SubagentHandback',input:{message:'<verdict JSON>'}}]: the loop sets last to the report, then the post-loop 'if (text.trim()) last = text' overwrites it with the preamble text.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/claude/review_host.ts:ClaudeReviewHost.consumeReview",
+              "plugins/immune-brain/runtime/claude/review_host.ts:readAgentTranscriptResult"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "RHSH-A1"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:review-host-subagent-handback:2026-10-04T15:24:06.503Z",
+      "at": "2026-10-04T15:24:06.503Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-host-subagent-handback.intent.json"
+    },
+    {
+      "id": "record_approval:review-host-subagent-handback:2026-10-04T15:24:09.928Z",
+      "at": "2026-10-04T15:24:09.928Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ff7515d0\naction_v2_sha256:902df7eff4d1bd62c912ae0a28d0c829dd772dd0310e1a7f33b4c13426af4b29",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-04T15:24:09.928Z",
+        "expires_at": "2026-10-04T15:34:09.928Z"
+      }
+    },
+    {
+      "id": "record_approval:review-host-subagent-handback:2026-10-04T15:25:21.430Z",
+      "at": "2026-10-04T15:25:21.430Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-252a5438\naction_v2_sha256:48b6ee5e30383b83bc2a71a7c5705d3b35a8650be410b5072ac74e717bd2b967",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-04T15:25:21.430Z",
+        "expires_at": "2026-10-04T15:35:21.430Z"
+      }
+    },
+    {
+      "id": "complete:review-host-subagent-handback:2026-10-04T15:25:22.238Z",
+      "at": "2026-10-04T15:25:22.238Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:703cb4f56b14d49323d6ba29b618e2cd485c5552c3ebcce1f530f602866a6679"
+    }
+  ]
+}

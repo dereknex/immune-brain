@@ -55,6 +55,21 @@ function transcriptLine(agentId: string, text: string, type = "assistant"): stri
 	})}\n`;
 }
 
+/**
+ * Recorded from Claude Code on 2026-10-04: the reviewer's last record is a
+ * `SubagentHandback` call carrying the report in `input.message`, and the
+ * transcript holds no assistant text block at all.
+ */
+function handbackLine(agentId: string, message: unknown, name = "SubagentHandback"): string {
+	return `${JSON.stringify({
+		parentUuid: null,
+		isSidechain: true,
+		agentId,
+		type: "assistant",
+		message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_recorded", name, input: { message } }], stop_reason: null },
+	})}\n`;
+}
+
 function reviewRequest(): ReviewRequest {
 	return { taskId: TASK, operationId: OPERATION, prompt: "review instructions", evidencePath: "/tmp/evidence.json", maxTurns: 24 };
 }
@@ -119,6 +134,52 @@ describe("claude review host: recorded async Agent envelope", () => {
 		expect(readAgentTranscriptResult(transcript, RECORDED_AGENT_ID)).toBe(VERDICT);
 		// Records another agent wrote never answer for this one.
 		expect(readAgentTranscriptResult(transcriptLine("someone-else", VERDICT), RECORDED_AGENT_ID)).toBeNull();
+	});
+
+	test("the transcript reader takes a report the observed agent handed back through a tool", () => {
+		expect(readAgentTranscriptResult(handbackLine(RECORDED_AGENT_ID, VERDICT), RECORDED_AGENT_ID)).toBe(VERDICT);
+		// Whichever the agent wrote last is its result.
+		expect(readAgentTranscriptResult(
+			transcriptLine(RECORDED_AGENT_ID, "checking the diff") + handbackLine(RECORDED_AGENT_ID, VERDICT),
+			RECORDED_AGENT_ID,
+		)).toBe(VERDICT);
+		expect(readAgentTranscriptResult(
+			handbackLine(RECORDED_AGENT_ID, "superseded") + transcriptLine(RECORDED_AGENT_ID, VERDICT),
+			RECORDED_AGENT_ID,
+		)).toBe(VERDICT);
+		// Another agent's handback, another tool's input, and a non-string or
+		// blank report never answer for this reviewer.
+		expect(readAgentTranscriptResult(handbackLine("someone-else", VERDICT), RECORDED_AGENT_ID)).toBeNull();
+		expect(readAgentTranscriptResult(handbackLine(RECORDED_AGENT_ID, VERDICT, "Bash"), RECORDED_AGENT_ID)).toBeNull();
+		expect(readAgentTranscriptResult(handbackLine(RECORDED_AGENT_ID, { decision: "pass" }), RECORDED_AGENT_ID)).toBeNull();
+		expect(readAgentTranscriptResult(handbackLine(RECORDED_AGENT_ID, "   "), RECORDED_AGENT_ID)).toBeNull();
+	});
+
+	test("a reservation settles from a handed-back report when the transcript has no assistant text", () => {
+		const root = mkdtempSync(join(tmpdir(), "imm-review-host-"));
+		try {
+			const real = join(root, `agent-${RECORDED_AGENT_ID}.jsonl`);
+			writeFileSync(real, handbackLine(RECORDED_AGENT_ID, VERDICT), { mode: 0o600 });
+			chmodSync(real, 0o600);
+			const link = join(root, `${RECORDED_AGENT_ID}.output`);
+			symlinkSync(real, link);
+
+			const host = new ClaudeReviewHost(new FileHookEventLog(root));
+			const reservation = host.prepareReview(reviewRequest());
+			observeDispatch(host, {
+				sessionId: RECORDED_SESSION,
+				agentId: RECORDED_AGENT_ID,
+				envelope: { ...RECORDED_LAUNCH_ENVELOPE, outputFile: link, prompt: reservedPrompt() },
+				prompt: reservedPrompt(),
+			});
+
+			expect(host.consumeReview(reservation)).toEqual({
+				ok: true,
+				receipt: { actorId: `claude:${RECORDED_AGENT_ID}`, result: VERDICT },
+			});
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 
 	test("a reservation settles from the transcript the recorded receipt names", () => {
