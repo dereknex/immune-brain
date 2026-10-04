@@ -316,7 +316,10 @@ export interface ForegroundToolUpdate {
 	details: Record<string, unknown>;
 }
 
+/** Wall-clock milliseconds spent per advance stage; the stage names are the progress stages. */
+export interface AssuranceTimings { total_ms: number; stage_ms: Record<string, number> }
 type AssuranceRecoveryFields = {
+	timings?: AssuranceTimings;
 	diagnostics?: QaCheckDiagnostic[];
 	environment_failure?: boolean;
 	recovery?: AssuranceRecovery;
@@ -404,12 +407,23 @@ export interface AssuranceCoordinatorPorts {
 	qaOnAuthorityCommit?: () => void;
 	qaAfterAuthorityCommit?: () => Promise<void>;
 	qaJobTimeoutMs?: number;
+	/** Attach per-stage `timings` to advance results. Defaults to IMM_ASSURANCE_TIMINGS=1. */
+	reportTimings?: boolean;
+	/** Overrides QA_MAX_IDENTICAL_FAILURES; tests only. */
+	qaMaxIdenticalFailures?: number;
 }
 
 export const QA_MIN_JOB_TIMEOUT_SECONDS = 15 * 60;
 export const QA_MAX_JOB_TIMEOUT_SECONDS = 60 * 60;
 export const QA_JOB_OVERHEAD_SECONDS = 2 * 60;
 export const QA_JOB_TIMEOUT_SECONDS = QA_MIN_JOB_TIMEOUT_SECONDS;
+/**
+ * A QA run that fails before attestation writes no authority, so the Kernel
+ * would happily rerun the same descriptors forever. After this many identical
+ * failures on the same snapshot (record revision, intent hash, diff hash) the
+ * coordinator refuses to rerun until the snapshot changes.
+ */
+export const QA_MAX_IDENTICAL_FAILURES = 2;
 export const REVIEW_PREPARATION_TIMEOUT_MS = 30_000;
 export const REVIEW_DISPATCH_TIMEOUT_MS = 120_000;
 export const REVIEW_VERDICT_VALIDATION_TIMEOUT_MS = 30_000;
@@ -705,6 +719,8 @@ export class AssuranceCoordinator {
 	private readonly operationControllers = new Map<string, { operationId: string; controller: AbortController }>();
 	private readonly reviewReservations = new Map<string, ReviewReservation>();
 	private readonly rejectedReviewOperations = new Map<string, { operationId: string; reason: string }>();
+	private readonly qaFailureStreaks = new Map<string, { key: string; count: number }>();
+	private readonly qaAttemptKeys = new Map<string, string>();
 	private readonly unknownOperations = new Map<string, { operation: "qa" | "review"; operationId: string; reason: string }>();
 	private readonly sessionInvocations = new Set<InvocationToken>();
 	private sessionActive = true;
@@ -731,6 +747,8 @@ export class AssuranceCoordinator {
 			this.removeEvidence(reservation);
 		}
 		this.reviewReservations.clear();
+		this.qaFailureStreaks.clear();
+		this.qaAttemptKeys.clear();
 		for (const invocation of [...this.sessionInvocations]) this.closeSessionInvocation(invocation);
 	}
 
@@ -762,7 +780,19 @@ export class AssuranceCoordinator {
 
 	async advance(taskId: string, ctx: HostContext, signal?: AbortSignal, onUpdate?: (update: ForegroundToolUpdate) => void): Promise<AssuranceAdvanceResult> {
 		const checks = new Map<string, QaCheckDiagnostic>();
+		const started = performance.now();
+		const stageMs: Record<string, number> = {};
+		let stage = "preparing";
+		let stageStarted = started;
+		const closeStage = (now: number) => { stageMs[stage] = (stageMs[stage] ?? 0) + Math.round(now - stageStarted); };
 		const result = await this.advanceOnce(taskId, ctx, signal, update => {
+			const next = update.details.stage;
+			if (typeof next === "string" && next !== stage) {
+				const now = performance.now();
+				closeStage(now);
+				stage = next;
+				stageStarted = now;
+			}
 			const diagnostic = update.details.diagnostic as QaCheckDiagnostic | undefined;
 			if (diagnostic) {
 				checks.set(diagnostic.descriptor_ref, diagnostic);
@@ -772,8 +802,25 @@ export class AssuranceCoordinator {
 			}
 			onUpdate?.(update);
 		});
+		this.recordQaAttempt(taskId, result);
 		const diagnostics = result.diagnostics ?? [...checks.values()];
-		return this.withRecovery(taskId, ctx, diagnostics.length ? { ...result, diagnostics } : result);
+		const enriched = diagnostics.length ? { ...result, diagnostics } : result;
+		if (!(this.ports.reportTimings ?? process.env.IMM_ASSURANCE_TIMINGS === "1")) return this.withRecovery(taskId, ctx, enriched);
+		const finished = performance.now();
+		closeStage(finished);
+		return this.withRecovery(taskId, ctx, { ...enriched, timings: { total_ms: Math.round(finished - started), stage_ms: stageMs } });
+	}
+
+	private recordQaAttempt(taskId: string, result: AssuranceAdvanceResult): void {
+		const key = this.qaAttemptKeys.get(taskId);
+		this.qaAttemptKeys.delete(taskId);
+		if (!key || result.state === "cancelled") return;
+		if (result.state !== "failed" || result.operation !== "qa") {
+			this.qaFailureStreaks.delete(taskId);
+			return;
+		}
+		const streak = this.qaFailureStreaks.get(taskId);
+		this.qaFailureStreaks.set(taskId, { key, count: streak?.key === key ? streak.count + 1 : 1 });
 	}
 
 	private async withRecovery<T extends AssuranceAdvanceResult | AssuranceSubmitReviewResult>(taskId: string, ctx: HostContext, enriched: T): Promise<T> {
@@ -947,7 +994,13 @@ export class AssuranceCoordinator {
 				// Preparation counts against the same ceiling as the checks, so the
 				// aggregate clock starts before the first prepared group runs. A host
 				// may only tighten the derived budget, never raise it past the ceiling.
-				const declaredQaJobMs = deriveQaJobTimeoutMs(assurance.descriptors.values());
+				const qaKey = `${assurance.snapshot.record_revision}|${assurance.snapshot.intent_content_hash}|${assurance.snapshot.diff_hash}`;
+					const streak = this.qaFailureStreaks.get(taskId);
+					const maxFailures = this.ports.qaMaxIdenticalFailures ?? QA_MAX_IDENTICAL_FAILURES;
+					if (streak?.key === qaKey && streak.count >= maxFailures)
+						return { state: "blocked", reason: `deterministic QA already failed ${streak.count} times on this exact snapshot; change the workspace diff or intent, or restart the session after fixing the environment, before retrying` };
+					this.qaAttemptKeys.set(taskId, qaKey);
+					const declaredQaJobMs = deriveQaJobTimeoutMs(assurance.descriptors.values());
 				const qaJobTimeoutMs = Math.min(declaredQaJobMs, this.ports.qaJobTimeoutMs ?? declaredQaJobMs);
 				const qaJobDeadline = setTimeout(() => {
 					qaJobBudgetExceeded = true;

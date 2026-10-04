@@ -527,4 +527,38 @@ describe("host-neutral assurance coordinator", () => {
 		expect(h.qaRuns()).toBe(1);
 		expect(h.counts().applyCount).toBe(0);
 	});
+
+	test("QA stops rerunning after identical failures on the same snapshot", async () => {
+		const failing = async () => { throw new Error("fixture execution failure"); };
+		const h = makeCoordinator({ qa: failing });
+		const outcomes = [];
+		for (let i = 0; i < 3; i++) outcomes.push(await h.coordinator.advance(TASK, ctx));
+		expect(outcomes.map(o => o.state)).toEqual(["failed", "failed", "blocked"]);
+		expect((outcomes[2] as { reason: string }).reason).toContain("already failed 2 times");
+		expect(h.qaRuns()).toBe(2);
+	});
+
+	test("a changed snapshot resets the QA failure limit", async () => {
+		let diff = "sha256:diff";
+		const h = makeCoordinator({
+			qa: async () => { throw new Error("fixture execution failure"); },
+			assurance: async (_root, _task, role) => ({ snapshot: { ...snapshot(role), diff_hash: diff }, descriptors: new Map([["A1", { contract: "assurance_kernel/verification_descriptor/v2", command: { executable: "tool", argv: ["test"], cwd: ".", timeout_ms: 1000, max_output_bytes: 1024 }, environment: { prepare: null, writable_paths: [] } }]] as never), reviewBundle: null }),
+		});
+		await h.coordinator.advance(TASK, ctx);
+		await h.coordinator.advance(TASK, ctx);
+		diff = "sha256:changed";
+		expect((await h.coordinator.advance(TASK, ctx)).state).toBe("failed");
+		expect(h.qaRuns()).toBe(3);
+	});
+
+	test("advance reports per-stage timings that sum to the total", async () => {
+		expect(await makeCoordinator().coordinator.advance(TASK, ctx)).not.toHaveProperty("timings");
+		const h = makeCoordinator();
+		h.ports.reportTimings = true;
+		const result = await h.coordinator.advance(TASK, ctx);
+		const timings = (result as { timings?: { total_ms: number; stage_ms: Record<string, number> } }).timings!;
+		expect(Object.keys(timings.stage_ms)).toEqual(expect.arrayContaining(["capturing_snapshot", "settling_qa", "review_ready"]));
+		const sum = Object.values(timings.stage_ms).reduce((a, b) => a + b, 0);
+		expect(Math.abs(sum - timings.total_ms)).toBeLessThanOrEqual(Object.keys(timings.stage_ms).length);
+	});
 });
