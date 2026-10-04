@@ -1,0 +1,29 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "workflow-decision-closure-s2",
+  "owner": "user",
+  "goal": "Keep staging recovery and outbound research within exact existing operation, target and impact grants while preserving already-authorized operations and batch capabilities.",
+  "acceptance": [
+    {
+      "id": "WDC-S2-A1",
+      "assertion": "Implement S2 of docs/specs/workflow-decision-closure.spec.md in existing BASELINE and Skill research/recovery instructions. Separate staging, commit, push, publication and outbound model/data effects; a stage-only recovery must not inherit commit authority. Preserve exact pre-existing approvals, valid batch commit capabilities and mandatory native gates without redundant chat confirmation. Check project research channel and data scope before a new outbound effect; public articles do not authorize arbitrary providers. Distinguish documentation, mock, real-channel and model-quality evidence. Add positive/negative contract and scenario controls, update generated BASELINE mirror and packaging coverage. Text rules must not be advertised as an absolute bash sandbox. No credential changes, provider routing, external model run, Git commit or production write belongs to this Slice.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-effect-boundaries.test.ts\",\n      \"tests/baseline-packaging-contract.test.ts\",\n      \"tests/plugin-package-runtime.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/workflow-decision-closure-s2.intent.json",
+    "docs/specs/workflow-decision-closure.spec.md",
+    "plugins/immune-brain/BASELINE.md",
+    "plugins/immune-brain/dist/BASELINE.md",
+    "plugins/immune-brain/dist/imm-brainstorm.md",
+    "plugins/immune-brain/dist/imm-loop.md",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/skills/BASELINE.md",
+    "tests/baseline-packaging-contract.test.ts",
+    "tests/fixtures/imm-brainstorm-behavior-benchmark.json",
+    "tests/plugin-package-runtime.test.ts",
+    "tests/workflow-effect-boundaries.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

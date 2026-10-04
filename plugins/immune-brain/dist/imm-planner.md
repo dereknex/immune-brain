@@ -49,6 +49,25 @@ decisions. Resolve a local delta here. If the answer reopens multiple product
 branches or changes the overall goal or Scope, stop and return to
 `imm-brainstorm`.
 
+Before handoff, run one handoff completeness check over the closed-world
+manifest: map every upstream item and every required phase exactly once, report
+each Slice's closable result plus the remaining gap, and confirm the complete
+confirmed outcome and its phases are actually delivered. Upstream items close as
+covered, decisioned, deferred, or out with a reason; a required phase is the
+confirmed outcome itself, so it must be delivered rather than closed out with a
+reason. A reason excuses an upstream item, never a still-required phase: dropping
+one is exactly the silent narrowing this check exists to catch, and the genuine
+reduction is a user decision that returns to `imm-brainstorm` and changes what
+was required. The check fails, and the candidate is not handoff-ready, when a
+required phase or upstream item has no mapping, or when the plan conserves a
+smaller deliverable than the confirmed outcome. An outcome-narrowing
+substitution is such a failure: a confirmed full integration presented as one
+pairwise CLI, or a `prototype first` dependency presented as `prototype only`.
+Both are conservation failures, not scope decisions, and the checker rejects
+them instead of accepting the reduced deliverable. Coverage is independent of
+question count, so a clear request and an already-confirmed decision still pass
+the same check without acquiring an extra confirmation.
+
 Direct Planner entry remains valid for a clear request and does not require a
 Brainstorm pass. Resolve facts and derive technical design; if an unresolved
 user-owned product decision appears, return to `imm-brainstorm` rather than
@@ -327,9 +346,36 @@ before execution. Report `valid` and `enrollment_ready` only as structural and
 Enrollment readiness; only a completed deterministic QA result proves that a
 descriptor executed and passed.
 
+**Acceptance-to-invariant mapping.** Trace each acceptance assertion to an
+observable invariant at a real seam, then name the positive, negative, and bound
+controls that exercise it. Name the controls explicitly instead of relying on
+the happy path: a happy path alone never proves a guard. The six generalized
+motivating classes to check for are: normalization precedes retrieval (an input
+is normalized before it is used to retrieve); validation precedes merge (a
+rejected input never enters the merged state); the deadline covers the whole
+lifecycle including cleanup; ranking tolerates missing embeddings (an absent
+signal is ranked, not silently skipped); the budget covers the complete
+serialized request; and each success, failure, and timeout outcome carries its
+own duration evidence. These are workflow-quality input patterns, not requests
+to edit the original applications that motivated the audit.
+
+**Environment and prerequisite discipline.** A descriptor that needs a
+prerequisite states its provenance and how it is obtained. Preparation must not
+hide a download, credential use, production write, or system change: authorize
+it explicitly, or redesign the check to avoid it. Require cleanup on failure and
+interruption, and restoration of any explicitly authorized setting. An absent
+dependency, a missing simulator, or a preparation failure is a failed check, not
+a pass. Zero matched checks and skipped required checks are failures: a required
+check that selects no test, or that is skipped, must fail the acceptance rather
+than silently succeed. Separate automated behavioral or geometry evidence from
+human judgment of motion quality; a descriptor can assert only the automated
+half. Textual presence in a contract string is not proof that a provider obeyed
+it, and structural Enrollment readiness is not proof that a descriptor executed.
+
 ## Core Responsibilities
 
 - **Decomposition**: Convert requirements into one or more TaskIntents. Add a Spec under `docs/specs/` only for complex work. Treat Technical Design as one TaskIntent decomposition dimension alongside outcome, Verification, dependency, risk, rollback, compatibility, and authority.
+- **Outcome Conservation**: The plan conserves the complete confirmed outcome and its required phases. A required phase is delivered, not closed out with a reason; a genuine reduction changes what the user confirmed and returns to `imm-brainstorm`. A generalized substitution such as full integration becoming a pairwise CLI, or `prototype first` becoming `prototype only`, is a completeness-check failure rather than a valid plan. Each Slice reports its closable result and the remaining gap so an omitted phase is visible instead of implied.
 - **Outcome Focus**: Each TaskIntent owns one independently verifiable outcome. Implementation batches are Executor work, not separately authorized read/edit/run Steps.
 - **Planning granularity**: Keep a coherent outcome together when acceptance, risk, rollback, and authority can settle together. Use the TaskIntent decomposition rules below for independent outcomes. File count, tokens, compactions, elapsed time, and review rounds are evidence for judgment, not universal gates.
 - **Historical artifacts**: v3 prose Plan mutation is retired. `imm-plan` is a read-only validator for archived Plans; create no new Roadmap, Phase, successor Plan, or State Ledger.
@@ -340,7 +386,7 @@ descriptor executed and passed.
 - **Technical Design Authority**: The Spec is the single Technical Design baseline. TaskIntent acceptance and scope reference the applicable design decisions or invariants without copying Technical Design prose. If discovery invalidates the baseline, stop execution and return to Planner to update the Spec and decide whether `replan` is required. TaskIntent and Initiative text do not duplicate Technical Design prose or become a prose Plan substitute.
 - **TaskIntent decomposition**: Use the selected design boundaries as one retain/split criterion for TaskIntent slices. Keep work in one TaskIntent when the selected views describe one coherent executable slice with shared acceptance, risk treatment, rollback, and authority. Split a successor TaskIntent when a service boundary, state-machine owner, migration/compatibility boundary, independently promotable layer, or sequence dependency needs independent verification, rollback, authorization, or settlement. Do not split merely because the design names several layers, files, or services. Treat trust-boundary changes as the same kind of decomposition evidence: a TaskIntent should normally change one primary trust-boundary invariant, while merely traversing several boundaries or updating both sides of one end-to-end authority chain does not require a split. Split separate trust invariants when they can be independently verified, rolled back, authorized, migrated, or settled. Keep multiple trust-boundary changes together only when they form one atomic security outcome and splitting would create an unsafe or unusable intermediate state; record that reason in the Spec. This is Planner judgment, not a TaskIntent schema field or an Enrollment counting rule. This does not revive prose Plan, Roadmap, or Phase authority.
 - **Mermaid Use**: Mermaid is required only when a medium/high-risk design contains structure, sequence, data flow, or state transition relationships that a diagram materially clarifies. Mermaid is not a universal gate; a diagram supplements adjacent prose and never becomes a second design authority. Medium/High risk Specs record `**Diagram decision**: required|not_required` and a non-empty `**Diagram reason**:`. A `required` decision must have a Mermaid block; `not_required` explains why prose is sufficient. Low-risk Specs omit the empty ceremony and record neither field.
-- **Verification**: Every acceptance assertion has a concrete focused descriptor that can fail on the intended regression. Hypothetical evidence is not execution-ready.
+- **Verification**: Every acceptance assertion has a concrete focused descriptor that can fail on the intended regression, and every named invariant has positive, negative, and bound controls at an observable seam. Hypothetical evidence is not execution-ready; a check that matches zero tests, is skipped, or lacks its prerequisite is a failure rather than a pass.
 - **Executable Scope**: `scope_hint` is the mutation envelope, not discovery context. Close references across callers, tests, generated mirrors, and state-machine owners before authoring. Simple tasks are TaskIntent-only. A complex task binds at most one active Spec by content identity; do not add archive paths for freeze, and do not relocate artifacts. Collect all known scope gaps in one revision request; ask again only when new evidence changes the boundary.
 - **Devil's Advocate Preplan Audit**: Medium/High risk work records a `Devil's Advocate Audit` in its Spec covering rollback resilience, verification vanity, and spec dilution detection. Explain recovery from partial implementation, why verification detects the regression, and how accepted requirements remain covered. Simple TaskIntent-only work records outcome, boundary, and concrete verification on the Intent. Low-risk work omits the empty template.
 - **Execution posture**: Record `test-first` or `characterization-first` on the Spec when the work is complex, otherwise on the TaskIntent, when explicitly requested or justified by fragile untested behavior. The Executor owns the local choreography; do not create prototype or RED/GREEN/REFACTOR authority Steps. Throwaway probes must have a cleanup condition and a durable decision output.
@@ -433,17 +479,31 @@ preparation does not apply the revision or authorize expanded execution.
   verification descriptors or add a mandatory user confirmation.
 - **Review Mapping**: In-scope rework stays with the enrolled TaskIntent and explicit `imm-loop` entry. Cross-scope findings become a Planner decision delta with concrete missing paths and verification evidence; do not create a successor prose Plan.
 - **Brainstorm Manifest Mapping**: Record every upstream `BR-*` item in a Spec `Brainstorm Trace` when the work is complex, otherwise on the TaskIntent, mapped to acceptance, a captured decision, or an explicit reason for deferral or exclusion. Resolve every `BR-Q-*` item before handoff. Do not silently narrow confirmed framing.
+- **Handoff Completeness Check**: Before reporting a candidate as handoff-ready, confirm every upstream item and required phase is mapped exactly once, that required phases are delivered rather than excused by a reason, and that no confirmed outcome was conserved as a smaller deliverable. Reject a narrowed deliverable as a completeness failure; ask again only for a new material delta, never to reconfirm an unchanged clear request or an already-confirmed decision.
 - **Session Lifecycle Ownership**: The user chooses the current or a new session. Tokens, compactions, tool counts, elapsed time, and review rounds never trigger automatic session creation or termination. Recovery uses TaskRecord and the fresh Kernel projection.
 - **Subagents**: Only when optional research is needed, read Research Dispatch and its shared dispatch reference. Default to inline evidence gathering. Plan conditional reviewers such as `security-reviewer` only if their trigger surfaces are explicit; do not manufacture them.
 - **Enrolled Intent**: Follow Enrolled Intent Revision for a Loop-requested scope or acceptance change; candidate preparation never changes the current owner or grants execution authority.
 - **CONTEXT.md Vocabulary**: Consult the relevant `CONTEXT.md` terms when domain meaning is unclear or changes; known file-local tasks do not require a full root-document read. `CONTEXT.md` is vocabulary and architecture navigation, not execution state.
 - **Discovery Protocol**: Read `CONTEXT.md` `## Architecture Map` before broad searching; consult relevant `docs/solutions/` evidence under Clarification supplement's history trigger. Record concrete file pointers and reasons in the Spec when one exists, otherwise on the TaskIntent. Do not read or write a legacy Step discovery cache.
+
+**Bounded discovery.** State the question, the named paths, the expected evidence,
+and the stop condition before an investigation expands. Read known paths directly,
+expand only along proved callers and state owners, and stop once the question is
+closed instead of continuing into nearby unrelated paths. Keep project-specific
+log or history searches inside the named project paths. Reads or investigation
+output that is truncated continue in bounded pages only while still needed, and an
+operation that may have partially succeeded is inspected before it is retried for
+only its unfinished part. Telemetry and tool-call counts are observational: they
+never justify dropping evidence the question requires, and they are not comparable
+to another session's numbers unless the inputs and environment match.
 - **Planning Quality Gate**: For elevated-risk complex work, verify contract surfaces, compatibility, interruption recovery, rollback, verification strength, and Brainstorm traceability in the Spec. Simple TaskIntent-only work verifies those properties on the Intent. Do not invoke retired Plan mutation or State Ledger synchronization.
 - **Parallel Probes**: Optional read-only probes must have bounded non-overlapping scopes, expected evidence, and no file or authority writes. They are advisory discovery, not persisted Step annotations. Probe failure falls back to inline investigation with a recorded reason.
 
 ## Research Dispatch
 
 Follow [`docs/reference/subagent-dispatch-protocol.md`](docs/reference/subagent-dispatch-protocol.md) for the full dispatch lifecycle. This section defines planner-specific optional research dispatch.
+
+A discovery path that leaves the repository — an external model/provider call or sending project data off-host — first checks the project's existing research channel and data scope. Architecture exploration and local reads stay on the existing channel; a new channel or data scope is a material delta with its own authorization, and documentation, mock, or local read-only evidence never substitutes for real-channel evidence.
 
 Use the invoking Host's read-only role-boundary route for bounded
 `arch-explorer` and explicit-lens `advisory-reviewer` routing. Invoke the returned foreground Agent envelope
@@ -492,14 +552,18 @@ a State Ledger. Keep historical Plan validation strictly read-only.
 | Split one outcome into read/edit/run micro-steps | One TaskIntent owns one closable outcome; Executor owns implementation batches. |
 | Append repair outside scope | Return the complete known scope delta for Kernel revision; do not widen execution. |
 | Drop a brainstorm-confirmed item as "out of scope" without saying so | Closed-world handoff: every `BR-*` ID must be covered, decisioned, deferred, scoped out with reason, or resolved as an assumption. |
+| Conserve a narrower deliverable than the confirmed outcome | **Conservation failure**: a full integration is not a pairwise CLI and `prototype first` is not `prototype only`; the handoff completeness check rejects the reduced deliverable instead of accepting a reason for it. |
 | Finalize dependent planning while brainstorm questions are open | **Clarification Barrier**: Finalization and dependent commitments are blocked until required `BR-Q-*` items are answered. Independent investigation and explicitly unapproved alternative drafts may continue; silence is not consent. |
 | Skip adversarial self-review on Medium/High risk because the plan is small | **Devil's Advocate** audit still checks rollback resilience, verification vanity, and spec dilution before the plan is treated as execution-ready. |
 
 ## Red Flags
 
 - Acceptance verification names only hypothetical evidence with no runnable descriptor.
+- An acceptance descriptor names no negative or bound control for its invariant, or its required prerequisite (dependency, simulator, preparation) is absent and still counted as a pass.
+- A required check matches zero tests or is skipped and the run is reported as passing.
 - New work depends on a prose Plan validator, Step activation, or State Ledger.
 - A Brainstorm manifest lacks complete `BR-*` coverage on the Spec (complex) or TaskIntent (simple).
+- The handoff completeness check passed while a required phase or upstream item is unmapped, or while the plan delivers only part of the confirmed outcome.
 - A Medium/High risk Spec lacks a `Devil's Advocate Audit` covering rollback resilience, verification vanity, and spec dilution detection.
 - New Spec prose ignores the document-language policy.
 - Candidate artifacts escape the approved planning scope.

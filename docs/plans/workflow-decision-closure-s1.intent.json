@@ -1,0 +1,30 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "workflow-decision-closure-s1",
+  "owner": "user",
+  "goal": "Close relevant Brainstorm decision dependencies and conserve the complete approved outcome through Planner handoff, including clear zero-question requests and staged implementation.",
+  "acceptance": [
+    {
+      "id": "WDC-S1-A1",
+      "assertion": "Implement the S1 design of docs/specs/workflow-decision-closure.spec.md. Traverse request/repository/confirmed-parent decision branches to resolved, explicitly excluded/deferred or dependent-blocked states; preserve autonomous fact/technical resolution, opt-in exhaustive interviewing, batch approvals and zero-question fast paths without skipping coverage. Planner maps every upstream item and all required phases, reports each Slice result and remaining gap, and confirms only a new material delta. Generalized integration-to-CLI and prototype-first-to-prototype-only counterexamples must fail the handoff completeness check; clear requests and already-confirmed decisions must not acquire extra confirmation. Update existing route/contract tests and sanitized multi-turn fixture inputs; static checks establish contract coverage, not provider obedience. No new decision engine, generic scheduler, store or mandatory interview.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-decision-closure.test.ts\",\n      \"tests/brainstorm-decision-probing-contract.test.ts\",\n      \"tests/exhaustive-decision-tree-contract.test.ts\",\n      \"tests/imm-planner-kernel-intent-contract.test.ts\",\n      \"tests/planner-ensemble-contract.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/workflow-decision-closure-s1.intent.json",
+    "docs/specs/workflow-decision-closure.spec.md",
+    "plugins/immune-brain/dist/imm-brainstorm.md",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
+    "plugins/immune-brain/skills/imm-planner/SKILL.md",
+    "tests/brainstorm-decision-probing-contract.test.ts",
+    "tests/exhaustive-decision-tree-contract.test.ts",
+    "tests/fixtures/imm-brainstorm-behavior-benchmark.json",
+    "tests/imm-planner-kernel-intent-contract.test.ts",
+    "tests/planner-ensemble-contract.test.ts",
+    "tests/skill-dist-consistency.test.ts",
+    "tests/workflow-decision-closure.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

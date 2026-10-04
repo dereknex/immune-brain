@@ -138,6 +138,67 @@
         "Material user-owned decisions (such as the meaning of cancellation) still reach the frontier when present.",
         "The response remains in Brainstorm and no workspace file is created or changed."
       ]
+    },
+    {
+      "id": "multi-turn-relevant-coverage-complete",
+      "title": "Close every sourced branch across turns, including a zero-question request",
+      "purpose": "Verify that the relevant-coverage check closes each sourced branch as resolved, explicitly excluded, explicitly deferred, or dependent-blocked, and that a later clear request runs the same check without an extra round.",
+      "userInput": "Use the local Pi Skill `imm-brainstorm` in the fixture workspace to frame an account deletion feature. Inspect only CONTEXT.md, README.md, and docs/solutions and report each sourced branch with its closing state. Where a branch depends on an undecided prerequisite, mark it dependent-blocked and name the blocking branch instead of asking it early or dropping it. Do not create or edit any files.",
+      "turns": [
+        {
+          "role": "user",
+          "content": "Use the local Pi Skill `imm-brainstorm` in the fixture workspace to frame an account deletion feature. Inspect only CONTEXT.md, README.md, and docs/solutions and report each sourced branch with its closing state. Where a branch depends on an undecided prerequisite, mark it dependent-blocked and name the blocking branch instead of asking it early or dropping it. Do not create or edit any files."
+        },
+        {
+          "role": "assistant",
+          "content": "I inspected CONTEXT.md, README.md, and docs/solutions. Sourced branches: (1) what deletion means for a subscription - open on the currently unblocked frontier, asked with a recommendation; (2) whether historical data is retained - dependent-blocked by (1), not asked yet; (3) whether an already-open session survives deletion - dependent-blocked by (1), not asked yet. No further branch is sourced by this request, so none is excluded or deferred yet: a branch is never closed without a decision or an evidenced reason. No workspace file was created."
+        },
+        {
+          "role": "user",
+          "content": "Adopted your recommendation for (1): deletion removes the account and ends the subscription. I am also explicitly excluding export-before-delete from this request and explicitly deferring the scheduled deletion grace period. Now also frame a README spelling correction from `teh` to `the`, preserving all other text and behavior. No other decisions are pending and I am not requesting exhaustive interrogation."
+        },
+        {
+          "role": "assistant",
+          "content": "The clear README correction runs the same coverage check: its only sourced branch is resolved by the explicit requirement, and it acquires no extra confirmation because no material delta exists. For the deletion feature, (1) is now resolved, so (2) and (3) are unblocked and asked together with recommendations. Two branches now close with a recorded reason: export-before-delete as explicitly excluded, and the grace period as explicitly deferred. That leaves four closed branches and (2) and (3) open on the frontier. No workspace file was created or changed."
+        }
+      ],
+      "successChecklist": [
+        "The response reports each sourced branch with one closing state: open/resolved on the frontier, explicitly excluded, explicitly deferred, or dependent-blocked with a named prerequisite.",
+        "The dependent retention and open-session branches are marked dependent-blocked and are not asked before their prerequisite is decided.",
+        "No branch is claimed as excluded or deferred before the user states that decision.",
+        "The later clear README request runs the coverage check and acquires no extra confirmation round.",
+        "No workspace file is created or changed across either turn."
+      ]
+    },
+    {
+      "id": "full-outcome-conserved-not-narrowed",
+      "title": "Conserve the confirmed outcome instead of a smaller deliverable",
+      "purpose": "Verify the handoff completeness check rejects a narrowed deliverable and that a genuine sequence keeps the complete outcome.",
+      "userInput": "Use the local Pi Skill `imm-brainstorm` in the fixture workspace to frame a full third-party provider integration for the fixture app. The outcome is the complete integration; the prototype is a dependency the implementation passes through, not a separate deliverable. Report the complete required phase list and state explicitly whether the plan conserves it. Do not create or edit any files.",
+      "turns": [
+        {
+          "role": "user",
+          "content": "Use the local Pi Skill `imm-brainstorm` in the fixture workspace to frame a full third-party provider integration for the fixture app. The outcome is the complete integration; the prototype is a dependency the implementation passes through, not a separate deliverable. Report the complete required phase list and state explicitly whether the plan conserves it. Do not create or edit any files."
+        },
+        {
+          "role": "assistant",
+          "content": "Confirmed outcome: the complete provider integration. Required phases: prototype (a spike on the provider seam), full integration (real provider behind the existing gateway), and verification of the integrated path. The prototype is sequential evidence for the integration, not a reduction of it; a `prototype only` deliverable would be a conservation failure that the handoff completeness check rejects. All required phases are delivered by the plan, so conservation holds and no branch is narrowed. No workspace file was created."
+        },
+        {
+          "role": "user",
+          "content": "Would delivering only the prototype satisfy this outcome? State the completeness-check result without silently accepting a smaller deliverable."
+        },
+        {
+          "role": "assistant",
+          "content": "No. A prototype-only plan leaves the required full-integration and verification phases undelivered and unclosed, so the handoff completeness check reports a conservation failure rather than passing the smaller deliverable. I would return the genuine reduction to you as a user decision instead of presenting `prototype only` as the complete result. No workspace file was created or changed."
+        }
+      ],
+      "successChecklist": [
+        "The response conserves the complete integration and lists every required phase, treating the prototype as a dependency rather than the deliverable.",
+        "The response states that delivering `prototype only` is a conservation failure rejected by the handoff completeness check.",
+        "The response does not silently accept a smaller deliverable and does not narrow the confirmed outcome.",
+        "No workspace file is created or changed across either turn."
+      ]
     }
   ]
 }

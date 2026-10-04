@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
 	appendFileSync,
 	existsSync,
@@ -86,14 +87,35 @@ export interface ScenarioMetrics {
 interface BenchmarkFixture {
 	version: number;
 	targetName: string;
-	runner: { model: string; resultTransport?: "foreground_agent_details"; requiresInteractiveHost?: boolean };
+	runner: {
+		model: string;
+		provider?: string;
+		subagentType?: string;
+		resultTransport?: "foreground_agent_details";
+		requiresInteractiveHost?: boolean;
+		serial?: boolean;
+		parallel?: boolean;
+		isolated?: boolean;
+		turnsPerScenario?: number;
+		attemptsPerScenario?: number;
+		automaticRetry?: boolean;
+		allowScenarioChildSpawning?: boolean;
+	};
 	metrics?: { cost?: string; required?: string[] };
 	evidence?: {
 		claim_scope?: BenchmarkClaimScope;
 		runtime_advisory_metrics?: "available" | "unavailable";
+		required_bindings?: string[];
 	};
 	comparison?: BenchmarkComparisonIdentity;
-	scenarios: Array<{ id: string }>;
+	scenarios: Array<{
+		id: string;
+		title?: string;
+		purpose?: string;
+		userInput?: string;
+		turns?: string[];
+		successChecklist?: string[];
+	}>;
 }
 
 interface ParsedSubagentReport extends ScenarioMetrics {
@@ -1193,7 +1215,7 @@ function loadFixture(repoRoot: string, fixturePath: string): BenchmarkFixture {
 	}
 }
 
-function benchmarkPrompt(
+export function benchmarkPrompt(
 	fixturePath: string,
 	fixture: BenchmarkFixture,
 ): string {
@@ -1202,10 +1224,18 @@ function benchmarkPrompt(
 			"Benchmark fixture must declare resultTransport=foreground_agent_details",
 		);
 	}
-	return [
+	const dispatch =
+		fixture.runner.serial === true
+			? [
+					"Dispatch the scenarios serially in this foreground session: exactly one scenario at a time, never a parallel batch.",
+					`Run exactly ${fixture.runner.turnsPerScenario ?? 1} turns per scenario, in fixture order, before moving to the next scenario.`,
+					`Make ${fixture.runner.attemptsPerScenario ?? 1} attempt per scenario: no automatic retry and no scenario child spawning.`,
+				]
+				: ["Launch every scenario in one parallel foreground Agent batch."];
+		return [
 		`Run Immune-Brain benchmark baseline using ${fixturePath}.`,
 		"Follow the fixture runner contract exactly.",
-		"Launch every scenario in one parallel foreground Agent batch.",
+		...dispatch,
 		"Set run_in_background=false for every Agent call.",
 		"Use the exact Agent description `Benchmark: <scenario-id>` for every scenario.",
 		"Do not call get_subagent_result; foreground Agent tool results are the scenario evidence.",
@@ -1311,15 +1341,947 @@ export async function runBenchmark(
 	return { record, exitCode };
 }
 
+export const WORKFLOW_BEHAVIOR_EVIDENCE_CONTRACT =
+	"immune_brain/workflow_behavior_evidence/v1";
+
+export interface WorkflowEvidenceIssue {
+	code: string;
+	detail: string;
+}
+
+export interface WorkflowEvidenceCheckResult {
+	ok: boolean;
+	issues: WorkflowEvidenceIssue[];
+	reason_codes: string[];
+}
+
+export interface WorkflowEvidenceCheckInput {
+	evidence: unknown;
+	cohort: unknown;
+	cohort_path: string;
+	bindings: Readonly<Record<string, string>>;
+}
+
+function asString(value: unknown): string | undefined {
+	return typeof value === "string" && value.trim().length > 0
+		? value
+		: undefined;
+}
+
+function asInteger(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isInteger(value)
+		? value
+		: undefined;
+}
+
+function asBoolean(value: unknown): boolean | undefined {
+	return typeof value === "boolean" ? value : undefined;
+}
+
+function asStringList(value: unknown): string[] {
+	if (!Array.isArray(value)) return [];
+	return value.filter(
+		(entry): entry is string =>
+			typeof entry === "string" && entry.trim().length > 0,
+	);
+}
+
+function normalizeHash(value: unknown): string | undefined {
+	if (typeof value !== "string") return undefined;
+	const hex = value.trim().replace(/^sha256:/i, "").toLowerCase();
+	return /^[0-9a-f]{64}$/.test(hex) ? hex : undefined;
+}
+
+const REAL_EFFECT_SEAMS = [
+	"real_commit_performed",
+	"real_github_write_performed",
+	"real_enrollment_performed",
+] as const;
+
+interface WorkflowEvidenceCounts {
+	expected: number;
+	completed: number;
+	passed: number;
+	failed: number;
+	missing: number;
+	duplicated: number;
+	attempts: number;
+}
+
+const SCENARIO_COUNT_FIELDS: readonly (readonly [
+	string,
+	keyof WorkflowEvidenceCounts,
+])[] = [
+	["scenarios_expected", "expected"],
+	["scenarios_completed", "completed"],
+	["scenarios_passed", "passed"],
+	["scenarios_failed", "failed"],
+	["scenarios_missing", "missing"],
+	["scenarios_duplicated", "duplicated"],
+	["attempts_total", "attempts"],
+];
+
+/**
+ * Offline workflow-behavior evidence check. It is a pure function over already
+ * read JSON and recomputed content hashes: it never spawns a child, never calls
+ * a model, and fails closed on missing, duplicate, non-live or drifted evidence.
+ */
+export function checkWorkflowBehaviorEvidence(
+	input: WorkflowEvidenceCheckInput,
+): WorkflowEvidenceCheckResult {
+	const issues: WorkflowEvidenceIssue[] = [];
+	const fail = (code: string, detail: string): void => {
+		issues.push({ code, detail });
+	};
+	const result = (): WorkflowEvidenceCheckResult => ({
+		ok: issues.length === 0,
+		issues,
+		reason_codes: [...new Set(issues.map(({ code }) => code))],
+	});
+
+	const evidence = asRecord(input.evidence);
+	if (!evidence) {
+		fail("evidence_unreadable", "The evidence document is not a JSON object.");
+		return result();
+	}
+	const cohort = asRecord(input.cohort);
+	if (!cohort) {
+		fail("cohort_unreadable", "The cohort fixture is not a JSON object.");
+		return result();
+	}
+
+	const cohortRunner = asRecord(cohort.runner) ?? {};
+	const cohortScenarios = Array.isArray(cohort.scenarios)
+		? cohort.scenarios
+		: [];
+	const cohortTurns = new Map<string, number>();
+	const cohortCriteria = new Map<string, number>();
+	const cohortChecklists = new Map<string, string[]>();
+	if (
+		asString(cohort.kind) !== "plugin-eval-benchmark" ||
+		asInteger(cohort.schemaVersion) !== 2
+	)
+		fail(
+			"cohort_fixture_invalid",
+			"The cohort fixture is not a schema-v2 plugin-eval-benchmark.",
+		);
+	if (!asString(cohort.targetName))
+		fail("cohort_fixture_invalid", "The cohort fixture declares no targetName.");
+	const cohortModel = asString(cohortRunner.model);
+	const cohortProvider = asString(cohortRunner.provider);
+	const cohortSubagent = asString(cohortRunner.subagentType);
+	const cohortTurnsPerScenario = asInteger(cohortRunner.turnsPerScenario);
+	const cohortAttemptsPerScenario = asInteger(cohortRunner.attemptsPerScenario);
+	if (!cohortModel)
+		fail("cohort_fixture_invalid", "The cohort declares no runner model.");
+	if (!cohortProvider)
+		fail("cohort_fixture_invalid", "The cohort declares no runner provider.");
+	if (!cohortSubagent)
+		fail("cohort_fixture_invalid", "The cohort declares no subagent type.");
+	if (asString(cohortRunner.resultTransport) !== "foreground_agent_details")
+		fail(
+			"cohort_fixture_invalid",
+			"The cohort must transport results through foreground Agent details.",
+		);
+	if (
+		asBoolean(cohortRunner.serial) !== true ||
+		asBoolean(cohortRunner.parallel) !== false
+	)
+		fail(
+			"cohort_fixture_invalid",
+			"The cohort must declare serial dispatch and no parallel batch.",
+		);
+	if (asBoolean(cohortRunner.isolated) !== true)
+		fail("cohort_fixture_invalid", "The cohort scenarios must be isolated.");
+	if (asBoolean(cohortRunner.requiresInteractiveHost) !== false)
+		fail(
+			"cohort_fixture_invalid",
+			"The cohort must declare that no interactive native authority gate is required.",
+		);
+	if (cohortTurnsPerScenario === undefined || cohortTurnsPerScenario < 2)
+		fail(
+			"cohort_fixture_invalid",
+			"The cohort requires at least two turns per scenario.",
+		);
+	if (cohortAttemptsPerScenario !== 1)
+		fail(
+			"cohort_fixture_invalid",
+			"The cohort must declare exactly one attempt per scenario.",
+		);
+	if (asBoolean(cohortRunner.automaticRetry) !== false)
+		fail("cohort_fixture_invalid", "The cohort must forbid automatic retry.");
+	if (asBoolean(cohortRunner.allowScenarioChildSpawning) !== false)
+		fail(
+			"cohort_fixture_invalid",
+			"The cohort must forbid scenario child spawning.",
+		);
+	const cohortMetrics = asRecord(cohort.metrics) ?? {};
+	const requiredMetrics = asStringList(cohortMetrics.required);
+	if (requiredMetrics.length === 0)
+		fail("cohort_fixture_invalid", "The cohort declares no required metrics.");
+	if (!asString(cohortMetrics.cost))
+		fail("cohort_fixture_invalid", "The cohort declares no cost capability.");
+	const cohortEvidence = asRecord(cohort.evidence) ?? {};
+	if (asString(cohortEvidence.claim_scope) !== "provider_runtime")
+		fail(
+			"cohort_fixture_invalid",
+			"The cohort evidence scope must be provider_runtime.",
+		);
+	const requiredBindings = asStringList(cohortEvidence.required_bindings);
+	if (requiredBindings.length === 0)
+		fail(
+			"cohort_fixture_invalid",
+			"The cohort declares no required source bindings.",
+		);
+	for (const entry of cohortScenarios) {
+		const scenario = asRecord(entry);
+		if (!scenario) {
+			fail(
+				"cohort_fixture_invalid",
+				"A cohort scenario is not a JSON object.",
+			);
+			continue;
+		}
+		const id = asString(scenario.id);
+		if (!id) {
+			fail("cohort_fixture_invalid", "A cohort scenario declares no id.");
+			continue;
+		}
+		const turns = asStringList(scenario.turns);
+		const checklist = asStringList(scenario.successChecklist);
+		if (turns.length !== cohortTurnsPerScenario)
+			fail(
+				"cohort_fixture_invalid",
+				`Cohort scenario ${id} declares ${turns.length} turns instead of ${cohortTurnsPerScenario}.`,
+			);
+		if (
+			!asString(scenario.title) ||
+			!asString(scenario.purpose) ||
+			!asString(scenario.userInput)
+		)
+			fail(
+				"cohort_fixture_invalid",
+				`Cohort scenario ${id} is not a bounded sanitized scenario.`,
+			);
+		if (checklist.length < 2)
+			fail(
+				"cohort_fixture_invalid",
+				`Cohort scenario ${id} declares fewer than two concrete success criteria.`,
+			);
+		if (cohortTurns.has(id))
+			fail(
+				"cohort_fixture_invalid",
+				`Cohort scenario id ${id} is declared more than once.`,
+			);
+		cohortTurns.set(id, turns.length);
+		cohortCriteria.set(id, checklist.length);
+		cohortChecklists.set(id, checklist);
+	}
+
+	if (asString(evidence.contract) !== WORKFLOW_BEHAVIOR_EVIDENCE_CONTRACT)
+		fail(
+			"evidence_contract_mismatch",
+			`The evidence contract is not ${WORKFLOW_BEHAVIOR_EVIDENCE_CONTRACT}.`,
+		);
+	if (asString(evidence.evidence_kind) !== "live_provider_cohort")
+		fail(
+			"live_evidence_absent",
+			`evidence_kind '${String(evidence.evidence_kind)}' is not a live provider cohort; contract-only or simulated records cannot close S7.`,
+		);
+	if (!asString(evidence.initiative) || !asString(evidence.slice_id))
+		fail(
+			"evidence_contract_mismatch",
+			"The evidence declares no initiative or slice identity.",
+		);
+	const recordedAt = asString(evidence.recorded_at);
+	if (
+		!recordedAt ||
+		!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(recordedAt) ||
+		Number.isNaN(Date.parse(recordedAt))
+	)
+		fail(
+			"provenance_untrusted",
+			"The evidence declares no truthful recording timestamp.",
+		);
+	if (asString(evidence.claim_scope) !== "bounded_cohort")
+		fail(
+			"claim_scope_mismatch",
+			"The evidence must declare a bounded_cohort claim scope.",
+		);
+	if (!asString(evidence.claim))
+		fail("claim_scope_mismatch", "The evidence declares no cohort claim.");
+	const claimLimits = asStringList(evidence.claim_limits);
+	if (claimLimits.length < 3)
+		fail(
+			"claim_limit_missing",
+			"The evidence declares fewer than three claim limits.",
+		);
+	const claimBoundChecks: readonly (readonly [RegExp, string])[] = [
+		[/universal/i, "universal host/model correctness"],
+		[/attempt|retry/i, "single-attempt retry"],
+		[/unknown|never zero/i, "unknown cost or telemetry"],
+		[/commit|github|enrollment/i, "no real commit, GitHub write or Enrollment"],
+	];
+	for (const [pattern, label] of claimBoundChecks) {
+		if (!claimLimits.some((limit) => pattern.test(limit)))
+			fail(
+				"claim_limit_missing",
+				`No claim limit discloses the bound on ${label}.`,
+			);
+	}
+
+	const runner = asRecord(evidence.runner) ?? {};
+	if (!asString(runner.host))
+		fail("runner_identity_drift", "The evidence declares no host.");
+	if (asString(runner.dispatch) !== "foreground_agent")
+		fail(
+			"dispatch_contract_drift",
+			"The cohort was not dispatched through the foreground Agent path.",
+		);
+	const dispatchFlags: readonly (readonly [string, boolean])[] = [
+		["serial", true],
+		["parallel_dispatch", false],
+		["scenario_child_spawning", false],
+		["automatic_retry", false],
+		["isolated", true],
+	];
+	for (const [key, expected] of dispatchFlags) {
+		if (asBoolean(runner[key]) !== expected)
+			fail(
+				"dispatch_contract_drift",
+				`runner.${key} must be ${String(expected)}.`,
+			);
+	}
+	if (asString(runner.model) !== cohortModel)
+		fail(
+			"runner_identity_drift",
+			"The disclosed model is not the model declared by the cohort fixture.",
+		);
+	if (asString(runner.provider) !== cohortProvider)
+		fail(
+			"runner_identity_drift",
+			"The disclosed provider is not the provider declared by the cohort fixture.",
+		);
+	if (asString(runner.subagent_type) !== cohortSubagent)
+		fail(
+			"runner_identity_drift",
+			"The dispatch subagent type differs from the cohort fixture.",
+		);
+	if (!asString(runner.model_selection_evidence))
+		fail(
+			"runner_identity_drift",
+			"The model identity is not bound to an observable host resolution.",
+		);
+	if (asBoolean(runner.resolved_before_runs) !== true)
+		fail(
+			"runner_identity_drift",
+			"The model must be resolved and disclosed before any paid run.",
+		);
+	if (asInteger(runner.attempts_per_scenario) !== cohortAttemptsPerScenario)
+		fail(
+			"dispatch_contract_drift",
+			"The recorded attempts per scenario differ from the cohort.",
+		);
+	if (asInteger(runner.turns_per_scenario) !== cohortTurnsPerScenario)
+		fail(
+			"dispatch_contract_drift",
+			"The recorded turns per scenario differ from the cohort.",
+		);
+	const budget = asRecord(runner.authorized_budget) ?? {};
+	if (!asString(budget.scope) || asBoolean(budget.declared_before_launch) !== true)
+		fail(
+			"budget_missing_or_drifted",
+			"The authorized call/cost budget was not declared before the cohort launched.",
+		);
+	if (asInteger(budget.max_scenario_dispatches) !== cohortTurns.size)
+		fail(
+			"budget_missing_or_drifted",
+			`The dispatch budget is not the ${cohortTurns.size}-scenario cohort.`,
+		);
+	if (asInteger(budget.max_attempts_per_scenario) !== cohortAttemptsPerScenario)
+		fail(
+			"budget_missing_or_drifted",
+			"The per-scenario attempt budget differs from the cohort.",
+		);
+
+	const seams = asRecord(evidence.seams) ?? {};
+	if (
+		asString(seams.authority) !== "simulated" ||
+		asString(seams.publication) !== "simulated"
+	)
+		fail(
+			"real_effect_seam_violation",
+			"Authority and publication seams must both be simulated.",
+		);
+	for (const key of REAL_EFFECT_SEAMS) {
+		if (asBoolean(seams[key]) !== false)
+			fail(
+				"real_effect_seam_violation",
+				`${key} is not false; a scenario may never perform a real effect.`,
+			);
+	}
+
+	const metrics = asRecord(evidence.metrics) ?? {};
+	if (asString(metrics.reported_tokens_source) !== "host_runtime")
+		fail(
+			"metrics_source_untrusted",
+			"Token metrics are not host runtime; a harness or self-reported footer is contract-only evidence.",
+		);
+	const cost = asRecord(metrics.cost) ?? {};
+	const costStatus = asString(cost.status);
+	if (costStatus === "unknown") {
+		if (!asString(cost.reason))
+			fail(
+				"cost_not_disclosed",
+				"Unknown cost requires a disclosed reason for the gap.",
+			);
+	} else if (costStatus === "reported") {
+		if (typeof cost.amount_usd !== "number" || !Number.isFinite(cost.amount_usd))
+			fail(
+				"cost_not_disclosed",
+				"A reported cost requires the metered amount from the host.",
+			);
+	} else {
+		fail(
+			"cost_not_disclosed",
+			"Cost status must be unknown or reported; unavailable cost is never recorded as zero.",
+		);
+	}
+	const advisory = asRecord(metrics.runtime_advisory_metrics) ?? {};
+	const advisoryStatus = asString(advisory.status);
+	if (advisoryStatus === "unknown") {
+		if (!asString(advisory.reason))
+			fail(
+				"metrics_provenance_drift",
+				"Unknown runtime advisory metrics require a disclosed reason.",
+			);
+	} else if (advisoryStatus !== "available") {
+		fail(
+			"metrics_provenance_drift",
+			"Runtime advisory metrics must be available or disclosed as unknown.",
+		);
+	}
+	if (asStringList(metrics.host_metrics_available).length === 0)
+		fail(
+			"metrics_provenance_drift",
+			"The evidence declares no available host metric.",
+		);
+
+	const bindings = asRecord(evidence.source_bindings) ?? {};
+	const declaredBindings: { label: string; path?: string; sha?: string }[] = [];
+	for (const label of ["spec", "fixture", "runner_source"] as const) {
+		const entry = asRecord(bindings[label]);
+		declaredBindings.push({
+			label,
+			path: asString(entry?.path),
+			sha: asString(entry?.sha256),
+		});
+	}
+	const contracts = Array.isArray(bindings.contracts) ? bindings.contracts : [];
+	contracts.forEach((entry, index) => {
+		const record = asRecord(entry);
+		declaredBindings.push({
+			label: `contracts[${index}]`,
+			path: asString(record?.path),
+			sha: asString(record?.sha256),
+		});
+	});
+	if (!asString(bindings.note))
+		fail(
+			"provenance_untrusted",
+			"The source bindings declare no basis for their non-Git-HEAD identity.",
+		);
+	// Live dispatch is Parent-mediated through the foreground Agent tool: no script
+	// executes while a scenario runs, so there is no execution-time runner revision
+	// to bind. Declaring one would be an unverifiable claim about bytes no offline
+	// check can tie to the cohort, so it is rejected rather than ignored. The single
+	// bound runner_source is the offline verifier, and it is re-hashed from disk.
+	if (bindings.runner_source_at_recording)
+		fail(
+			"provenance_untrusted",
+			"The evidence declares an execution-time runner revision, but no script executes during Parent-mediated foreground dispatch, so that claim cannot be verified.",
+		);
+	const verifiedBindings = new Set<string>();
+	for (const declared of declaredBindings) {
+		if (!declared.path) {
+			fail(
+				"fingerprint_drift",
+				`${declared.label} declares no bound path.`,
+			);
+			continue;
+		}
+		const hex = normalizeHash(declared.sha);
+		if (!hex) {
+			fail(
+				"fingerprint_drift",
+				`${declared.label} declares no sha256 content hash.`,
+			);
+			continue;
+		}
+		const computed = input.bindings[declared.path];
+		if (!computed) {
+			fail(
+				"fingerprint_drift",
+				`${declared.label} bound path ${declared.path} cannot be re-hashed.`,
+			);
+			continue;
+		}
+		if (computed !== hex)
+			fail(
+				"fingerprint_drift",
+				`${declared.label} content drifted at ${declared.path}.`,
+			);
+		else verifiedBindings.add(declared.path);
+	}
+	for (const required of requiredBindings) {
+		if (!verifiedBindings.has(required))
+			fail(
+				"required_binding_missing",
+				`The cohort requires a verified binding for ${required}, but it is absent, unhashable or drifted.`,
+			);
+	}
+	if (
+		declaredBindings.find((entry) => entry.label === "fixture")?.path !==
+		input.cohort_path
+	)
+		fail(
+			"binding_target_drift",
+			"The bound cohort fixture is not the fixture being verified.",
+		);
+
+	const observedScenarios = Array.isArray(evidence.scenarios)
+		? evidence.scenarios
+		: [];
+	const occurrences = new Map<string, number>();
+	const firstOutcome = new Map<string, ScenarioOutcome>();
+	const deviationFlagged = new Set<string>();
+	const failedNeedingDisclosure = new Set<string>();
+	let attemptsTotal = 0;
+	for (const entry of observedScenarios) {
+		const scenario = asRecord(entry);
+		if (!scenario) {
+			fail(
+				"scenario_unexpected",
+				"An evidence scenario is not a JSON object.",
+			);
+			continue;
+		}
+		const id = asString(scenario.scenario_id);
+		if (!id) {
+			fail(
+				"scenario_unexpected",
+				"An evidence scenario declares no scenario_id.",
+			);
+			continue;
+		}
+		occurrences.set(id, (occurrences.get(id) ?? 0) + 1);
+		if (!cohortTurns.has(id)) {
+			fail(
+				"scenario_unexpected",
+				`Evidence scenario ${id} is not part of the cohort.`,
+			);
+			continue;
+		}
+		const attempt = asInteger(scenario.attempt);
+		if (attempt !== undefined) attemptsTotal += attempt;
+		if (attempt !== cohortAttemptsPerScenario)
+			fail(
+				"scenario_attempt_drift",
+				`${id} records attempt ${String(scenario.attempt)}; the cohort allows exactly one attempt per scenario.`,
+			);
+		if (asInteger(scenario.turns) !== cohortTurns.get(id))
+			fail(
+				"scenario_incomplete",
+				`${id} records ${String(scenario.turns)} turns instead of the cohort's ${cohortTurns.get(id)}.`,
+			);
+		const scenarioStatus = asString(scenario.scenario_status);
+		if (scenarioStatus !== "completed")
+			fail(
+				"scenario_not_completed",
+				`${id} scenario_status is '${String(scenario.scenario_status)}'.`,
+			);
+		const outcome = asString(scenario.outcome);
+		if (outcome !== "passed" && outcome !== "failed")
+			fail(
+				"scenario_outcome_invalid",
+				`${id} outcome '${String(scenario.outcome)}' is neither passed nor failed.`,
+			);
+		else {
+			if (!firstOutcome.has(id))
+				firstOutcome.set(id, {
+					status: scenarioStatus ?? "",
+					outcome,
+				});
+		}
+		const decisions = asStringList(scenario.observed_decisions);
+		if (decisions.length < 2)
+			fail(
+				"observed_decisions_missing",
+				`${id} records fewer than two independently inspected transcript decisions.`,
+			);
+		const criteriaRequired = cohortCriteria.get(id);
+		const criteriaMet = asInteger(scenario.criteria_met);
+		const declaredUnmet = asStringList(scenario.unmet_criteria);
+		// The unmet list is not free text: each entry must be the scenario's own
+		// criterion, and the same criterion cannot be listed twice. Without this an
+		// arbitrary string could stand in for a real unmet criterion and still count
+		// as a disclosed failure.
+		const checklist = cohortChecklists.get(id) ?? [];
+		const unmetIds = new Set<string>();
+		for (const unmet of declaredUnmet) {
+			const criterion = asString(unmet);
+			if (!criterion || !checklist.includes(criterion)) {
+				fail(
+					"failure_not_disclosed",
+					`${id} records an unmet criterion that is not one of its own cohort successChecklist entries.`,
+				);
+				continue;
+			}
+			if (unmetIds.has(criterion))
+				fail(
+					"failure_not_disclosed",
+					`${id} lists the same unmet criterion more than once.`,
+				);
+			unmetIds.add(criterion);
+		}
+		// Every required criterion must carry its own checklist-linked assessment whose
+		// concrete observation is one of the recorded transcript decisions. A numeric
+		// tally alone cannot stand as evidence: without this, a scenario could claim a
+		// full pass while the decision that would substantiate a criterion was never
+		// recorded, or record a criterion that no observation supports.
+		const assessments = Array.isArray(scenario.criterion_assessments)
+			? scenario.criterion_assessments
+			: [];
+		const assessed = new Map<string, boolean>();
+		for (const entry of assessments) {
+			const assessment = asRecord(entry);
+			const criterion = asString(assessment?.criterion);
+			const observation = asString(assessment?.observation);
+			if (!criterion || !checklist.includes(criterion)) {
+				fail(
+					"criterion_evidence_incomplete",
+					`${id} records a criterion assessment that is not one of its own cohort successChecklist entries.`,
+				);
+				continue;
+			}
+			if (assessed.has(criterion))
+				fail(
+					"criterion_evidence_incomplete",
+					`${id} assesses the same criterion more than once.`,
+				);
+			const met = assessment?.met;
+			if (typeof met !== "boolean")
+				fail(
+					"criterion_evidence_incomplete",
+					`${id} records no boolean met outcome for a criterion.`,
+				);
+			if (!observation || !decisions.includes(observation))
+				fail(
+					"criterion_evidence_incomplete",
+					`${id} does not link a criterion to a recorded transcript decision, so the assessment has no observable evidence.`,
+				);
+			assessed.set(criterion, met === true);
+		}
+		for (const criterion of checklist) {
+			if (!assessed.has(criterion))
+				fail(
+					"criterion_evidence_incomplete",
+					`${id} records no assessment for a required criterion, so the cohort cannot show it was observed.`,
+				);
+		}
+		const metAssessments = [...assessed.values()].filter(Boolean).length;
+		if (outcome === "passed") {
+			// A pass must meet every required criterion, agree with its own assessments,
+			// and must not simultaneously claim a failure. Matching summary totals cannot
+			// hide partial credit, and an outcome cannot contradict the unmet list it
+			// carries.
+			if (
+				criteriaRequired === undefined ||
+				criteriaMet === undefined ||
+				criteriaMet !== criteriaRequired ||
+				unmetIds.size > 0 ||
+				metAssessments !== criteriaRequired
+			)
+				fail(
+					"criteria_coverage_drift",
+					`${id} passes while recording ${String(scenario.criteria_met)} met criteria of the cohort's required ${String(criteriaRequired)}, or while still listing unmet or unassessed criteria; a scenario passes only when every required criterion is met and evidenced.`,
+				);
+		} else if (outcome === "failed") {
+			// A failed scenario may close S7 only when it is fully disclosed: real unmet
+			// criteria from its own checklist, the class of failure and a deviation record
+			// that names it as a failure. An undisclosed, miscounted or self-awarded
+			// failure still fails, so honesty about a failure is checkable rather than
+			// merely asserted.
+			const requiredForPass = asInteger(scenario.criteria_required_for_pass);
+			const failureClass = asString(scenario.failure_class);
+			if (
+				criteriaRequired === undefined ||
+				criteriaMet === undefined ||
+				requiredForPass !== criteriaRequired ||
+				criteriaMet >= criteriaRequired ||
+				criteriaMet !== criteriaRequired - unmetIds.size ||
+				unmetIds.size === 0 ||
+				!failureClass ||
+				metAssessments !== criteriaMet
+			)
+				fail(
+					"failure_not_disclosed",
+					`${id} fails without disclosing its unmet criteria, its failure class or a criterion tally consistent with the cohort's ${String(criteriaRequired)} required criteria.`,
+				);
+			// Each unmet criterion must actually be assessed as unmet, and every other one
+			// as met, so the disclosure cannot name a criterion it recorded as passing.
+			for (const [criterion, met] of assessed) {
+				if (met !== unmetIds.has(criterion)) continue;
+				fail(
+					"failure_not_disclosed",
+					`${id} disagrees with its own assessment of a criterion: recorded ${met ? "met" : "unmet"} while disclosing the opposite.`,
+				);
+			}
+			failedNeedingDisclosure.add(id);
+		}
+		if (decisions.some((decision) => /deviation/i.test(decision)))
+			deviationFlagged.add(id);
+		for (const metric of requiredMetrics) {
+			if (metric === "scenario_status") continue;
+			const value = asInteger(scenario[metric]);
+			if (value === undefined || value < 0) {
+				fail(
+					"scenario_metrics_missing",
+					`${id} records no non-negative integer for required metric ${metric}.`,
+				);
+				continue;
+			}
+		if (
+				(metric === "reported_tokens" || metric === "duration_ms") &&
+				value === 0
+			)
+				fail(
+					"metric_unknown_recorded_as_zero",
+					`${id} records ${metric} as zero; an unavailable metric is unknown, never zero.`,
+				);
+		}
+	}
+	for (const id of cohortTurns.keys()) {
+		if (!occurrences.has(id))
+			fail("scenario_missing", `Cohort scenario ${id} has no recorded outcome.`);
+	}
+	for (const [id, count] of occurrences) {
+		if (count > 1)
+			fail("scenario_duplicate", `Scenario ${id} is recorded ${count} times.`);
+	}
+
+	const counts: WorkflowEvidenceCounts = {
+		expected: cohortTurns.size,
+		completed: [...firstOutcome.values()].filter(
+			(entry) => entry.status === "completed",
+		).length,
+		passed: [...firstOutcome.values()].filter(
+			(entry) => entry.outcome === "passed",
+		).length,
+		failed: [...firstOutcome.values()].filter(
+			(entry) => entry.outcome === "failed",
+		).length,
+		missing: cohortTurns.size - firstOutcome.size,
+		duplicated: observedScenarios.length - firstOutcome.size,
+		attempts: attemptsTotal,
+	};
+	const summary = asRecord(evidence.cohort_summary) ?? {};
+	for (const [field, key] of SCENARIO_COUNT_FIELDS) {
+		const declared = asInteger(summary[field]);
+		if (declared === undefined) {
+			fail("summary_count_drift", `cohort_summary declares no ${field}.`);
+			continue;
+		}
+		if (declared !== counts[key])
+			fail(
+				"summary_count_drift",
+				`cohort_summary.${field} says ${declared} but the recorded scenarios derive ${counts[key]}.`,
+			);
+	}
+	const deviations = Array.isArray(summary.deviations_recorded)
+		? summary.deviations_recorded
+		: [];
+	const deviationIds = new Set<string>();
+	for (const entry of deviations) {
+		const record = asRecord(entry);
+		const id = record ? asString(record.scenario_id) : undefined;
+		if (!id || !occurrences.has(id)) {
+			fail(
+				"deviation_record_incomplete",
+				"A recorded deviation references no cohort scenario.",
+			);
+			continue;
+		}
+		if (
+			!asString(record?.detail) ||
+			!asString(record?.classified_as) ||
+			!asString(record?.rationale)
+		)
+			fail(
+				"deviation_record_incomplete",
+				`The deviation record for ${id} is not fully explained.`,
+			);
+		// The classification must agree with the recorded outcome: a failed scenario's
+		// record must be classified as a failure, and a passed scenario's record must not
+		// be. Otherwise a pass could carry a record that admits the failure it denies.
+		const classification = String(record?.classified_as);
+		const scenarioOutcome = firstOutcome.get(id)?.outcome;
+		const classifiedAsFailure = /fail|unmet|rejected/i.test(classification);
+		if (
+			scenarioOutcome !== undefined &&
+			(scenarioOutcome === "failed") !== classifiedAsFailure
+		)
+			fail(
+				"failure_not_disclosed",
+				`The deviation record for ${id} classifies it as '${classification}', which contradicts its recorded ${scenarioOutcome} outcome.`,
+			);
+		deviationIds.add(id);
+	}
+	for (const id of deviationFlagged) {
+		if (!deviationIds.has(id))
+			fail(
+				"deviation_linkage_drift",
+				`${id} reports a deviation in its transcript decisions but no cohort deviation record.`,
+			);
+	}
+	for (const id of failedNeedingDisclosure) {
+		if (!deviationIds.has(id))
+			fail(
+				"failure_not_disclosed",
+				`${id} records a failed scenario with no cohort deviation record naming it.`,
+			);
+	}
+
+	const provenance = asRecord(evidence.provenance) ?? {};
+	if (!asString(provenance.collection))
+		fail(
+			"provenance_untrusted",
+			"The evidence declares no observed collection path.",
+		);
+	if (!/sanitized/i.test(String(provenance.retention ?? "")))
+		fail(
+			"provenance_untrusted",
+			"Retention does not disclose sanitized-only persistence.",
+		);
+	if (asBoolean(provenance.parent_independent_inspection) !== true)
+		fail(
+			"provenance_untrusted",
+			"The Parent did not independently inspect concrete decisions.",
+		);
+	if (asBoolean(provenance.model_self_report_trusted) !== false)
+		fail(
+			"provenance_untrusted",
+			"A scenario child's self-reported pass cannot stand as cohort evidence.",
+		);
+	// Dispatch provenance must be disclosed as the Parent-mediated foreground path
+	// it actually was, so the evidence never implies a script or detached subprocess
+	// produced the outcomes it records.
+	if (!/foreground/i.test(String(provenance.dispatch ?? "")))
+		fail(
+			"provenance_untrusted",
+			"The evidence does not disclose parent-mediated foreground dispatch.",
+		);
+	if (/script|subprocess|detached|automated/i.test(String(provenance.dispatch ?? "")))
+		fail(
+			"provenance_untrusted",
+			"The evidence claims a scripted or detached dispatch that the cohort did not use.",
+		);
+
+	return result();
+}
+
+interface ScenarioOutcome {
+	status: string;
+	outcome: "passed" | "failed";
+}
+
+export function sha256File(
+	absolutePath: string,
+): string | undefined {
+	try {
+		return createHash("sha256")
+			.update(readFileSync(absolutePath))
+			.digest("hex");
+	} catch {
+		return undefined;
+	}
+}
+
+function requiredBindingPaths(cohort: unknown): string[] {
+	return asStringList(asRecord(asRecord(cohort)?.evidence)?.required_bindings);
+}
+
+function boundPaths(evidence: unknown, cohort: unknown, extra: string[]): string[] {
+	const paths = [...extra, ...requiredBindingPaths(cohort)];
+	const bindings = asRecord(asRecord(evidence)?.source_bindings);
+	if (!bindings) return paths;
+	for (const key of ["spec", "fixture", "runner_source"]) {
+		const path = asString(asRecord(bindings[key])?.path);
+		if (path) paths.push(path);
+	}
+	if (Array.isArray(bindings.contracts)) {
+		for (const entry of bindings.contracts) {
+			const path = asString(asRecord(entry)?.path);
+			if (path) paths.push(path);
+		}
+	}
+	return paths;
+}
+
+/** Read the checked-in evidence and cohort, re-hash every bound source, and check offline. */
+export function verifyWorkflowBehaviorEvidenceFiles(
+	repoRoot: string,
+	evidencePath: string,
+	cohortPath: string,
+): WorkflowEvidenceCheckResult {
+	const readJson = (path: string): unknown => {
+		try {
+			return JSON.parse(
+				readFileSync(resolve(repoRoot, path), "utf8"),
+			) as unknown;
+		} catch {
+			return undefined;
+		}
+	};
+	const evidence = readJson(evidencePath);
+	const cohort = readJson(cohortPath);
+	const bindings: Record<string, string> = {};
+	for (const path of new Set([
+		...boundPaths(evidence, cohort, [cohortPath]),
+		evidencePath,
+	])) {
+		const hex = sha256File(resolve(repoRoot, path));
+		if (hex) bindings[path] = hex;
+	}
+	return checkWorkflowBehaviorEvidence({
+		evidence,
+		cohort,
+		cohort_path: cohortPath,
+		bindings,
+	});
+}
+
 export async function main(argv = process.argv.slice(2)): Promise<number> {
 	let fixturePath = DEFAULT_FIXTURE;
 	let resultsPath = DEFAULT_RESULTS_DIR;
+	let verifyEvidencePath: string | undefined;
 	for (let index = 0; index < argv.length; index++) {
 		if (argv[index] === "--fixture" && argv[index + 1])
 			fixturePath = argv[++index];
 		else if (argv[index] === "--results-dir" && argv[index + 1])
 			resultsPath = argv[++index];
+		else if (argv[index] === "--verify-evidence" && argv[index + 1])
+			verifyEvidencePath = argv[++index];
 		else throw new Error(`Unknown or incomplete argument: ${argv[index]}`);
+	}
+	if (verifyEvidencePath) {
+		const result = verifyWorkflowBehaviorEvidenceFiles(
+			process.cwd(),
+			verifyEvidencePath,
+			fixturePath,
+		);
+		process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+		return result.ok ? 0 : 1;
 	}
 	const result = await runBenchmark(process.cwd(), fixturePath, resultsPath);
 	return result.exitCode;

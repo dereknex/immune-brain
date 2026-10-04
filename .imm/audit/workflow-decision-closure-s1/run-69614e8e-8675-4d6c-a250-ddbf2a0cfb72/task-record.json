@@ -1,0 +1,268 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "workflow-decision-closure-s1",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "workflow-decision-closure-s1",
+    "goal": "Close relevant Brainstorm decision dependencies and conserve the complete approved outcome through Planner handoff, including clear zero-question requests and staged implementation.",
+    "acceptance": [
+      {
+        "id": "WDC-S1-A1",
+        "assertion": "Implement the S1 design of docs/specs/workflow-decision-closure.spec.md. Traverse request/repository/confirmed-parent decision branches to resolved, explicitly excluded/deferred or dependent-blocked states; preserve autonomous fact/technical resolution, opt-in exhaustive interviewing, batch approvals and zero-question fast paths without skipping coverage. Planner maps every upstream item and all required phases, reports each Slice result and remaining gap, and confirms only a new material delta. Generalized integration-to-CLI and prototype-first-to-prototype-only counterexamples must fail the handoff completeness check; clear requests and already-confirmed decisions must not acquire extra confirmation. Update existing route/contract tests and sanitized multi-turn fixture inputs; static checks establish contract coverage, not provider obedience. No new decision engine, generic scheduler, store or mandatory interview.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-decision-closure.test.ts\",\n      \"tests/brainstorm-decision-probing-contract.test.ts\",\n      \"tests/exhaustive-decision-tree-contract.test.ts\",\n      \"tests/imm-planner-kernel-intent-contract.test.ts\",\n      \"tests/planner-ensemble-contract.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/workflow-decision-closure-s1.intent.json",
+      "docs/specs/workflow-decision-closure.spec.md",
+      "plugins/immune-brain/dist/imm-brainstorm.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
+      "plugins/immune-brain/skills/imm-planner/SKILL.md",
+      "tests/brainstorm-decision-probing-contract.test.ts",
+      "tests/exhaustive-decision-tree-contract.test.ts",
+      "tests/fixtures/imm-brainstorm-behavior-benchmark.json",
+      "tests/imm-planner-kernel-intent-contract.test.ts",
+      "tests/planner-ensemble-contract.test.ts",
+      "tests/skill-dist-consistency.test.ts",
+      "tests/workflow-decision-closure.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/workflow-decision-closure-s1.intent.json",
+    "content_hash": "sha256:132d055ee85c694799a27d4572aacc21a4d55d3451e659b1b70af364c33c0a46"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:132d055ee85c694799a27d4572aacc21a4d55d3451e659b1b70af364c33c0a46",
+  "git_base_head": "89bd5b1d5db9a88c475503af7b5ce2ccc3a721ae",
+  "attestations": [
+    {
+      "id": "approval-qa-639d9dd4",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:132d055ee85c694799a27d4572aacc21a4d55d3451e659b1b70af364c33c0a46",
+      "diff_hash": "sha256:f87c03669dc370fc101bd48e65e36a7d2abbc602aadb727c7be92461025f228e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:d06b173be6af9b03fd055099bce945d3fcb68b35a6a2185f3b013c7f23918595",
+      "acceptance_results": [
+        {
+          "acceptance_id": "WDC-S1-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:d06b173be6af9b03fd055099bce945d3fcb68b35a6a2185f3b013c7f23918595"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-009c4f0f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:132d055ee85c694799a27d4572aacc21a4d55d3451e659b1b70af364c33c0a46",
+      "diff_hash": "sha256:146d47ace68cc767679369b9b10c124680230f613708bc71f1efc0f52b484437",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:08f403637710b32a50e82ac25fd2a745b2a19b54f45e0992b16c005434726954",
+      "acceptance_results": [
+        {
+          "acceptance_id": "WDC-S1-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:08f403637710b32a50e82ac25fd2a745b2a19b54f45e0992b16c005434726954"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-fc9aa769",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:132d055ee85c694799a27d4572aacc21a4d55d3451e659b1b70af364c33c0a46",
+      "diff_hash": "sha256:f1e181e72dbbb7f43ad5a8e1a4f57b963cc43ccf38242e9de3acccf562c98f8b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:befc5749b073363fd8fac18f7a334e023db29245f305e3acd0b460b8507a051c",
+      "acceptance_results": [
+        {
+          "acceptance_id": "WDC-S1-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:befc5749b073363fd8fac18f7a334e023db29245f305e3acd0b460b8507a051c"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-c18007b0",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:132d055ee85c694799a27d4572aacc21a4d55d3451e659b1b70af364c33c0a46",
+      "diff_hash": "sha256:f1e181e72dbbb7f43ad5a8e1a4f57b963cc43ccf38242e9de3acccf562c98f8b",
+      "actor_id": "parent-mediated-review",
+      "summary": "已验证 immutable revision 的唯一父提交、tree、manifest_digest 及全部七个 changed_paths；变更符合 S1 的相关分支闭合、完整结果守恒与无新增重复确认要求，未发现阻断问题。Kernel QA 已通过；静态契约与测试 fixture 不代表 provider 行为已获验证。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "89bd5b1d5db9a88c475503af7b5ce2ccc3a721ae",
+        "review_commit": "5b4cb36a5af5e9d593c2e7ae3e5cce49bfc85591",
+        "review_tree": "af7141997f953fc45880b3f612f38f9bd48f59bc",
+        "manifest_digest": "sha256:9e573dc2a6b0e26e71e46df44759662d29a74c2196d2fdc6a03e098512d7d7ac"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-8fa6153e34d8-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "WDC-S1-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "tests/workflow-decision-closure.test.ts:79-90 的 completeness checker 只检查 requiredItems 的映射，已列入 deliveredPhases 的 required phase 会直接跳过，因此缺失 phase 映射仍然通过。第 216-224 行的正例甚至固定了这个错误行为，与 Planner 明确要求每个 required phase 恰好映射一次的契约冲突。最小修复：对 requiredItems 与 requiredPhases 的并集检查映射完整性，补齐正例中的 phase 映射，并新增 delivered-but-unmapped 必须失败的反例。",
+      "anchor": "sha256:9f09bd8971055c0e02f16ad6653e4779884acdd9db20c5d4b5dbe1b3842f3d99",
+      "evidence": {
+        "trigger": "现有 staged 正例传入 requiredPhases=['prototype','full-app']、deliveredPhases=['prototype','full-app']，mappings 只有 BR-REQ-1，requiredItems=['BR-REQ-1']；两个 required phase 均无映射，但 checker 返回 ok=true，测试明确要求该结果。",
+        "caller_chain": [
+          "tests/workflow-decision-closure.test.ts::a conserved outcome, a reasoned exclusion, and dependency order all pass",
+          "tests/workflow-decision-closure.test.ts::checkHandoffCompleteness"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "WDC-S1-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-8fa6153e34d8-2-review-2",
+      "kind": "advisory",
+      "status": "open",
+      "acceptance_id": "WDC-S1-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "tests/fixtures/imm-brainstorm-behavior-benchmark.json:154 的 synthetic assistant turn 在用户采纳之前便将问题 (1) 标为 resolved，并称当前请求明确排除 export、defer grace period，但第 150 行请求没有这些决定。这使 closure 场景混入未经证实的决定，而 checklist 没有要求识别或纠正它们。建议将排除和 defer 明确写入 user input，保持问题 (1) 为 open 直到采纳；若这些错误是刻意设置的反例，则明确要求后续响应纠正它们。",
+      "anchor": "sha256:eef16fc50110cec220d65cb42a21a5c4c6b59bc3ac88ef00ec27c211ed629058",
+      "evidence": {
+        "trigger": "multi-turn-relevant-coverage-complete 的首个 user turn 仅要求 framing account deletion；紧随其后的 assistant turn 声称问题 (1) 已 resolved，并声称 export 被当前请求明确排除、grace period 已明确 deferred；用户直到下一个 turn 才采纳问题 (1) 的建议。",
+        "caller_chain": [
+          "tests/fixtures/imm-brainstorm-behavior-benchmark.json::multi-turn-relevant-coverage-complete.turns",
+          "tests/workflow-decision-closure.test.ts::the sanitized multi-turn fixture carries both decision-closure scenarios"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "WDC-S1-A1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:workflow-decision-closure-s1:2026-10-03T12:22:30.142Z",
+      "at": "2026-10-03T12:22:30.142Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-decision-closure-s1.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s1:2026-10-03T12:22:33.976Z",
+      "at": "2026-10-03T12:22:33.976Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-639d9dd4\naction_v2_sha256:ee9bcd1350c05fe75fd0e9d4cdbe65bd887959b8fb85da651e545b211fdfc71f",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-1bca9053bc9e9b04",
+        "issued_at": "2026-10-03T12:22:33.976Z",
+        "expires_at": "2026-10-03T12:32:33.976Z"
+      }
+    },
+    {
+      "id": "request_rework:workflow-decision-closure-s1:2026-10-03T12:26:33.299Z",
+      "at": "2026-10-03T12:26:33.299Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:995e2c9f58c5fe255f22f4a21d53369892540ad4643ea09026e5ff67c628ad8e",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-d23e1969a80d224e",
+        "issued_at": "2026-10-03T12:26:33.300Z",
+        "expires_at": "2026-10-03T12:36:33.299Z"
+      }
+    },
+    {
+      "id": "resolve_finding:workflow-decision-closure-s1:2026-10-03T12:27:53.849Z",
+      "at": "2026-10-03T12:27:53.849Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-8fa6153e34d8-1-review-1\naction_v2_sha256:083daeac053be9db3eeb1ebcb5fb15e37ae0ff0e83f31be3156ca23b7288b787"
+    },
+    {
+      "id": "freeze_artifacts:workflow-decision-closure-s1:2026-10-03T12:28:46.724Z",
+      "at": "2026-10-03T12:28:46.724Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-decision-closure-s1.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s1:2026-10-03T12:28:52.928Z",
+      "at": "2026-10-03T12:28:52.928Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-009c4f0f\naction_v2_sha256:b71891bd4942b80597102c5783f44eec2edd2f692d2d9cd94dba5a8e7e6badab",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-639ff4962c11981f",
+        "issued_at": "2026-10-03T12:28:52.928Z",
+        "expires_at": "2026-10-03T12:38:52.928Z"
+      }
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s1:2026-10-03T12:41:39.684Z",
+      "at": "2026-10-03T12:41:39.684Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-fc9aa769\naction_v2_sha256:7c8e62ae6ad645ab8911b83e9d943e08c04fc784925e9131275c046f01c5a770",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-e7e77c50a9ffaace",
+        "issued_at": "2026-10-03T12:41:39.685Z",
+        "expires_at": "2026-10-03T12:51:39.685Z"
+      }
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s1:2026-10-03T12:46:06.314Z",
+      "at": "2026-10-03T12:46:06.314Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-c18007b0\naction_v2_sha256:0f4ca16475b97399a6762ba13b157d872f0c532f12c5e8fb0e8a931fda5817fb",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-7e95560b936a52e1",
+        "issued_at": "2026-10-03T12:46:06.314Z",
+        "expires_at": "2026-10-03T12:56:06.314Z"
+      }
+    },
+    {
+      "id": "complete:workflow-decision-closure-s1:2026-10-03T12:46:07.264Z",
+      "at": "2026-10-03T12:46:07.264Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:fe1da1212589716f1d4c1d240a31a7aa6eeddf00fcca8d90c98567d38105f4aa"
+    }
+  ]
+}

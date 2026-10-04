@@ -176,6 +176,15 @@ async function runKernelCli(args: string[], root: string): Promise<{
 	// status --json, and the explicit audit command. All other kernel
 	// subcommands (readiness, journal, migrate) are retired.
 	const sub = args[0] ?? "";
+	// The canonical author shape is discoverable before any error probing: a
+	// caller who does not know the destination/stdin contract reads it here
+	// instead of discovering it through a failed call.
+	if (sub === "intent" && (args[1] === "--help" || args[1] === "help" || args[1] === undefined))
+		return {
+			stdout: `${intentAuthorHelp()}\n`,
+			stderr: "",
+			returncode: 0,
+		};
 	// The explicit claimless storage-layout migration is reachable here: a
 	// worktree still on the retired file store has no other entry point, and
 	// every mutating subcommand stays fail-closed behind it.
@@ -222,6 +231,51 @@ async function runCli(command: string, args: string[], root: string): Promise<{
 		stderr: `Unknown Immune-Brain v4 command: ${command}\n`,
 		returncode: 2,
 	};
+}
+
+/**
+ * The canonical TaskIntent author contract, printed by `imm-kernel intent` and
+ * `imm-kernel intent --help`. It states destination, stdin, and the strict v2
+ * descriptor shape before a caller has to discover them by failing a call.
+ */
+export function intentAuthorHelp(): string {
+	return [
+		"imm-kernel intent author <destination> --stdin --json",
+		"  destination: docs/plans/<task-id>.intent.json (created exclusively; never overwritten)",
+		"  stdin:       the complete candidate TaskIntent JSON on file descriptor 0",
+		"  stdout:      { valid, enrollment_ready, intent_ref, git_base_initialization_required, ... }",
+		"",
+		"imm-kernel intent validate <path> --json",
+		"",
+		"Candidate shape (assurance_kernel/task_intent/v1):",
+		JSON.stringify(
+			{
+				contract: "assurance_kernel/task_intent/v1",
+				task_id: "<task-id>",
+				owner: "user",
+				goal: "<one closable outcome>",
+				risk: "routine|material|critical",
+				revision: 1,
+				scope_hint: ["<every file the slice touches>"],
+				acceptance: [
+					{
+						id: "<ID>",
+						assertion: "<observable invariant>",
+						verification: JSON.stringify({
+							contract: "assurance_kernel/verification_descriptor/v2",
+							command: { executable: "bun", argv: ["test", "tests/<focused>.test.ts"], cwd: ".", timeout_ms: 180000, max_output_bytes: 196608 },
+							environment: { prepare: null, writable_paths: [] },
+						}),
+					},
+				],
+			},
+			null,
+			2,
+		),
+		"",
+		"Unknown fields are rejected; the descriptor parser is strict v2 and never infers a runner.",
+		"A v1 descriptor is historical-only and needs an explicit Intent revision before execution.",
+	].join("\n");
 }
 
 async function main(argv: string[]): Promise<number> {

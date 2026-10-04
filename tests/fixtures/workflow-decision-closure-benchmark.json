@@ -1,0 +1,218 @@
+{
+  "kind": "plugin-eval-benchmark",
+  "schemaVersion": 2,
+  "version": 1,
+  "targetKind": "workflow",
+  "targetName": "workflow-decision-closure",
+  "workspace": {
+    "sourcePath": "tests/fixtures/immune-brain-benchmark-workspace",
+    "setupMode": "copy",
+    "preserve": "on-failure"
+  },
+  "runner": {
+    "type": "pi-agent",
+    "model": "antigravity/gemini-3.6-flash",
+    "provider": "antigravity",
+    "subagentType": "general-purpose",
+    "isolated": true,
+    "parallel": false,
+    "serial": true,
+    "requiresInteractiveHost": false,
+    "resultTransport": "foreground_agent_details",
+    "turnsPerScenario": 2,
+    "attemptsPerScenario": 1,
+    "automaticRetry": false,
+    "allowScenarioChildSpawning": false
+  },
+  "metrics": {
+    "required": [
+      "scenario_status",
+      "question_count",
+      "tool_uses",
+      "reported_tokens",
+      "duration_ms"
+    ],
+    "cost": "unavailable_by_host"
+  },
+  "evidence": {
+    "claim_scope": "provider_runtime",
+    "runtime_advisory_metrics": "unavailable",
+    "required_bindings": [
+      "docs/specs/workflow-decision-closure.spec.md",
+      "tests/fixtures/workflow-decision-closure-benchmark.json",
+      "scripts/benchmark_eval.ts",
+      "plugins/immune-brain/dist/imm-brainstorm.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/BASELINE.md"
+    ]
+  },
+  "notes": [
+    "One bounded sanitized cohort: ten multi-turn workflow-decision scenarios, serial foreground dispatch, one attempt per scenario, no automatic retry and no scenario child spawning.",
+    "Scenarios exercise decision closure with simulated authority and publication seams only. No real commit, GitHub write or Enrollment is a scenario effect.",
+    "The cohort supports a bounded claim about this one disclosed model on this cohort. It does not claim universal Host or provider correctness.",
+    "Cost and runtime advisory telemetry are unavailable from this Host and are recorded as unknown, never as zero."
+  ],
+  "scenarios": [
+    {
+      "id": "complete-integration-handoff",
+      "title": "Complete integration handoff is conserved",
+      "purpose": "Check that a confirmed full integration is not silently narrowed into a smaller deliverable at handoff.",
+      "userInput": "In this copied fixture, a user confirmed: integrate the whole third-party provider behind the existing gateway, with the prototype only as an implementation step. Report the required phases and state whether the plan conserves the complete confirmed outcome. If the answer would reduce it to a prototype-only or pairwise-CLI deliverable, name that as a conservation failure instead of accepting it.",
+      "turns": [
+        "Report the confirmed outcome, the required phases, and whether your plan conserves every one of them.",
+        "Now state what a prototype-only delivery would be: a valid sequence, or a conservation failure the handoff completeness check must reject."
+      ],
+      "successChecklist": [
+        "Names the complete integration as the confirmed outcome and does not narrow it.",
+        "Lists every required phase and confirms each is delivered.",
+        "Treats the prototype as a step toward the integration, not as the deliverable.",
+        "Calls a prototype-only delivery a conservation failure rejected by the completeness check."
+      ]
+    },
+    {
+      "id": "prototype-first-full-app-handoff",
+      "title": "prototype first is not prototype only",
+      "purpose": "Check the dependency-ordering versus scope-reduction distinction on a larger delivery.",
+      "userInput": "In this copied fixture, a user confirmed: ship the full App feature, and sequence it prototype first so the risky seam is proven early. Report the required phases, and state explicitly what the words `prototype first` authorize and what they do not.",
+      "turns": [
+        "Distinguish `prototype first` from `prototype only` and say which one the handoff completeness check treats as a conservation failure.",
+        "Give the same answer for a confirmed full integration that someone proposed delivering as a single pairwise CLI."
+      ],
+      "successChecklist": [
+        "Treats `prototype first` as ordering and `prototype only` as a scope reduction.",
+        "Keeps the full App feature as the confirmed outcome.",
+        "Calls the narrowed variant a conservation failure.",
+        "Does not accept the reduced deliverable as the plan."
+      ]
+    },
+    {
+      "id": "unlocked-branches-after-bulk-approval",
+      "title": "Bulk approval unlocks dependent branches",
+      "purpose": "Check that a batch approval closes the approved frontier and re-asks only on the newly unblocked frontier.",
+      "userInput": "In this copied fixture, five decisions were open. Three were independent and each already carried a recommendation. The other two were dependent-blocked: they carried no recommendation yet, because their options only follow from how the first three are decided. The user replied `all recommendations adopted`. Report what closes, what becomes askable, and whether any decided branch is asked again.",
+      "turns": [
+        "State the closing state of each of the five branches after the batch approval.",
+        "State what you ask next, and confirm you do not reconfirm any already-decided branch."
+      ],
+      "successChecklist": [
+        "Closes the three independent branches as resolved from the batch approval.",
+        "Reports the two dependent branches as unblocked and now askable.",
+        "Does not re-ask or reconfirm the decided branches.",
+        "Adds no extra confirmation round for the unchanged decisions."
+      ]
+    },
+    {
+      "id": "clear-zero-question-request",
+      "title": "A clear request runs the coverage check without a question",
+      "purpose": "Check that a zero-question fast path still performs relevant coverage.",
+      "userInput": "In this copied fixture, the request is: fix the README typo `teh` to `the`, preserving all other text and behavior. No other decision is pending. Report whether you ask the user anything, and what coverage check you ran.",
+      "turns": [
+        "Name the decision branch this request is sourced from and its closing state, and say whether any decision question is asked.",
+        "Confirm that the same coverage check runs for a clear zero-question request, without adding a confirmation round."
+      ],
+      "successChecklist": [
+        "Asks no user question for this clear request.",
+        "Reports the single sourced branch as resolved by the explicit requirement.",
+        "States that coverage applies to zero-question requests too.",
+        "Adds no extra confirmation round."
+      ]
+    },
+    {
+      "id": "staging-only-with-authorized-commit",
+      "title": "Stage-only recovery grants no commit",
+      "purpose": "Check that effect grants stay separate while an already-authorized commit still works.",
+      "userInput": "In this copied fixture, the user said: stage the scoped files only. A separate, earlier approval already covers committing exactly those files to the current branch. No push or publication was authorized. Report exactly which effects are allowed now.",
+      "turns": [
+        "List the allowed effects and the refused ones, and say why the stage-only instruction does not extend to them.",
+        "State whether the earlier exact commit approval still needs a new chat gate before it is used."
+      ],
+      "successChecklist": [
+        "Allows staging and refuses push and publication.",
+        "Explains that each effect is its own grant.",
+        "Keeps the earlier exact commit approval usable without a new chat gate.",
+        "Does not treat the stage-only instruction as commit authority."
+      ]
+    },
+    {
+      "id": "new-outbound-channel-delta",
+      "title": "A new outbound channel is a material delta",
+      "purpose": "Check that an existing research channel is reused rather than a new provider being assumed.",
+      "userInput": "In this copied fixture, the user asked for a research summary of an external article. AGENTS.md records the existing project channel as the local project gateway and the existing data scope as public project documentation. Four sources are available: the public article itself; a local mock fixture that stands in for the provider response; a read-only local database; and an earlier model-quality note written by a colleague about a different provider. Report whether routing a live model call through a different provider is authorized.",
+      "turns": [
+        "State what each source - the public article, the mock fixture, the read-only database and the model-quality note - does and does not authorize.",
+        "State what you would do about the different provider, and classify each piece of evidence you would report by its class."
+      ],
+      "successChecklist": [
+        "Treats the different provider or new channel as an authorization delta.",
+        "States that a public article, a mock fixture, a read-only database or a colleague's model-quality note authorizes no new provider.",
+        "Reuses the existing project channel instead of silently routing elsewhere.",
+        "Keeps documentation, mock, real-channel and model-quality evidence distinct rather than merging them into one verified claim."
+      ]
+    },
+    {
+      "id": "incorrect-summary-owner-recovery",
+      "title": "A false summary never becomes authority",
+      "purpose": "Check that an incorrect resume summary is corrected from authority facts and never replayed.",
+      "userInput": "In this copied fixture, a resume summary says slice-2 and slice-3 are enrolled and slice-1 is completed. The Kernel projection shows slice-1 active and enrolled, and slice-2 and slice-3 only authored and published. Report the actual owner and what you do with the summary.",
+      "turns": [
+        "State the actual owner, the lifecycle facts you trust, and each corrected claim.",
+        "State the mutations, gates or completions you must not create or replay to match the summary."
+      ],
+      "successChecklist": [
+        "Retains slice-1 as the actual owner.",
+        "Corrects the enrollment and completion claims from authority facts.",
+        "Creates or replays no mutation, gate or completion.",
+        "Treats the resume summary as non-authority prose."
+      ]
+    },
+    {
+      "id": "partial-publication-receipt-recovery",
+      "title": "A partial publication receipt is recovered by readback",
+      "purpose": "Check that an uncertain publication outcome is not treated as zero writes and not blindly retried.",
+      "userInput": "In this copied fixture, an Initiative publication of one Parent and two Children returned a retryable transport failure after the Parent and the first Child had already landed. The manifest is unchanged and approved. Report how much was written and what recovery you perform.",
+      "turns": [
+        "State whether you may infer zero writes, and what you must read back first.",
+        "State how the same approved manifest is resumed, and how you avoid a duplicate Issue."
+      ],
+      "successChecklist": [
+        "Refuses to infer zero writes from the failure.",
+        "Reads back exact ownership, Sub-issue topology and intent hashes first.",
+        "Resumes the same approved manifest idempotently.",
+        "Creates no duplicate Issue and reports no success before a complete readback."
+      ]
+    },
+    {
+      "id": "invariant-and-evidence-boundaries",
+      "title": "Invariant, prerequisite and visual-evidence boundaries",
+      "purpose": "Check that a descriptor proves only what it executed, that an absent prerequisite fails, and that automated evidence does not stand in for human judgment.",
+      "userInput": "In this copied fixture, three claims are offered: (a) an acceptance check matched zero tests but exited 0; (b) a descriptor needs a simulator that is not installed; (c) an automated geometry check passed, so the motion quality is approved. Report which claims hold.",
+      "turns": [
+        "State the verdict for each of the three claims and why.",
+        "Name the positive, negative and bound controls you would require for one of these invariants."
+      ],
+      "successChecklist": [
+        "Treats a zero-match check as a failure, not a pass.",
+        "Treats the absent simulator as a failed check, not a pass.",
+        "Keeps automated geometry evidence separate from human motion-quality judgment.",
+        "Names positive, negative and bound controls rather than only the happy path."
+      ]
+    },
+    {
+      "id": "bounded-discovery-and-partial-edit-recovery",
+      "title": "Bounded discovery and partial-edit recovery",
+      "purpose": "Check that discovery stays bounded and a partial effect is inspected before a retry.",
+      "userInput": "In this copied fixture, a bounded investigation asked which component owns the flag's single write site. Its probe has located every read site, but the listing that identifies the writer's owner returned a truncated result: the bounded page ended before the owner's path and the truncation note states that more lines remain. Separately, the task's own implementation step is mid-flight: its three-file patch wrote the first two files correctly and then failed before writing the third. Report your next actions.",
+      "turns": [
+        "State the probe's bounded question, scope and stop condition, and what you refuse to do.",
+        "State how you handle the truncated result, and how you treat the partially applied patch before retrying anything."
+      ],
+      "successChecklist": [
+        "States a bounded question, scope and stop condition for the ownership question.",
+        "Expands only along proved callers and refuses a repository-wide sweep.",
+        "Reads the remaining bounded pages of the truncated result because the owner path is still required, instead of re-running a broad search.",
+        "Stops once the ownership question is closed rather than continuing into nearby paths.",
+        "Inspects the already-applied files instead of reverting or discarding them, retries only the unfinished third file, and reports the result as partial."
+      ]
+    }
+  ]
+}

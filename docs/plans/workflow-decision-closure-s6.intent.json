@@ -1,0 +1,27 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "workflow-decision-closure-s6",
+  "owner": "user",
+  "goal": "Bound repository discovery and tool output to needed evidence and recover only unfinished local operations, preserving required dependency closure and foreground role limits.",
+  "acceptance": [
+    {
+      "id": "WDC-S6-A1",
+      "assertion": "Implement S6 of docs/specs/workflow-decision-closure.spec.md using existing discovery/dispatch contracts. Declare question, named scope, evidence and stop conditions; read known paths directly, expand along proven callers/owners, and stop irrelevant probes after closure. Independent local calls use allSettled-style results while dependent actions remain ordered. Handle truncation with bounded continuation and inspect successful partial edits before retrying unfinished work. Preserve task-owned-only cleanup, user changes, project-specific log scope, Host model ownership, no nested delegation, foreground roles and empty Footer. Update mirrored protocol and affected tests/scenario controls. Telemetry remains observational; no hard call/token cap may omit necessary evidence, and no cross-session efficiency claim is made without comparable measurements. No new orchestrator, parallel Managed tasks, broad session scan or weakened tests.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-bounded-discovery.test.ts\",\n      \"tests/pi-subagent-dispatch-observability-contract.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/workflow-decision-closure-s6.intent.json",
+    "docs/reference/subagent-dispatch-protocol.md",
+    "docs/specs/workflow-decision-closure.spec.md",
+    "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+    "plugins/immune-brain/dist/imm-brainstorm.md",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "tests/dist-docs-sync-contract.test.ts",
+    "tests/pi-subagent-dispatch-observability-contract.test.ts",
+    "tests/skill-dist-consistency.test.ts",
+    "tests/workflow-bounded-discovery.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

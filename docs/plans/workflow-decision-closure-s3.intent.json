@@ -1,0 +1,25 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "workflow-decision-closure-s3",
+  "owner": "user",
+  "goal": "Make Loop resume from current task/run authority facts rather than prose summaries, without duplicating mutations, replaying successful gates or rewriting evidence.",
+  "acceptance": [
+    {
+      "id": "WDC-S3-A1",
+      "assertion": "Implement S3 of docs/specs/workflow-decision-closure.spec.md on the existing Loop consumer instructions and loader. Revalidate exact owner/run identity and lifecycle, artifacts, obligation and claim after uncertain interruption; consume a successful operation fresh projection directly rather than adding unnecessary status calls. Correct authored/validated/published/enrolled/assured/completed prose from authority evidence, and never treat Issue state or a compaction heading as Enrollment or completion. Negative scenarios with falsely enrolled later Slices must retain the actual owner and must not create/replay mutation, gate or completion. Update alignment/route tests and package closure. Prepare only a sanitized local H1 Host-producer follow-up; external summary generation remains unfixed. No Kernel core/store changes, legacy-audit edits, real authority repair or Host write.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-authoritative-recovery.test.ts\",\n      \"tests/loop-contract-v4-alignment.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/workflow-decision-closure-s3.intent.json",
+    "docs/reports/workflow-summary-host-followup.md",
+    "docs/specs/workflow-decision-closure.spec.md",
+    "plugins/immune-brain/dist/imm-loop.md",
+    "plugins/immune-brain/skills/imm-loop/SKILL.md",
+    "tests/loop-contract-v4-alignment.test.ts",
+    "tests/skill-dist-consistency.test.ts",
+    "tests/workflow-authoritative-recovery.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

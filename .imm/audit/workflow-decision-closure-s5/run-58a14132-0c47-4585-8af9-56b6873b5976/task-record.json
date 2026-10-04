@@ -1,0 +1,583 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "workflow-decision-closure-s5",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "workflow-decision-closure-s5",
+    "goal": "Make canonical Intent authoring discoverable and complete GitHub publication safely recover from confirmed partial writes or uncertain responses within a whole-operation deadline.",
+    "acceptance": [
+      {
+        "id": "WDC-S5-A1",
+        "assertion": "Implement S5 of docs/specs/workflow-decision-closure.spec.md in existing public command guidance and GitHub tracker transport/publication seams, preserving strict v2 parsing and exclusive canonical authoring. State destination/stdin/example structure before error probing. Report confirmed writes, unfinished steps and uncertain outcomes truthfully; read back exact ownership/topology and intent hashes before same-manifest idempotent recovery. Bound the entire publication without a blind outer shell loop. Fake-transport tests cover partial success, lost response, stale or ambiguous ownership/hash, timeout/cancellation and repeat publication, proving no duplicate or wrong-owner mutation and no execution handoff before complete success. Preserve existing negative controls and one specific recovery action. Regenerate the Claude bundle and pass focused runtime/package checks and typecheck before Review. No real remote test writes, authority schema/reducer/store changes, new scheduler or automatic native-gate retry.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/github-initiative-recovery.test.ts\",\n      \"tests/kernel-intent-authoring.test.ts\",\n      \"tests/v4-runtime-launchers.test.ts\",\n      \"tests/github-issue-projection-contract.test.ts\",\n      \"tests/carrier-enrollment-gate-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/workflow-decision-closure-s5.intent.json",
+      "docs/specs/workflow-decision-closure.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/runtime/commands/kernel.ts",
+      "plugins/immune-brain/runtime/github_issue_tracker.ts",
+      "plugins/immune-brain/runtime/v4_runtime.ts",
+      "tests/carrier-enrollment-gate-contract.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/github-initiative-recovery.test.ts",
+      "tests/github-issue-projection-contract.test.ts",
+      "tests/kernel-intent-authoring.test.ts",
+      "tests/plugin-package-runtime.test.ts",
+      "tests/v4-runtime-launchers.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/workflow-decision-closure-s5.intent.json",
+    "content_hash": "sha256:8590f83a9ea3b81decd758dc1d9c758f506e0607222d949fba030901ade3d7fa"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:8590f83a9ea3b81decd758dc1d9c758f506e0607222d949fba030901ade3d7fa",
+  "git_base_head": "0808c856f8ce7f01bb2221481bc64ea4f49cc61a",
+  "attestations": [
+    {
+      "id": "approval-qa-1fe4a6e7",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8590f83a9ea3b81decd758dc1d9c758f506e0607222d949fba030901ade3d7fa",
+      "diff_hash": "sha256:764e7d484fa73f99ef5c34d741051804b40e8b42910b07679c8205d7756934b0",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:2f99728518a4848fdea532ed4955d78292ff01137c472aa0cf6e9daf57d7c9bd",
+      "acceptance_results": [
+        {
+          "acceptance_id": "WDC-S5-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:2f99728518a4848fdea532ed4955d78292ff01137c472aa0cf6e9daf57d7c9bd"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-5330ceaa",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8590f83a9ea3b81decd758dc1d9c758f506e0607222d949fba030901ade3d7fa",
+      "diff_hash": "sha256:d126a25b10eec4a26d6a92f718a4f899752ff096a74406985a16f619fe45fc1e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:1511414cd7121e5bbc1353ee633d248ce2e5314e1a67c2887c7ee3b4e00f8807",
+      "acceptance_results": [
+        {
+          "acceptance_id": "WDC-S5-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:1511414cd7121e5bbc1353ee633d248ce2e5314e1a67c2887c7ee3b4e00f8807"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-e7b32aa7",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8590f83a9ea3b81decd758dc1d9c758f506e0607222d949fba030901ade3d7fa",
+      "diff_hash": "sha256:4799fc46729069a569a88de8419804d2e7961d6eacdcc85b1a60f111ecf77cea",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:de4b7edefd393b13af330ebb973ef82c067cd7e5a3326887eb9fd20470f29fce",
+      "acceptance_results": [
+        {
+          "acceptance_id": "WDC-S5-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:de4b7edefd393b13af330ebb973ef82c067cd7e5a3326887eb9fd20470f29fce"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-ddc3c27c",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8590f83a9ea3b81decd758dc1d9c758f506e0607222d949fba030901ade3d7fa",
+      "diff_hash": "sha256:9ea85d1bfd620f2473650cbcf1cbd974c9fc2ccedab4a0a4c5b1a2f4ff9e1972",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:a475a94474d0b1acc351433288d815ff5dbbc5dfa8db0d598a3f218de7fbded8",
+      "acceptance_results": [
+        {
+          "acceptance_id": "WDC-S5-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:a475a94474d0b1acc351433288d815ff5dbbc5dfa8db0d598a3f218de7fbded8"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-ecc9a7a6",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8590f83a9ea3b81decd758dc1d9c758f506e0607222d949fba030901ade3d7fa",
+      "diff_hash": "sha256:30839149eafc29438debf607fee15006794662526c69972cea90b0ec4445f063",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:c096986757cdd57c9905fc4812411b600bd6329233e889dfaed022574d82a07b",
+      "acceptance_results": [
+        {
+          "acceptance_id": "WDC-S5-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:c096986757cdd57c9905fc4812411b600bd6329233e889dfaed022574d82a07b"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-907d55ce",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8590f83a9ea3b81decd758dc1d9c758f506e0607222d949fba030901ade3d7fa",
+      "diff_hash": "sha256:67db7d9c5e1144a439f4e29cad8ccbfe51639246f9994455ed78cb89cdee6a75",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:66f93bc1725420b8f994df7d74e9b074088e32e3df7361d94b39499c0324a9d4",
+      "acceptance_results": [
+        {
+          "acceptance_id": "WDC-S5-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:66f93bc1725420b8f994df7d74e9b074088e32e3df7361d94b39499c0324a9d4"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-aa6a3801",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8590f83a9ea3b81decd758dc1d9c758f506e0607222d949fba030901ade3d7fa",
+      "diff_hash": "sha256:67db7d9c5e1144a439f4e29cad8ccbfe51639246f9994455ed78cb89cdee6a75",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核实 base_head、review_commit、唯一父提交、review_tree、changed_paths 对象及 manifest_digest；已审阅全部变更并采信 Kernel QA 通过证据，未发现阻断性交付缺陷。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "0808c856f8ce7f01bb2221481bc64ea4f49cc61a",
+        "review_commit": "06d4e6edcb7eb897cdf16e9614ee1068d11cb4ba",
+        "review_tree": "a4f49c871570d0df83cf21ac1c6611bd4e54b087",
+        "manifest_digest": "sha256:f8fe1a319a8b97b3980caa601f80a34ab38df1123f91c980b41dc7faf032bdeb"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-efa4a3d51ebf-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "WDC-S5-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "整次 publication 没有 deadline 或 cancellation 边界。github_issue_tracker.ts:208-210 的 transport 接口没有取消信号，:515-518 只为每次 gh 调用重新设置 20 秒计时器，:2279-2289 的 publication 入口也没有累计预算。因此多个分别未超时的慢调用仍可超出整次发布预算，并继续产生后续写入。tests/github-initiative-recovery.test.ts:367-375 仅注入已返回的 timed_out 结果，:437-447 仅验证不重试，均未覆盖整次 deadline 或 cancellation。最小修复是在现有 publication/transport 路径共享一个 deadline 和取消信号，终止在途调用并禁止后续 mutation；增加跨调用累计超时及部分成功后取消的 fake-transport 测试。",
+      "anchor": "sha256:ea4b77d835f547b894eeeb2b8f8efa9663d19e53afddddbd108bd2c23c96002d",
+      "evidence": {
+        "trigger": "合法的两 Task manifest 发布过程中，每个 gh 调用都在自身 20 秒限制内返回，但累计耗时超过整次发布预算；或者 Parent 写入后请求取消。当前入口没有整次 deadline 或 cancellation 状态，仍执行后续 Child/关系写入。有限步骤数量不等于整次操作的时间与取消边界。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:runGithubTrackerCli",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:runGithubInitiativePublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:createGhTransport"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "WDC-S5-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-efa4a3d51ebf-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "WDC-S5-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "pending_steps 遗漏尚未尝试的 Task，不能完整报告 unfinished steps。github_issue_tracker.ts:1611、:1625 仅从已有 taskResults 的失败项生成 pending_steps；Parent 失败时 :2422-2423 未传入任何 Task 结果，因此合法的两 Task 发布返回 pending_steps: []，尽管两项都未完成。首个 Child 失败时也遗漏剩余 Child。最小修复是将完整 prepared.order 传入结果构造，以全部计划 Task 减去已确认 Task 计算 pending_steps，并增加 Parent 失败及首个 Child 失败的精确数组断言。",
+      "anchor": "sha256:df8f394eb14dcb836ba888fb1a3cfc7d4b0052262ed57e050c37f8ef4f1b9fc6",
+      "evidence": {
+        "trigger": "使用 tests/github-initiative-recovery.test.ts:367-375 已有的两 Task batch，在 Parent issue_create 注入 timed_out。runGithubInitiativePublication 返回失败时 taskResults 尚未建立，publicationResult 默认 tasks=[]，最终 confirmed_steps=[] 且 pending_steps=[]，没有列出 widget-a、widget-b 两个未完成步骤。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:runGithubTrackerCli",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:runGithubInitiativePublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:publicationResult"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "WDC-S5-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-f358c5ba2dcc-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "WDC-S5-A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts:2411、2496 仍把原始 gh 而非 publishTransport 传给 labelAvailabilityFailure 和 amendInitiativeParent。后者的重新读取、Parent edit 和写后读取全部绕过共享 deadline/cancellation，因此 publication 可以超时继续运行，甚至在取消后修改 Parent。两处都应使用 publishTransport，并补充预算在 preflight 后耗尽或取消的 amendment 测试。",
+      "anchor": "sha256:9576adf2e5ff347ece5449f85f0270867e1e75495ef5f87bc6020a3da00b59b1",
+      "evidence": {
+        "trigger": "整次操作预算传播不变量：一个有效 amendment 完成 validateAmendmentTopology 和历史依赖读取后，deadline 已耗尽或 signal.aborted 已变为 true；2496 仍用原始 gh 调用 amendInitiativeParent，其 1140、1159、1166 行调用没有 budget，可以继续执行 Parent edit。现有 publishTransport 包装只保护经该 adapter 的调用，不能覆盖这条原始 transport 分支；2411 的 label 查询也存在相同遗漏。新增测试仅覆盖开始前已过期及普通创建后的取消，没有覆盖这些绕行分支。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:runGithubTrackerCli",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:runGithubInitiativePublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:amendInitiativeParent",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:createGhTransport.run"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "WDC-S5-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-f358c5ba2dcc-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "WDC-S5-A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts:1680-1693 对所有失败无条件添加 same-manifest replay 恢复指令，包括必须先修复输入、标签或 ownership 的 permanent_failure。这既使无法通过原样重放解决的错误得到错误恢复建议，也与底层已有的具体修复动作形成多个行动指令。应把“不保证零写入”的事实说明与恢复动作分开，保留一个与实际错误匹配的动作，只在可安全恢复的失败上建议同一 manifest 重放。",
+      "anchor": "sha256:efa81ea2d012972c7fef21409a603e9673ddf96784e6e9b6a0e0a38e42b78477",
+      "evidence": {
+        "trigger": "错误特定恢复不变量：成功发布后更改并 stage widget-b 的 canonical Intent，再用同一 publication 输入调用，createInitiative 在 971-975 行返回 permanent_failure，明确要求处理已存在且内容不同的 Parent；publicationResultImpl 却先添加“Re-read ... before replaying the same approved manifest”。重新读取并原样重放不会消除内容差异，输出同时包含 replay 和 edit GitHub source 两个行动建议。缺失 required label 时也同时出现 replay 与 create labels 两个动作。tests/github-initiative-recovery.test.ts 的 stale-intent 测试只检查 uncertainty 文案，没有检查恢复动作是否可解决该错误。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:runGithubTrackerCli",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:runGithubInitiativePublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:runGithubTrackerOperation",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:createInitiative",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:publicationResultWithPlan",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:publicationResultImpl"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "WDC-S5-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-f358c5ba2dcc-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "WDC-S5-A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts:2439-2440 在 prepared.order 已知的 amendment 验证异常分支仍调用不带计划的 publicationResult，导致所有尚未确认的 Task 从 pending_steps 消失。应在该 catch 使用 publicationResultWithPlan(prepared.order.map(...))，并为缺失或重复 historical slice-id 的拒绝结果断言完整 pending_steps。",
+      "anchor": "sha256:28fa11c7752f1cfe2ffb1cbb6d25f1321daf130dc9a38031206d4776d71ad52e",
+      "evidence": {
+        "trigger": "完整未完成步骤报告不变量：合法 canonical pending Task 通过 preflightPublication，现有 Parent 可读取，但 amendment.historical 中一个 closed binding 的 body 缺少 slice-id marker。approvedAmendmentContent 在 1038 行抛错，2440 的 catch 返回 publicationResult；它向 publicationResultImpl 传入空 plannedTaskIds 和空 tasks，最终 confirmed_steps=[]、pending_steps=[]，尽管 prepared.order 中的全部 pending Task 均未确认。plan-aware builder 覆盖了普通返回结果分支，却没有覆盖这个计划已建立后的异常分支。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:runGithubTrackerCli",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:runGithubInitiativePublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:approvedAmendmentContent",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:publicationResult",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:publicationResultImpl"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "WDC-S5-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-6f22a7258a18-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "WDC-S5-A1",
+      "source": "review",
+      "review_round": 3,
+      "summary": "[P1] plugins/immune-brain/runtime/github_issue_tracker.ts:697-703 将重复 intent-hash marker 解释为历史缺失，并在正文比较中全部删除。已发布 Child 同时携带正确和过期 hash 时，批量预检和 upsertTask 都跳过 hash 校验，随后仍可修复标签、返回 confirmed 并提供 execution。最小修复是区分真正缺失、唯一合法值与重复/歧义状态；保留历史无 marker 的兼容行为，但在任何恢复写入前拒绝重复 marker，并添加相应负向测试。",
+      "anchor": "sha256:3d164e8cf3cf0cda759c60ab1b34c4196b11c4e65d030d6a01f31e59577f6f00",
+      "evidence": {
+        "trigger": "不变量类别：已发布 Intent 身份必须唯一且无歧义。完成一次双 Child publication 后，在 widget-b 原有 intent-hash 行后插入第二个合法格式但不同值的 intent-hash 行，其他正文、ownership 和 topology 不变，再重放相同 manifest。publishedIntentHash 返回 null，stripPublishedIntentHash 删除两行，使 publicationBatchDrift 与 upsertTask 的校验均放行。现有单 hash mismatch 修复只覆盖恰好一个 marker 的情形，不覆盖多个相互冲突的身份声明；这不是契约明确保留的历史零 marker 情形。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::runGithubInitiativePublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::publicationBatchDrift",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::publishedIntentHash"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "WDC-S5-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-6f22a7258a18-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "WDC-S5-A1",
+      "source": "review",
+      "review_round": 3,
+      "summary": "[P1] plugins/immune-brain/runtime/github_issue_tracker.ts:1900、2658-2666 的最终 readback 忽略 intent-hash，却没有执行注释所称的独立 hash 比较。最后一个 Child 在早期校验之后仅发生 hash 变更，publicationIssueDrift 仍认为正文一致，最终返回 confirmed 和 execution。最小修复是在 Child 最终 readback 中验证唯一的已发布 hash 与 operation.intent_hash 一致；同样补足 upsertTask:1402 的 readback，并增加仅在最终快照改变 hash 的 fake-transport 测试。",
+      "anchor": "sha256:3ed20444de8a2d9cf1b15634dd2541cd2526d309592f63d66154be164a520500",
+      "evidence": {
+        "trigger": "不变量类别：Intent 身份绑定必须保持到成功 handoff 的最终 readback。初始预检和最后一个 Child 的早期校验均观察到正确 hash，随后在最终 publication snapshot 中将该 Child 的唯一 intent-hash 替换为另一个合法值，其余正文、身份、状态和 topology 保持不变。publicationIssueDrift 调用 sameTrackedBody 删除双方 hash，因此放行并产生 execution。现有 mismatch 修复只覆盖批量预检和 upsertTask 的早期读取，不覆盖成功判定时实际读回的身份，无法保护这一完整 readback 不变量。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::runGithubInitiativePublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::publicationIssueDrift",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::sameTrackedBody",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::stripPublishedIntentHash"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "WDC-S5-A1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:workflow-decision-closure-s5:2026-10-03T14:54:55.235Z",
+      "at": "2026-10-03T14:54:55.235Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-decision-closure-s5.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s5:2026-10-03T14:55:04.514Z",
+      "at": "2026-10-03T14:55:04.514Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-1fe4a6e7\naction_v2_sha256:569eaa930a94cbaa410df343d6aabf837edd60c628c7c51ab77ad0fb37cfb0bb",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-770e5366a74e27fc",
+        "issued_at": "2026-10-03T14:55:04.515Z",
+        "expires_at": "2026-10-03T15:05:04.515Z"
+      }
+    },
+    {
+      "id": "request_rework:workflow-decision-closure-s5:2026-10-03T14:58:59.956Z",
+      "at": "2026-10-03T14:58:59.956Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:f9bab04a4b58dc5279ced9d1893c96dc2293d82f93dc5ce50ea624b153b76a9a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-12e03f28ffd80284",
+        "issued_at": "2026-10-03T14:58:59.956Z",
+        "expires_at": "2026-10-03T15:08:59.956Z"
+      }
+    },
+    {
+      "id": "resolve_finding:workflow-decision-closure-s5:2026-10-03T15:10:33.039Z",
+      "at": "2026-10-03T15:10:33.039Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-efa4a3d51ebf-1-review-1\naction_v2_sha256:d76aedb2c5521209b4fbcaa3f306ab6f22d80ff7e1f1d7ac9ad3161886f6afeb"
+    },
+    {
+      "id": "resolve_finding:workflow-decision-closure-s5:2026-10-03T15:10:42.077Z",
+      "at": "2026-10-03T15:10:42.077Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-efa4a3d51ebf-2-review-2\naction_v2_sha256:4ae75ee52a5f100ffa142d3ee57edac5a683b0bfc43c130bc091b13960274b41"
+    },
+    {
+      "id": "freeze_artifacts:workflow-decision-closure-s5:2026-10-03T15:10:49.593Z",
+      "at": "2026-10-03T15:10:49.593Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-decision-closure-s5.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s5:2026-10-03T15:11:01.660Z",
+      "at": "2026-10-03T15:11:01.660Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5330ceaa\naction_v2_sha256:1c3e7285000d1c5d965afe59b2abe0602574da5e81b47489a88156377ef1d406",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-555c0b21c6ee3037",
+        "issued_at": "2026-10-03T15:11:01.660Z",
+        "expires_at": "2026-10-03T15:21:01.660Z"
+      }
+    },
+    {
+      "id": "request_rework:workflow-decision-closure-s5:2026-10-03T15:16:08.799Z",
+      "at": "2026-10-03T15:16:08.799Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:b9871de7e7b59f844a9763b6abcee3f3631eae94eb99a62e6415ff676229e98f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-7eb144eefa27f4d4",
+        "issued_at": "2026-10-03T15:16:08.799Z",
+        "expires_at": "2026-10-03T15:26:08.799Z"
+      }
+    },
+    {
+      "id": "resolve_finding:workflow-decision-closure-s5:2026-10-03T15:21:02.680Z",
+      "at": "2026-10-03T15:21:02.680Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f358c5ba2dcc-1-review-1\naction_v2_sha256:b624cf77026bf13af538da4fb515f3e7b73814c66a4e7a7a29f121abeb9937a8"
+    },
+    {
+      "id": "resolve_finding:workflow-decision-closure-s5:2026-10-03T15:21:11.477Z",
+      "at": "2026-10-03T15:21:11.477Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f358c5ba2dcc-2-review-2\naction_v2_sha256:92dacc09976e843e675be874d6550c6179281e3364162f6c02176441bdcc1029"
+    },
+    {
+      "id": "resolve_finding:workflow-decision-closure-s5:2026-10-03T15:21:23.689Z",
+      "at": "2026-10-03T15:21:23.689Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f358c5ba2dcc-3-review-3\naction_v2_sha256:e8c1c6868a5bac5a395a5da2a805ce28b60020945b59e731ecdc59b30b309281"
+    },
+    {
+      "id": "freeze_artifacts:workflow-decision-closure-s5:2026-10-03T15:21:33.131Z",
+      "at": "2026-10-03T15:21:33.131Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-decision-closure-s5.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s5:2026-10-03T15:21:42.818Z",
+      "at": "2026-10-03T15:21:42.818Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e7b32aa7\naction_v2_sha256:15131482b32c74a4dfbd730faef4e645c2e979c2592278ba41b0a61d4dcfe26d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-398338bd92c2904d",
+        "issued_at": "2026-10-03T15:21:42.819Z",
+        "expires_at": "2026-10-03T15:31:42.819Z"
+      }
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s5:2026-10-03T15:34:24.843Z",
+      "at": "2026-10-03T15:34:24.843Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ddc3c27c\naction_v2_sha256:df5bcfdb91d917ff4d2ac4dacb93e87494d13a6693c254c9bcb1f6464930f395",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-419e8664fc94fa1f",
+        "issued_at": "2026-10-03T15:34:24.844Z",
+        "expires_at": "2026-10-03T15:44:24.844Z"
+      }
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s5:2026-10-03T15:53:05.634Z",
+      "at": "2026-10-03T15:53:05.634Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ecc9a7a6\naction_v2_sha256:39824f18943a93f56c2b74197860edd938f9ed02d776eac70f96caae285a4cd8",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-a557d166de9fd046",
+        "issued_at": "2026-10-03T15:53:05.634Z",
+        "expires_at": "2026-10-03T16:03:05.634Z"
+      }
+    },
+    {
+      "id": "request_rework:workflow-decision-closure-s5:2026-10-03T15:59:36.777Z",
+      "at": "2026-10-03T15:59:36.777Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_3\naction_v2_sha256:dddea2bc581e06075f93f6e72ebdc5bd0cacc407164b4533721a0a36ffe702b6",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-df04ff53a78623b2",
+        "issued_at": "2026-10-03T15:59:36.777Z",
+        "expires_at": "2026-10-03T16:09:36.777Z"
+      }
+    },
+    {
+      "id": "resolve_finding:workflow-decision-closure-s5:2026-10-03T16:03:31.788Z",
+      "at": "2026-10-03T16:03:31.788Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-6f22a7258a18-1-review-1\naction_v2_sha256:72806a19cdef7d5b7b11fe4ad328e9df25ffe710551267bb8fda21adde5619cd"
+    },
+    {
+      "id": "resolve_finding:workflow-decision-closure-s5:2026-10-03T16:03:46.817Z",
+      "at": "2026-10-03T16:03:46.817Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-6f22a7258a18-2-review-2\naction_v2_sha256:cadd36385823f9461d66a77f7070a84cedbfe6ffa8355913d9bb10babf712a79"
+    },
+    {
+      "id": "freeze_artifacts:workflow-decision-closure-s5:2026-10-03T16:03:58.099Z",
+      "at": "2026-10-03T16:03:58.099Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-decision-closure-s5.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s5:2026-10-03T16:04:07.449Z",
+      "at": "2026-10-03T16:04:07.449Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-907d55ce\naction_v2_sha256:f3c64752a78acce6a231d39a73f270590d74e509c1ac18cebf3108143000cb34",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-a9e8735296926b27",
+        "issued_at": "2026-10-03T16:04:07.449Z",
+        "expires_at": "2026-10-03T16:14:07.449Z"
+      }
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s5:2026-10-03T16:13:49.117Z",
+      "at": "2026-10-03T16:13:49.117Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-aa6a3801\naction_v2_sha256:f0ba84a147e84de6f4e824779106c004f1c30527abde70b644eea1d5d1a873fe",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-93f25304f38a285f",
+        "issued_at": "2026-10-03T16:13:49.117Z",
+        "expires_at": "2026-10-03T16:23:49.117Z"
+      }
+    },
+    {
+      "id": "complete:workflow-decision-closure-s5:2026-10-03T16:13:50.033Z",
+      "at": "2026-10-03T16:13:50.033Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:b20b711a6a9a5a8fb90865a47f8de24e6a49bae8c0a4e3eb8da566e554ab0267"
+    }
+  ]
+}

@@ -28,3 +28,8 @@ When framing discusses later execution, describe Enrollment only as the
 current Host's native gate. A failed Managed authority interaction stays
 fail-closed: report one same-Host recovery action, never another Host,
 worktree, or unmanaged implementation.
+
+Every sourced branch closes as resolved, explicitly excluded, explicitly
+deferred, or dependent-blocked with its blocking node named, including for a
+clear zero-question request; a confirmed outcome is never conserved as a
+smaller deliverable.

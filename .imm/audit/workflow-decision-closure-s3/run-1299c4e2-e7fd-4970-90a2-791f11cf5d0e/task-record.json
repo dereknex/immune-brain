@@ -1,0 +1,155 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "workflow-decision-closure-s3",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "workflow-decision-closure-s3",
+    "goal": "Make Loop resume from current task/run authority facts rather than prose summaries, without duplicating mutations, replaying successful gates or rewriting evidence.",
+    "acceptance": [
+      {
+        "id": "WDC-S3-A1",
+        "assertion": "Implement S3 of docs/specs/workflow-decision-closure.spec.md on the existing Loop consumer instructions and loader. Revalidate exact owner/run identity and lifecycle, artifacts, obligation and claim after uncertain interruption; consume a successful operation fresh projection directly rather than adding unnecessary status calls. Correct authored/validated/published/enrolled/assured/completed prose from authority evidence, and never treat Issue state or a compaction heading as Enrollment or completion. Negative scenarios with falsely enrolled later Slices must retain the actual owner and must not create/replay mutation, gate or completion. Update alignment/route tests and package closure. Prepare only a sanitized local H1 Host-producer follow-up; external summary generation remains unfixed. No Kernel core/store changes, legacy-audit edits, real authority repair or Host write.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-authoritative-recovery.test.ts\",\n      \"tests/loop-contract-v4-alignment.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/workflow-decision-closure-s3.intent.json",
+      "docs/reports/workflow-summary-host-followup.md",
+      "docs/specs/workflow-decision-closure.spec.md",
+      "plugins/immune-brain/dist/imm-loop.md",
+      "plugins/immune-brain/skills/imm-loop/SKILL.md",
+      "tests/loop-contract-v4-alignment.test.ts",
+      "tests/skill-dist-consistency.test.ts",
+      "tests/workflow-authoritative-recovery.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/workflow-decision-closure-s3.intent.json",
+    "content_hash": "sha256:2d4b6c9ca611f468b6d20c624b26bbfda882606b8623bb6cb88e5cf69a502ea0"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:2d4b6c9ca611f468b6d20c624b26bbfda882606b8623bb6cb88e5cf69a502ea0",
+  "git_base_head": "c4dc00c8ad75e345a5e2f0fb4dd5d6c9dee9debb",
+  "attestations": [
+    {
+      "id": "approval-qa-0119445f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2d4b6c9ca611f468b6d20c624b26bbfda882606b8623bb6cb88e5cf69a502ea0",
+      "diff_hash": "sha256:f4d2c679a687cc03535c2fd420d53ced93780600733066271a4574b82b9ee569",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:feb2ccf4b9a597c16a295766f95690cadcc823902a8db1fdb7a9d4b20fe60551",
+      "acceptance_results": [
+        {
+          "acceptance_id": "WDC-S3-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:feb2ccf4b9a597c16a295766f95690cadcc823902a8db1fdb7a9d4b20fe60551"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-766fed00",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2d4b6c9ca611f468b6d20c624b26bbfda882606b8623bb6cb88e5cf69a502ea0",
+      "diff_hash": "sha256:6177844d90f2fadc733754b57712d96d7d74835b2da63bdb8689ad326d7dd314",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:95422868c73afd20acd02cc6f98f7a3d69574b300d26e7937b0ed69b7e7db039",
+      "acceptance_results": [
+        {
+          "acceptance_id": "WDC-S3-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:95422868c73afd20acd02cc6f98f7a3d69574b300d26e7937b0ed69b7e7db039"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-40e0f86a",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2d4b6c9ca611f468b6d20c624b26bbfda882606b8623bb6cb88e5cf69a502ea0",
+      "diff_hash": "sha256:6177844d90f2fadc733754b57712d96d7d74835b2da63bdb8689ad326d7dd314",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验唯一父提交、review_tree、manifest_digest、snapshot_digest及全部四个变更路径；结合 Kernel QA 通过证据，未发现阻断问题。恢复规则与 S3 一致，测试明确限定为契约与模拟证据，H1 保持本地脱敏、未发布且外部缺陷未宣称修复。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "c4dc00c8ad75e345a5e2f0fb4dd5d6c9dee9debb",
+        "review_commit": "c3fc696e100b790ca097711ef02d2e7c020bd213",
+        "review_tree": "e890239431123896062bf67cf936e1b0a8b04681",
+        "manifest_digest": "sha256:f18dbc30faa0b7d5761497ff6ec8053c8e4614d98cfed8a14fe8caecd6db6d59"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:workflow-decision-closure-s3:2026-10-03T13:40:19.281Z",
+      "at": "2026-10-03T13:40:19.281Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-decision-closure-s3.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s3:2026-10-03T13:40:22.290Z",
+      "at": "2026-10-03T13:40:22.290Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-0119445f\naction_v2_sha256:2fde221284c01a72019a36bc7d9bfe2f49dba15a8b69564a3c5e5a886223fc3c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-6e6a2c6df98a32d6",
+        "issued_at": "2026-10-03T13:40:22.290Z",
+        "expires_at": "2026-10-03T13:50:22.290Z"
+      }
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s3:2026-10-03T13:49:38.805Z",
+      "at": "2026-10-03T13:49:38.805Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-766fed00\naction_v2_sha256:5573194b23cf8a6f24f3fad95be8a8a1e2093930c92db83ad299ef12b2959f23",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-35088a7696afe7a6",
+        "issued_at": "2026-10-03T13:49:38.806Z",
+        "expires_at": "2026-10-03T13:59:38.806Z"
+      }
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s3:2026-10-03T13:53:33.430Z",
+      "at": "2026-10-03T13:53:33.430Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-40e0f86a\naction_v2_sha256:e35ae20e438aa71389e73916ade9a270858385ad7686e8b5ded629c320b0c34e",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-ca18c212b6ea4e32",
+        "issued_at": "2026-10-03T13:53:33.430Z",
+        "expires_at": "2026-10-03T14:03:33.430Z"
+      }
+    },
+    {
+      "id": "complete:workflow-decision-closure-s3:2026-10-03T13:53:34.336Z",
+      "at": "2026-10-03T13:53:34.336Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:9a51815b043f3b4bbadea77fec6eb3c1a6a079199bb901fe901d1fe1b34e6e10"
+    }
+  ]
+}

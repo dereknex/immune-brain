@@ -1,0 +1,213 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "workflow-decision-closure-s6",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "workflow-decision-closure-s6",
+    "goal": "Bound repository discovery and tool output to needed evidence and recover only unfinished local operations, preserving required dependency closure and foreground role limits.",
+    "acceptance": [
+      {
+        "id": "WDC-S6-A1",
+        "assertion": "Implement S6 of docs/specs/workflow-decision-closure.spec.md using existing discovery/dispatch contracts. Declare question, named scope, evidence and stop conditions; read known paths directly, expand along proven callers/owners, and stop irrelevant probes after closure. Independent local calls use allSettled-style results while dependent actions remain ordered. Handle truncation with bounded continuation and inspect successful partial edits before retrying unfinished work. Preserve task-owned-only cleanup, user changes, project-specific log scope, Host model ownership, no nested delegation, foreground roles and empty Footer. Update mirrored protocol and affected tests/scenario controls. Telemetry remains observational; no hard call/token cap may omit necessary evidence, and no cross-session efficiency claim is made without comparable measurements. No new orchestrator, parallel Managed tasks, broad session scan or weakened tests.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-bounded-discovery.test.ts\",\n      \"tests/pi-subagent-dispatch-observability-contract.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/workflow-decision-closure-s6.intent.json",
+      "docs/reference/subagent-dispatch-protocol.md",
+      "docs/specs/workflow-decision-closure.spec.md",
+      "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+      "plugins/immune-brain/dist/imm-brainstorm.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "tests/dist-docs-sync-contract.test.ts",
+      "tests/pi-subagent-dispatch-observability-contract.test.ts",
+      "tests/skill-dist-consistency.test.ts",
+      "tests/workflow-bounded-discovery.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/workflow-decision-closure-s6.intent.json",
+    "content_hash": "sha256:5e14e41f38295fc161e66dccf2a33fa9f9c480cb1fc35269bf6a27bad0b9bfd8"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:5e14e41f38295fc161e66dccf2a33fa9f9c480cb1fc35269bf6a27bad0b9bfd8",
+  "git_base_head": "94f60352d6b5bd2cc890c9fc1c6a50db9a7ecbc6",
+  "attestations": [
+    {
+      "id": "approval-qa-14700409",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5e14e41f38295fc161e66dccf2a33fa9f9c480cb1fc35269bf6a27bad0b9bfd8",
+      "diff_hash": "sha256:671ebc39c8159f45e1201d3bdfaa09b35746ca0bb1163321cda2374ccbdae25d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:2ac7904d4a979f9c314d0aacdac3868c1a055fb7f7a991af1b307229136cca13",
+      "acceptance_results": [
+        {
+          "acceptance_id": "WDC-S6-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:2ac7904d4a979f9c314d0aacdac3868c1a055fb7f7a991af1b307229136cca13"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-1af4e0f5",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5e14e41f38295fc161e66dccf2a33fa9f9c480cb1fc35269bf6a27bad0b9bfd8",
+      "diff_hash": "sha256:267d9b1f78a6a38b987b0efb2d3861e19413eb389b2ac9ef8555628ed9e7be00",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:6a27e142853cc18267d087ea058b9f94300e396372e707b1d263df8066834aa1",
+      "acceptance_results": [
+        {
+          "acceptance_id": "WDC-S6-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:6a27e142853cc18267d087ea058b9f94300e396372e707b1d263df8066834aa1"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-9b7addcf",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5e14e41f38295fc161e66dccf2a33fa9f9c480cb1fc35269bf6a27bad0b9bfd8",
+      "diff_hash": "sha256:267d9b1f78a6a38b987b0efb2d3861e19413eb389b2ac9ef8555628ed9e7be00",
+      "actor_id": "parent-mediated-review",
+      "summary": "已验证 immutable revision 的单一 parent、tree、manifest digest 和全部四个 changed_paths 的对象绑定；逐项审查 diff 与完整 Git 对象，未发现阻断问题。S6 契约、镜像及正负场景控制符合验收要求，Kernel QA 已通过；真实模型行为验证仍属于 S7，不由本次契约测试证明。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "94f60352d6b5bd2cc890c9fc1c6a50db9a7ecbc6",
+        "review_commit": "a0528cecd246e6f569ec4c6fc305c2e657662c32",
+        "review_tree": "e688f54513a30073637f8a4e30833a095a8eb682",
+        "manifest_digest": "sha256:b5a3cdbf1ff839c008becf30adc6f1c665b4416ef11acb039a85a8f201e6bf17"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-bfa2ba00603e-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "WDC-S6-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "tests/workflow-bounded-discovery.test.ts:81-100,222-240 的 partial-result controls 无法区分合规恢复与违规重放：模型没有执行结果、已完成部分或实际检查状态；partial-edit 测试反而要求 wholesale replay 条目存在，却没有拒绝它。最小修复是补充确定性的成功/失败结果合并，以及已完成/未完成部分、检查和重试目标的正反控制，明确拒绝未经检查或包含已完成部分的重放；无需引入生产 orchestrator 或提前执行 S7 live scenarios。",
+      "anchor": "sha256:7be20f2d58dc6062acd634a6491ce7db38d587bf26f7f0b202e7b88baac8b5b4",
+      "evidence": {
+        "trigger": "输入 patch-three-files 的 partiallyApplied=true 时，planLocalOperations 同时生成 inspectBeforeRetry 和 replay from scratch，测试仅断言两者存在，没有非法恢复路径的失败断言。独立调用测试的 read-a/read-b 也没有任何 fulfilled/rejected 结果，因此丢弃成功结果与保留成功结果无法由该 control 区分。问题属于 partial-result preservation invariant 的验证缺口，而非缺少本地测试运行；manifest 中 QA passed 只能证明这些现有断言通过。直接读取未变更的 docs/specs/workflow-decision-closure.spec.md 是因为 acceptance 明确引用它，其 S6 和 Slice acceptance mapping 要求 partial recovery 及 negative controls；S7 的 live behavior 验证仍保持独立。",
+        "caller_chain": [
+          "docs/specs/workflow-decision-closure.spec.md#S6: bounded discovery and partial local results",
+          "tests/workflow-bounded-discovery.test.ts#planLocalOperations",
+          "tests/workflow-bounded-discovery.test.ts#independent calls settle together, dependent calls stay ordered",
+          "tests/workflow-bounded-discovery.test.ts#a partially applied operation is inspected before retrying its unfinished part"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "WDC-S6-A1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:workflow-decision-closure-s6:2026-10-03T14:31:35.280Z",
+      "at": "2026-10-03T14:31:35.280Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-decision-closure-s6.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s6:2026-10-03T14:31:38.233Z",
+      "at": "2026-10-03T14:31:38.233Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-14700409\naction_v2_sha256:18e3cab62acceba77737224f4f8b611ab28b10228552bac92a06518f4ab229d0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-30a656e0058aa93e",
+        "issued_at": "2026-10-03T14:31:38.233Z",
+        "expires_at": "2026-10-03T14:41:38.233Z"
+      }
+    },
+    {
+      "id": "request_rework:workflow-decision-closure-s6:2026-10-03T14:35:43.529Z",
+      "at": "2026-10-03T14:35:43.529Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:b9eaeef88548f42cef350fbef985cbd5b79cab70b94fd7af5ab53d9628a4b9b6",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-3635b0763feb97ef",
+        "issued_at": "2026-10-03T14:35:43.530Z",
+        "expires_at": "2026-10-03T14:45:43.529Z"
+      }
+    },
+    {
+      "id": "resolve_finding:workflow-decision-closure-s6:2026-10-03T14:38:49.329Z",
+      "at": "2026-10-03T14:38:49.329Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-bfa2ba00603e-1-review-1\naction_v2_sha256:39742f3e49170a727e58e717b8f2853716cdde5c15d43bb3716ab4b1819fc4d7"
+    },
+    {
+      "id": "freeze_artifacts:workflow-decision-closure-s6:2026-10-03T14:39:02.386Z",
+      "at": "2026-10-03T14:39:02.386Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-decision-closure-s6.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s6:2026-10-03T14:39:05.515Z",
+      "at": "2026-10-03T14:39:05.515Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-1af4e0f5\naction_v2_sha256:49bc1d8444e6f205527101d3cefccfce0f47a623df58cadedec5df7b54aba4de",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-46147305f0b3c6cd",
+        "issued_at": "2026-10-03T14:39:05.515Z",
+        "expires_at": "2026-10-03T14:49:05.515Z"
+      }
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s6:2026-10-03T14:41:47.317Z",
+      "at": "2026-10-03T14:41:47.317Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-9b7addcf\naction_v2_sha256:80abb107f4f329ac903c0042df9cfb0643260450201eb6711754eb1ba809dc3e",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-fa4a2f5997e3fa11",
+        "issued_at": "2026-10-03T14:41:47.317Z",
+        "expires_at": "2026-10-03T14:51:47.317Z"
+      }
+    },
+    {
+      "id": "complete:workflow-decision-closure-s6:2026-10-03T14:41:48.331Z",
+      "at": "2026-10-03T14:41:48.331Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:157007f31caba3df44596aff80fcd6cfe4dd512127031f1bfed89c7e843dbe43"
+    }
+  ]
+}
