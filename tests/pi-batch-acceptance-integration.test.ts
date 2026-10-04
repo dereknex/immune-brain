@@ -161,6 +161,8 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 		const owned = await f.kernel(f.tasks[0]!, { op: "status" });
 		expect(owned).toMatchObject({ run_id: first.report.handoff.run_id, record_revision: first.report.handoff.record_revision,
 			lifecycle: "active", artifact_state: "active", fresh_approval_kinds: [], missing_approval_kinds: ["qa"] });
+		// The runbook's loaded-build check compares this field with package.json.
+		expect(owned.plugin_version).toBe(JSON.parse(readFileSync(join(import.meta.dir, "../package.json"), "utf8")).version);
 		expect(readAuditTaskPair(f.root, f.tasks[0]!)).toBeNull();
 
 		const again = await f.batch();
@@ -189,7 +191,8 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 
 		const second = await f.batch();
 		expect(second).toMatchObject({ state: "started", batch_id: first.batch_id, report: { batch_state: "running",
-			children: [{ task_id: f.tasks[0], state: "committed" }, { task_id: f.tasks[1], state: "enrolled", commit: null }],
+			// The runbook tells operators this reason is the normal path, not a failure.
+			children: [{ task_id: f.tasks[0], state: "committed", reason: "crash after settlement; resuming at commit" }, { task_id: f.tasks[1], state: "enrolled", commit: null }],
 			handoff: { role: "executor", task_id: f.tasks[1], next_obligation: "submit_assurance" } } });
 		expect(f.commits()).toEqual(second.report.commits);
 		expect(f.commits()).toHaveLength(1);
