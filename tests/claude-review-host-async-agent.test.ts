@@ -147,6 +147,12 @@ describe("claude review host: recorded async Agent envelope", () => {
 			handbackLine(RECORDED_AGENT_ID, "superseded") + transcriptLine(RECORDED_AGENT_ID, VERDICT),
 			RECORDED_AGENT_ID,
 		)).toBe(VERDICT);
+		// The same holds between the ordered blocks of one record.
+		const mixed = (content: unknown[]) => `${JSON.stringify({ agentId: RECORDED_AGENT_ID, type: "assistant", message: { role: "assistant", content } })}\n`;
+		const text = (value: string) => ({ type: "text", text: value });
+		const handback = (message: string) => ({ type: "tool_use", id: "toolu_mixed", name: "SubagentHandback", input: { message } });
+		expect(readAgentTranscriptResult(mixed([text("Delivering the report."), handback(VERDICT)]), RECORDED_AGENT_ID)).toBe(VERDICT);
+		expect(readAgentTranscriptResult(mixed([text("preamble"), handback("superseded"), text(VERDICT)]), RECORDED_AGENT_ID)).toBe(VERDICT);
 		// Another agent's handback, another tool's input, and a non-string or
 		// blank report never answer for this reviewer.
 		expect(readAgentTranscriptResult(handbackLine("someone-else", VERDICT), RECORDED_AGENT_ID)).toBeNull();

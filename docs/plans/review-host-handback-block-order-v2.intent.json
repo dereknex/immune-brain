@@ -1,0 +1,20 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "review-host-handback-block-order-v2",
+  "owner": "user",
+  "goal": "Make the Claude Review Host honor content-block order inside a single reviewer transcript record, so a text preamble written before a SubagentHandback call in the same record no longer replaces the handed-back report.",
+  "acceptance": [
+    {
+      "id": "RHBO2-A1",
+      "assertion": "Within one assistant record of the observed agent, readAgentTranscriptResult returns the SubagentHandback report when text blocks precede it, and returns the text written after the report when text blocks follow it. A record holding only text blocks still yields their concatenation, cross-record last-wins is unchanged, and a foreign agentId, another tool name, and a non-string or blank message still never answer for the reviewer. No new authority path, schema or Kernel change. The generated Claude bundle matches the runtime source.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-review-host-async-agent.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/claude/review_host.ts",
+    "tests/claude-review-host-async-agent.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

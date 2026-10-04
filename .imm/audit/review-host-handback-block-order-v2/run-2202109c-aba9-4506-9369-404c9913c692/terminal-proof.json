@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "review-host-handback-block-order-v2",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:review-host-handback-block-order-v2:2026-10-04T15:33:06.172Z",
+  "final_record_hash": "sha256:32462d61797af17cdce72b772842bdcce5b5e8f78b6f0c2cccf34bd1c67aabe6",
+  "terminalized_at": "2026-10-04T15:33:06.172Z"
+}

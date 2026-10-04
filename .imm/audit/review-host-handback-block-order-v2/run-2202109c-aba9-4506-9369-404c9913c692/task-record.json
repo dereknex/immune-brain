@@ -1,0 +1,118 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "review-host-handback-block-order-v2",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "review-host-handback-block-order-v2",
+    "goal": "Make the Claude Review Host honor content-block order inside a single reviewer transcript record, so a text preamble written before a SubagentHandback call in the same record no longer replaces the handed-back report.",
+    "acceptance": [
+      {
+        "id": "RHBO2-A1",
+        "assertion": "Within one assistant record of the observed agent, readAgentTranscriptResult returns the SubagentHandback report when text blocks precede it, and returns the text written after the report when text blocks follow it. A record holding only text blocks still yields their concatenation, cross-record last-wins is unchanged, and a foreign agentId, another tool name, and a non-string or blank message still never answer for the reviewer. No new authority path, schema or Kernel change. The generated Claude bundle matches the runtime source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-review-host-async-agent.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/claude/review_host.ts",
+      "tests/claude-review-host-async-agent.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/review-host-handback-block-order-v2.intent.json",
+    "content_hash": "sha256:08daa614d3cbdba4ca5d5d29b0d536a9333298b3eede3f03acead3c167939648"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:08daa614d3cbdba4ca5d5d29b0d536a9333298b3eede3f03acead3c167939648",
+  "git_base_head": "cc61c406a1bd9a099dac4670c818980e20bfc2a9",
+  "attestations": [
+    {
+      "id": "approval-qa-65e661f7",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:08daa614d3cbdba4ca5d5d29b0d536a9333298b3eede3f03acead3c167939648",
+      "diff_hash": "sha256:e8e313ef6d24aca952613d93d2b4b196f90aea249775e60e984cc2951dbcf47b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:4840530048ea0bc7108ad6e248e0cda889a08de5937e06e44f6249242cb556f5",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RHBO2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:4840530048ea0bc7108ad6e248e0cda889a08de5937e06e44f6249242cb556f5"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-d45c4c73",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:08daa614d3cbdba4ca5d5d29b0d536a9333298b3eede3f03acead3c167939648",
+      "diff_hash": "sha256:e8e313ef6d24aca952613d93d2b4b196f90aea249775e60e984cc2951dbcf47b",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (review commit 82454f1 has single parent cc61c40, tree 7c44b79, all three changed blob oids match the manifest; manifest_digest and diff_hash were not independently recomputed because their canonicalization is not in the evidence). readAgentTranscriptResult now resets accumulated text when a valid SubagentHandback block is seen, so in-record preamble text no longer overrides the report and text after it still supersedes; text-only records, cross-record last-wins, foreign agentId, other tool names and non-string/blank messages are unchanged; the dist bundle carries the identical change and the tests cover both in-record orderings.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "cc61c406a1bd9a099dac4670c818980e20bfc2a9",
+        "review_commit": "82454f13224bb0dbc57c8f972f8849a8436890ca",
+        "review_tree": "7c44b79c354d8f08ec2d279bda95d92bbccdd630",
+        "manifest_digest": "sha256:1387ebd017edf5826a087e969d287495c437d3d8510645d04430a266eb6efb67"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:review-host-handback-block-order-v2:2026-10-04T15:31:53.833Z",
+      "at": "2026-10-04T15:31:53.833Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-host-handback-block-order-v2.intent.json"
+    },
+    {
+      "id": "record_approval:review-host-handback-block-order-v2:2026-10-04T15:31:57.437Z",
+      "at": "2026-10-04T15:31:57.437Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-65e661f7\naction_v2_sha256:61faca38b4031db17c637502ad9d8dd6c62f04c1645b64812faa92cf64a02cc3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-04T15:31:57.437Z",
+        "expires_at": "2026-10-04T15:41:57.437Z"
+      }
+    },
+    {
+      "id": "record_approval:review-host-handback-block-order-v2:2026-10-04T15:33:05.310Z",
+      "at": "2026-10-04T15:33:05.310Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-d45c4c73\naction_v2_sha256:2c100b0a5d60e69fd30e652ba8b96379af2de2dc3fd3a4850844de7b38ce7122",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-04T15:33:05.310Z",
+        "expires_at": "2026-10-04T15:43:05.310Z"
+      }
+    },
+    {
+      "id": "complete:review-host-handback-block-order-v2:2026-10-04T15:33:06.172Z",
+      "at": "2026-10-04T15:33:06.172Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:ae6e94e18492230980422f8b8015ef309b4ad9fe2f55689d36ba5f4374276a39"
+    }
+  ]
+}

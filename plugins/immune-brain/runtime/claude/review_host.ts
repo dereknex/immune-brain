@@ -182,7 +182,8 @@ const HANDBACK_TOOL = "SubagentHandback";
  * that hand the report back through a tool, with a `SubagentHandback` call whose
  * `input.message` is that same report and which leaves no text block behind.
  * Both are the reviewer's own record in its own transcript, so whichever the
- * observed agent wrote last is its result.
+ * observed agent wrote last is its result — across records and across the
+ * ordered content blocks of a single record.
  */
 export function readAgentTranscriptResult(transcript: string, agentId: string): string | null {
 	let last: string | null = null;
@@ -202,7 +203,9 @@ export function readAgentTranscriptResult(transcript: string, agentId: string): 
 			if (part.type === "text" && typeof part.text === "string") text += part.text;
 			if (part.type === "tool_use" && part.name === HANDBACK_TOOL && part.input && typeof part.input === "object") {
 				const report = (part.input as Record<string, unknown>).message;
-				if (typeof report === "string" && report.trim()) last = report;
+				// Blocks are ordered, so text before the report is a preamble and
+				// only text written after it can supersede it.
+				if (typeof report === "string" && report.trim()) { last = report; text = ""; }
 			}
 		}
 		if (text.trim()) last = text;

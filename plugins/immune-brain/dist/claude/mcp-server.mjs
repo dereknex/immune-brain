@@ -250,8 +250,10 @@ function readAgentTranscriptResult(transcript, agentId) {
         text += part.text;
       if (part.type === "tool_use" && part.name === HANDBACK_TOOL && part.input && typeof part.input === "object") {
         const report = part.input.message;
-        if (typeof report === "string" && report.trim())
+        if (typeof report === "string" && report.trim()) {
           last = report;
+          text = "";
+        }
       }
     }
     if (text.trim())
