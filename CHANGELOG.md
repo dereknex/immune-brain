@@ -1,5 +1,35 @@
 # Changelog
 
+## 4.6.0
+
+### Minor Changes
+
+- [`fb80252`](https://github.com/dereknex/immune-brain/commit/fb802525ec59a9fac56637f58aed3cb47635874a) Thanks [@dereknex](https://github.com/dereknex)! - Remove every wall-clock bound on Immune-Brain authority.
+
+  - **Single-step capabilities (S1):** Kernel authority and Enrollment capabilities no longer carry `expires_at` and are never refused because time passed. They stay one-use and bound to their task, operation, record hash, and nonce. New TaskRecord history entries omit `authority.expires_at`; records that carry it still validate and load.
+  - **Native confirmation (S1):** the batch gate has no window of its own on either Host. It settles only on the user's answer or the caller's cancellation signal. `IMMUNE_BRAIN_BATCH_TIMEOUT_MS` and the `confirmation_timed_out` reason are removed; setting the variable has no effect.
+  - **Batch authorization (S1):** the budget is `max_children` and `qa_failure_limit` only. `budget.deadline_at`, the binding's `expires_at`, the state record's `authorization_expires_at`, the default eight-hour deadline, and the `batch_authorization_expired` / `batch_budget_expired` blockers are removed. A batch parked on a foreground Review resumes with no gate however long it waited. Plan-digest drift, a branch change, a moved HEAD lineage, and both budget limits still stop or re-gate the run as before.
+  - **Older records:** a batch state record that still carries the retired expiry fields is read as if they were absent and is rewritten without them. No migration runs and frozen audit is untouched.
+  - **Decision records:** ADR-0005 decision 3 and ADR-0008 decision 3, with its rejected alternative, now describe the clockless rule and why the deadline was retired.
+  - **Gate-free closeout (S2):** a batch child that reaches Kernel `done` in the foreground is committed and the batch record settled in the same tool call, with no new gate. A HEAD that fast-forwards on the batch branch is adopted as the new expected head and recorded in the batch run state; any other HEAD movement still ends the run with `batch_head_lineage_broken`. A failure after the Kernel result is reported beside it with one retry action and never alters it.
+  - **Parent close (S3):** after `mark-terminal` closes a Child as completed, the tracker reads the Parent and its Sub-issue list (Issue-scoped, no repository listing) and closes the GitHub Initiative Parent as completed exactly once when every Slice Child is completed. An open, stopped or parked Child keeps it open; an already closed Parent and a rerun write nothing. A failed Parent read or close is reported as tracker observation, retried by the same `mark-terminal`, and never changes the Kernel result. The Parent body, the Planner contract and `docs/agents/issue-tracker.md` state the new rule; the tracker result contract and Issue markers are unchanged.
+
+- [`f72f2e8`](https://github.com/dereknex/immune-brain/commit/f72f2e89aea6069e7103a95f0a421a52f5d5dfeb) Thanks [@dereknex](https://github.com/dereknex)! - Publish GitHub Initiatives with a direct create-then-relate write flow.
+
+  - **Direct write flow (S1):** `imm-tracker publish-initiative` reads the repository identity, the Issue listing, and the label listing once at start, then creates each absent Issue in dependency order, attaches each Child as a native Sub-issue, and writes one `blocked_by` relation per dependency edge. Issue numbers come from the create responses; no repository listing, attachment confirmation, dependency confirmation, ownership confirmation, or closing topology pass follows a write. The number of repository-wide reads is constant in the number of Children, so a large Initiative no longer grows its call count or its runtime with the batch.
+  - **Start-only deduplication:** a rerun of the same approved batch adopts whatever the start listing already carries and writes only the missing relations, so a partial run, a lost create response, or a repeated complete batch never creates a duplicate Issue and never repeats a completed write. Concurrent edits made during a run are no longer detected within that run; they surface as drift at the start of the next run.
+  - **No whole-operation deadline:** the 120-second publication budget and its expiry refusal are removed. One publication call is a finite step sequence that stops at its first failed call, each call keeps its own 20-second timeout, and the caller's cancellation signal still stops the run at the next call. A failure is reported as uncertain with its confirmed steps, pending steps, and exactly one recovery action — rerun the same approved batch.
+  - **Amendment uses the same flow (S2):** an `amendment` input verifies every bound Issue against its approved baseline once, from the start listing plus Issue-scoped relation reads, then edits the Parent at most once, edits each approved pending brief at most once, creates newly added pending Children as in ordinary publication, and converges each pending Child's `blocked_by` set from the start read. Historical Children receive zero writes. No read follows a write, so baseline drift that appears after the start listing is not detected in that run; it surfaces at the start of the next run. Omitted membership, start drift, and stopped historical prerequisites still fail closed before any write. A Parent edit that already succeeded is reported as confirmed even when a later Child or relation call fails.
+  - **Generator consistency:** this changeset also regenerates `plugins/immune-brain/dist/claude/mcp-server.mjs`. The previous commit (`aa8b5b8`) added `QA_MAX_IDENTICAL_FAILURES` to `runtime/assurance/coordinator.ts` and to the bundle, but the following tracker commit re-checked out an older bundle while keeping the newer runtime source, leaving the checked-in bundle inconsistent with its own sources. The regenerated bundle restores that consistency; no Kernel behavior is changed by this task.
+  - **Unchanged surfaces:** local preflight, Issue body and marker format, `mark-terminal`, `observeGithubInitiative`, the tracker result contract, Kernel authority, and Enrollment are untouched.
+
+### Patch Changes
+
+- [`ca0f7ec`](https://github.com/dereknex/immune-brain/commit/ca0f7ec0b3e1e5dd419fe0a8b251952922389a9c) Thanks [@dereknex](https://github.com/dereknex)! - Limit repeated identical QA failures and add opt-in stage timings to `advance_assurance`.
+
+  - **QA retry limit:** after two consecutive QA failures on the same snapshot (record revision, intent hash, diff hash) the coordinator returns `blocked` instead of rerunning the descriptors. A changed snapshot, a QA success, or a new session resets the count; host cancellation neither counts nor resets it.
+  - **Stage timings:** with `IMM_ASSURANCE_TIMINGS=1` (or the `reportTimings` port) advance results carry `timings: { total_ms, stage_ms }` per progress stage. Off by default, so existing result contracts are unchanged.
+
 ## 4.5.0
 
 ### Minor Changes
