@@ -1533,4 +1533,166 @@ describe("claude host resolve_finding", () => {
 			.rejects.toThrow(/fresh passing QA attestation/);
 		expect(recordBytes(root)).toBe(original.run.split("/").slice(3).join("/"));
 	});
+
+	test("every blocked Claude review submission names one same-host recovery action", async () => {
+		const released = "Call advance_assurance to obtain a new Review reservation, then dispatch one fresh reviewer with the returned envelope unchanged";
+		const retained = "Wait for the dispatched reviewer to finish, then call submit_review again with its verdict; do not dispatch or continue another reviewer";
+		const mismatch = "Resubmit the reviewer's verdict exactly as the reviewer returned it";
+		const forbidden = [/another Host/i, /worktree/i, /repair_authority_state/, /\bcommit\b/i, /unmanaged/i];
+		const verdict = () => passVerdict(snapshot("review"));
+
+		async function blocked(host: ClaudeReviewHost, h: ReturnType<typeof makeCoordinator>, input: unknown) {
+			const result = await submitClaudeReview(host, h.coordinator, ctx, TASK, input);
+			expect(result.state).toBe("blocked");
+			if (result.state !== "blocked") throw new Error("expected blocked");
+			expect(result.recovery_action?.length ?? 0).toBeGreaterThan(0);
+			for (const pattern of forbidden) expect(result.recovery_action).not.toMatch(pattern);
+			return result;
+		}
+
+		const host = new ClaudeReviewHost();
+		const h = makeCoordinator({ host });
+		const ready = await h.coordinator.advance(TASK, ctx) as { operation_id: string };
+		const missing = await blocked(host, h, verdict());
+		expect(missing).toMatchObject({ reason: "reserved foreground Agent was not observed", recovery_action: retained });
+		expect((await h.coordinator.advance(TASK, ctx) as { operation_id: string }).operation_id).toBe(ready.operation_id);
+
+		const incompleteHost = new ClaudeReviewHost();
+		const incomplete = makeCoordinator({ host: incompleteHost });
+		const incompleteReady = await incomplete.coordinator.advance(TASK, ctx) as { operation_id: string };
+		incompleteHost.observe({ type: "SubagentStart", sessionId: "s", agent: REVIEWER_AGENT, agentId: "a", taskId: TASK, operationId: incompleteReady.operation_id });
+		expect(await blocked(incompleteHost, incomplete, verdict())).toMatchObject({
+			reason: "foreground Agent terminal event order is incomplete",
+			recovery_action: retained,
+		});
+		expect((await incomplete.coordinator.advance(TASK, ctx) as { operation_id: string }).operation_id).toBe(incompleteReady.operation_id);
+
+		const mismatchHost = new ClaudeReviewHost();
+		const mismatchHarness = makeCoordinator({ host: mismatchHost });
+		const mismatchReady = await mismatchHarness.coordinator.advance(TASK, ctx) as { operation_id: string };
+		const start = { type: "SubagentStart" as const, sessionId: "s", agent: REVIEWER_AGENT, agentId: "a", taskId: TASK, operationId: mismatchReady.operation_id };
+		mismatchHost.observe(start);
+		mismatchHost.observe({ type: "PostToolUse", sessionId: "s", agentId: "a", toolName: AGENT_TOOL, result: JSON.stringify(verdict()), taskId: TASK, operationId: mismatchReady.operation_id });
+		mismatchHost.observe({ type: "SubagentStop", sessionId: "s", agent: REVIEWER_AGENT, agentId: "a", taskId: TASK, operationId: mismatchReady.operation_id });
+		expect(mismatchHost.inspectReviewForTask(TASK).ok).toBe(true);
+		start.sessionId = "diverged";
+		expect(await blocked(mismatchHost, mismatchHarness, verdict())).toMatchObject({
+			reason: "foreground Agent terminal event correlation mismatch",
+			recovery_action: released,
+		});
+		expect((await mismatchHarness.coordinator.advance(TASK, ctx) as { operation_id: string }).operation_id).not.toBe(mismatchReady.operation_id);
+
+		const consumedHost = new ClaudeReviewHost();
+		const consumed = makeCoordinator({ host: consumedHost });
+		const consumedReady = await consumed.coordinator.advance(TASK, ctx) as { operation_id: string };
+		completeReview(consumedHost, consumedReady.operation_id, JSON.stringify(verdict()));
+		consumedHost.consumeReview({ id: consumedReady.operation_id, dispatch: { name: REVIEWER_AGENT, prompt: "", max_turns: 1, run_in_background: false } });
+		expect(await blocked(consumedHost, consumed, verdict())).toMatchObject({
+			reason: "review receipt already consumed",
+			recovery_action: released,
+		});
+
+		const foreignHost = new ClaudeReviewHost();
+		const foreign = makeCoordinator({ host: foreignHost });
+		const foreignReady = await foreign.coordinator.advance(TASK, ctx) as { operation_id: string };
+		const envelope = JSON.stringify({ isAsync: true, status: "async_launched", agentId: "other", outputFile: "/tmp/imm-review-foreign" });
+		foreignHost.observe({ type: "SubagentStart", sessionId: "s", agent: REVIEWER_AGENT, agentId: "a", taskId: TASK, operationId: foreignReady.operation_id });
+		foreignHost.observe({ type: "PostToolUse", sessionId: "s", agentId: "a", toolName: AGENT_TOOL, result: envelope, taskId: TASK, operationId: foreignReady.operation_id });
+		foreignHost.observe({ type: "SubagentStop", sessionId: "s", agent: REVIEWER_AGENT, agentId: "a", taskId: TASK, operationId: foreignReady.operation_id });
+		expect(await blocked(foreignHost, foreign, verdict())).toMatchObject({
+			reason: "async Agent launch envelope names a different agent",
+			recovery_action: released,
+		});
+
+		const root = mkdtempSync(join(tmpdir(), "imm-review-recovery-"));
+		try {
+			const unreadHost = new ClaudeReviewHost();
+			const unread = makeCoordinator({ host: unreadHost });
+			const unreadReady = await unread.coordinator.advance(TASK, ctx) as { operation_id: string };
+			const missingEnvelope = JSON.stringify({ isAsync: true, status: "async_launched", agentId: "a", outputFile: join(root, "missing.output") });
+			unreadHost.observe({ type: "SubagentStart", sessionId: "s", agent: REVIEWER_AGENT, agentId: "a", taskId: TASK, operationId: unreadReady.operation_id });
+			unreadHost.observe({ type: "PostToolUse", sessionId: "s", agentId: "a", toolName: AGENT_TOOL, result: missingEnvelope, taskId: TASK, operationId: unreadReady.operation_id });
+			unreadHost.observe({ type: "SubagentStop", sessionId: "s", agent: REVIEWER_AGENT, agentId: "a", taskId: TASK, operationId: unreadReady.operation_id });
+			expect(await blocked(unreadHost, unread, verdict())).toMatchObject({
+				reason: "async Agent transcript is not readable",
+				recovery_action: retained,
+			});
+			expect((await unread.coordinator.advance(TASK, ctx) as { operation_id: string }).operation_id).toBe(unreadReady.operation_id);
+
+			const emptyHost = new ClaudeReviewHost();
+			const empty = makeCoordinator({ host: emptyHost });
+			const emptyReady = await empty.coordinator.advance(TASK, ctx) as { operation_id: string };
+			const real = join(root, "empty.jsonl");
+			writeFileSync(real, `${JSON.stringify({ type: "assistant", agentId: "a", message: { content: [{ type: "text", text: "   " }] } })}\n`, { mode: 0o600 });
+			chmodSync(real, 0o600);
+			const emptyEnvelope = JSON.stringify({ isAsync: true, status: "async_launched", agentId: "a", outputFile: real });
+			emptyHost.observe({ type: "SubagentStart", sessionId: "s", agent: REVIEWER_AGENT, agentId: "a", taskId: TASK, operationId: emptyReady.operation_id });
+			emptyHost.observe({ type: "PostToolUse", sessionId: "s", agentId: "a", toolName: AGENT_TOOL, result: emptyEnvelope, taskId: TASK, operationId: emptyReady.operation_id });
+			emptyHost.observe({ type: "SubagentStop", sessionId: "s", agent: REVIEWER_AGENT, agentId: "a", taskId: TASK, operationId: emptyReady.operation_id });
+			expect(await blocked(emptyHost, empty, verdict())).toMatchObject({
+				reason: "async Agent transcript carries no reviewer result",
+				recovery_action: retained,
+			});
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+
+		const secondHost = new ClaudeReviewHost();
+		const second = makeCoordinator({ host: secondHost });
+		const secondReady = await second.coordinator.advance(TASK, ctx) as { operation_id: string };
+		secondHost.observe({ type: "SubagentStart", sessionId: "s", agent: REVIEWER_AGENT, agentId: "a", taskId: TASK, operationId: secondReady.operation_id });
+		secondHost.observe({ type: "SubagentStart", sessionId: "s", agent: REVIEWER_AGENT, agentId: "a", taskId: TASK, operationId: secondReady.operation_id });
+		expect(await blocked(secondHost, second, verdict())).toMatchObject({
+			reason: "reserved Review already has a native tool call",
+			recovery_action: released,
+		});
+
+		const postHost = new ClaudeReviewHost();
+		const post = makeCoordinator({ host: postHost });
+		const postReady = await post.coordinator.advance(TASK, ctx) as { operation_id: string };
+		postHost.observe({ type: "PostToolUse", sessionId: "s", agentId: "a", toolName: AGENT_TOOL, result: JSON.stringify(verdict()), taskId: TASK, operationId: postReady.operation_id });
+		postHost.observe({ type: "PostToolUse", sessionId: "s", agentId: "a", toolName: AGENT_TOOL, result: JSON.stringify(verdict()), taskId: TASK, operationId: postReady.operation_id });
+		expect(await blocked(postHost, post, verdict())).toMatchObject({
+			reason: "duplicate PostToolUse result observed for review reservation",
+			recovery_action: released,
+		});
+
+		const stopHost = new ClaudeReviewHost();
+		const stop = makeCoordinator({ host: stopHost });
+		const stopReady = await stop.coordinator.advance(TASK, ctx) as { operation_id: string };
+		stopHost.observe({ type: "SubagentStop", sessionId: "s", agent: REVIEWER_AGENT, agentId: "a", taskId: TASK, operationId: stopReady.operation_id });
+		stopHost.observe({ type: "SubagentStop", sessionId: "s", agent: REVIEWER_AGENT, agentId: "a", taskId: TASK, operationId: stopReady.operation_id });
+		expect(await blocked(stopHost, stop, verdict())).toMatchObject({
+			reason: "duplicate SubagentStop observed for review reservation: a reviewer was continued after it finished; a reviewer cannot be continued and a fresh reviewer must be dispatched",
+			recovery_action: released,
+		});
+
+		const receiptHost = new ClaudeReviewHost();
+		const receipt = makeCoordinator({ host: receiptHost });
+		const receiptReady = await receipt.coordinator.advance(TASK, ctx) as { operation_id: string };
+		completeReview(receiptHost, receiptReady.operation_id, "{");
+		expect(await blocked(receiptHost, receipt, verdict())).toMatchObject({
+			reason: "reviewer receipt is not a valid verdict",
+			recovery_action: released,
+		});
+
+		const parentHost = new ClaudeReviewHost();
+		const parent = makeCoordinator({ host: parentHost });
+		const parentReady = await parent.coordinator.advance(TASK, ctx) as { operation_id: string };
+		const receiptVerdict = verdict();
+		completeReview(parentHost, parentReady.operation_id, JSON.stringify(receiptVerdict));
+		expect(await blocked(parentHost, parent, { ...receiptVerdict, approval: { ...receiptVerdict.approval, summary: "rewritten by parent" } })).toMatchObject({
+			reason: "parent verdict does not match reviewer receipt",
+			recovery_action: mismatch,
+		});
+		expect((await parent.coordinator.advance(TASK, ctx) as { operation_id: string }).operation_id).toBe(parentReady.operation_id);
+
+		const invalidHost = new ClaudeReviewHost();
+		const invalid = makeCoordinator({ host: invalidHost });
+		const invalidReady = await invalid.coordinator.advance(TASK, ctx) as { operation_id: string };
+		completeReview(invalidHost, invalidReady.operation_id, JSON.stringify(verdict()));
+		const invalidResult = await submitClaudeReview(invalidHost, invalid.coordinator, ctx, TASK, { contract: "nope" });
+		expect(invalidResult).toMatchObject({ state: "blocked", code: "verdict_invalid" });
+		expect("recovery_action" in invalidResult ? invalidResult.recovery_action : undefined).toBeUndefined();
+	});
 });

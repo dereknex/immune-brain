@@ -1,0 +1,32 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "review-pass-path-coverage",
+  "owner": "user",
+  "goal": "Implement S3 of docs/specs/review-settlement-hardening.spec.md: a Review pass verdict must list the changed paths the reviewer inspected, and a pass that omits any changed path of the reviewed revision is rejected as a correctable invalid verdict.",
+  "acceptance": [
+    {
+      "id": "RSH-S3-A1",
+      "assertion": "Per S3 of docs/specs/review-settlement-hardening.spec.md (BR-REQ-5, BR-DEC-3): for the review role, parseAssuranceVerdict requires approval.inspected_paths on a pass verdict as an array of unique repository-relative path strings. A pass is rejected with code verdict_invalid, naming the missing paths, when the field is absent, is not an array of strings, contains a duplicate, contains a path outside the reviewed change set, or omits any path of the reviewed change set (changed_paths for a Git review revision, dirty_files for a legacy bundle); deleted paths are part of the required set. A pass listing exactly the reviewed change set is accepted, including an empty list for an empty change set. The rejection keeps the reservation and follows the existing single-correction path. Rework verdicts and QA-role verdicts are unchanged and reject the field as unknown. The list is checked at the coordinator and is not written into the Kernel approval or TaskRecord, so no Kernel schema, persisted record or replay path changes. Every consumer of parseAssuranceVerdict (coordinator, the Claude parent-versus-receipt fingerprint comparison, and both Pi extension call sites) passes the reviewed change set and has a positive and a missing-path control. The reviewer prompt, the reviewer agent definition and the Loop contract state the field and that a path may be listed only after its diff was read. The generated Claude bundle matches the runtime source.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\",\n      \"tests/pi-canary-assurance-progression.test.ts\",\n      \"tests/pi-canary-assurance-authority.test.ts\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/managed-authority-failure-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/review-pass-path-coverage.md",
+    "docs/plans/review-pass-path-coverage.intent.json",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+    "plugins/immune-brain/agents/immune-brain-reviewer.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-loop.md",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "tests/claude-host-authority.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/host-neutral-assurance-coordinator.test.ts",
+    "tests/managed-authority-failure-contract.test.ts",
+    "tests/pi-canary-assurance-authority.test.ts",
+    "tests/pi-canary-assurance-progression.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

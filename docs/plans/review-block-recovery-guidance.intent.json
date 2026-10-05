@@ -1,0 +1,36 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "review-block-recovery-guidance",
+  "owner": "user",
+  "goal": "Implement S1 of docs/specs/review-settlement-hardening.spec.md: every blocked Review submission result on the Claude Host carries one same-Host recovery action, and the Loop contract and reviewer definition stop steering the Parent into unrecoverable reviewer dispatches.",
+  "acceptance": [
+    {
+      "id": "RSH-S1-A1",
+      "assertion": "Per S1 of docs/specs/review-settlement-hardening.spec.md (BR-REQ-1, BR-REQ-3): every blocked result returned by submitClaudeReview carries a non-empty recovery_action naming one same-Host next call, for each host observation failure (reservation not observed, incomplete terminal event order, correlation mismatch, receipt already consumed, launch envelope naming a different agent, unreadable transcript, transcript without a reviewer result), for each of the three reservation errors (second native tool call, duplicate PostToolUse, duplicate SubagentStop), and for a parent verdict that differs from the reviewer receipt. A released reservation directs to advance_assurance followed by a fresh reviewer dispatch; a retained reservation directs to resubmitting after the reviewer finishes. The duplicate SubagentStop reason states that a reviewer cannot be continued and a fresh reviewer must be dispatched. No recovery_action names another Host, a worktree, repair_authority_state, a commit, or unmanaged implementation. Existing reason strings other than the duplicate SubagentStop reason, release decisions, verdict_invalid handling, and non-blocked results are unchanged; the new field is optional on the shared result type and other Hosts are unaffected. The generated Claude bundle matches the runtime source.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/claude-review-host-async-agent.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RSH-S1-A2",
+      "assertion": "Per S1 of docs/specs/review-settlement-hardening.spec.md (BR-REQ-2, BR-REQ-3): the packaged Loop contract no longer states that internal Agent envelopes run in the foreground on every Host; it states that the envelope is passed through unchanged, that on the Claude Host an Agent call always returns an asynchronous launch receipt which is normal and never a configuration fault, and that the Parent waits for the reviewer to finish before submit_review. The Loop contract and the reviewer agent definition both state that a dispatched reviewer is never continued or re-prompted (including through SendMessage), that the reserved prompt is dispatched verbatim, and that a blocked submit_review is recovered only through its returned recovery_action. Contract tests assert the presence of each statement and the absence of the retired sentence.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/managed-authority-failure-contract.test.ts\",\n      \"tests/host-runtime-cutover.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/loop-contract-v4-alignment.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/review-block-recovery-guidance.md",
+    "docs/plans/review-block-recovery-guidance.intent.json",
+    "plugins/immune-brain/agents/immune-brain-reviewer.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-loop.md",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/review_host.ts",
+    "tests/claude-host-authority.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/claude-review-host-async-agent.test.ts",
+    "tests/host-runtime-cutover.test.ts",
+    "tests/loop-contract-v4-alignment.test.ts",
+    "tests/managed-authority-failure-contract.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

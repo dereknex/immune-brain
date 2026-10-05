@@ -240,7 +240,12 @@ Use the returned verdict schema exactly, including omission of unsupported field
 `dispatch_role` for `qa`, `code-review`, or `ui-review` is used only when an
 explicit runtime-supported role boundary requests it, followed by the returned
 foreground Agent envelope exactly. It is not an extra gate on Kernel Assurance.
-All internal Agent envelopes use `run_in_background: false`.
+Pass the returned Agent envelope through unchanged. On the Claude Host an Agent
+call always returns an asynchronous launch receipt, which is normal and never a
+configuration fault; the Parent waits for the reviewer to finish before
+`submit_review`. A dispatched reviewer is never continued or re-prompted,
+including through SendMessage. The reserved prompt is dispatched verbatim. A
+blocked `submit_review` is recovered only through its returned `recovery_action`.
 
 Role dispatches follow the user's interaction language: include
 `"interaction_language"` in the `dispatch_role` or routed role context with

@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "review-block-recovery-guidance",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:review-block-recovery-guidance:2026-10-05T12:14:59.045Z",
+  "final_record_hash": "sha256:e7344f7731c6d79542424207ba603da7878bc0faee7b984071847b2c5f0a535f",
+  "terminalized_at": "2026-10-05T12:14:59.045Z"
+}

@@ -205,6 +205,13 @@ describe("claude host package", () => {
     expect(files.some((path: string) => path.startsWith(".cursor-plugin/"))).toBe(false);
   });
 
+  it("reviewer definition forbids continuation and recovers only through recovery_action", () => {
+    const reviewer = readFileSync(resolve(PLUGIN_ROOT, "agents/immune-brain-reviewer.md"), "utf8").replace(/\s+/g, " ");
+    expect(reviewer).toContain("A dispatched reviewer is never continued or re-prompted, including through SendMessage");
+    expect(reviewer).toContain("The reserved prompt is dispatched verbatim");
+    expect(reviewer).toContain("A blocked `submit_review` is recovered only through its returned `recovery_action`");
+  });
+
   it("does not fork the public Skill contracts", () => {
     const dist = readdirSync(resolve(PLUGIN_ROOT, "dist")).filter((name) => name.startsWith("imm-") && name.endsWith(".md"));
     expect(dist.sort()).toEqual(["imm-agent-doc-maintain.md", "imm-brainstorm.md", "imm-doc-prune.md", "imm-loop.md", "imm-planner.md", "imm-pr-fix.md", "imm-review-retro.md"]);

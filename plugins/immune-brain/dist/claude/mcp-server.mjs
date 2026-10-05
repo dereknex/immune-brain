@@ -515,7 +515,7 @@ ${request.prompt}`,
       if (state.stopEvent) {
         if (state.stopEvent === event)
           return;
-        state.error = "duplicate SubagentStop observed for review reservation";
+        state.error = "duplicate SubagentStop observed for review reservation: a reviewer was continued after it finished; a reviewer cannot be continued and a fresh reviewer must be dispatched";
         return;
       }
       state.stopEvent = event;
@@ -12654,26 +12654,34 @@ function verdictFingerprint(raw) {
     findings: raw.findings ?? null
   });
 }
+var RELEASED_REVIEW_RECOVERY = "Call advance_assurance to obtain a new Review reservation, then dispatch one fresh reviewer with the returned envelope unchanged";
+var RETAINED_REVIEW_RECOVERY = "Wait for the dispatched reviewer to finish, then call submit_review again with its verdict; do not dispatch or continue another reviewer";
+var MISMATCH_REVIEW_RECOVERY = "Resubmit the reviewer's verdict exactly as the reviewer returned it";
+function withReviewRecovery(result, recovery_action) {
+  if (result.state !== "blocked" || result.code === "verdict_invalid")
+    return result;
+  return { ...result, recovery_action };
+}
 async function submitClaudeReview(host, coordinator, ctx, taskId, verdictInput) {
   if (verdictInput === undefined)
     throw new Error("verdict is required");
   const observed = host.inspectReviewForTask(taskId);
   if (!observed.ok) {
     if (observed.release)
-      return coordinator.abandonReview(taskId, observed.reason);
-    return { state: "blocked", reason: observed.reason };
+      return withReviewRecovery(coordinator.abandonReview(taskId, observed.reason), RELEASED_REVIEW_RECOVERY);
+    return { state: "blocked", reason: observed.reason, recovery_action: RETAINED_REVIEW_RECOVERY };
   }
   const parentValid = coordinator.isReviewVerdictValid(taskId, verdictInput);
   if (!parentValid)
     return coordinator.submitReview(taskId, ctx, verdictInput);
   const receiptValid = coordinator.isReviewVerdictValid(taskId, observed.receipt.result);
   if (!receiptValid) {
-    return coordinator.abandonReview(taskId, "reviewer receipt is not a valid verdict");
+    return withReviewRecovery(coordinator.abandonReview(taskId, "reviewer receipt is not a valid verdict"), RELEASED_REVIEW_RECOVERY);
   }
   const parentJson = extractVerdictJson(verdictInput);
   const receiptJson = extractVerdictJson(observed.receipt.result);
   if (verdictFingerprint(parentJson) !== verdictFingerprint(receiptJson)) {
-    return { state: "blocked", reason: "parent verdict does not match reviewer receipt" };
+    return { state: "blocked", reason: "parent verdict does not match reviewer receipt", recovery_action: MISMATCH_REVIEW_RECOVERY };
   }
   return coordinator.submitReview(taskId, ctx, verdictInput);
 }

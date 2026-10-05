@@ -34,6 +34,17 @@ describe("loop contract v4 alignment", () => {
 		expect(dist).not.toMatch(/Consume `imm-autowork --json`/);
 	});
 
+	test("packaged loop contract tells Claude to wait and forbids continuing a reviewer", () => {
+		const dist = read("plugins/immune-brain/dist/imm-loop.md").replace(/\s+/g, " ");
+		expect(dist).toContain("Pass the returned Agent envelope through unchanged");
+		expect(dist).toContain("On the Claude Host an Agent call always returns an asynchronous launch receipt, which is normal and never a configuration fault");
+		expect(dist).toContain("the Parent waits for the reviewer to finish before `submit_review`");
+		expect(dist).toContain("A dispatched reviewer is never continued or re-prompted, including through SendMessage");
+		expect(dist).toContain("The reserved prompt is dispatched verbatim");
+		expect(dist).toContain("A blocked `submit_review` is recovered only through its returned `recovery_action`");
+		expect(dist).not.toContain("All internal Agent envelopes use `run_in_background: false`");
+	});
+
 	test("plugin README no longer names the removed imm-autowork command", () => {
 		const readme = read("plugins/immune-brain/README.md");
 		expect(readme).not.toMatch(/imm-loop` consumes `imm-autowork/);

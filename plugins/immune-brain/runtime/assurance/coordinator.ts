@@ -346,7 +346,7 @@ export type AssuranceSubmitReviewResult = AssuranceRecoveryFields & (
 	| { state: "review_preparation_failed"; operation: "review"; operation_id: string; reason: string }
 	| { state: "completed" }
 	| { state: "settlement_unknown"; operation: "qa" | "review"; operation_id: string; reason: string }
-	| { state: "blocked"; reason: string; code?: "verdict_invalid" });
+	| { state: "blocked"; reason: string; code?: "verdict_invalid"; recovery_action?: string });
 
 export type ActiveAssuranceState =
 	| { state: "running"; operation: "qa"; operation_id: string; deadline_seconds: number }

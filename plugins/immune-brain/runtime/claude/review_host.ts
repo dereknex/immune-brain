@@ -458,7 +458,7 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 			}
 			if (state.stopEvent) {
 				if (state.stopEvent === event) return;
-				state.error = "duplicate SubagentStop observed for review reservation";
+				state.error = "duplicate SubagentStop observed for review reservation: a reviewer was continued after it finished; a reviewer cannot be continued and a fresh reviewer must be dispatched";
 				return;
 			}
 			state.stopEvent = event;

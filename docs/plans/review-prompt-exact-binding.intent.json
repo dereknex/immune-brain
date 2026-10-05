@@ -1,0 +1,27 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "review-prompt-exact-binding",
+  "owner": "user",
+  "goal": "Implement S2 of docs/specs/review-settlement-hardening.spec.md: the Claude Review Host binds a reviewer start to a reservation only when the dispatched prompt is byte-identical to the reserved prompt.",
+  "acceptance": [
+    {
+      "id": "RSH-S2-A1",
+      "assertion": "Per S2 of docs/specs/review-settlement-hardening.spec.md (BR-REQ-4, BR-DEC-2): when a SubagentStart or the Agent tool input carries a prompt, it binds to a Review reservation only if that prompt equals the reserved dispatch prompt exactly. A prompt that keeps the matching operation_id and task_id marker but appends text, removes text, or rewrites the body does not bind, cannot settle the reservation, and yields a blocked submit_review with the S1 recovery_action; a prompt with a different operation or task marker still does not bind. The byte-identical prompt binds and settles as before, and a start that carries no prompt but an explicit matching operationId binds as before. No marker-only acceptance path remains. Tests cover the exact, appended, truncated, rewritten, foreign-marker and no-prompt controls. The Loop contract states that any edit to the reserved prompt forfeits the reservation. The generated Claude bundle matches the runtime source.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/claude-review-host-async-agent.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/managed-authority-failure-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/review-prompt-exact-binding.md",
+    "docs/plans/review-prompt-exact-binding.intent.json",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-loop.md",
+    "plugins/immune-brain/runtime/claude/review_host.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/claude-host-authority.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/claude-review-host-async-agent.test.ts",
+    "tests/managed-authority-failure-contract.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
