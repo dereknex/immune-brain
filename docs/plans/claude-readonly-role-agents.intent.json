@@ -1,0 +1,38 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "claude-readonly-role-agents",
+  "owner": "user",
+  "goal": "Implement S4 of docs/specs/host-native-subagent-definitions.spec.md: on the Claude Host the advisory-reviewer, ui-review and qa roles have generated native agent definitions whose tool allowlist enforces their read-only boundary, and the packaged contracts name the native dispatch route.",
+  "acceptance": [
+    {
+      "id": "HNS-S4-A1",
+      "assertion": "Per S4 of docs/specs/host-native-subagent-definitions.spec.md (AN-6, DEC-1): the Claude plugin ships generated agent definitions immune-brain-advisory-reviewer, immune-brain-ui-review and immune-brain-qa. Each body is generated from the matching role prompt source and each tool allowlist is exactly Read, Grep, Glob. A Claude role-to-agent table maps exactly those three roles; every mapped role's declared boundary in INTERNAL_ROLE_PROMPTS is no tools or read-only tools, every mapped definition exists, and no mapped definition's allowlist contains a write, shell or dispatch tool. The build check fails when a committed definition differs from the generated one. loopRoleSubagentFor and the Pi dispatch envelope are unchanged, and the reviewer definition is unchanged.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "HNS-S4-A2",
+      "assertion": "Per S4 of docs/specs/host-native-subagent-definitions.spec.md (AN-6, DEC-1): the packaged Loop and Planner contracts and the dispatch protocol, with its packaged mirror identical to its source, state that on the Claude Host a read-only role is dispatched through the Agent tool by its plugin agent type, that architecture exploration uses the Host's Explore agent, and that the agent definition rather than prompt text bounds the role's tools. They state that on Pi the agent configuration belongs to the user and the boundary remains prompt text. Existing Pi dispatch statements in those contracts are unchanged.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-contract-v4-alignment.test.ts\",\n      \"tests/planner-ensemble-contract.test.ts\",\n      \"tests/pi-subagent-dispatch-observability-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/claude-readonly-role-agents.md",
+    "docs/plans/claude-readonly-role-agents.intent.json",
+    "docs/reference/subagent-dispatch-protocol.md",
+    "plugins/immune-brain/agents/immune-brain-advisory-reviewer.md",
+    "plugins/immune-brain/agents/immune-brain-qa.md",
+    "plugins/immune-brain/agents/immune-brain-ui-review.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+    "plugins/immune-brain/dist/imm-loop.md",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/runtime/claude/role_agents.ts",
+    "scripts/build-claude-plugin.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/loop-contract-v4-alignment.test.ts",
+    "tests/pi-subagent-dispatch-observability-contract.test.ts",
+    "tests/planner-ensemble-contract.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

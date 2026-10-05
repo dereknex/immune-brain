@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "claude-reviewer-native-shape",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:claude-reviewer-native-shape:2026-10-05T13:33:39.552Z",
+  "final_record_hash": "sha256:fc6021c4bbd7cac6d4358d7af020564cab4258ed3a2288a4286282c4b6556861",
+  "terminalized_at": "2026-10-05T13:33:39.552Z"
+}

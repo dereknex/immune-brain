@@ -1,0 +1,29 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "claude-reviewer-native-shape",
+  "owner": "user",
+  "goal": "Implement S1 of docs/specs/host-native-subagent-definitions.spec.md: the Claude Host Review dispatch envelope carries only the fields the Claude Agent tool accepts, and the packaged reviewer definition's native tool boundary is pinned by a test.",
+  "acceptance": [
+    {
+      "id": "HNS-S1-A1",
+      "assertion": "Per S1 of docs/specs/host-native-subagent-definitions.spec.md (AN-2): the dispatch envelope returned by the Claude Host prepareReview has exactly the keys name and prompt; name is the packaged reviewer agent and prompt is the reservation marker line followed by the reserved prompt unchanged. It carries no max_turns and no run_in_background. ReviewRequest.maxTurns remains on the shared type and the Pi dispatch parameters are unchanged. Reservation binding, hook observation, settlement of a valid reviewer receipt, and every blocked result with its reason, release decision and recovery_action are unchanged. The generated Claude bundle matches the runtime source.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/claude-review-host-async-agent.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "HNS-S1-A2",
+      "assertion": "Per S1 of docs/specs/host-native-subagent-definitions.spec.md (AN-3): the packaged reviewer agent definition declares a tool allowlist that is exactly Read, Grep, Glob, Bash, so Agent, Edit, Write and NotebookEdit are natively denied; its frontmatter declares none of hooks, mcpServers or permissionMode, which the Host ignores for plugin agents; and it still states that a dispatched reviewer is never continued or re-prompted, that the reserved prompt is dispatched verbatim, and that a blocked submit_review is recovered only through its returned recovery_action. The test fails when a tool is added to or removed from the allowlist.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/claude-reviewer-native-shape.md",
+    "docs/plans/claude-reviewer-native-shape.intent.json",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/claude/review_host.ts",
+    "tests/claude-host-authority.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/claude-review-host-async-agent.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

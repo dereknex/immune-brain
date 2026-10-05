@@ -1,0 +1,187 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "claude-reviewer-native-shape",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "claude-reviewer-native-shape",
+    "goal": "Implement S1 of docs/specs/host-native-subagent-definitions.spec.md: the Claude Host Review dispatch envelope carries only the fields the Claude Agent tool accepts, and the packaged reviewer definition's native tool boundary is pinned by a test.",
+    "acceptance": [
+      {
+        "id": "HNS-S1-A1",
+        "assertion": "Per S1 of docs/specs/host-native-subagent-definitions.spec.md (AN-2): the dispatch envelope returned by the Claude Host prepareReview has exactly the keys name and prompt; name is the packaged reviewer agent and prompt is the reservation marker line followed by the reserved prompt unchanged. It carries no max_turns and no run_in_background. ReviewRequest.maxTurns remains on the shared type and the Pi dispatch parameters are unchanged. Reservation binding, hook observation, settlement of a valid reviewer receipt, and every blocked result with its reason, release decision and recovery_action are unchanged. The generated Claude bundle matches the runtime source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/claude-review-host-async-agent.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "HNS-S1-A2",
+        "assertion": "Per S1 of docs/specs/host-native-subagent-definitions.spec.md (AN-3): the packaged reviewer agent definition declares a tool allowlist that is exactly Read, Grep, Glob, Bash, so Agent, Edit, Write and NotebookEdit are natively denied; its frontmatter declares none of hooks, mcpServers or permissionMode, which the Host ignores for plugin agents; and it still states that a dispatched reviewer is never continued or re-prompted, that the reserved prompt is dispatched verbatim, and that a blocked submit_review is recovered only through its returned recovery_action. The test fails when a tool is added to or removed from the allowlist.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/claude-reviewer-native-shape.md",
+      "docs/plans/claude-reviewer-native-shape.intent.json",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/claude/review_host.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/claude-review-host-async-agent.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/claude-reviewer-native-shape.intent.json",
+    "content_hash": "sha256:1cd811f50efdd8129ec0c72bcc3d1679cbfa9e9cc3389c4d77803de3502d8de6"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:1cd811f50efdd8129ec0c72bcc3d1679cbfa9e9cc3389c4d77803de3502d8de6",
+  "git_base_head": "856ef4994b299afd5a0015354145e16901844035",
+  "attestations": [
+    {
+      "id": "approval-qa-10f65ce1",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1cd811f50efdd8129ec0c72bcc3d1679cbfa9e9cc3389c4d77803de3502d8de6",
+      "diff_hash": "sha256:542721c18abab8efd45ae44f53962582961697786289f06734fdefb02c0ce979",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:e4f1c409aa6b078bcd50ae5388ccaa07f4c1840d4fa8c585d1a39866394edcb7",
+      "acceptance_results": [
+        {
+          "acceptance_id": "HNS-S1-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:e4f1c409aa6b078bcd50ae5388ccaa07f4c1840d4fa8c585d1a39866394edcb7"
+        },
+        {
+          "acceptance_id": "HNS-S1-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:e4f1c409aa6b078bcd50ae5388ccaa07f4c1840d4fa8c585d1a39866394edcb7"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-6a92aa0b",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1cd811f50efdd8129ec0c72bcc3d1679cbfa9e9cc3389c4d77803de3502d8de6",
+      "diff_hash": "sha256:542721c18abab8efd45ae44f53962582961697786289f06734fdefb02c0ce979",
+      "actor_id": "parent-mediated-review",
+      "summary": "Envelope is exactly {name,prompt} with the reservation marker prefix intact, dist parity holds, Pi maxTurns path untouched, and both acceptances are pinned by exact-key-set and exact-allowlist tests; only documentation-drift and evidence-provenance advisories remain.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "856ef4994b299afd5a0015354145e16901844035",
+        "review_commit": "b48680346be41c4ef29467cb0c34948d77515dd7",
+        "review_tree": "c7abe613beb61137ec7a86c19a8c11f134759702",
+        "manifest_digest": "sha256:474faef4a58765a9f4d2ed4c8798456aac35dacf54adf3c42ad3546c99b33c20"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-1fe239ee3fe9-1-review-1",
+          "acceptance_id": "HNS-S1-A1",
+          "summary": "docs/specs/review-settlement-hardening.spec.md:30 still states review_host.ts documents that `run_in_background: false` is not honoured, but the reworded comment at review_host.ts:149-155 no longer says it, leaving a live spec sentence factually stale against this revision",
+          "anchor": "sha256:567f643e14cb39e33002baa7ded543eef0bbcec11b64b47c46e2309a3733d683",
+          "evidence": {
+            "trigger": "Read the live (non-archive) spec's 'Current behavior' bullet after the review_commit: the bullet asserts review_host.ts documents `run_in_background: false` is not honoured, while git show b486803:plugins/immune-brain/runtime/claude/review_host.ts now reads 'this Host has no synchronous mode and no background switch, so the dispatch envelope carries nothing that would ask for one'; the only surviving pins of the old wording are the unchanged test header comment tests/claude-review-host-async-agent.test.ts:25-26 and historical CHANGELOG.md:466-467, and no test asserts the spec sentence, so the drift is silent",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/claude/review_host.ts:149",
+              "docs/specs/review-settlement-hardening.spec.md:30",
+              "tests/claude-review-host-async-agent.test.ts:25"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "HNS-S1-A1"
+            }
+          }
+        },
+        {
+          "id": "review-1fe239ee3fe9-2-review-2",
+          "acceptance_id": "HNS-S1-A1",
+          "summary": "Dropping max_turns removes the only turn budget the Claude reviewer could have had, and the 'no receiver' claim rests on a code comment rather than recorded host evidence, so a future Claude build that does accept it yields a silently unbounded reviewer",
+          "anchor": "sha256:82e9d7ca05df0b69c1448cb3aa55ceae69680f8995ff0fabc80332e4ff63d35f",
+          "evidence": {
+            "trigger": "A Claude Code build whose `Agent` tool accepts max_turns: prepareReview at review_host.ts:330-336 now emits only {name,prompt}, so reviewTurnBudget(workload) from runtime/assurance/coordinator.ts:1120 reaches ReviewRequest.maxTurns (host_port.ts:6) but is never projected; the recorded-conformance note at tests/claude-review-host-async-agent.test.ts:25-26 evidences only that run_in_background is not honoured, not that max_turns is rejected, and the Pi projection at .pi-extension/pi-canary-assurance-progression.ts:64 remains intact so this is Claude-only",
+            "caller_chain": [
+              "runtime/assurance/coordinator.ts:1120",
+              "runtime/assurance/host_port.ts:6",
+              "plugins/immune-brain/runtime/claude/review_host.ts:330",
+              "tests/claude-review-host-async-agent.test.ts:25"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "HNS-S1-A1"
+            }
+          }
+        },
+        {
+          "id": "review-1fe239ee3fe9-3-review-3",
+          "acceptance_id": "HNS-S1-A2",
+          "summary": "The cited authority docs/specs/host-native-subagent-definitions.spec.md is absent from both base_head and review_commit (worktree-only, untracked), so AN-2/AN-3 could not be checked against spec text inside the immutable revision; the review was performed against the assertion text embedded in the bundle instead",
+          "anchor": "sha256:8469687b18ac47580a591b436a4aaebae361777adf7a56eb654f6a16341a6301",
+          "evidence": {
+            "trigger": "git cat-file -e b48680346be41c4ef29467cb0c34948d77515dd7:docs/specs/host-native-subagent-definitions.spec.md returns fatal (path exists on disk but not in the commit) and the same holds for base_head 856ef499; both acceptance assertions and the intent goal cite S1/AN-2/AN-3 of that spec as their source of truth, so the anchors are unverifiable from immutable objects alone, matching the BR-Q-1 pattern already recorded at docs/specs/review-settlement-hardening.spec.md (a Spec staged before Enrollment is not a changed path)",
+            "caller_chain": [
+              "docs/plans/claude-reviewer-native-shape.intent.json",
+              "docs/specs/host-native-subagent-definitions.spec.md",
+              "tests/claude-host-package.test.ts:216"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "HNS-S1-A2"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:claude-reviewer-native-shape:2026-10-05T13:24:23.046Z",
+      "at": "2026-10-05T13:24:23.046Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/claude-reviewer-native-shape.intent.json"
+    },
+    {
+      "id": "record_approval:claude-reviewer-native-shape:2026-10-05T13:24:42.352Z",
+      "at": "2026-10-05T13:24:42.352Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-10f65ce1\naction_v2_sha256:b83e3b0fdcd4771d27df5170913fbb4935266ac508b90baa7dd52037213ed22a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-32f474cfc884f976",
+        "issued_at": "2026-10-05T13:24:42.352Z"
+      }
+    },
+    {
+      "id": "record_approval:claude-reviewer-native-shape:2026-10-05T13:33:38.512Z",
+      "at": "2026-10-05T13:33:38.512Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-6a92aa0b\naction_v2_sha256:72839c8adea858751607649888a08cc483ba8087c9f26e2d58a0285d7e0a42a2",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-206105073e05e0ca",
+        "issued_at": "2026-10-05T13:33:38.512Z"
+      }
+    },
+    {
+      "id": "complete:claude-reviewer-native-shape:2026-10-05T13:33:39.552Z",
+      "at": "2026-10-05T13:33:39.552Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:d87b668857c2c132bf2b3268299215f3b5f031318cc96e1d7facdad5c088c39d"
+    }
+  ]
+}

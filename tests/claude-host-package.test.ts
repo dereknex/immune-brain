@@ -212,6 +212,38 @@ describe("claude host package", () => {
     expect(reviewer).toContain("A blocked `submit_review` is recovered only through its returned `recovery_action`");
   });
 
+  it("reviewer definition declares exactly the native read-only tool boundary", () => {
+    const source = readFileSync(resolve(PLUGIN_ROOT, "agents/immune-brain-reviewer.md"), "utf8");
+    const match = /^---\n([\s\S]*?)\n---\n/.exec(source);
+    expect(match).not.toBeNull();
+    const frontmatter = match![1];
+
+    // The allowlist is read from the shipped frontmatter, not from a runtime
+    // string, so a definition that stops asking for the boundary fails here.
+    const toolsLine = /^tools:[^\n]*$/m.exec(frontmatter);
+    expect(toolsLine).not.toBeNull();
+    const tools = toolsLine![0]
+      .slice("tools:".length)
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0)
+      .sort();
+    expect(tools).toEqual(["Bash", "Glob", "Grep", "Read"]);
+
+    // Adding any of these would let the reviewer write, dispatch or escape its
+    // read-only boundary; removing one narrows the evidence it can gather.
+    for (const denied of ["Agent", "Edit", "Write", "NotebookEdit"]) expect(tools).not.toContain(denied);
+
+    // Plugin agents ignore these keys, so declaring one would read as an
+    // enforced boundary that the Host never applies.
+    for (const ignored of ["hooks", "mcpServers", "permissionMode"]) {
+      expect(new RegExp(`^${ignored}:`, "m").test(frontmatter)).toBe(false);
+    }
+    expect(source).not.toContain("hooks:");
+    expect(source).not.toContain("mcpServers:");
+    expect(source).not.toContain("permissionMode:");
+  });
+
   it("does not fork the public Skill contracts", () => {
     const dist = readdirSync(resolve(PLUGIN_ROOT, "dist")).filter((name) => name.startsWith("imm-") && name.endsWith(".md"));
     expect(dist.sort()).toEqual(["imm-agent-doc-maintain.md", "imm-brainstorm.md", "imm-doc-prune.md", "imm-loop.md", "imm-planner.md", "imm-pr-fix.md", "imm-review-retro.md"]);

@@ -876,7 +876,6 @@ describe("claude host authority", () => {
 			tool_input: {
 				subagent_type: REVIEWER_AGENT,
 				prompt: reservedPrompt,
-				run_in_background: false,
 			},
 			tool_response: {
 				status: "completed",
@@ -1586,7 +1585,7 @@ describe("claude host resolve_finding", () => {
 		const consumed = makeCoordinator({ host: consumedHost });
 		const consumedReady = await consumed.coordinator.advance(TASK, ctx) as { operation_id: string };
 		completeReview(consumedHost, consumedReady.operation_id, JSON.stringify(verdict()));
-		consumedHost.consumeReview({ id: consumedReady.operation_id, dispatch: { name: REVIEWER_AGENT, prompt: "", max_turns: 1, run_in_background: false } });
+		consumedHost.consumeReview({ id: consumedReady.operation_id, dispatch: { name: REVIEWER_AGENT, prompt: "" } });
 		expect(await blocked(consumedHost, consumed, verdict())).toMatchObject({
 			reason: "review receipt already consumed",
 			recovery_action: released,

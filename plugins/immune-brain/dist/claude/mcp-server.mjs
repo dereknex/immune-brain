@@ -376,9 +376,7 @@ class ClaudeReviewHost {
       dispatch: {
         name: CLAUDE_REVIEWER_AGENT,
         prompt: `<!-- immune-brain:operation_id=${request.operationId} task_id=${request.taskId} -->
-${request.prompt}`,
-        max_turns: request.maxTurns,
-        run_in_background: false
+${request.prompt}`
       }
     };
   }

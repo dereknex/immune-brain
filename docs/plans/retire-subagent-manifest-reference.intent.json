@@ -1,0 +1,20 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "retire-subagent-manifest-reference",
+  "owner": "user",
+  "goal": "Implement S2 of docs/specs/host-native-subagent-definitions.spec.md: docs/reference/workflow-and-subagents.md describes only the roles that exist in the runtime; the Subagent Manifest Contract, the core-subagent roster and the scenario activation matrix are deleted.",
+  "acceptance": [
+    {
+      "id": "HNS-S2-A1",
+      "assertion": "Per S2 of docs/specs/host-native-subagent-definitions.spec.md (AN-7): docs/reference/workflow-and-subagents.md no longer contains the Subagent Manifest Contract section, the core-subagent list and table, the minimal JSON output contract attached to them, or the scenario activation matrix, and contains none of the retired names context-mapper, scope-reviewer, qa-verifier, knowledge-compounder, code-reviewer or ui-reviewer. The authority and routing boundary, the authorization policy, the advisory lens sections and the model selection note remain. The file contains one role mapping table whose set of role names equals the keys of INTERNAL_ROLE_PROMPTS exactly; the test fails for a role missing from the table and for a table role absent from the runtime. The existing retired-token and current-contract checks over this file still pass.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/subagent-activation-contract-retirement.test.ts\",\n      \"tests/pi-only-current-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/retire-subagent-manifest-reference.intent.json",
+    "docs/reference/workflow-and-subagents.md",
+    "tests/subagent-activation-contract-retirement.test.ts"
+  ],
+  "risk": "routine",
+  "revision": 1
+}

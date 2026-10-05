@@ -149,9 +149,9 @@ export type AsyncAgentLaunch = { agentId: string; outputFile: string };
 /**
  * Recognise the launch receipt this Claude Code build returns for `Agent`.
  *
- * Every `Agent` call here runs asynchronously — `run_in_background: false` in
- * the dispatch envelope is not honoured, and there is no synchronous mode. The
- * tool result is therefore
+ * Every `Agent` call here runs asynchronously: this Host has no synchronous
+ * mode and no background switch, so the dispatch envelope carries nothing that
+ * would ask for one. The tool result is therefore
  * `{"isAsync":true,"status":"async_launched","agentId":…,"outputFile":…}`:
  * proof that a subagent started, never its answer. Treating it as the verdict
  * would settle Review on a receipt for starting the reviewer, so the launch
@@ -327,11 +327,12 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 		});
 		return {
 			id: request.operationId,
+			// Only parameters the Claude `Agent` tool accepts. The Host has no turn
+			// cap and no background switch, so `request.maxTurns` (which the Pi port
+			// forwards natively) has no receiver here and is not projected.
 			dispatch: {
 				name: CLAUDE_REVIEWER_AGENT,
 				prompt: `<!-- immune-brain:operation_id=${request.operationId} task_id=${request.taskId} -->\n${request.prompt}`,
-				max_turns: request.maxTurns,
-				run_in_background: false,
 			},
 		};
 	}

@@ -110,9 +110,59 @@ function observeDispatch(
 	host.observe(stop!);
 }
 
+const RESERVATION_MARKER = `<!-- immune-brain:operation_id=${OPERATION} task_id=${TASK} -->`;
+
 function reservedPrompt(): string {
-	return `<!-- immune-brain:operation_id=${OPERATION} task_id=${TASK} -->\nreview instructions`;
+	return `${RESERVATION_MARKER}\nreview instructions`;
 }
+
+describe("claude review host: dispatch envelope shape", () => {
+	test("prepareReview carries only the parameters the Claude Agent tool accepts", () => {
+		const host = new ClaudeReviewHost();
+		const reservation = host.prepareReview(reviewRequest());
+		const dispatch = reservation.dispatch as Record<string, unknown>;
+
+		// Exact key set, not a subset check: re-adding a receiver-less parameter
+		// must fail here. The Claude `Agent` tool has no turn cap and no
+		// background switch, so `max_turns` and `run_in_background` never had one.
+		expect(Object.keys(dispatch).sort()).toEqual(["name", "prompt"]);
+		expect(dispatch.name).toBe(CLAUDE_REVIEWER_AGENT);
+		expect(dispatch.prompt).toBe(`${RESERVATION_MARKER}\n${reviewRequest().prompt}`);
+		expect(dispatch.prompt).not.toContain("max_turns");
+		expect(dispatch.prompt).not.toContain("run_in_background");
+
+		// The shared request type keeps the budget the Pi port consumes.
+		expect(reviewRequest().maxTurns).toBe(24);
+	});
+
+	test("the exact envelope settles a reservation dispatched unchanged", () => {
+		const root = mkdtempSync(join(tmpdir(), "imm-review-host-"));
+		try {
+			const real = join(root, `agent-${RECORDED_AGENT_ID}.jsonl`);
+			writeFileSync(real, transcriptLine(RECORDED_AGENT_ID, VERDICT), { mode: 0o600 });
+			chmodSync(real, 0o600);
+			const link = join(root, `${RECORDED_AGENT_ID}.output`);
+			symlinkSync(real, link);
+
+			const host = new ClaudeReviewHost(new FileHookEventLog(root));
+			const reservation = host.prepareReview(reviewRequest());
+			const dispatch = reservation.dispatch as { name: string; prompt: string };
+			// Dispatched verbatim: the envelope's own prompt, not a reconstructed one.
+			observeDispatch(host, {
+				sessionId: RECORDED_SESSION,
+				agentId: RECORDED_AGENT_ID,
+				envelope: { ...RECORDED_LAUNCH_ENVELOPE, outputFile: link, prompt: dispatch.prompt },
+				prompt: dispatch.prompt,
+			});
+			expect(host.consumeReview(reservation)).toEqual({
+				ok: true,
+				receipt: { actorId: `claude:${RECORDED_AGENT_ID}`, result: VERDICT },
+			});
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+});
 
 describe("claude review host: recorded async Agent envelope", () => {
 	test("the recorded launch receipt is recognised as a pointer, not a verdict", () => {
