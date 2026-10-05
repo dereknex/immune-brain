@@ -621,6 +621,7 @@ describe("unattended batch contract text", () => {
 			"children",
 			"consecutive_qa_failures",
 			"commits",
+			"adopted_heads",
 			"created_at",
 			"updated_at",
 		]);
