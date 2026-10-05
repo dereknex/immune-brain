@@ -30,6 +30,7 @@ import {
 	commitBatchChild,
 	lookupBatchCommit,
 } from "./batch_git";
+import { classifyBatchLineage, expectedBatchHead } from "./batch_preflight";
 import {
 	type BatchRunStateRecord,
 	type BatchChildRun,
@@ -283,35 +284,47 @@ function failPersistedLineage(
 	return writeBatchRunState(root, record);
 }
 
-/** review round 11: detect external HEAD movement or branch switch against a
- * persisted record's expected lineage; returns the failure message or null. */
-function externalHeadDriftMessage(root: string, record: BatchRunStateRecord): string | null {
-	if (!existsSync(join(root, ".git"))) return null;
-	const head = record.commits.length
-		? record.commits[record.commits.length - 1]!
-		: record.base_head;
-	const headCheck = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], {
-		encoding: "utf8",
-		stdio: ["ignore", "pipe", "pipe"],
+/** A HEAD that fast-forwards on the batch branch is the user's own work: adopt
+ * it as the new expected head and record it. Any other movement is the fatal
+ * lineage break, returned as the failure message with the record unchanged. */
+function reconcileLineage(
+	root: string,
+	record: BatchRunStateRecord,
+): { record: BatchRunStateRecord; failure: string | null } {
+	if (!existsSync(join(root, ".git"))) return { record, failure: null };
+	const expected = expectedBatchHead(record);
+	const lineage = classifyBatchLineage({
+		root,
+		branch: record.branch ?? "",
+		expectedHead: expected,
+		childCommits: record.commits,
+		batchId: record.batch_id,
 	});
-	if (headCheck.status === 0 && headCheck.stdout.trim() && headCheck.stdout.trim() !== head) {
-		return `batch_head_lineage_broken: current HEAD ${headCheck.stdout.trim()} does not match expected batch head ${head}`;
-	}
-	const branchCheck = spawnSync("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
-		encoding: "utf8",
-		stdio: ["ignore", "pipe", "pipe"],
-	});
-	const currentBranch = branchCheck.stdout.trim();
-	if (branchCheck.status !== 0 || currentBranch !== record.branch) {
-		return `batch_head_lineage_broken: current branch ${currentBranch} does not match expected batch branch ${record.branch}`;
-	}
-	return null;
+	if (lineage.kind === "broken") return { record, failure: lineage.message };
+	if (lineage.kind === "equal") return { record, failure: null };
+	return {
+		record: writeBatchRunState(root, {
+			...record,
+			adopted_heads: [...(record.adopted_heads ?? []), { from: expected, to: lineage.head }],
+		}),
+		failure: null,
+	};
 }
 
 async function validatePersistedRun(input: StartBatchInput, record: BatchRunStateRecord): Promise<void> {
 	if (!record.commits.length && record.children[0]?.state === "settled" && existsSync(join(input.root, ".git"))) {
 		const head = spawnSync("git", ["-C", input.root, "rev-parse", "HEAD"], { encoding: "utf8" });
-		if (head.status !== 0 || (head.stdout.trim() !== record.base_head && !ownUnpersistedBatchHead(input.root, record, head.stdout.trim())))
+		const live = head.stdout.trim();
+		const expected = expectedBatchHead(record);
+		const adoptable = () =>
+			classifyBatchLineage({
+				root: input.root,
+				branch: record.branch ?? "",
+				expectedHead: expected,
+				childCommits: record.commits,
+				batchId: record.batch_id,
+			}).kind === "fast_forward";
+		if (head.status !== 0 || (live !== expected && !ownUnpersistedBatchHead(input.root, record, live) && !adoptable()))
 			throw new Error("first unpersisted batch commit provenance is invalid");
 	}
 	const plan = input.registry.children(input.capability);
@@ -656,17 +669,15 @@ async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport>
 		persist();
 	}
 
-	let head = record.commits.length
-		? record.commits[record.commits.length - 1]!
-		: record.base_head;
-
 	// Validate current Git HEAD and branch against the expected head/branch before continuing (review rounds 7+11)
-	const driftMessage = externalHeadDriftMessage(input.root, record);
-	if (driftMessage) {
+	const lineage = reconcileLineage(input.root, record);
+	record = lineage.record;
+	if (lineage.failure) {
 		record.batch_state = "failed";
 		persist();
-		return finalize(input.root, record, driftMessage, "");
+		return finalize(input.root, record, lineage.failure, "");
 	}
+	let head = expectedBatchHead(record);
 
 	while (record.batch_state === "running") {
 		const child = nextEnrollableChild(record);
@@ -869,10 +880,11 @@ export async function resumeBatch(
 			// defers to driveInterruptedChild's lookupBatchCommit verification,
 			// which adopts a verified own commit (crash before committed-persist)
 			// instead of misjudging it as external drift.
-			const drivenDrift = externalHeadDriftMessage(input.root, existing);
-			if (drivenDrift) {
-				const failed = failPersistedLineage(input.root, existing, drivenDrift);
-				return finalize(input.root, failed, drivenDrift, "");
+			const drivenLineage = reconcileLineage(input.root, existing);
+			existing = drivenLineage.record;
+			if (drivenLineage.failure) {
+				const failed = failPersistedLineage(input.root, existing, drivenLineage.failure);
+				return finalize(input.root, failed, drivenLineage.failure, "");
 			}
 			const fresh = requireFreshProjection(
 				await input.kernel.projectTask(input.root, driven.task_id),
@@ -1003,9 +1015,7 @@ async function driveInterruptedChild(
 		record.batch_state = "running";
 		persist();
 	}
-	let head = record.commits.length
-		? record.commits[record.commits.length - 1]!
-		: record.base_head;
+	let head = expectedBatchHead(record);
 	while (child.state === "enrolled" || child.state === "settled") {
 		if (child.state === "settled") {
 			// review-2(2nd round): a persisted settled child must not replay
@@ -1055,6 +1065,13 @@ async function driveInterruptedChild(
 				record.batch_state = isLineageError ? "failed" : "needs_human";
 				persist();
 				throw new BatchCommitAbortError(`commit lookup failed: ${message}`);
+			}
+			if (!existing) {
+				// No own commit exists yet: a fast-forward since settlement is the
+				// user's work. Adopt it so this child's commit parents on it; a broken
+				// lineage is left for commitChild to refuse with its own message.
+				record = reconcileLineage(input.root, record).record;
+				head = expectedBatchHead(record);
 			}
 			const planChild = input.children.find((c) => c.task_id === child.task_id);
 			const intentPath = planChild?.intent_path ?? undefined;

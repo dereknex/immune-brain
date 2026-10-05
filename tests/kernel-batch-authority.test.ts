@@ -578,7 +578,30 @@ describe("batch-derived enrollment", () => {
 		expect(readBackendClaim(root)).toBeNull();
 	});
 
-	test("rejects a first child whose expected_head is not the confirmed base_head", () => {
+	test("accepts a first child whose expected_head fast-forwards the confirmed base_head", () => {
+		const root = makeRoot(["t1"]);
+		const children = [childFor(root, "t1")];
+		const binding = bindingFor(root, children);
+		const batchRegistry = createBatchAuthorityRegistry();
+		const capability = batchRegistry.issue(binding, children, NOW);
+
+		// The user commits on the batch branch before the first child enrolls.
+		writeFileSync(join(root, "unrelated.txt"), "outside the batch\n");
+		const movedHead = commitAll(root, "outside the batch");
+		expect(movedHead).not.toBe(binding.base_head);
+
+		const derived = deriveChildEnrollment(root, batchRegistry, {
+			capability,
+			binding,
+			task_id: "t1",
+			expected_head: movedHead,
+			now: NOW,
+		});
+		expect(derived.child.task_id).toBe("t1");
+		expect(batchRegistry.consumedChildren(capability)).toEqual([]);
+	});
+
+	test("rejects a first child whose expected_head does not descend from the confirmed base_head", () => {
 		const root = makeRoot(["t1"]);
 		const children = [childFor(root, "t1")];
 		const binding = bindingFor(root, children);
@@ -586,9 +609,10 @@ describe("batch-derived enrollment", () => {
 		const capability = batchRegistry.issue(binding, children, NOW);
 		const enrollmentRegistry = createEnrollmentAuthorityRegistry();
 
-		// HEAD advances by a commit this batch did not create. No slot is
-		// consumed, so the batch has produced nothing and its lineage still
+		// History is rewritten so HEAD no longer descends from base_head. No slot
+		// is consumed, so the batch has produced nothing and its lineage still
 		// stands at base_head.
+		execFileSync("git", ["-C", root, "checkout", "-q", "--orphan", "rewritten"]);
 		writeFileSync(join(root, "unrelated.txt"), "outside the batch\n");
 		const movedHead = commitAll(root, "outside the batch");
 		expect(movedHead).not.toBe(binding.base_head);

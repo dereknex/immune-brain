@@ -7,7 +7,9 @@ import {
 	runBatchGitPreflight,
 	commitBatchChild,
 	lookupBatchCommit,
+	classifyBatchLineage,
 } from "../plugins/immune-brain/runtime/unattended/batch_git";
+import { expectedBatchHead } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
 import {
 	startBatch,
 	resumeBatch,
@@ -896,10 +898,25 @@ describe("acc-batch-scope-bounded-commit", () => {
 		expect(found).not.toBeNull();
 		expect(found!.commit).toBe(commit);
 
-		// 2. Finding 3: External commit moves HEAD past the batch commit -> throws lineage error
+		// 2. A user commit fast-forwarding past the unpersisted batch commit is
+		// adopted work, not drift: the own commit is still found.
 		writeFileSync(join(repo.root, "external.txt"), "external\n");
 		git(repo.root, ["add", "external.txt"]);
 		git(repo.root, ["commit", "-m", "external commit"]);
+
+		const past = await lookupBatchCommit({
+			root: repo.root,
+			taskId,
+			batchId: "batch-xyz",
+			expectedHead: repo.baseHead,
+		});
+		expect(past!.commit).toBe(commit);
+
+		// 3. Finding 3: a HEAD that no longer descends from the batch commit is fatal.
+		git(repo.root, ["reset", "--hard", repo.baseHead]);
+		writeFileSync(join(repo.root, "diverged.txt"), "diverged\n");
+		git(repo.root, ["add", "diverged.txt"]);
+		git(repo.root, ["commit", "-m", "diverged commit"]);
 
 		await expect(
 			lookupBatchCommit({
@@ -1644,7 +1661,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 		expect(readBatchRunState(repo.root, "batch-fake-inscope-1")!.batch_state).toBe("running");
 	});
 
-	it("Finding 1: startBatch terminates as failed on post-commit persistence window external HEAD drift", async () => {
+	it("Finding 1: startBatch terminates as failed on post-commit persistence window history rewrite", async () => {
 		const slug = "drift-window-flow";
 		const taskA = "task-drift-window";
 		const intentPathA = writeTaskIntent(repo.root, taskA, "Goal", [
@@ -1692,7 +1709,8 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			expectedHead: repo.baseHead,
 		});
 
-		// External commit advances HEAD past commit before the batch finishes marking completed
+		// History rewrite drops the batch commit before the batch finishes marking completed
+		git(repo.root, ["reset", "--hard", repo.baseHead]);
 		writeFileSync(join(repo.root, "external-drift.txt"), "drift\n");
 		git(repo.root, ["add", "external-drift.txt"]);
 		git(repo.root, ["commit", "-m", "external drift commit"]);
@@ -1759,6 +1777,126 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 
 		const stored = readBatchRunState(repo.root, "batch-window-1");
 		expect(stored!.batch_state).toBe("failed");
+	});
+
+	it("Finding 1: startBatch adopts a fast-forward commit made in the post-commit persistence window", async () => {
+		const slug = "adopt-window-flow";
+		const taskA = "task-adopt-window";
+		const intentPathA = writeTaskIntent(repo.root, taskA, "Goal", [
+			"src/a.ts",
+			`docs/plans/archive/${taskA}.intent.json`,
+		]);
+
+		git(repo.root, ["add", "docs/plans"]);
+		git(repo.root, ["commit", "-m", "add intent file"]);
+		repo.baseHead = git(repo.root, ["rev-parse", "HEAD"]);
+
+		const children: BatchPlanChild[] = [
+			{
+				task_id: taskA,
+				slice_id: "S1",
+				blocked_by: [],
+				status: "enrollable",
+				reason: null,
+				intent_path: intentPathA,
+				intent_revision: 1,
+				intent_content_hash: "a".repeat(64),
+			},
+		];
+
+		runBatchGitPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
+
+		// Settle and commit taskA
+		mkdirSync(join(repo.root, "src"), { recursive: true });
+		writeFileSync(join(repo.root, "src", "a.ts"), "content\n");
+		writeChildAudit(repo.root, taskA, "done", repo.baseHead, {
+			contract: "assurance_kernel/task_intent/v1",
+			task_id: taskA,
+			owner: "user",
+			goal: "Goal",
+			scope_hint: ["src/a.ts", `docs/plans/archive/${taskA}.intent.json`],
+			acceptance: [{ id: `acc-${taskA}`, assertion: "assert", verification: "bun test" }],
+			risk: "material",
+			revision: 1,
+		});
+
+		const { commit } = await commitBatchChild({
+			root: repo.root,
+			taskId: taskA,
+			batchId: "batch-adopt-window-1",
+			expectedHead: repo.baseHead,
+		});
+
+		// External commit advances HEAD past commit before the batch finishes marking completed
+		writeFileSync(join(repo.root, "external-drift.txt"), "drift\n");
+		git(repo.root, ["add", "external-drift.txt"]);
+		git(repo.root, ["commit", "-m", "external drift commit"]);
+
+		const kernel: BatchRunnerKernelPort = {
+			async enrollTask() {
+				throw new Error("not called");
+			},
+			async advanceTask() {
+				return { state: "completed" };
+			},
+			async projectTask(_root, taskId) {
+				return {
+					contract: "assurance_kernel/assurance_projection/v1",
+					task_id: taskId,
+					error: null,
+					claim: null,
+					projection: { lifecycle: "done", completion_ready: true } as never,
+				};
+			},
+			ownsTaskClaim() {
+				return false;
+			},
+			validateBatchAuthorization(input) {
+				return input.registry.inspect(input.capability, input.binding);
+			},
+		};
+
+		const batchInput = makeBatchInput(children, kernel, slug, "batch-adopt-window-1");
+
+		// Persist state as if crash happened after commit but while state is still "running"
+		const stateRecord = {
+			contract: "assurance_kernel/batch_run_state/v1" as const,
+			batch_id: "batch-adopt-window-1",
+			initiative_slug: slug,
+			plan_digest: batchInput.plan_digest,
+			base_head: repo.baseHead,
+			branch: `imm/${slug}`,
+			confirmation_time: CONFIRMATION_TIME,
+			budget: { max_children: 5, qa_failure_limit: 3 },
+			batch_state: "running" as const,
+			children: [
+				{
+					task_id: taskA,
+					slice_id: "S1",
+					blocked_by: [],
+					state: "committed" as const,
+					reason: null,
+					commit,
+				},
+			],
+			consecutive_qa_failures: 0,
+			commits: [commit],
+			created_at: CONFIRMATION_TIME,
+			updated_at: CONFIRMATION_TIME,
+		};
+		const { writeBatchRunState } = await import("../plugins/immune-brain/runtime/unattended/batch_state");
+		writeBatchRunState(repo.root, stateRecord);
+
+		const adoptedHead = git(repo.root, ["rev-parse", "HEAD"]);
+		const report = await startBatch(batchInput);
+
+		expect(report.batch_state).toBe("completed");
+
+		const stored = readBatchRunState(repo.root, "batch-adopt-window-1");
+		expect(stored!.batch_state).toBe("completed");
+		expect(stored!.commits).toEqual([commit]);
+		expect(stored!.adopted_heads).toEqual([{ from: commit, to: adoptedHead }]);
+		expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(adoptedHead);
 	});
 
 	it("review round 7: resumeBatch terminates as failed on same-SHA branch switch before settlement", async () => {
@@ -2513,7 +2651,9 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 
 		runBatchGitPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
 
-		// External HEAD movement after the initial check, while child A is enrolled
+		// History rewrite after the initial check, while child A is enrolled: the
+		// recorded base is no longer an ancestor of HEAD.
+		git(repo.root, ["reset", "-q", "--hard", "HEAD~1"]);
 		git(repo.root, ["commit", "--allow-empty", "-qm", "external movement"]);
 
 		const kernel: BatchRunnerKernelPort = {
@@ -3046,5 +3186,133 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 		} finally {
 			rmSync(srcRepo, { recursive: true, force: true });
 		}
+	});
+});
+
+function commitFile(root: string, name: string): string {
+	writeFileSync(join(root, name), `${name}\n`);
+	git(root, ["add", name]);
+	git(root, ["commit", "-qm", `commit ${name}`]);
+	return git(root, ["rev-parse", "HEAD"]);
+}
+
+describe("batch HEAD lineage classification", () => {
+	let root: string;
+	let base: string;
+	beforeEach(() => {
+		root = mkdtempSync(join(tmpdir(), "batch-lineage-"));
+		git(root, ["init", "-b", "main"]);
+		git(root, ["config", "user.name", "Test"]);
+		git(root, ["config", "user.email", "test@example.com"]);
+		base = commitFile(root, "base.txt");
+		git(root, ["checkout", "-qb", "imm/demo"]);
+	});
+	afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+	it("reports equal when HEAD is the recorded head", () => {
+		expect(classifyBatchLineage({ root, branch: "imm/demo", expectedHead: base, childCommits: [] })).toEqual({
+			kind: "equal",
+			head: base,
+		});
+	});
+
+	it("adopts a fast-forward commit on the batch branch", () => {
+		const outside = commitFile(root, "outside.txt");
+		expect(classifyBatchLineage({ root, branch: "imm/demo", expectedHead: base, childCommits: [] })).toEqual({
+			kind: "fast_forward",
+			head: outside,
+		});
+	});
+
+	it("adopts a fast-forward that sits on top of a recorded child commit", () => {
+		const child = commitFile(root, "child.txt");
+		const outside = commitFile(root, "outside.txt");
+		expect(classifyBatchLineage({ root, branch: "imm/demo", expectedHead: child, childCommits: [child] })).toEqual({
+			kind: "fast_forward",
+			head: outside,
+		});
+	});
+
+	it("refuses a fast-forward that claims this batch's trailer without recorded evidence", () => {
+		writeFileSync(join(root, "forged.txt"), "forged\n");
+		git(root, ["add", "forged.txt"]);
+		git(root, ["commit", "-qm", "forged\n\nImmune-Brain-Batch: batch-1"]);
+		const result = classifyBatchLineage({ root, branch: "imm/demo", expectedHead: base, childCommits: [], batchId: "batch-1" });
+		expect(result.kind).toBe("broken");
+		if (result.kind === "broken") expect(result.message).toContain("without recorded evidence");
+	});
+
+	it("adopts a fast-forward that carries another batch's trailer", () => {
+		writeFileSync(join(root, "other.txt"), "other\n");
+		git(root, ["add", "other.txt"]);
+		git(root, ["commit", "-qm", "other\n\nImmune-Brain-Batch: batch-2"]);
+		expect(classifyBatchLineage({ root, branch: "imm/demo", expectedHead: base, childCommits: [], batchId: "batch-1" }).kind).toBe(
+			"fast_forward",
+		);
+	});
+
+	it("keeps a different branch fatal", () => {
+		git(root, ["checkout", "-qb", "other"]);
+		const result = classifyBatchLineage({ root, branch: "imm/demo", expectedHead: base, childCommits: [] });
+		expect(result.kind).toBe("broken");
+		if (result.kind === "broken") expect(result.message).toContain("batch_head_lineage_broken");
+	});
+
+	it("keeps a detached HEAD fatal", () => {
+		git(root, ["checkout", "-q", "--detach"]);
+		const result = classifyBatchLineage({ root, branch: "imm/demo", expectedHead: base, childCommits: [] });
+		expect(result.kind).toBe("broken");
+	});
+
+	it("keeps a recorded head that is not an ancestor of HEAD fatal", () => {
+		const child = commitFile(root, "child.txt");
+		git(root, ["reset", "-q", "--hard", base]);
+		commitFile(root, "diverged.txt");
+		const result = classifyBatchLineage({ root, branch: "imm/demo", expectedHead: child, childCommits: [child] });
+		expect(result.kind).toBe("broken");
+		if (result.kind === "broken") expect(result.message).toContain("batch_head_lineage_broken");
+	});
+
+	it("keeps an unreachable recorded child commit fatal even when the head still descends", () => {
+		const child = commitFile(root, "child.txt");
+		git(root, ["checkout", "-q", "--orphan", "rewritten"]);
+		git(root, ["branch", "-D", "imm/demo"]);
+		git(root, ["branch", "-m", "imm/demo"]);
+		const rewritten = commitFile(root, "rewritten.txt");
+		const result = classifyBatchLineage({ root, branch: "imm/demo", expectedHead: rewritten, childCommits: [child] });
+		expect(result.kind).toBe("broken");
+		if (result.kind === "broken") expect(result.message).toContain(child);
+	});
+});
+
+describe("expected batch head with adopted commits", () => {
+	it("follows the adoption chain from the last child commit", () => {
+		const record = {
+			base_head: "a".repeat(40),
+			commits: ["b".repeat(40)],
+			adopted_heads: [
+				{ from: "b".repeat(40), to: "c".repeat(40) },
+				{ from: "c".repeat(40), to: "d".repeat(40) },
+			],
+		};
+		expect(expectedBatchHead(record)).toBe("d".repeat(40));
+	});
+
+	it("follows an adoption recorded before any child commit", () => {
+		const record = {
+			base_head: "a".repeat(40),
+			commits: [],
+			adopted_heads: [{ from: "a".repeat(40), to: "c".repeat(40) }],
+		};
+		expect(expectedBatchHead(record)).toBe("c".repeat(40));
+	});
+
+	it("ignores an adoption that predates the last child commit", () => {
+		const record = {
+			base_head: "a".repeat(40),
+			commits: ["e".repeat(40)],
+			adopted_heads: [{ from: "a".repeat(40), to: "c".repeat(40) }],
+		};
+		expect(expectedBatchHead(record)).toBe("e".repeat(40));
 	});
 });

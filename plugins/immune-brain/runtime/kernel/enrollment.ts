@@ -15,6 +15,7 @@ import type {
 	BatchAuthorizationBinding,
 } from "./batch_authority";
 import type { BackendClaim } from "./backend_claim";
+import { assertBatchLineageOrigin } from "./batch_authority";
 import { preparePiCanary, readGitHead } from "./pi_canary_prepare";
 import { dirtyScopePaths, writeEnrollmentBaseline } from "../workspace_scope";
 import { enrollmentRequestDigest } from "./run_identity";
@@ -346,23 +347,19 @@ export function enrollCanaryTask(
 
 			// A batch-derived enrollment must still stand on the lineage the
 			// literal user confirmed: child N's base is the commit child N-1
-			// produced on the batch branch, and child 1's base is base_head.
+			// produced on the batch branch, and child 1's base is base_head or a
+			// fast-forward of it the runner adopted.
 			// expected_head is caller-supplied, so anchor its origin here rather
 			// than trusting the caller's own assertion: before this batch has
 			// consumed any slot it has created no commit, so the only lineage
-			// value it can hold is the confirmed base_head.
+			// value it can hold descends from the confirmed base_head.
 			if (input.batch) {
 				const batch = input.batch.registry.inspect(
 					input.batch.capability,
 					input.batch.binding,
 				);
-				if (
-					input.batch.registry.consumedChildren(input.batch.capability).length === 0 &&
-					input.batch.expected_head !== batch.base_head
-				)
-					throw new Error(
-						`batch_head_lineage_broken: the first child must enroll on the confirmed base_head ${batch.base_head}, not ${input.batch.expected_head}`,
-					);
+				if (input.batch.registry.consumedChildren(input.batch.capability).length === 0)
+					assertBatchLineageOrigin(root, batch.base_head, input.batch.expected_head);
 				if (checks.gitBaseHead !== input.batch.expected_head)
 					throw new Error(
 						`batch_head_lineage_broken: expected ${input.batch.expected_head}, found ${checks.gitBaseHead}`,

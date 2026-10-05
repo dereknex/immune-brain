@@ -8,6 +8,7 @@
 // plus an advancing HEAD lineage instead.
 
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { createCapabilityRegistry } from "./capability_registry";
 import { isLiteralUserActor } from "./actor_identity";
 import type { BaseCapabilityBinding, EnrollmentCapabilityBinding } from "./enrollment_authority";
@@ -299,6 +300,24 @@ export function createBatchAuthorityRegistry(): BatchAuthorityRegistry {
 	};
 }
 
+/**
+ * Before a batch has consumed a slot it has created no commit, so its lineage
+ * can only stand on the confirmed base_head or on a fast-forward of it: the
+ * user's own commit on the batch branch, which the runner adopts. A head that
+ * does not descend from base_head is not a lineage.
+ */
+export function assertBatchLineageOrigin(root: string, baseHead: string, expectedHead: string): void {
+	if (expectedHead === baseHead) return;
+	const descends =
+		spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", baseHead, expectedHead], {
+			stdio: ["ignore", "ignore", "ignore"],
+		}).status === 0;
+	if (!descends)
+		throw new Error(
+			`batch_head_lineage_broken: the first child must enroll on the confirmed base_head ${baseHead} or a fast-forward of it, not ${expectedHead}`,
+		);
+}
+
 export interface DeriveChildEnrollmentInput {
 	capability: object;
 	binding: BatchAuthorizationBinding;
@@ -353,13 +372,8 @@ export function deriveChildEnrollment(
 	// settled a child there is no commit it could have created, so a
 	// caller-supplied expected_head other than base_head is not a lineage.
 	// Checked last so the intent-divergence reason keeps its precedence.
-	if (
-		registry.consumedChildren(input.capability).length === 0 &&
-		input.expected_head !== validated.base_head
-	)
-		throw new Error(
-			`batch_head_lineage_broken: the first child must enroll on the confirmed base_head ${validated.base_head}, not ${input.expected_head}`,
-		);
+	if (registry.consumedChildren(input.capability).length === 0)
+		assertBatchLineageOrigin(root, validated.base_head, input.expected_head);
 
 	return {
 		child,

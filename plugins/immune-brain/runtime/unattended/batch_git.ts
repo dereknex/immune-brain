@@ -20,6 +20,7 @@ import { dirname, join } from "node:path";
 import { localRunId, readAuditTaskPair, readSecureProjectFile } from "../kernel/storage";
 import { captureGitTaskRevisionSnapshot, pathMatchesScope } from "../workspace_scope";
 import { expectedBatchHead, findExistingActiveBatch, findSettledBatchRecord } from "./batch_preflight";
+export { classifyBatchLineage, type BatchLineage } from "./batch_preflight";
 
 export type BatchGitPreflightRejectReason =
 	| "batch_branch_exists"
@@ -744,7 +745,14 @@ export async function lookupBatchCommit(input: {
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 		const currentHead = currentHeadResult.stdout.trim();
-		if (currentHead !== commit) {
+		// HEAD is the own commit, or a fast-forward the user added on top of it
+		// before the runner persisted it.
+		if (
+			currentHead !== commit &&
+			spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", commit, currentHead], {
+				stdio: ["ignore", "ignore", "ignore"],
+			}).status !== 0
+		) {
 			throw new Error(`batch_head_lineage_broken: current HEAD ${currentHead} diverged from adopted commit ${commit}`);
 		}
 		const parentsResult = spawnSync("git", ["-C", root, "rev-parse", `${commit}^@`], {

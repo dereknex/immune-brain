@@ -55,6 +55,11 @@ export interface BatchRunStateRecord {
 	consecutive_qa_failures: number;
 	/** Commit heads produced by this batch, in child order. */
 	commits: string[];
+	/**
+	 * Fast-forward commits the user made on the batch branch, adopted as the new
+	 * expected head. Never attributed to a child and never rewritten.
+	 */
+	adopted_heads?: Array<{ from: string; to: string }>;
 	created_at: string;
 	updated_at: string;
 }
@@ -155,6 +160,20 @@ function validateRecordShape(value: unknown, batchId: string): asserts value is 
 		throw new Error(`batch run state ${batchId} has an invalid budget`);
 	if (!Array.isArray(record.commits) || record.commits.some((c) => typeof c !== "string"))
 		throw new Error(`batch run state ${batchId} has an invalid commits list`);
+	if (
+		record.adopted_heads !== undefined &&
+		(!Array.isArray(record.adopted_heads) ||
+			record.adopted_heads.some(
+				(a: unknown) =>
+					typeof a !== "object" ||
+					a === null ||
+					typeof (a as { from?: unknown }).from !== "string" ||
+					!(a as { from: string }).from ||
+					typeof (a as { to?: unknown }).to !== "string" ||
+					!(a as { to: string }).to,
+			))
+	)
+		throw new Error(`batch run state ${batchId} has an invalid adopted_heads list`);
 	const seenTaskIds = new Set<string>();
 	for (const child of record.children) {
 		if (

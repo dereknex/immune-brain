@@ -1506,11 +1506,30 @@ describe("batch authorization reuse (ADR-0005 Decision 1)", () => {
 		expect(rewritten.budget).not.toHaveProperty("deadline_at");
 	});
 
-	it("demands a fresh gate when the HEAD lineage moved, then fails closed on the drift", async () => {
-		const { fixture } = await startRunningBatch("reuse-head");
+	it("adopts a fast-forward commit on the batch branch and reuses the authorization with zero gates", async () => {
+		const { fixture, batchId } = await startRunningBatch("reuse-fast-forward");
 		writeFileSync(join(fixture.root, "outside.txt"), "external commit\n");
 		execFileSync("git", ["add", "outside.txt"], { cwd: fixture.root });
 		execFileSync("git", ["commit", "-q", "-m", "external commit"], { cwd: fixture.root });
+		const outsideHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+
+		const gates: string[] = [];
+		const resumed = await resumeBatch(fixture, "reuse-fast-forward", async (details) => {
+			gates.push(details.details);
+			return "accept";
+		});
+
+		expect(gates).toEqual([]);
+		expect(resumed.state).toBe("started");
+		expect(resumed.batch_id).toBe(batchId);
+		expect(resumed.report.batch_state).toBe("completed");
+		const stored = JSON.parse(readFileSync(join(fixture.root, ".imm", "state", "batches", `${batchId}.json`), "utf8"));
+		expect(stored.adopted_heads.some((adoption: { from: string; to: string }) => adoption.to === outsideHead)).toBe(true);
+	});
+
+	it("demands a fresh gate when the HEAD lineage was rewritten, then fails closed on the drift", async () => {
+		const { fixture } = await startRunningBatch("reuse-head");
+		execFileSync("git", ["commit", "-q", "--amend", "-m", "rewritten commit"], { cwd: fixture.root });
 
 		const gates: string[] = [];
 		const resumed = await resumeBatch(fixture, "reuse-head", async (details) => {

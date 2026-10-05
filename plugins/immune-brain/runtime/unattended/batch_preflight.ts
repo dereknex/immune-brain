@@ -182,10 +182,78 @@ export function findSettledBatchRecord(root: string, initiativeSlug: string): Ba
 	return newest;
 }
 
+export type BatchLineage =
+	| { kind: "equal"; head: string }
+	| { kind: "fast_forward"; head: string }
+	| { kind: "broken"; message: string };
+
+/**
+ * Classify live HEAD against the batch's recorded head. `fast_forward` is HEAD
+ * on the same batch branch with the recorded head as an ancestor and every
+ * recorded child commit still reachable: the user's own commit, adopted rather
+ * than refused. Anything else is the fatal `batch_head_lineage_broken`.
+ */
+export function classifyBatchLineage(input: {
+	root: string;
+	branch: string;
+	expectedHead: string;
+	childCommits: readonly string[];
+	/** When set, a fast-forward carrying this batch's own trailer is refused. */
+	batchId?: string;
+}): BatchLineage {
+	const { root, branch, expectedHead, childCommits } = input;
+	const run = (args: string[]) =>
+		spawnSync("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+	const broken = (reason: string): BatchLineage => ({
+		kind: "broken",
+		message: `batch_head_lineage_broken: ${reason}`,
+	});
+	const branchResult = run(["symbolic-ref", "--short", "HEAD"]);
+	const currentBranch = branchResult.stdout.trim();
+	if (branchResult.status !== 0 || currentBranch !== branch)
+		return broken(`current branch ${currentBranch} does not match expected branch ${branch}`);
+	const headResult = run(["rev-parse", "HEAD"]);
+	const head = headResult.stdout.trim();
+	if (headResult.status !== 0 || !head) return broken("current HEAD is unreadable");
+	if (head !== expectedHead && run(["merge-base", "--is-ancestor", expectedHead, head]).status !== 0)
+		return broken(`current HEAD ${head} does not descend from expected batch head ${expectedHead}`);
+	for (const commit of childCommits) {
+		if (run(["merge-base", "--is-ancestor", commit, head]).status !== 0)
+			return broken(`recorded commit ${commit} is no longer reachable from HEAD`);
+	}
+	if (head === expectedHead) return { kind: "equal", head };
+	// Only the runner writes this batch's trailer, and every commit it recorded
+	// is already in childCommits: a fast-forward claiming it is an impersonation
+	// (or an unverified own commit), never the user's own work.
+	if (input.batchId) {
+		const claimed = run([
+			"log",
+			"--fixed-strings",
+			`--grep=Immune-Brain-Batch: ${input.batchId}`,
+			"--format=%H",
+			`${expectedHead}..${head}`,
+		]);
+		const claimant = claimed.stdout.split(/\s+/).find(Boolean);
+		if (claimed.status !== 0 || claimant)
+			return broken(`commit ${claimant ?? head} claims batch ${input.batchId} without recorded evidence`);
+	}
+	return { kind: "fast_forward", head };
+}
+
 /** The HEAD a resumable batch must still sit on: its last child commit, or its base. */
-export function expectedBatchHead(record: { base_head: string; commits?: unknown }): string {
+export function expectedBatchHead(record: {
+	base_head: string;
+	commits?: unknown;
+	adopted_heads?: ReadonlyArray<{ from: string; to: string }>;
+}): string {
 	const commits = Array.isArray(record.commits) ? (record.commits as string[]) : [];
-	return commits.length > 0 ? commits[commits.length - 1]! : record.base_head;
+	let head = commits.length > 0 ? commits[commits.length - 1]! : record.base_head;
+	// An adoption is keyed by the head it moved from, so one recorded before the
+	// last child commit can never resurface as the expected head.
+	for (const adoption of record.adopted_heads ?? []) {
+		if (adoption.from === head) head = adoption.to;
+	}
+	return head;
 }
 
 /**
@@ -234,9 +302,9 @@ export function isOwnBatchClaim(
 		return false;
 	}
 	if (!rec) return false;
-	const lineageHeads = [existingBatch.base_head].concat(
-		Array.isArray(existingBatch.commits) ? existingBatch.commits : [],
-	);
+	const lineageHeads = [existingBatch.base_head]
+		.concat(Array.isArray(existingBatch.commits) ? existingBatch.commits : [])
+		.concat((existingBatch.adopted_heads ?? []).map((adoption) => adoption.to));
 	if (!lineageHeads.includes(rec.git_base_head)) return false;
 	if (claim.enrollment_event_id !== `enroll-${taskId}-${claim.created_at}`) return false;
 	const createdAt = Date.parse(claim.created_at);
@@ -703,15 +771,27 @@ export async function authorizeBatch<HostRejection>(
 	// binds falls through to the gate below, which names the reason.
 	const ownsUnpersistedHead = isResuming && existingBatch !== null && existingBatch.plan_digest === planDigest &&
 		expectedBatchHead(existingBatch) !== baseHead && ownUnpersistedBatchHead(root, existingBatch, baseHead);
+	// A fast-forward on the batch branch is the user's own work: the runner adopts
+	// it, so it neither blocks reuse nor counts as moved provenance.
+	const fastForwardsRecordedHead = isResuming && existingBatch !== null && existingBatch.branch === batchBranch &&
+		expectedBatchHead(existingBatch) !== baseHead && !ownsUnpersistedHead &&
+		classifyBatchLineage({
+			root,
+			branch: batchBranch,
+			expectedHead: expectedBatchHead(existingBatch),
+			childCommits: existingBatch.commits,
+			batchId: existingBatch.batch_id,
+		}).kind === "fast_forward";
 	if (isResuming && existingBatch && !existingBatch.commits.length && existingBatch.children[0]?.state === "settled" &&
-		expectedBatchHead(existingBatch) !== baseHead && !ownsUnpersistedHead)
+		expectedBatchHead(existingBatch) !== baseHead && !ownsUnpersistedHead && !fastForwardsRecordedHead)
 		return { outcome: "rejected", rejection: batchRejection("head_moved", "first unpersisted commit provenance is invalid") };
 	const reuseBlockers: string[] = [];
 	if (isResuming && existingBatch) {
 		if (existingBatch.batch_state !== "running") reuseBlockers.push("batch_not_running");
 		if (existingBatch.plan_digest !== planDigest) reuseBlockers.push("batch_plan_digest_changed");
 		if (existingBatch.branch !== batchBranch) reuseBlockers.push("batch_branch_changed");
-		if (expectedBatchHead(existingBatch) !== baseHead && !ownsUnpersistedHead) reuseBlockers.push("batch_head_lineage_moved");
+		if (expectedBatchHead(existingBatch) !== baseHead && !ownsUnpersistedHead && !fastForwardsRecordedHead)
+				reuseBlockers.push("batch_head_lineage_moved");
 	}
 	const reuseAuthorization = isResuming && reuseBlockers.length === 0;
 
