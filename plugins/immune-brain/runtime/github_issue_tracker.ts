@@ -1065,12 +1065,8 @@ interface AmendmentExecutionContext {
 	pendingContent: Map<string, { title: string; body: string }>;
 	/** Approved final Parent title/body. */
 	parent: { title: string; body: string };
-	/** Approved bound Parent issue number. */
-	parentIssueNumber: number;
 	/** Historical Slice lines derived from the approved Parent baseline (exact bytes). */
 	historicalSlices: string[];
-	/** Historical dependency database IDs and terminal state_reason snapshotted before any write. */
-	historicalRelations: Map<string, { blocked_by: number[]; state_reason: string | null }>;
 }
 
 /**
@@ -1143,9 +1139,7 @@ function approvedAmendmentContent(
 			title: initiativeIssueTitle(parent.initiative_id, parent.projection),
 			body: parentBody,
 		},
-		parentIssueNumber: parentIssue.number,
 		historicalSlices,
-		historicalRelations: new Map(),
 	};
 }
 
@@ -1193,8 +1187,6 @@ async function upsertTask(
 	gh: GhTransport,
 	operation: Extract<TrackerOperation, { op: "upsert-task" }>,
 	source: RepositorySnapshot,
-	pendingBinding: InitiativeAmendmentBinding | undefined | null = null,
-	amendmentContext: AmendmentExecutionContext | undefined = undefined,
 ): Promise<GithubTrackerResult> {
 	const labelFailure = await labelAvailabilityFailure(root, gh, source.repository, desiredTaskLabels(operation));
 	if (labelFailure) return labelFailure;
@@ -1212,8 +1204,6 @@ async function upsertTask(
 	const lookup = (issues: GithubIssue[]) => taskLookup(issues, source.repository.id, operation.task_id);
 	const found = lookup(source.issues);
 	if (found.kind === "ambiguous") return result(operation.op, "ambiguous_remote_state", found.message);
-	if (found.kind === "missing" && pendingBinding !== null && pendingBinding !== undefined)
-		return result(operation.op, "ambiguous_remote_state", `Task ${operation.task_id} is bound to Issue #${pendingBinding.issue_number} but that Issue no longer holds its Task marker; amend the binding or restore the marker instead of recreating`, parent.issue);
 	const blockerIds = operation.projection?.blocked_by ?? [];
 	const blockers: GithubIssue[] = [];
 	for (const blockerId of blockerIds) {
@@ -1234,40 +1224,6 @@ async function upsertTask(
 	let createdChild = false;
 	let labelsConverged = false;
 	if (found.kind === "missing") {
-		// Pre-create re-read (amendment path): a concurrent writer may have already
-		// created this unbound Task between the initial snapshot and our create — the
-		// same resumable-creation contract applies before we issue any write, so we
-		// fail closed on divergent content instead of issuing a duplicate create.
-		if (amendmentContext !== undefined) {
-			const reRead = await snapshot(root, gh, operation.op);
-			if ("contract" in reRead) return reRead;
-			// The re-read snapshot must also still hold the amendment's Parent exactly
-			// as approved: a Parent closed or edited after the initial snapshot fails
-			// closed here, before any Child create (avoiding an avoidable remote write
-			// that the post-create attachment guard would otherwise reject).
-			const reReadParent = initiativeLookup(reRead.issues, reRead.repository.id, operation.initiative_id);
-			if (reReadParent.kind !== "found")
-				return result(operation.op, "ambiguous_remote_state", reReadParent.kind === "ambiguous" ? reReadParent.message : "amendment Parent is not observable before creating a new Child", parent.issue);
-			if (reReadParent.issue.number !== amendmentContext.parentIssueNumber)
-				return result(operation.op, "ambiguous_remote_state", `amendment Parent is bound to Issue #${amendmentContext.parentIssueNumber} but observed Issue #${reReadParent.issue.number} before creating a new Child`, reReadParent.issue);
-			if (reReadParent.issue.state !== "open")
-				return result(operation.op, "ambiguous_remote_state", "amendment Parent is no longer open before creating a new Child", reReadParent.issue);
-			if (amendmentContext.parent.title !== reReadParent.issue.title || amendmentContext.parent.body !== reReadParent.issue.body)
-				return result(operation.op, "ambiguous_remote_state", "amendment Parent content changed before creating a new Child", reReadParent.issue);
-			if (sliceCount(reReadParent.issue.body, operation.slice_id) !== 1)
-				return result(operation.op, "ambiguous_remote_state", `Parent Issue #${reReadParent.issue.number} lost its exact Slice marker ${operation.slice_id} before creating a new Child`, reReadParent.issue);
-			const raced = lookup(reRead.issues);
-			if (raced.kind === "ambiguous") return result(operation.op, "ambiguous_remote_state", raced.message);
-			if (raced.kind === "found") {
-				const approved = amendmentContext.pendingContent.get(operation.task_id);
-				const resumable = approved !== undefined
-					&& raced.issue.state === "open"
-					&& carriesApprovedContent(raced.issue.title, raced.issue.body, approved);
-				if (!resumable)
-					return result(operation.op, "ambiguous_remote_state", `new pending Task ${operation.task_id} is unbound but Issue #${raced.issue.number} already exists with divergent content; bind it to amend`, raced.issue);
-				return updatePendingChild(root, gh, reRead, operation, raced.issue, undefined, blockers, approved, amendmentContext);
-			}
-		}
 		const mutation = await gh.run([
 			"issue", "create", "--repo", source.repository.name_with_owner,
 			"--title", title,
@@ -1285,59 +1241,12 @@ async function upsertTask(
 		}
 		if (created.issue.body !== body || created.issue.title !== title)
 			return result(operation.op, "retryable_failure", "Task Issue did not converge to the requested title and body", created.issue);
-		if (amendmentContext !== undefined) {
-			// Amendment unbound new Child: creation converged, but the Child must
-			// still be open — a concurrent close between create and read fails closed
-			// instead of attaching and wiring dependencies onto closed work.
-			if (created.issue.state !== "open")
-				return result(operation.op, "ambiguous_remote_state", `new pending Task ${operation.task_id} (Issue #${created.issue.number}) is not open after creation`, created.issue);
-			// Route through the amendment convergence path so attachment (R4
-			// re-attach) and every dependency write carry the same pre-write
-			// revalidation as bound pending Children.
-			return updatePendingChild(root, gh, source, operation, created.issue, undefined, blockers, amendmentContext.pendingContent.get(operation.task_id), amendmentContext);
-		}
 		child = created.issue;
 		createdChild = true;
 	} else {
 		const owned = ownedTaskLookup(source.issues, source.repository.id, operation.task_id, operation.initiative_id, operation.slice_id);
 		if (owned.kind !== "found") return result(operation.op, "ambiguous_remote_state", owned.kind === "ambiguous" ? owned.message : "Task Issue ownership changed during publication", found.issue);
 		child = owned.issue;
-		if (pendingBinding !== null) {
-			if (child.state !== "open")
-				return result(operation.op, "ambiguous_remote_state", `Task ${operation.task_id} is closed and cannot be amended as pending work`, found.issue);
-			// The bound pending Child must still be the Issue its binding pins (review-5):
-			// a replacement Issue that took over the markers fails closed instead of
-			// being edited or recreated.
-			if (pendingBinding !== undefined && pendingBinding.issue_number !== child.number)
-				return result(operation.op, "ambiguous_remote_state", `Task ${operation.task_id} is bound to Issue #${pendingBinding.issue_number} but observed Issue #${child.number}`, found.issue);
-			const approvedFinal = amendmentContext?.pendingContent.get(operation.task_id);
-			// A Child left open with a validated terminal suffix (failed terminal close)
-			// counts as approved-final when its suffix-free bytes match the approved bytes.
-			const isFinal = approvedFinal !== undefined && carriesApprovedContent(found.issue.title, found.issue.body, approvedFinal);
-			if (!isFinal) {
-				// Suffix-aware baseline equality: a Child whose remote bytes carry a validated
-				// terminal suffix over the binding baseline (failed terminal close) still
-				// matches its binding, because the suffix is terminal evidence, not drift.
-				const baselineMatches = pendingBinding !== undefined
-					&& pendingBinding.title === found.issue.title
-					&& carriesApprovedContent(found.issue.title, found.issue.body, pendingBinding);
-				if (!baselineMatches)
-					return result(operation.op, "ambiguous_remote_state", `Task ${operation.task_id} changed since the approved amendment baseline`, found.issue);
-			}
-			return updatePendingChild(root, gh, source, operation, child, pendingBinding?.issue_number, blockers, approvedFinal, amendmentContext);
-		}
-		if (amendmentContext !== undefined) {
-			// Amendment unbound Child observed before any write: it is only valid
-			// as the exact approved-final creation of this same batch (resumable
-			// creation); anything else fails closed.
-			const approvedFinal = amendmentContext.pendingContent.get(operation.task_id);
-			const resumable = approvedFinal !== undefined
-				&& child.state === "open"
-				&& carriesApprovedContent(found.issue.title, found.issue.body, approvedFinal);
-			if (!resumable)
-				return result(operation.op, "ambiguous_remote_state", `new pending Task ${operation.task_id} is unbound but Issue #${child.number} already exists with divergent content; bind it to amend`, found.issue);
-			return updatePendingChild(root, gh, source, operation, child, undefined, blockers, approvedFinal, amendmentContext);
-		}
 		if (!sameTrackedBody(found.issue.body, body) || found.issue.title !== title)
 			return result(operation.op, "permanent_failure", "Task Issue already exists with a different title or Agent Brief; edit the GitHub source or retry the original projection before changing native relations", found.issue);
 		// The published surface records the approved Intent identity. A Child that
@@ -2119,247 +2028,6 @@ function carriesApprovedContent(title: string, body: string, approved: { title: 
 	return typeof stripped === "string" && stripped.trimEnd() === approved.body.trimEnd();
 }
 
-async function updatePendingChild(
-	root: string,
-	gh: GhTransport,
-	source: RepositorySnapshot,
-	op: Extract<TrackerOperation, { op: "upsert-task" }>,
-	child: GithubIssue,
-	boundNumber: number | undefined,
-	desiredBlockers: GithubIssue[],
-	approvedFinal: { title: string; body: string } | undefined,
-	amendmentContext: AmendmentExecutionContext | undefined = undefined,
-): Promise<GithubTrackerResult> { // eslint-disable-line @typescript-eslint/no-unused-vars -- boundNumber retained for call-site symmetry
-	const parent = initiativeLookup(source.issues, source.repository.id, op.initiative_id);
-	const body = childBody(source.repository, op, parent.kind === "found" ? parent.issue : child);
-	const oversized = bodyLimitFailure(op.op, body, MAX_TERMINAL_SUFFIX_BYTES);
-	if (oversized) return oversized;
-	const title = taskIssueTitle(op, sliceOrdinalFromChecklist(parent.kind === "found" ? parent.issue.body : child.body, op.slice_id, op.projection?.slice_ordinal ?? 1));
-	// Parent content expectation for pre-write revalidation: on the amendment
-	// path the expectation is always the fixed approved final Parent bytes —
-	// never re-adopt freshly observed content as the baseline, so an edit that
-	// lands between the Parent write and this Child write fails closed. On the
-	// non-amendment path (no amendmentContext) no Parent content expectation is
-	// enforced here.
-	const parentApprovedContent = amendmentContext?.parent;
-	const parentBoundNumber = amendmentContext?.parentIssueNumber;
-	const baseBody = child.body;
-	const suffixEvent = issueTerminalEventId(baseBody);
-	if (suffixEvent === "multiple") return result(op.op, "ambiguous_remote_state", "pending Task has multiple terminal markers", child);
-	if (suffixEvent === "malformed") return result(op.op, "ambiguous_remote_state", `pending Task ${op.task_id} carries a malformed terminal marker (marker without its exact canonical suffix)`, child);
-	// An open Child left by a failed terminal close retains its validated terminal
-	// suffix; the approved-final bytes keep that suffix so the original-input batch
-	// retry converges instead of failing closed on its own partial write.
-	let finalBody = suffixEvent !== null ? `${body.trimEnd()}${terminalSuffix(suffixEvent)}` : body;
-	// The approved-final bytes are suffix-free by construction; a Child carrying a
-	// validated terminal suffix matches when its suffix-free bytes are exact.
-	const approvedMatches = approvedFinal !== undefined && carriesApprovedContent(title, body, approvedFinal);
-	if (!approvedMatches)
-		return result(op.op, "ambiguous_remote_state", `pending Task ${op.task_id} carries a terminal suffix that diverges from the approved amendment content`, child);
-	// R4 re-attach: a Child that already carries the exact approved-final content
-	// but lost its native Sub-issue attachment (a detached intermediate state from
-	// a prior partial write) is re-attached instead of failing closed, keeping the
-	// original batch retryable. The Child must be bound to this amendment's
-	// Parent (its marker Initiative) and carry no other parent edge — a foreign
-	// attachment is ambiguous remote state, never re-attached.
-	const approvedNow = approvedFinal !== undefined && carriesApprovedContent(child.title, child.body, approvedFinal);
-	if (approvedNow) {
-		const currentParent = initiativeLookup(source.issues, source.repository.id, op.initiative_id);
-		if (currentParent.kind !== "found")
-			return result(op.op, "ambiguous_remote_state", "pending Task Parent is not observable before attachment convergence", child);
-		// Re-read and revalidate the Child immediately before the attachment
-		// mutation: the earlier snapshot may have raced a concurrent edit or
-		// close. exact identity, open state and approved-final bytes must hold,
-		// or the re-attach fails closed with zero relation writes. The attachment
-		// check is skipped here: the re-attach itself converges it and verifies
-		// the relation after the write.
-		const revalidated = await revalidatePendingChildBeforeWrite(root, gh, child.number, op.task_id, approvedFinal, undefined, true, parentApprovedContent, parentBoundNumber);
-		if ("contract" in revalidated) return revalidated;
-		const targetParentNumber = parentBoundNumber ?? currentParent.issue.number;
-		const attachment = await confirmAttachment(root, gh, op.op, source.repository, targetParentNumber, child.number);
-		if (!("attached" in attachment)) return attachment;
-		if (!attachment.attached) {
-			const attached = await attachSubIssue(root, gh, op.op, source.repository, targetParentNumber, child);
-			if (!("attached" in attached)) return attached;
-		}
-	}
-	// The authoritative remote observation for the write decision is the
-	// revalidated pre-write read, not the earlier snapshot: a terminal suffix
-	// that landed after the snapshot must be preserved exactly, never
-	// overwritten by bytes computed from stale data.
-	let observed = child;
-	const desiredLabels = desiredTaskLabels(op);
-	if (child.title !== title || child.body !== finalBody || labelMutationArgs(child.labels, desiredLabels).length) {
-		// Re-read the Child immediately before writing: earlier blocker ownership
-		// reads may have raced a concurrent user edit. The bound issue_number must
-		// still hold and the remote content must still be baseline-or-approved-final.
-		// revalidatePendingChildBeforeWrite additionally rechecks native Parent
-		// attachment and exact Parent/Slice ownership so a detached or moved Child
-		// never receives a content rewrite.
-		const revalidated = await revalidatePendingChildBeforeWrite(
-			root, gh, child.number, op.task_id, approvedFinal,
-			{ title: child.title, body: child.body },
-			false, parentApprovedContent, parentBoundNumber,
-		);
-		if ("contract" in revalidated) return revalidated;
-		observed = revalidated;
-		// A newly observed terminal suffix on the remote (approved-final content
-		// plus evidence appended after the snapshot) must survive this write: the
-		// written body keeps the observed suffix instead of the snapshot-derived one.
-		const observedEvent = issueTerminalEventId(observed.body);
-		if (observedEvent === "malformed") return result(op.op, "ambiguous_remote_state", `pending Task ${op.task_id} carries a malformed terminal marker (marker without its exact canonical suffix)`, child);
-		const writeBody = typeof observedEvent === "string"
-			? `${body.trimEnd()}${terminalSuffix(observedEvent)}`
-			: finalBody;
-		const labelArgs = labelMutationArgs(observed.labels, desiredLabels);
-		if (observed.title !== title || observed.body !== writeBody || labelArgs.length) {
-			const edited = await gh.run([
-				"issue", "edit", String(child.number), "--repo", source.repository.name_with_owner,
-				"--title", title,
-				"--body-file", "-",
-				...labelArgs,
-			], { cwd: root, stdin: writeBody });
-			if (edited.exit_code !== 0 || edited.output_exceeded) return ghFailure(op.op, edited, `pending Task Issue #${child.number} update failed`);
-			finalBody = writeBody;
-		}
-	}
-	const dependencies = await convergePendingDependencies(root, gh, source, child.number, op.task_id, desiredBlockers, approvedFinal, parentApprovedContent, parentBoundNumber);
-	if (!("complete" in dependencies)) return dependencies;
-	const refreshed = await snapshot(root, gh, op.op);
-	if ("contract" in refreshed) return refreshed;
-	const reread = ownedTaskLookup(refreshed.issues, refreshed.repository.id, op.task_id, op.initiative_id, op.slice_id);
-	if (reread.kind !== "found" || reread.issue.number !== child.number)
-		return result(op.op, "ambiguous_remote_state", `pending Task ${op.task_id} changed identity during amendment`, child);
-	if (reread.issue.title !== title || reread.issue.body !== finalBody)
-		return result(op.op, "retryable_failure", `pending Task ${op.task_id} update did not converge`, reread.issue);
-	const labelsCurrent = !desiredLabels.some((label) => !reread.issue.labels.includes(label));
-	if (!labelsCurrent)
-		return result(op.op, "retryable_failure", `pending Task ${op.task_id} labels did not converge`, reread.issue);
-	const currentDependencies = await confirmBlockedBy(root, gh, op.op, refreshed.repository, reread.issue.number, desiredBlockers);
-	if (!("complete" in currentDependencies)) return currentDependencies;
-	if (!currentDependencies.complete)
-		return result(op.op, "retryable_failure", `pending Task ${op.task_id} dependencies did not converge`, reread.issue);
-	const contentCurrent = child.title === title && child.body === finalBody
-		&& labelMutationArgs(child.labels, desiredLabels).length === 0;
-	return contentCurrent
-		? result(op.op, "already_current", `pending Task ${op.task_id} already carries the approved amendment content`, reread.issue)
-		: result(op.op, "updated", `pending Task ${op.task_id} Agent Brief updated with approved amendment content`, reread.issue);
-}
-
-/** Converge the exact approved dependency set on a pending Child (amendment only). */
-async function convergePendingDependencies(
-	root: string,
-	gh: GhTransport,
-	source: RepositorySnapshot,
-	childNumber: number,
-	childTaskId: string,
-	requestedBlockers: GithubIssue[],
-	approvedFinal: { title: string; body: string } | undefined,
-	parentApprovedContent: { title: string; body: string } | undefined = undefined,
-	parentBoundNumber: number | undefined = undefined,
-): Promise<GithubTrackerResult | { complete: true }> {
-	const expected = requestedBlockers.map((blocker) => blocker.id);
-	const existing = await readBlockedByIds(root, gh, "upsert-task", source.repository, childNumber);
-	if (!Array.isArray(existing)) return existing;
-	const removed = existing.filter((id) => !expected.includes(id));
-	for (const id of removed) {
-		const revalidated = await revalidatePendingChildBeforeWrite(root, gh, childNumber, childTaskId, approvedFinal, undefined, false, parentApprovedContent, parentBoundNumber);
-		if ("contract" in revalidated) return revalidated;
-		const mutation = await gh.run([
-			"api", "--method", "DELETE",
-			`repos/${source.repository.name_with_owner}/issues/${childNumber}/dependencies/blocked_by/${id}`,
-		], { cwd: root });
-		if (mutation.exit_code !== 0 || mutation.output_exceeded)
-			return ghFailure("upsert-task", mutation, `native blocked_by removal failed for Issue #${childNumber}`);
-	}
-	const additions = requestedBlockers.filter((blocker) => !existing.includes(blocker.id));
-	for (const blocker of additions) {
-		const revalidated = await revalidatePendingChildBeforeWrite(root, gh, childNumber, childTaskId, approvedFinal, undefined, false, parentApprovedContent, parentBoundNumber);
-		if ("contract" in revalidated) return revalidated;
-		const mutation = await gh.run([
-			"api", "-F", `issue_id=${blocker.id}`,
-			`repos/${source.repository.name_with_owner}/issues/${childNumber}/dependencies/blocked_by`,
-		], { cwd: root });
-		if (mutation.exit_code !== 0 || mutation.output_exceeded)
-			return ghFailure("upsert-task", mutation, `native blocked_by attachment failed for Issue #${blocker.number}`);
-	}
-	const confirm = await confirmBlockedBy(root, gh, "upsert-task", source.repository, childNumber, requestedBlockers);
-	if (!("complete" in confirm)) return confirm;
-	return confirm.complete ? { complete: true } : { complete: true };
-}
-
-/**
- * Re-snapshot and re-validate a pending Child's bound identity, open state,
- * ownership, and baseline-or-approved-final content immediately before each
- * dependency write. Any drift stops the remaining mutations and fails closed
- * as ambiguous remote state. On success returns the validated Child
- * observation so callers can write the bytes actually present on the remote
- * (preserving a terminal suffix that landed after their earlier snapshot).
- * The return is discriminated by `contract`: a GithubTrackerResult failure
- * short-circuits the caller, a GithubIssue is the validated observation.
- */
-async function revalidatePendingChildBeforeWrite(
-	root: string,
-	gh: GhTransport,
-	childNumber: number,
-	childTaskId: string,
-	approvedFinal: { title: string; body: string } | undefined,
-	/** Additional byte-exact content this Child is allowed to carry (e.g. its pre-update baseline). */
-	allowedBaseline: { title: string; body: string } | undefined = undefined,
-	/** When true the native Sub-issue attachment check is skipped (re-attach phase: the attachment write itself is about to run). */
-	skipAttachmentCheck = false,
-	/** Expected exact Parent bytes (approved final after the Parent write, baseline before it); undefined skips the Parent content check. */
-	parentApproved: { title: string; body: string } | undefined = undefined,
-	/** Expected exact bound Parent issue number; undefined skips the Parent issue_number check. */
-	parentExpectedNumber: number | undefined = undefined,
-): Promise<GithubTrackerResult | GithubIssue> {
-	const refreshed = await snapshot(root, gh, "upsert-task");
-	if ("contract" in refreshed) return refreshed;
-	// Repository-wide identity resolution: a duplicate Task Issue introduced after
-	// the caller's snapshot must fail closed here, not at a later lookup — the
-	// immediate pre-write observation is the authoritative one.
-	const resolved = taskLookup(refreshed.issues, refreshed.repository.id, childTaskId);
-	if (resolved.kind !== "found")
-		return result("upsert-task", "ambiguous_remote_state", `pending Task ${childTaskId} is not uniquely owned before a write: ${resolved.kind}`);
-	const child = resolved.issue;
-	if (child.number !== childNumber)
-		return result("upsert-task", "ambiguous_remote_state", `pending Task ${childTaskId} resolves to Issue #${child.number}, not the bound Issue #${childNumber}`, child);
-	if (child.state !== "open")
-		return result("upsert-task", "ambiguous_remote_state", `pending Task ${childTaskId} (Issue #${childNumber}) is no longer open before a dependency write`, child);
-	const contentFinal = approvedFinal !== undefined && carriesApprovedContent(child.title, child.body, approvedFinal);
-	const contentBaseline = allowedBaseline !== undefined && child.title === allowedBaseline.title && child.body === allowedBaseline.body;
-	if (!contentFinal && !contentBaseline)
-		return result("upsert-task", "ambiguous_remote_state", `pending Task ${childTaskId} (Issue #${childNumber}) content is no longer the approved final bytes before a dependency write`, child);
-	const initiativeId = [...child.body.matchAll(/<!-- immune-brain:initiative-id=([A-Za-z0-9._:-]+) -->/g)].map((match) => match[1])[0];
-	if (!initiativeId)
-		return result("upsert-task", "ambiguous_remote_state", `pending Task ${childTaskId} (Issue #${childNumber}) lost its Initiative marker before a dependency write`, child);
-	const parent = initiativeLookup(refreshed.issues, refreshed.repository.id, initiativeId);
-	if (parent.kind !== "found" || parent.issue.state !== "open")
-		return result("upsert-task", "ambiguous_remote_state", `pending Task ${childTaskId} (Issue #${childNumber}) lost its open Parent before a dependency write`, child);
-	if (parentExpectedNumber !== undefined && parent.issue.number !== parentExpectedNumber)
-		return result("upsert-task", "ambiguous_remote_state", `pending Task ${childTaskId} (Issue #${childNumber}) Parent resolves to Issue #${parent.issue.number}, not the bound Parent Issue #${parentExpectedNumber} before a dependency write`, child);
-	// The Parent must still carry exactly the expected amendment bytes before any
-	// Child write: after the Parent write it is the approved final content; before
-	// the Parent write (non-amendment or pre-write paths) the earlier caller
-	// snapshot bytes apply. A concurrent edit that keeps ownership markers intact
-	// must fail closed here, not after the dependency mutations in final verification.
-	if (parentApproved !== undefined
-		&& (parent.issue.title !== parentApproved.title || parent.issue.body !== parentApproved.body))
-		return result("upsert-task", "ambiguous_remote_state", `pending Task ${childTaskId} (Issue #${childNumber}) Parent changed since the approved amendment content before a dependency write`, child);
-	// Native Sub-issue attachment must still hold immediately before each
-	// dependency write: a detached Child no longer belongs to the amendment.
-	if (!skipAttachmentCheck) {
-		const attachedNow = await readSubIssueNumbers(root, gh, "upsert-task", refreshed.repository, parent.issue.number);
-		if (!Array.isArray(attachedNow)) return attachedNow;
-		if (!attachedNow.includes(childNumber))
-			return result("upsert-task", "ambiguous_remote_state", `pending Task ${childTaskId} (Issue #${childNumber}) is no longer attached to the Parent before a dependency write`, child);
-	}
-	const sliceId = ownershipMarkerValue(child.body, "slice-id");
-	if (sliceId && sliceCount(parent.issue.body, sliceId) !== 1)
-		return result("upsert-task", "ambiguous_remote_state", `pending Task ${childTaskId} (Issue #${childNumber}) lost its exact Slice in the Parent before a dependency write`, child);
-	return child;
-}
-
 /**
  * The Issue number at the end of a `gh issue create` response URL, or null.
  * Creation takes its number from the create response: no read-back follows a
@@ -3109,9 +2777,7 @@ export async function runGithubInitiativePublication(
 	const amendmentContextValue: AmendmentExecutionContext = {
 		pendingContent,
 		parent,
-		parentIssueNumber: amendment.parent.issue_number,
 		historicalSlices,
-		historicalRelations: new Map(),
 	};
 	return publishAmendmentDirect(absoluteRoot, gh, prepared, initial, amendment, amendmentContextValue);
 }
