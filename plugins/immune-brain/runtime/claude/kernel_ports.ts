@@ -1068,7 +1068,7 @@ export class ClaudeRuntime {
 						signal: deadline.signal,
 					});
 				} catch (err) {
-					if (deadline.timedOut()) return { kind: "host_rejection", value: batchReason("confirmation_timed_out") };
+					if (deadline.timedOut()) return { kind: "host_rejection", value: batchReason("confirmation_timed_out", String(deadline.timeoutMs)) };
 					if (meta.signal?.aborted)
 						return { kind: "host_rejection", value: batchReason("cancelled_before_execution") };
 					if (err instanceof NativeAuthorityError) {
@@ -1094,7 +1094,7 @@ export class ClaudeRuntime {
 
 				// A transport that answers "cancel" on abort is still a timeout, not a user
 				// decision: the Host that owns the transport reports which one it was.
-				if (deadline.timedOut()) return { kind: "host_rejection", value: batchReason("confirmation_timed_out") };
+				if (deadline.timedOut()) return { kind: "host_rejection", value: batchReason("confirmation_timed_out", String(deadline.timeoutMs)) };
 				if (confirmationResult.decision === "cancel" && meta.signal?.aborted)
 					return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
 				if (meta.signal?.aborted)

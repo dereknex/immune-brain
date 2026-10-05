@@ -1,0 +1,38 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "batch-confirmation-window",
+  "owner": "user",
+  "goal": "Widen the shared native batch-confirmation window so an attentive literal user can answer it: both Hosts default to 15 minutes instead of 60 seconds, and a timeout says how long the gate waited and how to change the bound. Evidence: in this project's Pi sessions 4 of 12 batch gates expired at exactly 60 s while unbounded gates had a median answer time of about 60 s; the dialog itself renders. Confirmed framing: one shared default on both Hosts (keeps the 9d61307 convergence), IMMUNE_BRAIN_BATCH_TIMEOUT_MS stays the override. Out of scope: scope_hint preflight, post-commit Intent-revision resume, closing out existing batch records, any change to who may confirm or to unbounded Enrollment/authorization gates.",
+  "acceptance": [
+    {
+      "id": "BCW-A1",
+      "assertion": "startConfirmationDeadline uses a 900000 ms default on both Hosts when IMMUNE_BRAIN_BATCH_TIMEOUT_MS is unset. Positive: an unanswered confirmation is still pending after 60 s of the default bound (proved with a controllable clock or by asserting the armed bound, never by a real 60 s sleep) and an answer given before the bound is accepted. Bound: a positive finite override is honoured exactly and still produces confirmation_timed_out on both Hosts with zero authority, state or Git writes. Negative: an empty, non-numeric, zero or negative override falls back to the default; a caller-signal abort is still reported as cancellation, not timeout; clear() leaves no pending timer.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/confirmation-deadline.test.ts\",\n      \"tests/dual-host-assurance-conformance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "BCW-A2",
+      "assertion": "A confirmation_timed_out rejection reports the bound that actually elapsed and names IMMUNE_BRAIN_BATCH_TIMEOUT_MS as the way to change it, with identical state, reason shape and exactly one same-Host recovery action on Pi and Claude. The rejection keeps state rejected, stays distinct from cancelled and declined, and the batch reason contract table is updated in place rather than duplicated. Negative: no other batch reason text or recovery action changes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/claude-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "BCW-A3",
+      "assertion": "The generated Claude bundle carries the same default and timeout text as the runtime source; the bundle check reports no drift.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/build-claude-plugin.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/batch-confirmation-window.intent.json",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+    "plugins/immune-brain/runtime/unattended/confirmation_deadline.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/confirmation-deadline.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/unattended-batch-run.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

@@ -1254,7 +1254,8 @@ describe("acc-claude-batch-fail-closed", () => {
 		input.end();
 		await server;
 
-		expect(JSON.stringify(result)).toContain("native confirmation timed out");
+		expect(JSON.stringify(result)).toContain("native confirmation timed out after 50 ms");
+		expect(JSON.stringify(result)).toContain("IMMUNE_BRAIN_BATCH_TIMEOUT_MS");
 		expect(JSON.stringify(result)).toContain("rejected");
 	});
 

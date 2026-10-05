@@ -8652,7 +8652,7 @@ var BATCH_REASONS = Object.freeze({
   },
   confirmation_timed_out: {
     state: "rejected",
-    reason: "native confirmation timed out waiting for user interaction",
+    reason: (detail) => `native confirmation timed out after ${detail} ms waiting for user interaction; set IMMUNE_BRAIN_BATCH_TIMEOUT_MS to change the bound`,
     recovery_action: "retry through a fresh native gate in the current Host"
   },
   confirmation_cancelled: {
@@ -8721,16 +8721,24 @@ function batchReason(key, detail = "") {
 }
 
 // plugins/immune-brain/runtime/unattended/confirmation_deadline.ts
-var CONFIRMATION_TIMEOUT_DEFAULT_MS = 60000;
+var CONFIRMATION_TIMEOUT_DEFAULT_MS = 900000;
 var CONFIRMATION_TIMEOUT_ENV = "IMMUNE_BRAIN_BATCH_TIMEOUT_MS";
+var TIMER_DELAY_LIMIT_MS = 2147483647;
 function startConfirmationDeadline(input) {
   const configured = Number(input.env?.[CONFIRMATION_TIMEOUT_ENV]);
   const timeoutMs = Number.isFinite(configured) && configured > 0 ? configured : CONFIRMATION_TIMEOUT_DEFAULT_MS;
   const controller = new AbortController;
-  const timer = setTimeout(() => {
-    controller.abort(new Error("native confirmation timed out waiting for user interaction"));
-  }, timeoutMs);
+  let timer;
+  const arm = (remainingMs) => {
+    timer = setTimeout(() => {
+      if (remainingMs > TIMER_DELAY_LIMIT_MS)
+        return arm(remainingMs - TIMER_DELAY_LIMIT_MS);
+      controller.abort(new Error("native confirmation timed out waiting for user interaction"));
+    }, Math.min(remainingMs, TIMER_DELAY_LIMIT_MS));
+  };
+  arm(timeoutMs);
   return {
+    timeoutMs,
     signal: input.signal ? AbortSignal.any([input.signal, controller.signal]) : controller.signal,
     timedOut: () => controller.signal.aborted && !input.signal?.aborted,
     clear: () => clearTimeout(timer)
@@ -13307,7 +13315,7 @@ class ClaudeRuntime {
           });
         } catch (err) {
           if (deadline.timedOut())
-            return { kind: "host_rejection", value: batchReason("confirmation_timed_out") };
+            return { kind: "host_rejection", value: batchReason("confirmation_timed_out", String(deadline.timeoutMs)) };
           if (meta.signal?.aborted)
             return { kind: "host_rejection", value: batchReason("cancelled_before_execution") };
           if (err instanceof NativeAuthorityError) {
@@ -13332,7 +13340,7 @@ class ClaudeRuntime {
           deadline.clear();
         }
         if (deadline.timedOut())
-          return { kind: "host_rejection", value: batchReason("confirmation_timed_out") };
+          return { kind: "host_rejection", value: batchReason("confirmation_timed_out", String(deadline.timeoutMs)) };
         if (confirmationResult.decision === "cancel" && meta.signal?.aborted)
           return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
         if (meta.signal?.aborted)

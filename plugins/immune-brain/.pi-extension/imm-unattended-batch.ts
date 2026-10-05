@@ -162,7 +162,7 @@ export async function executePiUnattendedBatch(
 			try {
 				decision = await options.confirmBatch({ ...confirmDetails, signal: deadline.signal });
 			} catch (err) {
-				if (deadline.timedOut()) return { kind: "host_rejection", value: batchReason("confirmation_timed_out") };
+				if (deadline.timedOut()) return { kind: "host_rejection", value: batchReason("confirmation_timed_out", String(deadline.timeoutMs)) };
 				if (signal?.aborted) return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
 				return {
 					kind: "host_rejection",
@@ -172,7 +172,7 @@ export async function executePiUnattendedBatch(
 				deadline.clear();
 			}
 
-			if (deadline.timedOut()) return { kind: "host_rejection", value: batchReason("confirmation_timed_out") };
+			if (deadline.timedOut()) return { kind: "host_rejection", value: batchReason("confirmation_timed_out", String(deadline.timeoutMs)) };
 			if (decision === "cancel" || signal?.aborted) {
 				return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
 			}

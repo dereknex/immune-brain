@@ -2165,8 +2165,12 @@ describe("dual-host assurance conformance", () => {
 			});
 
 			// A timeout is a timeout on both Hosts, not a user cancellation.
-			expect(cRes).toMatchObject(batchReason("confirmation_timed_out"));
-			expect(pRes).toMatchObject(batchReason("confirmation_timed_out"));
+			// Both report the bound that elapsed and the setting that changes it.
+			const timedOut = batchReason("confirmation_timed_out", "40");
+			expect(timedOut.reason).toContain("after 40 ms");
+			expect(timedOut.reason).toContain("IMMUNE_BRAIN_BATCH_TIMEOUT_MS");
+			expect(cRes).toMatchObject(timedOut);
+			expect(pRes).toMatchObject(timedOut);
 			expect(piConfirmations).toBe(1);
 			assertZeroWrites(cf, pf);
 		}

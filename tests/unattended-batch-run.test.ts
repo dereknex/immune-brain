@@ -2087,7 +2087,7 @@ describe("shared batch preflight projection", () => {
 			empty_enrollable_set: ["empty enrollable child set: no enrollable child tasks found in the initiative plan", "ensure the initiative has uncompleted, non-critical child tasks in the current Host"],
 			plan_projection_failed: ["failed to project batch plan: <detail>", "review initiative issues and planning sidecars in the current Host"],
 			confirmation_port_unavailable: ["native confirmation port is unavailable", "retry through a fresh native gate in the current Host"],
-			confirmation_timed_out: ["native confirmation timed out waiting for user interaction", "retry through a fresh native gate in the current Host"],
+			confirmation_timed_out: ["native confirmation timed out after <detail> ms waiting for user interaction; set IMMUNE_BRAIN_BATCH_TIMEOUT_MS to change the bound", "retry through a fresh native gate in the current Host"],
 			confirmation_cancelled: ["native interaction cancelled", "wait for a fresh literal-user request"],
 			confirmation_declined: ["native interaction declined", "wait for a fresh literal-user request"],
 			confirmation_no_decision: ["native interaction returned no decision", "retry through a fresh native gate in the current Host"],

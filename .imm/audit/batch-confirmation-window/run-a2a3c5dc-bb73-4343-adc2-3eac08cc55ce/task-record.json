@@ -1,0 +1,265 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "batch-confirmation-window",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "batch-confirmation-window",
+    "goal": "Widen the shared native batch-confirmation window so an attentive literal user can answer it: both Hosts default to 15 minutes instead of 60 seconds, and a timeout says how long the gate waited and how to change the bound. Evidence: in this project's Pi sessions 4 of 12 batch gates expired at exactly 60 s while unbounded gates had a median answer time of about 60 s; the dialog itself renders. Confirmed framing: one shared default on both Hosts (keeps the 9d61307 convergence), IMMUNE_BRAIN_BATCH_TIMEOUT_MS stays the override. Out of scope: scope_hint preflight, post-commit Intent-revision resume, closing out existing batch records, any change to who may confirm or to unbounded Enrollment/authorization gates.",
+    "acceptance": [
+      {
+        "id": "BCW-A1",
+        "assertion": "startConfirmationDeadline uses a 900000 ms default on both Hosts when IMMUNE_BRAIN_BATCH_TIMEOUT_MS is unset. Positive: an unanswered confirmation is still pending after 60 s of the default bound (proved with a controllable clock or by asserting the armed bound, never by a real 60 s sleep) and an answer given before the bound is accepted. Bound: a positive finite override is honoured exactly and still produces confirmation_timed_out on both Hosts with zero authority, state or Git writes. Negative: an empty, non-numeric, zero or negative override falls back to the default; a caller-signal abort is still reported as cancellation, not timeout; clear() leaves no pending timer.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/confirmation-deadline.test.ts\",\n      \"tests/dual-host-assurance-conformance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "BCW-A2",
+        "assertion": "A confirmation_timed_out rejection reports the bound that actually elapsed and names IMMUNE_BRAIN_BATCH_TIMEOUT_MS as the way to change it, with identical state, reason shape and exactly one same-Host recovery action on Pi and Claude. The rejection keeps state rejected, stays distinct from cancelled and declined, and the batch reason contract table is updated in place rather than duplicated. Negative: no other batch reason text or recovery action changes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/claude-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "BCW-A3",
+        "assertion": "The generated Claude bundle carries the same default and timeout text as the runtime source; the bundle check reports no drift.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/build-claude-plugin.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/batch-confirmation-window.intent.json",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "plugins/immune-brain/runtime/unattended/confirmation_deadline.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/confirmation-deadline.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/unattended-batch-run.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/batch-confirmation-window.intent.json",
+    "content_hash": "sha256:e668237f8e969b63b9d9e8f626686fe234ab893066dd34d3934f8a80be4f7e22"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:e668237f8e969b63b9d9e8f626686fe234ab893066dd34d3934f8a80be4f7e22",
+  "git_base_head": "4c918f32de501e717ebff30328d3b5422d14b163",
+  "attestations": [
+    {
+      "id": "approval-qa-61fe4ed3",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e668237f8e969b63b9d9e8f626686fe234ab893066dd34d3934f8a80be4f7e22",
+      "diff_hash": "sha256:d042d03087b5b487406b2291aa1f959a695fbdb62bb6874d42a4851ca5a4fbda",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:f6df58b92bad1796a54e5292382e5f0203835891716fd1b51f5ae4d185f061df",
+      "acceptance_results": [
+        {
+          "acceptance_id": "BCW-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:f6df58b92bad1796a54e5292382e5f0203835891716fd1b51f5ae4d185f061df"
+        },
+        {
+          "acceptance_id": "BCW-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:f6df58b92bad1796a54e5292382e5f0203835891716fd1b51f5ae4d185f061df"
+        },
+        {
+          "acceptance_id": "BCW-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:f6df58b92bad1796a54e5292382e5f0203835891716fd1b51f5ae4d185f061df"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-5d27ba96",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e668237f8e969b63b9d9e8f626686fe234ab893066dd34d3934f8a80be4f7e22",
+      "diff_hash": "sha256:b19fc558574a8d966e79614be600d29454e2c477473b108597df1dd8548c27ea",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:7f8da1c33698730dc383623557fcfc14e320c3720b7272da460fdd17837190b9",
+      "acceptance_results": [
+        {
+          "acceptance_id": "BCW-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:7f8da1c33698730dc383623557fcfc14e320c3720b7272da460fdd17837190b9"
+        },
+        {
+          "acceptance_id": "BCW-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:7f8da1c33698730dc383623557fcfc14e320c3720b7272da460fdd17837190b9"
+        },
+        {
+          "acceptance_id": "BCW-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:7f8da1c33698730dc383623557fcfc14e320c3720b7272da460fdd17837190b9"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-431a14ca",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e668237f8e969b63b9d9e8f626686fe234ab893066dd34d3934f8a80be4f7e22",
+      "diff_hash": "sha256:b19fc558574a8d966e79614be600d29454e2c477473b108597df1dd8548c27ea",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (base 4c918f32, single-parent review commit bf3b1e10, tree bf2ef3b1, changed paths match manifest). The shared deadline defaults to 900000 ms, honours positive finite overrides exactly (including bounds above the 32-bit timer limit), falls back on invalid values, keeps caller abort distinct from timeout, and both Hosts render the elapsed bound plus IMMUNE_BRAIN_BATCH_TIMEOUT_MS from the single in-place reason table entry; the Claude bundle mirrors the runtime source and no other reason or recovery text changed.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "4c918f32de501e717ebff30328d3b5422d14b163",
+        "review_commit": "bf3b1e108575737d92f41c55814ebc9c039d2a05",
+        "review_tree": "bf2ef3b1cbecb574f653472fe59f542176fde7a0",
+        "manifest_digest": "sha256:9e77ac356df17df90b9e3e31ae2d1f4dee5d52be13033c98bd179d9af091e725"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-6c35350b409f-1-review-1",
+          "acceptance_id": "BCW-A1",
+          "summary": "The 900000 ms default is asserted only at the shared module (armed timer delay); Host-level tests on Pi and Claude all run with an explicit override, so the both-Hosts default holds by construction (each Host's only deadline source is startConfirmationDeadline with its own env) rather than by a per-Host assertion.",
+          "anchor": "sha256:1a441f2dc7ecde730da1b77762794bc4c4cca7962fbb5ccafefcaa1b5e5b65ab",
+          "evidence": {
+            "trigger": "IMMUNE_BRAIN_BATCH_TIMEOUT_MS unset in the env passed by executePiUnattendedBatch (options.env ?? process.env) or ClaudeRuntime (this.env); no Host-level test exercises this state, only tests/confirmation-deadline.test.ts does at module level",
+            "caller_chain": [
+              "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:executePiUnattendedBatch",
+              "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime",
+              "plugins/immune-brain/runtime/unattended/confirmation_deadline.ts:startConfirmationDeadline"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "BCW-A1"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-bb40aae595cd-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "BCW-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "A positive finite IMMUNE_BRAIN_BATCH_TIMEOUT_MS above 2147483647 is not honoured: setTimeout overflows to a 1 ms delay, so the gate rejects almost immediately on both Hosts while the confirmation_timed_out reason claims the full configured bound elapsed (also contradicting BCW-A2 'reports the bound that actually elapsed'). Invariant class: the reported/armed bound must equal the bound the timer really enforces. The new reason text now tells users to set this variable, and the tests only cover overrides up to 1800000.",
+      "anchor": "sha256:c7bf1f4c422fc09a7b2db6fc9553a40f489e67cd75c9a6783e75234d3d9f8208",
+      "evidence": {
+        "trigger": "env IMMUNE_BRAIN_BATCH_TIMEOUT_MS=\"3000000000\" (any finite value > 2^31-1 ms, e.g. a user trying to effectively disable the bound). startConfirmationDeadline passes Number.isFinite && > 0, sets timeoutMs=3000000000 and calls setTimeout(fn, 3000000000). Probed on this machine's bun: 'TimeoutOverflowWarning: 3000000000 does not fit into a 32-bit signed integer. Timeout duration was set to 1.' and the callback fired after 8 ms. deadline.timedOut() then becomes true and both Hosts return batchReason(\"confirmation_timed_out\", \"3000000000\") = 'native confirmation timed out after 3000000000 ms waiting for user interaction; set IMMUNE_BRAIN_BATCH_TIMEOUT_MS to change the bound' before the user can answer. Outcome is fail-closed (rejected, zero writes), so this is a correctness defect, not a security one. Verified against review commit 3e8fd89d04e14be9592928d0b38afd7dc8686760 (single parent 4c918f32de501e717ebff30328d3b5422d14b163, tree 4a8a12bc773b51f0e2ea7fa1147964dd14d13fa1, manifest_digest recomputed and matching); tests/confirmation-deadline.test.ts 'honours a positive finite override exactly' has no case above 1800000.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/confirmation_deadline.ts:startConfirmationDeadline",
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime gate (startConfirmationDeadline -> batchReason(\"confirmation_timed_out\", String(deadline.timeoutMs)))",
+          "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:executePiUnattendedBatch",
+          "plugins/immune-brain/runtime/unattended/batch_reasons.ts:BATCH_REASONS.confirmation_timed_out",
+          "plugins/immune-brain/dist/claude/mcp-server.mjs:startConfirmationDeadline"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "BCW-A1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:batch-confirmation-window:2026-10-05T02:21:35.755Z",
+      "at": "2026-10-05T02:21:35.755Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-confirmation-window.intent.json"
+    },
+    {
+      "id": "record_approval:batch-confirmation-window:2026-10-05T02:24:23.888Z",
+      "at": "2026-10-05T02:24:23.888Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-61fe4ed3\naction_v2_sha256:e28929f3d2f78e5d6dad992470738e5f443bfcdf2a3ae946e7e24bbc5fa4df36",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-05T02:24:23.889Z",
+        "expires_at": "2026-10-05T02:34:23.889Z"
+      }
+    },
+    {
+      "id": "request_rework:batch-confirmation-window:2026-10-05T02:35:49.932Z",
+      "at": "2026-10-05T02:35:49.932Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:3348d6367eea87e50f70c0c42650cde98683105b2db586d559d4f6d71225b2ed",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-05T02:35:49.933Z",
+        "expires_at": "2026-10-05T02:45:49.933Z"
+      }
+    },
+    {
+      "id": "resolve_finding:batch-confirmation-window:2026-10-05T02:38:45.110Z",
+      "at": "2026-10-05T02:38:45.110Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-bb40aae595cd-1-review-1\naction_v2_sha256:ab12072057e732dcafe405420283a33082b02ddaaa64f26f1c871b8e4a11c319"
+    },
+    {
+      "id": "freeze_artifacts:batch-confirmation-window:2026-10-05T02:38:48.253Z",
+      "at": "2026-10-05T02:38:48.253Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-confirmation-window.intent.json"
+    },
+    {
+      "id": "record_approval:batch-confirmation-window:2026-10-05T02:41:35.832Z",
+      "at": "2026-10-05T02:41:35.832Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5d27ba96\naction_v2_sha256:1aa90f8e04e656dcb7cbc0a3ea3da40c714ae3daa9197d9088f4a95933bf532c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-05T02:41:35.833Z",
+        "expires_at": "2026-10-05T02:51:35.833Z"
+      }
+    },
+    {
+      "id": "record_approval:batch-confirmation-window:2026-10-05T02:42:54.521Z",
+      "at": "2026-10-05T02:42:54.521Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-431a14ca\naction_v2_sha256:a75e432cca89b99432b666d7cf49a7db8165a85b72f84bed73c21f540becfbb8",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-05T02:42:54.521Z",
+        "expires_at": "2026-10-05T02:52:54.521Z"
+      }
+    },
+    {
+      "id": "complete:batch-confirmation-window:2026-10-05T02:42:55.716Z",
+      "at": "2026-10-05T02:42:55.716Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:f16f70c49bf42b08bf69ff65c309d1feceba72efe37e0c92cd11e47fbdf04cca"
+    }
+  ]
+}

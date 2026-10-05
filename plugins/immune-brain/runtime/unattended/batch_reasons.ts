@@ -117,7 +117,9 @@ export const BATCH_REASONS: Readonly<Record<BatchReasonKey, BatchReasonSpec>> = 
 	},
 	confirmation_timed_out: {
 		state: "rejected",
-		reason: "native confirmation timed out waiting for user interaction",
+		// The detail is the bound that elapsed, in milliseconds.
+		reason: (detail: string) =>
+			`native confirmation timed out after ${detail} ms waiting for user interaction; set IMMUNE_BRAIN_BATCH_TIMEOUT_MS to change the bound`,
 		recovery_action: "retry through a fresh native gate in the current Host",
 	},
 	confirmation_cancelled: {

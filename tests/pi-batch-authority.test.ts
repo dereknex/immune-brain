@@ -541,6 +541,36 @@ describe("acc-pi-batch-gate", () => {
 		assertZeroWrites(fixture.root, priorHead, "cancel-zero");
 	});
 
+	it("an unanswered confirmation times out as rejected, reporting the elapsed bound and its setting, with zero writes", async () => {
+		const fixture = createBatchFixture("timeout-zero");
+		const priorHead = fixture.head;
+		// The dialog either resolves "cancel" or rejects when its signal aborts.
+		for (const settle of ["resolve", "reject"] as const) {
+			const result = await executePiUnattendedBatch({
+				root: fixture.root,
+				initiativeSlug: "timeout-zero",
+				env: { ...process.env, IMMUNE_BRAIN_BATCH_TIMEOUT_MS: "30" },
+				readInitiative: async () => fixture.observation,
+				confirmBatch: (details) =>
+					new Promise((resolve, reject) => {
+						details.signal?.addEventListener(
+							"abort",
+							() => (settle === "resolve" ? resolve("cancel") : reject(new Error("dialog aborted"))),
+							{ once: true },
+						);
+					}),
+			});
+
+			// Rejected, not cancelled or declined: the user made no decision.
+			expect(result).toEqual({
+				state: "rejected",
+				reason: "native confirmation timed out after 30 ms waiting for user interaction; set IMMUNE_BRAIN_BATCH_TIMEOUT_MS to change the bound",
+				recovery_action: "retry through a fresh native gate in the current Host",
+			});
+			assertZeroWrites(fixture.root, priorHead, "timeout-zero");
+		}
+	});
+
 	it("active workspace claim blocks execution with state: blocked and zero writes", async () => {
 		const fixture = createBatchFixture("active-claim");
 		seedInFlightOwner(fixture.root, "in-flight-task");
