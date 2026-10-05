@@ -58,11 +58,17 @@ function persist(root: string, batch: string, state: Record<string, unknown>, re
 	writeFileSync(join(dir, `${batch}.json`), `${JSON.stringify(state, null, 2)}\n`);
 	writeFileSync(join(dir, `${batch}.report.json`), `${JSON.stringify(report, null, 2)}\n`);
 }
-async function fixture(format: "sha1" | "sha256" = "sha1") {
+async function fixture(format: "sha1" | "sha256" = "sha1", adopt?: "between" | "after") {
 	const root = mkdtempSync(join(tmpdir(), "batch-verify-")); const batch = "batch-fixture-11111111-1111-4111-8111-111111111111";
 	git(root, ["init", `--object-format=${format}`, "-b", "imm/fixture"]); writeFileSync(join(root, ".gitignore"), ".imm/state/\n.imm/authority/\n"); git(root, ["add", ".gitignore"]); git(root, ["commit", "-m", "base"]);
+	const adopted: Array<{ from: string; to: string }> = [];
+	const adoptOutsideCommit = () => {
+		const from = git(root, ["rev-parse", "HEAD"]); writeFileSync(join(root, "outside.txt"), "user commit\n");
+		git(root, ["add", "outside.txt"]); git(root, ["commit", "-m", "user work"]); adopted.push({ from, to: git(root, ["rev-parse", "HEAD"]) });
+	};
 	const commits: string[] = []; const tasks = ["task-s0", "task-s1"]; const runs = ["run-11111111-1111-4111-8111-111111111111", "run-22222222-2222-4222-8222-222222222222"];
 	for (const [index, task] of tasks.entries()) {
+		if (adopt === "between" && index === 1) adoptOutsideCommit();
 		const path = `src/${task}.ts`; mkdirSync(join(root, "src"), { recursive: true });
 		writeFileSync(join(root, path), `export const value = ${JSON.stringify(task)};\n`);
 		const pair = record(task, runs[index]!, "done", [path]); const audit = join(root, ".imm/audit", task, pair.run);
@@ -72,8 +78,9 @@ async function fixture(format: "sha1" | "sha256" = "sha1") {
 		const committed = await commitBatchChild({ root, taskId: task, batchId: batch, expectedHead: parent, branch: "imm/fixture" });
 		commits.push(committed.commit); rmSync(join(root, ".imm/state/active-run.json"));
 	}
+	if (adopt === "after") adoptOutsideCommit();
 	const children = tasks.map((task, index) => child(task, "committed", commits[index]));
-	const state = { contract: "assurance_kernel/batch_run_state/v1", batch_id: batch, initiative_slug: "fixture", plan_digest: "sha256:p", base_head: git(root, ["rev-parse", `${commits[0]}^`]), branch: "imm/fixture", confirmation_time: NOW, authorization_expires_at: NOW, budget: { max_children: 2, deadline_at: NOW, qa_failure_limit: 2 }, batch_state: "completed", children, consecutive_qa_failures: 0, commits, created_at: NOW, updated_at: NOW };
+	const state = { contract: "assurance_kernel/batch_run_state/v1", batch_id: batch, initiative_slug: "fixture", plan_digest: "sha256:p", base_head: git(root, ["rev-parse", `${commits[0]}^`]), branch: "imm/fixture", confirmation_time: NOW, authorization_expires_at: NOW, budget: { max_children: 2, deadline_at: NOW, qa_failure_limit: 2 }, batch_state: "completed", children, consecutive_qa_failures: 0, commits, ...(adopted.length ? { adopted_heads: adopted } : {}), created_at: NOW, updated_at: NOW } as Record<string, any>;
 	const report = { contract: "assurance_kernel/batch_run_report/v1", batch_id: batch, initiative_slug: "fixture", batch_state: "completed", children: structuredClone(children), commits: [...commits], reason: null, next_action: "none", created_at: NOW };
 	persist(root, batch, state, report);
 	mkdirSync(join(root, ".imm/authority"), { recursive: true });
@@ -133,6 +140,25 @@ describe("batch completion verifier", () => {
 				finally { rmSync(next.root, { recursive: true, force: true }); }
 			}
 		} finally { rmSync(fx.root, { recursive: true, force: true }); }
+	}, 20000);
+	test("accepts a completed batch whose chain steps over adopted commits and keeps the fatal cases", async () => {
+		for (const adopt of ["between", "after"] as const) {
+			const fx = await fixture("sha1", adopt);
+			try { expect(check(fx.root, fx.batch, fx.before, 0).complete).toBe(true); }
+			finally { rmSync(fx.root, { recursive: true, force: true }); }
+		}
+		const fatal: Array<[string, "between" | "after", string, (state: Record<string, any>, report: Record<string, any>) => void]> = [
+			["adoption dropped from state", "between", "missing_commit_evidence", (state) => { delete state.adopted_heads; }],
+			["unrecorded commit after the last child", "after", "lineage_mismatch", (state) => { delete state.adopted_heads; }],
+			["adoption pointing backwards", "after", "lineage_mismatch", (state) => { state.adopted_heads[0].to = state.commits[0]; }],
+		];
+		for (const [label, adopt, code, mutate] of fatal) {
+			const fx = await fixture("sha1", adopt);
+			try {
+				mutate(fx.state, fx.report); persist(fx.root, fx.batch, fx.state, fx.report);
+				const failure = check(fx.root, fx.batch, snapshot(fx.root), 1, code); expect({ label, complete: failure.complete }).toEqual({ label, complete: false });
+			} finally { rmSync(fx.root, { recursive: true, force: true }); }
+		}
 	}, 20000);
 	test("accepts a real SHA-256 runner chain", async () => {
 		const fx = await fixture("sha256");

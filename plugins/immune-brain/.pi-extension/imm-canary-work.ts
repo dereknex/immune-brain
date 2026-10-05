@@ -21,6 +21,8 @@ import { join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { PLUGIN_VERSION } from "../runtime/plugin_version";
+import { findResumableBatchSlugForTask } from "../runtime/unattended/batch_preflight";
+import { executePiUnattendedBatch } from "./imm-unattended-batch";
 import {
 	parseVerificationDescriptor,
 	type VerificationDescriptor,
@@ -581,7 +583,11 @@ export default function (
 							: action.op === "request_stop"
 								? await authorizeExactOperation(taskId, "stop", { ...ctx, signal: signal && ctx.signal ? AbortSignal.any([signal, ctx.signal]) : signal ?? ctx.signal })
 								: await requestAuthorization(taskId, ctx);
-				const enriched = await enrichAssuranceResult(ctx, taskId, result as unknown as Record<string, unknown>);
+				const enriched = await closeOutBatchChild(
+					ctx,
+					taskId,
+					await enrichAssuranceResult(ctx, taskId, result as unknown as Record<string, unknown>),
+				);
 				presentTaskRailResult(ctx, taskId, enriched);
 				throwIfCanaryToolFailure(taskId, action.op, enriched);
 				return toolResult(JSON.stringify(enriched, null, 2), enriched);
@@ -1728,6 +1734,46 @@ async function reconcileRefsQuietly(root: string): Promise<void> {
 		await reconcileReviewRevisionRefs(root);
 	} catch {
 		/* non-authoritative */
+	}
+}
+
+/**
+ * Gate-free closeout: a batch child that reached Kernel `done` in the foreground
+ * re-enters the batch in the same call, reusing its authorization. Only `done`
+ * continues; stopped, parked and Review-pending children end where they do
+ * today. The continuation is transport: the Kernel result is returned
+ * unchanged, and any failure is reported beside it with one retry action.
+ */
+async function closeOutBatchChild(
+	ctx: ExtensionContext,
+	taskId: string,
+	enriched: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+	const taskState = enriched.task_state as { lifecycle?: unknown } | undefined;
+	if (taskState?.lifecycle !== "done") return enriched;
+	let slug: string | null;
+	try {
+		slug = findResumableBatchSlugForTask(ctx.cwd, taskId);
+	} catch {
+		return enriched;
+	}
+	if (!slug) return enriched;
+	try {
+		// The batch commit takes exactly the scope envelope plus this task's own
+		// audit evidence and refuses unstaged changes: stage only that evidence.
+		if (existsSync(join(ctx.cwd, ".imm", "audit", taskId)))
+			execFileSync("git", ["-C", ctx.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
+		const batch = await executePiUnattendedBatch({ root: ctx.cwd, initiativeSlug: slug, reuseOnly: true, signal: ctx.signal });
+		return { ...enriched, batch };
+	} catch (error) {
+		return {
+			...enriched,
+			batch: {
+				state: "rejected",
+				reason: `batch continuation failed: ${error instanceof Error ? error.message : String(error)}`,
+				recovery_action: "call start_unattended_batch with the same Initiative to continue the batch",
+			},
+		};
 	}
 }
 

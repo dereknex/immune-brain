@@ -111,9 +111,6 @@ async function fixture(slug: string) {
 		batch: () => call(batchTool, { initiative_slug: slug }),
 		kernel: (task: string, action: Record<string, unknown>) => call(workTool, { task_id: task, action }),
 		implement: (n: number, content = "implemented\n") => { writeFileSync(join(root, `src/child-${n}.txt`), content); git(root, "add", `src/child-${n}.txt`); },
-		// Terminal evidence is Git-tracked: the operator stages the exported pair
-		// before re-entering the runner, which rejects untracked bytes.
-		stageEvidence: (task: string) => git(root, "add", `.imm/audit/${task}`),
 		gates: () => gates,
 		answer: (fn: typeof answer) => { answer = fn; },
 		state: (batchId: string) => readBatchRunState(root, batchId)!,
@@ -138,14 +135,17 @@ async function fixture(slug: string) {
 	};
 }
 
-/** Implement, run real QA to settlement, and stage the exported evidence pair. */
+/**
+ * Implement and run real QA to settlement. The same call that reaches `done`
+ * stages the exported evidence pair and continues the batch, so the result
+ * carries the batch report as `batch`.
+ */
 async function settle(f: Awaited<ReturnType<typeof fixture>>, n: number) {
 	const task = f.tasks[n - 1]!;
 	f.implement(n);
 	const qa = await f.kernel(task, { op: "advance_assurance" });
 	expect(qa).toMatchObject({ state: "completed", diagnostics: [{ acceptance_id: `acc-${n}`, outcome: "passed", exit_code: 0 }],
 		task_state: { lifecycle: "done", fresh_approval_kinds: ["qa"], risk: "routine" } });
-	f.stageEvidence(task);
 	return qa;
 }
 
@@ -181,15 +181,10 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 		const f = await fixture("acceptance-serial");
 		const first = await f.batch();
 		f.implement(1);
-		expect(await f.kernel(f.tasks[0]!, { op: "advance_assurance" })).toMatchObject({ state: "completed", task_state: { lifecycle: "done" } });
-		// Settlement exports untracked terminal evidence; re-entry refuses it until staged.
-		const unstaged = await f.batch();
-		expect(unstaged.state).toBe("refused");
-		expect(unstaged.reason).toContain("working tree has unstaged or untracked changes");
-		expect(f.commits()).toEqual([]);
-		expect(f.runbook("git add .imm/audit/", { "task-id": f.tasks[0]! }).status).toBe(0);
-
-		const second = await f.batch();
+		const done = await f.kernel(f.tasks[0]!, { op: "advance_assurance" });
+		expect(done).toMatchObject({ state: "completed", task_state: { lifecycle: "done" } });
+		// The same call staged the exported evidence, committed the child and enrolled the next one.
+		const second = done.batch;
 		expect(second).toMatchObject({ state: "started", batch_id: first.batch_id, report: { batch_state: "running",
 			// The runbook tells operators this reason is the normal path, not a failure.
 			children: [{ task_id: f.tasks[0], state: "committed", reason: "crash after settlement; resuming at commit" }, { task_id: f.tasks[1], state: "enrolled", commit: null }],
@@ -206,8 +201,7 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 		expect(partial.status).not.toBe(0);
 		expect(JSON.parse(partial.stdout).complete).toBe(false);
 
-		await settle(f, 2);
-		const third = await f.batch();
+		const third = (await settle(f, 2)).batch;
 		expect(third).toMatchObject({ batch_id: first.batch_id, report: { batch_state: "completed",
 			children: [{ task_id: f.tasks[0], state: "committed" }, { task_id: f.tasks[1], state: "committed" }] } });
 		expect(third.report.handoff).toBeUndefined();
@@ -254,15 +248,12 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 		expect(fresh).toMatchObject({ state: "completed", diagnostics: [{ outcome: "passed", exit_code: 0 }],
 			task_state: { run_id: first.report.handoff.run_id, lifecycle: "done", blocking_finding_ids: [] } });
 		expect(fresh.operation_id).not.toBe(failed.operation_id);
-		f.stageEvidence(f.tasks[0]!);
 
-		f.restart();
-		const second = await f.batch();
+		const second = fresh.batch;
 		expect(second).toMatchObject({ batch_id: first.batch_id, report: { children: [{ state: "committed" }, { state: "enrolled" }], handoff: { task_id: f.tasks[1] } } });
 		expect(second.report.recovery).toBeUndefined();
-		await settle(f, 2);
 		f.restart();
-		expect((await f.batch()).report.batch_state).toBe("completed");
+		expect((await settle(f, 2)).batch.report.batch_state).toBe("completed");
 		expect(f.commits()).toHaveLength(2);
 		expect(f.gates()).toBe(1);
 		expect(f.verify(first.batch_id)).toMatchObject({ status: 0, out: { complete: true } });
@@ -271,8 +262,7 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 	it("resumes a child parked on foreground Review with no gate however far the clock advanced, then completes", async () => {
 		const f = await fixture("acceptance-clockless");
 		const first = await f.batch();
-		await settle(f, 1);
-		const second = await f.batch();
+		const second = (await settle(f, 1)).batch;
 		f.implement(2);
 		const before = f.state(first.batch_id);
 		expect(before).not.toHaveProperty("authorization_expires_at");
@@ -291,8 +281,8 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 		expect(evidence()).toEqual(kept);
 		expect(await f.kernel(f.tasks[1]!, { op: "status" })).toMatchObject({ run_id: second.report.handoff.run_id, lifecycle: "active", next_obligation: "submit_assurance" });
 
-		await settle(f, 2);
-		expect((await f.batch()).report.batch_state).toBe("completed");
+		// Thirty days on, the closeout still continues without a gate.
+		expect((await settle(f, 2)).batch.report.batch_state).toBe("completed");
 		expect(f.gates()).toBe(1);
 		expect(f.commits()).toHaveLength(2);
 		expect(f.verify(first.batch_id)).toMatchObject({ status: 0, out: { complete: true } });

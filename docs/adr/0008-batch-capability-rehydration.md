@@ -16,8 +16,9 @@ budget), each child's TaskRecord, and the batch branch with its commits.
 The question this decision record settles is what a resumed run may reconstruct
 from those facts. A resumed run rebuilds its projection from them and reuses the
 authorization only while it still binds: still running, same plan digest, same
-branch, and the expected HEAD lineage. Elapsed time is not one of the
-conditions. Anything else opens one
+branch, and the expected HEAD lineage, where a fast-forward on the batch
+branch is adopted into that expectation rather than treated as a break.
+Elapsed time is not one of the conditions. Anything else opens one
 fresh native confirmation named with the reason, and the renewal rule requires a
 strictly newer confirmation than the one it replaces.
 

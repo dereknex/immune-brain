@@ -135,7 +135,7 @@ The single dedicated branch `imm/<initiative-slug>` that a batch run creates fro
 _Avoid_: feature branch, worktree, trunk
 
 **HEAD Lineage**:
-The Kernel-enforced chain where each child enrolls on the commit its predecessor produced on the batch branch, so an externally moved HEAD fails the run closed instead of rebasing or force-continuing.
+The Kernel-enforced chain where each child enrolls on the commit its predecessor produced on the batch branch. A fast-forward of the batch branch is adopted as the new expected head and never attributed to a child; any other moved HEAD (another branch, a rewrite, a divergence) fails the run closed instead of rebasing or force-continuing.
 _Avoid_: commit ordering convention, best-effort ancestry
 
 ### Supporting Concepts

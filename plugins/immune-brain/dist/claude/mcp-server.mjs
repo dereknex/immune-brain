@@ -10828,6 +10828,27 @@ function readActiveClaimTaskId(root) {
   const claim = readBackendClaim(root);
   return workspace.state.current_working || (claim?.lifecycle_status === "active" ? claim.task_id : null);
 }
+function findResumableBatchSlugForTask(root, taskId) {
+  const batchesDir = join12(root, ".imm", "state", "batches");
+  if (!existsSync7(batchesDir))
+    return null;
+  for (const file of readdirSync6(batchesDir)) {
+    if (!file.endsWith(".json"))
+      continue;
+    try {
+      const record = JSON.parse(readFileSync13(join12(batchesDir, file), "utf8"));
+      if (record?.contract !== "assurance_kernel/batch_run_state/v1")
+        continue;
+      if (record.batch_state !== "running" && record.batch_state !== "needs_human")
+        continue;
+      if (record.children.some((child) => child.task_id === taskId && (child.state === "enrolled" || child.state === "settled")))
+        return record.initiative_slug;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
 function findExistingActiveBatch(root, initiativeSlug) {
   const batchesDir = join12(root, ".imm", "state", "batches");
   if (!existsSync7(batchesDir))
@@ -12967,11 +12988,41 @@ class ClaudeRuntime {
       throw error;
     }
   }
-  async advance(taskId, signal) {
-    return this.withTerminalTracker(taskId, await this.coordinator.advance(taskId, { cwd: this.cwd }, signal));
+  async advance(taskId, signal, meta) {
+    return this.closeOutBatchChild(taskId, await this.withTerminalTracker(taskId, await this.coordinator.advance(taskId, { cwd: this.cwd }, signal)), meta);
   }
-  async submitReview(taskId, verdictInput) {
-    return this.withTerminalTracker(taskId, await submitClaudeReview(this.host, this.coordinator, { cwd: this.cwd }, taskId, verdictInput));
+  async submitReview(taskId, verdictInput, meta) {
+    return this.closeOutBatchChild(taskId, await this.withTerminalTracker(taskId, await submitClaudeReview(this.host, this.coordinator, { cwd: this.cwd }, taskId, verdictInput)), meta);
+  }
+  async closeOutBatchChild(taskId, result, meta) {
+    if (!meta || result === null || typeof result !== "object")
+      return result;
+    const lifecycle = result.record?.lifecycle;
+    if (result.state !== "completed" && lifecycle !== "done")
+      return result;
+    let slug;
+    try {
+      slug = findResumableBatchSlugForTask(this.cwd, taskId);
+    } catch {
+      return result;
+    }
+    if (!slug)
+      return result;
+    try {
+      if (existsSync10(join15(this.cwd, ".imm", "audit", taskId)))
+        execFileSync7("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
+      const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
+      return { ...result, batch };
+    } catch (error) {
+      return {
+        ...result,
+        batch: {
+          state: "rejected",
+          reason: `batch continuation failed: ${error instanceof Error ? error.message : String(error)}`,
+          recovery_action: "call start_unattended_batch with the same Initiative to continue the batch"
+        }
+      };
+    }
   }
   async withTerminalTracker(taskId, result) {
     if (result === null || typeof result !== "object")
@@ -13273,15 +13324,16 @@ class ClaudeRuntime {
       throw error;
     }
   }
-  async startUnattendedBatch(initiativeSlug, meta) {
+  async startUnattendedBatch(initiativeSlug, meta, options = {}) {
     throwIfCancelled(meta.signal);
+    const reuseOnly = options.reuseOnly === true;
     const probe = probeHost(this.env, process.platform, this.hostVersion);
     if (!probe.ok)
       throw new NativeAuthorityError("unsupported_host", probe.reason);
     const interactive = meta.interactive ?? this.interactive;
-    if (!interactive)
+    if (!reuseOnly && !interactive)
       throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
-    if (!this.requestConfirmation)
+    if (!reuseOnly && !this.requestConfirmation)
       throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
     let now = new Date().toISOString();
     const preflight = await projectBatchPreflight({
@@ -13311,6 +13363,15 @@ class ClaudeRuntime {
       readInitiative: this.readInitiative ?? observeGithubInitiative,
       nonce: enrollmentNonce(),
       gate: async (facts) => {
+        if (reuseOnly)
+          return {
+            kind: "host_rejection",
+            value: {
+              state: "blocked",
+              reason: `batch authorization cannot be reused (${facts.reuse_blockers.join(", ")})`,
+              recovery_action: "call start_unattended_batch with the same Initiative to confirm a fresh authorization"
+            }
+          };
         let confirmationResult;
         try {
           confirmationResult = await this.requestConfirmation({
@@ -13621,11 +13682,11 @@ function createMcpRuntime(options = {}) {
       if (name === "enroll")
         return runtime.enroll(taskId, toolMeta);
       if (name === "advance_assurance")
-        return runtime.advance(taskId, toolMeta.signal);
+        return runtime.advance(taskId, toolMeta.signal, toolMeta);
       if (name === "submit_review") {
         if (!Object.hasOwn(args, "verdict"))
           throw new Error("verdict is required");
-        return runtime.submitReview(taskId, args.verdict);
+        return runtime.submitReview(taskId, args.verdict, toolMeta);
       }
       if (name === "revise_intent") {
         if (!Object.hasOwn(args, "next_intent"))

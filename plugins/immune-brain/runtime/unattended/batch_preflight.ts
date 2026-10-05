@@ -99,6 +99,29 @@ export function readActiveClaimTaskId(root: string): string | null {
 }
 
 /**
+ * The initiative whose resumable batch holds `taskId` as an in-flight child, or
+ * null. Read-only; a Host uses it to re-enter the batch after a foreground
+ * child settles, and anything unreadable simply means there is nothing to continue.
+ */
+export function findResumableBatchSlugForTask(root: string, taskId: string): string | null {
+	const batchesDir = join(root, ".imm", "state", "batches");
+	if (!existsSync(batchesDir)) return null;
+	for (const file of readdirSync(batchesDir)) {
+		if (!file.endsWith(".json")) continue;
+		try {
+			const record = JSON.parse(readFileSync(join(batchesDir, file), "utf8")) as BatchRunStateRecord;
+			if (record?.contract !== "assurance_kernel/batch_run_state/v1") continue;
+			if (record.batch_state !== "running" && record.batch_state !== "needs_human") continue;
+			if (record.children.some((child) => child.task_id === taskId && (child.state === "enrolled" || child.state === "settled")))
+				return record.initiative_slug;
+		} catch {
+			continue;
+		}
+	}
+	return null;
+}
+
+/**
  * The batch record for this initiative, or a corruption marker. A terminal
  * record (completed, budget_stopped, failed, rejected) is not active: returning
  * it would let a settled batch block or be resumed by a later run.

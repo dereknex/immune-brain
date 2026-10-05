@@ -589,6 +589,150 @@ describe("batch foreground Executor integration", () => {
 	}, 60000);
 });
 
+describe("batch foreground closeout", () => {
+	// A child that reaches `done` in the foreground re-enters the batch in the same
+	// tool call, reusing the stored authorization: no gate, one commit, and the
+	// next child's handoff arrives beside the unchanged Kernel result.
+	it("claude: submit_review of the last in-flight child commits and continues without a gate", async () => {
+		const slug = "closeout-claude";
+		const fixture = createBatchFixture(slug);
+		writeFileSync(join(fixture.root, "verify.ts"), `import { strict as assert } from "node:assert"; assert.equal(await Bun.file(process.argv[2]).text(), "implemented");\n`);
+		for (const n of [1, 2]) {
+			const path = join(fixture.root, `docs/plans/${slug}-c${n}.intent.json`);
+			const intent = JSON.parse(readFileSync(path, "utf8"));
+			intent.risk = "material";
+			intent.scope_hint = [`docs/plans/${slug}-c${n}.intent.json`, "verify.ts", `impl-${n}.txt`];
+			intent.acceptance[0].verification = JSON.stringify({
+				contract: "assurance_kernel/verification_descriptor/v2",
+				command: { executable: "bun", argv: ["verify.ts", `impl-${n}.txt`], cwd: ".", timeout_ms: 10000, max_output_bytes: 8192 },
+				environment: { writable_paths: [] },
+			});
+			writeFileSync(path, `${JSON.stringify(intent, null, 2)}\n`);
+		}
+		execFileSync("git", ["add", "-A"], { cwd: fixture.root });
+		execFileSync("git", ["commit", "-qm", "closeout fixture"], { cwd: fixture.root });
+		let confirmations = 0;
+		const client = createMcpRuntimeOnce({ cwd: fixture.root, env: ENV, interactive: true,
+			readInitiative: async () => fixture.observation,
+			requestConfirmation: async () => ({ decision: "accept", requestId: `closeout-${++confirmations}` }),
+		});
+		client.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
+		const { REVIEWER_AGENT, AGENT_TOOL } = await import("../plugins/immune-brain/runtime/claude/review_host");
+		try {
+			let started: any = await client.callTool("start_unattended_batch", { initiative_slug: slug });
+			for (const n of [1, 2]) {
+				const task = `${slug}-c${n}`;
+				expect(started.report.handoff).toMatchObject({ role: "executor", task_id: task });
+				writeFileSync(join(fixture.root, `impl-${n}.txt`), "implemented");
+				execFileSync("git", ["add", `impl-${n}.txt`], { cwd: fixture.root });
+				const ready = await client.runtime.advance(task);
+				expect(ready.state).toBe("review_ready");
+				const verdict = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: task,
+					snapshot_digest: ready.snapshot_digest, decision: "pass",
+					approval: { kind: "review", authority_role: "reviewer", summary: "fixture implementation verified" } };
+				const agentId = `agent-${n}`, sessionId = `review-${slug}`;
+				client.host.observe({ type: "SubagentStart", sessionId, agentId, agent: REVIEWER_AGENT, taskId: task, operationId: ready.operation_id });
+				client.host.observe({ type: "PostToolUse", sessionId, agentId, toolName: AGENT_TOOL, result: JSON.stringify(verdict), taskId: task, operationId: ready.operation_id });
+				client.host.observe({ type: "SubagentStop", sessionId, agentId, agent: REVIEWER_AGENT, taskId: task, operationId: ready.operation_id });
+				const settled: any = await client.callTool("submit_review", { task_id: task, verdict });
+				expect(settled).toMatchObject({ state: "completed" });
+				// The same call that settled the child already continued the batch.
+				expect(settled.batch).toMatchObject({ state: "started" });
+				expect(settled.batch.report.children.find((c: any) => c.task_id === task)).toMatchObject({ state: "committed" });
+				expect(settled.batch.report.commits).toHaveLength(n);
+				if (n === 1) expect(settled.batch.report.handoff).toMatchObject({ role: "executor", task_id: `${slug}-c2` });
+				else expect(settled.batch.report.batch_state).toBe("completed");
+				started = settled.batch;
+				expect(confirmations).toBe(1);
+			}
+			const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" });
+			expect(await client.callTool("start_unattended_batch", { initiative_slug: slug })).toMatchObject({ state: "rejected" });
+			expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" })).toBe(head);
+			expect(confirmations).toBe(1);
+		} finally { await client.runtime.coordinator.onSessionShutdown?.(); }
+	}, 60000);
+});
+
+describe("batch foreground closeout boundaries", () => {
+	function closeoutFixture(slug: string) {
+		const fixture = createBatchFixture(slug);
+		writeFileSync(join(fixture.root, "verify.ts"), `import { strict as assert } from "node:assert"; assert.equal(await Bun.file(process.argv[2]).text(), "implemented");\n`);
+		for (const n of [1, 2]) {
+			const path = join(fixture.root, `docs/plans/${slug}-c${n}.intent.json`);
+			const intent = JSON.parse(readFileSync(path, "utf8"));
+			intent.risk = "material";
+			intent.scope_hint = [`docs/plans/${slug}-c${n}.intent.json`, "verify.ts", `impl-${n}.txt`];
+			intent.acceptance[0].verification = JSON.stringify({
+				contract: "assurance_kernel/verification_descriptor/v2",
+				command: { executable: "bun", argv: ["verify.ts", `impl-${n}.txt`], cwd: ".", timeout_ms: 10000, max_output_bytes: 8192 },
+				environment: { writable_paths: [] },
+			});
+			writeFileSync(path, `${JSON.stringify(intent, null, 2)}\n`);
+		}
+		execFileSync("git", ["add", "-A"], { cwd: fixture.root });
+		execFileSync("git", ["commit", "-qm", "closeout fixture"], { cwd: fixture.root });
+		let confirmations = 0;
+		const client = createMcpRuntimeOnce({ cwd: fixture.root, env: ENV, interactive: true,
+			readInitiative: async () => fixture.observation,
+			requestConfirmation: async () => ({ decision: "accept", requestId: `boundary-${++confirmations}` }),
+		});
+		client.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
+		return { fixture, client, confirmations: () => confirmations };
+	}
+	async function reviewPass(client: any, root: string, slug: string, task: string) {
+		const { REVIEWER_AGENT, AGENT_TOOL } = await import("../plugins/immune-brain/runtime/claude/review_host");
+		const impl = `impl-${task.endsWith("c1") ? 1 : 2}.txt`;
+		writeFileSync(join(root, impl), "implemented");
+		execFileSync("git", ["add", impl], { cwd: root });
+		const advanced: any = await client.callTool("advance_assurance", { task_id: task });
+		const verdict = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: task,
+			snapshot_digest: advanced.snapshot_digest, decision: "pass",
+			approval: { kind: "review", authority_role: "reviewer", summary: "fixture implementation verified" } };
+		const sessionId = `review-${slug}`, agentId = `agent-${task}`;
+		client.host.observe({ type: "SubagentStart", sessionId, agentId, agent: REVIEWER_AGENT, taskId: task, operationId: advanced.operation_id });
+		client.host.observe({ type: "PostToolUse", sessionId, agentId, toolName: AGENT_TOOL, result: JSON.stringify(verdict), taskId: task, operationId: advanced.operation_id });
+		client.host.observe({ type: "SubagentStop", sessionId, agentId, agent: REVIEWER_AGENT, taskId: task, operationId: advanced.operation_id });
+		return { advanced, verdict };
+	}
+
+	it("a child that is not done is not closed out: advance_assurance to review_ready carries no batch continuation", async () => {
+		const slug = "boundary-notdone";
+		const { fixture, client, confirmations } = closeoutFixture(slug);
+		try {
+			await client.callTool("start_unattended_batch", { initiative_slug: slug });
+			writeFileSync(join(fixture.root, "impl-1.txt"), "implemented");
+			execFileSync("git", ["add", "impl-1.txt"], { cwd: fixture.root });
+			const advanced: any = await client.callTool("advance_assurance", { task_id: `${slug}-c1` });
+			expect(advanced.state).toBe("review_ready");
+			expect(advanced).not.toHaveProperty("batch");
+			expect(execFileSync("git", ["log", "--format=%s", "-3"], { cwd: fixture.root, encoding: "utf8" })).not.toContain(`${slug}-c1`);
+			expect(confirmations()).toBe(1);
+		} finally { await client.runtime.coordinator.onSessionShutdown?.(); }
+	}, 60000);
+
+	it("a continuation the batch refuses (plan drift) reports a recovery action beside the unchanged result and opens no gate", async () => {
+		const slug = "boundary-drift";
+		const { fixture, client, confirmations } = closeoutFixture(slug);
+		try {
+			await client.callTool("start_unattended_batch", { initiative_slug: slug });
+			const { verdict } = await reviewPass(client, fixture.root, slug, `${slug}-c1`);
+			// Plan drift makes the stored authorization unusable.
+			const c2 = join(fixture.root, `docs/plans/${slug}-c2.intent.json`);
+			const intent = JSON.parse(readFileSync(c2, "utf8"));
+			intent.goal = "child 2, revised out of band";
+			writeFileSync(c2, `${JSON.stringify(intent, null, 2)}\n`);
+			execFileSync("git", ["commit", "-qm", "revise c2 intent", "--only", "--", `docs/plans/${slug}-c2.intent.json`], { cwd: fixture.root });
+			const settled: any = await client.callTool("submit_review", { task_id: `${slug}-c1`, verdict });
+			expect(settled).toMatchObject({ state: "completed" });
+			expect(settled.batch.state).not.toBe("started");
+			expect(settled.batch.recovery_action).toEqual(expect.any(String));
+			expect(settled.batch.recovery_action.length).toBeGreaterThan(0);
+			expect(confirmations()).toBe(1);
+			expect(execFileSync("git", ["log", "--format=%s", "-3"], { cwd: fixture.root, encoding: "utf8" })).not.toContain(`${slug}-c1`);
+		} finally { await client.runtime.coordinator.onSessionShutdown?.(); }
+	}, 60000);
+});
+
 describe("acc-claude-batch-gate", () => {
 	it("start_unattended_batch joins PRIVILEGED_OPERATIONS and has destructiveHint annotation", () => {
 		expect(PRIVILEGED_OPERATIONS).toContain("start_unattended_batch");

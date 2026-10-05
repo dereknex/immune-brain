@@ -130,11 +130,18 @@ The runtime owns no model invocation and adds no persisted execution lifecycle.
 After diagnostics pass, the Parent advances Kernel QA and dispatches any reserved
 foreground Review once using the exact returned `agent_params`, then submits its
 structured verdict. An open Review reservation stays with that Host invocation;
-batch re-entry waits for it rather than redispatching. On Kernel `done`, stage
-only that child's generated terminal audit evidence and call
-`start_unattended_batch` with the same slug. The driver reconciles settlement,
+batch re-entry waits for it rather than redispatching. When a batch child's
+foreground terminal mutation reaches Kernel `done`, the same tool call stages
+only that child's generated terminal audit evidence and re-enters the batch under
+the still-valid authorization, opening no gate. The driver reconciles settlement,
 adopts or creates the one scope-bound commit, then enrolls the next ready child
-under the still-valid authorization. Ordinary Executor handoff and below-limit
+or settles the batch as `completed`; the result carries the batch report as
+`batch`. A reserved Review, a parked child and a stopped child end where they do
+today and are never committed automatically. If the re-entry fails, the Kernel
+result is unchanged and `batch` carries one recovery action: call
+`start_unattended_batch` with the same slug, which is also how to continue by
+hand. A commit that fast-forwards the batch branch outside the runner is adopted,
+not attributed to a child; any other HEAD movement still fails closed. Ordinary Executor handoff and below-limit
 QA repair do not park the batch; genuine budget/authority stops remain fail-closed.
 
 Batch execution never pushes a ref, opens or updates a pull request, resolves a

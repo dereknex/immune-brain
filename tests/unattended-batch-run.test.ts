@@ -27,6 +27,7 @@ import {
 	projectBatchDrift,
 	findExistingActiveBatch,
 	findSettledBatchRecord,
+	findResumableBatchSlugForTask,
 } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
 import { BATCH_REASONS, batchReason } from "../plugins/immune-brain/runtime/unattended/batch_reasons";
 import {
@@ -2000,5 +2001,48 @@ describe("shared batch preflight projection", () => {
 				recovery_action: recoveryAction,
 			});
 		}
+	});
+});
+
+describe("foreground closeout trigger", () => {
+	function root(records: Array<Record<string, unknown>>): string {
+		const dir = mkdtempSync(join(tmpdir(), "closeout-trigger-"));
+		mkdirSync(join(dir, ".imm", "state", "batches"), { recursive: true });
+		records.forEach((record, i) => writeFileSync(join(dir, ".imm", "state", "batches", `b${i}.json`), JSON.stringify({ contract: "assurance_kernel/batch_run_state/v1", ...record })));
+		return dir;
+	}
+	const running = (state: string, batch_state = "running") => ({ initiative_slug: "init", batch_state, children: [{ task_id: "t1", state }] });
+
+	it("selects only a task that is an in-flight child of a resumable batch", () => {
+		for (const state of ["enrolled", "settled"]) {
+			const dir = root([running(state)]);
+			try { expect(findResumableBatchSlugForTask(dir, "t1")).toBe("init"); } finally { rmSync(dir, { recursive: true, force: true }); }
+		}
+	});
+
+	it("selects nothing for a task outside any batch, a committed, pending or parked child, or a settled batch", () => {
+		const cases: Array<[string, Array<Record<string, unknown>>, string]> = [
+			["no batch directory", [], "t1"],
+			["a task that is not a child", [running("enrolled")], "other"],
+			["a committed child", [running("committed")], "t1"],
+			["a pending child", [running("pending")], "t1"],
+			["a parked child", [running("parked")], "t1"],
+			["a stopped child", [running("stopped")], "t1"],
+			["a completed batch", [running("settled", "completed")], "t1"],
+			["a failed batch", [running("enrolled", "failed")], "t1"],
+		];
+		for (const [label, records, task] of cases) {
+			const dir = root(records);
+			try { expect({ label, slug: findResumableBatchSlugForTask(dir, task) }).toEqual({ label, slug: null }); } finally { rmSync(dir, { recursive: true, force: true }); }
+		}
+	});
+
+	it("ignores unreadable or foreign files instead of throwing", () => {
+		const dir = root([running("enrolled")]);
+		try {
+			writeFileSync(join(dir, ".imm", "state", "batches", "junk.json"), "{not json");
+			writeFileSync(join(dir, ".imm", "state", "batches", "foreign.json"), JSON.stringify({ contract: "other/v1" }));
+			expect(findResumableBatchSlugForTask(dir, "t1")).toBe("init");
+		} finally { rmSync(dir, { recursive: true, force: true }); }
 	});
 });

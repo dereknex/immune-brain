@@ -160,10 +160,10 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				signal: meta.signal,
 			};
 			if (name === "enroll") return runtime.enroll(taskId, toolMeta);
-			if (name === "advance_assurance") return runtime.advance(taskId, toolMeta.signal);
+			if (name === "advance_assurance") return runtime.advance(taskId, toolMeta.signal, toolMeta);
 			if (name === "submit_review") {
 				if (!Object.hasOwn(args, "verdict")) throw new Error("verdict is required");
-				return runtime.submitReview(taskId, args.verdict);
+				return runtime.submitReview(taskId, args.verdict, toolMeta);
 			}
 			if (name === "revise_intent") {
 				if (!Object.hasOwn(args, "next_intent")) throw new Error("next_intent is required");

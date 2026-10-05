@@ -68,12 +68,26 @@ export function verify(root: string, batch: string, afterCapture?: (path: string
 	if (state.children.some((child) => child.state !== "committed" || !child.commit) || new Set(state.commits).size !== state.commits.length || state.children.map((child) => child.commit).join() !== state.commits.join()) fail("commit_order_mismatch");
 	const branch = git(root, ["symbolic-ref", "--short", "HEAD"]).trim();
 	const head = oid(git(root, ["rev-parse", "--verify", "-q", "HEAD"]).trim());
-	if (branch !== (state.branch ?? `imm/${state.initiative_slug}`) || head !== state.commits.at(-1)) fail("lineage_mismatch");
+	// An adopted commit is the user's own work on the batch branch: the chain may
+	// step over it, but only as a recorded descendant of the head it moved from.
+	const follow = (from: string): string => {
+		let current = from;
+		for (const adoption of state.adopted_heads ?? []) {
+			if (oid(adoption.from) !== current) continue;
+			const to = oid(adoption.to);
+			if (to === current || spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", current, to], { stdio: "ignore" }).status !== 0) fail("lineage_mismatch");
+			current = to;
+		}
+		return current;
+	};
+	const lastCommit = state.commits.at(-1);
+	if (branch !== (state.branch ?? `imm/${state.initiative_slug}`) || !lastCommit || head !== follow(oid(lastCommit))) fail("lineage_mismatch");
 	let parent = oid(state.base_head);
 	const consumed: Array<{ path: string; raw: Buffer }> = [{ path: statePath, raw: stateRaw }, { path: inside(root, `.imm/state/batches/${batch}.report.json`), raw: reportRaw }];
 	const children = [];
 	for (const [index, child] of state.children.entries()) {
 		const commit = oid(child.commit);
+		parent = follow(parent);
 		if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(child.task_id)) fail("invalid_input");
 		const evidencePath = inside(root, `.imm/state/batches/commits/${batch}-${child.task_id}.json`);
 		const evidenceRaw = capture(evidencePath);

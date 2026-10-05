@@ -58,6 +58,7 @@ import {
 	projectBatchPreflight,
 	readActiveClaimTaskId,
 	isOwnBatchClaim,
+	findResumableBatchSlugForTask,
 } from "../unattended/batch_preflight";
 import {
 	startBatch,
@@ -608,18 +609,63 @@ export class ClaudeRuntime {
 		}
 	}
 
-	async advance(taskId: string, signal?: AbortSignal) {
-		return this.withTerminalTracker(
+	async advance(taskId: string, signal?: AbortSignal, meta?: ToolMeta) {
+		return this.closeOutBatchChild(
 			taskId,
-			await this.coordinator.advance(taskId, { cwd: this.cwd }, signal),
+			await this.withTerminalTracker(taskId, await this.coordinator.advance(taskId, { cwd: this.cwd }, signal)),
+			meta,
 		);
 	}
 
-	async submitReview(taskId: string, verdictInput: unknown) {
-		return this.withTerminalTracker(
+	async submitReview(taskId: string, verdictInput: unknown, meta?: ToolMeta) {
+		return this.closeOutBatchChild(
 			taskId,
-			await submitClaudeReview(this.host, this.coordinator, { cwd: this.cwd }, taskId, verdictInput),
+			await this.withTerminalTracker(
+				taskId,
+				await submitClaudeReview(this.host, this.coordinator, { cwd: this.cwd }, taskId, verdictInput),
+			),
+			meta,
 		);
+	}
+
+	/**
+	 * Gate-free closeout: a batch child that reached Kernel `done` in the
+	 * foreground re-enters the batch in the same call, reusing its authorization.
+	 * Only `done` continues; a stopped child, a parked child and a live Review
+	 * obligation end where they do today. The continuation is transport: the
+	 * Kernel result is returned unchanged, and any failure is reported beside it
+	 * with one retry action, never thrown into a path that could read as "the
+	 * mutation did not happen".
+	 */
+	private async closeOutBatchChild<T>(taskId: string, result: T, meta?: ToolMeta): Promise<T> {
+		if (!meta || result === null || typeof result !== "object") return result;
+		const lifecycle = (result as { record?: { lifecycle?: unknown } }).record?.lifecycle;
+		if ((result as { state?: unknown }).state !== "completed" && lifecycle !== "done") return result;
+		let slug: string | null;
+		try {
+			slug = findResumableBatchSlugForTask(this.cwd, taskId);
+		} catch {
+			return result;
+		}
+		if (!slug) return result;
+		try {
+			// The batch commit takes exactly the scope envelope plus this task's own
+			// audit evidence, and its preflight refuses unstaged changes: stage only
+			// that evidence, the step an Executor otherwise does by hand.
+			if (existsSync(join(this.cwd, ".imm", "audit", taskId)))
+				execFileSync("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
+			const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
+			return { ...(result as object), batch } as T;
+		} catch (error) {
+			return {
+				...(result as object),
+				batch: {
+					state: "rejected",
+					reason: `batch continuation failed: ${error instanceof Error ? error.message : String(error)}`,
+					recovery_action: "call start_unattended_batch with the same Initiative to continue the batch",
+				},
+			} as T;
+		}
 	}
 
 	/**
@@ -984,15 +1030,18 @@ export class ClaudeRuntime {
 	async startUnattendedBatch(
 		initiativeSlug: string,
 		meta: ToolMeta,
+		options: { reuseOnly?: boolean } = {},
 	): Promise<ClaudeBatchStartResult> {
 		throwIfCancelled(meta.signal);
+		const reuseOnly = options.reuseOnly === true;
 		const probe = probeHost(this.env, process.platform, this.hostVersion);
 		if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
+		// A reuse-only continuation never opens a gate, so it needs no confirmation port.
 		const interactive = meta.interactive ?? this.interactive;
-		if (!interactive) throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
+		if (!reuseOnly && !interactive) throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
 		// The text is table-owned; only the form (a thrown native error rather than
 		// a returned envelope) is this Host's.
-		if (!this.requestConfirmation)
+		if (!reuseOnly && !this.requestConfirmation)
 			throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
 
 		// 1. Host-independent batch preflight: claim ownership, branch
@@ -1030,6 +1079,17 @@ export class ClaudeRuntime {
 			readInitiative: this.readInitiative ?? observeGithubInitiative,
 			nonce: enrollmentNonce(),
 			gate: async (facts) => {
+				// A continuation after a foreground child never opens a gate: when the
+				// authorization cannot be reused, the user re-enters the batch tool.
+				if (reuseOnly)
+					return {
+						kind: "host_rejection",
+						value: {
+							state: "blocked",
+							reason: `batch authorization cannot be reused (${facts.reuse_blockers.join(", ")})`,
+							recovery_action: "call start_unattended_batch with the same Initiative to confirm a fresh authorization",
+						},
+					};
 				// The gate settles only on the literal user's answer or the caller's
 				// cancellation signal.
 				let confirmationResult: { decision: NativeDecision; requestId: string };

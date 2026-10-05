@@ -49,7 +49,21 @@ the enrolled TaskIntent.
    `startBatch`; they are callers, never owners (Invariant H-1).
 5. The confirmation is bound to the `plan_digest` of the ordered child
    identities and to the repository `base_head`. A plan that drifts after
-   confirmation, or a HEAD that moves, is refused rather than reconciled.
+   confirmation is refused rather than reconciled. HEAD lineage is a guard,
+   not a state: a HEAD on the same batch branch that descends from the recorded
+   head, with every recorded child commit still reachable, is a fast-forward and
+   is adopted as the new expected head, recorded in the batch run state, with
+   no gate. The adopted commit is never attributed to a child and never
+   rewritten, and the next batch commit parents on it. A different branch, a
+   detached HEAD, a recorded head that is not an ancestor of HEAD, and an
+   unreachable recorded child commit stay fatal (`batch_head_lineage_broken`).
+   When a child's foreground terminal mutation reaches Kernel `done`, the same
+   Host call re-enters the shared `startBatch` with a capability rebuilt from
+   durable facts and opens no gate: the runner commits the child, then enrolls
+   the next child or settles the batch record as `completed`. A reserved
+   Review, a parked child and a stopped child end the sequence where they do
+   today. A failure of that re-entry never changes the Kernel result; it is
+   reported beside it with one retry action, `start_unattended_batch`.
 6. `critical` children are never batched, the runner never pushes, opens a pull
    request, resolves a user decision, or creates, switches, or deletes a Git
    worktree, and default `imm-loop` behavior is unchanged when the batch tool is

@@ -68,6 +68,12 @@ export interface PiBatchExecutionOptions {
 	root: string;
 	initiativeSlug: string;
 	interactive?: boolean;
+	/**
+	 * Gate-free continuation after a foreground child: never opens the
+	 * confirmation, and an authorization that cannot be reused is reported as a
+	 * blocked result with the one action that reopens the gate.
+	 */
+	reuseOnly?: boolean;
 	signal?: AbortSignal;
 	batchKernel?: Partial<BatchRunnerKernelPort>;
 	batchGit?: BatchRunnerGitPort;
@@ -104,9 +110,10 @@ export async function executePiUnattendedBatch(
 	options: PiBatchExecutionOptions,
 ): Promise<PiBatchExecutionResult> {
 	const { root, initiativeSlug, signal } = options;
+	const reuseOnly = options.reuseOnly === true;
 	const interactive = options.interactive ?? true;
 
-	if (!interactive) return { state: "rejected", ...nonInteractiveRefusal() };
+	if (!reuseOnly && !interactive) return { state: "rejected", ...nonInteractiveRefusal() };
 
 	// 1. Host-independent batch preflight: claim ownership, branch availability,
 	// working-tree cleanliness against the authorized scope, recovery children,
@@ -140,6 +147,15 @@ export async function executePiUnattendedBatch(
 		readInitiative: options.readInitiative,
 		nonce: randomUUID(),
 		gate: async (facts) => {
+			if (reuseOnly)
+				return {
+					kind: "host_rejection",
+					value: {
+						state: "blocked",
+						reason: `batch authorization cannot be reused (${facts.reuse_blockers.join(", ")})`,
+						recovery_action: "call start_unattended_batch with the same Initiative to confirm a fresh authorization",
+					},
+				};
 			// review-2: fail closed with zero writes when confirmation port is missing
 			if (!options.confirmBatch) {
 				return { kind: "host_rejection", value: batchReason("confirmation_port_unavailable") };
