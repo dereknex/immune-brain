@@ -69,7 +69,6 @@ beforeEach(() => {
 		preparation_digest: preparation.digest,
 		actor_id: "user",
 		confirmation_ref: "pi-confirm-enroll",
-		expires_at: "2099-01-01T00:00:00.000Z",
 		nonce: "nonce-enroll",
 	};
 	enrollCanaryTask(root, {
@@ -121,7 +120,6 @@ function capabilityFor(
 		diff_hash: DIFF,
 		actor_id,
 		confirmation_ref: `conf-${authority_kind}`,
-		expires_at: "2099-01-01T00:00:00.000Z",
 		findings_digest: null,
 	});
 }
@@ -268,7 +266,6 @@ describe("canary application v3 semantic operations", () => {
 			diff_hash: `sha256:${"0".repeat(64)}`,
 			actor_id: "user",
 			confirmation_ref: "conf-drain",
-			expires_at: "2099-01-01T00:00:00.000Z",
 			findings_digest: null,
 		});
 		app.beginDrain({ root, task_id: TASK, capability, now });

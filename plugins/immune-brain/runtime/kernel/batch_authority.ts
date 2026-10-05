@@ -19,15 +19,6 @@ export const BATCH_AUTHORITY_CAPABILITY_BRAND = Symbol.for(
 
 const GIT_COMMIT_ID = /^[a-f0-9]{40}$/;
 
-/** review-7(3rd rework): typed expiry marker thrown at the Kernel enrollment
- * boundary so the driver can classify a real enrollment-time expiry as an
- * intentional budget stop without free-form message matching. */
-export class BatchAuthorizationExpiryError extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = "BatchAuthorizationExpiryError";
-	}
-}
 
 export interface BatchPlanChild {
 	task_id: string;
@@ -39,7 +30,6 @@ export interface BatchPlanChild {
 
 export interface BatchBudget {
 	max_children: number;
-	deadline_at: string;
 	qa_failure_limit: number;
 }
 
@@ -63,7 +53,6 @@ export interface ValidatedBatchAuthorization {
 	actor_id: string;
 	confirmation_ref: string;
 	issued_at: string;
-	expires_at: string;
 	nonce: string;
 }
 
@@ -81,7 +70,6 @@ export interface BatchAuthorityRegistry {
 	inspect(
 		capability: object,
 		expected: BatchAuthorizationBinding,
-		now?: number,
 	): ValidatedBatchAuthorization;
 	children(capability: object): BatchPlanChild[];
 	consumedChildren(capability: object): string[];
@@ -91,7 +79,6 @@ export interface BatchAuthorityRegistry {
 		capability: object,
 		expected: BatchAuthorizationBinding,
 		taskId: string,
-		now?: number,
 	): ValidatedBatchAuthorization;
 	/** Undo one slot consumption when the bound write did not commit. */
 	releaseChild(capability: object, taskId: string): void;
@@ -138,7 +125,6 @@ function requireNonEmpty(binding: BatchAuthorizationBinding): void {
 		"base_head",
 		"actor_id",
 		"confirmation_ref",
-		"expires_at",
 		"nonce",
 	] as const) {
 		const value = binding[key];
@@ -149,14 +135,11 @@ function requireNonEmpty(binding: BatchAuthorizationBinding): void {
 		throw new Error(`batch authorization binding is incomplete: ${missing.join(", ")}`);
 }
 
-function validateBudget(budget: BatchBudget, issuedAt: string): void {
+function validateBudget(budget: BatchBudget): void {
 	if (!Number.isInteger(budget.max_children) || budget.max_children <= 0)
 		throw new Error("batch budget max_children must be a positive integer");
 	if (!Number.isInteger(budget.qa_failure_limit) || budget.qa_failure_limit <= 0)
 		throw new Error("batch budget qa_failure_limit must be a positive integer");
-	const deadline = Date.parse(budget.deadline_at);
-	if (Number.isNaN(deadline) || deadline <= Date.parse(issuedAt))
-		throw new Error("batch budget must have a future deadline_at");
 }
 
 function validateChildren(children: BatchPlanChild[], planDigest: string): void {
@@ -210,7 +193,7 @@ export function createBatchAuthorityRegistry(): BatchAuthorityRegistry {
 	>(
 		BATCH_AUTHORITY_CAPABILITY_BRAND,
 		{
-			validateBinding(binding, issuedAt) {
+			validateBinding(binding) {
 				requireNonEmpty(binding);
 				// Both the canonical literal-user spelling and the historical `user`
 				// spelling are read, so a batch authorized before the convergence keeps
@@ -219,29 +202,15 @@ export function createBatchAuthorityRegistry(): BatchAuthorityRegistry {
 					throw new Error("batch authorization requires a literal-user actor_id");
 				if (!GIT_COMMIT_ID.test(binding.base_head))
 					throw new Error("batch authorization base_head must be a committed 40-hex commit id");
-				const expires = Date.parse(binding.expires_at);
-				if (Number.isNaN(expires) || expires <= Date.parse(issuedAt))
-					throw new Error("batch authorization must have a future expiry");
-				validateBudget(binding.budget, issuedAt);
+				validateBudget(binding.budget);
 			},
-			validateAndProject(state, expected, now) {
-				// Fail closed on an unusable clock. `now` reaches here as
-				// Date.parse(...) from callers, and NaN makes every `<=` compare
-				// false, which would silently accept an expired authorization.
-				if (!Number.isFinite(now))
-					throw new Error("batch authorization requires a valid clock");
-				const expires = Date.parse(state.expires_at);
-				if (Number.isNaN(expires) || expires <= now)
-					throw new BatchAuthorizationExpiryError("batch authorization has expired");
-				if (Date.parse(state.budget.deadline_at) <= now)
-					throw new BatchAuthorizationExpiryError("batch authorization deadline has expired");
+			validateAndProject(state, expected) {
 				for (const key of Object.keys(expected) as Array<keyof BatchAuthorizationBinding>) {
 					if (key === "budget") {
 						const a = state.budget ?? ({} as BatchBudget);
 						const b = expected.budget ?? ({} as BatchBudget);
 						if (
 							a.max_children !== b.max_children ||
-							a.deadline_at !== b.deadline_at ||
 							a.qa_failure_limit !== b.qa_failure_limit
 						)
 							throw new Error("batch authorization budget mismatch");
@@ -263,7 +232,6 @@ export function createBatchAuthorityRegistry(): BatchAuthorityRegistry {
 					actor_id: state.actor_id,
 					confirmation_ref: state.confirmation_ref,
 					issued_at: state.issued_at,
-					expires_at: state.expires_at,
 					nonce: state.nonce,
 				};
 			},
@@ -299,9 +267,9 @@ export function createBatchAuthorityRegistry(): BatchAuthorityRegistry {
 			consumed.set(capability, new Set<string>());
 			return capability;
 		},
-		inspect(capability, expected, now = Date.now()) {
+		inspect(capability, expected) {
 			planOf(capability);
-			return inner.inspect(capability, expected, now);
+			return inner.inspect(capability, expected);
 		},
 		children(capability) {
 			return planOf(capability).map((child) => ({ ...child, blocked_by: [...child.blocked_by] }));
@@ -312,8 +280,8 @@ export function createBatchAuthorityRegistry(): BatchAuthorityRegistry {
 		isChildConsumed(capability, taskId) {
 			return slotsOf(capability).has(taskId);
 		},
-		consumeChild(capability, expected, taskId, now = Date.now()) {
-			const validated = this.inspect(capability, expected, now);
+		consumeChild(capability, expected, taskId) {
+			const validated = this.inspect(capability, expected);
 			const plan = planOf(capability);
 			if (!plan.some((child) => child.task_id === taskId))
 				throw new Error(`batch_child_not_in_plan: ${taskId}`);
@@ -355,7 +323,7 @@ export function deriveChildEnrollment(
 	registry: BatchAuthorityRegistry,
 	input: DeriveChildEnrollmentInput,
 ): DerivedChildEnrollment {
-	const validated = registry.inspect(input.capability, input.binding, Date.parse(input.now));
+	const validated = registry.inspect(input.capability, input.binding);
 	const child = registry
 		.children(input.capability)
 		.find((entry) => entry.task_id === input.task_id);
@@ -404,7 +372,6 @@ export function deriveChildEnrollment(
 			preparation_digest: preparation.digest,
 			actor_id: validated.actor_id,
 			confirmation_ref: validated.confirmation_ref,
-			expires_at: validated.expires_at,
 			nonce: `${validated.nonce}:${child.task_id}`,
 		},
 	};

@@ -23,7 +23,7 @@ import { readTaskIntent } from "../kernel/intent";
 import { localRunId, readAuditTaskPair, readTaskRecordRaw, readWorkspaceStateRaw, reconcileKernelAuthority } from "../kernel/storage";
 import { pathMatchesScope } from "../workspace_scope";
 import { captureBatchReconfirmation, retainReconfirmation, ownUnpersistedBatchHead, type ReconfirmationSnapshot } from "./batch_reconfirmation";
-import { DEFAULT_DEADLINE_MS, projectBatchPlan } from "./batch_plan";
+import { projectBatchPlan } from "./batch_plan";
 import { batchReason, type BatchReasonKey } from "./batch_reasons";
 import { isTerminalBatchState, readBatchRunState, type BatchRunStateRecord } from "./batch_state";
 import { readRunRowByTask, withKernelRead } from "../kernel/sqlite_store";
@@ -347,11 +347,11 @@ async function projectPlanSurface(input: {
 	let budget: BatchPlanBudget;
 
 	if (isResuming && existingBatch) {
-		// Candidate only: renewal uses the same default window as a fresh plan,
-		// while preserving the confirmed count limits and the persisted record.
-		budget = { ...existingBatch.budget };
-		if (Date.parse(budget.deadline_at) <= Date.parse(now))
-			budget.deadline_at = new Date(Date.parse(now) + DEFAULT_DEADLINE_MS).toISOString();
+		// A resume keeps the confirmed count limits of the persisted record.
+		budget = {
+			max_children: existingBatch.budget.max_children,
+			qa_failure_limit: existingBatch.budget.qa_failure_limit,
+		};
 		try {
 			recoveryChildren = existingBatch.children.map((c) => {
 				const intentPath = `docs/plans/${c.task_id}.intent.json`;
@@ -635,7 +635,6 @@ export interface BatchConfirmationFacts {
 	batch_branch: string;
 	plan_digest: string;
 	budget: BatchPlanBudget;
-	expires_at: string;
 	reuse_blockers: string[];
 	children: Array<{ task_id: string; slice_id: string; risk: string; status: BatchPlanChildStatus }>;
 	excluded: Array<{ task_id: string; slice_id: string; reason: string }>;
@@ -656,7 +655,6 @@ export type BatchAuthorizationOutcome<HostRejection> =
 			batch_id: string;
 			reuse_authorization: boolean;
 			reuse_blockers: string[];
-			expires_at: string;
 			binding: BatchAuthorizationBinding;
 	  }
 	| { outcome: "rejected"; rejection: BatchPreflightRejection }
@@ -678,7 +676,7 @@ export interface BatchAuthorizationOptions<HostRejection> {
 
 /**
  * The one authorization flow both Host adapters call after the shared
- * preflight: ADR-0005's reuse/expiry decision, the literal-user gate, the
+ * preflight: ADR-0005's reuse decision, the literal-user gate, the
  * post-gate claim/drift cascade, and the BatchAuthorizationBinding. A Host
  * supplies its gate, its confirmation reference, and its nonce; every decision
  * below stays Host-independent.
@@ -696,10 +694,6 @@ export async function authorizeBatch<HostRejection>(
 	} = projection;
 	const existingBatch = projection.existing_batch;
 
-	// ADR-0005 Decision 1: one Batch Authorization spans the work it authorizes,
-	// so its expiry is the deadline the literal user confirmed rather than a fixed
-	// window that lapses while a child is parked on a foreground Review.
-	const isExistingExpired = isResuming && Date.parse(existingBatch!.authorization_expires_at) <= Date.now();
 	const branchBefore = spawnSync("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
 	if (branchBefore.status !== 0)
 		return { outcome: "rejected", rejection: batchRejection("repository_became_unreadable") };
@@ -714,15 +708,12 @@ export async function authorizeBatch<HostRejection>(
 		return { outcome: "rejected", rejection: batchRejection("head_moved", "first unpersisted commit provenance is invalid") };
 	const reuseBlockers: string[] = [];
 	if (isResuming && existingBatch) {
-		if (isExistingExpired) reuseBlockers.push("batch_authorization_expired");
-		if (Date.parse(existingBatch.budget.deadline_at) <= Date.now()) reuseBlockers.push("batch_budget_expired");
 		if (existingBatch.batch_state !== "running") reuseBlockers.push("batch_not_running");
 		if (existingBatch.plan_digest !== planDigest) reuseBlockers.push("batch_plan_digest_changed");
 		if (existingBatch.branch !== batchBranch) reuseBlockers.push("batch_branch_changed");
 		if (expectedBatchHead(existingBatch) !== baseHead && !ownsUnpersistedHead) reuseBlockers.push("batch_head_lineage_moved");
 	}
 	const reuseAuthorization = isResuming && reuseBlockers.length === 0;
-	const expiresAt = reuseAuthorization ? existingBatch!.authorization_expires_at : budget.deadline_at;
 
 	const batchId = isResuming && existingBatch ? existingBatch.batch_id : `batch-${initiativeSlug}-${randomUUID()}`;
 	const facts: BatchConfirmationFacts = {
@@ -730,7 +721,6 @@ export async function authorizeBatch<HostRejection>(
 		batch_branch: batchBranch,
 		plan_digest: planDigest,
 		budget,
-		expires_at: expiresAt,
 		reuse_blockers: reuseBlockers,
 		children: projection.recovery_children.map((child) => ({
 			task_id: child.task_id,
@@ -777,8 +767,8 @@ export async function authorizeBatch<HostRejection>(
 	if (finalClaimTaskId && !finalOwnClaim)
 		return { outcome: "rejected", rejection: batchRejection("claim_appeared_during_confirmation", finalClaimTaskId) };
 
-	// Confirmation cannot adopt a changed record or extend its displayed window
-	// after the user answers. Re-read the clock and branch after the async checks.
+	// Confirmation cannot adopt a changed record after the user answers. Re-read
+	// the record and branch after the async checks.
 	if (isResuming) {
 		const current = findExistingActiveBatch(root, initiativeSlug);
 		if (!current || current.corrupt || JSON.stringify(current.record) !== JSON.stringify(existingBatch))
@@ -787,8 +777,6 @@ export async function authorizeBatch<HostRejection>(
 	const branchAfter = spawnSync("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
 	if (branchAfter.status !== 0 || branchAfter.stdout !== branchBefore.stdout)
 		return { outcome: "rejected", rejection: batchRejection("confirmation_failed", "Git branch moved after native confirmation") };
-	if (Date.parse(expiresAt) <= Date.now())
-		return { outcome: "rejected", rejection: batchRejection("confirmation_failed", "confirmed batch deadline expired before authorization issuance") };
 
 	if (projection.reconfirmation) {
 		try { projection.reconfirmation.assertUnchanged(); }
@@ -803,16 +791,14 @@ export async function authorizeBatch<HostRejection>(
 		budget,
 		actor_id: LITERAL_USER_ACTOR_ID,
 		confirmation_ref: options.confirmationRef({ batch_id: batchId, request_id: requestId }),
-		expires_at: expiresAt,
 		nonce: options.nonce,
 	};
-	if (projection.reconfirmation) retainReconfirmation(binding.nonce, binding.expires_at, projection.reconfirmation);
+	if (projection.reconfirmation) retainReconfirmation(binding.nonce, projection.reconfirmation);
 	return {
 		outcome: "authorized",
 		batch_id: batchId,
 		reuse_authorization: reuseAuthorization,
 		reuse_blockers: reuseBlockers,
-		expires_at: expiresAt,
 		binding,
 	};
 }

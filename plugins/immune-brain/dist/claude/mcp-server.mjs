@@ -4264,7 +4264,7 @@ function parseHistoryV3(value, index, violations) {
       actor_id: stringAt(auth.actor_id, `${path}.authority.actor_id`, violations),
       confirmation_ref: stringAt(auth.confirmation_ref, `${path}.authority.confirmation_ref`, violations),
       issued_at: stringAt(auth.issued_at, `${path}.authority.issued_at`, violations),
-      expires_at: stringAt(auth.expires_at, `${path}.authority.expires_at`, violations)
+      ...auth.expires_at !== undefined ? { expires_at: stringAt(auth.expires_at, `${path}.authority.expires_at`, violations) } : {}
     };
   }
   return {
@@ -7077,7 +7077,7 @@ async function projectAssurance(root, taskId, diffProvider) {
 
 // plugins/immune-brain/runtime/kernel/application.ts
 function applyTaskAction(input) {
-  const { root, task_id, prior_intent_token, registry, capability, diffProvider, now } = input;
+  const { root, task_id, prior_intent_token, registry, capability, diffProvider } = input;
   return withKernelStoreLock(root, () => {
     const current = readTaskRecordRaw(root, task_id);
     if (!current.record)
@@ -7128,7 +7128,7 @@ function applyTaskAction(input) {
       diff_hash: trustedDiff.diff_hash,
       ...action.type === "request_rework" ? { findings_digest: findingsDigestV2(action.findings) } : {}
     } : null;
-    const inspectedAudit = expectedAuthority ? registry.inspect(capability, expectedAuthority, now) : null;
+    const inspectedAudit = expectedAuthority ? registry.inspect(capability, expectedAuthority) : null;
     const authorityRunId = inspectedAudit?.run_id;
     const mutation = reduceTask(current.record, action, inspectedAudit ? inspectedAudit.audit : null, trustedDiff.changed_paths);
     if (!isReducedMutation(mutation))
@@ -7154,7 +7154,7 @@ function applyTaskAction(input) {
     consumeIntentToken(prior_intent_token);
     consumeIntentToken(freshRead.token);
     if (expectedAuthority) {
-      registry.consume(capability, expectedAuthority, now);
+      registry.consume(capability, expectedAuthority);
     }
     const nextWorking = mutation.next_workspace_working;
     const nextRecord = input.artifact_transition ? {
@@ -7480,7 +7480,6 @@ function createCanaryApplication(registry) {
       registry,
       capability,
       diffProvider: input.diffProvider,
-      now: Date.parse(now),
       ...operation.op === "complete" || operation.op === "stop" ? { terminal: { terminalized_at: now } } : {},
       ...artifactTransition ? { artifact_transition: artifactTransition } : {}
     });
@@ -7528,7 +7527,7 @@ function createCanaryApplication(registry) {
         intent_revision: current.record.intent_snapshot.revision,
         intent_content_hash: current.record.intent_ref.content_hash,
         diff_hash: "sha256:" + "0".repeat(64)
-      }, Date.parse(now));
+      });
       const nextClaim = {
         ...claim,
         lifecycle_status: "draining",
@@ -7569,7 +7568,7 @@ function createCapabilityRegistry(capabilityBrand, hooks, domainLabel) {
   return {
     brand,
     issue(binding, issuedAt = new Date().toISOString()) {
-      hooks.validateBinding(binding, issuedAt);
+      hooks.validateBinding(binding);
       const capability = Object.freeze(Object.defineProperties({}, {
         [capabilityBrand]: { value: true, enumerable: false, writable: false, configurable: false },
         [brand]: { value: true, enumerable: false, writable: false, configurable: false }
@@ -7577,16 +7576,16 @@ function createCapabilityRegistry(capabilityBrand, hooks, domainLabel) {
       states.set(capability, { binding: { ...binding }, issued_at: issuedAt, consumed: false });
       return capability;
     },
-    inspect(capability, expected, now = Date.now()) {
+    inspect(capability, expected) {
       if (!isCapability(capability))
         throw new Error(`${domainLabel} capability is not recognized by this registry`);
       const state = stateOf(capability);
       if (state.consumed)
         throw new Error(`${domainLabel} capability already consumed`);
-      return hooks.validateAndProject({ ...state.binding, issued_at: state.issued_at }, expected, now);
+      return hooks.validateAndProject({ ...state.binding, issued_at: state.issued_at }, expected);
     },
-    consume(capability, expected, now = Date.now()) {
-      const validated = this.inspect(capability, expected, now);
+    consume(capability, expected) {
+      const validated = this.inspect(capability, expected);
       stateOf(capability).consumed = true;
       return validated;
     },
@@ -7603,7 +7602,7 @@ function digestOfAction(action) {
 }
 function createMutationAuthorityRegistry() {
   const inner = createCapabilityRegistry(MUTATION_AUTHORITY_CAPABILITY_BRAND, {
-    validateBinding(binding, issuedAt) {
+    validateBinding(binding) {
       const missing = [];
       if (binding.run_id !== undefined && binding.run_id.length === 0)
         throw new Error("authority capability run_id must not be empty");
@@ -7617,12 +7616,8 @@ function createMutationAuthorityRegistry() {
         throw new Error(`authority capability binding is incomplete: ${missing.join(", ")}`);
       if (binding.findings_digest !== null && !/^sha256:[a-f0-9]{64}$/.test(binding.findings_digest))
         throw new Error("authority capability findings_digest must be a canonical sha256 hash");
-      if (Number.isNaN(Date.parse(binding.expires_at)) || Date.parse(binding.expires_at) <= Date.parse(issuedAt))
-        throw new Error("authority capability must have a future expiry");
     },
-    validateAndProject(state, expected, now) {
-      if (Date.parse(state.expires_at) <= now)
-        throw new Error("authority capability has expired");
+    validateAndProject(state, expected) {
       const actionDigest = digestOfAction(expected.action);
       if (state.action_digest !== actionDigest)
         throw new Error("authority capability action digest mismatch");
@@ -7649,8 +7644,7 @@ function createMutationAuthorityRegistry() {
           authority_kind: state.authority_kind,
           actor_id: canonicalActorId(state.actor_id),
           confirmation_ref: state.confirmation_ref,
-          issued_at: state.issued_at,
-          expires_at: state.expires_at
+          issued_at: state.issued_at
         },
         action_digest: actionDigest,
         ...state.run_id !== undefined ? { run_id: state.run_id } : {},
@@ -7665,20 +7659,20 @@ function createMutationAuthorityRegistry() {
   return {
     brand: inner.brand,
     issue: inner.issue.bind(inner),
-    inspect(capability, expected, now = Date.now()) {
+    inspect(capability, expected) {
       if (!capability)
         throw new Error("privileged action requires an opaque authority capability");
       try {
-        return inner.inspect(capability, expected, now);
+        return inner.inspect(capability, expected);
       } catch (err) {
         if (err instanceof Error && err.message.includes("not recognized by this registry"))
           throw new Error("privileged action requires an opaque authority capability");
         throw err;
       }
     },
-    consume(capability, expected, now = Date.now()) {
+    consume(capability, expected) {
       try {
-        return inner.consume(capability, expected, now);
+        return inner.consume(capability, expected);
       } catch (err) {
         if (err instanceof Error && err.message.includes("not recognized by this registry"))
           throw new Error("privileged action requires an opaque authority capability");
@@ -7693,7 +7687,7 @@ function createMutationAuthorityRegistry() {
 var ENROLLMENT_CAPABILITY_BRAND = Symbol.for("assurance-kernel.enrollment-capability-brand");
 function createEnrollmentAuthorityRegistry() {
   return createCapabilityRegistry(ENROLLMENT_CAPABILITY_BRAND, {
-    validateBinding(binding, issuedAt) {
+    validateBinding(binding) {
       const missing = [];
       for (const [key, value] of Object.entries(binding)) {
         if (value === undefined || value === null || value === "")
@@ -7701,12 +7695,8 @@ function createEnrollmentAuthorityRegistry() {
       }
       if (missing.length > 0)
         throw new Error(`enrollment capability binding is incomplete: ${missing.join(", ")}`);
-      if (Number.isNaN(Date.parse(binding.expires_at)) || Date.parse(binding.expires_at) <= Date.parse(issuedAt))
-        throw new Error("enrollment capability must have a future expiry");
     },
-    validateAndProject(state, expected, now) {
-      if (Date.parse(state.expires_at) <= now)
-        throw new Error("enrollment capability has expired");
+    validateAndProject(state, expected) {
       for (const key of Object.keys(expected)) {
         if (state[key] !== expected[key])
           throw new Error(`enrollment capability ${key} mismatch`);
@@ -7720,7 +7710,6 @@ function createEnrollmentAuthorityRegistry() {
         actor_id: state.actor_id,
         confirmation_ref: state.confirmation_ref,
         issued_at: state.issued_at,
-        expires_at: state.expires_at,
         nonce: state.nonce
       };
     }
@@ -7986,7 +7975,7 @@ function enrollCanaryTask(root, input, registry) {
       if (checks.gitBaseHead !== gitBaseHead)
         throw new Error("Git HEAD moved after the enrollment confirmation");
       if (input.batch) {
-        const batch = input.batch.registry.inspect(input.batch.capability, input.batch.binding, Date.parse(input.now));
+        const batch = input.batch.registry.inspect(input.batch.capability, input.batch.binding);
         if (input.batch.registry.consumedChildren(input.batch.capability).length === 0 && input.batch.expected_head !== batch.base_head)
           throw new Error(`batch_head_lineage_broken: the first child must enroll on the confirmed base_head ${batch.base_head}, not ${input.batch.expected_head}`);
         if (checks.gitBaseHead !== input.batch.expected_head)
@@ -7995,7 +7984,7 @@ function enrollCanaryTask(root, input, registry) {
       registry.consume(input.capability, input.capability_binding);
       consumed = true;
       if (input.batch)
-        input.batch.registry.consumeChild(input.batch.capability, input.batch.binding, input.task_id, Date.parse(input.now));
+        input.batch.registry.consumeChild(input.batch.capability, input.batch.binding, input.task_id);
       if (!gitBaseHead)
         throw new Error("enrollment requires a committed Git HEAD");
       const record = buildTaskRecordV4(input, checks.intent, gitBaseHead);
@@ -8650,11 +8639,6 @@ var BATCH_REASONS = Object.freeze({
     reason: "native confirmation port is unavailable",
     recovery_action: "retry through a fresh native gate in the current Host"
   },
-  confirmation_timed_out: {
-    state: "rejected",
-    reason: (detail) => `native confirmation timed out after ${detail} ms waiting for user interaction; set IMMUNE_BRAIN_BATCH_TIMEOUT_MS to change the bound`,
-    recovery_action: "retry through a fresh native gate in the current Host"
-  },
   confirmation_cancelled: {
     state: "cancelled",
     reason: "native interaction cancelled",
@@ -8717,31 +8701,6 @@ function batchReason(key, detail = "") {
     state: spec.state,
     reason: typeof spec.reason === "function" ? spec.reason(detail) : spec.reason,
     recovery_action: spec.recovery_action
-  };
-}
-
-// plugins/immune-brain/runtime/unattended/confirmation_deadline.ts
-var CONFIRMATION_TIMEOUT_DEFAULT_MS = 900000;
-var CONFIRMATION_TIMEOUT_ENV = "IMMUNE_BRAIN_BATCH_TIMEOUT_MS";
-var TIMER_DELAY_LIMIT_MS = 2147483647;
-function startConfirmationDeadline(input) {
-  const configured = Number(input.env?.[CONFIRMATION_TIMEOUT_ENV]);
-  const timeoutMs = Number.isFinite(configured) && configured > 0 ? configured : CONFIRMATION_TIMEOUT_DEFAULT_MS;
-  const controller = new AbortController;
-  let timer;
-  const arm = (remainingMs) => {
-    timer = setTimeout(() => {
-      if (remainingMs > TIMER_DELAY_LIMIT_MS)
-        return arm(remainingMs - TIMER_DELAY_LIMIT_MS);
-      controller.abort(new Error("native confirmation timed out waiting for user interaction"));
-    }, Math.min(remainingMs, TIMER_DELAY_LIMIT_MS));
-  };
-  arm(timeoutMs);
-  return {
-    timeoutMs,
-    signal: input.signal ? AbortSignal.any([input.signal, controller.signal]) : controller.signal,
-    timedOut: () => controller.signal.aborted && !input.signal?.aborted,
-    clear: () => clearTimeout(timer)
   };
 }
 
@@ -9896,13 +9855,6 @@ import { spawnSync as spawnSync6 } from "node:child_process";
 import { createHash as createHash18 } from "node:crypto";
 var BATCH_AUTHORITY_CAPABILITY_BRAND = Symbol.for("assurance-kernel.batch-authority-capability-brand");
 var GIT_COMMIT_ID2 = /^[a-f0-9]{40}$/;
-
-class BatchAuthorizationExpiryError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = "BatchAuthorizationExpiryError";
-  }
-}
 function sha256Hex3(bytes) {
   return createHash18("sha256").update(bytes).digest("hex");
 }
@@ -9934,7 +9886,6 @@ function requireNonEmpty(binding) {
     "base_head",
     "actor_id",
     "confirmation_ref",
-    "expires_at",
     "nonce"
   ]) {
     const value = binding[key];
@@ -9946,14 +9897,11 @@ function requireNonEmpty(binding) {
   if (missing.length > 0)
     throw new Error(`batch authorization binding is incomplete: ${missing.join(", ")}`);
 }
-function validateBudget(budget, issuedAt) {
+function validateBudget(budget) {
   if (!Number.isInteger(budget.max_children) || budget.max_children <= 0)
     throw new Error("batch budget max_children must be a positive integer");
   if (!Number.isInteger(budget.qa_failure_limit) || budget.qa_failure_limit <= 0)
     throw new Error("batch budget qa_failure_limit must be a positive integer");
-  const deadline = Date.parse(budget.deadline_at);
-  if (Number.isNaN(deadline) || deadline <= Date.parse(issuedAt))
-    throw new Error("batch budget must have a future deadline_at");
 }
 function validateChildren(children, planDigest) {
   if (!Array.isArray(children) || children.length === 0)
@@ -10001,30 +9949,20 @@ function validateChildren(children, planDigest) {
 }
 function createBatchAuthorityRegistry() {
   const inner = createCapabilityRegistry(BATCH_AUTHORITY_CAPABILITY_BRAND, {
-    validateBinding(binding, issuedAt) {
+    validateBinding(binding) {
       requireNonEmpty(binding);
       if (!isLiteralUserActor(binding.actor_id))
         throw new Error("batch authorization requires a literal-user actor_id");
       if (!GIT_COMMIT_ID2.test(binding.base_head))
         throw new Error("batch authorization base_head must be a committed 40-hex commit id");
-      const expires = Date.parse(binding.expires_at);
-      if (Number.isNaN(expires) || expires <= Date.parse(issuedAt))
-        throw new Error("batch authorization must have a future expiry");
-      validateBudget(binding.budget, issuedAt);
+      validateBudget(binding.budget);
     },
-    validateAndProject(state, expected, now) {
-      if (!Number.isFinite(now))
-        throw new Error("batch authorization requires a valid clock");
-      const expires = Date.parse(state.expires_at);
-      if (Number.isNaN(expires) || expires <= now)
-        throw new BatchAuthorizationExpiryError("batch authorization has expired");
-      if (Date.parse(state.budget.deadline_at) <= now)
-        throw new BatchAuthorizationExpiryError("batch authorization deadline has expired");
+    validateAndProject(state, expected) {
       for (const key of Object.keys(expected)) {
         if (key === "budget") {
           const a = state.budget ?? {};
           const b = expected.budget ?? {};
-          if (a.max_children !== b.max_children || a.deadline_at !== b.deadline_at || a.qa_failure_limit !== b.qa_failure_limit)
+          if (a.max_children !== b.max_children || a.qa_failure_limit !== b.qa_failure_limit)
             throw new Error("batch authorization budget mismatch");
           continue;
         }
@@ -10041,7 +9979,6 @@ function createBatchAuthorityRegistry() {
         actor_id: state.actor_id,
         confirmation_ref: state.confirmation_ref,
         issued_at: state.issued_at,
-        expires_at: state.expires_at,
         nonce: state.nonce
       };
     }
@@ -10070,9 +10007,9 @@ function createBatchAuthorityRegistry() {
       consumed.set(capability, new Set);
       return capability;
     },
-    inspect(capability, expected, now = Date.now()) {
+    inspect(capability, expected) {
       planOf(capability);
-      return inner.inspect(capability, expected, now);
+      return inner.inspect(capability, expected);
     },
     children(capability) {
       return planOf(capability).map((child) => ({ ...child, blocked_by: [...child.blocked_by] }));
@@ -10083,8 +10020,8 @@ function createBatchAuthorityRegistry() {
     isChildConsumed(capability, taskId) {
       return slotsOf(capability).has(taskId);
     },
-    consumeChild(capability, expected, taskId, now = Date.now()) {
-      const validated = this.inspect(capability, expected, now);
+    consumeChild(capability, expected, taskId) {
+      const validated = this.inspect(capability, expected);
       const plan = planOf(capability);
       if (!plan.some((child) => child.task_id === taskId))
         throw new Error(`batch_child_not_in_plan: ${taskId}`);
@@ -10103,7 +10040,7 @@ function createBatchAuthorityRegistry() {
   };
 }
 function deriveChildEnrollment(root, registry, input) {
-  const validated = registry.inspect(input.capability, input.binding, Date.parse(input.now));
+  const validated = registry.inspect(input.capability, input.binding);
   const child = registry.children(input.capability).find((entry) => entry.task_id === input.task_id);
   if (!child)
     throw new Error(`batch_child_not_in_plan: ${input.task_id}`);
@@ -10133,7 +10070,6 @@ function deriveChildEnrollment(root, registry, input) {
       preparation_digest: preparation.digest,
       actor_id: validated.actor_id,
       confirmation_ref: validated.confirmation_ref,
-      expires_at: validated.expires_at,
       nonce: `${validated.nonce}:${child.task_id}`
     }
   };
@@ -10179,8 +10115,13 @@ function statePath(batchId) {
   validateBatchId(batchId);
   return join11(".imm", "state", "batches", `${batchId}.json`);
 }
+function withoutRetiredClock(record) {
+  const { authorization_expires_at: _expiry, ...rest } = record;
+  const { deadline_at: _deadline, ...budget } = rest.budget;
+  return { ...rest, budget };
+}
 function canonicalBytes(record) {
-  return `${JSON.stringify(record, null, 2)}
+  return `${JSON.stringify(withoutRetiredClock(record), null, 2)}
 `;
 }
 function validateRecordShape(value, batchId) {
@@ -10199,8 +10140,6 @@ function validateRecordShape(value, batchId) {
     throw new Error(`batch run state ${batchId} has an invalid branch`);
   if (!isCanonicalTimestamp(record.confirmation_time))
     throw new Error(`batch run state ${batchId} has an invalid confirmation_time`);
-  if (!isCanonicalTimestamp(record.authorization_expires_at))
-    throw new Error(`batch run state ${batchId} has an invalid authorization_expires_at`);
   if (!isCanonicalTimestamp(record.created_at) || !isCanonicalTimestamp(record.updated_at))
     throw new Error(`batch run state ${batchId} has invalid state timestamps`);
   if (!Array.isArray(record.children) || record.children.length === 0)
@@ -10210,7 +10149,7 @@ function validateRecordShape(value, batchId) {
   if (typeof record.consecutive_qa_failures !== "number" || !Number.isInteger(record.consecutive_qa_failures) || record.consecutive_qa_failures < 0)
     throw new Error(`batch run state ${batchId} has an invalid consecutive_qa_failures`);
   const budget = record.budget;
-  if (typeof record.budget !== "object" || record.budget === null || typeof budget.max_children !== "number" || !Number.isInteger(budget.max_children) || budget.max_children <= 0 || !isCanonicalTimestamp(budget.deadline_at) || typeof budget.qa_failure_limit !== "number" || !Number.isInteger(budget.qa_failure_limit) || budget.qa_failure_limit <= 0)
+  if (typeof record.budget !== "object" || record.budget === null || typeof budget.max_children !== "number" || !Number.isInteger(budget.max_children) || budget.max_children <= 0 || typeof budget.qa_failure_limit !== "number" || !Number.isInteger(budget.qa_failure_limit) || budget.qa_failure_limit <= 0)
     throw new Error(`batch run state ${batchId} has an invalid budget`);
   if (!Array.isArray(record.commits) || record.commits.some((c) => typeof c !== "string"))
     throw new Error(`batch run state ${batchId} has an invalid commits list`);
@@ -10253,7 +10192,6 @@ function prepareBatchRunState(input) {
     base_head: input.base_head,
     branch: input.branch ?? `imm/${input.initiative_slug}`,
     confirmation_time: input.confirmation_time,
-    authorization_expires_at: input.authorization_expires_at,
     budget: input.budget,
     batch_state: "prepared",
     children: input.children.map((child) => ({
@@ -10275,7 +10213,7 @@ function parseBatchRunState(raw, batchId) {
   validateBatchId(batchId);
   const parsed = JSON.parse(raw);
   validateRecordShape(parsed, batchId);
-  return parsed;
+  return withoutRetiredClock(parsed);
 }
 function readBatchRunState(root, batchId) {
   const path = statePath(batchId);
@@ -10328,7 +10266,7 @@ function replaceBatchRunState(root, expected, next, validate) {
     if (!readSecureProjectBytes(root, path).equals(expected))
       throw new Error("batch state CAS mismatch");
     validate();
-    const stored = { ...next, updated_at: new Date().toISOString() };
+    const stored = withoutRetiredClock({ ...next, updated_at: new Date().toISOString() });
     writeFileAtomically(root, path, canonicalBytes(stored));
     return stored;
   });
@@ -10340,10 +10278,10 @@ function writeBatchRunState(root, record) {
     const existing = existsSync6(join11(root, path)) ? readSecureProjectFile(root, path) : null;
     if (existing !== null && existing === canonicalBytes(record))
       return record;
-    const stored = {
+    const stored = withoutRetiredClock({
       ...record,
       updated_at: new Date().toISOString()
-    };
+    });
     ensureSecureDirectory2(root, join11(".imm", "state", "batches"));
     writeFileAtomically(root, path, canonicalBytes(stored));
     return stored;
@@ -10441,20 +10379,17 @@ function ownUnpersistedBatchHead(root, record, head) {
   }
 }
 var confirmations = new Map;
-function retainReconfirmation(nonce, expires, snapshot) {
-  for (const [key, value] of confirmations)
-    if (value.expires <= Date.now())
-      confirmations.delete(key);
+function retainReconfirmation(nonce, snapshot) {
   if (confirmations.has(nonce))
     refuse();
-  confirmations.set(nonce, { snapshot, expires: Date.parse(expires) });
+  confirmations.set(nonce, snapshot);
 }
 function takeReconfirmation(nonce) {
   const found = confirmations.get(nonce);
   confirmations.delete(nonce);
-  if (!found || found.expires <= Date.now())
+  if (!found)
     refuse();
-  return found.snapshot;
+  return found;
 }
 async function captureBatchReconfirmation(root, record, children) {
   if (!id.test(record.batch_id) || !oid.test(record.base_head) || isTerminalBatchState(record.batch_state) || record.commits.length || record.children.some((c) => c.commit !== null || c.state === "committed") || record.children.length !== children.length || !children.length)
@@ -10599,7 +10534,6 @@ async function captureBatchReconfirmation(root, record, children) {
 // plugins/immune-brain/runtime/unattended/batch_plan.ts
 import { createHash as createHash19 } from "node:crypto";
 var ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-var DEFAULT_DEADLINE_MS = 8 * 60 * 60 * 1000;
 var DEFAULT_QA_FAILURE_LIMIT = 2;
 function specBindingReason(inspection) {
   if (inspection.missing.length > 0)
@@ -10692,15 +10626,12 @@ function dependencyClosures(order) {
   }
   return closures;
 }
-function budget(input, enrollableCount, confirmationTime) {
+function budget(input, enrollableCount) {
   const maxChildren = input.budget?.max_children === undefined ? positiveSafeInteger(enrollableCount, "budget.max_children") : positiveSafeInteger(input.budget.max_children, "budget.max_children");
   if (maxChildren > enrollableCount)
     throw new Error("budget.max_children exceeds the enrollable Child count");
   const qaFailureLimit = input.budget?.qa_failure_limit === undefined ? DEFAULT_QA_FAILURE_LIMIT : positiveSafeInteger(input.budget.qa_failure_limit, "budget.qa_failure_limit");
-  const deadline = input.budget?.deadline_at === undefined ? new Date(confirmationTime.milliseconds + DEFAULT_DEADLINE_MS).toISOString() : timestamp(input.budget.deadline_at, "budget.deadline_at").iso;
-  if (Date.parse(deadline) <= confirmationTime.milliseconds)
-    throw new Error("budget.deadline_at must be later than confirmation_time");
-  return { max_children: maxChildren, deadline_at: deadline, qa_failure_limit: qaFailureLimit };
+  return { max_children: maxChildren, qa_failure_limit: qaFailureLimit };
 }
 async function projectBatchPlan(root, initiativeSlug, input, readInitiative = observeGithubInitiative) {
   if (!ID_PATTERN2.test(initiativeSlug))
@@ -10798,7 +10729,7 @@ async function projectBatchPlan(root, initiativeSlug, input, readInitiative = ob
     children,
     enrollable,
     plan_digest: planDigest,
-    budget: budget(input, enrollable.length, confirmationTime)
+    budget: budget(input, enrollable.length)
   };
 }
 
@@ -10983,9 +10914,10 @@ async function projectPlanSurface(input) {
   const riskByTask = new Map;
   let budget;
   if (isResuming && existingBatch) {
-    budget = { ...existingBatch.budget };
-    if (Date.parse(budget.deadline_at) <= Date.parse(now))
-      budget.deadline_at = new Date(Date.parse(now) + DEFAULT_DEADLINE_MS).toISOString();
+    budget = {
+      max_children: existingBatch.budget.max_children,
+      qa_failure_limit: existingBatch.budget.qa_failure_limit
+    };
     try {
       recoveryChildren = existingBatch.children.map((c) => {
         const intentPath = `docs/plans/${c.task_id}.intent.json`;
@@ -11213,7 +11145,6 @@ async function authorizeBatch(options) {
     is_resuming: isResuming
   } = projection;
   const existingBatch = projection.existing_batch;
-  const isExistingExpired = isResuming && Date.parse(existingBatch.authorization_expires_at) <= Date.now();
   const branchBefore = spawnSync6("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
   if (branchBefore.status !== 0)
     return { outcome: "rejected", rejection: batchRejection("repository_became_unreadable") };
@@ -11222,10 +11153,6 @@ async function authorizeBatch(options) {
     return { outcome: "rejected", rejection: batchRejection("head_moved", "first unpersisted commit provenance is invalid") };
   const reuseBlockers = [];
   if (isResuming && existingBatch) {
-    if (isExistingExpired)
-      reuseBlockers.push("batch_authorization_expired");
-    if (Date.parse(existingBatch.budget.deadline_at) <= Date.now())
-      reuseBlockers.push("batch_budget_expired");
     if (existingBatch.batch_state !== "running")
       reuseBlockers.push("batch_not_running");
     if (existingBatch.plan_digest !== planDigest)
@@ -11236,14 +11163,12 @@ async function authorizeBatch(options) {
       reuseBlockers.push("batch_head_lineage_moved");
   }
   const reuseAuthorization = isResuming && reuseBlockers.length === 0;
-  const expiresAt = reuseAuthorization ? existingBatch.authorization_expires_at : budget.deadline_at;
   const batchId = isResuming && existingBatch ? existingBatch.batch_id : `batch-${initiativeSlug}-${randomUUID7()}`;
   const facts = {
     initiative_slug: initiativeSlug,
     batch_branch: batchBranch,
     plan_digest: planDigest,
     budget,
-    expires_at: expiresAt,
     reuse_blockers: reuseBlockers,
     children: projection.recovery_children.map((child) => ({
       task_id: child.task_id,
@@ -11288,8 +11213,6 @@ async function authorizeBatch(options) {
   const branchAfter = spawnSync6("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
   if (branchAfter.status !== 0 || branchAfter.stdout !== branchBefore.stdout)
     return { outcome: "rejected", rejection: batchRejection("confirmation_failed", "Git branch moved after native confirmation") };
-  if (Date.parse(expiresAt) <= Date.now())
-    return { outcome: "rejected", rejection: batchRejection("confirmation_failed", "confirmed batch deadline expired before authorization issuance") };
   if (projection.reconfirmation) {
     try {
       projection.reconfirmation.assertUnchanged();
@@ -11306,17 +11229,15 @@ async function authorizeBatch(options) {
     budget,
     actor_id: LITERAL_USER_ACTOR_ID,
     confirmation_ref: options.confirmationRef({ batch_id: batchId, request_id: requestId }),
-    expires_at: expiresAt,
     nonce: options.nonce
   };
   if (projection.reconfirmation)
-    retainReconfirmation(binding.nonce, binding.expires_at, projection.reconfirmation);
+    retainReconfirmation(binding.nonce, projection.reconfirmation);
   return {
     outcome: "authorized",
     batch_id: batchId,
     reuse_authorization: reuseAuthorization,
     reuse_blockers: reuseBlockers,
-    expires_at: expiresAt,
     binding
   };
 }
@@ -11889,17 +11810,11 @@ function skipDependents(record, taskId, reason) {
   }
   record.children = record.children.map((child) => skip.has(child.task_id) && child.state === "pending" ? { ...child, state: "skipped_blocked", reason } : child);
 }
-function budgetStopReason(record, now) {
+function budgetStopReason(record) {
   const enrolledCount = record.children.filter((child) => child.state !== "pending" && child.state !== "skipped_blocked").length;
   if (enrolledCount >= record.budget.max_children)
     return `max_children budget exhausted (${record.budget.max_children})`;
-  const deadline = Date.parse(record.budget.deadline_at);
-  if (!Number.isNaN(deadline) && now >= deadline)
-    return `deadline_at reached (${record.budget.deadline_at})`;
   return null;
-}
-function isAuthorizationExpiryError(error) {
-  return error instanceof BatchAuthorizationExpiryError;
 }
 function requireFreshProjection(result, taskId) {
   if (result.error !== null)
@@ -11911,7 +11826,7 @@ function nextEnrollableChild(record) {
 }
 var TERMINAL_NEXT_ACTIONS = {
   completed: "The batch settled every enrollable child; review the commits and the tracker.",
-  budget_stopped: "Budget, deadline, or authorization expiry stopped new enrollments; re-confirm to continue under a new authorization.",
+  budget_stopped: "The child budget stopped new enrollments; re-confirm to continue under a new authorization.",
   failed: "A commit or lineage failure stopped the batch; inspect the failing child and the branch state.",
   rejected: "The batch was rejected before any enrollment; correct the stated reason and re-confirm.",
   needs_human: "A parked child needs a human decision; resolve it, then re-confirm to continue.",
@@ -12038,8 +11953,7 @@ function validateRunAuthorization(input, existing) {
       plan_digest: existing?.plan_digest ?? input.plan_digest,
       base_head: existing?.base_head ?? input.base_head,
       initiative_slug: existing?.initiative_slug ?? input.initiative_slug,
-      budget: input.budget,
-      expires_at: input.authorization_expires_at
+      budget: input.budget
     }
   });
   if (authorized.issued_at !== input.confirmation_time || existing && Date.parse(authorized.issued_at) <= Date.parse(existing.confirmation_time))
@@ -12061,7 +11975,6 @@ function applyPlanReconfirmation(input, existing) {
     ...existing,
     plan_digest: input.plan_digest,
     confirmation_time: input.confirmation_time,
-    authorization_expires_at: input.authorization_expires_at,
     budget: input.budget
   };
   if (!existing.branch || input.batch_id !== existing.batch_id || input.initiative_slug !== existing.initiative_slug || input.base_head !== existing.base_head || input.budget.max_children !== existing.budget.max_children || input.budget.qa_failure_limit !== existing.budget.qa_failure_limit)
@@ -12139,8 +12052,7 @@ async function startBatchLocked(input) {
   if (existing?.batch_state === "needs_human") {
     const priorConfirmation = Date.parse(existing.confirmation_time);
     const nextConfirmation = Date.parse(input.confirmation_time);
-    const nextExpiry = Date.parse(input.authorization_expires_at);
-    const freshAuthorization = Number.isFinite(nextConfirmation) && nextConfirmation > priorConfirmation && Number.isFinite(nextExpiry) && nextExpiry > Date.now();
+    const freshAuthorization = Number.isFinite(nextConfirmation) && nextConfirmation > priorConfirmation;
     if (!freshAuthorization && !reconfirmed) {
       return finalize(input.root, existing, "the parked batch requires a fresh literal-user confirmation", "Resolve the parked child, then re-confirm the batch to continue.");
     }
@@ -12167,7 +12079,6 @@ async function startBatchLocked(input) {
       existing = writeBatchRunState(input.root, {
         ...reparked,
         confirmation_time: input.confirmation_time,
-        authorization_expires_at: input.authorization_expires_at,
         budget: input.budget,
         batch_state: "needs_human"
       });
@@ -12177,27 +12088,10 @@ async function startBatchLocked(input) {
     existing = writeBatchRunState(input.root, {
       ...existing,
       confirmation_time: input.confirmation_time,
-      authorization_expires_at: input.authorization_expires_at,
       budget: input.budget,
       batch_state: "running",
       children: resumedChildren
     });
-  }
-  if (existing?.batch_state === "running") {
-    const nextConfirmation = Date.parse(input.confirmation_time);
-    const nextExpiry = Date.parse(input.authorization_expires_at);
-    const priorConfirmation = Date.parse(existing.confirmation_time);
-    const persistedExpiry = Date.parse(existing.authorization_expires_at);
-    const renewedAuthorization = Number.isFinite(nextConfirmation) && nextConfirmation > priorConfirmation && Number.isFinite(nextExpiry) && nextExpiry > Date.now() && nextExpiry > persistedExpiry;
-    if (renewedAuthorization) {
-      validateRunAuthorization(input, existing);
-      existing = writeBatchRunState(input.root, {
-        ...existing,
-        confirmation_time: input.confirmation_time,
-        authorization_expires_at: input.authorization_expires_at,
-        budget: input.budget
-      });
-    }
   }
   if (existing) {
     const interruptedChild = existing.children.find((child) => child.state === "enrolled" || child.state === "settled");
@@ -12236,7 +12130,6 @@ async function startBatchLocked(input) {
     plan_digest: input.plan_digest,
     base_head: input.base_head,
     confirmation_time: input.confirmation_time,
-    authorization_expires_at: input.authorization_expires_at,
     budget: input.budget,
     now: input.now
   });
@@ -12280,8 +12173,7 @@ async function startBatchLocked(input) {
       record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "enrolled", reason: "adopted existing batch claim after interruption" } : c);
       persist();
     } else {
-      const now = Date.now();
-      if (now >= Date.parse(record.authorization_expires_at) || budgetStopReason(record, now)) {
+      if (budgetStopReason(record)) {
         record.batch_state = record.children.some((c) => c.state === "needs_human" || c.state === "skipped_blocked") ? "needs_human" : "budget_stopped";
         persist();
         break;
@@ -12296,8 +12188,7 @@ async function startBatchLocked(input) {
             plan_digest: record.plan_digest,
             base_head: record.base_head,
             initiative_slug: record.initiative_slug,
-            budget: record.budget,
-            expires_at: record.authorization_expires_at
+            budget: record.budget
           }
         });
         for (const committed of record.children) {
@@ -12317,12 +12208,6 @@ async function startBatchLocked(input) {
         persist();
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        if (isAuthorizationExpiryError(error)) {
-          record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "pending", reason: message } : c);
-          record.batch_state = "budget_stopped";
-          persist();
-          break;
-        }
         if (isLineageBreakError(message)) {
           record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: message } : c);
           skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
@@ -12345,7 +12230,7 @@ async function startBatchLocked(input) {
 function stopReasonFor(record) {
   switch (record.batch_state) {
     case "budget_stopped":
-      return budgetStopReason(record, Date.now()) ?? "budget, deadline, or authorization expiry stopped new enrollments";
+      return budgetStopReason(record) ?? "the child budget stopped new enrollments";
     case "failed": {
       const failedChild = record.children.find((c) => c.state === "needs_human" && c.reason);
       return failedChild?.reason ?? "a commit or lineage failure stopped the batch";
@@ -12778,7 +12663,6 @@ async function mintCapability(registry, input) {
     diff_hash: input.diff_hash,
     actor_id: input.actor_id,
     confirmation_ref: input.confirmation_ref,
-    expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
     findings_digest: input.action_kind === "request_rework" ? findingsDigestV2(input.findings) : null
   };
   return registry.issue(binding);
@@ -12915,7 +12799,6 @@ class ClaudeRuntime {
         preparation_digest: preparation.digest,
         actor_id: LITERAL_USER_ACTOR_ID,
         confirmation_ref: gate.confirmation_ref,
-        expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
         nonce
       };
       const capability = this.enrollmentRegistry.issue(binding);
@@ -13283,7 +13166,6 @@ class ClaudeRuntime {
       readInitiative: this.readInitiative ?? observeGithubInitiative,
       nonce: enrollmentNonce(),
       gate: async (facts) => {
-        const deadline = startConfirmationDeadline({ env: this.env, signal: meta.signal });
         let confirmationResult;
         try {
           confirmationResult = await this.requestConfirmation({
@@ -13305,17 +13187,14 @@ class ClaudeRuntime {
                 reason: child.reason
               })),
               budget: facts.budget,
-              expires_at: facts.expires_at,
               ...facts.reuse_blockers.length > 0 ? {
                 re_confirmation_required: facts.reuse_blockers,
                 recovery: "confirm to issue a fresh authorization bound to the current plan and HEAD"
               } : {}
             },
-            signal: deadline.signal
+            signal: meta.signal
           });
         } catch (err) {
-          if (deadline.timedOut())
-            return { kind: "host_rejection", value: batchReason("confirmation_timed_out", String(deadline.timeoutMs)) };
           if (meta.signal?.aborted)
             return { kind: "host_rejection", value: batchReason("cancelled_before_execution") };
           if (err instanceof NativeAuthorityError) {
@@ -13336,11 +13215,7 @@ class ClaudeRuntime {
             kind: "host_rejection",
             value: batchReason("confirmation_failed", err instanceof Error ? err.message : String(err))
           };
-        } finally {
-          deadline.clear();
         }
-        if (deadline.timedOut())
-          return { kind: "host_rejection", value: batchReason("confirmation_timed_out", String(deadline.timeoutMs)) };
         if (confirmationResult.decision === "cancel" && meta.signal?.aborted)
           return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
         if (meta.signal?.aborted)
@@ -13366,12 +13241,10 @@ class ClaudeRuntime {
       return authorization.value;
     if (authorization.outcome === "rejected")
       return authorization.rejection;
-    const { binding, batch_id: batchId, expires_at: expiresAt } = authorization;
+    const { binding, batch_id: batchId } = authorization;
     if (meta.signal?.aborted)
       return batchReason("cancelled_before_execution");
     now = new Date().toISOString();
-    if (Date.parse(expiresAt) <= Date.parse(now))
-      return batchReason("confirmation_failed", "confirmed batch deadline expired before authorization issuance");
     const capability = this.batchRegistry.issue(binding, recoveryChildren, now);
     const basePort = this.createBatchKernelPort(this.batchRegistry, capability, binding);
     const kernelPort = {
@@ -13393,7 +13266,6 @@ class ClaudeRuntime {
       plan_digest: planDigest,
       base_head: binding.base_head,
       confirmation_time: now,
-      authorization_expires_at: expiresAt,
       budget,
       now,
       kernel: kernelPort,
@@ -13804,8 +13676,7 @@ ${b.children.map((c) => `  - ${c.task_id} (${c.slice_id}) [risk: ${c.risk ?? "un
       b?.excluded && b.excluded.length > 0 ? `Excluded children (${b.excluded.length}):
 ${b.excluded.map((e) => `  - ${e.task_id} (${e.slice_id}): ${e.reason}`).join(`
 `)}` : null,
-      b?.budget ? `Budget: max_children=${b.budget.max_children}, deadline_at=${b.budget.deadline_at}, qa_failure_limit=${b.budget.qa_failure_limit}` : null,
-      b?.expires_at ? `Expires at: ${b.expires_at}` : null
+      b?.budget ? `Budget: max_children=${b.budget.max_children}, qa_failure_limit=${b.budget.qa_failure_limit}` : null
     ].filter(Boolean);
     return {
       mode: "form",

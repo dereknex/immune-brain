@@ -182,7 +182,7 @@ async function fixture(host: "pi" | "claude", settle: "done" | "active" | "stopp
 	const capability = createMutationAuthorityCapabilityForTest(registry, { authority_kind: "user", task_id: task,
 		action_digest: digestOfAction(action), expected_record_hash: current.revision, intent_revision: next.revision,
 		intent_content_hash: canonicalIntentHash(next), diff_hash: diff.diff_hash, actor_id: "user", confirmation_ref: "fixture-native-breaking",
-		expires_at: "2099-01-01T00:00:00.000Z", findings_digest: null });
+		findings_digest: null });
 	const revised = app.execute({ root, task_id: task, prior_intent_token: priorToken, diffProvider: diffSnapshotOf, now: at,
 		operation: { op: "approve_breaking_intent_revision", next_intent: next, capability, actor_id: "user" } });
 	expect(revised.record.intent_snapshot.revision).toBe(2); expect(localRunId(root, task)).toBe(runId);
@@ -210,7 +210,7 @@ async function fixture(host: "pi" | "claude", settle: "done" | "active" | "stopp
 		const stop = createMutationAuthorityCapabilityForTest(registry, { authority_kind: "user", task_id: task,
 			action_digest: digestOfAction(capabilityActionFor({ op: "stop", task_id: task, actor_id: "user", at: stopAt, reason: "fixture stop" })),
 			expected_record_hash: active.revision, intent_revision: 2, intent_content_hash: canonicalIntentHash(next),
-			diff_hash: diffSnapshotOf(root, active.record!).diff_hash, actor_id: "user", confirmation_ref: "fixture-stop", expires_at: "2099-01-01T00:00:00.000Z", findings_digest: null });
+			diff_hash: diffSnapshotOf(root, active.record!).diff_hash, actor_id: "user", confirmation_ref: "fixture-stop", findings_digest: null });
 		app.execute({ root, task_id: task, prior_intent_token: readTaskIntent(root, task).token, diffProvider: diffSnapshotOf, now: stopAt,
 			operation: { op: "stop", reason: "fixture stop", capability: stop, actor_id: "user" } }); git(root, "add", "-A");
 	}
@@ -360,11 +360,10 @@ describe("bounded batch plan reconfirmation", () => {
 
 	for (const host of ["pi", "claude"] as const) it(`${host}: each native refusal or drift cannot write or advance`, async () => {
 		const f = await fixture(host), restore = restorePoint(f.root);
-		for (const failure of ["decline", "cancel", "expired", "plan-drift", "state-drift", "evidence-drift", "head-drift", "branch-drift"]) {
-		let expected = snapshot(f.root), clock: ReturnType<typeof spyOn> | undefined;
+		for (const failure of ["decline", "cancel", "plan-drift", "state-drift", "evidence-drift", "head-drift", "branch-drift"]) {
+		let expected = snapshot(f.root);
 		f.answer(async () => {
 			if (failure === "decline" || failure === "cancel") return failure;
-			if (failure === "expired") clock = spyOn(Date, "now").mockReturnValue(Date.parse(f.before.budget.deadline_at));
 			if (failure === "plan-drift") { const pending = readTaskIntent(f.root, `${f.slug}-c2`).intent; put(f.root, `docs/plans/${pending.task_id}.intent.json`, { ...pending, revision: 2 }); }
 			if (failure === "state-drift") put(f.root, f.path, { ...f.state(), consecutive_qa_failures: 1 });
 			if (failure === "evidence-drift") {
@@ -380,9 +379,9 @@ describe("bounded batch plan reconfirmation", () => {
 			expect(["rejected", "cancelled", "blocked"], failure).toContain(result.state);
 			expect(snapshot(f.root)).toEqual(expected); expect(f.state().plan_digest).toBe(f.before.plan_digest);
 			expect(git(f.root, "rev-list", "--count", `${f.base}..HEAD`)).toBe(failure === "head-drift" ? "1" : "0");
-		} finally { clock?.mockRestore(); restore(); }
+		} finally { restore(); }
 		}
-		expect(f.gates()).toBe(9);
+		expect(f.gates()).toBe(8);
 	}, 90000);
 
 	for (const host of ["pi", "claude"] as const) it(`${host}: a foreign claim during native answer refuses without further writes`, async () => {
@@ -515,9 +514,6 @@ describe("bounded batch plan reconfirmation", () => {
 			const before = snapshot(f.root);
 			await expect(batchRunner.startBatch({ ...input, ...changed })).rejects.toThrow(); expect(snapshot(f.root)).toEqual(before);
 		}
-		const beforeExpiry = snapshot(f.root);
-		const expired = spyOn(Date, "now").mockReturnValue(Date.parse(input.authorization_expires_at));
-		try { await expect(batchRunner.startBatch(input)).rejects.toThrow(); expect(snapshot(f.root)).toEqual(beforeExpiry); } finally { expired.mockRestore(); }
 		expect(f.gates()).toBe(2); expect(f.state().plan_digest).toBe(state.plan_digest);
 		const bytes = readFileSync(join(f.root, f.path));
 		writeFileSync(join(f.root, f.path), JSON.stringify(state));

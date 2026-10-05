@@ -69,7 +69,6 @@ function bindingFor(root: string): EnrollmentCapabilityBinding {
 		preparation_digest: prep.digest,
 		actor_id: "user",
 		confirmation_ref: "pi-confirm-001",
-		expires_at: "2099-01-01T00:00:00.000Z",
 		nonce: "nonce-001",
 	};
 }

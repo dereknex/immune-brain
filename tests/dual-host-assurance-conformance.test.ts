@@ -128,7 +128,6 @@ function enrolledHostFixture(taskId: string): string {
 		preparation_digest: preparation.digest,
 		actor_id: "user",
 		confirmation_ref: "c",
-		expires_at: "2099-01-01T00:00:00.000Z",
 		nonce: "n",
 	};
 	enrollCanaryTask(
@@ -1052,7 +1051,10 @@ describe("dual-host assurance conformance", () => {
 			expect(claudeBinding.plan_digest).toBe(piBinding.plan_digest);
 			expect(claudeBinding.budget.max_children).toBe(piBinding.budget.max_children);
 			expect(claudeBinding.budget.qa_failure_limit).toBe(piBinding.budget.qa_failure_limit);
-			expect(Math.abs(Date.parse(claudeBinding.budget.deadline_at) - Date.parse(piBinding.budget.deadline_at))).toBeLessThan(5000);
+			expect(claudeBinding.budget).toEqual(piBinding.budget);
+			expect(Object.keys(claudeBinding.budget).sort()).toEqual(["max_children", "qa_failure_limit"]);
+			expect(claudeBinding).not.toHaveProperty("expires_at");
+			expect(piBinding).not.toHaveProperty("expires_at");
 			expect(claudeBinding.base_head).toBe(claudeFixture.head);
 			expect(piBinding.base_head).toBe(piFixture.head);
 			expect(claudeBinding.base_head).toMatch(/^[a-f0-9]{40}$/);
@@ -1836,15 +1838,15 @@ describe("dual-host assurance conformance", () => {
 			expect(pRes1.state).toBe("started");
 
 			// An intact, still-binding authorization is reused without a second gate, so
-			// expire the persisted one to keep this resume re-confirming: this scenario
-			// exists to prove a mid-confirmation claim swap is caught on both Hosts.
+			// park the persisted batch for a human to keep this resume re-confirming: this
+			// scenario exists to prove a mid-confirmation claim swap is caught on both Hosts.
 			for (const [stateRoot, batchId] of [
 				[cf.root, cRes1.batch_id],
 				[pf.root, pRes1.batch_id],
 			] as const) {
 				const statePath = join(stateRoot, ".imm", "state", "batches", `${batchId}.json`);
 				const persisted = JSON.parse(readFileSync(statePath, "utf8"));
-				persisted.authorization_expires_at = "2020-01-01T00:00:00.000Z";
+				persisted.batch_state = "needs_human";
 				writeFileSync(statePath, `${JSON.stringify(persisted, null, 2)}\n`);
 			}
 
@@ -2122,56 +2124,42 @@ describe("dual-host assurance conformance", () => {
 			expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim()).toBe(pHeadBefore);
 		}
 
-		// 17. Converged divergence: an unanswered native confirmation is bounded on
-		// both Hosts by the same setting and reports a timeout, not a cancellation.
+		// 17. Converged divergence: an unanswered native confirmation has no window
+		// of its own on either Host. It stays pending until it is answered.
 		{
-			const cf = createConformanceFixture("conf-timeout-c");
-			const pf = createConformanceFixture("conf-timeout-p");
-			// Both transports honor their signal, exactly as the real dialog and the
-			// MCP elicitation port do: an unanswered confirmation ends on abort.
-			const unanswered = (signal?: AbortSignal): Promise<"cancel"> =>
-				new Promise((resolve) => {
-					if (signal?.aborted) return resolve("cancel");
-					signal?.addEventListener("abort", () => resolve("cancel"), { once: true });
-				});
-			let piConfirmations = 0;
+			const cf = createConformanceFixture("conf-pending-c");
+			const pf = createConformanceFixture("conf-pending-p");
+			const answers: Array<(decision: "cancel") => void> = [];
+			const unanswered = (): Promise<"cancel"> => new Promise((resolve) => answers.push(resolve));
 			const cr = createMcpRuntime({
 				cwd: cf.root,
-				env: { ...ENV, IMMUNE_BRAIN_BATCH_TIMEOUT_MS: "40" },
+				env: ENV,
 				interactive: true,
 				readInitiative: async () => cf.observation,
-				requestConfirmation: async (request) => {
-					await unanswered((request as { signal?: AbortSignal }).signal);
-					return { decision: "cancel", requestId: "req-timeout" };
-				},
+				requestConfirmation: async () => ({ decision: await unanswered(), requestId: "req-pending" }),
 			});
 			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-			const cRes = await cr.callTool(
-				"start_unattended_batch",
-				{ initiative_slug: "conf-timeout-c" },
-				{ toolCallId: "toolu-timeout" },
-			);
-			const pRes = await executePiUnattendedBatch({
+			let settled = 0;
+			const cPending = cr
+				.callTool("start_unattended_batch", { initiative_slug: "conf-pending-c" }, { toolCallId: "toolu-pending" })
+				.finally(() => { settled += 1; });
+			const pPending = executePiUnattendedBatch({
 				root: pf.root,
-				initiativeSlug: "conf-timeout-p",
+				initiativeSlug: "conf-pending-p",
 				interactive: true,
-				env: { ...process.env, IMMUNE_BRAIN_BATCH_TIMEOUT_MS: "40" },
 				readInitiative: async () => pf.observation,
-				confirmBatch: async (details) => {
-					piConfirmations += 1;
-					await unanswered(details.signal);
-					return "cancel";
-				},
-			});
+				confirmBatch: unanswered,
+			}).finally(() => { settled += 1; });
 
-			// A timeout is a timeout on both Hosts, not a user cancellation.
-			// Both report the bound that elapsed and the setting that changes it.
-			const timedOut = batchReason("confirmation_timed_out", "40");
-			expect(timedOut.reason).toContain("after 40 ms");
-			expect(timedOut.reason).toContain("IMMUNE_BRAIN_BATCH_TIMEOUT_MS");
-			expect(cRes).toMatchObject(timedOut);
-			expect(pRes).toMatchObject(timedOut);
-			expect(piConfirmations).toBe(1);
+			await new Promise((resolve) => setTimeout(resolve, 200));
+			expect(answers).toHaveLength(2);
+			expect(settled).toBe(0);
+			for (const answer of answers) answer("cancel");
+
+			// Ending the wait is the user's or the caller's decision, reported as such.
+			const cancelled = batchReason("confirmation_cancelled");
+			expect(await cPending).toMatchObject(cancelled);
+			expect(await pPending).toMatchObject(cancelled);
 			assertZeroWrites(cf, pf);
 		}
 		// 16. Parity scenario: FOREIGN CLAIM APPEARING DURING THE POST-CONFIRMATION
@@ -2433,7 +2421,8 @@ describe("dual-host assurance conformance", () => {
 			expect(cRes1.report.batch_state).toBe("running");
 			expect(pRes1.report.batch_state).toBe("running");
 
-			// The authorization elapses while the batch waits on implementation.
+			// The record carries the retired expiry field, long past, while the batch
+			// waits on implementation; it resumes all the same.
 			for (const [root, batchId] of [[cf.root, cRes1.batch_id], [pf.root, pRes1.batch_id]] as const) {
 				const batchPath = join(root, ".imm", "state", "batches", `${batchId}.json`);
 				const record = JSON.parse(readFileSync(batchPath, "utf8"));

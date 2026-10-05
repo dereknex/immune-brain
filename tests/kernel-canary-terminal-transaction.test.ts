@@ -96,7 +96,6 @@ beforeEach(() => {
 		preparation_digest: prep.digest,
 		actor_id: "user",
 		confirmation_ref: "pi-confirm-enroll",
-		expires_at: "2099-01-01T00:00:00.000Z",
 		nonce: "nonce-enroll",
 	};
 	enrollCanaryTask(
@@ -172,7 +171,6 @@ function approveQa() {
 		diff_hash: DIFF,
 		actor_id: "qa-1",
 		confirmation_ref: "qa-terminal",
-		expires_at: "2099-01-01T00:00:00.000Z",
 		findings_digest: null,
 	});
 	execute({ op: "record_approval", approval, capability, actor_id: "qa-1" }, approvalAt);
@@ -204,7 +202,6 @@ function stopCapability(at: string, overrides: Record<string, unknown> = {}) {
 		diff_hash: DIFF,
 		actor_id: "user-1",
 		confirmation_ref: "conf-stop",
-		expires_at: "2099-01-01T00:00:00.000Z",
 		findings_digest: null,
 		...overrides,
 	});
@@ -410,7 +407,6 @@ describe("terminal ownership transfer", () => {
 			diff_hash: DIFF,
 			actor_id: "user",
 			confirmation_ref: "different-request",
-			expires_at: "2099-01-01T00:00:00.000Z",
 			findings_digest: null,
 		});
 		// Called directly with no usable intent token: the replay decision must
@@ -442,7 +438,6 @@ describe("terminal ownership transfer", () => {
 			preparation_digest: prep.digest,
 			actor_id: "user",
 			confirmation_ref: "pi-confirm-enroll",
-			expires_at: "2099-01-01T00:00:00.000Z",
 			nonce: "nonce-enroll",
 		};
 		expect(() =>

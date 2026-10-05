@@ -1648,7 +1648,6 @@ async function mintCapability(
 		confirmation_ref: `pi-confirm-${createHash("sha256").update(
 			`${input.task_id}\0${now}\0${input.intent_revision}\0${input.intent_content_hash}\0${input.diff_hash}`,
 		).digest("hex").slice(0, 16)}`,
-		expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
 		findings_digest:
 			input.action_kind === "request_rework"
 				? await findingsDigestV2(input.findings as never[])

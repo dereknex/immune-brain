@@ -105,7 +105,6 @@ function audit(authority_kind: "qa" | "review" | "user", actor_id = `${authority
 		actor_id,
 		confirmation_ref: `conf-${authority_kind}`,
 		issued_at: "2026-08-12T00:00:00.000Z",
-		expires_at: "2099-01-01T00:00:00.000Z",
 	};
 }
 

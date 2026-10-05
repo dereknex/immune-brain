@@ -2,14 +2,13 @@
 // union, confirmation requirement (cancellation/timeout/abort = zero writes),
 // and the confirmed begin-drain path with capability-bound application.
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { buildUserDecisionOperation, deriveAuthorizationOperation } from "../plugins/immune-brain/.pi-extension/imm-canary-work.ts";
 import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import {
@@ -25,6 +24,62 @@ import {
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { readTaskRecord, readAuditTaskPair } from "../plugins/immune-brain/runtime/kernel/storage";
+
+// Delivery QA has no node_modules; use host seams only when a real Host
+// package is absent. The dialog classes mirror pi-canary-work-extension's seam
+// because these tests drive the native confirmation dialogs.
+async function hostPackagesAvailable(): Promise<boolean> {
+	for (const specifier of ["typebox", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"]) {
+		try { await import(specifier); }
+		catch { return false; }
+	}
+	return true;
+}
+
+if (!(await hostPackagesAvailable())) {
+	class Text {
+		constructor(private text: string) {}
+		setText(text: string) { this.text = text; }
+		render() { return this.text.split("\n"); }
+		invalidate() {}
+	}
+	class Container {
+		private children: Array<{ render(width: number): string[] }> = [];
+		addChild(child: { render(width: number): string[] }) { this.children.push(child); }
+		render(width: number) { return this.children.flatMap((child) => child.render(width)); }
+		invalidate() { for (const child of this.children) (child as any).invalidate?.(); }
+	}
+	class DynamicBorder {
+		constructor(private style: (text: string) => string) {}
+		render(width: number) { return [this.style("─".repeat(Math.max(0, width)))]; }
+	}
+	class SelectList {
+		onSelect?: (item: any) => void;
+		onCancel?: () => void;
+		private selected = 0;
+		constructor(private items: any[]) {}
+		render() { return this.items.map((item, index) => `${index === this.selected ? "> " : "  "}${item.label}`); }
+		handleInput(input: string) {
+			if (input === "\u001b[B") this.selected = Math.min(this.items.length - 1, this.selected + 1);
+			else if (input === "\u001b[A") this.selected = Math.max(0, this.selected - 1);
+			else if (input === "\r") this.onSelect?.(this.items[this.selected]);
+			else if (input === "\u001b") this.onCancel?.();
+		}
+	}
+	mock.module("typebox", () => ({ Type: new Proxy({}, { get: () => () => ({}) }) }));
+	mock.module("@earendil-works/pi-coding-agent", () => ({ DynamicBorder }));
+	mock.module("@earendil-works/pi-tui", () => ({
+		Container,
+		SelectList,
+		Text,
+		sliceByColumn: (text: string, start: number, width?: number) => text.slice(start, width === undefined ? undefined : start + width),
+		truncateToWidth: (text: string, width: number, marker = "") => text.length <= width
+			? text
+			: `${text.slice(0, Math.max(0, width - marker.length))}${marker}`,
+		visibleWidth: (text: string) => text.length,
+	}));
+}
+const { buildUserDecisionOperation, deriveAuthorizationOperation } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work.ts");
 
 const TASK = "canary-user-task";
 const INTENT = {
@@ -72,7 +127,6 @@ function makeEnrolledRoot(): string {
 		preparation_digest: prep.digest,
 		actor_id: "user",
 		confirmation_ref: "c",
-		expires_at: "2099-01-01T00:00:00.000Z",
 		nonce: "n",
 	};
 	enrollCanaryTask(

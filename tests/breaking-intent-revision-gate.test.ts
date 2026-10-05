@@ -115,7 +115,6 @@ function makeEnrolledRoot(): string {
 		preparation_digest: prep.digest,
 		actor_id: "user",
 		confirmation_ref: "c",
-		expires_at: "2099-01-01T00:00:00.000Z",
 		nonce: "n",
 	};
 	enrollCanaryTask(root, {

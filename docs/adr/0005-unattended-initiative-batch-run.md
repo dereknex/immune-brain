@@ -34,8 +34,13 @@ the enrolled TaskIntent.
    scoped: `runtime/unattended/batch_state.ts` persists one
    `BatchRunStateRecord` per run at `.imm/state/batches/<batch_id>.json` with the
    ordered child states, the confirmed plan digest, the base head, the budget,
-   the produced commit chain, and the authorization expiry, so an interrupted
-   run resumes from durable facts. That record owns batch progress only. Every
+   and the produced commit chain, so an interrupted run resumes from durable
+   facts. The budget is `max_children` and `qa_failure_limit`; neither it nor the
+   authorization carries a deadline, so a confirmed run stays authorized for as
+   long as its plan, branch, and HEAD lineage hold. A record written before this
+   rule may still carry `authorization_expires_at` and `budget.deadline_at`;
+   both are ignored on read and dropped on the next write. That record owns
+   batch progress only. Every
    authority fact it references — enrollment, claim, settlement, tombstone —
    remains a per-child TaskRecord owned by the Kernel.
 4. Batch state transitions live only in `runtime/unattended/` and

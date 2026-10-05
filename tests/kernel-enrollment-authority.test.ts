@@ -15,7 +15,6 @@ const binding: EnrollmentCapabilityBinding = {
 	intent_content_hash: "sha256:intent",
 	actor_id: "user",
 	confirmation_ref: "pi-confirm-001",
-	expires_at: "2099-01-01T00:00:00.000Z",
 	nonce: "nonce-001",
 };
 
@@ -27,10 +26,9 @@ function makeRegistry() {
 }
 
 describe("enrollment authority registry", () => {
-	test("issue requires complete binding and future expiry", () => {
+	test("issue requires complete binding", () => {
 		const { issue } = makeRegistry();
 		expect(() => issue({ ...binding, actor_id: "" } as EnrollmentCapabilityBinding)).toThrow(/incomplete/i);
-		expect(() => issue({ ...binding, expires_at: "2026-08-01T00:00:00.000Z" })).toThrow(/future expiry/i);
 	});
 
 	test("inspect validates full binding", () => {
@@ -65,14 +63,12 @@ describe("enrollment authority registry", () => {
 		expect(() => registry.consume(cap, binding)).toThrow(/consumed/i);
 	});
 
-	test("expired capability rejected with now injection", () => {
+	test("a capability issued long ago is still accepted, exactly once", () => {
 		const { registry, issue } = makeRegistry();
-		// deliberately past expiry to exercise rejection without using a near-future bomb; must stay <2y future guard threshold (past is allowed)
-		const expiredBinding = { ...binding, expires_at: "2026-08-15T00:00:00.000Z" } as EnrollmentCapabilityBinding;
-		const cap = issue(expiredBinding, "2026-08-01T00:00:00.000Z");
-		// inspection time derived from expiry to avoid hardcoding a near-future absolute timestamp that the guard would flag
-		const expiredAt = Date.parse(expiredBinding.expires_at) + 10 * 24 * 60 * 60 * 1000;
-		expect(() => registry.inspect(cap, expiredBinding, expiredAt)).toThrow(/expired/i);
+		const cap = issue(binding, "2020-01-01T00:00:00.000Z");
+		expect(registry.inspect(cap, binding)).not.toHaveProperty("expires_at");
+		expect(() => registry.consume(cap, binding)).not.toThrow();
+		expect(() => registry.consume(cap, binding)).toThrow(/consumed/i);
 	});
 
 	test("nonce replay rejected", () => {

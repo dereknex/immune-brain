@@ -21,7 +21,6 @@ export interface EnrollmentCapabilityBinding {
 	preparation_digest: string;
 	actor_id: string;
 	confirmation_ref: string;
-	expires_at: string;
 	nonce: string;
 }
 export interface EnrollmentAuthorityRegistry {
@@ -36,7 +35,6 @@ export interface CanaryWaiver {
 	reason: string;
 	actor: string;
 	confirmation_ref: string;
-	expires_at: string;
 	nonce: string;
 }
 export interface PiCanaryPrepareInput {
@@ -66,7 +64,6 @@ export interface CapabilityBindingV2 {
 	diff_hash: string;
 	actor_id: string;
 	confirmation_ref: string;
-	expires_at: string;
 	findings_digest: string | null;
 }
 export interface MutationAuthorityRegistry {

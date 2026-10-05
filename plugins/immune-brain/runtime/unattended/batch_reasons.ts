@@ -24,7 +24,6 @@ export type BatchReasonKey =
 	| "empty_enrollable_set"
 	| "plan_projection_failed"
 	| "confirmation_port_unavailable"
-	| "confirmation_timed_out"
 	| "confirmation_cancelled"
 	| "confirmation_declined"
 	| "confirmation_no_decision"
@@ -113,13 +112,6 @@ export const BATCH_REASONS: Readonly<Record<BatchReasonKey, BatchReasonSpec>> = 
 	confirmation_port_unavailable: {
 		state: "rejected",
 		reason: "native confirmation port is unavailable",
-		recovery_action: "retry through a fresh native gate in the current Host",
-	},
-	confirmation_timed_out: {
-		state: "rejected",
-		// The detail is the bound that elapsed, in milliseconds.
-		reason: (detail: string) =>
-			`native confirmation timed out after ${detail} ms waiting for user interaction; set IMMUNE_BRAIN_BATCH_TIMEOUT_MS to change the bound`,
 		recovery_action: "retry through a fresh native gate in the current Host",
 	},
 	confirmation_cancelled: {

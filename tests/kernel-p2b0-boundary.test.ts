@@ -27,7 +27,6 @@ describe("P2B0 kernel surface boundary", () => {
 			intent_content_hash: "sha256:h",
 			actor_id: "user",
 			confirmation_ref: "ref",
-			expires_at: "2099-01-01T00:00:00.000Z",
 			nonce: "n",
 		});
 		expect(JSON.parse(JSON.stringify(cap))).toEqual({});
@@ -49,7 +48,6 @@ describe("P2B0 kernel surface boundary", () => {
 				diff_hash: "d",
 				actor_id: "user",
 				confirmation_ref: "ref",
-				expires_at: "2099-01-01T00:00:00.000Z",
 				findings_digest: null,
 			},
 		);

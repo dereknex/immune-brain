@@ -369,8 +369,7 @@ export function elicitationParams(input: NativeConfirmationInput) {
 			input.planDigest ? `Plan digest: ${input.planDigest}` : null,
 			b?.children ? `Ordered children (${b.children.length}):\n${b.children.map((c) => `  - ${c.task_id} (${c.slice_id}) [risk: ${c.risk ?? "unknown"}]`).join("\n")}` : null,
 			b?.excluded && b.excluded.length > 0 ? `Excluded children (${b.excluded.length}):\n${b.excluded.map((e) => `  - ${e.task_id} (${e.slice_id}): ${e.reason}`).join("\n")}` : null,
-			b?.budget ? `Budget: max_children=${b.budget.max_children}, deadline_at=${b.budget.deadline_at}, qa_failure_limit=${b.budget.qa_failure_limit}` : null,
-			b?.expires_at ? `Expires at: ${b.expires_at}` : null,
+			b?.budget ? `Budget: max_children=${b.budget.max_children}, qa_failure_limit=${b.budget.qa_failure_limit}` : null,
 		].filter(Boolean);
 		return {
 			mode: "form",

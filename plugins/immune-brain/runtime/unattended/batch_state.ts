@@ -45,11 +45,8 @@ export interface BatchRunStateRecord {
 	branch?: string;
 	/** Timestamp of the literal-user batch confirmation. */
 	confirmation_time: string;
-	/** Authorization expiry from the batch capability binding. */
-	authorization_expires_at: string;
 	budget: {
 		max_children: number;
-		deadline_at: string;
 		qa_failure_limit: number;
 	};
 	batch_state: BatchRunState;
@@ -101,8 +98,19 @@ function statePath(batchId: string): string {
 	return join(".imm", "state", "batches", `${batchId}.json`);
 }
 
+/**
+ * A record persisted while batch authorization still carried a clock holds
+ * `authorization_expires_at` and `budget.deadline_at`. They are ignored on read
+ * and never written back.
+ */
+function withoutRetiredClock(record: BatchRunStateRecord): BatchRunStateRecord {
+	const { authorization_expires_at: _expiry, ...rest } = record as BatchRunStateRecord & { authorization_expires_at?: unknown };
+	const { deadline_at: _deadline, ...budget } = rest.budget as BatchRunStateRecord["budget"] & { deadline_at?: unknown };
+	return { ...rest, budget };
+}
+
 function canonicalBytes(record: BatchRunStateRecord): string {
-	return `${JSON.stringify(record, null, 2)}\n`;
+	return `${JSON.stringify(withoutRetiredClock(record), null, 2)}\n`;
 }
 
 function validateRecordShape(value: unknown, batchId: string): asserts value is BatchRunStateRecord {
@@ -121,8 +129,6 @@ function validateRecordShape(value: unknown, batchId: string): asserts value is 
 		throw new Error(`batch run state ${batchId} has an invalid branch`);
 	if (!isCanonicalTimestamp(record.confirmation_time))
 		throw new Error(`batch run state ${batchId} has an invalid confirmation_time`);
-	if (!isCanonicalTimestamp(record.authorization_expires_at))
-		throw new Error(`batch run state ${batchId} has an invalid authorization_expires_at`);
 	if (!isCanonicalTimestamp(record.created_at) || !isCanonicalTimestamp(record.updated_at))
 		throw new Error(`batch run state ${batchId} has invalid state timestamps`);
 	if (!Array.isArray(record.children) || record.children.length === 0)
@@ -142,7 +148,6 @@ function validateRecordShape(value: unknown, batchId: string): asserts value is 
 		typeof budget.max_children !== "number" ||
 		!Number.isInteger(budget.max_children) ||
 		budget.max_children <= 0 ||
-		!isCanonicalTimestamp(budget.deadline_at) ||
 		typeof budget.qa_failure_limit !== "number" ||
 		!Number.isInteger(budget.qa_failure_limit) ||
 		budget.qa_failure_limit <= 0
@@ -211,8 +216,7 @@ export function prepareBatchRunState(input: {
 	base_head: string;
 	branch?: string;
 	confirmation_time: string;
-	authorization_expires_at: string;
-	budget: { max_children: number; deadline_at: string; qa_failure_limit: number };
+	budget: { max_children: number; qa_failure_limit: number };
 	now: string;
 }): BatchRunStateRecord {
 	validateBatchId(input.batch_id);
@@ -224,7 +228,6 @@ export function prepareBatchRunState(input: {
 		base_head: input.base_head,
 		branch: input.branch ?? `imm/${input.initiative_slug}`,
 		confirmation_time: input.confirmation_time,
-		authorization_expires_at: input.authorization_expires_at,
 		budget: input.budget,
 		batch_state: "prepared",
 		children: input.children.map((child) => ({
@@ -248,7 +251,7 @@ export function parseBatchRunState(raw: string, batchId: string): BatchRunStateR
 	validateBatchId(batchId);
 	const parsed: unknown = JSON.parse(raw);
 	validateRecordShape(parsed, batchId);
-	return parsed;
+	return withoutRetiredClock(parsed);
 }
 
 export function readBatchRunState(root: string, batchId: string): BatchRunStateRecord | null {
@@ -300,7 +303,7 @@ export function replaceBatchRunState(root: string, expected: Buffer, next: Batch
 	return withKernelStoreLock(root, () => {
 		if (!readSecureProjectBytes(root, path).equals(expected)) throw new Error("batch state CAS mismatch");
 		validate();
-		const stored = { ...next, updated_at: new Date().toISOString() };
+		const stored = withoutRetiredClock({ ...next, updated_at: new Date().toISOString() });
 		writeFileAtomically(root, path, canonicalBytes(stored));
 		return stored;
 	});
@@ -315,10 +318,10 @@ export function writeBatchRunState(
 	return withKernelStoreLock(root, () => {
 		const existing = existsSync(join(root, path)) ? readSecureProjectFile(root, path) : null;
 		if (existing !== null && existing === canonicalBytes(record)) return record;
-		const stored: BatchRunStateRecord = {
+		const stored = withoutRetiredClock({
 			...record,
 			updated_at: new Date().toISOString(),
-		};
+		});
 		// review-4: secure directory + atomic no-symlink write.
 		ensureSecureDirectory(root, join(".imm", "state", "batches"));
 		writeFileAtomically(root, path, canonicalBytes(stored));

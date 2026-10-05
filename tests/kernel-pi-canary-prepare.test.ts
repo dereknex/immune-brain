@@ -95,7 +95,6 @@ function baseWaiver(): CanaryWaiver {
 		reason: "user risk acceptance",
 		actor: "user",
 		confirmation_ref: "confirm-ref-1",
-		expires_at: "2999-01-01T00:00:00.000Z",
 		nonce: "nonce-1",
 	};
 }

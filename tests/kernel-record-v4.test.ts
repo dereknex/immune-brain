@@ -166,4 +166,26 @@ describe("recorded actor identity", () => {
 			expires_at: "2026-09-06T01:00:00.000Z",
 		});
 	});
+
+	test("rejects an unknown field inside a history authority block", () => {
+		const entry = (authority: Record<string, unknown>) => ({
+			id: "h-1",
+			type: "authorize",
+			at: "2026-09-06T00:00:00.000Z",
+			from_state: "active:active",
+			to_state: "active:active",
+			reason: "approve_breaking_intent_revision",
+			authority: {
+				authority_kind: "user",
+				actor_id: "user",
+				confirmation_ref: "claude-confirm-1",
+				issued_at: "2026-09-06T00:00:00.000Z",
+				...authority,
+			},
+		});
+		// Tolerating the retired expires_at does not open the block to other keys.
+		expect(() => parseTaskRecordV4(record({ history: [entry({})] }))).not.toThrow();
+		expect(() => parseTaskRecordV4(record({ history: [entry({ valid_until: "2026-09-06T01:00:00.000Z" })] })))
+			.toThrow(/unknown field: record\.history\[0\]\.authority\.valid_until/);
+	});
 });

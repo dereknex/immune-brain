@@ -265,7 +265,8 @@ export interface AuthorityAuditDescriptor {
 	actor_id: string;
 	confirmation_ref: string;
 	issued_at: string;
-	expires_at: string;
+	/** Read-only: history written before authority lost its clock still carries it. Never written. */
+	expires_at?: string;
 }
 
 export interface TaskActionBase {

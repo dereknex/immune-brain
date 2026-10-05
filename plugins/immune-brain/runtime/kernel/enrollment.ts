@@ -355,7 +355,6 @@ export function enrollCanaryTask(
 				const batch = input.batch.registry.inspect(
 					input.batch.capability,
 					input.batch.binding,
-					Date.parse(input.now),
 				);
 				if (
 					input.batch.registry.consumedChildren(input.batch.capability).length === 0 &&
@@ -378,7 +377,6 @@ export function enrollCanaryTask(
 					input.batch.capability,
 					input.batch.binding,
 					input.task_id,
-					Date.parse(input.now),
 				);
 
 			// Set by beforeLock above, which throws when the repository has no

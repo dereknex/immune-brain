@@ -1,0 +1,32 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "clockless-authority-closeout-s3",
+  "owner": "user",
+  "goal": "Make terminal tracker projection close a GitHub Initiative Parent as completed once every Slice Child is completed, and keep it open otherwise.",
+  "acceptance": [
+    {
+      "id": "CAC-S3-A1",
+      "assertion": "Implement S3 of docs/specs/clockless-authority-closeout.spec.md in the existing mark-terminal path, test-first, with the fake gh transport and no real remote write. After mark-terminal closes a Child as completed, the tracker decides from Issue-scoped reads of the Parent and its Sub-issue list, with no repository listing, whether every Sub-issue carrying a Slice marker of that Initiative is closed as completed; if so it closes the Parent as completed exactly once. An open Child, a Child closed as stopped or not planned, and a parked Child keep the Parent open with zero Parent writes. An already closed Parent and a rerun of the same mark-terminal perform no Parent write. A failed Parent read or close is returned as tracker observation with the same mark-terminal as its one retry action and never changes or hides the Kernel result. The tracker result contract identifier, Issue marker format, publication and amendment flows are unchanged. The Parent body no longer says the tracker never closes it and states the new rule; dist/imm-planner.md says the Planner never closes the Parent and that terminal projection does; docs/agents/issue-tracker.md matches. The Claude bundle is regenerated, the evidence fixture that hash-binds the Planner contract is re-hashed, and the Initiative changeset describes all three Slices.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/plugin-package-runtime.test.ts\",\n      \"tests/github-issue-projection-contract.test.ts\",\n      \"tests/github-initiative-recovery.test.ts\",\n      \"tests/workflow-behavior-evidence.test.ts\",\n      \"tests/carrier-enrollment-gate-contract.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/clockless-authority-closeout.md",
+    "docs/agents/issue-tracker.md",
+    "docs/plans/clockless-authority-closeout-s3.intent.json",
+    "docs/specs/clockless-authority-closeout.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/runtime/github_issue_tracker.ts",
+    "tests/carrier-enrollment-gate-contract.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/fixtures/workflow-decision-closure-evidence.json",
+    "tests/github-initiative-recovery.test.ts",
+    "tests/github-issue-projection-contract.test.ts",
+    "tests/plugin-package-runtime.test.ts",
+    "tests/skill-dist-consistency.test.ts",
+    "tests/workflow-behavior-evidence.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

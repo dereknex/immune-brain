@@ -925,7 +925,6 @@ describe("SQLite authority store durability", () => {
         diff_hash: `sha256:${"b".repeat(64)}`,
         actor_id: "user",
         confirmation_ref: "confirmation",
-        expires_at: "2099-01-01T00:00:00.000Z",
         findings_digest: null,
       });
       expect(() =>
@@ -987,7 +986,6 @@ describe("SQLite authority store durability", () => {
         diff_hash: `sha256:${"b".repeat(64)}`,
         actor_id: "user",
         confirmation_ref: "confirmation",
-        expires_at: "2099-01-01T00:00:00.000Z",
         findings_digest: null,
       });
       expect(() =>

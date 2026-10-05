@@ -6,7 +6,6 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
-	BatchAuthorizationExpiryError,
 	type BatchAuthorityRegistry,
 	type ValidatedBatchAuthorization,
 	computeBatchPlanDigest,
@@ -92,15 +91,15 @@ export interface BatchRunnerKernelPort {
 	 * is held under this batch's derived capability (consumed child slot). */
 	ownsTaskClaim(taskId: string): boolean;
 	/** review-8(4th rework): Kernel-side proof that a replacement parked-batch
-	 * authorization is genuine, unexpired, and bound to this exact batch_id,
+	 * authorization is genuine and bound to this exact batch_id,
 	 * plan_digest, and base_head, validated against the Kernel's authoritative
-	 * binding state. Throws on fabrication, mismatch, or expiry; the driver
+	 * binding state. Throws on fabrication or mismatch; the driver
 	 * must call this before accepting a parked-batch resume. */
 	validateBatchAuthorization(input: {
 		registry: BatchAuthorityRegistry;
 		capability: object;
 		binding: Pick<ValidatedBatchAuthorization,
-			"batch_id" | "plan_digest" | "base_head" | "initiative_slug" | "budget" | "expires_at">;
+			"batch_id" | "plan_digest" | "base_head" | "initiative_slug" | "budget">;
 	}): ValidatedBatchAuthorization;
 }
 
@@ -123,8 +122,7 @@ export interface StartBatchInput {
 	plan_digest: string;
 	base_head: string;
 	confirmation_time: string;
-	authorization_expires_at: string;
-	budget: { max_children: number; deadline_at: string; qa_failure_limit: number };
+	budget: { max_children: number; qa_failure_limit: number };
 	now: string;
 	kernel: BatchRunnerKernelPort;
 	git?: BatchRunnerGitPort;
@@ -155,7 +153,7 @@ function skipDependents(record: BatchRunStateRecord, taskId: string, reason: str
 	);
 }
 
-function budgetStopReason(record: BatchRunStateRecord, now: number): string | null {
+function budgetStopReason(record: BatchRunStateRecord): string | null {
 	// review-3: budget counts enrollments consumed (children that left
 	// pending), not commits, so parked children still consume authorization.
 	const enrolledCount = record.children.filter(
@@ -163,20 +161,7 @@ function budgetStopReason(record: BatchRunStateRecord, now: number): string | nu
 	).length;
 	if (enrolledCount >= record.budget.max_children)
 		return `max_children budget exhausted (${record.budget.max_children})`;
-	const deadline = Date.parse(record.budget.deadline_at);
-	if (!Number.isNaN(deadline) && now >= deadline)
-		return `deadline_at reached (${record.budget.deadline_at})`;
 	return null;
-}
-
-/** review-7(3rd rework): the typed expiry marker now lives at the Kernel
- * boundary (kernel/batch_authority.ts) so a real enrollment-time expiry is
- * structurally classifiable as an intentional budget stop; re-exported here
- * for driver API compatibility. */
-export { BatchAuthorizationExpiryError };
-
-function isAuthorizationExpiryError(error: unknown): boolean {
-	return error instanceof BatchAuthorizationExpiryError;
 }
 
 function requireFreshProjection<T extends AssuranceProjectionResult>(
@@ -203,7 +188,7 @@ function nextEnrollableChild(record: BatchRunStateRecord): BatchChildRun | null 
 
 const TERMINAL_NEXT_ACTIONS: Record<string, string> = {
 	completed: "The batch settled every enrollable child; review the commits and the tracker.",
-	budget_stopped: "Budget, deadline, or authorization expiry stopped new enrollments; re-confirm to continue under a new authorization.",
+	budget_stopped: "The child budget stopped new enrollments; re-confirm to continue under a new authorization.",
 	failed: "A commit or lineage failure stopped the batch; inspect the failing child and the branch state.",
 	rejected: "The batch was rejected before any enrollment; correct the stated reason and re-confirm.",
 	needs_human: "A parked child needs a human decision; resolve it, then re-confirm to continue.",
@@ -401,7 +386,6 @@ function validateRunAuthorization(input: StartBatchInput, existing: BatchRunStat
 			base_head: existing?.base_head ?? input.base_head,
 			initiative_slug: existing?.initiative_slug ?? input.initiative_slug,
 			budget: input.budget,
-			expires_at: input.authorization_expires_at,
 		},
 	});
 	if (authorized.issued_at !== input.confirmation_time ||
@@ -422,7 +406,7 @@ function validateRunAuthorization(input: StartBatchInput, existing: BatchRunStat
 function applyPlanReconfirmation(input: StartBatchInput, existing: BatchRunStateRecord): BatchRunStateRecord {
 	if (existing.plan_digest === input.plan_digest) return existing;
 	const next = { ...existing, plan_digest: input.plan_digest, confirmation_time: input.confirmation_time,
-		authorization_expires_at: input.authorization_expires_at, budget: input.budget };
+		budget: input.budget };
 	if (!existing.branch || input.batch_id !== existing.batch_id || input.initiative_slug !== existing.initiative_slug || input.base_head !== existing.base_head ||
 		input.budget.max_children !== existing.budget.max_children || input.budget.qa_failure_limit !== existing.budget.qa_failure_limit)
 		throw new Error("plan_digest mismatch: reconfirmation binding changed");
@@ -516,12 +500,9 @@ async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport>
 	if (existing?.batch_state === "needs_human") {
 		const priorConfirmation = Date.parse(existing.confirmation_time);
 		const nextConfirmation = Date.parse(input.confirmation_time);
-		const nextExpiry = Date.parse(input.authorization_expires_at);
 		const freshAuthorization =
 			Number.isFinite(nextConfirmation) &&
-			nextConfirmation > priorConfirmation &&
-			Number.isFinite(nextExpiry) &&
-			nextExpiry > Date.now();
+			nextConfirmation > priorConfirmation;
 		if (!freshAuthorization && !reconfirmed) {
 			return finalize(
 				input.root,
@@ -573,7 +554,6 @@ async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport>
 			existing = writeBatchRunState(input.root, {
 				...reparked,
 				confirmation_time: input.confirmation_time,
-				authorization_expires_at: input.authorization_expires_at,
 				budget: input.budget,
 				batch_state: "needs_human",
 			});
@@ -592,40 +572,10 @@ async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport>
 		existing = writeBatchRunState(input.root, {
 			...existing,
 			confirmation_time: input.confirmation_time,
-			authorization_expires_at: input.authorization_expires_at,
 			budget: input.budget,
 			batch_state: "running",
 			children: resumedChildren,
 		});
-	}
-
-	// A running batch can outlive its authorization while it waits on a child's
-	// reserved foreground Review. The driver owns every batch state transition,
-	// so the renewal the Host bound into the capability must be adopted here;
-	// otherwise the record keeps the expired stamp and the next child enrollment
-	// stops the batch as budget_stopped even though the literal user just
-	// re-confirmed it. Renewal requires the same proof the parked path requires:
-	// a strictly newer literal-user confirmation and a later, still-valid expiry.
-	if (existing?.batch_state === "running") {
-		const nextConfirmation = Date.parse(input.confirmation_time);
-		const nextExpiry = Date.parse(input.authorization_expires_at);
-		const priorConfirmation = Date.parse(existing.confirmation_time);
-		const persistedExpiry = Date.parse(existing.authorization_expires_at);
-		const renewedAuthorization =
-			Number.isFinite(nextConfirmation) &&
-			nextConfirmation > priorConfirmation &&
-			Number.isFinite(nextExpiry) &&
-			nextExpiry > Date.now() &&
-			nextExpiry > persistedExpiry;
-		if (renewedAuthorization) {
-			validateRunAuthorization(input, existing);
-			existing = writeBatchRunState(input.root, {
-				...existing,
-				confirmation_time: input.confirmation_time,
-				authorization_expires_at: input.authorization_expires_at,
-				budget: input.budget,
-			});
-		}
 	}
 
 	// review-2(6th round): an enrolled or settled child from an interrupted
@@ -693,7 +643,6 @@ async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport>
 			plan_digest: input.plan_digest,
 			base_head: input.base_head,
 			confirmation_time: input.confirmation_time,
-			authorization_expires_at: input.authorization_expires_at,
 			budget: input.budget,
 			now: input.now,
 		});
@@ -780,9 +729,8 @@ async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport>
 			);
 			persist();
 		} else {
-		// Re-read the clock after projection; an adopted claim is not a new enrollment.
-		const now = Date.now();
-		if (now >= Date.parse(record.authorization_expires_at) || budgetStopReason(record, now)) {
+		// An adopted claim is not a new enrollment.
+		if (budgetStopReason(record)) {
 			record.batch_state = record.children.some(
 				(c) => c.state === "needs_human" || c.state === "skipped_blocked",
 			) ? "needs_human" : "budget_stopped";
@@ -799,7 +747,7 @@ async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport>
 				binding: {
 					batch_id: record.batch_id, plan_digest: record.plan_digest,
 					base_head: record.base_head, initiative_slug: record.initiative_slug,
-					budget: record.budget, expires_at: record.authorization_expires_at,
+					budget: record.budget,
 				},
 			});
 			for (const committed of record.children) {
@@ -821,17 +769,6 @@ async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport>
 			persist();
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			// Only a typed BatchAuthorizationExpiryError is an intentional
-			// budget stop; free-form message matching misclassified
-			// infrastructure and validation failures as intentional stops.
-			if (isAuthorizationExpiryError(error)) {
-				record.children = record.children.map((c) =>
-					c.task_id === child.task_id ? { ...c, state: "pending", reason: message } : c,
-				);
-				record.batch_state = "budget_stopped";
-				persist();
-				break;
-			}
 			// review round 10: external HEAD movement after the pre-loop check
 			// (including between children) fails the batch, it never parks.
 			if (isLineageBreakError(message)) {
@@ -869,8 +806,8 @@ function stopReasonFor(record: BatchRunStateRecord): string | null {
 	switch (record.batch_state) {
 		case "budget_stopped":
 			return (
-				budgetStopReason(record, Date.now()) ??
-				"budget, deadline, or authorization expiry stopped new enrollments"
+				budgetStopReason(record) ??
+				"the child budget stopped new enrollments"
 			);
 		case "failed": {
 			const failedChild = record.children.find((c) => c.state === "needs_human" && c.reason);
@@ -888,10 +825,9 @@ function stopReasonFor(record: BatchRunStateRecord): string | null {
 /**
  * review-1: resume the interrupted child first. A persisted enrolled child
  * is driven through the Kernel obligation surface to its own terminal
- * settlement and commit before any new enrollment or expiry check, so an
- * interrupted run can never falsely complete or enroll a sibling while a
- * child claim is still open. Never replays a committed mutation; refuses an
- * expired authorization by requiring a new literal-user confirmation.
+ * settlement and commit before any new enrollment, so an interrupted run can
+ * never falsely complete or enroll a sibling while a child claim is still
+ * open. Never replays a committed mutation.
  */
 export async function resumeBatch(
 	input: StartBatchInput,
@@ -915,8 +851,8 @@ export async function resumeBatch(
 		return replayTerminal(input.root, existing);
 
 	// An enrolled-but-unsettled child must reach its own Kernel terminal
-	// settlement before anything else, even under an expired authorization:
-	// its claim is already held and the Kernel owns its remaining obligations.
+	// settlement before anything else: its claim is already held and the
+	// Kernel owns its remaining obligations.
 	// review-1(2nd round): an `enrolled` child is verified against a fresh
 	// Kernel projection; a projection that finds no active claim means the
 	// persisted `enrolled` flag predates a successful enrollment, so the child

@@ -56,10 +56,12 @@ Summaries are not authority. After a restart or compaction, call `status` for th
 
 ## Renewal
 
-When both `authorization_expires_at` and `budget.deadline_at` have passed, the next `start_unattended_batch` opens a new native gate.
+A confirmed batch does not expire. While it is still running on the same plan, branch and HEAD lineage, `start_unattended_batch` continues it with no gate, however long the child sat in foreground Review. The dialog itself has no time limit either: it waits until you answer or the caller cancels.
 
-- Decline, cancel, a deadline that lapses while the dialog is open, or a HEAD that moved during it: the call is refused and the batch state, commits, index and enrolled child are unchanged. Retry through a fresh gate.
-- Confirm: the same batch id continues with a new window; earlier commits and the enrolled child's run are kept, and later continuations open no further gate.
+A new native gate opens only when something no longer binds: the batch is parked for a human, the plan digest changed, the branch changed, or HEAD left the recorded lineage.
+
+- Decline, cancel, or a HEAD that moved while the dialog was open: the call is refused and the batch state, commits, index and enrolled child are unchanged. Retry through a fresh gate.
+- Confirm: the same batch id continues; earlier commits and the enrolled child's run are kept, and later continuations open no further gate.
 
 ## Decide whether the batch completed
 

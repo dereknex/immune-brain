@@ -57,7 +57,6 @@ describe("capability registry contract", () => {
 		const binding: ComposedBinding = {
 			actor_id: "literal-user",
 			confirmation_ref: "pi-confirm-composed",
-			expires_at: "2026-06-01T00:00:00.000Z",
 			task_id: "capability-registry-contract-composed",
 			nonce: "nonce-composed",
 		};
@@ -84,7 +83,8 @@ describe("capability registry contract", () => {
 	test("enrollment-specific validation markers remain in enrollment_authority.ts", () => {
 		expect(enrollmentSrc).toContain("EnrollmentCapabilityBinding");
 		expect(enrollmentSrc).toContain("enrollment capability binding is incomplete");
-		expect(enrollmentSrc).toContain("enrollment capability must have a future expiry");
+		expect(enrollmentSrc).not.toMatch(/expir/i);
+		expect(authorityPortSrc).not.toMatch(/expir/i);
 	});
 
 	test("mutation-specific validation markers remain in authority_port.ts", () => {

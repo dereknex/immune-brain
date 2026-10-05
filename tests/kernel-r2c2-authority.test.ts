@@ -46,7 +46,6 @@ function binding(
 		diff_hash: DIFF,
 		actor_id: "user-1",
 		confirmation_ref: "conf-1",
-		expires_at: FUTURE,
 		findings_digest: null,
 		...overrides,
 	};
@@ -104,16 +103,12 @@ describe("R2C2 authority port", () => {
 		).toThrow();
 	});
 
-	test("expired capability fails", () => {
+	test("a capability issued long ago is still accepted, exactly once", () => {
 		const registry = createMutationAuthorityRegistry();
-		const cap = createMutationAuthorityCapabilityForTest(registry, binding(registry));
-		expect(() =>
-			registry.inspect(
-				cap,
-				expected(cap),
-				Date.parse("2100-01-01T00:00:00.000Z"),
-			),
-		).toThrow();
+		const cap = createMutationAuthorityCapabilityForTest(registry, binding(registry), PAST);
+		expect(registry.inspect(cap, expected(cap))).not.toHaveProperty("expires_at");
+		expect(() => registry.consume(cap, expected(cap))).not.toThrow();
+		expect(() => registry.consume(cap, expected(cap))).toThrow(/consumed/i);
 	});
 
 	test("mismatched task, record hash, intent hash, or diff fails", () => {
@@ -211,7 +206,6 @@ describe("R2C2 authority port", () => {
 			diff_hash: DIFF,
 			actor_id: "qa-1",
 			confirmation_ref: "conf-qa",
-			expires_at: FUTURE,
 			findings_digest: digest,
 		});
 		// Matching findings pass.
@@ -244,14 +238,4 @@ describe("R2C2 authority port", () => {
 		).toThrow(/not bound to findings/i);
 	});
 
-	test("binding with future expiry only is accepted; PAST constant stays defined", () => {
-		expect(PAST).toBe("2020-01-01T00:00:00.000Z");
-		const registry = createMutationAuthorityRegistry();
-		expect(() =>
-			createMutationAuthorityCapabilityForTest(
-				registry,
-				binding(registry, { expires_at: "2020-01-01T00:00:00.000Z" }),
-			),
-		).toThrow(/future expiry/i);
-	});
 });

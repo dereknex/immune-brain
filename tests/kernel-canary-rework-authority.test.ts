@@ -80,7 +80,6 @@ beforeEach(() => {
 		preparation_digest: prep.digest,
 		actor_id: "user",
 		confirmation_ref: "pi-confirm-enroll",
-		expires_at: "2099-01-01T00:00:00.000Z",
 		nonce: "nonce-enroll",
 	};
 	enrollCanaryTask(
@@ -150,7 +149,6 @@ function toReview(at = "2026-08-12T10:00:02.000Z") {
 		diff_hash: DIFF,
 		actor_id: "qa-1",
 		confirmation_ref: "conf-qa",
-		expires_at: "2099-01-01T00:00:00.000Z",
 		findings_digest: null,
 	});
 	return execute({ op: "record_approval", approval, capability, actor_id: "qa-1" }, at);
@@ -221,7 +219,6 @@ function reworkCapability(kind: "review" | "qa" | "user", overrides: Record<stri
 		diff_hash: DIFF,
 		actor_id: actorId,
 		confirmation_ref: "conf-rework",
-		expires_at: "2099-01-01T00:00:00.000Z",
 		findings_digest: findingsDigestV2([...FINDINGS] as never[]),
 		...overrides,
 	});
@@ -245,7 +242,6 @@ function requestReviewRework(findings: Record<string, unknown>[], at: string) {
 		diff_hash: DIFF,
 		actor_id: "reviewer-1",
 		confirmation_ref: `conf-${at}`,
-		expires_at: "2099-01-01T00:00:00.000Z",
 		findings_digest: findingsDigestV2(findings as never[]),
 	});
 	return execute(
@@ -413,7 +409,6 @@ describe("request_rework authority", () => {
 			diff_hash: DIFF,
 			actor_id: "literal-user",
 			confirmation_ref: "confirm-authorize-rework",
-			expires_at: "2099-01-01T00:00:00.000Z",
 			findings_digest: null,
 		});
 		const resumed = execute(
@@ -738,7 +733,6 @@ describe("request_rework authority", () => {
 			diff_hash: DIFF,
 			actor_id: "qa-1",
 			confirmation_ref: "conf-qa-provenance",
-			expires_at: "2099-01-01T00:00:00.000Z",
 			findings_digest: findingsDigestV2(qaFindings as never[]),
 		});
 		expect(() =>

@@ -301,7 +301,7 @@ When an Initiative has several ready children, you can run them as one serial ba
 - **Entry is explicit:** the Host's privileged `start_unattended_batch` tool, taking the Initiative slug. Nothing batch-related exists until it is called — without it, `imm-loop` behaves exactly like per-task enrollment and creates no batch state, branch, or authorization.
 - **One confirmation, one digest:** the native gate (Pi TUI dialog or Claude MCP elicitation) shows the ordered child list and the shared plan digest; that single literal-user act is the whole Batch Authorization.
 - **Per-child authority survives:** every child is still enrolled, frozen, QA'd, reviewed, and settled by the Kernel on its own `TaskRecord`. The batch is the scope of one authorization, never a new authority layer.
-- **Bounds:** only published, non-`critical` children run, serially on a dedicated batch branch. The run parks when a child needs a human decision or a budget, deadline, authorization, or commit failure stops it, and dependents of a blocked child are skipped rather than reordered. The runner never pushes, opens PRs, resolves user decisions, or creates, switches, or deletes Git worktrees.
+- **Bounds:** only published, non-`critical` children run, serially on a dedicated batch branch. The run parks when a child needs a human decision or a budget, authorization, or commit failure stops it; the budget is a child count and a QA failure limit, and nothing expires with time, and dependents of a blocked child are skipped rather than reordered. The runner never pushes, opens PRs, resolves user decisions, or creates, switches, or deletes Git worktrees.
 
 ---
 
@@ -361,7 +361,7 @@ docs/specs/                           # Living specs (updated in place)
 
 **A review finding stopped blocking — why?** It was refuted: fresh deterministic QA evidence shows the acceptance it names passes. The refutation is bound to that exact evidence, so the finding blocks again the moment the evidence goes stale for the current revision, intent hash, or diff.
 
-**Can it run a whole Initiative without me?** Only as far as you authorize. Confirm `start_unattended_batch` with the Initiative slug and the runner works through the published, non-`critical` children serially on one batch branch — parking as soon as a child needs a human decision or the run hits a budget, deadline, authorization, or commit failure. It never pushes, opens PRs, or settles user decisions for you.
+**Can it run a whole Initiative without me?** Only as far as you authorize. Confirm `start_unattended_batch` with the Initiative slug and the runner works through the published, non-`critical` children serially on one batch branch — parking as soon as a child needs a human decision or the run hits a budget, authorization, or commit failure. A parked run waits for you indefinitely: neither the confirmation dialog nor the authorization it grants times out. It never pushes, opens PRs, or settles user decisions for you.
 
 **Can I switch between hosts (e.g. plan in Claude Code, code in Pi)?** Yes. Immune-Brain's contracts and state live entirely on disk in the repository, decoupled from conversation sessions. You can leverage Claude Code for deep architectural thinking and Spec planning, then switch to Pi to run `imm-loop` for code execution and deterministic QA. Interrupted tasks can be resumed in either host at any time.
 

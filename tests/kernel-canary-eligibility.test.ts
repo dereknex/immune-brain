@@ -51,7 +51,6 @@ function baseInput(overrides: Record<string, unknown> = {}): CanaryEligibilityIn
 			reason: "user risk acceptance for bounded Pi canary",
 			actor: "user",
 			confirmation_ref: "pi-confirm-001",
-			expires_at: "2099-01-01T00:00:00.000Z",
 			nonce: "nonce-001",
 		},
 		now: "2026-08-11T12:00:00.000Z",
@@ -137,13 +136,6 @@ describe("canary eligibility", () => {
 		expect(result.rejections).toContain("waiver route retired");
 	});
 
-	test("waiver expiry is enforced (v4: waiver route retired)", () => {
-		const input = baseInput({ waiver: { ...baseInput().waiver!, expires_at: "2026-08-01T00:00:00.000Z" } });
-		const result = evaluateCanaryEligibility(input);
-		expect(result.eligible).toBe(false);
-		expect(result.rejections).toContain("waiver route retired");
-	});
-
 	test("waiver task mismatch is rejected", () => {
 		const input = baseInput({ waiver: { ...baseInput().waiver!, task_id: "task-other" } });
 		const result = evaluateCanaryEligibility(input);
@@ -170,7 +162,6 @@ describe("enrollment capability", () => {
 		intent_content_hash: "sha256:intent",
 		actor_id: "user",
 		confirmation_ref: "pi-confirm-001",
-		expires_at: "2099-01-01T00:00:00.000Z",
 		nonce: "nonce-001",
 	} as const;
 
@@ -188,12 +179,9 @@ describe("enrollment capability", () => {
 		expect(() => registry.inspect(cap, binding)).toThrow(/consumed|reuse/);
 	});
 
-	test("expired capability rejected", () => {
-		// deliberately past expiry to exercise rejection; far-future binding would not expire at 2026-08-25
-		const expiredBinding = { ...binding, expires_at: "2026-08-15T00:00:00.000Z" } as const;
-		const cap = registry.issue(expiredBinding, "2026-08-01T00:00:00.000Z");
-		const expiredAt = Date.parse(expiredBinding.expires_at) + 10 * 24 * 60 * 60 * 1000;
-		expect(() => registry.inspect(cap, expiredBinding, expiredAt)).toThrow(/expired/);
+	test("a capability issued long ago is still accepted", () => {
+		const cap = registry.issue(binding, "2020-01-01T00:00:00.000Z");
+		expect(() => registry.inspect(cap, binding)).not.toThrow();
 	});
 
 	test("mismatched binding rejected", () => {
@@ -215,7 +203,6 @@ describe("enrollment capability", () => {
 				diff_hash: "d",
 				actor_id: "user",
 				confirmation_ref: "ref",
-				expires_at: "2099-01-01T00:00:00.000Z",
 				findings_digest: null,
 			},
 		);

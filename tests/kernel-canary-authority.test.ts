@@ -71,7 +71,6 @@ beforeEach(() => {
 		preparation_digest: prep.digest,
 		actor_id: "user",
 		confirmation_ref: "pi-confirm-enroll",
-		expires_at: "2099-01-01T00:00:00.000Z",
 		nonce: "nonce-enroll",
 	};
 	enrollCanaryTask(
@@ -118,13 +117,12 @@ function drainCapability(registry = mutationRegistryA, overrides: Record<string,
 		diff_hash: ZERO_DIFF,
 		actor_id: "user-1",
 		confirmation_ref: "conf-drain",
-		expires_at: "2099-01-01T00:00:00.000Z",
 		findings_digest: null,
 		...overrides,
 	});
 }
 
-function stopActionCapability(registry = mutationRegistryA, overrides: Record<string, unknown> = {}) {
+function stopActionCapability(registry = mutationRegistryA, overrides: Record<string, unknown> = {}, issuedAt?: string) {
 	const record = readTaskRecord(root, TASK);
 	const digest = (a: Record<string, unknown>) => createHash("sha256").update(JSON.stringify(a)).digest("hex");
 	return createMutationAuthorityCapabilityForTest(registry, {
@@ -143,10 +141,9 @@ function stopActionCapability(registry = mutationRegistryA, overrides: Record<st
 		diff_hash: DIFF,
 		actor_id: "user-1",
 		confirmation_ref: "conf-stop",
-		expires_at: "2099-01-01T00:00:00.000Z",
 		findings_digest: null,
 		...overrides,
-	});
+	}, issuedAt);
 }
 
 describe("canary application authority pairing", () => {
@@ -175,22 +172,18 @@ describe("canary application authority pairing", () => {
 		expect(mutationRegistryB.isConsumed(foreign)).toBe(false);
 	});
 
-	test("expired capability is rejected with zero writes", () => {
-		// Issue a capability valid for one hour, then consume it after expiry.
-		const expiresAt = new Date(Date.now() + 3_600_000).toISOString();
-		const cap = stopActionCapability(mutationRegistryA, { expires_at: expiresAt });
-		const afterExpiry = new Date(Date.now() + 7_200_000).toISOString();
-		expect(() =>
-			appA.execute({
-				root,
-				task_id: TASK,
-				operation: { op: "stop", capability: cap, reason: "halt", actor_id: "user" },
-				prior_intent_token: token(),
-				diffProvider: () => DIFF,
-				now: afterExpiry,
-			}),
-		).toThrow(/expired/i);
-		expect(readTaskRecord(root, TASK).record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
+	test("a capability used long after issue is accepted and records no expiry", () => {
+		const cap = stopActionCapability(mutationRegistryA, {}, "2020-01-01T00:00:00.000Z");
+		const { record } = appA.execute({
+			root,
+			task_id: TASK,
+			operation: { op: "stop", capability: cap, reason: "halt", actor_id: "user" },
+			prior_intent_token: token(),
+			diffProvider: () => DIFF,
+			now,
+		});
+		expect(record.lifecycle).toBe("stopped");
+		for (const entry of record.history) expect(entry.authority ?? {}).not.toHaveProperty("expires_at");
 	});
 
 	test("stale snapshot capability (record advanced) is rejected", () => {

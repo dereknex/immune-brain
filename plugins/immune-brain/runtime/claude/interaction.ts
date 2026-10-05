@@ -81,8 +81,7 @@ export interface NativeConfirmationInput {
 		batch_branch: string;
 		children: Array<{ task_id: string; slice_id: string; risk?: string }>;
 		excluded: Array<{ task_id: string; slice_id: string; reason: string }>;
-		budget: { max_children: number; deadline_at: string; qa_failure_limit: number };
-		expires_at: string;
+		budget: { max_children: number; qa_failure_limit: number };
 	};
 	signal?: AbortSignal;
 }

@@ -23,7 +23,6 @@ export interface CanaryWaiver {
 	reason: string;
 	actor: string;
 	confirmation_ref: string;
-	expires_at: string;
 	nonce: string;
 }
 

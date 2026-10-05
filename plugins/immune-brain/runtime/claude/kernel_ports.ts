@@ -44,7 +44,6 @@ import { preparePiCanary, revalidatePiCanary } from "../kernel/pi_canary_prepare
 import { runDeterministicQa } from "../assurance/qa";
 import { taskDiffIdentity, taskRevisionIdentity } from "../workspace_scope";
 import { batchReason } from "../unattended/batch_reasons";
-import { startConfirmationDeadline } from "../unattended/confirmation_deadline";
 import { deriveAuthorizationOperation } from "../authorization_operation";
 import { LITERAL_USER_ACTOR_ID, canonicalActorId } from "../kernel/actor_identity";
 import {
@@ -391,7 +390,6 @@ async function mintCapability(
 		diff_hash: input.diff_hash,
 		actor_id: input.actor_id,
 		confirmation_ref: input.confirmation_ref,
-		expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
 		findings_digest: input.action_kind === "request_rework"
 			? findingsDigestV2(input.findings as TaskFinding[])
 			: null,
@@ -587,7 +585,6 @@ export class ClaudeRuntime {
 				preparation_digest: preparation.digest,
 				actor_id: LITERAL_USER_ACTOR_ID,
 				confirmation_ref: gate.confirmation_ref,
-				expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
 				nonce,
 			};
 			const capability = this.enrollmentRegistry.issue(binding);
@@ -1022,7 +1019,7 @@ export class ClaudeRuntime {
 		const budget = preflight.projection.budget;
 		const planDigest = preflight.projection.plan_digest;
 		const recoveryChildren = preflight.projection.recovery_children;
-		// 5. Literal-user gate plus the shared reuse/expiry decision, the post-gate
+		// 5. Literal-user gate plus the shared reuse decision, the post-gate
 		// claim/drift cascade, and the Batch Authorization binding. The Host supplies
 		// only its gate, its confirmation reference, and its binding nonce.
 		const authorization = await authorizeBatch<ClaudeBatchStartResult>({
@@ -1033,9 +1030,8 @@ export class ClaudeRuntime {
 			readInitiative: this.readInitiative ?? observeGithubInitiative,
 			nonce: enrollmentNonce(),
 			gate: async (facts) => {
-				// review-4: the bounded elicitation deadline is shared behavior now, so
-				// both Hosts bound an unanswered confirmation by the same setting.
-				const deadline = startConfirmationDeadline({ env: this.env, signal: meta.signal });
+				// The gate settles only on the literal user's answer or the caller's
+				// cancellation signal.
 				let confirmationResult: { decision: NativeDecision; requestId: string };
 				try {
 					confirmationResult = await this.requestConfirmation!({
@@ -1057,7 +1053,6 @@ export class ClaudeRuntime {
 								reason: child.reason,
 							})),
 							budget: facts.budget,
-							expires_at: facts.expires_at,
 							...(facts.reuse_blockers.length > 0
 								? {
 										re_confirmation_required: facts.reuse_blockers,
@@ -1065,10 +1060,9 @@ export class ClaudeRuntime {
 									}
 								: {}),
 						},
-						signal: deadline.signal,
+						signal: meta.signal,
 					});
 				} catch (err) {
-					if (deadline.timedOut()) return { kind: "host_rejection", value: batchReason("confirmation_timed_out", String(deadline.timeoutMs)) };
 					if (meta.signal?.aborted)
 						return { kind: "host_rejection", value: batchReason("cancelled_before_execution") };
 					if (err instanceof NativeAuthorityError) {
@@ -1088,13 +1082,8 @@ export class ClaudeRuntime {
 						kind: "host_rejection",
 						value: batchReason("confirmation_failed", err instanceof Error ? err.message : String(err)),
 					};
-				} finally {
-					deadline.clear();
 				}
 
-				// A transport that answers "cancel" on abort is still a timeout, not a user
-				// decision: the Host that owns the transport reports which one it was.
-				if (deadline.timedOut()) return { kind: "host_rejection", value: batchReason("confirmation_timed_out", String(deadline.timeoutMs)) };
 				if (confirmationResult.decision === "cancel" && meta.signal?.aborted)
 					return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
 				if (meta.signal?.aborted)
@@ -1122,14 +1111,12 @@ export class ClaudeRuntime {
 		});
 		if (authorization.outcome === "host_rejection") return authorization.value;
 		if (authorization.outcome === "rejected") return authorization.rejection;
-		const { binding, batch_id: batchId, expires_at: expiresAt } = authorization;
+		const { binding, batch_id: batchId } = authorization;
 
 		// review-1: verify cancellation signal right before authority issuance and startBatch
 		if (meta.signal?.aborted) return batchReason("cancelled_before_execution");
 
 		now = new Date().toISOString();
-		if (Date.parse(expiresAt) <= Date.parse(now))
-			return batchReason("confirmation_failed", "confirmed batch deadline expired before authorization issuance");
 		const capability = this.batchRegistry.issue(binding, recoveryChildren as any, now);
 
 		const basePort = this.createBatchKernelPort(this.batchRegistry, capability, binding);
@@ -1153,7 +1140,6 @@ export class ClaudeRuntime {
 			plan_digest: planDigest,
 			base_head: binding.base_head,
 			confirmation_time: now,
-			authorization_expires_at: expiresAt,
 			budget,
 			now,
 			kernel: kernelPort,

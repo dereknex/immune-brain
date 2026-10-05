@@ -268,51 +268,32 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 		expect(f.verify(first.batch_id)).toMatchObject({ status: 0, out: { complete: true } });
 	}, 120000);
 
-	it("refuses decline, cancel, time drift and HEAD drift after both expiry fields without changing evidence, then renews on confirmation and completes", async () => {
-		const f = await fixture("acceptance-renewal");
+	it("resumes a child parked on foreground Review with no gate however far the clock advanced, then completes", async () => {
+		const f = await fixture("acceptance-clockless");
 		const first = await f.batch();
 		await settle(f, 1);
 		const second = await f.batch();
 		f.implement(2);
 		const before = f.state(first.batch_id);
-		const evidence = () => ({ state: readFileSync(f.statePath(first.batch_id), "utf8"), head: f.head(), index: git(f.root, "write-tree"),
+		expect(before).not.toHaveProperty("authorization_expires_at");
+		expect(before.budget).not.toHaveProperty("deadline_at");
+		const evidence = () => ({ head: f.head(), index: git(f.root, "write-tree"),
 			audit: git(f.root, "rev-parse", `HEAD:.imm/audit/${f.tasks[0]}`) });
 		const kept = evidence();
-		const expired = new Date(Math.max(Date.parse(before.authorization_expires_at), Date.parse(before.budget.deadline_at)) + 60_000);
-		setSystemTime(expired);
 
-		const refusals: Array<[() => Selection, string]> = [
-			[() => "decline", "native interaction declined"],
-			[() => "cancel", "native interaction cancelled"],
-			[() => { setSystemTime(new Date(expired.getTime() + 30 * 24 * 3600_000)); return "confirm"; }, "confirmed batch deadline expired before authorization issuance"],
-			// An out-of-band commit on the batch branch moves the bound HEAD during the gate.
-			[() => { git(f.root, "update-ref", "HEAD", git(f.root, "commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "out of band")); return "confirm"; }, "Git HEAD moved after native confirmation"],
-		];
-		for (const [index, [select, message]] of refusals.entries()) {
-			f.answer(select);
-			const refused = await f.batch();
-			expect(refused.state).toBe("refused");
-			expect(refused.reason).toContain(message);
-			expect(f.gates()).toBe(2 + index);
-			setSystemTime(expired);
-			git(f.root, "update-ref", "HEAD", kept.head);
-			expect(evidence()).toEqual(kept);
-			expect(await f.kernel(f.tasks[1]!, { op: "status" })).toMatchObject({ run_id: second.report.handoff.run_id, lifecycle: "active", next_obligation: "submit_assurance" });
-		}
-
-		f.answer(() => "confirm");
-		const renewed = await f.batch();
-		expect(renewed).toMatchObject({ state: "started", batch_id: first.batch_id, report: { batch_state: "running", commits: second.report.commits,
+		// Thirty days later the single confirmation still binds: no gate opens.
+		setSystemTime(new Date(Date.parse(before.confirmation_time) + 30 * 24 * 3600_000));
+		f.answer(() => { throw new Error("a clockless resume must not open a gate"); });
+		const resumed = await f.batch();
+		expect(resumed).toMatchObject({ state: "started", batch_id: first.batch_id, report: { batch_state: "running", commits: second.report.commits,
 			children: [{ state: "committed" }, { state: "enrolled" }], handoff: second.report.handoff } });
-		expect(f.gates()).toBe(6);
-		const after = f.state(first.batch_id);
-		expect(Date.parse(after.authorization_expires_at)).toBeGreaterThan(expired.getTime());
-		expect(Date.parse(after.budget.deadline_at)).toBeGreaterThan(expired.getTime());
-		expect(f.head()).toBe(kept.head);
-		// The renewed window is reused: continuation opens no further gate.
+		expect(f.gates()).toBe(1);
+		expect(evidence()).toEqual(kept);
+		expect(await f.kernel(f.tasks[1]!, { op: "status" })).toMatchObject({ run_id: second.report.handoff.run_id, lifecycle: "active", next_obligation: "submit_assurance" });
+
 		await settle(f, 2);
 		expect((await f.batch()).report.batch_state).toBe("completed");
-		expect(f.gates()).toBe(6);
+		expect(f.gates()).toBe(1);
 		expect(f.commits()).toHaveLength(2);
 		expect(f.verify(first.batch_id)).toMatchObject({ status: 0, out: { complete: true } });
 	}, 120000);

@@ -786,7 +786,6 @@ describe("claude host authority", () => {
 				diff_hash: diffHashOf(fixture.root, record.record as never),
 				actor_id: "reviewer",
 				confirmation_ref: `review-${id}`,
-				expires_at: "2099-01-01T00:00:00.000Z",
 				findings_digest: findingsDigestV2([finding] as never[]),
 			});
 			await apply({ op: "request_rework", capability, findings: [finding] }, at);

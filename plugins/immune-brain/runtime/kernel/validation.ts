@@ -287,7 +287,9 @@ function parseHistoryV3(
 			actor_id: stringAt(auth.actor_id, `${path}.authority.actor_id`, violations),
 			confirmation_ref: stringAt(auth.confirmation_ref, `${path}.authority.confirmation_ref`, violations),
 			issued_at: stringAt(auth.issued_at, `${path}.authority.issued_at`, violations),
-			expires_at: stringAt(auth.expires_at, `${path}.authority.expires_at`, violations),
+			...(auth.expires_at !== undefined
+				? { expires_at: stringAt(auth.expires_at, `${path}.authority.expires_at`, violations) }
+				: {}),
 		};
 	}
 	return {

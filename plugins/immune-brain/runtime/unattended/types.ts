@@ -2,13 +2,11 @@ import type { GithubInitiativeObservation } from "../github_issue_tracker";
 
 export interface BatchPlanBudget {
 	max_children: number;
-	deadline_at: string;
 	qa_failure_limit: number;
 }
 
 export interface BatchPlanBudgetInput {
 	max_children?: number;
-	deadline_at?: string;
 	qa_failure_limit?: number;
 }
 

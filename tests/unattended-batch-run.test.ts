@@ -17,7 +17,6 @@ import {
 import {
 	startBatch as startBatchOnce,
 	resumeBatch as resumeBatchOnce,
-	BatchAuthorizationExpiryError,
 	type BatchRunnerKernelPort,
 	type StartBatchInput,
 	type BatchChildAdvanceResult,
@@ -34,7 +33,6 @@ import {
 	createBatchAuthorityRegistry,
 	deriveChildEnrollment,
 	computeBatchPlanDigest,
-	BatchAuthorizationExpiryError as KernelBatchAuthorizationExpiryError,
 } from "../plugins/immune-brain/runtime/kernel/batch_authority";
 
 const FAR_FUTURE = "2099-01-01T00:00:00.000Z";
@@ -101,7 +99,7 @@ function input(
 	const registry = createBatchAuthorityRegistry();
 	const planDigest = computeBatchPlanDigest(children);
 	const confirmationTime = overrides.confirmation_time ?? "2026-01-01T00:00:00.000Z";
-	const budget = overrides.budget ?? { max_children: children.length, deadline_at: FAR_FUTURE, qa_failure_limit: 3 };
+	const budget = overrides.budget ?? { max_children: children.length, qa_failure_limit: 3 };
 	const capability = overrides.capability ?? registry.issue(
 		{
 			batch_id: "batch-001",
@@ -112,7 +110,6 @@ function input(
 			budget,
 			actor_id: "user",
 			confirmation_ref: "confirm",
-			expires_at: overrides.authorization_expires_at ?? FAR_FUTURE,
 			nonce: "n",
 		},
 		children,
@@ -128,7 +125,6 @@ function input(
 		plan_digest: planDigest,
 		base_head: "b".repeat(40),
 		confirmation_time: confirmationTime,
-		authorization_expires_at: FAR_FUTURE,
 		budget,
 		now: FAR_FUTURE,
 		kernel,
@@ -204,7 +200,7 @@ function scriptedKernel(advances: Record<string, BatchChildAdvanceResult[]>): Ba
 		},
 		validateBatchAuthorization({ registry, capability, binding }) {
 			// Kernel-side gate: the presented capability must be genuinely
-			// issued (inspect rejects fabricated objects), unexpired, and bound
+			// issued (inspect rejects fabricated objects) and bound
 			// to the presented batch_id/plan_digest/base_head.
 			return registry.inspect(capability, {
 				...binding, branch: "main", actor_id: "user", confirmation_ref: "confirm", nonce: "n",
@@ -288,7 +284,7 @@ describe("renewed authorization with real enrollment derivation", () => {
 				const request = input(root, plan, kernel, { base_head: base, confirmation_time: "2026-02-01T00:00:00.000Z" });
 				const binding = { batch_id: request.batch_id, initiative_slug: request.initiative_slug,
 					plan_digest: request.plan_digest, branch: "main", base_head: base, budget: request.budget,
-					actor_id: "user", confirmation_ref: "confirm", expires_at: FAR_FUTURE, nonce: "n" };
+					actor_id: "user", confirmation_ref: "confirm", nonce: "n" };
 				const enroll = kernel.enrollTask.bind(kernel);
 				kernel.enrollTask = async (args) => {
 					deriveChildEnrollment(root, request.registry, { capability: request.capability, binding,
@@ -327,9 +323,9 @@ describe("renewed authorization with real enrollment derivation", () => {
 describe("single-claim recovery matrix", () => {
 	for (const entry of ["start", "resume"] as const) {
 		for (const reverse of [false, true]) {
-			for (const expired of [false, true]) {
+			{
 				for (const checkpoint of ["enrollment", "settlement", "commit", "foreign"] as const) {
-					it(`${entry}: reverse=${reverse} expired=${expired} after ${checkpoint}`, async () => {
+					it(`${entry}: reverse=${reverse} after ${checkpoint}`, async () => {
 						const root = tempRoot();
 						try {
 							const a = child("task-a", "S1");
@@ -378,7 +374,6 @@ describe("single-claim recovery matrix", () => {
 							const request = input(root, reverse ? [b, a] : [a, b], kernel);
 							const prepared = prepareBatchRunState(request);
 							writeBatchRunState(root, { ...prepared, batch_state: "running",
-								authorization_expires_at: expired ? "2020-01-01T00:00:00.000Z" : FAR_FUTURE,
 								children: prepared.children.map((item) => item.task_id !== a.task_id ? item : {
 									...item, state: checkpoint === "commit" ? "settled" : checkpoint === "settlement" ? "enrolled" : "pending",
 								}),
@@ -397,12 +392,12 @@ describe("single-claim recovery matrix", () => {
 								expect(kernel.commits).toEqual([]);
 								expect(claim).toBe(a.task_id);
 							} else {
-								expect(report.batch_state).toBe(expired ? "budget_stopped" : "completed");
+								expect(report.batch_state).toBe("completed");
 								expect(claim).toBeNull();
-								expect(kernel.commits.map((item) => item.task_id)).toEqual(expired ? [a.task_id] : [a.task_id, b.task_id]);
+								expect(kernel.commits.map((item) => item.task_id)).toEqual([a.task_id, b.task_id]);
 								await run();
 							}
-							expect(kernel.enrolled).toEqual(expired || checkpoint === "foreign" ? [a.task_id] : [a.task_id, b.task_id]);
+							expect(kernel.enrolled).toEqual(checkpoint === "foreign" ? [a.task_id] : [a.task_id, b.task_id]);
 						} finally { rmSync(root, { recursive: true, force: true }); }
 					});
 				}
@@ -422,8 +417,7 @@ describe("batch run state persistence", () => {
 				plan_digest: "d".repeat(64),
 				base_head: "b".repeat(40),
 				confirmation_time: FAR_FUTURE,
-				authorization_expires_at: FAR_FUTURE,
-				budget: { max_children: 1, deadline_at: FAR_FUTURE, qa_failure_limit: 3 },
+				budget: { max_children: 1, qa_failure_limit: 3 },
 				now: FAR_FUTURE,
 			});
 			const stored = writeBatchRunState(root, record);
@@ -449,8 +443,7 @@ describe("batch run state persistence", () => {
 				plan_digest: "d".repeat(64),
 				base_head: "b".repeat(40),
 				confirmation_time: FAR_FUTURE,
-				authorization_expires_at: FAR_FUTURE,
-				budget: { max_children: 1, deadline_at: FAR_FUTURE, qa_failure_limit: 3 },
+				budget: { max_children: 1, qa_failure_limit: 3 },
 				now: FAR_FUTURE,
 			});
 			writeBatchRunState(root, record);
@@ -469,8 +462,7 @@ describe("batch run state persistence", () => {
 				plan_digest: "d".repeat(64),
 				base_head: "b".repeat(40),
 				confirmation_time: FAR_FUTURE,
-				authorization_expires_at: FAR_FUTURE,
-				budget: { max_children: 1, deadline_at: FAR_FUTURE, qa_failure_limit: 3 },
+				budget: { max_children: 1, qa_failure_limit: 3 },
 				now: FAR_FUTURE,
 			}),
 		).toThrow(/safe file identity/);
@@ -491,7 +483,7 @@ describe("batch run state persistence", () => {
 		},
 	);
 
-	it("rejects malformed persisted authorization and budget values", () => {
+	it("rejects malformed persisted budget and state values", () => {
 		const root = tempRoot();
 		try {
 			const valid = prepareBatchRunState({
@@ -501,15 +493,12 @@ describe("batch run state persistence", () => {
 				plan_digest: "d".repeat(64),
 				base_head: "b".repeat(40),
 				confirmation_time: FAR_FUTURE,
-				authorization_expires_at: FAR_FUTURE,
-				budget: { max_children: 1, deadline_at: FAR_FUTURE, qa_failure_limit: 3 },
+				budget: { max_children: 1, qa_failure_limit: 3 },
 				now: FAR_FUTURE,
 			});
 			writeBatchRunState(root, valid);
 			const path = join(root, ".imm/state/batches/batch-001.json");
 			const invalidRecords: BatchRunStateRecord[] = [
-				{ ...valid, authorization_expires_at: "not-a-date" },
-				{ ...valid, budget: { ...valid.budget, deadline_at: "January 1, 2099" } },
 				{ ...valid, budget: { ...valid.budget, max_children: 0 } },
 				{ ...valid, budget: { ...valid.budget, qa_failure_limit: 1.5 } },
 				{ ...valid, batch_state: "completed" },
@@ -522,6 +511,34 @@ describe("batch run state persistence", () => {
 			for (const invalid of invalidRecords) {
 				writeFileSync(path, `${JSON.stringify(invalid, null, 2)}\n`);
 				expect(() => readBatchRunState(root, "batch-001")).toThrow(/invalid|not committed|mid-flight/);
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("reads a record carrying retired clock fields and drops them", () => {
+		const root = tempRoot();
+		try {
+			const valid = prepareBatchRunState({
+				batch_id: "batch-001",
+				initiative_slug: "initiative-slug",
+				children: [child("task-a", "S1")],
+				plan_digest: "d".repeat(64),
+				base_head: "b".repeat(40),
+				confirmation_time: FAR_FUTURE,
+				budget: { max_children: 1, qa_failure_limit: 3 },
+				now: FAR_FUTURE,
+			});
+			mkdirSync(join(root, ".imm/state/batches"), { recursive: true });
+			const path = join(root, ".imm/state/batches/batch-001.json");
+			for (const [expiry, deadline] of [["2020-01-01T00:00:00.000Z", "2020-01-01T00:00:00.000Z"], ["not-a-date", "January 1, 2099"]]) {
+				writeFileSync(path, `${JSON.stringify({
+					...valid, authorization_expires_at: expiry, budget: { ...valid.budget, deadline_at: deadline },
+				}, null, 2)}\n`);
+				const read = readBatchRunState(root, "batch-001")!;
+				expect(read).not.toHaveProperty("authorization_expires_at");
+				expect(read.budget).toEqual({ max_children: 1, qa_failure_limit: 3 });
 			}
 		} finally {
 			rmSync(root, { recursive: true, force: true });
@@ -608,13 +625,12 @@ describe("batch boundary regressions", () => {
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 	it.each(["enrolled", "settled", "pending"] as const)(
-		"completes an expired last %s child without new enrollment", async (state) => {
+		"completes a last %s child decades after confirmation without new enrollment", async (state) => {
 			const root = tempRoot();
 			const clock = spyOn(Date, "now").mockReturnValue(Date.parse("2098-01-01T00:00:00.000Z"));
 			try {
 				const kernel = scriptedKernel({ "task-a": [{ state: "completed" }] });
 				const request = input(root, [child("task-a", "S1")], kernel, {
-					authorization_expires_at: "2097-01-01T00:00:00.000Z",
 				});
 				kernel.enrolled.push("task-a");
 				const prepared = prepareBatchRunState(request);
@@ -630,38 +646,6 @@ describe("batch boundary regressions", () => {
 		},
 	);
 
-	it("does not enroll when deadline elapses during projection", async () => {
-		const root = tempRoot();
-		const deadline = "2098-01-01T00:00:00.000Z";
-		const clock = spyOn(Date, "now").mockReturnValue(Date.parse(deadline) - 1);
-		try {
-			const kernel = scriptedKernel({});
-			const project = kernel.projectTask.bind(kernel);
-			kernel.projectTask = async (...args) => {
-				const result = await project(...args);
-				clock.mockReturnValue(Date.parse(deadline));
-				return result;
-			};
-			const request = input(root, [child("task-a", "S1")], kernel, {
-				budget: { max_children: 1, deadline_at: deadline, qa_failure_limit: 3 },
-			});
-			const report = await startBatch(request);
-			expect(report.batch_state).toBe("budget_stopped");
-			expect(report.children[0]!.state).toBe("pending");
-			expect(kernel.enrolled).toEqual([]);
-		} finally { clock.mockRestore(); rmSync(root, { recursive: true, force: true }); }
-	});
-
-	it("the real capability boundary rejects deadline expiry before consuming a child", () => {
-		const request = input("unused", [child("task-a", "S1")], scriptedKernel({}), {
-			budget: { max_children: 1, deadline_at: "2098-01-01T00:00:00.000Z", qa_failure_limit: 3 },
-		});
-		const now = Date.parse(request.budget.deadline_at);
-		expect(() => request.registry.inspect(request.capability, {}, now - 1)).not.toThrow();
-		expect(() => request.registry.consumeChild(request.capability, {}, "task-a", now))
-			.toThrow(KernelBatchAuthorizationExpiryError);
-		expect(request.registry.consumedChildren(request.capability)).toEqual([]);
-	});
 	it.each(["intent_path", "intent_revision", "intent_content_hash"] as const)(
 		"rejects missing %s before any writes", async (field) => {
 			const root = tempRoot();
@@ -755,7 +739,7 @@ describe("batch boundary regressions", () => {
 				{ state: "rework", operation: "qa", summary: "second failure" },
 			] });
 			const request = input(root, [child("task-a", "S1")], kernel, {
-				budget: { max_children: 1, deadline_at: FAR_FUTURE, qa_failure_limit: 2 },
+				budget: { max_children: 1, qa_failure_limit: 2 },
 			});
 			const prepared = prepareBatchRunState(request);
 			writeBatchRunState(root, { ...prepared, batch_state: "running",
@@ -781,7 +765,7 @@ describe("batch boundary regressions", () => {
 				],
 				"task-b": [{ state: "completed" }],
 			});
-			const budget = { max_children: 2, deadline_at: FAR_FUTURE, qa_failure_limit: 2 };
+			const budget = { max_children: 2, qa_failure_limit: 2 };
 			const request = input(root, children, kernel, { budget });
 			const parked = await startBatch(request);
 			expect(parked.children.map((c) => c.state)).toEqual(["needs_human", "skipped_blocked"]);
@@ -906,65 +890,14 @@ describe("startBatch state machine", () => {
 		}
 	});
 
-	it("authorization expiry blocks new enrollment mid-run", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const b = child("task-b", "S2");
-			const kernel = scriptedKernel({
-				"task-a": [{ state: "completed" }],
-				"task-b": [{ state: "completed" }],
-			});
-			const report = await startBatch(
-				input(root, [a, b], kernel, {
-					authorization_expires_at: FAR_FUTURE,
-					budget: { max_children: 2, deadline_at: FAR_FUTURE, qa_failure_limit: 3 },
-					// Force the expiry branch by shortening authorization after first commit:
-				}),
-			);
-			// With a far-future expiry both children run; expiry itself is covered
-			// by the expired-enrollment case below.
-			expect(report.batch_state).toBe("completed");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("expired enrollment rolls the child back to pending and stops for budget", async () => {
+	it("an enrollment failure that mentions expiry parks needs_human like any other failure", async () => {
 		const root = tempRoot();
 		try {
 			const a = child("task-a", "S1");
 			const kernel = {
 				...scriptedKernel({}),
 				async enrollTask() {
-					// Only the typed error classifies as an intentional budget stop.
-					throw new BatchAuthorizationExpiryError("batch authorization expired");
-				},
-				async advanceTask() {
-					throw new Error("unreachable");
-				},
-				async commitChild() {
-					throw new Error("unreachable");
-				},
-			};
-			const report = await startBatch(input(root, [a], kernel as unknown as BatchRunnerKernelPort));
-			expect(report.batch_state).toBe("budget_stopped");
-			const stored = readBatchRunState(root, "batch-001")!;
-			expect(stored.children[0]!.state).toBe("pending");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("a free-form expiry message parks needs_human; only the typed error is a budget stop", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const kernel = {
-				...scriptedKernel({}),
-				async enrollTask() {
-					// Message-only similarity must not suppress this failure as an
-					// intentional stop; without the typed discriminator it parks.
+					// No error is classified as an intentional stop any more.
 					throw new Error("batch authorization expired");
 				},
 			};
@@ -1008,7 +941,7 @@ describe("startBatch state machine", () => {
 			});
 			const report = await startBatch(
 				input(root, [a, b], kernel, {
-					budget: { max_children: 1, deadline_at: FAR_FUTURE, qa_failure_limit: 3 },
+					budget: { max_children: 1, qa_failure_limit: 3 },
 				}),
 			);
 			expect(report.batch_state).toBe("budget_stopped");
@@ -1164,7 +1097,6 @@ describe("startBatch state machine", () => {
 			const stored = readBatchRunState(root, "batch-001")!;
 			writeBatchRunState(root, {
 				...stored,
-				authorization_expires_at: "2000-01-01T00:00:00.000Z",
 			});
 			const report = await resumeBatch(
 				input(root, [a], scriptedKernel({})),
@@ -1359,13 +1291,8 @@ describe("startBatch state machine", () => {
 				"task-a": [{ state: "review_ready", operation_id: "op-1" }],
 			});
 			await startBatch(input(root, [a], kernel));
-			// Resume with an expired authorization: the interrupted child must
-			// still be driven to its own settlement and commit first.
-			const stored = readBatchRunState(root, "batch-001")!;
-			writeBatchRunState(root, {
-				...stored,
-				authorization_expires_at: "2000-01-01T00:00:00.000Z",
-			});
+			// Resume: the interrupted child must be driven to its own
+			// settlement and commit first.
 			const resumeKernel = scriptedKernel({
 				"task-a": [{ state: "completed" }],
 			});
@@ -1403,7 +1330,7 @@ describe("startBatch state machine", () => {
 				"task-a": [{ state: "blocked", reason: "resolve_user_decision: scope" }],
 			});
 			// max_children=1: after parking task-a the batch must not enroll task-b.
-			const report = await startBatch(input(root, [a, b], kernel, { budget: { max_children: 1, deadline_at: FAR_FUTURE, qa_failure_limit: 3 } }));
+			const report = await startBatch(input(root, [a, b], kernel, { budget: { max_children: 1, qa_failure_limit: 3 } }));
 			expect(report.batch_state).toBe("needs_human");
 			expect(kernel.enrolled).toEqual(["task-a"]);
 			const stored = readBatchRunState(root, "batch-001")!;
@@ -1469,7 +1396,6 @@ describe("startBatch state machine", () => {
 			writeBatchRunState(root, {
 				...stored,
 				children: stored.children.map((c) => ({ ...c, state: "pending", reason: null })),
-				authorization_expires_at: "2000-01-01T00:00:00.000Z",
 			});
 			// Resume: kernel.enrolled already contains task-a, so the fresh
 			// projection sees the claim and the child is adopted, not
@@ -1613,30 +1539,6 @@ describe("startBatch state machine", () => {
 		}
 	});
 
-	it("review-7: a kernel-boundary expiry error is structurally classified as budget_stopped", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const kernel = scriptedKernel({});
-			const request = input(root, [a], kernel);
-			kernel.enrollTask = async ({ batch }) => {
-				// Exercise the real registry's enrollment-time expiry boundary.
-				request.registry.inspect(batch.capability, {
-					batch_id: request.batch_id, initiative_slug: request.initiative_slug,
-					plan_digest: request.plan_digest, branch: "main", base_head: request.base_head,
-					budget: request.budget, actor_id: "user", confirmation_ref: "confirm",
-					expires_at: request.authorization_expires_at, nonce: "n",
-				}, Date.parse(FAR_FUTURE));
-				throw new Error("expired authority was accepted");
-			};
-			expect(BatchAuthorizationExpiryError).toBe(KernelBatchAuthorizationExpiryError);
-			const report = await startBatch(request);
-			expect(report.batch_state).toBe("budget_stopped");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
 	it("review-8: a parked-batch resume with a fabricated authorization fails closed", async () => {
 		const root = tempRoot();
 		try {
@@ -1680,10 +1582,9 @@ describe("startBatch state machine", () => {
 					plan_digest: computeBatchPlanDigest([child("task-a", "S1"), child("task-x", "S2")]),
 					branch: "main",
 					base_head: "b".repeat(40),
-					budget: { max_children: 1, deadline_at: FAR_FUTURE, qa_failure_limit: 3 },
+					budget: { max_children: 1, qa_failure_limit: 3 },
 					actor_id: "user",
 					confirmation_ref: "confirm",
-					expires_at: FAR_FUTURE,
 					nonce: "n",
 				},
 				[child("task-a", "S1"), child("task-x", "S2")],
@@ -1763,8 +1664,7 @@ describe("startBatch state machine", () => {
 				plan_digest: computeBatchPlanDigest([a]),
 				base_head: "b".repeat(40),
 				confirmation_time: FAR_FUTURE,
-				authorization_expires_at: FAR_FUTURE,
-				budget: { max_children: 1, deadline_at: FAR_FUTURE, qa_failure_limit: 3 },
+				budget: { max_children: 1, qa_failure_limit: 3 },
 				now: FAR_FUTURE,
 			});
 			writeBatchRunState(root, {
@@ -1829,8 +1729,7 @@ describe("startBatch state machine", () => {
 				plan_digest: "d".repeat(64),
 				base_head: "b".repeat(40),
 				confirmation_time: FAR_FUTURE,
-				authorization_expires_at: FAR_FUTURE,
-				budget: { max_children: 1, deadline_at: FAR_FUTURE, qa_failure_limit: 3 },
+				budget: { max_children: 1, qa_failure_limit: 3 },
 				now: FAR_FUTURE,
 			});
 			expect(() => writeBatchRunState(root, record)).toThrow();
@@ -1898,7 +1797,7 @@ describe("shared batch preflight projection", () => {
 	function writeBatch(
 		root: string,
 		batchState: string,
-		overrides: { authorization_expires_at?: string; budget?: { max_children: number; deadline_at: string; qa_failure_limit: number } } = {},
+		overrides: { budget?: { max_children: number; deadline_at?: string; qa_failure_limit: number } } = {},
 	): void {
 		writeFileSync(
 			join(root, ".imm/state/batches/batch-1.json"),
@@ -1917,8 +1816,7 @@ describe("shared batch preflight projection", () => {
 				confirmation_time: NOW,
 				created_at: NOW,
 				consecutive_qa_failures: 0,
-				authorization_expires_at: overrides.authorization_expires_at ?? FAR_FUTURE,
-				budget: overrides.budget ?? { max_children: 2, deadline_at: FAR_FUTURE, qa_failure_limit: 2 },
+				budget: overrides.budget ?? { max_children: 2, qa_failure_limit: 2 },
 				updated_at: NOW,
 				children: [
 					{ task_id: "child-a", slice_id: "S1", state: "committed", blocked_by: [], commit: headOf(root), reason: null },
@@ -1987,28 +1885,23 @@ describe("shared batch preflight projection", () => {
 		}
 	});
 
-	it("issues a fresh budget for a settled batch even when its own deadline already expired", async () => {
+	it("issues a fresh clockless budget for a settled batch that still carries a legacy deadline", async () => {
 		const root = fixture();
 		try {
 			const expired = "2020-01-01T00:00:00.000Z";
 			writeBatch(root, "completed", {
-				authorization_expires_at: expired,
 				budget: { max_children: 2, deadline_at: expired, qa_failure_limit: 2 },
 			});
 
-			const before = Date.now();
 			const outcome = await projectBatchPreflight({ root, initiative_slug: SLUG, now: new Date().toISOString(), readInitiative: readNextInitiative });
 			if (!outcome.ok) throw new Error(`preflight rejected: ${outcome.reason}`);
 
 			expect(outcome.projection.is_resuming).toBe(false);
-			// A settled record's stale, long-expired budget must never be inherited
-			// into a fresh run: the projection issues the same default a from-scratch
-			// batch gets, not the record's own expired figures.
+			// A settled record's budget must never be inherited into a fresh run,
+			// and its retired deadline must not resurface in the projection.
 			expect(outcome.projection.budget.max_children).toBe(1); // Fresh plan contains one child.
 			expect(outcome.projection.budget.qa_failure_limit).toBe(2);
-			const deadlineMs = Date.parse(outcome.projection.budget.deadline_at);
-			expect(deadlineMs).toBeGreaterThan(before);
-			expect(deadlineMs).toBeLessThanOrEqual(Date.now() + 8 * 60 * 60 * 1_000);
+			expect(outcome.projection.budget).not.toHaveProperty("deadline_at");
 			// Only the newly projected plan participates in the fresh run.
 			expect(outcome.projection.recovery_children.map((c) => [c.task_id, c.status])).toEqual([
 				["child-b", "enrollable"],
@@ -2087,7 +1980,6 @@ describe("shared batch preflight projection", () => {
 			empty_enrollable_set: ["empty enrollable child set: no enrollable child tasks found in the initiative plan", "ensure the initiative has uncompleted, non-critical child tasks in the current Host"],
 			plan_projection_failed: ["failed to project batch plan: <detail>", "review initiative issues and planning sidecars in the current Host"],
 			confirmation_port_unavailable: ["native confirmation port is unavailable", "retry through a fresh native gate in the current Host"],
-			confirmation_timed_out: ["native confirmation timed out after <detail> ms waiting for user interaction; set IMMUNE_BRAIN_BATCH_TIMEOUT_MS to change the bound", "retry through a fresh native gate in the current Host"],
 			confirmation_cancelled: ["native interaction cancelled", "wait for a fresh literal-user request"],
 			confirmation_declined: ["native interaction declined", "wait for a fresh literal-user request"],
 			confirmation_no_decision: ["native interaction returned no decision", "retry through a fresh native gate in the current Host"],

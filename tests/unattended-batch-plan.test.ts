@@ -60,7 +60,6 @@ function enrollChild(root: string, taskId: string): void {
 		preparation_digest: preparation.digest,
 		actor_id: "user",
 		confirmation_ref: "pi-confirm-fixture",
-		expires_at: "2100-01-01T00:00:00.000Z",
 		nonce: `nonce-${taskId}`,
 	};
 	enrollCanaryTask(
@@ -324,7 +323,6 @@ describe("unattended batch plan projection", () => {
 			expect(first.plan_digest).toBe(expectedDigest);
 			expect(first.budget).toEqual({
 				max_children: 3,
-				deadline_at: "2099-01-01T08:00:00.000Z",
 				qa_failure_limit: 2,
 			});
 		} finally {
@@ -341,13 +339,19 @@ describe("unattended batch plan projection", () => {
 		try {
 			const overridden = await projectBatchPlan(root, "batch", {
 				confirmation_time: CONFIRMATION_TIME,
-				budget: { max_children: 1, deadline_at: "2099-01-01T02:00:00.000Z", qa_failure_limit: 3 },
+				budget: { max_children: 1, qa_failure_limit: 3 },
 			}, async () => twoTasks);
 			expect(overridden.budget).toEqual({
 				max_children: 1,
-				deadline_at: "2099-01-01T02:00:00.000Z",
 				qa_failure_limit: 3,
 			});
+			// A caller written before the deadline was retired may still send one;
+			// it is not a bound and never reaches the projected budget.
+			const legacyCaller = await projectBatchPlan(root, "batch", {
+				confirmation_time: CONFIRMATION_TIME,
+				budget: { max_children: 1, deadline_at: "2000-01-01T00:00:00.000Z" } as { max_children: number },
+			}, async () => twoTasks);
+			expect(legacyCaller.budget).toEqual({ max_children: 1, qa_failure_limit: 2 });
 			const mixedCase = await projectBatchPlan(root, "batch", { confirmation_time: CONFIRMATION_TIME }, async () => observation([
 				{ task_id: "b-d", slice_id: "S4", issue_number: 4, blocked_by: [] },
 				{ task_id: "a-b", slice_id: "S3", issue_number: 3, blocked_by: [] },
@@ -359,9 +363,6 @@ describe("unattended batch plan projection", () => {
 				[{ max_children: 0 }, "max_children"],
 				[{ max_children: 3 }, "exceeds"],
 				[{ qa_failure_limit: 0 }, "qa_failure_limit"],
-				[{ deadline_at: CONFIRMATION_TIME }, "later"],
-				[{ deadline_at: "January 1, 2099" }, "ISO timestamp"],
-				[{ deadline_at: "2099-01-01T02:00:00+02:00" }, "ISO timestamp"],
 			] as const) {
 				await expect(projectBatchPlan(root, "batch", { confirmation_time: CONFIRMATION_TIME, budget }, async () => twoTasks))
 					.rejects.toThrow(message);

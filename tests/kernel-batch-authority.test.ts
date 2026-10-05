@@ -88,9 +88,9 @@ function countingBatchRegistry(inner: BatchAuthorityRegistry): {
 	const calls = { consumeChild: 0, releaseChild: 0 };
 	const registry: BatchAuthorityRegistry = {
 		...inner,
-		consumeChild(capability, expected, taskId, now) {
+		consumeChild(capability, expected, taskId) {
 			calls.consumeChild += 1;
-			return inner.consumeChild(capability, expected, taskId, now);
+			return inner.consumeChild(capability, expected, taskId);
 		},
 		releaseChild(capability, taskId) {
 			calls.releaseChild += 1;
@@ -121,17 +121,13 @@ function bindingFor(root: string, children: BatchPlanChild[]): BatchAuthorizatio
 		base_head: readGitHead(root),
 		budget: {
 			max_children: children.length,
-			deadline_at: "2099-01-01T00:00:00.000Z",
 			qa_failure_limit: 2,
 		},
 		actor_id: "user",
 		confirmation_ref: "claude-confirm-001",
-		expires_at: "2099-01-01T00:00:00.000Z",
 		nonce: "batch-nonce-001",
 	};
 }
-
-const AT_ISSUE = Date.parse(NOW);
 
 describe("batch plan digest", () => {
 	test("is stable across key order and changes when the order changes", () => {
@@ -182,7 +178,7 @@ describe("batch authorization issue", () => {
 		expect(registry.children(capability)).toEqual(children);
 		expect(registry.consumedChildren(capability)).toEqual([]);
 		expect(registry.isExhausted(capability)).toBe(false);
-		expect(registry.inspect(capability, bindingFor(root, children), AT_ISSUE)).toMatchObject({
+		expect(registry.inspect(capability, bindingFor(root, children))).toMatchObject({
 			batch_id: "batch-001",
 			actor_id: "user",
 			confirmation_ref: "claude-confirm-001",
@@ -203,7 +199,7 @@ describe("batch authorization issue", () => {
 		const children = [childFor(root, "t1")];
 		for (const spelling of ["literal-user", "user"]) {
 			const capability = issueWith(root, children, { actor_id: spelling });
-			const projected = registry.inspect(capability, { ...bindingFor(root, children), actor_id: spelling }, AT_ISSUE);
+			const projected = registry.inspect(capability, { ...bindingFor(root, children), actor_id: spelling });
 			expect(projected.actor_id).toBe(spelling);
 			expect(isLiteralUserActor(String(projected.actor_id))).toBe(true);
 			expect(canonicalActorId(String(projected.actor_id))).toBe(LITERAL_USER_ACTOR_ID);
@@ -220,7 +216,6 @@ describe("batch authorization issue", () => {
 			"branch",
 			"base_head",
 			"confirmation_ref",
-			"expires_at",
 			"nonce",
 		] as const) {
 			expect(() => issueWith(root, children, { [key]: "" } as Partial<BatchAuthorizationBinding>)).toThrow(
@@ -236,28 +231,17 @@ describe("batch authorization issue", () => {
 		expect(() => issueWith(root, children, { base_head: "abc123" })).toThrow(/40-hex/i);
 	});
 
-	test("rejects a non-future expiry and a non-future deadline", () => {
-		const root = makeRoot(["t1"]);
-		const children = [childFor(root, "t1")];
-		expect(() => issueWith(root, children, { expires_at: NOW })).toThrow(/future expiry/i);
-		expect(() =>
-			issueWith(root, children, {
-				budget: { max_children: 1, deadline_at: NOW, qa_failure_limit: 2 },
-			}),
-		).toThrow(/future deadline_at/i);
-	});
-
 	test("rejects a non-positive budget", () => {
 		const root = makeRoot(["t1"]);
 		const children = [childFor(root, "t1")];
 		expect(() =>
 			issueWith(root, children, {
-				budget: { max_children: 0, deadline_at: "2026-09-05T08:00:00.000Z", qa_failure_limit: 2 },
+				budget: { max_children: 0, qa_failure_limit: 2 },
 			}),
 		).toThrow(/max_children/i);
 		expect(() =>
 			issueWith(root, children, {
-				budget: { max_children: 1, deadline_at: "2099-01-01T00:00:00.000Z", qa_failure_limit: 0 },
+				budget: { max_children: 1, qa_failure_limit: 0 },
 			}),
 		).toThrow(/qa_failure_limit/i);
 	});
@@ -296,16 +280,16 @@ describe("batch authorization per-child consumption", () => {
 		const binding = bindingFor(root, children);
 		const capability = registry.issue(binding, children, NOW);
 
-		registry.consumeChild(capability, binding, "t1", AT_ISSUE);
+		registry.consumeChild(capability, binding, "t1");
 		expect(registry.consumedChildren(capability)).toEqual(["t1"]);
 		expect(registry.isChildConsumed(capability, "t1")).toBe(true);
 		expect(registry.isChildConsumed(capability, "t2")).toBe(false);
 		expect(registry.isExhausted(capability)).toBe(false);
 		// The authorization itself is still usable for the rest of the plan.
-		expect(registry.inspect(capability, binding, AT_ISSUE).batch_id).toBe("batch-001");
+		expect(registry.inspect(capability, binding).batch_id).toBe("batch-001");
 
-		registry.consumeChild(capability, binding, "t2", AT_ISSUE);
-		registry.consumeChild(capability, binding, "t3", AT_ISSUE);
+		registry.consumeChild(capability, binding, "t2");
+		registry.consumeChild(capability, binding, "t3");
 		expect(registry.isExhausted(capability)).toBe(true);
 	});
 
@@ -314,7 +298,7 @@ describe("batch authorization per-child consumption", () => {
 		const children = [childFor(root, "t1")];
 		const binding = bindingFor(root, children);
 		const capability = registry.issue(binding, children, NOW);
-		expect(() => registry.consumeChild(capability, binding, "t-absent", AT_ISSUE)).toThrow(
+		expect(() => registry.consumeChild(capability, binding, "t-absent")).toThrow(
 			/batch_child_not_in_plan/,
 		);
 		expect(registry.consumedChildren(capability)).toEqual([]);
@@ -325,36 +309,22 @@ describe("batch authorization per-child consumption", () => {
 		const children = [childFor(root, "t1"), childFor(root, "t2")];
 		const binding = bindingFor(root, children);
 		const capability = registry.issue(binding, children, NOW);
-		registry.consumeChild(capability, binding, "t1", AT_ISSUE);
-		expect(() => registry.consumeChild(capability, binding, "t1", AT_ISSUE)).toThrow(
+		registry.consumeChild(capability, binding, "t1");
+		expect(() => registry.consumeChild(capability, binding, "t1")).toThrow(
 			/batch_child_slot_consumed/,
 		);
 		expect(registry.consumedChildren(capability)).toEqual(["t1"]);
 	});
 
-	test("rejects any child after expiry and consumes nothing", () => {
+	test("an authorization issued long ago still admits each child exactly once", () => {
 		const root = makeRoot(["t1", "t2"]);
 		const children = [childFor(root, "t1"), childFor(root, "t2")];
 		const binding = bindingFor(root, children);
-		const capability = registry.issue(binding, children, NOW);
-		const afterExpiry = Date.parse(binding.expires_at) + 1;
-		expect(() => registry.consumeChild(capability, binding, "t1", afterExpiry)).toThrow(/expired/i);
-		expect(registry.consumedChildren(capability)).toEqual([]);
-	});
-
-	test("rejects an unparseable clock rather than failing open past expiry", () => {
-		const root = makeRoot(["t1"]);
-		const children = [childFor(root, "t1")];
-		const binding = bindingFor(root, children);
-		const capability = registry.issue(binding, children, NOW);
-		// Date.parse of a malformed timestamp yields NaN, and every `<=` compare
-		// against NaN is false, which would otherwise wave an expired
-		// authorization through.
-		expect(() =>
-			registry.consumeChild(capability, binding, "t1", Date.parse("not-a-timestamp")),
-		).toThrow(/valid clock/i);
-		expect(() => registry.inspect(capability, binding, Number.NaN)).toThrow(/valid clock/i);
-		expect(registry.consumedChildren(capability)).toEqual([]);
+		const capability = registry.issue(binding, children, "2001-01-01T00:00:00.000Z");
+		registry.consumeChild(capability, binding, "t1");
+		expect(() => registry.consumeChild(capability, binding, "t1")).toThrow(/batch_child_slot_consumed/);
+		registry.consumeChild(capability, binding, "t2");
+		expect(registry.consumedChildren(capability)).toEqual(["t1", "t2"]);
 	});
 
 	test("rejects a mismatched expected binding field by field and consumes nothing", () => {
@@ -371,7 +341,7 @@ describe("batch authorization per-child consumption", () => {
 			{ plan_digest: computeBatchPlanDigest([{ ...children[0]!, intent_revision: 7 }]) },
 		]) {
 			expect(() =>
-				registry.consumeChild(capability, { ...binding, ...patch }, "t1", AT_ISSUE),
+				registry.consumeChild(capability, { ...binding, ...patch }, "t1"),
 			).toThrow(/mismatch/i);
 		}
 		expect(() =>
@@ -379,7 +349,6 @@ describe("batch authorization per-child consumption", () => {
 				capability,
 				{ ...binding, budget: { ...binding.budget, qa_failure_limit: 9 } },
 				"t1",
-				AT_ISSUE,
 			),
 		).toThrow(/budget mismatch/i);
 		expect(registry.consumedChildren(capability)).toEqual([]);
@@ -390,7 +359,7 @@ describe("batch authorization per-child consumption", () => {
 		const children = [childFor(root, "t1")];
 		const binding = bindingFor(root, children);
 		const foreign = createBatchAuthorityRegistry().issue(binding, children, NOW);
-		expect(() => registry.inspect(foreign, binding, AT_ISSUE)).toThrow(/not recognized/i);
+		expect(() => registry.inspect(foreign, binding)).toThrow(/not recognized/i);
 		expect(() => registry.children(foreign)).toThrow(/not recognized/i);
 	});
 });
@@ -419,7 +388,6 @@ describe("batch child enrollment derivation", () => {
 			intent_revision: 1,
 			actor_id: "user",
 			confirmation_ref: binding.confirmation_ref,
-			expires_at: binding.expires_at,
 		});
 		// Each child gets its own nonce so two children never share one binding.
 		const second = deriveChildEnrollment(root, registry, {
@@ -493,7 +461,7 @@ describe("batch child enrollment derivation", () => {
 				now: NOW,
 			}),
 		).toThrow(/batch_child_not_in_plan/);
-		registry.consumeChild(capability, binding, "t1", AT_ISSUE);
+		registry.consumeChild(capability, binding, "t1");
 		expect(() =>
 			deriveChildEnrollment(root, registry, {
 				capability,
@@ -505,20 +473,19 @@ describe("batch child enrollment derivation", () => {
 		).toThrow(/batch_child_slot_consumed/);
 	});
 
-	test("rejects derivation after the authorization expired", () => {
+	test("derives a child Enrollment however long after the authorization was issued", () => {
 		const root = makeRoot(["t1"]);
 		const children = [childFor(root, "t1")];
 		const binding = bindingFor(root, children);
 		const capability = registry.issue(binding, children, NOW);
-		expect(() =>
-			deriveChildEnrollment(root, registry, {
-				capability,
-				binding,
-				task_id: "t1",
-				expected_head: readGitHead(root),
-				now: "2099-06-01T00:00:00.000Z",
-			}),
-		).toThrow(/expired/i);
+		const derived = deriveChildEnrollment(root, registry, {
+			capability,
+			binding,
+			task_id: "t1",
+			expected_head: readGitHead(root),
+			now: "2099-06-01T00:00:00.000Z",
+		});
+		expect(derived.child.task_id).toBe("t1");
 		expect(registry.consumedChildren(capability)).toEqual([]);
 	});
 });
@@ -649,7 +616,6 @@ describe("batch-derived enrollment", () => {
 			preparation_digest: preparation.digest,
 			actor_id: binding.actor_id,
 			confirmation_ref: binding.confirmation_ref,
-			expires_at: binding.expires_at,
 			nonce: `${binding.nonce}:t1`,
 		};
 		const childCapability = enrollmentRegistry.issue(forged, NOW);

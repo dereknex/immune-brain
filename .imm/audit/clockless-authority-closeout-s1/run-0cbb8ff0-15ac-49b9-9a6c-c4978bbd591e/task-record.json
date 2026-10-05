@@ -1,0 +1,375 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "clockless-authority-closeout-s1",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "clockless-authority-closeout-s1",
+    "goal": "Retire every wall-clock bound on Immune-Brain authority: the ten-minute expiry of single-step Kernel and Enrollment capabilities, the native confirmation window, and the batch authorization expiry and budget deadline, on both Hosts, while records written before the change stay readable.",
+    "acceptance": [
+      {
+        "id": "CAC-S1-A1",
+        "assertion": "Implement the single-step capability part of S1 of docs/specs/clockless-authority-closeout.spec.md, test-first. Kernel authority and Enrollment capabilities carry no expires_at and are never refused because time passed: a capability issued with the clock advanced arbitrarily far before use is accepted. A consumed capability, a second use, and a task, operation, record-hash or nonce mismatch still refuse with their existing errors. Both Hosts issue capabilities without an expiry. A TaskRecord written after the change has no authority.expires_at in any history entry; a TaskRecord whose history carries authority.expires_at still validates and loads, and unknown authority fields are still rejected. legacy_task_record.ts and frozen audit are not modified. The expiry source lines and their contract text are deleted, not walled off.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-enrollment-authority.test.ts\",\n      \"tests/kernel-canary-authority.test.ts\",\n      \"tests/kernel-record-v4.test.ts\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/pi-canary-user-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "CAC-S1-A2",
+        "assertion": "Implement the confirmation-window part of S1 of the Spec. runtime/unattended/confirmation_deadline.ts, its test, the IMMUNE_BRAIN_BATCH_TIMEOUT_MS variable and the confirmation_timed_out reason no longer exist anywhere in source, packaged prose or the Claude bundle. On both Hosts the batch gate accepts an answer given after any delay, and settles only on the user's answer or the caller's cancellation signal. Cancellation and decline return a refusal and leave batch state, commits, the index and any enrolled child unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/unattended-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "CAC-S1-A3",
+        "assertion": "Implement the batch-authorization part of S1 of the Spec. The batch budget has no deadline_at, the batch binding has no expires_at, and batch run state written after the change has no authorization_expires_at; the default eight-hour deadline, budgetStopReason's deadline branch, the expiry renewal comparison and the batch_authorization_expired and batch_budget_expired blockers are deleted. A batch parked on a foreground Review resumes with no native gate after the clock advances arbitrarily far. Plan-digest drift, a branch change, max_children reached and qa_failure_limit reached still stop or re-gate the batch exactly as before, and a reconfirmation must still be newer than the confirmation it replaces. A persisted batch record that carries the old expiry fields with past timestamps validates, resumes without a gate, and is rewritten without those fields. Gate summaries on both Hosts show only the remaining bounds. ADR-0005 decision 3, ADR-0008 decision 3 and its rejected alternative, README.md and docs/agents/pi-batch-acceptance.md describe the new behavior; the Claude bundle is regenerated and matches source; the Initiative changeset is created.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-batch-authority.test.ts\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/unattended-batch-plan.test.ts\",\n      \"tests/batch-plan-reconfirmation.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/clockless-authority-closeout.md",
+      "README.md",
+      "docs/adr/0005-unattended-initiative-batch-run.md",
+      "docs/adr/0008-batch-capability-rehydration.md",
+      "docs/agents/pi-batch-acceptance.md",
+      "docs/plans/clockless-authority-closeout-s1.intent.json",
+      "docs/specs/clockless-authority-closeout.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/claude/interaction.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/kernel/application.ts",
+      "plugins/immune-brain/runtime/kernel/authority_port.ts",
+      "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+      "plugins/immune-brain/runtime/kernel/canary_application.ts",
+      "plugins/immune-brain/runtime/kernel/canary_eligibility.ts",
+      "plugins/immune-brain/runtime/kernel/capability_registry.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment_authority.ts",
+      "plugins/immune-brain/runtime/kernel/types.ts",
+      "plugins/immune-brain/runtime/kernel/validation.ts",
+      "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/confirmation_deadline.ts",
+      "plugins/immune-brain/runtime/unattended/types.ts",
+      "tests/batch-completion-verifier.test.ts",
+      "tests/batch-plan-reconfirmation.test.ts",
+      "tests/breaking-intent-revision-gate.test.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/confirmation-deadline.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/enrollment-dirty-scope.test.ts",
+      "tests/kernel-assurance-projection.test.ts",
+      "tests/kernel-batch-authority.test.ts",
+      "tests/kernel-canary-application.test.ts",
+      "tests/kernel-canary-authority.test.ts",
+      "tests/kernel-canary-claim-writer-boundary.test.ts",
+      "tests/kernel-canary-drain-transaction.test.ts",
+      "tests/kernel-canary-eligibility.test.ts",
+      "tests/kernel-canary-rehearsal.test.ts",
+      "tests/kernel-canary-rework-authority.test.ts",
+      "tests/kernel-canary-terminal-transaction.test.ts",
+      "tests/kernel-capability-registry-contract.test.ts",
+      "tests/kernel-enrollment-authority.test.ts",
+      "tests/kernel-enrollment-transaction.test.ts",
+      "tests/kernel-p2b0-boundary.test.ts",
+      "tests/kernel-pi-canary-prepare.test.ts",
+      "tests/kernel-r2c2-authority.test.ts",
+      "tests/kernel-r2c2-reducer.test.ts",
+      "tests/kernel-record-v4.test.ts",
+      "tests/pi-batch-acceptance-integration.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/pi-canary-lifecycle-package.test.ts",
+      "tests/pi-canary-user-authority.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/planning-artifact-archival.test.ts",
+      "tests/risk-downgrade-guard.test.ts",
+      "tests/task-record-durability.test.ts",
+      "tests/unattended-batch-commit.test.ts",
+      "tests/unattended-batch-plan.test.ts",
+      "tests/unattended-batch-run.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "risk": "material",
+    "revision": 4,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/clockless-authority-closeout-s1.intent.json",
+    "content_hash": "sha256:5932ef19845fc4f83576fb88917c8eeebac9dd80d822667ea01f72ba4cf140c3"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:c0d98419f41080d4d853a4884c1844f980b2bb6762239a4cbf156f27ef1d37a6",
+  "git_base_head": "20df6e48ad826aef30fd78e8dd31e5c4f0497bb6",
+  "attestations": [
+    {
+      "id": "approval-qa-39ad6215",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:5932ef19845fc4f83576fb88917c8eeebac9dd80d822667ea01f72ba4cf140c3",
+      "diff_hash": "sha256:5f9e3c2e4ba7feb5aef49b8496a5d3049d0cc21939d2424814f64fb89e827386",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:32e3b02e61066b8ed96db597e1275f515a415f57c47d3df9b01ead12402738b6",
+      "acceptance_results": [
+        {
+          "acceptance_id": "CAC-S1-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:32e3b02e61066b8ed96db597e1275f515a415f57c47d3df9b01ead12402738b6"
+        },
+        {
+          "acceptance_id": "CAC-S1-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:32e3b02e61066b8ed96db597e1275f515a415f57c47d3df9b01ead12402738b6"
+        },
+        {
+          "acceptance_id": "CAC-S1-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:32e3b02e61066b8ed96db597e1275f515a415f57c47d3df9b01ead12402738b6"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-ffcb8a37",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:5932ef19845fc4f83576fb88917c8eeebac9dd80d822667ea01f72ba4cf140c3",
+      "diff_hash": "sha256:89c7e5b379d646f160145153bd2f19d5e67fb386b3eeb612bf8072a402d9253d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:c739a57d608397e6ab805e07bc8b269b93ad3375fd7bf5b73bc8f3822cfc2ae6",
+      "acceptance_results": [
+        {
+          "acceptance_id": "CAC-S1-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:c739a57d608397e6ab805e07bc8b269b93ad3375fd7bf5b73bc8f3822cfc2ae6"
+        },
+        {
+          "acceptance_id": "CAC-S1-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:c739a57d608397e6ab805e07bc8b269b93ad3375fd7bf5b73bc8f3822cfc2ae6"
+        },
+        {
+          "acceptance_id": "CAC-S1-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:c739a57d608397e6ab805e07bc8b269b93ad3375fd7bf5b73bc8f3822cfc2ae6"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-a6262663",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:5932ef19845fc4f83576fb88917c8eeebac9dd80d822667ea01f72ba4cf140c3",
+      "diff_hash": "sha256:89c7e5b379d646f160145153bd2f19d5e67fb386b3eeb612bf8072a402d9253d",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (base, single-parent review commit, tree, manifest digest recomputed); expiry and deadline logic is deleted across Kernel, both Hosts, batch state and the bundle, legacy records stay readable, remaining bounds are intact, and tests cover late use, one-use, legacy fields and cancellation.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "20df6e48ad826aef30fd78e8dd31e5c4f0497bb6",
+        "review_commit": "9a54cea61a88c464f97d038e131e5485f91b5abd",
+        "review_tree": "40fd9151ecc565439233e508879e7a625ec0700e",
+        "manifest_digest": "sha256:c8482f7c1169fe8968ebf0e5782fc36e7e9ef1d58dddce393816a4429c31db1c"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-2630f6a9cb29-1-review-1",
+          "acceptance_id": "CAC-S1-A1",
+          "summary": "docs/specs/clockless-authority-closeout.spec.md is named by all three acceptances and listed in manifest scope, but it is absent from both the base and the review tree, so the review checked the acceptance text only, not the Spec's S1 wording.",
+          "anchor": "sha256:a87d7ddd6741b8e8c3b9a28b04e7346aee650b40318be4c0dc3bee2b46a96ac2",
+          "evidence": {
+            "trigger": "git ls-tree 9a54cea61a88c464f97d038e131e5485f91b5abd docs/specs/clockless-authority-closeout.spec.md returns nothing; the path is in manifest scope but not in changed_paths, and it is not in base 20df6e48ad826aef30fd78e8dd31e5c4f0497bb6 either.",
+            "caller_chain": [
+              "docs/plans/clockless-authority-closeout-s1.intent.json",
+              "docs/specs/clockless-authority-closeout.spec.md"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "CAC-S1-A1"
+            }
+          }
+        },
+        {
+          "id": "review-2630f6a9cb29-2-review-2",
+          "acceptance_id": "CAC-S1-A3",
+          "summary": "Retained reconfirmation snapshots are now removed only by takeReconfirmation; a snapshot retained for an authorization that never reaches the runner stays in the process-local map until exit. It grants no authority, so this is a small memory residue only.",
+          "anchor": "sha256:86f7805cf2b718b5fdd7491b5190ae1314573d86bcfd1463d1806d0315e0d239",
+          "evidence": {
+            "trigger": "authorizeBatch returns authorized with projection.reconfirmation set, then the Host returns cancelled_before_execution (signal aborted before issuance) so startBatch never calls takeReconfirmation for that nonce.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/unattended/batch_preflight.ts:authorizeBatch",
+              "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts:retainReconfirmation",
+              "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts:takeReconfirmation"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "CAC-S1-A3"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-CAC-S1-A1-a2c63067-9986f3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "CAC-S1-A1",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=9848B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:clockless-authority-closeout-s1:2026-10-05T03:27:21.765Z",
+      "at": "2026-10-05T03:27:21.765Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:37453c5b2a2b04350744c6712196f0841efcbff88f8242395af9713b6e15521a",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-f741efb03fe9c60a",
+        "issued_at": "2026-10-05T03:33:23.638Z",
+        "expires_at": "2026-10-05T03:43:23.638Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:clockless-authority-closeout-s1:2026-10-05T03:47:20.582Z",
+      "at": "2026-10-05T03:47:20.582Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\naction_v2_sha256:c3df6cba44fabb9d8e176d55317a1c1063f2b2267a36c14f1e2a6ba8ea2be583",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-d58b4c01e7070bb0",
+        "issued_at": "2026-10-05T03:58:24.798Z",
+        "expires_at": "2026-10-05T04:08:24.798Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:clockless-authority-closeout-s1:2026-10-05T03:59:59.324Z",
+      "at": "2026-10-05T03:59:59.324Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_4\naction_v2_sha256:01565cd030438ca18660ba2d6b4b87e6dc26aae5a017866765573711ef7cfebc",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-1a7a6d3e840d34db",
+        "issued_at": "2026-10-05T04:00:30.568Z",
+        "expires_at": "2026-10-05T04:10:30.568Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:clockless-authority-closeout-s1:2026-10-05T04:36:23.540Z",
+      "at": "2026-10-05T04:36:23.540Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/clockless-authority-closeout-s1.intent.json"
+    },
+    {
+      "id": "request_rework:clockless-authority-closeout-s1:2026-10-05T04:41:44.650Z",
+      "at": "2026-10-05T04:41:44.650Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:879db31c732c5cb8e4707cab32159dc844a1520af5368154f258c3b4d2fe24dc",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-05T04:41:44.650Z",
+        "expires_at": "2026-10-05T04:51:44.650Z"
+      }
+    },
+    {
+      "id": "resolve_finding:clockless-authority-closeout-s1:2026-10-05T04:49:35.286Z",
+      "at": "2026-10-05T04:49:35.286Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-CAC-S1-A1-a2c63067-9986f3\naction_v2_sha256:c5c1b41c71039a70fbee1ae01c59d60261244f56f2665e4e8344af6deb6bbcc5"
+    },
+    {
+      "id": "freeze_artifacts:clockless-authority-closeout-s1:2026-10-05T04:49:41.588Z",
+      "at": "2026-10-05T04:49:41.588Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/clockless-authority-closeout-s1.intent.json"
+    },
+    {
+      "id": "record_approval:clockless-authority-closeout-s1:2026-10-05T04:55:10.796Z",
+      "at": "2026-10-05T04:55:10.796Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-39ad6215\naction_v2_sha256:579fcde03b82e8545f32e67b8646bf911617d6f0bbe1ae3217cfaf1838ea11c7",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-05T04:55:10.796Z",
+        "expires_at": "2026-10-05T05:05:10.796Z"
+      }
+    },
+    {
+      "id": "record_approval:clockless-authority-closeout-s1:2026-10-05T05:32:54.517Z",
+      "at": "2026-10-05T05:32:54.517Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ffcb8a37\naction_v2_sha256:efdf407b2b7e981d457471b1b94df3be12cef1e4e12167b5a30ddaeed395c478",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-05T05:32:54.518Z",
+        "expires_at": "2026-10-05T05:42:54.518Z"
+      }
+    },
+    {
+      "id": "record_approval:clockless-authority-closeout-s1:2026-10-05T05:35:45.512Z",
+      "at": "2026-10-05T05:35:45.512Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-a6262663\naction_v2_sha256:c2e9a745d2b61dffecd75de5435b08bb596bcfbc1e8b3208c330d7652352b89b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-05T05:35:45.512Z",
+        "expires_at": "2026-10-05T05:45:45.512Z"
+      }
+    },
+    {
+      "id": "complete:clockless-authority-closeout-s1:2026-10-05T05:35:49.887Z",
+      "at": "2026-10-05T05:35:49.887Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:f45ea4e25995dbac9abd12bcbce72a5282a7e7f7a370f1cad319984f8f0ad1e9"
+    }
+  ]
+}

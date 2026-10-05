@@ -19,7 +19,6 @@ import {
 	type InitiativeObservationReader,
 } from "./runtime-stub";
 import { batchReason } from "../runtime/unattended/batch_reasons";
-import { startConfirmationDeadline } from "../runtime/unattended/confirmation_deadline";
 import {
 	authorizeBatch,
 	projectBatchPreflight,
@@ -73,8 +72,6 @@ export interface PiBatchExecutionOptions {
 	batchKernel?: Partial<BatchRunnerKernelPort>;
 	batchGit?: BatchRunnerGitPort;
 	readInitiative?: InitiativeObservationReader;
-	/** Environment the confirmation deadline reads; production passes process.env. */
-	env?: Record<string, string | undefined>;
 	confirmBatch?: (details: {
 		title: string;
 		summary: string;
@@ -132,7 +129,7 @@ export async function executePiUnattendedBatch(
 	const planDigest = preflight.projection.plan_digest;
 	const recoveryChildren = preflight.projection.recovery_children;
 
-	// 4. Literal-user gate plus the shared reuse/expiry decision, the post-gate
+	// 4. Literal-user gate plus the shared reuse decision, the post-gate
 	// claim/drift cascade, and the Batch Authorization binding. The Host supplies
 	// only its gate, its confirmation reference, and its binding nonce.
 	const authorization = await authorizeBatch<PiBatchExecutionResult>({
@@ -149,30 +146,25 @@ export async function executePiUnattendedBatch(
 			}
 			const confirmDetails = {
 				title: `Authorize Unattended Batch: ${facts.initiative_slug}`,
-				summary: `Initiative: ${facts.initiative_slug}\nBatch branch: ${facts.batch_branch}\nPlan digest: ${facts.plan_digest}\nBudget: max_children=${facts.budget.max_children}, deadline_at=${facts.budget.deadline_at}, qa_failure_limit=${facts.budget.qa_failure_limit}\nExpires at: ${facts.expires_at}`,
+				summary: `Initiative: ${facts.initiative_slug}\nBatch branch: ${facts.batch_branch}\nPlan digest: ${facts.plan_digest}\nBudget: max_children=${facts.budget.max_children}, qa_failure_limit=${facts.budget.qa_failure_limit}`,
 				details: `Ordered children (${facts.children.length}):\n${facts.children.map((child) => `  - ${child.task_id} (${child.slice_id}) [risk: ${child.risk}] [status: ${child.status === "already_settled" ? "completed" : "pending execution"}]`).join("\n")}${facts.excluded.length > 0 ? `\n\nExcluded children:\n${facts.excluded.map((child) => `  - ${child.task_id} (${child.slice_id}): ${child.reason}`).join("\n")}` : ""}${facts.reuse_blockers.length > 0 ? `\n\nRe-confirmation required: ${facts.reuse_blockers.join(", ")}.\nRecovery: confirm to issue a fresh authorization bound to the current plan and HEAD.` : ""}`,
 				planDigest: facts.plan_digest,
 				signal,
 			};
 
-			// The bounded elicitation deadline is shared behavior: an unanswered native
-			// confirmation is bounded by the same setting on both Hosts.
-			const deadline = startConfirmationDeadline({ env: options.env ?? process.env, signal });
+			// The gate settles only on the literal user's answer or the caller's
+			// cancellation signal.
 			let decision: "accept" | "decline" | "cancel";
 			try {
-				decision = await options.confirmBatch({ ...confirmDetails, signal: deadline.signal });
+				decision = await options.confirmBatch(confirmDetails);
 			} catch (err) {
-				if (deadline.timedOut()) return { kind: "host_rejection", value: batchReason("confirmation_timed_out", String(deadline.timeoutMs)) };
 				if (signal?.aborted) return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
 				return {
 					kind: "host_rejection",
 					value: batchReason("confirmation_failed", err instanceof Error ? err.message : String(err)),
 				};
-			} finally {
-				deadline.clear();
 			}
 
-			if (deadline.timedOut()) return { kind: "host_rejection", value: batchReason("confirmation_timed_out", String(deadline.timeoutMs)) };
 			if (decision === "cancel" || signal?.aborted) {
 				return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
 			}
@@ -195,7 +187,7 @@ export async function executePiUnattendedBatch(
 	});
 	if (authorization.outcome === "host_rejection") return authorization.value;
 	if (authorization.outcome === "rejected") return authorization.rejection;
-	const { binding, batch_id: batchId, expires_at: expiresAt } = authorization;
+	const { binding, batch_id: batchId } = authorization;
 
 	// 6. Issue Batch Authorization through Kernel registry and startBatch
 	const batchRegistry: BatchAuthorityRegistry = await createBatchAuthorityRegistry();
@@ -205,8 +197,6 @@ export async function executePiUnattendedBatch(
 	if (signal?.aborted) return batchReason("cancelled_before_execution");
 
 	now = new Date().toISOString();
-	if (Date.parse(expiresAt) <= Date.parse(now))
-		return batchReason("confirmation_failed", "confirmed batch deadline expired before authorization issuance");
 	const capability = batchRegistry.issue(binding, recoveryChildren as any, now);
 
 	let activeReviewDispatch: { operation_id: string; agent_params: Record<string, unknown> } | null = null;
@@ -300,7 +290,6 @@ export async function executePiUnattendedBatch(
 		plan_digest: planDigest,
 		base_head: binding.base_head,
 		confirmation_time: now,
-		authorization_expires_at: expiresAt,
 		budget,
 		now,
 		kernel: kernelPort,

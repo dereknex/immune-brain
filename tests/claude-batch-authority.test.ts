@@ -270,11 +270,12 @@ function jsonLineReader(output: PassThrough): () => Promise<Record<string, unkno
 	return () => queue.length ? Promise.resolve(queue.shift()!) : new Promise((resolve) => waiters.push(resolve));
 }
 
-type RenewalGate = (facts: { deadline: string; signal?: AbortSignal }) => Promise<"accept" | "decline" | "cancel">;
+type RenewalGate = (facts: { summary: string; signal?: AbortSignal }) => Promise<"accept" | "decline" | "cancel">;
 
 for (const host of ["Pi", "Claude"] as const) {
-	describe(`BER-S0 ${host} expired parked renewal`, () => {
-		async function parked(suffix: string, expired = true) {
+	describe(`BER-S0 ${host} parked renewal`, () => {
+		/** `legacyExpiry` writes the retired expiry fields, already in the past, into the parked record. */
+		async function parked(suffix: string, legacyExpiry = true) {
 			const slug = `ber-${host.toLowerCase()}-${suffix}`;
 			const fixture = createBatchFixture(slug);
 			let gate: RenewalGate = async () => "accept";
@@ -300,12 +301,11 @@ for (const host of ["Pi", "Claude"] as const) {
 				},
 				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
 			};
-			const env = { ...ENV, IMMUNE_BRAIN_BATCH_TIMEOUT_MS: suffix === "timeout" ? "20" : "60000" };
 			const runtime = createMcpRuntime({
-				cwd: fixture.root, env, interactive: true,
+				cwd: fixture.root, env: ENV, interactive: true,
 				readInitiative: async () => fixture.observation, batchKernel,
 				requestConfirmation: async (request) => ({
-					decision: await gate({ deadline: (request.batchDetails!.budget as { deadline_at: string }).deadline_at, signal: request.signal }),
+					decision: await gate({ summary: JSON.stringify(request.batchDetails!.budget), signal: request.signal }),
 					requestId: "req-renew",
 				}),
 			});
@@ -314,9 +314,9 @@ for (const host of ["Pi", "Claude"] as const) {
 				gate = confirm;
 				if (host === "Claude") return runtime.callTool("start_unattended_batch", { initiative_slug: slug }, { toolCallId: "renew" });
 				return executePiUnattendedBatch({
-					root: fixture.root, initiativeSlug: slug, env,
+					root: fixture.root, initiativeSlug: slug,
 					readInitiative: async () => fixture.observation, batchKernel,
-					confirmBatch: async (details) => gate({ deadline: /deadline_at=([^,\n]+)/.exec(details.summary)![1]!, signal: details.signal }),
+					confirmBatch: async (details) => gate({ summary: details.summary, signal: details.signal }),
 				});
 			};
 			try {
@@ -330,7 +330,9 @@ for (const host of ["Pi", "Claude"] as const) {
 				state.children[1].state = "needs_human";
 				state.children[1].reason = "foreground review parked";
 				state.consecutive_qa_failures = 1;
-				if (expired) {
+				expect(state).not.toHaveProperty("authorization_expires_at");
+				expect(state.budget).not.toHaveProperty("deadline_at");
+				if (legacyExpiry) {
 					const past = new Date(Date.parse(state.confirmation_time) + 1).toISOString();
 					expect(Date.parse(past)).toBeLessThan(Date.now());
 					state.budget.deadline_at = past;
@@ -344,24 +346,28 @@ for (const host of ["Pi", "Claude"] as const) {
 			}
 		}
 
-		it("confirms a future window and resumes the same lineage without erasing progress or counters", async () => {
-			const fixture = await parked("renew");
+		it.each([true, false])("confirms and resumes the same lineage without erasing progress or counters (retired expiry fields: %p)", async (legacyExpiry) => {
+			const fixture = await parked(legacyExpiry ? "renew" : "renew-clean", legacyExpiry);
 			try {
-				let deadline = "";
 				let confirmedAt = "";
+				let shown = "";
 				const result = await fixture.run(async (facts) => {
-					deadline = facts.deadline;
-					expect(Date.parse(deadline)).toBeGreaterThan(Date.now());
-					expect(Date.parse(deadline) - Date.now()).toBeLessThanOrEqual(8 * 60 * 60 * 1000);
+					shown = facts.summary;
 					confirmedAt = new Date().toISOString();
 					return "accept";
 				});
 				expect(result.state).toBe("started");
 				expect(result.batch_id).toBe(fixture.state.batch_id);
+				// The gate shows only the bounds that still exist.
+				expect(shown).toContain("max_children");
+				expect(shown).not.toMatch(/deadline|expires/i);
 				const state = JSON.parse(readFileSync(fixture.path, "utf8"));
 				expect(state.confirmation_time >= confirmedAt).toBe(true);
-				expect(state.authorization_expires_at).toBe(deadline);
-				expect(state.budget).toEqual({ ...fixture.state.budget, deadline_at: deadline });
+				expect(state).not.toHaveProperty("authorization_expires_at");
+				expect(state.budget).toEqual({
+					max_children: fixture.state.budget.max_children,
+					qa_failure_limit: fixture.state.budget.qa_failure_limit,
+				});
 				for (const key of ["batch_id", "branch", "plan_digest", "base_head", "commits", "consecutive_qa_failures"])
 					expect(state[key]).toEqual(fixture.state[key]);
 				expect(state.children[0]).toEqual(fixture.state.children[0]);
@@ -370,27 +376,13 @@ for (const host of ["Pi", "Claude"] as const) {
 			} finally { rmSync(fixture.root, { recursive: true, force: true }); }
 		});
 
-		it("does not extend a still-valid confirmed budget", async () => {
-			const fixture = await parked("future", false);
-			try {
-				await fixture.run(async (facts) => {
-					expect(facts.deadline).toBe(fixture.state.budget.deadline_at);
-					return "accept";
-				});
-				expect(JSON.parse(readFileSync(fixture.path, "utf8")).budget).toEqual(fixture.state.budget);
-			} finally { rmSync(fixture.root, { recursive: true, force: true }); }
-		});
-
-		it.each(["decline", "cancel", "timeout", "window-expired", "head-drift", "branch-drift", "plan-drift", "claim-drift", "budget-drift"])("%s rejects renewal without writing batch state", async (failure) => {
+		it.each(["decline", "cancel", "head-drift", "branch-drift", "plan-drift", "claim-drift", "budget-drift"])("%s rejects renewal without writing batch state", async (failure) => {
 			const fixture = await parked(failure);
 			const before = readFileSync(fixture.path, "utf8");
 			const recordRevision = readTaskRecordRaw(fixture.root, `${fixture.slug}-c2`).revision;
-			let clock: ReturnType<typeof spyOn> | undefined;
 			try {
-				const result = await fixture.run(async (facts) => {
+				const result = await fixture.run(async () => {
 					if (failure === "decline" || failure === "cancel") return failure;
-					if (failure === "timeout") return new Promise((resolve) => facts.signal!.addEventListener("abort", () => resolve("cancel"), { once: true }));
-					if (failure === "window-expired") clock = spyOn(Date, "now").mockReturnValue(Date.parse(facts.deadline));
 					if (failure === "head-drift") execFileSync("git", ["commit", "--allow-empty", "-q", "-m", "external drift"], { cwd: fixture.root });
 					if (failure === "branch-drift") execFileSync("git", ["checkout", "-q", "-b", "foreign"], { cwd: fixture.root });
 					if (failure === "plan-drift") {
@@ -414,12 +406,11 @@ for (const host of ["Pi", "Claude"] as const) {
 				expect(existsSync(fixture.path.replace(/\.json$/, ".report.json"))).toBe(false);
 				expect(fixture.advances()).toBe(2);
 			} finally {
-				clock?.mockRestore();
 				rmSync(fixture.root, { recursive: true, force: true });
 			}
 		});
 
-		it.each(["deadline", "expiry"])("malformed %s fails closed before opening confirmation", async (field) => {
+		it.each(["deadline", "expiry"])("an unparseable retired %s field is ignored like an absent one", async (field) => {
 			const fixture = await parked(`invalid-${field}`);
 			try {
 				const state = fixture.state;
@@ -427,9 +418,11 @@ for (const host of ["Pi", "Claude"] as const) {
 				else state.authorization_expires_at = "not-a-time";
 				writeFileSync(fixture.path, `${JSON.stringify(state, null, 2)}\n`);
 				const before = readFileSync(fixture.path, "utf8");
-				const result = await fixture.run(async () => { throw new Error("invalid state must not open a gate"); });
-				expect(result.state).toBe("blocked");
-				expect(result.reason).toContain("batch run state is unreadable or invalid");
+				let gates = 0;
+				const result = await fixture.run(async () => { gates++; return "decline"; });
+				// The parked record still loads and still asks the user; nothing reads the field.
+				expect(gates).toBe(1);
+				expect(result.state).toBe("rejected");
 				expect(readFileSync(fixture.path, "utf8")).toBe(before);
 			} finally { rmSync(fixture.root, { recursive: true, force: true }); }
 		});
@@ -675,7 +668,8 @@ describe("acc-claude-batch-gate", () => {
 		expect(params.message).toContain("Excluded children (1):");
 		expect(params.message).toContain("content-derive-c3 (S3): critical");
 		expect(params.message).toContain("Budget: max_children=");
-		expect(params.message).toContain("Expires at:");
+		// Only the bounds that still exist are shown.
+		expect(params.message).not.toMatch(/expires|deadline/i);
 	});
 
 	it("binds elicitation to plan_digest and rejects if plan changes before acceptance", async () => {
@@ -754,8 +748,9 @@ describe("acc-claude-batch-gate", () => {
 		expect(result.report.batch_state).toBe("completed");
 	});
 
-	it("TTL-1: authorization expiry is the confirmed budget deadline, not a fixed ten-minute window", async () => {
+	it("an answer given after any delay is accepted and the authorization it issues carries no expiry", async () => {
 		const fixture = createBatchFixture("claude-ttl");
+		let clock: ReturnType<typeof spyOn> | undefined;
 		const batchDetails: Record<string, unknown>[] = [];
 		const commitsByTask = new Map<string, string>();
 		const runtime = createMcpRuntime({
@@ -778,29 +773,27 @@ describe("acc-claude-batch-gate", () => {
 			},
 			requestConfirmation: async (request) => {
 				batchDetails.push(request.batchDetails as Record<string, unknown>);
+				// The user answers a year later by the wall clock.
+				clock = spyOn(Date, "now").mockReturnValue(Date.now() + 365 * 24 * 60 * 60 * 1000);
 				return { decision: "accept", requestId: "req-ttl" };
 			},
 		});
 		runtime.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
 
-		const result = await runtime.callTool(
-			"start_unattended_batch",
-			{ initiative_slug: "claude-ttl" },
-			{ toolCallId: "toolu-ttl" },
-		);
+		const result = await runtime
+			.callTool("start_unattended_batch", { initiative_slug: "claude-ttl" }, { toolCallId: "toolu-ttl" })
+			.finally(() => clock?.mockRestore());
 		expect(result.state).toBe("started");
 
-		// The literal user confirmed exactly one deadline; the authorization expires with it.
-		const confirmedBudget = batchDetails[0]!.budget as { deadline_at: string };
-		expect(batchDetails[0]!.expires_at).toBe(confirmedBudget.deadline_at);
+		// The literal user confirmed the remaining bounds and nothing time-based.
+		expect(batchDetails[0]).not.toHaveProperty("expires_at");
+		expect(Object.keys(batchDetails[0]!.budget as object).sort()).toEqual(["max_children", "qa_failure_limit"]);
 
 		const state = JSON.parse(
 			readFileSync(join(fixture.root, ".imm", "state", "batches", `${result.batch_id}.json`), "utf8"),
 		);
-		expect(state.budget.deadline_at).toBe(confirmedBudget.deadline_at);
-		expect(state.authorization_expires_at).toBe(confirmedBudget.deadline_at);
-		// Regression guard: the authorization outlives a fixed ten-minute window.
-		expect(Date.parse(state.authorization_expires_at) - Date.now()).toBeGreaterThan(10 * 60 * 1000);
+		expect(state).not.toHaveProperty("authorization_expires_at");
+		expect(state.budget).toEqual(batchDetails[0]!.budget);
 	});
 });
 
@@ -1203,7 +1196,7 @@ describe("acc-claude-batch-fail-closed", () => {
 		expect(result.recovery_action).toBe("delete or rename the conflicting branch, or commit working changes and retry in the current Host");
 	});
 
-	it("review-4: missing or only replayed elicitation evidence times out with bounded rejection", async () => {
+	it("review-4: replayed elicitation evidence never settles the gate; only the live answer does", async () => {
 		const fixture = createBatchFixture("timeout-test");
 		const input = new PassThrough();
 		const output = new PassThrough();
@@ -1213,7 +1206,7 @@ describe("acc-claude-batch-fail-closed", () => {
 			output,
 			runtime: createMcpRuntime({
 				cwd: fixture.root,
-				env: { ...ENV, IMMUNE_BRAIN_BATCH_TIMEOUT_MS: "50" }, // 50ms bounded timeout
+				env: ENV,
 				readInitiative: async () => fixture.observation,
 			}),
 			exit: () => undefined,
@@ -1241,7 +1234,7 @@ describe("acc-claude-batch-fail-closed", () => {
 				_meta: { "claudecode/toolUseId": "toolu-timeout" },
 			},
 		});
-		const elicitation = await next();
+		const elicitation = (await next()) as { id: string | number };
 		// Replay an old/unknown requestId instead of answering the live elicitation
 		send({
 			jsonrpc: "2.0",
@@ -1249,14 +1242,22 @@ describe("acc-claude-batch-fail-closed", () => {
 			result: { action: "accept" },
 		});
 
-		// Wait for timeout resolution
-		const result = await next();
+		// The replay is not an answer, and the gate has no window of its own.
+		const settled = next();
+		const early = await Promise.race([
+			settled,
+			new Promise((resolve) => setTimeout(() => resolve("still waiting"), 200)),
+		]);
+		expect(early).toBe("still waiting");
+
+		send({ jsonrpc: "2.0", id: elicitation.id, result: { action: "decline" } });
+		const result = await settled;
 		input.end();
 		await server;
 
-		expect(JSON.stringify(result)).toContain("native confirmation timed out after 50 ms");
-		expect(JSON.stringify(result)).toContain("IMMUNE_BRAIN_BATCH_TIMEOUT_MS");
+		expect(JSON.stringify(result)).toContain("native interaction declined");
 		expect(JSON.stringify(result)).toContain("rejected");
+		expect(existsSync(join(fixture.root, ".imm", "state", "batches"))).toBe(false);
 	});
 
 	it("review-batch-active-claim-race: active claim appearing during revalidation blocks execution with zero writes", async () => {
@@ -1370,8 +1371,9 @@ describe("acc-claude-batch-fail-closed", () => {
 		expect(branchCheck).toBe("");
 	});
 
-	it("reuses an intact, still-binding authorization with zero additional elicitations", async () => {
-		const fixture = createBatchFixture("claude-reuse");
+	it.each([false, true])("reuses an intact, still-binding authorization with zero additional elicitations (retired expiry fields in the record: %p)", async (legacyExpiry) => {
+		const slug = legacyExpiry ? "claude-reuse-legacy" : "claude-reuse";
+		const fixture = createBatchFixture(slug);
 		let elicitations = 0;
 		const commitsByTask = new Map<string, string>();
 		let step = 0;
@@ -1408,65 +1410,35 @@ describe("acc-claude-batch-fail-closed", () => {
 
 		const first = await runtime.callTool(
 			"start_unattended_batch",
-			{ initiative_slug: "claude-reuse" },
+			{ initiative_slug: slug },
 			{ toolCallId: "toolu-cr1" },
 		);
 		expect(first.state).toBe("started");
 		expect(elicitations).toBe(1);
 
+		const statePath = join(fixture.root, ".imm", "state", "batches", `${first.batch_id}.json`);
+		if (legacyExpiry) {
+			const state = JSON.parse(readFileSync(statePath, "utf8"));
+			state.authorization_expires_at = "2020-01-01T00:00:00.000Z";
+			state.budget.deadline_at = "2020-01-01T00:00:00.000Z";
+			writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
+		}
+
 		const second = await runtime.callTool(
 			"start_unattended_batch",
-			{ initiative_slug: "claude-reuse" },
+			{ initiative_slug: slug },
 			{ toolCallId: "toolu-cr2" },
 		);
 		expect(elicitations).toBe(1);
 		expect(second.state).toBe("started");
 		expect(second.batch_id).toBe(first.batch_id);
 		expect(second.report.batch_state).toBe("completed");
+		const rewritten = JSON.parse(readFileSync(statePath, "utf8"));
+		expect(rewritten).not.toHaveProperty("authorization_expires_at");
+		expect(rewritten.budget).not.toHaveProperty("deadline_at");
 	});
 
-	it("demands a fresh elicitation when the authorization expired, naming the reason", async () => {
-		const fixture = createBatchFixture("claude-expired");
-		const batchDetails: Record<string, unknown>[] = [];
-		let decision: "accept" | "decline" = "accept";
-		const runtime = createMcpRuntime({
-			cwd: fixture.root,
-			env: ENV,
-			interactive: true,
-			readInitiative: async () => fixture.observation,
-			requestConfirmation: async (request) => {
-				batchDetails.push(request.batchDetails as Record<string, unknown>);
-				return { decision, requestId: `req-expired-${batchDetails.length}` };
-			},
-		});
-		runtime.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
 
-		const first = await runtime.callTool(
-			"start_unattended_batch",
-			{ initiative_slug: "claude-expired" },
-			{ toolCallId: "toolu-ce1" },
-		);
-		expect(first.state).toBe("started");
-
-		const statePath = join(fixture.root, ".imm", "state", "batches", `${first.batch_id}.json`);
-		const state = JSON.parse(readFileSync(statePath, "utf8"));
-		state.authorization_expires_at = "2020-01-01T00:00:00.000Z";
-		writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
-
-		decision = "decline";
-		const second = await runtime.callTool(
-			"start_unattended_batch",
-			{ initiative_slug: "claude-expired" },
-			{ toolCallId: "toolu-ce2" },
-		);
-
-		expect(batchDetails).toHaveLength(2);
-		expect(JSON.stringify(batchDetails[1]!.re_confirmation_required)).toContain("batch_authorization_expired");
-		expect(String(batchDetails[1]!.recovery)).toContain("fresh authorization");
-		expect(second.state).toBe("rejected");
-		expect(second.reason).toBe("native interaction declined");
-		expect(second.recovery_action).toBe("wait for a fresh literal-user request");
-	});
 	// RB3-1 / F3: the post-settlement tracker projection runs after the Kernel
 	// mutation committed, so a failure inside it must not roll the staged intent
 	// back or turn the committed revision into an exception a caller could retry.

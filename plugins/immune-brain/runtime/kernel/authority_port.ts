@@ -62,17 +62,15 @@ export interface MutationAuthorityRegistry {
 	readonly brand: symbol;
 	/** Issue one capability bound to an exact binding. Library primitive; no production caller in P2B2. */
 	issue(binding: CapabilityBindingV2, issuedAt?: string): MutationAuthorityCapabilityV2;
-	/** Inspect without consuming. Fails on missing, expired, mismatched, or reused capability. */
+	/** Inspect without consuming. Fails on missing, mismatched, or reused capability. */
 	inspect(
 		capability: MutationAuthorityCapabilityV2 | undefined,
 		expected: MutationAuthorityInspection,
-		now?: number,
 	): ValidatedAuthorityV2;
 	/** Consume irreversibly. Returns the validated authority. */
 	consume(
 		capability: MutationAuthorityCapabilityV2,
 		expected: MutationAuthorityInspection,
-		now?: number,
 	): ValidatedAuthorityV2;
 	isConsumed(capability: MutationAuthorityCapabilityV2): boolean;
 }
@@ -88,7 +86,7 @@ export function createMutationAuthorityRegistry(): MutationAuthorityRegistry {
 	const inner = createCapabilityRegistry<CapabilityBindingV2, MutationAuthorityInspection, ValidatedAuthorityV2, MutationAuthorityCapabilityV2>(
 		MUTATION_AUTHORITY_CAPABILITY_BRAND,
 		{
-			validateBinding(binding, issuedAt) {
+			validateBinding(binding) {
 				const missing: string[] = [];
 				if (binding.run_id !== undefined && binding.run_id.length === 0)
 					throw new Error("authority capability run_id must not be empty");
@@ -100,12 +98,8 @@ export function createMutationAuthorityRegistry(): MutationAuthorityRegistry {
 					throw new Error(`authority capability binding is incomplete: ${missing.join(", ")}`);
 				if (binding.findings_digest !== null && !/^sha256:[a-f0-9]{64}$/.test(binding.findings_digest))
 					throw new Error("authority capability findings_digest must be a canonical sha256 hash");
-				if (Number.isNaN(Date.parse(binding.expires_at)) || Date.parse(binding.expires_at) <= Date.parse(issuedAt))
-					throw new Error("authority capability must have a future expiry");
 			},
-			validateAndProject(state, expected, now) {
-				if (Date.parse(state.expires_at) <= now)
-					throw new Error("authority capability has expired");
+			validateAndProject(state, expected) {
 				const actionDigest = digestOfAction(expected.action);
 				if (state.action_digest !== actionDigest)
 					throw new Error("authority capability action digest mismatch");
@@ -141,7 +135,6 @@ export function createMutationAuthorityRegistry(): MutationAuthorityRegistry {
 						actor_id: canonicalActorId(state.actor_id),
 						confirmation_ref: state.confirmation_ref,
 						issued_at: state.issued_at,
-						expires_at: state.expires_at,
 					},
 					action_digest: actionDigest,
 					...(state.run_id !== undefined ? { run_id: state.run_id } : {}),
@@ -162,12 +155,11 @@ export function createMutationAuthorityRegistry(): MutationAuthorityRegistry {
 		inspect(
 			capability: MutationAuthorityCapabilityV2 | undefined,
 			expected: MutationAuthorityInspection,
-			now = Date.now(),
 		): ValidatedAuthorityV2 {
 			if (!capability)
 				throw new Error("privileged action requires an opaque authority capability");
 			try {
-				return inner.inspect(capability, expected, now);
+				return inner.inspect(capability, expected);
 			} catch (err) {
 				if (err instanceof Error && err.message.includes("not recognized by this registry"))
 					throw new Error("privileged action requires an opaque authority capability");
@@ -177,10 +169,9 @@ export function createMutationAuthorityRegistry(): MutationAuthorityRegistry {
 		consume(
 			capability: MutationAuthorityCapabilityV2,
 			expected: MutationAuthorityInspection,
-			now = Date.now(),
 		): ValidatedAuthorityV2 {
 			try {
-				return inner.consume(capability, expected, now);
+				return inner.consume(capability, expected);
 			} catch (err) {
 				if (err instanceof Error && err.message.includes("not recognized by this registry"))
 					throw new Error("privileged action requires an opaque authority capability");

@@ -557,7 +557,6 @@ async function executeForegroundEnrollment(
 			preparation_digest: preparation.digest,
 			actor_id: LITERAL_USER_ACTOR_ID,
 			confirmation_ref: `pi-confirm-${createHash("sha256").update(`${taskId}\0${now}\0${nonce}`).digest("hex").slice(0, 16)}`,
-			expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
 			nonce,
 		};
 		const capability = registry.issue(binding);

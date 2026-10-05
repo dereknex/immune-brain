@@ -237,7 +237,7 @@ const children = [
 ];
 const planDigest = computeBatchPlanDigest(children);
 const registry = createBatchAuthorityRegistry();
-const budget = { max_children: 1, deadline_at: farFuture, qa_failure_limit: 3 };
+const budget = { max_children: 1, qa_failure_limit: 3 };
 
 /** Persist a batch record, then resume it so the runner inspects Git itself. */
 const resumePersisted = async (state, recordCommit) => {
@@ -252,7 +252,6 @@ const resumePersisted = async (state, recordCommit) => {
 			budget,
 			actor_id: "user",
 			confirmation_ref: "confirm",
-			expires_at: farFuture,
 			nonce: "n",
 		},
 		children,
@@ -268,7 +267,6 @@ const resumePersisted = async (state, recordCommit) => {
 		plan_digest: planDigest,
 		base_head: head,
 		confirmation_time: confirmationTime,
-		authorization_expires_at: farFuture,
 		budget,
 		now: farFuture,
 		kernel: {},
@@ -616,10 +614,8 @@ describe("unattended batch contract text", () => {
 			"base_head",
 			"branch",
 			"confirmation_time",
-			"authorization_expires_at",
 			"budget",
 			"max_children",
-			"deadline_at",
 			"qa_failure_limit",
 			"batch_state",
 			"children",

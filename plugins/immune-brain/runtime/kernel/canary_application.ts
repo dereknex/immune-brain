@@ -431,7 +431,6 @@ export function createCanaryApplication(
 			registry,
 			capability: capability as never,
 			diffProvider: input.diffProvider,
-			now: Date.parse(now),
 			...(operation.op === "complete" || operation.op === "stop"
 				? { terminal: { terminalized_at: now } }
 				: {}),
@@ -492,7 +491,7 @@ export function createCanaryApplication(
 				intent_revision: current.record.intent_snapshot.revision,
 				intent_content_hash: current.record.intent_ref.content_hash,
 				diff_hash: "sha256:" + "0".repeat(64),
-			}, Date.parse(now));
+			});
 			const nextClaim: BackendClaim = {
 				...claim,
 				lifecycle_status: "draining",

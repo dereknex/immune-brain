@@ -7,7 +7,7 @@ import { createCapabilityRegistry } from "./capability_registry";
 export const ENROLLMENT_CAPABILITY_BRAND = Symbol.for("assurance-kernel.enrollment-capability-brand");
 
 /**
- * The three fields every capability binding shares, whichever authority issues
+ * The two fields every capability binding shares, whichever authority issues
  * it. `nonce` is deliberately not part of this base: the enrollment and batch
  * bindings carry it for their own replay digest, while `CapabilityBindingV2`
  * uses `action_digest` instead and has no `nonce` field at all.
@@ -15,7 +15,6 @@ export const ENROLLMENT_CAPABILITY_BRAND = Symbol.for("assurance-kernel.enrollme
 export interface BaseCapabilityBinding {
 	actor_id: string;
 	confirmation_ref: string;
-	expires_at: string;
 }
 
 export interface EnrollmentCapabilityBinding extends BaseCapabilityBinding {
@@ -36,7 +35,6 @@ export interface ValidatedEnrollment {
 	actor_id: string;
 	confirmation_ref: string;
 	issued_at: string;
-	expires_at: string;
 	nonce: string;
 }
 
@@ -44,8 +42,8 @@ export interface EnrollmentAuthorityRegistry {
 	readonly brand: symbol;
 	/** Issue one capability bound to an exact binding. Library primitive. */
 	issue(binding: EnrollmentCapabilityBinding, issuedAt?: string): object;
-	inspect(capability: object, expected: EnrollmentCapabilityBinding, now?: number): ValidatedEnrollment;
-	consume(capability: object, expected: EnrollmentCapabilityBinding, now?: number): ValidatedEnrollment;
+	inspect(capability: object, expected: EnrollmentCapabilityBinding): ValidatedEnrollment;
+	consume(capability: object, expected: EnrollmentCapabilityBinding): ValidatedEnrollment;
 	isConsumed(capability: object): boolean;
 }
 
@@ -53,18 +51,15 @@ export function createEnrollmentAuthorityRegistry(): EnrollmentAuthorityRegistry
 	return createCapabilityRegistry<EnrollmentCapabilityBinding, EnrollmentCapabilityBinding, ValidatedEnrollment>(
 		ENROLLMENT_CAPABILITY_BRAND,
 		{
-			validateBinding(binding, issuedAt) {
+			validateBinding(binding) {
 				const missing: string[] = [];
 				for (const [key, value] of Object.entries(binding)) {
 					if (value === undefined || value === null || value === "") missing.push(key);
 				}
 				if (missing.length > 0)
 					throw new Error(`enrollment capability binding is incomplete: ${missing.join(", ")}`);
-				if (Number.isNaN(Date.parse(binding.expires_at)) || Date.parse(binding.expires_at) <= Date.parse(issuedAt))
-					throw new Error("enrollment capability must have a future expiry");
 			},
-			validateAndProject(state, expected, now) {
-				if (Date.parse(state.expires_at) <= now) throw new Error("enrollment capability has expired");
+			validateAndProject(state, expected) {
 				for (const key of Object.keys(expected) as Array<keyof EnrollmentCapabilityBinding>) {
 					if (state[key] !== expected[key])
 						throw new Error(`enrollment capability ${key} mismatch`);
@@ -78,7 +73,6 @@ export function createEnrollmentAuthorityRegistry(): EnrollmentAuthorityRegistry
 					actor_id: state.actor_id,
 					confirmation_ref: state.confirmation_ref,
 					issued_at: state.issued_at,
-					expires_at: state.expires_at,
 					nonce: state.nonce,
 				};
 			},

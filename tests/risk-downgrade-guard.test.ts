@@ -52,7 +52,6 @@ function revise(current: TaskRecordV4, next: TaskIntentV1) {
 		actor_id: "user-1",
 		confirmation_ref: "conf-1",
 		issued_at: "2026-08-12T00:00:00.000Z",
-		expires_at: "2099-01-01T00:00:00.000Z",
 	});
 }
 

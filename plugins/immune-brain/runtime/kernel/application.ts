@@ -53,7 +53,6 @@ export interface ApplyTaskActionInput {
 	capability?: MutationAuthorityCapabilityV2;
 	/** Trusted injected diff provider; the action's diff_hash is only an expectation. */
 	diffProvider: (root: string, record: TaskRecord) => string | { diff_hash: string; changed_paths?: readonly string[] };
-	now?: number;
 	/**
 	 * Terminal commit mode: record + workspace + active-claim removal + task
 	 * tombstone converge through one recoverable terminal transaction marker
@@ -72,8 +71,7 @@ export interface ApplyTaskActionInput {
 export function applyTaskAction(
 	input: ApplyTaskActionInput,
 ): StoredTaskMutationV3 {
-	const { root, task_id, prior_intent_token, registry, capability, diffProvider, now } =
-		input;
+	const { root, task_id, prior_intent_token, registry, capability, diffProvider } = input;
 	return withKernelStoreLock(root, () => {
 		const current = readTaskRecordRaw(root, task_id);
 		if (!current.record)
@@ -192,7 +190,7 @@ export function applyTaskAction(
 		// replay identity, and conflicting reuse, so any throw is a zero-write
 		// failure (including stale record/workspace CAS).
 		const inspectedAudit = expectedAuthority
-			? registry.inspect(capability, expectedAuthority, now)
+			? registry.inspect(capability, expectedAuthority)
 			: null;
 		const authorityRunId = inspectedAudit?.run_id;
 		const mutation = reduceTask(
@@ -237,7 +235,6 @@ export function applyTaskAction(
 			registry.consume(
 				capability as MutationAuthorityCapabilityV2,
 				expectedAuthority,
-				now,
 			);
 		}
 

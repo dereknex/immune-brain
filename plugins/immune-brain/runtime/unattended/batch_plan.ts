@@ -19,7 +19,6 @@ import type {
 } from "./types";
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-export const DEFAULT_DEADLINE_MS = 8 * 60 * 60 * 1_000;
 const DEFAULT_QA_FAILURE_LIMIT = 2;
 
 /**
@@ -123,7 +122,7 @@ function dependencyClosures(order: GithubInitiativeObservation["tasks"]): Map<st
 	return closures;
 }
 
-function budget(input: ProjectBatchPlanInput, enrollableCount: number, confirmationTime: { milliseconds: number; iso: string }): BatchPlanBudget {
+function budget(input: ProjectBatchPlanInput, enrollableCount: number): BatchPlanBudget {
 	const maxChildren = input.budget?.max_children === undefined
 		? positiveSafeInteger(enrollableCount, "budget.max_children")
 		: positiveSafeInteger(input.budget.max_children, "budget.max_children");
@@ -132,12 +131,7 @@ function budget(input: ProjectBatchPlanInput, enrollableCount: number, confirmat
 	const qaFailureLimit = input.budget?.qa_failure_limit === undefined
 		? DEFAULT_QA_FAILURE_LIMIT
 		: positiveSafeInteger(input.budget.qa_failure_limit, "budget.qa_failure_limit");
-	const deadline = input.budget?.deadline_at === undefined
-		? new Date(confirmationTime.milliseconds + DEFAULT_DEADLINE_MS).toISOString()
-		: timestamp(input.budget.deadline_at, "budget.deadline_at").iso;
-	if (Date.parse(deadline) <= confirmationTime.milliseconds)
-		throw new Error("budget.deadline_at must be later than confirmation_time");
-	return { max_children: maxChildren, deadline_at: deadline, qa_failure_limit: qaFailureLimit };
+	return { max_children: maxChildren, qa_failure_limit: qaFailureLimit };
 }
 
 export async function projectBatchPlan(
@@ -238,6 +232,6 @@ export async function projectBatchPlan(
 		children,
 		enrollable,
 		plan_digest: planDigest,
-		budget: budget(input, enrollable.length, confirmationTime),
+		budget: budget(input, enrollable.length),
 	};
 }

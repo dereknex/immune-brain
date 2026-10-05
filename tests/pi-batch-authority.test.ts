@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it, mock } from "bun:test";
+import { afterAll, describe, expect, it, mock, spyOn } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -541,15 +541,17 @@ describe("acc-pi-batch-gate", () => {
 		assertZeroWrites(fixture.root, priorHead, "cancel-zero");
 	});
 
-	it("an unanswered confirmation times out as rejected, reporting the elapsed bound and its setting, with zero writes", async () => {
-		const fixture = createBatchFixture("timeout-zero");
+	it("a pending confirmation settles only on the caller's cancellation signal, with zero writes", async () => {
+		const fixture = createBatchFixture("pending-cancel");
 		const priorHead = fixture.head;
 		// The dialog either resolves "cancel" or rejects when its signal aborts.
 		for (const settle of ["resolve", "reject"] as const) {
-			const result = await executePiUnattendedBatch({
+			const controller = new AbortController();
+			let settled = false;
+			const pending = executePiUnattendedBatch({
 				root: fixture.root,
-				initiativeSlug: "timeout-zero",
-				env: { ...process.env, IMMUNE_BRAIN_BATCH_TIMEOUT_MS: "30" },
+				initiativeSlug: "pending-cancel",
+				signal: controller.signal,
 				readInitiative: async () => fixture.observation,
 				confirmBatch: (details) =>
 					new Promise((resolve, reject) => {
@@ -559,15 +561,21 @@ describe("acc-pi-batch-gate", () => {
 							{ once: true },
 						);
 					}),
+			}).finally(() => {
+				settled = true;
 			});
 
-			// Rejected, not cancelled or declined: the user made no decision.
-			expect(result).toEqual({
-				state: "rejected",
-				reason: "native confirmation timed out after 30 ms waiting for user interaction; set IMMUNE_BRAIN_BATCH_TIMEOUT_MS to change the bound",
-				recovery_action: "retry through a fresh native gate in the current Host",
+			// Nothing but the caller ends the wait: the gate has no window of its own.
+			await new Promise((resolve) => setTimeout(resolve, 150));
+			expect(settled).toBe(false);
+			controller.abort();
+
+			expect(await pending).toEqual({
+				state: "cancelled",
+				reason: "native interaction cancelled",
+				recovery_action: "wait for a fresh literal-user request",
 			});
-			assertZeroWrites(fixture.root, priorHead, "timeout-zero");
+			assertZeroWrites(fixture.root, priorHead, "pending-cancel");
 		}
 	});
 
@@ -705,10 +713,11 @@ describe("acc-pi-batch-gate", () => {
 		expect(result.report.commits.length).toBe(2);
 	});
 
-	it("TTL-1: authorization expiry is the confirmed budget deadline, not a fixed ten-minute window", async () => {
+	it("an answer given after any delay is accepted and the authorization it issues carries no expiry", async () => {
 		const fixture = createBatchFixture("pi-ttl");
 		const commitsByTask = new Map<string, string>();
 		const confirmed: Array<{ summary: string }> = [];
+		let clock: ReturnType<typeof spyOn> | undefined;
 
 		const result = await executePiUnattendedBatch({
 			root: fixture.root,
@@ -732,19 +741,22 @@ describe("acc-pi-batch-gate", () => {
 			},
 			confirmBatch: async (details) => {
 				confirmed.push(details);
+				// The user answers a year later by the wall clock.
+				const answeredAt = Date.now() + 365 * 24 * 60 * 60 * 1000;
+				clock = spyOn(Date, "now").mockReturnValue(answeredAt);
 				return "accept";
 			},
-		});
+		}).finally(() => clock?.mockRestore());
 		expect(result.state).toBe("started");
 
 		const state = JSON.parse(
 			readFileSync(join(fixture.root, ".imm", "state", "batches", `${result.batch_id}.json`), "utf8"),
 		);
-		// The literal user confirmed exactly one deadline; the authorization expires with it.
-		expect(state.authorization_expires_at).toBe(state.budget.deadline_at);
-		// Regression guard: the authorization outlives a fixed ten-minute window.
-		expect(Date.parse(state.authorization_expires_at) - Date.now()).toBeGreaterThan(10 * 60 * 1000);
-		expect(confirmed[0]!.summary).toContain(`Expires at: ${state.authorization_expires_at}`);
+		expect(state).not.toHaveProperty("authorization_expires_at");
+		expect(state.budget).toEqual({ max_children: state.budget.max_children, qa_failure_limit: state.budget.qa_failure_limit });
+		// The gate shows only the bounds that still exist.
+		expect(confirmed[0]!.summary).toContain(`Budget: max_children=${state.budget.max_children}, qa_failure_limit=${state.budget.qa_failure_limit}`);
+		expect(confirmed[0]!.summary).not.toMatch(/expires|deadline/i);
 	});
 
 	it("review-2: cancellation right before batch execution produces cancelled state with zero writes", async () => {
@@ -888,7 +900,7 @@ describe("acc-pi-batch-gate", () => {
 		expect(result2.report.batch_state).toBe("completed");
 	});
 
-	it("review-3: batch resumption succeeds with fresh future expiry even after prior expiry has elapsed", async () => {
+	it("review-3: a parked batch carrying a retired past expiry resumes on fresh confirmation, and a decline leaves it byte-identical", async () => {
 		const fixture = createBatchFixture("expiry-resume");
 		const commitsByTask = new Map<string, string>();
 		let step = 0;
@@ -1213,10 +1225,10 @@ describe("acc-pi-batch-gate", () => {
 		execFileSync("git", ["add", "-A"], { cwd: fixture.root });
 
 		// An intact, still-binding authorization is reused without a second gate, so
-		// expire the persisted one to keep this resume re-confirming.
+		// park the persisted batch for a human to keep this resume re-confirming.
 		const batchStatePath = join(fixture.root, ".imm", "state", "batches", `${result1.batch_id}.json`);
 		const batchState = JSON.parse(readFileSync(batchStatePath, "utf8"));
-		batchState.authorization_expires_at = "2020-01-01T00:00:00.000Z";
+		batchState.batch_state = "needs_human";
 		writeFileSync(batchStatePath, `${JSON.stringify(batchState, null, 2)}\n`);
 
 		let capturedConfirmation: { details: string } | null = null;
@@ -1470,24 +1482,28 @@ describe("batch authorization reuse (ADR-0005 Decision 1)", () => {
 		expect(resumed.report.batch_state).toBe("completed");
 	});
 
-	it("demands a fresh gate when the authorization expired, naming the reason", async () => {
-		const { fixture, batchId } = await startRunningBatch("reuse-expired");
+	it("reuses a record carrying the retired expiry fields with past timestamps, and rewrites it without them", async () => {
+		const { fixture, batchId } = await startRunningBatch("reuse-legacy-expiry");
 		rewriteBatchState(fixture.root, batchId, (state) => {
 			state.authorization_expires_at = "2020-01-01T00:00:00.000Z";
+			state.budget.deadline_at = "2020-01-01T00:00:00.000Z";
 		});
 
 		const gates: string[] = [];
-		const declined = await resumeBatch(fixture, "reuse-expired", async (details) => {
+		const resumed = await resumeBatch(fixture, "reuse-legacy-expiry", async (details) => {
 			gates.push(details.details);
-			return "decline";
+			return "accept";
 		});
 
-		expect(gates).toHaveLength(1);
-		expect(gates[0]).toContain("batch_authorization_expired");
-		expect(gates[0]).toContain("Recovery: confirm to issue a fresh authorization");
-		expect(declined.state).toBe("rejected");
-		expect(declined.reason).toBe("native interaction declined");
-		expect(declined.recovery_action).toBe("wait for a fresh literal-user request");
+		expect(gates).toEqual([]);
+		expect(resumed.state).toBe("started");
+		expect(resumed.batch_id).toBe(batchId);
+		expect(resumed.report.batch_state).toBe("completed");
+		const rewritten = JSON.parse(
+			readFileSync(join(fixture.root, ".imm", "state", "batches", `${batchId}.json`), "utf8"),
+		);
+		expect(rewritten).not.toHaveProperty("authorization_expires_at");
+		expect(rewritten.budget).not.toHaveProperty("deadline_at");
 	});
 
 	it("demands a fresh gate when the HEAD lineage moved, then fails closed on the drift", async () => {

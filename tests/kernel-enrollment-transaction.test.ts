@@ -128,7 +128,6 @@ function bindingFor(root: string, taskId: string): EnrollmentCapabilityBinding {
 		preparation_digest: prep.digest,
 		actor_id: "user",
 		confirmation_ref: "pi-confirm-001",
-		expires_at: "2099-01-01T00:00:00.000Z",
 		nonce: "nonce-001",
 	};
 }
@@ -306,7 +305,6 @@ describe("enrollment workspace revision binding", () => {
 				diff_hash: `sha256:${"a".repeat(64)}`,
 				actor_id: "user",
 				confirmation_ref: "conf-stop",
-				expires_at: "2099-01-01T00:00:00.000Z",
 				findings_digest: null,
 			});
 			app.execute({
@@ -687,12 +685,10 @@ describe("batch-derived enrollment atomicity", () => {
 			base_head: readGitHead(root),
 			budget: {
 				max_children: children.length,
-				deadline_at: "2099-01-01T00:00:00.000Z",
 				qa_failure_limit: 2,
 			},
 			actor_id: "user",
 			confirmation_ref: "batch-confirm-001",
-			expires_at: "2099-01-01T00:00:00.000Z",
 			nonce: "batch-tx-nonce",
 		};
 	}

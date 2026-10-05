@@ -262,7 +262,6 @@ describe("planning artifact archival", () => {
         preparation_digest: prep.digest,
         actor_id: "user",
         confirmation_ref: "pi-confirm-enroll",
-        expires_at: "2099-01-01T00:00:00.000Z",
         nonce: "nonce-enroll",
       };
       enrollCanaryTask(root, {
@@ -323,7 +322,6 @@ describe("planning artifact archival", () => {
         diff_hash: d1,
         actor_id: "qa-1",
         confirmation_ref: "conf-qa",
-        expires_at: "2099-01-01T00:00:00.000Z",
         findings_digest: null,
       });
       run({ op: "record_approval", approval, capability: qaCap, actor_id: "qa-1" }, qaAt);
@@ -363,7 +361,6 @@ describe("planning artifact archival", () => {
         diff_hash: stale.diff_hash,
         actor_id: "reviewer-1",
         confirmation_ref: "conf-rework",
-        expires_at: "2099-01-01T00:00:00.000Z",
         findings_digest: findingsDigestV2(findings as never[]),
       });
       const restored = run(

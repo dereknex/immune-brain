@@ -985,10 +985,9 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 				plan_digest: planDigest,
 				branch: `imm/${slug}`,
 				base_head: repo.baseHead,
-				budget: { max_children: 5, deadline_at: FAR_FUTURE, qa_failure_limit: 3 },
+				budget: { max_children: 5, qa_failure_limit: 3 },
 				actor_id: "user",
 				confirmation_ref: "confirm-1",
-				expires_at: FAR_FUTURE,
 				nonce: "nonce-1",
 			},
 			children,
@@ -1005,8 +1004,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			plan_digest: planDigest,
 			base_head: repo.baseHead,
 			confirmation_time: CONFIRMATION_TIME,
-			authorization_expires_at: FAR_FUTURE,
-			budget: { max_children: 5, deadline_at: FAR_FUTURE, qa_failure_limit: 3 },
+			budget: { max_children: 5, qa_failure_limit: 3 },
 			now: "2026-01-01T01:00:00.000Z",
 			kernel,
 		};
@@ -1350,8 +1348,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			base_head: repo.baseHead,
 			branch: `imm/${slug}`,
 			confirmation_time: CONFIRMATION_TIME,
-			authorization_expires_at: FAR_FUTURE,
-			budget: { max_children: 5, deadline_at: FAR_FUTURE, qa_failure_limit: 3 },
+			budget: { max_children: 5, qa_failure_limit: 3 },
 			batch_state: "running" as const,
 			children: [
 				{
@@ -1454,8 +1451,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			base_head: repo.baseHead,
 			branch: `imm/${slug}`,
 			confirmation_time: CONFIRMATION_TIME,
-			authorization_expires_at: FAR_FUTURE,
-			budget: { max_children: 5, deadline_at: FAR_FUTURE, qa_failure_limit: 3 },
+			budget: { max_children: 5, qa_failure_limit: 3 },
 			batch_state: "running" as const,
 			children: [
 				{
@@ -1624,8 +1620,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			base_head: repo.baseHead,
 			branch: `imm/${slug}`,
 			confirmation_time: CONFIRMATION_TIME,
-			authorization_expires_at: FAR_FUTURE,
-			budget: { max_children: 5, deadline_at: FAR_FUTURE, qa_failure_limit: 3 },
+			budget: { max_children: 5, qa_failure_limit: 3 },
 			batch_state: "running" as const,
 			children: [
 				{
@@ -1737,8 +1732,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			base_head: repo.baseHead,
 			branch: `imm/${slug}`,
 			confirmation_time: CONFIRMATION_TIME,
-			authorization_expires_at: FAR_FUTURE,
-			budget: { max_children: 5, deadline_at: FAR_FUTURE, qa_failure_limit: 3 },
+			budget: { max_children: 5, qa_failure_limit: 3 },
 			batch_state: "running" as const,
 			children: [
 				{
@@ -1846,8 +1840,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			base_head: repo.baseHead,
 			branch: `imm/${slug}`,
 			confirmation_time: CONFIRMATION_TIME,
-			authorization_expires_at: FAR_FUTURE,
-			budget: { max_children: 5, deadline_at: FAR_FUTURE, qa_failure_limit: 3 },
+			budget: { max_children: 5, qa_failure_limit: 3 },
 			batch_state: "running" as const,
 			children: [
 				{
@@ -1960,8 +1953,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			base_head: repo.baseHead,
 			branch: `imm/${slug}`,
 			confirmation_time: CONFIRMATION_TIME,
-			authorization_expires_at: FAR_FUTURE,
-			budget: { max_children: 5, deadline_at: FAR_FUTURE, qa_failure_limit: 3 },
+			budget: { max_children: 5, qa_failure_limit: 3 },
 			batch_state: "running" as const,
 			children: [
 				{
@@ -2074,8 +2066,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			base_head: repo.baseHead,
 			branch: `imm/${slug}`,
 			confirmation_time: CONFIRMATION_TIME,
-			authorization_expires_at: FAR_FUTURE,
-			budget: { max_children: 5, deadline_at: FAR_FUTURE, qa_failure_limit: 3 },
+			budget: { max_children: 5, qa_failure_limit: 3 },
 			batch_state: "running" as const,
 			children: [
 				{
@@ -2203,8 +2194,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			base_head: repo.baseHead,
 			branch: `imm/${slug}`,
 			confirmation_time: CONFIRMATION_TIME,
-			authorization_expires_at: FAR_FUTURE,
-			budget: { max_children: 5, deadline_at: FAR_FUTURE, qa_failure_limit: 3 },
+			budget: { max_children: 5, qa_failure_limit: 3 },
 			batch_state: "running" as const,
 			children: [
 				{
@@ -2355,8 +2345,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			base_head: repo.baseHead,
 			branch: `imm/${slug}`,
 			confirmation_time: CONFIRMATION_TIME,
-			authorization_expires_at: FAR_FUTURE,
-			budget: { max_children: 5, deadline_at: FAR_FUTURE, qa_failure_limit: 3 },
+			budget: { max_children: 5, qa_failure_limit: 3 },
 			batch_state: "running" as const,
 			children: [
 				{
@@ -2561,8 +2550,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			base_head: repo.baseHead,
 			branch: `imm/${slug}`,
 			confirmation_time: CONFIRMATION_TIME,
-			authorization_expires_at: FAR_FUTURE,
-			budget: { max_children: 5, deadline_at: FAR_FUTURE, qa_failure_limit: 3 },
+			budget: { max_children: 5, qa_failure_limit: 3 },
 			batch_state: "running" as const,
 			children: [
 				{
@@ -2655,8 +2643,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			base_head: repo.baseHead,
 			branch: `imm/${slug}`,
 			confirmation_time: CONFIRMATION_TIME,
-			authorization_expires_at: FAR_FUTURE,
-			budget: { max_children: 5, deadline_at: FAR_FUTURE, qa_failure_limit: 3 },
+			budget: { max_children: 5, qa_failure_limit: 3 },
 			batch_state: "running" as const,
 			children: [
 				{
@@ -2798,8 +2785,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			base_head: repo.baseHead,
 			branch: `imm/${slug}`,
 			confirmation_time: CONFIRMATION_TIME,
-			authorization_expires_at: FAR_FUTURE,
-			budget: { max_children: 5, deadline_at: FAR_FUTURE, qa_failure_limit: 3 },
+			budget: { max_children: 5, qa_failure_limit: 3 },
 			batch_state: "running" as const,
 			children: [
 				{

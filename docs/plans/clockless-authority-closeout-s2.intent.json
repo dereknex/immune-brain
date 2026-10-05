@@ -1,0 +1,62 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "clockless-authority-closeout-s2",
+  "owner": "user",
+  "goal": "Let an unattended batch close itself out: adopt a fast-forward out-of-band commit on the batch branch instead of failing lineage, and, when a batch child reaches Kernel done in the foreground, commit it and settle the batch record in the same Host call with no new gate.",
+  "acceptance": [
+    {
+      "id": "CAC-S2-A1",
+      "assertion": "Implement the lineage part of S2 of docs/specs/clockless-authority-closeout.spec.md, test-first. Wherever the recorded batch head is compared, a HEAD on the same batch branch that descends from the recorded head with every recorded child commit still reachable is adopted as the new expected head, recorded in batch run state, and the batch proceeds without a gate; the next batch commit parents on the adopted head. A different branch, a detached HEAD, a recorded head that is not an ancestor of HEAD, and an unreachable recorded child commit still fail with batch_head_lineage_broken. An adopted out-of-band commit is never attributed to a child and never rewritten. The Enrollment dirty-scope refusal and the scope check on the batch's own commits are unchanged. scripts/verify-batch-completion.ts accepts a completed batch whose chain contains adopted commits and still reports lineage_mismatch for the fatal cases. ADR-0005 decision 5, ADR-0008 decision 1 and CONTEXT.md HEAD Lineage describe the rule.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-commit.test.ts\",\n      \"tests/kernel-batch-authority.test.ts\",\n      \"tests/batch-completion-verifier.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "CAC-S2-A2",
+      "assertion": "Implement the closeout part of S2 of the Spec. On both Hosts, when a batch child's foreground terminal mutation reaches Kernel done, the same tool call re-enters the shared startBatch with a capability rehydrated from durable facts; with no reuse blocker no native gate opens. The runner commits the child through its existing commit path with production evidence, then enrolls the next child or, when none remains, settles the batch record as completed and returns the report. A reserved foreground Review, a parked child and a stopped child end the sequence exactly where they do today and are never committed or closed out automatically. Re-entry after a crash at any step creates no second commit and no second enrollment. A failure during re-entry leaves the Kernel terminal result unchanged and is reported beside it with the single retry action start_unattended_batch. The runner still never pushes, opens a pull request or merges. A task that is not a batch child triggers no batch call. dist/imm-loop.md, README.md and docs/agents/pi-batch-acceptance.md describe the behavior, the Claude bundle is regenerated and matches source, and the Initiative changeset is extended.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/clockless-authority-closeout.md",
+    "CONTEXT.md",
+    "README.md",
+    "docs/adr/0005-unattended-initiative-batch-run.md",
+    "docs/adr/0008-batch-capability-rehydration.md",
+    "docs/agents/pi-batch-acceptance.md",
+    "docs/plans/clockless-authority-closeout-s2.intent.json",
+    "docs/specs/clockless-authority-closeout.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-loop.md",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+    "plugins/immune-brain/runtime/kernel/enrollment.ts",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/unattended/types.ts",
+    "scripts/verify-batch-completion.ts",
+    "tests/batch-completion-verifier.test.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/fixtures/workflow-decision-closure-evidence.json",
+    "tests/host-neutral-assurance-coordinator.test.ts",
+    "tests/kernel-batch-authority.test.ts",
+    "tests/kernel-enrollment-transaction.test.ts",
+    "tests/pi-batch-acceptance-integration.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/skill-dist-consistency.test.ts",
+    "tests/unattended-batch-commit.test.ts",
+    "tests/unattended-batch-run.test.ts",
+    "tests/unattended-contracts.test.ts",
+    "tests/workflow-behavior-evidence.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

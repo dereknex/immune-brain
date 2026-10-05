@@ -67,17 +67,16 @@ export interface ReconfirmationSnapshot {
 }
 
 // Ephemeral captured observations, not authority: the runner independently
-// validates the native capability. Entries expire and are discarded on application.
-const confirmations = new Map<string, { snapshot: ReconfirmationSnapshot; expires: number }>();
-export function retainReconfirmation(nonce: string, expires: string, snapshot: ReconfirmationSnapshot): void {
-	for (const [key, value] of confirmations) if (value.expires <= Date.now()) confirmations.delete(key);
+// validates the native capability. Entries are discarded on application.
+const confirmations = new Map<string, ReconfirmationSnapshot>();
+export function retainReconfirmation(nonce: string, snapshot: ReconfirmationSnapshot): void {
 	if (confirmations.has(nonce)) refuse();
-	confirmations.set(nonce, { snapshot, expires: Date.parse(expires) });
+	confirmations.set(nonce, snapshot);
 }
 export function takeReconfirmation(nonce: string): ReconfirmationSnapshot {
 	const found = confirmations.get(nonce); confirmations.delete(nonce);
-	if (!found || found.expires <= Date.now()) refuse();
-	return found.snapshot;
+	if (!found) refuse();
+	return found;
 }
 
 export async function captureBatchReconfirmation(root: string, record: BatchRunStateRecord, children: BatchPlanChild[]): Promise<ReconfirmationSnapshot> {

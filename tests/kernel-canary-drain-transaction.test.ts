@@ -86,7 +86,6 @@ beforeEach(() => {
 		preparation_digest: prep.digest,
 		actor_id: "user",
 		confirmation_ref: "pi-confirm-enroll",
-		expires_at: "2099-01-01T00:00:00.000Z",
 		nonce: "nonce-enroll",
 	};
 	enrollCap = enrollmentRegistry.issue(enrollBinding);
@@ -126,7 +125,6 @@ function drainCapability(overrides: Record<string, unknown> = {}) {
 		diff_hash: ZERO_DIFF,
 		actor_id: "user-1",
 		confirmation_ref: "conf-drain",
-		expires_at: "2099-01-01T00:00:00.000Z",
 		findings_digest: null,
 		...overrides,
 	});
@@ -271,7 +269,6 @@ describe("drain transaction", () => {
 			preparation_digest: prep.digest,
 			actor_id: "user",
 			confirmation_ref: "pi-confirm-enroll",
-			expires_at: "2099-01-01T00:00:00.000Z",
 			nonce: "nonce-enroll",
 		};
 		expect(() =>
