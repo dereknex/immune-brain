@@ -25,6 +25,10 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 
 Infer the repo from `git remote -v`; `gh` does this automatically when run inside a clone.
 
+## Initiative Parent closure
+
+The Planner never closes a GitHub Initiative Parent. The tracker's terminal projection does: after `mark-terminal` closes a Child as completed, it reads the Parent and its Sub-issue list (Issue-scoped reads, no repository listing) and closes the Parent as completed exactly once when every Sub-issue carrying a Slice marker of that Initiative is closed as completed. An open, stopped, not-planned or parked Child keeps the Parent open and causes no Parent write; an already closed Parent and a rerun of the same `mark-terminal` write nothing. A failed Parent read or close is reported as tracker observation beside the Kernel result, never changes it, and is retried by the same `mark-terminal`.
+
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_

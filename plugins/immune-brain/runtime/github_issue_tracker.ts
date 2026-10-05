@@ -973,7 +973,7 @@ function createInitiativeBody(
 		KIND_INITIATIVE_MARKER,
 		marker("repo-id", repository.id),
 		marker("initiative-id", operation.initiative_id),
-	].join("\n")}\n\n${provenance}## How to use this Issue\n\n- Edit planning prose and Slice ordering directly after creation.\n- Keep each Slice marker attached to exactly one stable Slice entry.\n- The tracker never rewrites or closes this Parent after creation; the tracker never changes or closes it automatically.\n\n## Problem\n\n${publicText(projection.problem ?? "The Initiative addresses the bounded delivery described below.", "projection.problem")}\n\n## Result\n\n${publicText(projection.result ?? operation.goal, "projection.result")}\n\n## Initiative design\n\n${publicText(projection.design ?? "Each Child preserves the shared Initiative decisions and boundaries recorded here.", "projection.design")}\n\n## Decisions\n\n${listText(projection.decisions, "- No additional Initiative decisions recorded.")}\n\n## Testing strategy\n\n${publicText(projection.testing_strategy ?? "Each Child closes from its focused acceptance verification.", "projection.testing_strategy")}\n\n## Out of scope\n\n${listText(projection.out_of_scope, "- Unrelated work outside this Initiative.")}\n\n## Slices\n\n${operation.slices.length + historicalSlices.length === 0 ? "No Slices recorded yet." : [...historicalSlices, ...operation.slices.map((slice) => `- [ ] ${marker("slice-id", slice.id)} **${slice.id}**: ${slice.result ?? slice.goal}${slice.blocked_by?.length ? ` (blocked by: ${slice.blocked_by.join(", ")})` : ""}`)].join("\n")}\n\n${ISSUE_FOOTER}\n`;
+	].join("\n")}\n\n${provenance}## How to use this Issue\n\n- Edit planning prose and Slice ordering directly after creation.\n- Keep each Slice marker attached to exactly one stable Slice entry.\n- The tracker never rewrites this Parent after creation; the tracker closes it as completed once every Slice Child is completed, and never closes it otherwise.\n\n## Problem\n\n${publicText(projection.problem ?? "The Initiative addresses the bounded delivery described below.", "projection.problem")}\n\n## Result\n\n${publicText(projection.result ?? operation.goal, "projection.result")}\n\n## Initiative design\n\n${publicText(projection.design ?? "Each Child preserves the shared Initiative decisions and boundaries recorded here.", "projection.design")}\n\n## Decisions\n\n${listText(projection.decisions, "- No additional Initiative decisions recorded.")}\n\n## Testing strategy\n\n${publicText(projection.testing_strategy ?? "Each Child closes from its focused acceptance verification.", "projection.testing_strategy")}\n\n## Out of scope\n\n${listText(projection.out_of_scope, "- Unrelated work outside this Initiative.")}\n\n## Slices\n\n${operation.slices.length + historicalSlices.length === 0 ? "No Slices recorded yet." : [...historicalSlices, ...operation.slices.map((slice) => `- [ ] ${marker("slice-id", slice.id)} **${slice.id}**: ${slice.result ?? slice.goal}${slice.blocked_by?.length ? ` (blocked by: ${slice.blocked_by.join(", ")})` : ""}`)].join("\n")}\n\n${ISSUE_FOOTER}\n`;
 }
 
 async function createInitiative(
@@ -1359,7 +1359,7 @@ async function closeTerminalIssue(
 		: result(operation.op, "retryable_failure", "terminal Issue closure did not converge", found.issue);
 }
 
-async function markTerminal(
+async function markChildTerminal(
 	root: string,
 	gh: GhTransport,
 	operation: Extract<TrackerOperation, { op: "mark-terminal" }>,
@@ -1403,6 +1403,86 @@ async function markTerminal(
 	const refreshedOwnership = await confirmTerminalOwnership(root, gh, operation.op, refreshed, reread.issue);
 	if (!("owned" in refreshedOwnership)) return refreshedOwnership;
 	return closeTerminalIssue(root, gh, operation, refreshed, reread.issue, lookup);
+}
+
+/**
+ * The Parent decision reads only Issue-scoped endpoints (the Parent and its
+ * Sub-issue list), never a repository listing. A failed read or close is a
+ * tracker observation whose single retry action is the same `mark-terminal`;
+ * the Child's terminal closure is already confirmed and stays unchanged.
+ */
+async function closeParentWhenComplete(
+	root: string,
+	gh: GhTransport,
+	operation: Extract<TrackerOperation, { op: "mark-terminal" }>,
+	source: RepositorySnapshot,
+	childResult: GithubTrackerResult,
+): Promise<GithubTrackerResult> {
+	const child = taskLookup(source.issues, source.repository.id, operation.task_id);
+	if (child.kind !== "found") return childResult;
+	const initiativeId = ownershipMarkerValue(child.issue.body, "initiative-id");
+	if (!initiativeId) return childResult;
+	const parentLookup = initiativeLookup(source.issues, source.repository.id, initiativeId);
+	if (parentLookup.kind !== "found") return childResult;
+	const parentNumber = parentLookup.issue.number;
+	const retry = (message: string, status: TrackerStatus = "retryable_failure") =>
+		result(operation.op, status, `Parent #${parentNumber}: ${message}; the Task closure is unchanged, retry the same mark-terminal`, child.issue);
+	const endpoint = `repos/${source.repository.name_with_owner}/issues/${parentNumber}`;
+	const readParent = async (): Promise<GithubIssue | GithubTrackerResult> => {
+		const read = await gh.run(["api", endpoint], { cwd: root });
+		if (read.exit_code !== 0 || read.output_exceeded) {
+			const failed = ghFailure(operation.op, read, "cannot read the Initiative Parent");
+			return retry(failed.message, failed.status);
+		}
+		try {
+			const [issue] = parseIssues(`[${read.stdout}]`);
+			return issue ?? retry("gh returned a malformed Issue", "permanent_failure");
+		} catch (error) {
+			return retry(error instanceof Error ? error.message : String(error), "permanent_failure");
+		}
+	};
+	const parent = await readParent();
+	if ("contract" in parent) return parent;
+	if (parent.state === "closed") return childResult;
+	const listed = await gh.run(["api", "--paginate", "--slurp", `${endpoint}/sub_issues?per_page=100`], { cwd: root });
+	if (listed.exit_code !== 0 || listed.output_exceeded) {
+		const failed = ghFailure(operation.op, listed, "cannot read the Initiative Sub-issues");
+		return retry(failed.message, failed.status);
+	}
+	let children: GithubIssue[];
+	try {
+		children = parseIssues(listed.stdout);
+	} catch (error) {
+		return retry(error instanceof Error ? error.message : String(error), "permanent_failure");
+	}
+	const sliceChildren = children.filter((candidate) =>
+		candidate.body.includes(marker("initiative-id", initiativeId))
+		&& /<!-- immune-brain:slice-id=[^>]+ -->/.test(candidate.body));
+	if (sliceChildren.length === 0
+		|| !sliceChildren.every((candidate) => candidate.state === "closed" && candidate.state_reason === "completed"))
+		return childResult;
+	const close = await gh.run(["issue", "close", String(parentNumber), "--repo", source.repository.name_with_owner, "--reason", "completed"], { cwd: root });
+	const confirmed = await readParent();
+	if ("contract" in confirmed) return confirmed;
+	if (confirmed.state === "closed" && confirmed.state_reason === "completed")
+		return result(operation.op, "updated", `${childResult.message}; Initiative Parent #${parentNumber} closed as completed`, child.issue);
+	if (close.exit_code !== 0 || close.output_exceeded) {
+		const failed = ghFailure(operation.op, close, "Initiative Parent closure failed");
+		return retry(failed.message, failed.status);
+	}
+	return retry("closure did not converge");
+}
+
+async function markTerminal(
+	root: string,
+	gh: GhTransport,
+	operation: Extract<TrackerOperation, { op: "mark-terminal" }>,
+	source: RepositorySnapshot,
+): Promise<GithubTrackerResult> {
+	const terminal = await markChildTerminal(root, gh, operation, source);
+	if (operation.phase !== "done" || (terminal.status !== "updated" && terminal.status !== "already_current") || !terminal.association_found)
+		return terminal;
+	return closeParentWhenComplete(root, gh, operation, source, terminal);
 }
 
 function normalizedList(value: unknown, name: string, max = 2_000): string[] | undefined {

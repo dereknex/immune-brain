@@ -51,7 +51,8 @@ class ProjectionGh implements GhTransport {
 			const detail = endpoint.match(/^repos\/[^/]+\/[^/]+\/issues\/(\d+)$/);
 			if (detail) {
 				const issue = this.issues.find((candidate) => candidate.number === Number(detail[1]));
-				return issue ? ok(String(issue.id)) : { ...ok(), exit_code: 1, stderr: "not found" };
+				if (!issue) return { ...ok(), exit_code: 1, stderr: "not found" };
+				return ok(args.includes("--jq") ? String(issue.id) : JSON.stringify(issue));
 			}
 			if (endpoint.includes("/issues?state=all"))
 				return ok(JSON.stringify(this.issues));
@@ -83,7 +84,7 @@ class ProjectionGh implements GhTransport {
 			const subIssueList = endpoint.match(/issues\/(\d+)\/sub_issues/);
 			if (subIssueList && !args.some((flag) => flag === "-F" || flag === "-f")) {
 				const numbers = this.subIssues.get(Number(subIssueList[1])) ?? [];
-				return ok(JSON.stringify(numbers.map((number) => ({ number }))));
+				return ok(JSON.stringify(numbers.map((number) => this.issues.find((issue) => issue.number === number) ?? { number })));
 			}
 			if (subIssueList) {
 				this.mutations += 1;

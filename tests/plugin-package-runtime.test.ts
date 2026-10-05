@@ -233,6 +233,12 @@ class FakeGh implements GhTransport {
 	/** Fails the next `issue edit` targeting this Issue number, after it succeeds. */
 	failNextEditForIssue: number | null = null;
 	afterIssueCreate?: (issueNumber: number, cwd: string) => void;
+	/** Every `issue close` target, in call order: the only Issue-state writes the fake can see. */
+	closedNumbers: number[] = [];
+	/** Every `api` endpoint read, in call order. */
+	apiReads: string[] = [];
+	failNextReadOfIssue: number | null = null;
+	failNextCloseOfIssue: number | null = null;
 
 	async run(args: string[], options: { cwd?: string; stdin?: string } = {}): Promise<GhExecution> {
 		const ok = (stdout = ""): GhExecution => ({ exit_code: 0, stdout, stderr: "", timed_out: false, output_exceeded: false });
@@ -252,8 +258,14 @@ class FakeGh implements GhTransport {
 			// number, then attaches relations from that id.
 			const detail = endpoint.match(/^repos\/[^/]+\/[^/]+\/issues\/(\d+)$/);
 			if (detail) {
+				this.apiReads.push(endpoint);
 				const issue = this.issues.find((candidate) => candidate.number === Number(detail[1]));
-				return issue ? ok(String(issue.id)) : { ...ok(), exit_code: 1, stderr: "not found" };
+				if (this.failNextReadOfIssue === Number(detail[1]) && !args.includes("--jq")) {
+					this.failNextReadOfIssue = null;
+					return { exit_code: 1, stdout: "", stderr: "network is unreachable", timed_out: false, output_exceeded: false };
+				}
+				if (!issue) return { ...ok(), exit_code: 1, stderr: "not found" };
+				return ok(args.includes("--jq") ? String(issue.id) : JSON.stringify(issue));
 			}
 			if (endpoint.includes("/issues?state=all")) {
 				if (args.includes("--paginate") && args.includes("--slurp"))
@@ -305,8 +317,9 @@ class FakeGh implements GhTransport {
 				}
 				const subIssueList = endpoint.match(/issues\/(\d+)\/sub_issues/);
 			if (subIssueList && !args.some((flag) => flag === "-F" || flag === "-f")) {
+				this.apiReads.push(endpoint);
 				const numbers = this.subIssues.get(Number(subIssueList[1])) ?? [];
-				const pages = Array.from({ length: Math.ceil(numbers.length / 100) }, (_, index) => numbers.slice(index * 100, (index + 1) * 100).map((number) => ({ number })));
+				const pages = Array.from({ length: Math.ceil(numbers.length / 100) }, (_, index) => numbers.slice(index * 100, (index + 1) * 100).map((number) => this.issues.find((issue) => issue.number === number) ?? { number }));
 				return ok(JSON.stringify(args.includes("--slurp") ? pages : (pages[0] ?? [])));
 			}
 			if (subIssueList) {
@@ -379,6 +392,11 @@ class FakeGh implements GhTransport {
 			this.mutations += 1;
 			const issue = this.issues.find((candidate) => candidate.number === Number(args[2]));
 			if (!issue) return { ...ok(), exit_code: 1, stderr: "not found" };
+			if (this.failNextCloseOfIssue === issue.number) {
+				this.failNextCloseOfIssue = null;
+				return { exit_code: 1, stdout: "", stderr: "network is unreachable", timed_out: false, output_exceeded: false };
+			}
+			this.closedNumbers.push(issue.number);
 			issue.state = "closed";
 			issue.state_reason = args.at(-1) === "not planned" ? "not_planned" : "completed";
 			return ok();
@@ -754,7 +772,8 @@ describe("plugin package runtime cutover parity", () => {
 			expect(gh.issues[0].body).toContain("<!-- immune-brain:slice-id=S1 -->");
 			expect(gh.issues[0].body).toContain("## How to use this Issue");
 			expect(gh.issues[0].body).toContain("Outbound visibility only");
-			expect(gh.issues[0].body).toContain("the tracker never changes or closes it automatically");
+			expect(gh.issues[0].body).toContain("the tracker closes it as completed once every Slice Child is completed");
+			expect(gh.issues[0].body).not.toContain("never changes or closes it automatically");
 			expect(gh.issues[0].body).toContain("**S1**: Ship the first bounded Task");
 
 			expect(await runGithubTrackerOperation(root, requested, gh)).toMatchObject({ status: "already_current" });
@@ -1431,6 +1450,77 @@ describe("plugin package runtime cutover parity", () => {
 		});
 	});
 
+	it("closes the Parent once when the last Slice Child completes and keeps it open otherwise", async () => {
+		await withIsolatedRootAsync(async (root) => {
+			const gh = new FakeGh();
+			const initiative = { ...INITIATIVE, slices: [{ id: "S1", goal: "First" }, { id: "S2", goal: "Second" }] };
+			expect((await runGithubTrackerOperation(root, initiative, gh)).status).toBe("created");
+			expect((await runGithubTrackerOperation(root, TRACKED_TASK, gh)).status).toBe("created");
+			const second = { ...TRACKED_TASK, task_id: "second-task", slice_id: "S2" };
+			expect((await runGithubTrackerOperation(root, second, gh)).status).toBe("created");
+			const first = { op: "mark-terminal" as const, task_id: TRACKED_TASK.task_id, phase: "done" as const, terminal_event_id: "complete:first:1" };
+			const last = { op: "mark-terminal" as const, task_id: "second-task", phase: "done" as const, terminal_event_id: "complete:second:1" };
+
+			// An open sibling Child keeps the Parent open with zero Parent writes.
+			expect(await runGithubTrackerOperation(root, first, gh)).toMatchObject({ status: "updated", issue_number: 2 });
+			expect(gh.closedNumbers).toEqual([2]);
+			expect(gh.issues[0].state).toBe("open");
+
+			// A sibling closed as stopped never counts as completed.
+			expect(await runGithubTrackerOperation(root, { ...last, phase: "stopped", terminal_event_id: "stop:second:1" }, gh)).toMatchObject({ status: "updated" });
+			expect(gh.closedNumbers).toEqual([2, 3]);
+			expect(gh.issues[0].state).toBe("open");
+
+			// The sibling reopens out of band and then completes: the Parent closes exactly once.
+			gh.issues[2].state = "open";
+			gh.issues[2].state_reason = null;
+			gh.issues[2].body = gh.issues[2].body.replace(/\n\n<!-- immune-brain:terminal-event=[^>]+ -->\nTerminal event: `[^`]+`\n/, "");
+			const completed = await runGithubTrackerOperation(root, last, gh);
+			expect(completed).toMatchObject({ status: "updated", issue_number: 3 });
+			expect(completed.message).toContain("Parent #1");
+			expect(gh.closedNumbers).toEqual([2, 3, 3, 1]);
+			expect(gh.issues[0]).toMatchObject({ state: "closed", state_reason: "completed" });
+
+			// A rerun, with the Parent already closed, writes nothing.
+			const mutations = gh.mutations;
+			expect(await runGithubTrackerOperation(root, last, gh)).toMatchObject({ status: "already_current" });
+			expect(await runGithubTrackerOperation(root, first, gh)).toMatchObject({ status: "already_current" });
+			expect(gh.mutations).toBe(mutations);
+			expect(gh.closedNumbers).toEqual([2, 3, 3, 1]);
+			// The Parent decision is read from Issue-scoped endpoints only.
+			expect(gh.apiReads).toContain("repos/example/project/issues/1");
+			expect(gh.apiReads).toContain("repos/example/project/issues/1/sub_issues?per_page=100");
+		});
+	});
+
+	it("reports a failed Parent read or close as tracker observation and converges on the same mark-terminal", async () => {
+		await withIsolatedRootAsync(async (root) => {
+			const gh = new FakeGh();
+			expect((await runGithubTrackerOperation(root, INITIATIVE, gh)).status).toBe("created");
+			expect((await runGithubTrackerOperation(root, TRACKED_TASK, gh)).status).toBe("created");
+			const terminal = { op: "mark-terminal" as const, task_id: TRACKED_TASK.task_id, phase: "done" as const, terminal_event_id: "complete:only:1" };
+
+			gh.failNextReadOfIssue = 1;
+			const readFailure = await runGithubTrackerOperation(root, terminal, gh);
+			expect(readFailure).toMatchObject({ status: "retryable_failure", issue_number: 2 });
+			expect(readFailure.message).toContain("mark-terminal");
+			expect(gh.issues[1]).toMatchObject({ state: "closed", state_reason: "completed" });
+			expect(gh.issues[0].state).toBe("open");
+
+			gh.failNextCloseOfIssue = 1;
+			const closeFailure = await runGithubTrackerOperation(root, terminal, gh);
+			expect(closeFailure).toMatchObject({ status: "retryable_failure", issue_number: 2 });
+			expect(closeFailure.message).toContain("mark-terminal");
+			expect(gh.issues[0].state).toBe("open");
+
+			expect(await runGithubTrackerOperation(root, terminal, gh)).toMatchObject({ status: "updated" });
+			expect(gh.issues[0]).toMatchObject({ state: "closed", state_reason: "completed" });
+			expect(gh.closedNumbers.filter((number) => number === 1)).toEqual([1]);
+			expect(await runGithubTrackerOperation(root, terminal, gh)).toMatchObject({ status: "already_current" });
+			expect(gh.closedNumbers.filter((number) => number === 1)).toEqual([1]);
+		});
+	});
+
 	it("fails closed on duplicate identities without mutating", async () => {
 		await withIsolatedRootAsync(async (root) => {
 			const gh = new FakeGh();
@@ -1887,6 +1977,9 @@ describe("initiative amendment publication", () => {
 			const closedChild = gh.issues.find((issue) => issue.body.includes("task-id=amend-live"))!;
 			closedChild.state = "open";
 			closedChild.state_reason = null;
+			// A lost Child close also means the terminal projection never reached the Parent close.
+			parentIssue.state = "open";
+			parentIssue.state_reason = null;
 			expect(closedChild.body).toContain("terminal-event=evt-failed-close");
 			const input = amendmentInput(paths, parentIssue, pending, historical, {
 				pendingResult: "Deliver the amended pending work",

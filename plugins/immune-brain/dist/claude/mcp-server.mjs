@@ -9331,7 +9331,7 @@ ${provenance}## How to use this Issue
 
 - Edit planning prose and Slice ordering directly after creation.
 - Keep each Slice marker attached to exactly one stable Slice entry.
-- The tracker never rewrites or closes this Parent after creation; the tracker never changes or closes it automatically.
+- The tracker never rewrites this Parent after creation; the tracker closes it as completed once every Slice Child is completed, and never closes it otherwise.
 
 ## Problem
 
@@ -9654,7 +9654,7 @@ async function closeTerminalIssue(root, gh, operation, source, issue, lookup) {
     return result(operation.op, "updated", "terminal Task Issue closure confirmed", found.issue);
   return close.exit_code !== 0 ? ghFailure(operation.op, close, "terminal Issue closure failed") : result(operation.op, "retryable_failure", "terminal Issue closure did not converge", found.issue);
 }
-async function markTerminal(root, gh, operation, source) {
+async function markChildTerminal(root, gh, operation, source) {
   const lookup = (issues) => taskLookup(issues, source.repository.id, operation.task_id);
   const found = lookup(source.issues);
   if (found.kind === "missing")
@@ -9703,6 +9703,69 @@ async function markTerminal(root, gh, operation, source) {
   if (!("owned" in refreshedOwnership))
     return refreshedOwnership;
   return closeTerminalIssue(root, gh, operation, refreshed, reread.issue, lookup);
+}
+async function closeParentWhenComplete(root, gh, operation, source, childResult) {
+  const child = taskLookup(source.issues, source.repository.id, operation.task_id);
+  if (child.kind !== "found")
+    return childResult;
+  const initiativeId = ownershipMarkerValue(child.issue.body, "initiative-id");
+  if (!initiativeId)
+    return childResult;
+  const parentLookup = initiativeLookup(source.issues, source.repository.id, initiativeId);
+  if (parentLookup.kind !== "found")
+    return childResult;
+  const parentNumber = parentLookup.issue.number;
+  const retry = (message, status = "retryable_failure") => result(operation.op, status, `Parent #${parentNumber}: ${message}; the Task closure is unchanged, retry the same mark-terminal`, child.issue);
+  const endpoint = `repos/${source.repository.name_with_owner}/issues/${parentNumber}`;
+  const readParent = async () => {
+    const read = await gh.run(["api", endpoint], { cwd: root });
+    if (read.exit_code !== 0 || read.output_exceeded) {
+      const failed = ghFailure(operation.op, read, "cannot read the Initiative Parent");
+      return retry(failed.message, failed.status);
+    }
+    try {
+      const [issue] = parseIssues(`[${read.stdout}]`);
+      return issue ?? retry("gh returned a malformed Issue", "permanent_failure");
+    } catch (error) {
+      return retry(error instanceof Error ? error.message : String(error), "permanent_failure");
+    }
+  };
+  const parent = await readParent();
+  if ("contract" in parent)
+    return parent;
+  if (parent.state === "closed")
+    return childResult;
+  const listed = await gh.run(["api", "--paginate", "--slurp", `${endpoint}/sub_issues?per_page=100`], { cwd: root });
+  if (listed.exit_code !== 0 || listed.output_exceeded) {
+    const failed = ghFailure(operation.op, listed, "cannot read the Initiative Sub-issues");
+    return retry(failed.message, failed.status);
+  }
+  let children;
+  try {
+    children = parseIssues(listed.stdout);
+  } catch (error) {
+    return retry(error instanceof Error ? error.message : String(error), "permanent_failure");
+  }
+  const sliceChildren = children.filter((candidate) => candidate.body.includes(marker("initiative-id", initiativeId)) && /<!-- immune-brain:slice-id=[^>]+ -->/.test(candidate.body));
+  if (sliceChildren.length === 0 || !sliceChildren.every((candidate) => candidate.state === "closed" && candidate.state_reason === "completed"))
+    return childResult;
+  const close = await gh.run(["issue", "close", String(parentNumber), "--repo", source.repository.name_with_owner, "--reason", "completed"], { cwd: root });
+  const confirmed = await readParent();
+  if ("contract" in confirmed)
+    return confirmed;
+  if (confirmed.state === "closed" && confirmed.state_reason === "completed")
+    return result(operation.op, "updated", `${childResult.message}; Initiative Parent #${parentNumber} closed as completed`, child.issue);
+  if (close.exit_code !== 0 || close.output_exceeded) {
+    const failed = ghFailure(operation.op, close, "Initiative Parent closure failed");
+    return retry(failed.message, failed.status);
+  }
+  return retry("closure did not converge");
+}
+async function markTerminal(root, gh, operation, source) {
+  const terminal = await markChildTerminal(root, gh, operation, source);
+  if (operation.phase !== "done" || terminal.status !== "updated" && terminal.status !== "already_current" || !terminal.association_found)
+    return terminal;
+  return closeParentWhenComplete(root, gh, operation, source, terminal);
 }
 function normalizedList(value, name, max = 2000) {
   if (value === undefined)

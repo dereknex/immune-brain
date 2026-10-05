@@ -1,0 +1,130 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "clockless-authority-closeout-s3",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "clockless-authority-closeout-s3",
+    "goal": "Make terminal tracker projection close a GitHub Initiative Parent as completed once every Slice Child is completed, and keep it open otherwise.",
+    "acceptance": [
+      {
+        "id": "CAC-S3-A1",
+        "assertion": "Implement S3 of docs/specs/clockless-authority-closeout.spec.md in the existing mark-terminal path, test-first, with the fake gh transport and no real remote write. After mark-terminal closes a Child as completed, the tracker decides from Issue-scoped reads of the Parent and its Sub-issue list, with no repository listing, whether every Sub-issue carrying a Slice marker of that Initiative is closed as completed; if so it closes the Parent as completed exactly once. An open Child, a Child closed as stopped or not planned, and a parked Child keep the Parent open with zero Parent writes. An already closed Parent and a rerun of the same mark-terminal perform no Parent write. A failed Parent read or close is returned as tracker observation with the same mark-terminal as its one retry action and never changes or hides the Kernel result. The tracker result contract identifier, Issue marker format, publication and amendment flows are unchanged. The Parent body no longer says the tracker never closes it and states the new rule; dist/imm-planner.md says the Planner never closes the Parent and that terminal projection does; docs/agents/issue-tracker.md matches. The Claude bundle is regenerated, the evidence fixture that hash-binds the Planner contract is re-hashed, and the Initiative changeset describes all three Slices.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/plugin-package-runtime.test.ts\",\n      \"tests/github-issue-projection-contract.test.ts\",\n      \"tests/github-initiative-recovery.test.ts\",\n      \"tests/workflow-behavior-evidence.test.ts\",\n      \"tests/carrier-enrollment-gate-contract.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/clockless-authority-closeout.md",
+      "docs/agents/issue-tracker.md",
+      "docs/plans/clockless-authority-closeout-s3.intent.json",
+      "docs/specs/clockless-authority-closeout.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/runtime/github_issue_tracker.ts",
+      "tests/carrier-enrollment-gate-contract.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/fixtures/workflow-decision-closure-evidence.json",
+      "tests/github-initiative-recovery.test.ts",
+      "tests/github-issue-projection-contract.test.ts",
+      "tests/plugin-package-runtime.test.ts",
+      "tests/skill-dist-consistency.test.ts",
+      "tests/workflow-behavior-evidence.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/clockless-authority-closeout-s3.intent.json",
+    "content_hash": "sha256:f27a7f85d80b002814aecfb00a0047432bbd4680a7849d508dd8b1b4b34a7a93"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:f27a7f85d80b002814aecfb00a0047432bbd4680a7849d508dd8b1b4b34a7a93",
+  "git_base_head": "fb802525ec59a9fac56637f58aed3cb47635874a",
+  "attestations": [
+    {
+      "id": "approval-qa-3484e963",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f27a7f85d80b002814aecfb00a0047432bbd4680a7849d508dd8b1b4b34a7a93",
+      "diff_hash": "sha256:76186bac9aa406a4a5afeb02c2696e5673a3ae98f76a0bf01ce62694ba796c05",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:41734415cad0e2260c8e1419c51b2309e3bccb42e0efb2ecb7031e46d7b8eded",
+      "acceptance_results": [
+        {
+          "acceptance_id": "CAC-S3-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:41734415cad0e2260c8e1419c51b2309e3bccb42e0efb2ecb7031e46d7b8eded"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-3f38cf01",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f27a7f85d80b002814aecfb00a0047432bbd4680a7849d508dd8b1b4b34a7a93",
+      "diff_hash": "sha256:76186bac9aa406a4a5afeb02c2696e5673a3ae98f76a0bf01ce62694ba796c05",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified. S3 Parent close uses Issue-scoped reads only, closes once, writes nothing on rerun or when a Child is open, stopped or parked, and returns read or close failures as retryable tracker observation. Docs, Planner contract, bundle, fixture and changeset are consistent, and the tests cover the acceptance.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "fb802525ec59a9fac56637f58aed3cb47635874a",
+        "review_commit": "b1826e92a1fb341d921dc62806e09c75da49b7af",
+        "review_tree": "bb1a3eef80fc31ecdc16448a8ab7789a1676e835",
+        "manifest_digest": "sha256:7c8c594e44cb9793d1532ea9725580911334cdd4016876344bbd91deb4fde978"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:clockless-authority-closeout-s3:2026-10-05T05:48:47.508Z",
+      "at": "2026-10-05T05:48:47.508Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/clockless-authority-closeout-s3.intent.json"
+    },
+    {
+      "id": "record_approval:clockless-authority-closeout-s3:2026-10-05T05:48:59.593Z",
+      "at": "2026-10-05T05:48:59.593Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-3484e963\naction_v2_sha256:b695f2d3ea6fcf4ea6a4d1514be720d69dcd47281c28d1b417e4c34cc897920e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-05T05:48:59.594Z",
+        "expires_at": "2026-10-05T05:58:59.594Z"
+      }
+    },
+    {
+      "id": "record_approval:clockless-authority-closeout-s3:2026-10-05T05:50:02.743Z",
+      "at": "2026-10-05T05:50:02.743Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-3f38cf01\naction_v2_sha256:5a682d005ae04ef43f50c8b56c517032fc7869be9bb836c36d289811f6d91728",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-05T05:50:02.743Z",
+        "expires_at": "2026-10-05T06:00:02.743Z"
+      }
+    },
+    {
+      "id": "complete:clockless-authority-closeout-s3:2026-10-05T05:50:03.805Z",
+      "at": "2026-10-05T05:50:03.805Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:3e0af3c07f9ccc8a1cdb636ccbfddbdc73fad08517cb2f3607075b98ebc4b9e5"
+    }
+  ]
+}

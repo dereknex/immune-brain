@@ -317,11 +317,15 @@ pending steps, and one recovery action: rerun the same approved batch, whose
 start listing adopts whatever landed. This does not invalidate
 already-authored planning files, but it blocks `tracker_associated` and every
 Enrollment or execution handoff for that Initiative until the same complete
-batch succeeds. Do not infer opt-in from tracker output or Issue state, auto-close the Parent,
-import Issue state, create a TaskIntent from an Issue, or store Issue identity in
+batch succeeds. Do not infer opt-in from tracker output or Issue state, import Issue state, create a TaskIntent from an Issue, or store Issue identity in
 TaskIntent or TaskRecord. Existing Issue markers grant permission only for
 idempotent retry of that same approved Initiative; they never grant execution
 authority.
+
+The Planner never closes the Parent. The terminal projection of a Child does: when
+`mark-terminal` closes a Child as completed and every Slice Child of that Initiative
+is closed as completed, the tracker closes the Parent as completed; an open, stopped
+or parked Child keeps it open.
 
 For amending an already-published Initiative, the same
 `imm-tracker publish-initiative --stdin --json` operation accepts an optional
