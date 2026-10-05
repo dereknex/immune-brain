@@ -2635,14 +2635,14 @@ function headEntry(root, head, path) {
 function taskPathMatchesScope(path, scope) {
   return scope.some((scopePath) => pathMatchesScope(path, scopePath));
 }
-function assertNoPreEnrollmentScopeChanges(root, scopedStagedPaths) {
+function assertNoPreEnrollmentScopeChanges(root, scopedStagedPaths, taskId) {
   const baseline = readEnrollmentBaseline(root);
   if (!baseline)
     return;
   const current = captureGitWorkspaceSnapshot(root);
   if (!current)
     throw new Error("enrollment baseline cannot be compared because Git is unavailable");
-  const withheld = [...new Set(scopedStagedPaths)].filter((path) => baseline.dirty_files[path] !== undefined && baseline.dirty_files[path] === current.dirty_files[path]).sort(comparePaths);
+  const withheld = [...new Set(scopedStagedPaths)].filter((path) => !isOwnPlanningSidecar(path, taskId)).filter((path) => baseline.dirty_files[path] !== undefined && baseline.dirty_files[path] === current.dirty_files[path]).sort(comparePaths);
   if (withheld.length > 0)
     throw new Error(`task scope contains staged changes that predate Enrollment and cannot become task work: ${withheld.join(", ")}; stop the task and re-enroll from a clean scope`);
 }
@@ -2677,7 +2677,7 @@ function taskSnapshotOnce(root, scope, taskId) {
   if (uncommittedInScope.length > 0)
     throw new Error(`task scope contains unstaged or untracked changes: ${uncommittedInScope.join(", ")}`);
   const taskPaths = [...new Set(stagedPaths)].filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope)).sort(comparePaths);
-  assertNoPreEnrollmentScopeChanges(root, taskPaths);
+  assertNoPreEnrollmentScopeChanges(root, taskPaths, taskId);
   const stagedFiles = {};
   for (const path of taskPaths) {
     const current = indexEntry(root, path);
@@ -2756,7 +2756,7 @@ function taskRevisionSnapshotOnce(root, scope, baseHead, taskId) {
   const untrackedPaths = decodeNullPaths(gitBytes(root, ["ls-files", "--others", "--exclude-standard", "-z", "--"]), "untracked task revision paths");
   assertNoEnvelopeEscape(root, stagedPaths, scope, taskId);
   const scopedStagedPaths = stagedPaths.filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope));
-  assertNoPreEnrollmentScopeChanges(root, scopedStagedPaths);
+  assertNoPreEnrollmentScopeChanges(root, scopedStagedPaths, taskId);
   const scopedUnstagedPaths = unstagedPaths.filter((path) => taskPathMatchesScope(path, scope));
   const scopedUntrackedPaths = untrackedPaths.filter((path) => taskPathMatchesScope(path, scope));
   assertNoCaseFoldCollisions([...scopedStagedPaths, ...scopedUnstagedPaths, ...scopedUntrackedPaths], "Git task revision paths");

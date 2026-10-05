@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -184,6 +184,46 @@ describe("task-path derivation fails closed on pre-Enrollment scope changes", ()
 			writeFileSync(join(root, "src", "task.ts"), "export const task = 'early';\n");
 			git(root, ["add", "src/task.ts"]);
 			expect(() => captureGitTaskRevisionSnapshot(root, SCOPE, baseHead, TASK)).toThrow(refusal);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("the task's own staged sidecar inside the scope enrolls and passes both derivations; another task's does not", () => {
+		const root = repo();
+		try {
+			const baseHead = git(root, ["rev-parse", "HEAD"]);
+			const scope = ["docs/plans"];
+			const own = `docs/plans/${TASK}.intent.json`;
+			const other = "docs/plans/other-task.intent.json";
+			const intent = JSON.parse(readFileSync(join(root, own), "utf8"));
+			writeFileSync(join(root, own), `${JSON.stringify({ ...intent, scope_hint: scope }, null, 2)}\n`);
+			git(root, ["add", own]);
+
+			// Staged but uncommitted at Enrollment: exempt from the refusal.
+			expect(dirtyScopePaths(root, scope, TASK)).toEqual([]);
+			const { registry, input } = enroll(root);
+			expect(enrollCanaryTask(root, input, registry).record).toMatchObject({ task_id: TASK, lifecycle: "active" });
+
+			// The baseline holds the sidecar, yet neither derivation hard-stops on it.
+			expect(Object.keys(captureGitTaskSnapshot(root, scope, TASK).staged_files)).toEqual([own]);
+			expect(Object.keys(captureGitTaskRevisionSnapshot(root, scope, baseHead, TASK).changed_paths)).toEqual([own]);
+			expect(() => taskRevisionDiffHash(root, scope, baseHead, TASK)).not.toThrow();
+
+			// The exemption is bound to the task id: a different task, or no
+			// task id, still stops on the same baseline-equal path.
+			const refusal = new RegExp(`staged changes that predate Enrollment and cannot become task work: ${own.replace(/\./g, "\\.")}`);
+			expect(() => captureGitTaskSnapshot(root, scope, "other-task")).toThrow(refusal);
+			expect(() => captureGitTaskRevisionSnapshot(root, scope, baseHead, "other-task")).toThrow(refusal);
+			expect(() => taskRevisionDiffHash(root, scope, baseHead)).toThrow(refusal);
+
+			// Another task's baseline-equal sidecar still stops this task.
+			writeFileSync(join(root, other), "{}\n");
+			git(root, ["add", other]);
+			writeEnrollmentBaseline(root);
+			const otherRefusal = /staged changes that predate Enrollment and cannot become task work: docs\/plans\/other-task\.intent\.json/;
+			expect(() => captureGitTaskSnapshot(root, scope, TASK)).toThrow(otherRefusal);
+			expect(() => captureGitTaskRevisionSnapshot(root, scope, baseHead, TASK)).toThrow(otherRefusal);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

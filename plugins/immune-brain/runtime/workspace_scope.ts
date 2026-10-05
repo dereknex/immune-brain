@@ -397,13 +397,16 @@ function taskPathMatchesScope(path: string, scope: string[]): boolean {
  * task. Dropping it silently let QA attest workspace bytes that the Review
  * revision did not carry, so it is a hard stop instead: reverting and reapplying
  * yields the same bytes, and only a fresh Enrollment from a clean scope recovers.
+ * The task's own planning sidecar is exempt, as it is in dirtyScopePaths:
+ * Enrollment requires it tracked, so it is routinely staged in the baseline.
  */
-function assertNoPreEnrollmentScopeChanges(root: string, scopedStagedPaths: readonly string[]): void {
+function assertNoPreEnrollmentScopeChanges(root: string, scopedStagedPaths: readonly string[], taskId?: string): void {
 	const baseline = readEnrollmentBaseline(root);
 	if (!baseline) return;
 	const current = captureGitWorkspaceSnapshot(root);
 	if (!current) throw new Error("enrollment baseline cannot be compared because Git is unavailable");
 	const withheld = [...new Set(scopedStagedPaths)]
+		.filter((path) => !isOwnPlanningSidecar(path, taskId))
 		.filter((path) => baseline.dirty_files[path] !== undefined && baseline.dirty_files[path] === current.dirty_files[path])
 		.sort(comparePaths);
 	if (withheld.length > 0)
@@ -465,7 +468,7 @@ function taskSnapshotOnce(root: string, scope: string[], taskId?: string): GitTa
 	const taskPaths = [...new Set(stagedPaths)]
 		.filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope))
 		.sort(comparePaths);
-	assertNoPreEnrollmentScopeChanges(root, taskPaths);
+	assertNoPreEnrollmentScopeChanges(root, taskPaths, taskId);
 	const stagedFiles: Record<string, GitTaskIndexEntry> = {};
 	for (const path of taskPaths) {
 		const current = indexEntry(root, path);
@@ -595,7 +598,7 @@ function taskRevisionSnapshotOnce(
 	);
 	assertNoEnvelopeEscape(root, stagedPaths, scope, taskId);
 	const scopedStagedPaths = stagedPaths.filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope));
-	assertNoPreEnrollmentScopeChanges(root, scopedStagedPaths);
+	assertNoPreEnrollmentScopeChanges(root, scopedStagedPaths, taskId);
 	const scopedUnstagedPaths = unstagedPaths.filter((path) => taskPathMatchesScope(path, scope));
 	const scopedUntrackedPaths = untrackedPaths.filter((path) => taskPathMatchesScope(path, scope));
 	assertNoCaseFoldCollisions(

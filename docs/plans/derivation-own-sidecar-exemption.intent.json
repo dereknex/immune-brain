@@ -1,0 +1,20 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "derivation-own-sidecar-exemption",
+  "goal": "Remove the asymmetry left by the Issue #140 fix: the task's own planning sidecar is exempt from the Enrollment dirty-scope refusal, so it must also be exempt from the pre-Enrollment staged-scope hard stop in both task-path derivations. A task whose scope_hint covers its own staged sidecar can enroll and then proceed through QA and Review.",
+  "acceptance": [
+    {
+      "id": "DOS-A1",
+      "assertion": "When scope_hint covers the task's own planning sidecar and that sidecar is staged but uncommitted at Enrollment, Enrollment succeeds and neither task-path derivation (the task index snapshot and the task revision snapshot) throws the pre-Enrollment staged-scope error for it. Any other staged in-scope path that equals the Enrollment baseline, including another task's sidecar, still hard-stops both derivations and names the path. The generated Claude bundle matches the runtime source.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/enrollment-dirty-scope.test.ts\",\n      \"tests/managed-task-snapshot-isolation.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/workspace_scope.ts",
+    "tests/enrollment-dirty-scope.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1,
+  "owner": "user"
+}
