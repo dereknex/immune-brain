@@ -80,7 +80,7 @@ const {
 	parseAssuranceVerdict,
 	reviewReworkFindings,
 } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work.ts");
-type SnapshotDescriptor = import("../plugins/immune-brain/runtime/assurance/host_port").SnapshotDescriptor;
+type SnapshotDescriptor = import("../plugins/immune-brain/runtime/assurance/coordinator").SnapshotDescriptor;
 import { findingsDigestV2 } from "../plugins/immune-brain/runtime/kernel/reducer";
 import { runDeterministicQa } from "../plugins/immune-brain/runtime/assurance/qa";
 import {
