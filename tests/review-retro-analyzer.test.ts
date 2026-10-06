@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { run } from "../plugins/immune-brain/skills/imm-review-retro/scripts/review_retro.ts";
 
 const ROOT = resolve(import.meta.dir, "fixtures/review-retro");
+const CONTRACT_ROOT = resolve(import.meta.dir, "fixtures/review-retro-contract");
 
 describe("review-retro analyzer", () => {
 	test("ranks authors, splits findings, and reports usage", async () => {
@@ -46,6 +47,21 @@ describe("review-retro analyzer", () => {
 		expect(out).not.toContain("openai/gpt-5");
 		expect(out).toMatch(/sessions: 1 /);
 		expect(out).not.toContain("other-app");
+	});
+
+	test("reads assurance_verdict contracts: decision, verdict findings, apply_patch attribution", async () => {
+		const out = await run(["7", "--root", CONTRACT_ROOT]);
+		const row = out.split("\n").find((line) => line.startsWith("acme/coder"));
+		expect(row).toBeDefined();
+		// devEdits=1 (apply_patch); reviews=3 uniq=3, including the lowercase "review" dispatch
+		expect(row).toMatch(/acme\/coder\s+1\s+\d+\s+3\s+3\s+300\.0\b/);
+		// avgSc comes from the one tagged review; pass% follows the contract decision
+		// (pass 1 / judged 2), over the tag's REVISE, and skips the unjudged prose review
+		expect(row).toMatch(/9\.0\s+50%/);
+		// registr=3, block=1 (re-submitted finding counted once), advis=1, noisy=0
+		expect(row).toMatch(/3\s+1\s+1\s+0\s*$/);
+		expect(out).not.toContain("no-edit (review-only)");
+		expect(out).toContain("findings: 3 raw calls deduped to 2 distinct");
 	});
 
 	test("rejects a non-positive window", async () => {

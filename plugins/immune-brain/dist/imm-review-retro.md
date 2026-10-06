@@ -42,23 +42,36 @@ No daemon, no cron, no CI, no automatic commit.
 These rules keep numbers comparable across runs. Read the analyzer header
 aloud in the report so the 口径 stays visible.
 
-- `review` = an `Agent` tool call with `subagent_type` equal to `Review`.
-- Attribution = the model behind the most recent `edit`, `write`, or
-  `multiedit` in that session. If none, the row is `no-edit (review-only)`.
+- `review` = an `Agent` tool call with `subagent_type` equal to `Review`,
+  compared case-insensitively.
+- Attribution = the model behind the most recent `edit`, `write`,
+  `multiedit`, or `apply_patch` in that session. If none, the row is
+  `no-edit (review-only)`. Edits made through `bash` or `codemode` are not
+  attributed.
 - `uniq` counts distinct (session, description+prompt prefix) pairs. A wide
   gap versus `reviews` is the same review re-run on the same code.
 - `rev/100ed` is `100 * reviews / devEdits`. Rank on both absolute `reviews`
   and this intensity. A model can lead one axis and sit mid-pack on the
   other.
-- `avgSc` / `pass%` parse `[SCORE: …]` and `[VERDICT: …]` tags from the
-  matching Review `toolResult`. Untagged reviews show `-`.
+- `avgSc` parses the `[SCORE: …]` tag from the matching Review `toolResult`.
+  The `assurance_verdict` contract carries no score, so untagged reviews show
+  `-` and are left out of the average.
+- `pass%` is PASS over judged reviews. A review is judged by the `decision`
+  of the `assurance_kernel/assurance_verdict` contract in its `toolResult`
+  (`pass` counts as PASS); without a contract, by the `[VERDICT: …]` tag. A
+  review with neither is unjudged and left out of the denominator.
+- The quality table (`PASS` / `REVISE` / `REJECT` / `highRisk`) covers tagged
+  reviews only, so its `PASS` count can differ from `pass%`.
 - `registr` counts the Kernel `submit_review` registration in the session log.
   It is the registration of the same review and is never added into `reviews`.
 - `rounds/task` is registrations per distinct `(cwd, task_id)`. High values
   can be canary/QA harness re-registration, not human-visible rework.
-- Findings are `record_finding` calls, deduped per session. Summaries that
-  match `recorded cleanly`, `receipt recorded`, `round recorded`, or
-  `no finding(s)` are `bookkeep` / `noisy`, excluded from `block`/`advis`.
+- Findings are the `verdict.findings` entries of `submit_review` calls plus
+  legacy `record_finding` calls, deduped per session by summary, so a finding
+  re-submitted across rounds counts once. The Review `toolResult` copy of the
+  same verdict is not counted. Summaries that match `recorded cleanly`,
+  `receipt recorded`, `round recorded`, or `no finding(s)` are `bookkeep` /
+  `noisy`, excluded from `block`/`advis`.
 
 Usage counters on the same pass: sessions with activity, assistant turns,
 edit counts, a tool-call name histogram, and the project × author table.

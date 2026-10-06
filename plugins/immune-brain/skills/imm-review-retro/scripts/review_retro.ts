@@ -5,11 +5,13 @@
  * Usage: bun review_retro.ts <days> [--root <sessions-dir>] [--project <substr>] [--top N]
  *
  * Counting rules (the 口径 that keeps the numbers honest):
- *   review executed      = Agent(subagent_type="Review") tool call
- *   avgSc / pass%        = average score (0-10) and PASS rate from [SCORE: ...] tags in Review toolResult
+ *   review executed      = Agent(subagent_type="Review", any case) tool call
+ *   avgSc                = average score (0-10) from [SCORE: ...] tags in Review toolResult (the contract has no score)
+ *   pass%                = PASS rate over judged reviews: assurance_verdict `decision`, else the [VERDICT: ...] tag
  *   kernel:submit_review = the *registration* of that same review, reported separately (never added)
- *   attribution          = the model behind the most recent edit/write before the review (the code's author)
- *   findings             = imm_kernel_canary record_finding, deduped per session, harness bookkeeping split out
+ *   attribution          = the model behind the most recent edit/write/apply_patch before the review (the code's author)
+ *   findings             = submit_review verdict.findings plus legacy record_finding, deduped per session,
+ *                          harness bookkeeping split out
  */
 import { createReadStream, existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
@@ -18,12 +20,14 @@ import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 
 const BOOKKEEPING = /recorded cleanly|receipt recorded|round recorded|no findings?\b/i;
-const EDIT_TOOLS = new Set(["edit", "write", "multiedit"]);
+const EDIT_TOOLS = new Set(["edit", "write", "multiedit", "apply_patch"]);
 const SCORE_RE = /\[SCORE:\s*([\d.]+)\s*(?:\/\s*10)?\]/i;
 const VERDICT_RE = /\[VERDICT:\s*(\w+)\]/i;
 const RISK_RE = /\[RISK:\s*(\w+)\]/i;
 const BLOCK_RE = /\[BLOCKING:\s*(\d+)\]/i;
 const ADVIS_RE = /\[ADVISORY:\s*(\d+)\]/i;
+const VERDICT_CONTRACT = "assurance_kernel/assurance_verdict";
+const DECISION_RE = /"decision"\s*:\s*"(\w+)"/;
 
 type ReviewTag = {
 	score: number;
@@ -46,6 +50,11 @@ function parseReviewTag(text: string): ReviewTag | null {
 		blocking: Number(BLOCK_RE.exec(text)?.[1] ?? 0),
 		advisory: Number(ADVIS_RE.exec(text)?.[1] ?? 0),
 	};
+}
+
+function parseDecision(text: string): string | null {
+	if (!text.includes(VERDICT_CONTRACT)) return null;
+	return DECISION_RE.exec(text)?.[1]?.toLowerCase() ?? null;
 }
 
 function extractText(content: unknown): string {
@@ -136,6 +145,8 @@ export async function run(argv: string[]): Promise<string> {
 	const findingsRaw = new Map<string, number>();
 	const scores = new Map<string, number[]>();
 	const verdicts = new Map<string, number>();
+	const judged = new Map<string, number>();
+	const passed = new Map<string, number>();
 	const risks = new Map<string, number>();
 	let files = 0;
 
@@ -144,6 +155,16 @@ export async function run(argv: string[]): Promise<string> {
 		let cwd = "";
 		let used = false;
 		const pending = new Map<string, string>();
+		const addFinding = (owner: string, finding: unknown) => {
+			const f = norm(finding);
+			const summ = String(f.summary ?? "");
+			const kind = BOOKKEEPING.test(summ) ? "bookkeeping" : String(f.kind ?? "");
+			const rawKey = `${owner}\0${kind}`;
+			bump(findingsRaw, rawKey);
+			const uniq = findUniq.get(rawKey) ?? new Set();
+			uniq.add(`${path}\0${summ.slice(0, 160)}`);
+			findUniq.set(rawKey, uniq);
+		};
 		const rl = createInterface({ input: createReadStream(path, { encoding: "utf8" }) });
 		for await (const raw of rl) {
 			const line = raw.trim();
@@ -179,7 +200,7 @@ export async function run(argv: string[]): Promise<string> {
 					if (EDIT_TOOLS.has(name)) {
 						bump(dev, mo);
 						editor = mo;
-					} else if (name === "Agent" && a.subagent_type === "Review") {
+					} else if (name === "Agent" && String(a.subagent_type ?? "").toLowerCase() === "review") {
 						const owner = editor ?? "no-edit (review-only)";
 						bump(rev, owner);
 						const ep = episode.get(owner) ?? new Set();
@@ -197,15 +218,10 @@ export async function run(argv: string[]): Promise<string> {
 							const t = tasks.get(owner) ?? new Set();
 							t.add(`${cwd}\0${String(a.task_id ?? "")}`);
 							tasks.set(owner, t);
+							const found = norm(act.verdict).findings;
+							if (Array.isArray(found)) for (const f of found) addFinding(owner, f);
 						} else if (op === "record_finding") {
-							const f = norm(act.finding);
-							const summ = String(f.summary ?? "");
-							const kind = BOOKKEEPING.test(summ) ? "bookkeeping" : String(f.kind ?? "");
-							const rawKey = `${owner}\0${kind}`;
-							bump(findingsRaw, rawKey);
-							const uniq = findUniq.get(rawKey) ?? new Set();
-							uniq.add(`${path}\0${summ.slice(0, 160)}`);
-							findUniq.set(rawKey, uniq);
+							addFinding(owner, act.finding);
 						}
 					}
 				}
@@ -214,7 +230,13 @@ export async function run(argv: string[]): Promise<string> {
 				const owner = pending.get(tcid);
 				if (!owner) continue;
 				pending.delete(tcid);
-				const tag = parseReviewTag(extractText(m.content));
+				const text = extractText(m.content);
+				const tag = parseReviewTag(text);
+				const decision = parseDecision(text);
+				if (decision || tag) {
+					bump(judged, owner);
+					if (decision ? decision === "pass" : tag?.verdict === "PASS") bump(passed, owner);
+				}
 				if (!tag) continue;
 				const sl = scores.get(owner) ?? [];
 				sl.push(tag.score);
@@ -230,7 +252,9 @@ export async function run(argv: string[]): Promise<string> {
 	const emit = (s = "") => lines.push(s);
 	emit(`window: last ${args.days}d (UTC >= ${cut}Z) | sessions with activity: ${files} | root: ${args.root}`);
 	emit("review = Agent(Review) executed; attributed to the model that last edited the code under review");
-	emit("avgSc/pass% = parsed from Review [SCORE: .../10] [VERDICT: ...] tags (shows '-' if untagged)");
+	emit("avgSc = parsed from Review [SCORE: .../10] tags (shows '-' if untagged)");
+	emit("pass% = assurance_verdict decision, else the [VERDICT: ...] tag, over judged reviews (shows '-' if none)");
+	emit("block/advis = submit_review verdict.findings plus legacy record_finding, deduped per session");
 	emit("");
 	const hdr =
 		`${"model".padEnd(42)}${"devEdits".padStart(9)}${"turns".padStart(6)}${"reviews".padStart(8)}${"uniq".padStart(5)}${"rev/100ed".padStart(10)}${"avgSc".padStart(6)}${"pass%".padStart(6)}${"registr".padStart(8)}${"block".padStart(6)}${"advis".padStart(6)}${"noisy".padStart(6)}`;
@@ -250,8 +274,8 @@ export async function run(argv: string[]): Promise<string> {
 		const rate = d ? ((100 * r) / d).toFixed(1) : "-";
 		const sl = scores.get(mo) ?? [];
 		const avgSc = sl.length ? (sl.reduce((x, y) => x + y, 0) / sl.length).toFixed(1) : "-";
-		const passCnt = verdicts.get(`${mo}\0PASS`) ?? 0;
-		const passPct = sl.length ? `${Math.round((100 * passCnt) / sl.length)}%` : "-";
+		const judgedCnt = judged.get(mo) ?? 0;
+		const passPct = judgedCnt ? `${Math.round((100 * (passed.get(mo) ?? 0)) / judgedCnt)}%` : "-";
 		const block = findUniq.get(`${mo}\0blocking`)?.size ?? 0;
 		const advis = findUniq.get(`${mo}\0advisory`)?.size ?? 0;
 		const noisy = findUniq.get(`${mo}\0bookkeeping`)?.size ?? 0;
@@ -264,8 +288,9 @@ export async function run(argv: string[]): Promise<string> {
 	const totAvg = totalScores.length
 		? (totalScores.reduce((x, y) => x + y, 0) / totalScores.length).toFixed(1)
 		: "-";
-	const totPass = shown.reduce((n, mo) => n + (verdicts.get(`${mo}\0PASS`) ?? 0), 0);
-	const totPassPct = totalScores.length ? `${Math.round((100 * totPass) / totalScores.length)}%` : "-";
+	const totPass = shown.reduce((n, mo) => n + (passed.get(mo) ?? 0), 0);
+	const totJudged = shown.reduce((n, mo) => n + (judged.get(mo) ?? 0), 0);
+	const totPassPct = totJudged ? `${Math.round((100 * totPass) / totJudged)}%` : "-";
 	const totBlock = [...findUniq.entries()].reduce((n, [k, v]) => n + (k.endsWith("\0blocking") ? v.size : 0), 0);
 	const totAdvis = [...findUniq.entries()].reduce((n, [k, v]) => n + (k.endsWith("\0advisory") ? v.size : 0), 0);
 	const totNoisy = [...findUniq.entries()].reduce((n, [k, v]) => n + (k.endsWith("\0bookkeeping") ? v.size : 0), 0);
@@ -286,7 +311,7 @@ export async function run(argv: string[]): Promise<string> {
 	else for (const [name, n] of toolRows) emit(`${String(n).padStart(5)}  ${name}`);
 
 	emit("");
-	emit("=== review quality & scores (new rubric) ===");
+	emit("=== review quality & scores (tagged reviews only) ===");
 	const scoredModels = [...scores.keys()]
 		.filter((m) => (scores.get(m) ?? []).length > 0)
 		.sort((a, b) => (scores.get(b)?.length ?? 0) - (scores.get(a)?.length ?? 0));
