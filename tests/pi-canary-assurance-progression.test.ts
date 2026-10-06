@@ -31,6 +31,13 @@ describe("foreground assurance progression", () => {
 		const result = await advancing;
 		expect(result.state).toBe("review_ready");
 		expect((result as { agent_params: { run_in_background: boolean } }).agent_params.run_in_background).toBe(false);
+		// A Pi reviewer agent carries no instructions of its own, so this Host still
+		// dispatches the complete prompt: role contract plus every static rule.
+		const params = (result as { agent_params: { prompt: string } }).agent_params;
+		expect(params.prompt).toContain("internal role: code-review");
+		expect(params.prompt).toContain("Do not edit files, create files, run mutating commands, or change Git state");
+		expect(params.prompt).toContain("Reserve the final turn for exactly one strict JSON verdict");
+		expect(params.prompt).toContain("A1: the contract holds");
 		expect(updates.some((item) => JSON.stringify(item).includes("verifying"))).toBe(true);
 		expect(h.counts().applyCount).toBe(1);
 	});

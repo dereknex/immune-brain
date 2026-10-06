@@ -134,7 +134,16 @@ function completeReview(host: ClaudeReviewHost, operationId: string, result: str
 }
 
 function reviewRequest(operationId: string, prompt = `prompt-${operationId}`) {
-	return { taskId: TASK, operationId, prompt, evidencePath: "/tmp/review.json", maxTurns: 1 };
+	// The Claude reservation binds against `snapshotPrompt`; `prompt` is the
+	// complete prompt the Pi Host dispatches.
+	return {
+		taskId: TASK,
+		operationId,
+		prompt: `internal role: code-review\n${prompt}`,
+		snapshotPrompt: prompt,
+		evidencePath: "/tmp/review.json",
+		maxTurns: 1,
+	};
 }
 
 function authorityFixtureRoot(taskId: string): { root: string; intent: Record<string, unknown> } {

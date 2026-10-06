@@ -71,7 +71,17 @@ function handbackLine(agentId: string, message: unknown, name = "SubagentHandbac
 }
 
 function reviewRequest(): ReviewRequest {
-	return { taskId: TASK, operationId: OPERATION, prompt: "review instructions", evidencePath: "/tmp/evidence.json", maxTurns: 24 };
+	// `prompt` is the complete prompt (what a Host without agent-side
+	// instructions dispatches); `snapshotPrompt` is the per-dispatch facts the
+	// Claude Host dispatches. The reservation binds against the latter.
+	return {
+		taskId: TASK,
+		operationId: OPERATION,
+		prompt: "internal role: code-review\nDo not edit files.\nreview instructions",
+		snapshotPrompt: "review instructions",
+		evidencePath: "/tmp/evidence.json",
+		maxTurns: 24,
+	};
 }
 
 /**
@@ -127,7 +137,14 @@ describe("claude review host: dispatch envelope shape", () => {
 		// background switch, so `max_turns` and `run_in_background` never had one.
 		expect(Object.keys(dispatch).sort()).toEqual(["name", "prompt"]);
 		expect(dispatch.name).toBe(CLAUDE_REVIEWER_AGENT);
-		expect(dispatch.prompt).toBe(`${RESERVATION_MARKER}\n${reviewRequest().prompt}`);
+		// The envelope carries the marker plus the per-dispatch snapshot facts only,
+		// not the complete prompt: the static instructions live in the generated
+		// reviewer definition, so sending them again would fork the single source.
+		const request = reviewRequest();
+		expect(dispatch.prompt).toBe(`${RESERVATION_MARKER}\n${request.snapshotPrompt}`);
+		expect(dispatch.prompt).not.toContain(request.prompt);
+		expect(dispatch.prompt).not.toContain("internal role: code-review");
+		expect(dispatch.prompt).not.toContain("Do not edit files");
 		expect(dispatch.prompt).not.toContain("max_turns");
 		expect(dispatch.prompt).not.toContain("run_in_background");
 

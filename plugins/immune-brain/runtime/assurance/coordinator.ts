@@ -16,7 +16,7 @@ import {
 } from "./verification";
 import { createInvocationRegistry, type InvocationState, type InvocationToken } from "./invocations";
 import type { ReviewBundle, ReviewManifestV5, ReviewRevision } from "./review_evidence";
-import { buildRoleDelegationPacket } from "../role_prompt_bridge";
+import { buildRoleDelegationPacket, STATIC_REVIEW_RULES } from "../role_prompt_bridge";
 import type { AssuranceProjectionResult } from "../kernel/assurance_projection";
 import type { TaskIntentIdentityToken } from "../kernel/intent_token_registry";
 import type { AssuranceHostPort, HostReviewReservation } from "./host_port";
@@ -478,19 +478,19 @@ export function snapshotDigest(snapshot: SnapshotDescriptor): string {
 	return `sha256:${createHash("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
 }
 
-export function buildReviewPrompt(snapshot: SnapshotDescriptor, evidencePath?: string): string {
+/**
+ * The per-dispatch Review facts: which evidence to read, which revision it pins,
+ * what the acceptances assert, and the exact verdict shapes.
+ *
+ * This is the whole prompt for a Host whose reviewer definition already carries
+ * the role contract and `STATIC_REVIEW_RULES` — the Claude Host. A Host whose
+ * dispatched agent carries no instructions (Pi) gets `buildReviewPrompt`, which
+ * prepends both.
+ */
+export function buildReviewSnapshotPrompt(snapshot: SnapshotDescriptor, evidencePath?: string): string {
 	if (snapshot.role !== "review") throw new Error("native review prompt requires review role");
 	const acceptance = snapshot.acceptance.map((item) => `- ${item.id}: ${item.assertion}`).join("\n");
 	const digest = snapshotDigest(snapshot);
-	const rolePacket = buildRoleDelegationPacket({
-		role: "code-review",
-		context: {
-			task_id: snapshot.task_id,
-			review_gate: "imm-code-review",
-			changed_files_signature: snapshot.diff_hash,
-			snapshot_digest: digest,
-		},
-	});
 	const revision = snapshot.review_revision;
 	const evidenceContract = revision
 		? [
@@ -506,23 +506,41 @@ export function buildReviewPrompt(snapshot: SnapshotDescriptor, evidencePath?: s
 				`The user-selected worktree may contain staged task changes that are absent from the isolated reviewer worktree. Review authority is bound only to the bundle dirty_files current_content bytes and committed HEAD provenance. Analyze code exclusively from those bundle bytes; repository file reads are permitted only for the provenance git commands above. A symbol present in current_content but absent from HEAD is the task change, not an absence.`,
 			];
 	return [
-		rolePacket.prompt,
 		...evidenceContract,
-		`Do not edit files, create files, run mutating commands, or change Git state. Focus on correctness, regressions, security, and missing tests.`,
-		`Execution outcomes for every acceptance were verified deterministically by the Kernel QA layer before this review and are embedded in this bundle under outcomes (the immutable evidence file, acceptance_id -> {status, summary}); do not re-execute descriptors and do not treat the absence of local test runs as a finding. Your review covers evidence provenance, code correctness, regressions, security, and missing tests against the embedded assertions and code.`,
 		`Snapshot digest: ${digest}`,
 		`TaskRecord revision: ${snapshot.record_revision}`,
 		revision
 			? `Intent revision ${snapshot.intent_revision} (hash ${snapshot.intent_content_hash}), diff ${snapshot.diff_hash}, review revision ${revision.review_commit} (base ${revision.base_head}, tree ${revision.review_tree}, manifest ${revision.manifest_digest}), state ${snapshot.lifecycle}:${snapshot.artifact_state}.`
 			: `Intent revision ${snapshot.intent_revision} (hash ${snapshot.intent_content_hash}), diff ${snapshot.diff_hash}, review bundle ${snapshot.review_bundle_digest}, state ${snapshot.lifecycle}:${snapshot.artifact_state}.`,
 		"Acceptance assertions:", acceptance,
-		"Reserve the final turn for exactly one strict JSON verdict. Reply with ONLY that object, without markdown fences or commentary.",
-		`Every rework finding must carry machine-checkable provenance: evidence.trigger (the concrete inputs or state that reach the defect), a non-empty evidence.caller_chain (ordered repository paths or symbols), and evidence.violated {kind: "acceptance"|"security_boundary", ref}. The anchor is derived from that evidence; a finding without it is rejected and the correction must be resubmitted.`,
-		`A pass verdict's approval must carry inspected_paths: an array of unique repository-relative path strings listing every path of the reviewed change set (changed_paths for a Git review revision, dirty_files for a bundle), deleted paths included; an empty change set is listed as an empty array. A path may be listed only after its diff was read. A pass that omits any changed path, lists a path outside the change set, or duplicates a path is rejected as a correctable invalid verdict.`,
 		`PASS shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>","inspected_paths":["<every changed path of the reviewed change set>"]}}`,
 		`A pass verdict may carry non-blocking notes as findings, but every one of them must set kind "advisory"; a blocking finding is a rework verdict and must omit approval: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>","inspected_paths":["<every changed path of the reviewed change set>"]},"findings":[{"id":"review-1","kind":"advisory","acceptance_id":"<id|null>","summary":"<one line>","evidence":{"trigger":"<concrete inputs or state>","caller_chain":["<path-or-symbol>"],"violated":{"kind":"acceptance|security_boundary","ref":"<acceptance id or boundary>"}}}]}`,
 		`REWORK shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"rework","findings":[{"id":"review-1","kind":"blocking|advisory","acceptance_id":"<id|null>","summary":"<one line>","evidence":{"trigger":"<concrete inputs or state>","caller_chain":["<path-or-symbol>"],"violated":{"kind":"acceptance|security_boundary","ref":"<acceptance id or boundary>"}}}]}`,
 		`REWORK verdicts must omit the approval field entirely; do not emit "approval": null.`,
+	].join("\n");
+}
+
+/**
+ * The complete Review prompt: the internal role contract, the static review
+ * rules, and the per-dispatch facts. Dispatched by a Host whose agent carries no
+ * instructions of its own.
+ */
+export function buildReviewPrompt(snapshot: SnapshotDescriptor, evidencePath?: string): string {
+	if (snapshot.role !== "review") throw new Error("native review prompt requires review role");
+	const digest = snapshotDigest(snapshot);
+	const rolePacket = buildRoleDelegationPacket({
+		role: "code-review",
+		context: {
+			task_id: snapshot.task_id,
+			review_gate: "imm-code-review",
+			changed_files_signature: snapshot.diff_hash,
+			snapshot_digest: digest,
+		},
+	});
+	return [
+		rolePacket.prompt,
+		...STATIC_REVIEW_RULES,
+		buildReviewSnapshotPrompt(snapshot, evidencePath),
 	].join("\n");
 }
 
@@ -1138,6 +1156,7 @@ export class AssuranceCoordinator {
 					taskId,
 					operationId,
 					prompt: buildReviewPrompt(review.snapshot, evidence.path),
+					snapshotPrompt: buildReviewSnapshotPrompt(review.snapshot, evidence.path),
 					evidencePath: evidence.path,
 					maxTurns: reviewTurnBudget(workload),
 				});

@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import {
 	AssuranceCoordinator,
 	buildReviewPrompt,
+	buildReviewSnapshotPrompt,
 	parseAssuranceVerdict,
 	reviewAdvisoryRecords,
 	snapshotDigest,
@@ -11,6 +12,7 @@ import {
 	type AssuranceVerdict,
 	type SnapshotDescriptor,
 } from "../plugins/immune-brain/runtime/assurance/coordinator";
+import { STATIC_REVIEW_RULES } from "../plugins/immune-brain/runtime/role_prompt_bridge";
 import type { AssuranceHostPort, HostReviewReservation, ReviewRequest } from "../plugins/immune-brain/runtime/assurance/host_port";
 import type { AssuranceProjectionResult } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
@@ -213,6 +215,25 @@ describe("host-neutral assurance coordinator", () => {
 		expect((await h.coordinator.advance(TASK, ctx)).state).toBe("review_ready");
 		expect(h.qaRuns()).toBe(1); expect(h.counts().applyCount).toBe(1);
 	});
+	test("the coordinator hands a Host both the complete prompt and the snapshot facts", async () => {
+		let captured: ReviewRequest | null = null;
+		const h = makeCoordinator();
+		h.host.prepareReview = (request: ReviewRequest) => {
+			captured = request;
+			return { id: request.operationId, dispatch: { run_in_background: false } };
+		};
+		expect((await h.coordinator.advance(TASK, ctx)).state).toBe("review_ready");
+		const request = captured as unknown as ReviewRequest;
+
+		// One build, two projections: a Host whose agent carries no instructions
+		// gets `prompt`; a Host whose definition carries them gets
+		// `snapshotPrompt`. They are the same facts, so the two cannot disagree.
+		expect(request.snapshotPrompt).toBe(buildReviewSnapshotPrompt(snapshot("review"), request.evidencePath));
+		expect(request.prompt).toBe(buildReviewPrompt(snapshot("review"), request.evidencePath));
+		expect(request.prompt.endsWith(request.snapshotPrompt)).toBe(true);
+		expect(request.snapshotPrompt.length).toBeLessThan(request.prompt.length);
+	});
+
 	test("open findings return exact repair identities and prevent local green from running QA", async () => {
 		const fresh = projection("active", "resolve_findings", "material", "active");
 		fresh.projection.blocking_finding_ids = ["qa-A1-current"];
@@ -506,6 +527,57 @@ describe("host-neutral assurance coordinator", () => {
 		expect(parse(evidence).findings![0].anchor).toBe(first.anchor);
 		expect(parse({ ...evidence, caller_chain: ["b.ts"] }).findings![0].anchor).not.toBe(first.anchor);
 		expect(parse({ ...evidence, violated: { kind: "acceptance", ref: "A2" } }).findings![0].anchor).not.toBe(first.anchor);
+	});
+
+	test("the complete Review prompt is the static block followed by the snapshot facts", () => {
+		const s = snapshot("review");
+		const complete = buildReviewPrompt(s, "/tmp/evidence.json");
+		const facts = buildReviewSnapshotPrompt(s, "/tmp/evidence.json");
+
+		// The complete prompt is exactly static text plus the facts, so no
+		// sentence can exist in only one of the two dispatch shapes.
+		expect(complete.endsWith(facts)).toBe(true);
+		expect(complete.length).toBeGreaterThan(facts.length);
+
+		// The facts alone carry everything a reviewer needs to act: the evidence
+		// contract, the revision it pins, the acceptances and both verdict shapes.
+		expect(facts).toContain(snapshotDigest(s));
+		expect(facts).toContain("TaskRecord revision: record-1");
+		expect(facts).toContain("Acceptance assertions:");
+		expect(facts).toContain("- A1: the contract holds");
+		expect(facts).toContain("PASS shape:");
+		expect(facts).toContain("REWORK shape:");
+		expect(facts).toContain("/tmp/evidence.json");
+
+		// And they carry no static instruction: the role prompt and every static
+		// rule belong to the reviewer definition the plugin build generates.
+		expect(facts).not.toContain("internal role: code-review");
+		expect(facts).not.toContain("do not discover or load Pi Skills");
+		for (const rule of STATIC_REVIEW_RULES) expect(facts).not.toContain(rule);
+
+		// The complete prompt keeps every static instruction, so a Host whose
+		// agent carries none still gets them.
+		expect(complete).toContain("internal role: code-review");
+		for (const rule of STATIC_REVIEW_RULES) expect(complete).toContain(rule);
+	});
+
+	test("the snapshot facts prompt is built for a review revision as well as a legacy bundle", () => {
+		const s = {
+			...snapshot("review"),
+			review_revision: {
+				contract: "assurance_kernel/review_revision_identity/v1" as const,
+				base_head: "a".repeat(40),
+				review_commit: "b".repeat(40),
+				review_tree: "c".repeat(40),
+				manifest_digest: `sha256:${"d".repeat(64)}`,
+			},
+		};
+		const facts = buildReviewSnapshotPrompt(s, "/tmp/evidence.json");
+		expect(facts).toContain("assurance_kernel/review_manifest/v5");
+		expect(facts).toContain(`git diff ${"a".repeat(40)} ${"b".repeat(40)}`);
+		expect(facts).not.toContain("neighborhood_files");
+		expect(facts).not.toContain("current_content");
+		expect(buildReviewPrompt(s, "/tmp/evidence.json").endsWith(facts)).toBe(true);
 	});
 
 	test("buildReviewPrompt states the evidence contract and discloses no prior finding", () => {

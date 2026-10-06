@@ -1,9 +1,13 @@
 import { describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { buildClaudePlugin, checkClaudePlugin } from "../scripts/build-claude-plugin";
+import { buildClaudePlugin, checkClaudePlugin, reviewerDefinitionDrift } from "../scripts/build-claude-plugin";
+import {
+	REVIEWER_DISPATCH_RULES,
+	STATIC_REVIEW_RULES,
+} from "../plugins/immune-brain/runtime/role_prompt_bridge";
 import { stampPluginManifest, validateManifests } from "../scripts/plugin_versioning";
 import { MIN_CLAUDE_CODE_VERSION, probeHost } from "../plugins/immune-brain/runtime/claude/capability";
 import { PLUGIN_VERSION } from "../plugins/immune-brain/runtime/plugin_version";
@@ -251,6 +255,50 @@ describe("claude host package", () => {
     expect(source).not.toContain("hooks:");
     expect(source).not.toContain("mcpServers:");
     expect(source).not.toContain("permissionMode:");
+  });
+
+  it("the reviewer definition body is generated from the role prompt and the exported static rules", () => {
+    const definition = readFileSync(resolve(PLUGIN_ROOT, "agents/immune-brain-reviewer.md"), "utf8");
+    const rolePrompt = readFileSync(resolve(PLUGIN_ROOT, "runtime/prompts/code-review.md"), "utf8").trim();
+
+    // One source: the definition carries the same role prompt bytes the Pi Host
+    // dispatches, followed by the same static sentences the runtime composes
+    // into a complete Review prompt. Neither is restated by hand.
+    expect(definition).toContain(rolePrompt);
+    for (const rule of [...STATIC_REVIEW_RULES, ...REVIEWER_DISPATCH_RULES]) expect(definition).toContain(rule);
+
+    // Nothing is invented by the generator: every non-empty paragraph after the
+    // frontmatter and the role prompt comes from those exported rules.
+    const body = definition.slice(definition.indexOf(rolePrompt) + rolePrompt.length);
+    const extra = body.split("\n").map((line) => line.trim()).filter((line) => line.length > 0);
+    const sources = [...STATIC_REVIEW_RULES, ...REVIEWER_DISPATCH_RULES] as unknown as string[];
+    expect(extra.filter((line) => !sources.some((rule) => line === rule.trim()))).toEqual([]);
+  });
+
+  it("the build check fails when the committed reviewer definition differs from the generated one", () => {
+    expect(reviewerDefinitionDrift(ROOT)).toBeNull();
+
+    const root = mkdtempSync(join(tmpdir(), "reviewer-drift-"));
+    try {
+      const promptDir = join(root, "plugins/immune-brain/runtime/prompts");
+      const agentDir = join(root, "plugins/immune-brain/agents");
+      mkdirSync(promptDir, { recursive: true });
+      mkdirSync(agentDir, { recursive: true });
+      const rolePrompt = readFileSync(resolve(PLUGIN_ROOT, "runtime/prompts/code-review.md"), "utf8");
+      writeFileSync(join(promptDir, "code-review.md"), rolePrompt);
+
+      // A hand-edited definition: correct tool boundary, one lost rule.
+      const committed = readFileSync(resolve(PLUGIN_ROOT, "agents/immune-brain-reviewer.md"), "utf8");
+      writeFileSync(join(agentDir, "immune-brain-reviewer.md"), committed.replace(STATIC_REVIEW_RULES[0], ""));
+      expect(reviewerDefinitionDrift(root)).toContain("drifted from a fresh generate");
+
+      // And the reverse: a role prompt whose bytes no longer match.
+      writeFileSync(join(agentDir, "immune-brain-reviewer.md"), committed);
+      writeFileSync(join(promptDir, "code-review.md"), `${rolePrompt}\nHand-added instruction.`);
+      expect(reviewerDefinitionDrift(root)).toContain("drifted from a fresh generate");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("does not fork the public Skill contracts", () => {

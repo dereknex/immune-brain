@@ -294,15 +294,17 @@ interface PendingReview {
 
 /**
  * The reserved dispatch prompt: the reservation marker line followed by the
- * Kernel-assembled reviewer prompt, byte for byte.
+ * per-dispatch snapshot facts, byte for byte.
  *
  * One place builds it and one place compares against it, so the marker format
- * cannot drift from what the binding rule accepts.
+ * cannot drift from what the binding rule accepts. The static instructions are
+ * deliberately absent: the dispatched reviewer definition carries them, and they
+ * are generated from one source by the plugin build.
  */
 function reservedDispatchPrompt(
-	request: Pick<ReviewRequest, "operationId" | "taskId" | "prompt">,
+	request: Pick<ReviewRequest, "operationId" | "taskId" | "snapshotPrompt">,
 ): string {
-	return `<!-- immune-brain:operation_id=${request.operationId} task_id=${request.taskId} -->\n${request.prompt}`;
+	return `<!-- immune-brain:operation_id=${request.operationId} task_id=${request.taskId} -->\n${request.snapshotPrompt}`;
 }
 
 /**
