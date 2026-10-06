@@ -10,6 +10,19 @@ function read(rel: string): string {
 }
 
 describe("planner ensemble contract", () => {
+	it("names the native Claude read-only dispatch route and keeps the Pi boundary as prompt text", () => {
+		const content = read("plugins/immune-brain/dist/imm-planner.md").replace(/\s+/g, " ");
+		expect(content).toContain("On the Claude Host a read-only role is dispatched");
+		expect(content).toContain("through the `Agent` tool by its plugin agent type");
+		expect(content).toContain("immune-brain:immune-brain-advisory-reviewer");
+		expect(content).toContain("architecture exploration uses the Host's own `Explore` agent");
+		expect(content).toContain("the agent definition, not prompt text, bounds that role's tools");
+		expect(content).toContain("On Pi the agent configuration belongs to the Pi user and the read-only boundary remains prompt text");
+		// Existing Pi dispatch statement is unchanged.
+		expect(content).toContain('On Pi the `arch-explorer` envelope uses `subagent_type: "Explore"`');
+		expect(content).not.toContain("immune-brain:immune-brain-arch-explorer");
+	});
+
 	it("keeps planner ensemble authority in the packaged contract without local model config", () => {
 		const content = read("plugins/immune-brain/dist/imm-planner.md");
 		expect(content).toContain("planner ensemble");

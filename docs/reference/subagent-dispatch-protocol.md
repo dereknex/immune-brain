@@ -1,6 +1,35 @@
 # Pi Subagent Dispatch Protocol
 
-本文档定义 Immune-Brain workflow role 在 Pi 中调度 advisory child 的唯一可执行协议。公共 `imm-brainstorm`、`imm-planner`、`imm-loop` 和 runtime 内部 roles 引用本协议，不内联另一套宿主分支。
+本文档定义 Immune-Brain workflow role 在 Pi 中调度 advisory child 的唯一可执行协议。公共 `imm-brainstorm`、`imm-planner`、`imm-loop` 和 runtime 内部 roles 引用本协议，不内联另一套宿主分支。Claude Host 的 read-only role 派发见 [Claude Host Read-Only Agent Dispatch](#claude-host-read-only-agent-dispatch)；Pi 的调度规则不因该节改变。
+
+## Claude Host Read-Only Agent Dispatch
+
+On the Claude Host a read-only internal role is dispatched through the `Agent`
+tool by its plugin agent type, not by prompt text alone:
+
+| Internal role | Claude agent type | Tool allowlist |
+|---|---|---|
+| `qa` | `immune-brain:immune-brain-qa` | `Read, Grep, Glob` |
+| `ui-review` | `immune-brain:immune-brain-ui-review` | `Read, Grep, Glob` |
+| `advisory-reviewer` | `immune-brain:immune-brain-advisory-reviewer` | `Read, Grep, Glob` |
+| `arch-explorer` | the Host's `Explore` agent | whatever the Host grants |
+
+Each shipped definition is generated from the matching `runtime/prompts/` source
+by the plugin build, so its body states the same role contract a Pi child
+receives. The agent definition, not prompt text, bounds the role's tools: a
+write, shell or dispatch tool absent from the allowlist is unavailable to the
+child whatever its prompt asks for. `arch-explorer` ships no definition because
+architecture exploration uses the Host's own read-only research agent, and a
+second definition would fork a boundary the Host owns.
+
+`code-review` is not in this table: the authoritative Review authority ships
+`immune-brain:immune-brain-reviewer`, whose allowlist adds `Bash` because it must
+run read-only Git commands against the immutable revision.
+
+On Pi the agent configuration belongs to the Pi user, and the read-only boundary
+remains prompt text plus the `tool_policy` the delegation packet declares; Pi's
+`Agent` has no `readonly` parameter. The Pi invocation and scheduling rules below
+are unchanged.
 
 ## Eligibility
 

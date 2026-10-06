@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "claude-readonly-role-agents",
-  "owner": "user",
   "goal": "Implement S4 of docs/specs/host-native-subagent-definitions.spec.md: on the Claude Host the advisory-reviewer, ui-review and qa roles have generated native agent definitions whose tool allowlist enforces their read-only boundary, and the packaged contracts name the native dispatch route.",
   "acceptance": [
     {
@@ -11,8 +10,8 @@
     },
     {
       "id": "HNS-S4-A2",
-      "assertion": "Per S4 of docs/specs/host-native-subagent-definitions.spec.md (AN-6, DEC-1): the packaged Loop and Planner contracts and the dispatch protocol, with its packaged mirror identical to its source, state that on the Claude Host a read-only role is dispatched through the Agent tool by its plugin agent type, that architecture exploration uses the Host's Explore agent, and that the agent definition rather than prompt text bounds the role's tools. They state that on Pi the agent configuration belongs to the user and the boundary remains prompt text. Existing Pi dispatch statements in those contracts are unchanged.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-contract-v4-alignment.test.ts\",\n      \"tests/planner-ensemble-contract.test.ts\",\n      \"tests/pi-subagent-dispatch-observability-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      "assertion": "Per S4 of docs/specs/host-native-subagent-definitions.spec.md (AN-6, DEC-1): the packaged Loop and Planner contracts and the dispatch protocol, with its packaged mirror identical to its source, state that on the Claude Host a read-only role is dispatched through the Agent tool by its plugin agent type, that architecture exploration uses the Host's Explore agent, and that the agent definition rather than prompt text bounds the role's tools. They state that on Pi the agent configuration belongs to the user and the boundary remains prompt text. Existing Pi dispatch statements in those contracts are unchanged. The Planner contract is bound by content hash in tests/fixtures/workflow-decision-closure-evidence.json, so that binding is re-recorded to the delivered bytes and the offline verifier reports ok with no issues.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-contract-v4-alignment.test.ts\",\n      \"tests/planner-ensemble-contract.test.ts\",\n      \"tests/pi-subagent-dispatch-observability-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/workflow-behavior-evidence.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
     }
   ],
   "scope_hint": [
@@ -29,10 +28,12 @@
     "plugins/immune-brain/runtime/claude/role_agents.ts",
     "scripts/build-claude-plugin.ts",
     "tests/claude-host-package.test.ts",
+    "tests/fixtures/workflow-decision-closure-evidence.json",
     "tests/loop-contract-v4-alignment.test.ts",
     "tests/pi-subagent-dispatch-observability-contract.test.ts",
     "tests/planner-ensemble-contract.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

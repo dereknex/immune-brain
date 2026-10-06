@@ -42,6 +42,15 @@ architecture exploration, advisory review, Compounder, Kernel ownership, or
 scope expansion. Use Kernel ownership for an enrolled task. This route projects
 authority; it does not record execution evidence, mutate task state, or replace
 Kernel operations.
+
+On the Claude Host a read-only internal role is dispatched through the `Agent`
+tool by its plugin agent type — `immune-brain:immune-brain-qa`,
+`immune-brain:immune-brain-ui-review`,
+`immune-brain:immune-brain-advisory-reviewer` — and architecture exploration uses
+the Host's own `Explore` agent. The agent definition, not prompt text, bounds
+that role's tools. On Pi the agent configuration belongs to the Pi user and the
+read-only boundary remains prompt text; the Pi dispatch rules are unchanged.
+
 Before a child dispatch, read the [Subagent Dispatch Protocol](docs/reference/subagent-dispatch-protocol.md#authorization-authority).
 Never load an internal role as a public Skill or spawn another loop process.
 The standalone `imm-pr-fix`, `imm-doc-prune`, and `imm-agent-doc-maintain` are host-native

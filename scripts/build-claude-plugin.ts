@@ -9,6 +9,10 @@ import {
 	REVIEWER_DISPATCH_RULES,
 	STATIC_REVIEW_RULES,
 } from "../plugins/immune-brain/runtime/role_prompt_bridge";
+import {
+	CLAUDE_READONLY_ROLE_AGENTS,
+	CLAUDE_READONLY_TOOLS,
+} from "../plugins/immune-brain/runtime/claude/role_agents";
 
 const SRC = "plugins/immune-brain/runtime/claude/mcp_server.ts";
 const OUT = "plugins/immune-brain/dist/claude/mcp-server.mjs";
@@ -44,15 +48,57 @@ function generateReviewerDefinition(root: string): string {
 }
 
 /**
- * Compare the committed reviewer definition against a fresh generate.
+ * Compare one committed agent definition against a fresh generate.
  *
  * Returned as a message rather than thrown so a caller can check it without a
  * bundle compile, and so a test can point it at a temporary root.
  */
+function definitionDrift(root: string, generated: string, out: string, sources: string): string | null {
+	const definition = resolve(root, out);
+	if (readFileSync(definition, "utf8") !== generated) return `${out} drifted from a fresh generate of ${sources}`;
+	return null;
+}
+
 export function reviewerDefinitionDrift(root: string): string | null {
-	const definition = resolve(root, REVIEWER_DEFINITION_OUT);
-	if (readFileSync(definition, "utf8") !== generateReviewerDefinition(root)) {
-		return `${REVIEWER_DEFINITION_OUT} drifted from a fresh generate of ${REVIEWER_PROMPT_SRC} plus the static review rules`;
+	return definitionDrift(root, generateReviewerDefinition(root), REVIEWER_DEFINITION_OUT, `${REVIEWER_PROMPT_SRC} plus the static review rules`);
+}
+
+/**
+ * The read-only role definitions: one frontmatter with the strictest expressible
+ * tool boundary, and a body taken from the matching role prompt source.
+ *
+ * These roles declare `no tools` in `INTERNAL_ROLE_PROMPTS`. A native definition
+ * cannot express an empty allowlist without inheriting every tool, so they ship
+ * read-only without shell instead — narrower than the reviewer, which needs
+ * `Bash` for read-only Git commands.
+ */
+function generateReadonlyRoleDefinitions(root: string): Array<{ out: string; content: string; sources: string }> {
+	return Object.values(CLAUDE_READONLY_ROLE_AGENTS).map((spec) => {
+		const out = spec.definition;
+		const name = out.slice(out.lastIndexOf("/") + 1).replace(/\.md$/, "");
+		const body = readFileSync(resolve(root, spec.prompt), "utf8").trim();
+		return {
+			out,
+			content: [
+				[
+					"---",
+					`name: ${name}`,
+					`description: ${spec.description}`,
+					`tools: ${CLAUDE_READONLY_TOOLS.join(", ")}`,
+					"---",
+				].join("\n"),
+				body,
+				"",
+			].join("\n\n"),
+			sources: spec.prompt,
+		};
+	});
+}
+
+export function readonlyRoleDefinitionDrift(root: string): string | null {
+	for (const generated of generateReadonlyRoleDefinitions(root)) {
+		const drift = definitionDrift(root, generated.content, generated.out, generated.sources);
+		if (drift) return drift;
 	}
 	return null;
 }
@@ -71,6 +117,10 @@ export function buildClaudePlugin(root = resolve(import.meta.dir, "..")): { out:
 	const out = resolve(root, OUT);
 	compile(root, out);
 	writeFileSync(resolve(root, REVIEWER_DEFINITION_OUT), generateReviewerDefinition(root));
+	for (const generated of generateReadonlyRoleDefinitions(root)) {
+		mkdirSync(dirname(resolve(root, generated.out)), { recursive: true });
+		writeFileSync(resolve(root, generated.out), generated.content);
+	}
 	return { out, version };
 }
 
@@ -84,7 +134,7 @@ export function checkClaudePlugin(root = resolve(import.meta.dir, "..")): void {
 	if (!expected.equals(actual)) {
 		throw new Error(`${OUT} drifted from a fresh bun build of ${SRC}`);
 	}
-	const drift = reviewerDefinitionDrift(root);
+	const drift = reviewerDefinitionDrift(root) ?? readonlyRoleDefinitionDrift(root);
 	if (drift) throw new Error(drift);
 }
 

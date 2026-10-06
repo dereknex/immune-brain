@@ -3,11 +3,19 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { buildClaudePlugin, checkClaudePlugin, reviewerDefinitionDrift } from "../scripts/build-claude-plugin";
+import { buildClaudePlugin, checkClaudePlugin, readonlyRoleDefinitionDrift, reviewerDefinitionDrift } from "../scripts/build-claude-plugin";
 import {
+	INTERNAL_ROLE_PROMPTS,
 	REVIEWER_DISPATCH_RULES,
 	STATIC_REVIEW_RULES,
 } from "../plugins/immune-brain/runtime/role_prompt_bridge";
+import {
+	CLAUDE_READONLY_ROLE_AGENTS,
+	CLAUDE_READONLY_ROLES,
+	CLAUDE_READONLY_TOOLS,
+	CLAUDE_HOST_PROVIDED_ROLE_AGENTS,
+} from "../plugins/immune-brain/runtime/claude/role_agents";
+import { buildLoopRoleDispatch, loopRoleSubagentFor } from "../plugins/immune-brain/runtime/loop_contract";
 import { stampPluginManifest, validateManifests } from "../scripts/plugin_versioning";
 import { MIN_CLAUDE_CODE_VERSION, probeHost } from "../plugins/immune-brain/runtime/claude/capability";
 import { PLUGIN_VERSION } from "../plugins/immune-brain/runtime/plugin_version";
@@ -299,6 +307,97 @@ describe("claude host package", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it("ships one generated native definition per read-only Claude role", () => {
+    // Exactly the three roles the acceptance names: a set equality, so adding a
+    // fourth definition or dropping one fails here rather than shipping a
+    // definition nothing dispatches.
+    expect([...CLAUDE_READONLY_ROLES].sort()).toEqual(["advisory-reviewer", "qa", "ui-review"]);
+
+    const WRITE_TOOLS = ["Agent", "Edit", "Write", "NotebookEdit", "Bash", "WebFetch", "WebSearch", "Task", "SendMessage"];
+    for (const role of CLAUDE_READONLY_ROLES) {
+      const spec = CLAUDE_READONLY_ROLE_AGENTS[role];
+      const path = resolve(ROOT, spec.definition);
+      expect({ role, exists: existsSync(path) }).toEqual({ role, exists: true });
+      const source = readFileSync(path, "utf8");
+
+      // The body comes from the role prompt the runtime dispatches on Pi, so a
+      // definition cannot state a boundary the role prompt does not.
+      expect(source).toContain(readFileSync(resolve(ROOT, spec.prompt), "utf8").trim());
+
+      const match = /^---\n([\s\S]*?)\n---\n/.exec(source);
+      expect({ role, frontmatter: match !== null }).toEqual({ role, frontmatter: true });
+      const frontmatter = match![1];
+      const toolsLine = /^tools:[^\n]*$/m.exec(frontmatter);
+      const tools = (toolsLine?.[0] ?? "").slice("tools:".length).split(",").map((t) => t.trim()).filter((t) => t.length > 0).sort();
+      expect({ role, tools }).toEqual({ role, tools: [...CLAUDE_READONLY_TOOLS].sort() });
+      for (const denied of WRITE_TOOLS) expect({ role, denied }).toEqual({ role, denied: tools.includes(denied) ? `${denied} is not denied` : denied });
+
+      // Plugin agents ignore these keys, so declaring one would read as an
+      // enforced boundary the Host never applies.
+      for (const ignored of ["hooks", "mcpServers", "permissionMode"])
+        expect({ role, ignored }).toEqual({ role, ignored: new RegExp(`^${ignored}:`, "m").test(frontmatter) ? `${ignored} is declared` : ignored });
+
+      // The declared boundary of a role that ships a definition is read-only, so
+      // no definition can widen what the role prompt already forbids.
+      const policy = INTERNAL_ROLE_PROMPTS[role].tool_policy;
+      expect({ role, policy }).toEqual({ role, policy: ["no tools", "read-only tools"].includes(policy) ? policy : `${policy} is not read-only` });
+    }
+
+    // `arch-explorer` is architecture discovery: the Host's own read-only
+    // research agent, and shipping a second definition would fork that boundary.
+    expect(Object.keys(CLAUDE_HOST_PROVIDED_ROLE_AGENTS)).toEqual(["arch-explorer"]);
+    expect(existsSync(resolve(ROOT, "plugins/immune-brain/agents/immune-brain-arch-explorer.md"))).toBe(false);
+  });
+
+  it("the build check fails when a committed read-only definition differs from the generated one", () => {
+    expect(readonlyRoleDefinitionDrift(ROOT)).toBeNull();
+
+    const root = mkdtempSync(join(tmpdir(), "readonly-drift-"));
+    try {
+      const spec = CLAUDE_READONLY_ROLE_AGENTS.qa;
+      mkdirSync(join(root, "plugins/immune-brain/runtime/prompts"), { recursive: true });
+      mkdirSync(join(root, "plugins/immune-brain/agents"), { recursive: true });
+      // The drift check walks every mapped role, so the temp root needs all of
+      // their prompt sources and committed definitions, not just the mutated one.
+      for (const mapped of Object.values(CLAUDE_READONLY_ROLE_AGENTS)) {
+        writeFileSync(join(root, mapped.prompt), readFileSync(resolve(ROOT, mapped.prompt), "utf8"));
+        writeFileSync(join(root, mapped.definition), readFileSync(resolve(ROOT, mapped.definition), "utf8"));
+      }
+
+      // A hand-widened boundary: one shell tool added to a role that declares none.
+      const committed = readFileSync(resolve(ROOT, spec.definition), "utf8");
+      writeFileSync(join(root, spec.definition), committed.replace("tools: Read, Grep, Glob", "tools: Read, Grep, Glob, Bash"));
+      expect(readonlyRoleDefinitionDrift(root)).toContain("drifted from a fresh generate");
+
+      // And a hand-added instruction the role prompt does not carry.
+      writeFileSync(join(root, spec.definition), `${committed}Hand-added instruction.\n`);
+      expect(readonlyRoleDefinitionDrift(root)).toContain("drifted from a fresh generate");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves the Pi role mapping and dispatch envelope unchanged", () => {
+    // The native definitions add a Claude dispatch route; they do not move the
+    // Pi one. `loopRoleSubagentFor` is the Pi mapping and stays as it was.
+    expect(loopRoleSubagentFor("code-review")).toBe("Review");
+    expect(loopRoleSubagentFor("arch-explorer")).toBe("Explore");
+    for (const role of ["qa", "ui-review", "advisory-reviewer", "executor", "test-fixer", "pr-fix", "compounder"] as const)
+      expect(loopRoleSubagentFor(role)).toBe("general-purpose");
+
+    const dispatch = buildLoopRoleDispatch({ role: "advisory-reviewer", context: { task_id: "package-task", target_id: "t1" } });
+    expect(dispatch.call).toMatchObject({
+      subagent_type: "general-purpose",
+      inherit_context: false,
+      isolated: true,
+      run_in_background: false,
+    });
+    expect(dispatch.call.prompt).toContain("internal role: advisory-reviewer");
+    expect(dispatch.call.prompt).toContain("tool_policy: no tools");
+    // The Pi boundary stays prompt text: the envelope carries no agent name.
+    expect(dispatch.call.prompt).not.toContain("immune-brain:immune-brain-advisory-reviewer");
   });
 
   it("does not fork the public Skill contracts", () => {

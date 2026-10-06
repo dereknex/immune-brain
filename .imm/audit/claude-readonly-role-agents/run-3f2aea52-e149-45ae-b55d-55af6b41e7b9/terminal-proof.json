@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "claude-readonly-role-agents",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:claude-readonly-role-agents:2026-10-06T08:03:31.146Z",
+  "final_record_hash": "sha256:6ef0f4db515c457e9761f7221c0f58d736f792668aaba4e636297f061a01c13a",
+  "terminalized_at": "2026-10-06T08:03:31.146Z"
+}

@@ -1,0 +1,174 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "claude-readonly-role-agents",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "claude-readonly-role-agents",
+    "goal": "Implement S4 of docs/specs/host-native-subagent-definitions.spec.md: on the Claude Host the advisory-reviewer, ui-review and qa roles have generated native agent definitions whose tool allowlist enforces their read-only boundary, and the packaged contracts name the native dispatch route.",
+    "acceptance": [
+      {
+        "id": "HNS-S4-A1",
+        "assertion": "Per S4 of docs/specs/host-native-subagent-definitions.spec.md (AN-6, DEC-1): the Claude plugin ships generated agent definitions immune-brain-advisory-reviewer, immune-brain-ui-review and immune-brain-qa. Each body is generated from the matching role prompt source and each tool allowlist is exactly Read, Grep, Glob. A Claude role-to-agent table maps exactly those three roles; every mapped role's declared boundary in INTERNAL_ROLE_PROMPTS is no tools or read-only tools, every mapped definition exists, and no mapped definition's allowlist contains a write, shell or dispatch tool. The build check fails when a committed definition differs from the generated one. loopRoleSubagentFor and the Pi dispatch envelope are unchanged, and the reviewer definition is unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "HNS-S4-A2",
+        "assertion": "Per S4 of docs/specs/host-native-subagent-definitions.spec.md (AN-6, DEC-1): the packaged Loop and Planner contracts and the dispatch protocol, with its packaged mirror identical to its source, state that on the Claude Host a read-only role is dispatched through the Agent tool by its plugin agent type, that architecture exploration uses the Host's Explore agent, and that the agent definition rather than prompt text bounds the role's tools. They state that on Pi the agent configuration belongs to the user and the boundary remains prompt text. Existing Pi dispatch statements in those contracts are unchanged. The Planner contract is bound by content hash in tests/fixtures/workflow-decision-closure-evidence.json, so that binding is re-recorded to the delivered bytes and the offline verifier reports ok with no issues.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-contract-v4-alignment.test.ts\",\n      \"tests/planner-ensemble-contract.test.ts\",\n      \"tests/pi-subagent-dispatch-observability-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/workflow-behavior-evidence.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/claude-readonly-role-agents.md",
+      "docs/plans/claude-readonly-role-agents.intent.json",
+      "docs/reference/subagent-dispatch-protocol.md",
+      "plugins/immune-brain/agents/immune-brain-advisory-reviewer.md",
+      "plugins/immune-brain/agents/immune-brain-qa.md",
+      "plugins/immune-brain/agents/immune-brain-ui-review.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+      "plugins/immune-brain/dist/imm-loop.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/runtime/claude/role_agents.ts",
+      "scripts/build-claude-plugin.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/fixtures/workflow-decision-closure-evidence.json",
+      "tests/loop-contract-v4-alignment.test.ts",
+      "tests/pi-subagent-dispatch-observability-contract.test.ts",
+      "tests/planner-ensemble-contract.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/claude-readonly-role-agents.intent.json",
+    "content_hash": "sha256:4acd77d90f37f73ebe1c850c1d716f81a3db50d4db01c81bc5ad0c2f39b7add3"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:55ef2887fb6045d12f03944c7f2f14eb502db36fe227c7d01d276a481636e914",
+  "git_base_head": "97f1763d9799ab5603170737f3205ff0d92b9e30",
+  "attestations": [
+    {
+      "id": "approval-qa-c7042a26",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:4acd77d90f37f73ebe1c850c1d716f81a3db50d4db01c81bc5ad0c2f39b7add3",
+      "diff_hash": "sha256:17129f64d8424677766d65f9e5dbfa3cf32b75548be77f3bde4b8d0be6c314cb",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:8ccc80797c798f053d2401cbef866f9cbed4bc2642bf1e7c9bdbc0c7b9ba59cf",
+      "acceptance_results": [
+        {
+          "acceptance_id": "HNS-S4-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:8ccc80797c798f053d2401cbef866f9cbed4bc2642bf1e7c9bdbc0c7b9ba59cf"
+        },
+        {
+          "acceptance_id": "HNS-S4-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:8ccc80797c798f053d2401cbef866f9cbed4bc2642bf1e7c9bdbc0c7b9ba59cf"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-40d79782",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:4acd77d90f37f73ebe1c850c1d716f81a3db50d4db01c81bc5ad0c2f39b7add3",
+      "diff_hash": "sha256:17129f64d8424677766d65f9e5dbfa3cf32b75548be77f3bde4b8d0be6c314cb",
+      "actor_id": "parent-mediated-review",
+      "summary": "Verified manifest identity (base 97f1763, commit 495073b, single parent, tree 693a695) and every changed path from immutable Git objects: the three generated definitions carry bodies matching their runtime/prompts sources with allowlist exactly Read/Grep/Glob, the role table maps exactly qa/ui-review/advisory-reviewer whose INTERNAL_ROLE_PROMPTS boundaries are no tools or read-only tools, drift is enforced by checkClaudePlugin, the reviewer definition and Pi dispatch envelope are untouched, the dispatch-protocol mirror is byte-identical to its source, the Planner fixture hash matches the delivered bytes, and the change conforms to spec S4 (AN-6, DEC-1).",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "97f1763d9799ab5603170737f3205ff0d92b9e30",
+        "review_commit": "495073bfa5ee825eb1d57be935cb1d0ebb406017",
+        "review_tree": "693a695904971c30e8d0c204b8c071df0ac0fed2",
+        "manifest_digest": "sha256:0957e38549a563193baf415581ba03887358f331275380fa24b7a237f993f7da"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-680fbaf6a4b4-1-review-1",
+          "acceptance_id": "HNS-S4-A1",
+          "summary": "The three definitions grant Read/Grep/Glob while the roles declare 'no tools' in INTERNAL_ROLE_PROMPTS; this widening is the acceptance-sanctioned strictest expressible boundary (an empty allowlist would inherit every tool), documented in role_agents.ts and spec S4 — noted against the accepted boundary, not as rework.",
+          "anchor": "sha256:1555f7c0a2a0cefb0c2774ef25378c068847d2df85aa38dc1183a0047d4c1199",
+          "evidence": {
+            "trigger": "A dispatched qa/ui-review/advisory-reviewer child on the Claude Host receives a native definition whose tools line is 'Read, Grep, Glob' while its role prompt header declares 'no tools', allowing read-only repo access beyond the prompt text.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/claude/role_agents.ts",
+              "scripts/build-claude-plugin.ts#generateReadonlyRoleDefinitions",
+              "plugins/immune-brain/agents/immune-brain-qa.md"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "HNS-S4-A1"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:claude-readonly-role-agents:2026-10-06T07:55:55.478Z",
+      "at": "2026-10-06T07:55:55.478Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:73d154ea5e43106455e3fda3691a620c0eee5536c2556cc62f06717cb4db2df1",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-f592a27ece6c58c0",
+        "issued_at": "2026-10-06T07:55:56.038Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:claude-readonly-role-agents:2026-10-06T07:57:32.867Z",
+      "at": "2026-10-06T07:57:32.867Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/claude-readonly-role-agents.intent.json"
+    },
+    {
+      "id": "record_approval:claude-readonly-role-agents:2026-10-06T07:57:39.962Z",
+      "at": "2026-10-06T07:57:39.962Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-c7042a26\naction_v2_sha256:a05e4c3f5771a8f7f1c63e918169601b099861835b516ab35032efb6da5a2836",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-becddd438b04ea5e",
+        "issued_at": "2026-10-06T07:57:39.962Z"
+      }
+    },
+    {
+      "id": "record_approval:claude-readonly-role-agents:2026-10-06T08:03:29.618Z",
+      "at": "2026-10-06T08:03:29.618Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-40d79782\naction_v2_sha256:653941f631c5de64c7be156fd17f2b837dda167b4393b612c3e68f6867e938ee",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-e6199febf09cb3cd",
+        "issued_at": "2026-10-06T08:03:29.618Z"
+      }
+    },
+    {
+      "id": "complete:claude-readonly-role-agents:2026-10-06T08:03:31.146Z",
+      "at": "2026-10-06T08:03:31.146Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:9f0834e7c3d76c98924069da24ee0c1edc41c9d54e233c2777a7d645ca146557"
+    }
+  ]
+}

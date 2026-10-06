@@ -535,7 +535,12 @@ Use the invoking Host's read-only role-boundary route for bounded
 exactly. The Parent owns Spec/TaskIntent synthesis, Brainstorm traceability,
 acceptance, and scope; children return evidence only. On Pi the `arch-explorer` envelope
 uses `subagent_type: "Explore"`; invoke the returned envelope rather than
-constructing another Agent call. Do not invoke retired Planner runtime helpers
+constructing another Agent call. On the Claude Host a read-only role is dispatched
+through the `Agent` tool by its plugin agent type —
+`immune-brain:immune-brain-advisory-reviewer` — and architecture exploration uses
+the Host's own `Explore` agent; the agent definition, not prompt text, bounds
+that role's tools. On Pi the agent configuration belongs to the Pi user and the
+read-only boundary remains prompt text. Do not invoke retired Planner runtime helpers
 or write child-owned planning artifacts.
 
 An optional planner ensemble is advisory-only; the Parent owns the final Spec and TaskIntent.

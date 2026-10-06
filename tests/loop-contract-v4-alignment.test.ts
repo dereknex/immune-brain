@@ -34,6 +34,20 @@ describe("loop contract v4 alignment", () => {
 		expect(dist).not.toMatch(/Consume `imm-autowork --json`/);
 	});
 
+	test("packaged loop contract names the native Claude read-only dispatch route", () => {
+		const dist = read("plugins/immune-brain/dist/imm-loop.md").replace(/\s+/g, " ");
+		expect(dist).toContain("On the Claude Host a read-only internal role is dispatched through the `Agent` tool by its plugin agent type");
+		for (const agent of ["immune-brain:immune-brain-qa", "immune-brain:immune-brain-ui-review", "immune-brain:immune-brain-advisory-reviewer"])
+			expect(dist).toContain(agent);
+		expect(dist).toContain("architecture exploration uses the Host's own `Explore` agent");
+		expect(dist).toContain("The agent definition, not prompt text, bounds that role's tools");
+		// The Pi boundary stays prompt text and the Pi rules are unchanged.
+		expect(dist).toContain("On Pi the agent configuration belongs to the Pi user and the read-only boundary remains prompt text");
+		expect(dist).toContain("the Pi dispatch rules are unchanged");
+		// No native arch-explorer definition: the Host owns that agent.
+		expect(dist).not.toContain("immune-brain:immune-brain-arch-explorer");
+	});
+
 	test("packaged loop contract tells Claude to wait and forbids continuing a reviewer", () => {
 		const dist = read("plugins/immune-brain/dist/imm-loop.md").replace(/\s+/g, " ");
 		expect(dist).toContain("Pass the returned Agent envelope through unchanged");
