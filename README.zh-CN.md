@@ -25,6 +25,7 @@ Pi 与 Claude Code 是支持的宿主。未声明的适配器仍不受支持。C
 - [安装](#安装)
 - [快速开始](#快速开始)
 - [如何使用](#如何使用)
+- [核心设计哲学：把“判断”变成“查表”](#核心设计哲学把判断变成查表用确定性工程驾驭多模型)
 - [7 个 Skills](#7-个-skills)
 - [生命周期](#生命周期)
 - [无人值守批次运行](#无人值守批次运行)
@@ -51,7 +52,7 @@ Pi 通过 `package.json`（或全局 Pi 配置）自动发现 Skills 与扩展�
 }
 ```
 
-无需额外 server 配置，通过 Pi 安装本 package 后 6 个 Skill 即自动可用。
+无需额外 server 配置，通过 Pi 安装本 package 后 7 个 Skill 即自动可用。
 
 ### 在 Claude Code 中使用
 
@@ -162,6 +163,116 @@ Immune-Brain 的核心状态与契约完全去会话化（Session-neutral），�
 
 ---
 
+## 核心设计哲学：把“判断”变成“查表”，用确定性工程驾驭多模型
+
+大模型（尤其是轻量/高性价比的 Fast 档模型）在工程落地中最容易失败的原因，不是代码语法不过关，而是死在**语义含糊、过度发挥**与**逃避严格验证**上。
+
+Immune-Brain 的核心假设是：**不要让弱模型做架构决策，把它变成精准执行的查表机；关键的门禁与审核则交由代码规则与强模型把关。**
+
+```text
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ 1. 方案规划 (Brainstorm) & 2. 计划制定 (Planner)                                       │
+│ 工具: Claude Code | 模型: 强推理旗舰模型 (Strong Tier)                                 │
+│ 职责: 澄清约束、架构推演，把“判断”收敛为精确到行号的 Living Spec 与可执行 TaskIntent      │
+└───────────────────────────────────────────┬────────────────────────────────────────────┘
+                                            │ Git 追踪制品共享 (docs/specs, docs/plans)
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ 3. 代码实现 (Executor)                                                                 │
+│ 工具: Pi | 模型: 高吞吐/经济型模型 (Fast / Mid Tier)                                    │
+│ 职责: 冻结 Scope 内“按图索骥”，严格镜像既有代码模式填空，无设计决策负担                │
+└───────────────────────────────────────────┬────────────────────────────────────────────┘
+                                            │ 本地代码与状态交付
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ 4. QA 确认 (Deterministic QA)                                                          │
+│ 工具: Pi / Kernel Native                                                               │
+│ 职责: 零 LLM 干预，真机执行 Verification Descriptor v2 命令，机器判决 Pass/Fail         │
+└───────────────────────────────────────────┬────────────────────────────────────────────┘
+                                            │ 自动化测试真实跑通后触发
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ 5. 代码审查 (Isolated Review)                                                          │
+│ 工具: Pi Subagent | 模型: 强推理/高智商审查模型 (Strong Tier)                           │
+│ 职责: 基于不可变 Git blob 打包的 ReviewBundle，结合 Devil's Advocate 规则审查代码      │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 1. 把“判断”变成“查表”：挤干含糊空间，弱模型按图索骥
+
+约束弱模型最有效的一招，是在 Spec 阶段彻底消除含糊：
+
+- **坐标级精准定位**：在 Spec 中直接给出既有实现的参考锚点（如 `kernel.ts:1219`），明确要求 *"mirror this exact shape"* 沿用既有实现模式。
+- **零自由度契约**：连报错文案、返回状态码与错误类型都要求照抄既有格式（如复制现有 `throw new VerificationDescriptorError(...)`，仅替换具体的命令名与字段名），不留任何自由措辞或抽象发挥的空间。
+- **物理冻结与负向清单（Exclusion List）**：在 Spec 的 Scope 章节中明确列出 Exclude 清单（严禁改动哪些文件、特定 receipt 路径禁止复用）。弱模型不需要自行推断架构影响面，只需在限定红线内按图索骥。
+
+### 2. “做完”的定义是可执行的，不是文字汇报
+
+口头汇报（Text-based Promise）是幻觉与蒙混过关的温床。Immune-Brain 的 Kernel 强制要求所有完成标准全部代码化、物理化：
+
+- **Verification Descriptor v2 强契约**：
+  `TaskIntent` 中每个验收条件（AC）都不是泛泛的自然语言，而是强类型的机器执行描述符（`assurance_kernel/verification_descriptor/v2`）：
+  ```json
+  {
+    "contract": "assurance_kernel/verification_descriptor/v2",
+    "command": {
+      "executable": "bun",
+      "argv": ["test", "tests/kernel-migrate-to-vnext.test.ts"],
+      "cwd": ".",
+      "timeout_ms": 30000,
+      "max_output_bytes": 262144
+    },
+    "environment": { "prepare": null, "writable_paths": [] }
+  }
+  ```
+  模型无法靠“我已经实现并测试通过”的话术过关；测试必须由 Kernel 子进程在隔离沙箱中真机拉起，根据真实的 exit code、stdout 与超时时限判定胜负。
+- **物理级 Scope 冻结**：
+  在 Enrollment 准入时，Kernel 通过 `captureGitWorkspaceSnapshot` 对 Git 树和 dirty files 进行基线快照。如果候选任务的 scope 已经变脏，或 Executor 试图修改 `scope_hint` 允许范围外的文件（`assertNoEnvelopeEscape`），Kernel 直接 fail-closed 拦截并拒绝推进。
+- **独立 QA 与隔离 Reviewer 强制 Gate**：
+  代码修改完成后，QA 阶段由本地命令执行器严格校验；对于 `material` 和 `critical` 任务，必须经由独立的 Reviewer 子代理审计并签批。任何试图跳过门禁的幻觉行为都会被底层状态机拦下。
+
+### 3. Devil's Advocate Audit 与代码级防御：封死偷懒路径
+
+弱模型在面对复杂逻辑和优化压力时，极易选择走阻力最小的“偷懒捷径”。Immune-Brain 从 Spec 到代码层面构建了层层阻尼：
+
+- **防虚荣验证（Verification Vanity）**：
+  在 Devil's Advocate Audit 中明确立规：“`--check` 跑通不等于真跑能成功”。静态检查、类型声明或空跑（dry-run）绝不能替代带断言的真实运行测试。
+- **防规格稀释（Spec Dilution）**：
+  严禁模型因为实现困难而悄悄删减需求，例如：“不许在没有 v1 数据的环境中凭空编造虚假的 v1→v2 转换逻辑”来伪造兼容性。
+- **代码强制的确定性风险兜底（Deterministic Risk-Tier Floor）**：
+  模型可能会自作聪明地将高危任务自评为 `routine`（常规），企图绕过代码审查。在 `kernel/intent.ts` 中，系统硬编码了底线规则：
+  > 只要 `scope_hint` 触及 `kernel/`、`assurance/`、`claude/` 或 `.pi-extension` 等核心权威路径，无论作者声明的风险多么轻微，Kernel 会强制将风险等级锁定至至少 `material`，由代码物理强制触发隔离审查。
+- **客观反证机制（Live Counterevidence & Refuted Findings）**：
+  审查模型并非百分之百可信。当 Reviewer 提出怀疑某个 acceptance 存在缺陷的主观 finding 时，若 Kernel 拥有一份针对当前 `diff_hash` 和 `intent_hash` 真实跑通的新鲜 QA 凭证（Attestation），Kernel 会直接将该 finding 标记为 `refuted`（反证驳回），避免审查模型的幻觉阻碍任务落地；而一旦代码产生新改动使凭证过期（stale），该 finding 又会立即重新激活阻塞。
+
+### 4. Token 经济学与成本杠杆：没有 Cost Lever，成本会复合爆炸
+
+如果缺乏精细的成本杠杆（Cost Lever），多 Agent 系统的成本会随着任务拆解呈几何级数（Compound）激增：
+
+- **先 Plan 后 Implement（“量两次，裁一次”）**：
+  一份几百 token 的精准 Spec 与 TaskIntent 成本，远低于一次方向做错后推倒重来、反复 debug 烧掉的上万 token。“量两次裁一次”在多 Agent 协作中是字面意义的真金白银。
+- **冻结 Scope 掐断 Token 黑洞**：
+  弱模型最爱“顺手重构无关文件”或“格式化全工程”。在 Immune-Brain 中，每多碰一个文件不仅增加额外的 token 消耗，还会让 Reviewer 和 Git Diff 负担翻倍。基于哈希的 Scope 边界硬性杜绝了模型过度发挥。
+- **Model Tier 分档流水线（`subagent-model-tier-pipeline`）**：
+  将模型按能力与成本精细分档：
+  - **Fast 档（如 Flash / 4o-mini）**：专跑无设计决策的机械填充、局部测试修复、固定模板编码。
+  - **Mid 档**：负责可靠性审计（`reliability-reviewer`）与常规代码审查。
+  - **Strong 档（如 Sonnet / Opus）**：仅用于前期 Brainstorming、Spec 架构推演与高危安全审计（`security-reviewer`）。
+
+### 5. 典型协作全景：跨 Host 与多模型落地
+
+在 Immune-Brain 的跨 Host 协作模式中，各阶段工具与模型能力得以实现最优配置：
+
+| 阶段 | 参与工具 / 宿主 | 模型档位推荐 | 职责与确定性保障 |
+|---|---|---|---|
+| **1. 方案规划 (Brainstorm)** | Claude Code (`/imm-brainstorm`) | **Strong Tier** (旗舰模型) | 利用长上下文与强推理，与开发者深入讨论方案、挖掘隐性约束并排除伪需求。 |
+| **2. 计划制定 (Planner)** | Claude Code (`/imm-planner`) | **Strong Tier** (旗舰模型) | 编写精确到文件行号的 Living Spec，生成携带 `VerificationDescriptor` 的 `TaskIntent`，完成 Devil's Advocate 预审。 |
+| **3. 代码实现 (Executor)** | Pi (`imm-loop`) | **Fast / Mid Tier** (经济模型) | 在 Pi TUI 弹窗确认冻结 Scope 后，小模型在信封内按图索骥写代码，遵守 YAGNI 极简红线。 |
+| **4. QA 确认 (Verification)** | 本地进程 / Kernel Native | **无需模型 (零 LLM)** | 由 Kernel 直接执行测试脚本（如 `bun test`），严格依照退出码和标准输出出具不可篡改的 Attestation。 |
+| **5. 代码审查 (Review)** | Pi Subagent (`immune-brain-reviewer`) | **Strong Tier** (高智力模型) | 调度隔离的只读审查子代理，基于不可变 Git blob 打包的 `ReviewBundle` 进行对抗性审计，通过后 Kernel 结算归档。 |
+
+---
+
 ## 7 个 Skills
 
 | Skill | 类型 | 何时使用 | 职责 |
@@ -268,25 +379,28 @@ flowchart TD
     end
 ```
 
-### 核心逻辑三要素
+### 核心架构与确定性保证
 
 1. **双轨制 (Two Paths)**
    - **Host-native Path**：日常对话、代码检视、单点修改，不触碰 Kernel 权限，零流程开销。
    - **Managed Path**：由 `imm-brainstorm` / `imm-planner` / `imm-loop` 显式驱动，全程受 Kernel 约束。
 
 2. **权限与契约 (Authority & Contract)**
-   - **TaskIntent (`.intent.json`)**：机器契约本体，严格锁定 `scope_hint`（文件修改范围）、`risk`（风险层级）与 `acceptance`（确定性断言）。
-   - **Native Gate (Enrollment)**：唯一一次人工介入确认，Kernel 原子抢占工作区所有权（SQLite CAS），防止多任务并发冲突与范围漂移。
+   - **TaskIntent (`.intent.json`)**：机器契约本体，严格锁定 `scope_hint`（文件修改范围）、`risk`（风险层级）与 `acceptance`（绑定 Verification Descriptor v2 的确定性断言）。
+   - **Native Gate (Enrollment)**：唯一一次人工介入确认，Kernel 原子抢占工作区所有权（基于 SQLite CAS），防止多任务并发冲突与范围漂移。
+   - **Git 物理基线快照 (Physical Baseline)**：准入时记录真实的 Git HEAD 与 dirty 文件状态（`enrollment-baseline.json`），任何超出 `scope_hint` 的物理逃逸（`assertNoEnvelopeEscape`）都会直接阻断执行。
 
-3. **客观验证 (Deterministic Assurance)**
-   - **QA 优先**：由 Kernel 直接前台执行命令并校验退出码/输出，不依赖 LLM 口头汇报。
-   - **按险定级**：`routine` 仅需 QA；`material`/`critical` 必须追加独立只读 Reviewer 产出结构化裁决。
+3. **客观验证与不可变证据链 (Deterministic Assurance & Evidence Trail)**
+   - **QA 优先与真实进程调用**：由 Kernel 直接前台拉起子进程执行测试命令，校验退出码、标准输出并施加超时上限，不依赖 LLM 口头汇报。
+   - **按险定级与确定性兜底**：`routine` 仅需 QA；`material`/`critical` 必须追加独立只读 Reviewer 产出结构化裁决。触碰核心权威路径强制定级为 `material`。
+   - **反证机制 (Live Refutation)**：主观 Review finding 可由真实通过的新鲜 QA 证据反证驳回；代码发生改动后反证自动失效并重新阻塞。
+   - **不可变审计落盘**：任务结项时，完整的 `TaskRecord`、Git blob 打包的 `ReviewBundle`、QA Attestation 凭证原子沉淀至 `.imm/audit/<task-id>/` 并受 Git 追踪。
    - **批处理 (Unattended Batch)**：基于 GitHub Issue / `plan_digest` 串行推进，每个子任务独立走完 Enrollment → QA → Review → Commit 闭环。
 
 核心不变量：
 
 - **一次仅一个活跃步骤**，编辑仅在步骤边界内。
-- **范围（`scope_hint`）在 enrollment 时冻结**，范围外文件被忽略。
+- **范围（`scope_hint`）在 enrollment 时冻结**，范围外文件被物理忽略与拦截。
 - **先记录证据再关闭** — 只有 QA 能关闭步骤。
 - **Finding 必须携带证据** — 被反证的 Review finding 只在绑定它的 QA 证据对当前 revision、intent hash 与 diff 仍然新鲜时压制工作；证据过期后 finding 重新阻塞，且这个失效过程不重写任何已存状态。
 - **批次必须显式授权且有边界** — 只有你确认 Host 的 `start_unattended_batch` 之后才存在无人值守批次；每个 child 仍各自 Enrollment、QA、Review 与结算。
@@ -333,7 +447,7 @@ Immune-Brain **没有独立配置文件**，偏好设置写在仓库根目录下
 package.json                          # Pi package manifest（skills + extensions）
 plugins/immune-brain/
 ├── .pi-extension/                    # Pi TUI + Kernel 扩展
-├── skills/                           # 6 个公开 Skills（触发 shim）
+├── skills/                           # 7 个公开 Skills（触发 shim）
 ├── dist/                             # 构建后的 skill 契约与参考文档
 ├── runtime/                          # Bun + TypeScript 运行时与 Kernel
 └── bin/                              # CLI wrappers（→ runtime/v4_runtime.ts）
@@ -365,6 +479,12 @@ docs/specs/                           # Living specs（原地更新）
 
 **可以在不同 Host 之间切换吗（例如 Claude Code 规划、Pi 编码）？** 可以。Immune-Brain 的契约与状态完全落盘于代码仓库，解耦了会话上下文。你可以用 Claude Code 进行深度推理与制定 Spec，再切换到 Pi 跑 `imm-loop` 编码并完成 QA 闭环；中途随时可以用 `/imm-loop` 双向恢复。
 
+**任务执行中途发现 Scope 不够用怎么办？** Executor 遵循严格的 Fail-closed 极简红线，严禁自行越界修改范围外文件。若发现必须扩充范围，Executor 会主动停止并返回 `replan_required` 路线；随后由 `imm-planner` 修订 Spec 与 `TaskIntent` 并生成新的 diff，重新弹出原生确认窗口经由人工授权（Replan）后，方可继续执行。
+
+**任务结算后的审计凭证（Audit Trail）保存在哪里？** 保存在仓库的 `.imm/audit/<task-id>/` 目录下，并作为 Git-tracked 资产提交。其中包含最终的 `TaskRecord`、绑定的代码 `diff_hash`、真实执行的 QA 退出码/输出 Attestation、以及 Reviewer 签署的验证凭据，保证交付全流程可追溯、可审计。
+
+**偏好配置为什么写在 AGENTS.md / CLAUDE.md 而不是独立配置文件？** 遵循“零外部负担、宿主原生”原则。将偏好（如 Initiative 载体、交互语言）声明在项目根目录受版本控制的指令文件中，既能在不同 Host 之间透明生效，又避免了本地全局配置文件容易漂移、团队成员无法共享的痛点。
+
 **支持哪些 AI 编程工具？** Pi 与 Claude Code 是支持的宿主（Claude Code 最低版本为 `2.1.236`）。两者共享同一套确定性 Kernel 核心、质量保障机制与工具链。
 
 ---
@@ -391,7 +511,7 @@ npm publish --access public   # 需 npm login / NPM_TOKEN
 # 或
 bun run changeset:publish
 ```
-包名为 `immune-brain`（当前版本 `3.6.7`），已配置 `publishConfig.access=public`。首次发布后，后续所有版本均通过 changesets 管理。
+包名为 `immune-brain`（当前版本 `4.6.0`），已配置 `publishConfig.access=public`。首次发布后，后续所有版本均通过 changesets 管理。
 
 详见 `CHANGELOG.md` 与 `.changeset/config.json`（changelog: `@changesets/changelog-github`，repo: `dereknex/immune-brain`）。
 

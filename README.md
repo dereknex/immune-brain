@@ -25,6 +25,7 @@ Pi and Claude Code are the supported hosts. Undeclared adapters remain unsupport
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [How to Use](#how-to-use)
+- [Core Philosophy: Turn "Judgment" into "Table Lookup"](#core-philosophy-turn-judgment-into-table-lookup-harnessing-multi-model-tiers-with-determinism)
 - [The 7 Skills](#the-7-skills)
 - [Lifecycle](#lifecycle)
 - [Unattended Batch Runs](#unattended-batch-runs)
@@ -51,7 +52,7 @@ Pi discovers Skills and extensions from `package.json` (or your global Pi config
 }
 ```
 
-No extra server config is needed. Installing the package via Pi makes all 6 Skills available automatically.
+No extra server config is needed. Installing the package via Pi makes all 7 Skills available automatically.
 
 ### In Claude Code
 
@@ -162,6 +163,113 @@ This enables a best-of-both-worlds workflow: **leverage Claude Code's deep reaso
 
 ---
 
+## Core Philosophy: Turn "Judgment" into "Table Lookup", Harnessing Multi-Model Tiers with Determinism
+
+Large language models—especially lightweight, cost-effective Fast Tier models—fail in real-world software engineering not because of syntax, but because of **semantic ambiguity, scope creep, and evasive verification**.
+
+Immune-Brain's foundational thesis is: **Never ask weak models to make architectural design decisions; turn them into deterministic table-lookup executors. Enforce all critical gates, verification, and reviews via code-level invariants and flagship models.**
+
+```text
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ 1. Architecture Exploration (Brainstorm) & 2. Plan Authoring (Planner)                 │
+│ Host: Claude Code | Model: Flagship Reasoning Model (Strong Tier)                      │
+│ Role: Clarify constraints, distill "judgment" into line-pinned Living Specs & intents  │
+└───────────────────────────────────────────┬────────────────────────────────────────────┘
+                                            │ Git-Tracked Shared Artifacts (docs/specs, docs/plans)
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ 3. Implementation (Executor)                                                           │
+│ Host: Pi | Model: High-Throughput / Cost-Effective Model (Fast / Mid Tier)             │
+│ Role: Follow the recipe inside a frozen Scope envelope, mirroring established patterns │
+└───────────────────────────────────────────┬────────────────────────────────────────────┘
+                                            │ Local code changes & state delivery
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ 4. Deterministic QA (Verification)                                                     │
+│ Host: Pi / Kernel Native                                                               │
+│ Role: Zero-LLM involvement; natively runs Verification Descriptor v2 commands (Pass/Fail)│
+└───────────────────────────────────────────┬────────────────────────────────────────────┘
+                                            │ Triggered only after live tests pass
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ 5. Isolated Code Review                                                                │
+│ Host: Pi Subagent | Model: High-Intelligence Reviewer Model (Strong Tier)              │
+│ Role: Audits immutable Git blob ReviewBundles against Devil's Advocate red lines       │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 1. Turn "Judgment" into "Table Lookup": Eliminate Ambiguity for Weak Models
+
+The most effective constraint for cost-effective models is eliminating all room for ambiguity at the Spec stage:
+
+- **Coordinate-Level Pinning**: Specs pin exact existing code patterns (e.g., `kernel.ts:1219`), instructing the model to *"mirror this exact shape"*.
+- **Zero-Freedom Machine Contracts**: Error messages, status codes, and error exceptions must mirror existing conventions exactly (e.g., re-using `throw new VerificationDescriptorError(...)` with only command names swapped), leaving no leeway for ad-hoc abstraction.
+- **Explicit Negative Scope (Exclusion List)**: The Scope section mandates clear negative boundaries (which directories must never be touched, which receipt paths cannot be re-used). Weak models need zero architecture guessing—they simply follow the recipe.
+
+### 2. "Done" Is Executable, Not Prose Promises
+
+Textual declarations ("I have implemented this and all tests pass") are the primary vector for hallucinations. Immune-Brain enforces execution by code:
+
+- **Verification Descriptor v2 Machine Contracts**:
+  Every Acceptance Criterion (AC) in a `TaskIntent` is bound to a strict machine descriptor (`assurance_kernel/verification_descriptor/v2`):
+  ```json
+  {
+    "contract": "assurance_kernel/verification_descriptor/v2",
+    "command": {
+      "executable": "bun",
+      "argv": ["test", "tests/kernel-migrate-to-vnext.test.ts"],
+      "cwd": ".",
+      "timeout_ms": 30000,
+      "max_output_bytes": 262144
+    },
+    "environment": { "prepare": null, "writable_paths": [] }
+  }
+  ```
+  Kernel executes verification commands in sandboxed child processes, validating authentic exit codes, stdout, and execution timeouts.
+- **Physical Scope Freezing**:
+  At Enrollment, Kernel captures baseline Git snapshots (`captureGitWorkspaceSnapshot`). If dirty files exist prior to enrollment, or if Executor touches files outside `scope_hint` (`assertNoEnvelopeEscape`), Kernel fails-closed and blocks execution.
+- **Mandatory QA and Isolated Review Subagents**:
+  Local CLI verification runs deterministically. For `material` and `critical` tasks, isolated Reviewer subagents are code-enforced gates that prevent drift.
+
+### 3. Devil's Advocate Audit: Closing the Shortcut Loopholes
+
+Under optimization pressure, models naturally take paths of least resistance. Immune-Brain installs structural defenses:
+
+- **Preventing Verification Vanity**:
+  Devil's Advocate audits explicitly rule that *"`--check` passing does not equal execution success"*. Dry runs or typechecks cannot substitute for test assertions.
+- **Preventing Spec Dilution**:
+  Models are barred from silently pruning hard requirements or fabricating fake compatibility layers (e.g., *"never fabricate v1→v2 migration logic without authentic v1 test fixtures"*).
+- **Deterministic Risk-Tier Floor**:
+  Models cannot weaken scrutiny by self-grading a task as `routine`. In `kernel/intent.ts`, the Kernel enforces a strict floor:
+  > Touching `kernel/`, `assurance/`, `claude/`, or `.pi-extension` automatically clamps the risk tier to at least `material`, regardless of author claims, physically forcing isolated subagent review.
+- **Objective Refutation via Counterevidence**:
+  Subjective Reviewer hallucinations cannot hold up delivery. If a Reviewer claims an acceptance failure, but fresh deterministic QA evidence exists for the current `diff_hash` and `intent_hash`, Kernel marks the finding as `refuted` and allows settlement; once edits dirty the diff, the finding re-blocks automatically.
+
+### 4. Token Economics and Cost Levers: Without Levers, Costs Compound
+
+Without explicit cost levers, multi-agent workflows compound expenses exponentially:
+
+- **Plan First, Implement Second ("Measure Twice, Cut Once")**:
+  A tight, line-pinned spec costs a fraction of the tokens wasted on wrong directions and circular debugging.
+- **Scope Freezing Eliminates Token Sinks**:
+  Barring unprompted refactorings and whole-project restyling prevents explosive diff expansion and token burn.
+- **Model Tier Pipeline (`subagent-model-tier-pipeline`)**:
+  - **Fast Tier** (e.g., Flash / 4o-mini): High-throughput, zero-decision mechanical implementation and focused test fixes.
+  - **Mid Tier**: Reliability reviews (`reliability-reviewer`) and standard code auditing.
+  - **Strong Tier** (e.g., Sonnet / Opus): Strategic planning, architecture formulation, and high-risk security audits (`security-reviewer`).
+
+### 5. Multi-Tool & Multi-Model Workflow Pipeline
+
+| Phase | Host / Tool | Recommended Tier | Responsibility & Guarantees |
+|---|---|---|---|
+| **1. Brainstorming** | Claude Code (`/imm-brainstorm`) | **Strong Tier** | Long-context dialogue, uncovering latent constraints and pruning pseudo-requirements. |
+| **2. Planning** | Claude Code (`/imm-planner`) | **Strong Tier** | Line-pinned Living Specs, `VerificationDescriptor` bindings, and Devil's Advocate audits. |
+| **3. Implementation** | Pi (`imm-loop`) | **Fast / Mid Tier** | Native modal enrollment, mechanical coding within frozen scopes, adhering to YAGNI gates. |
+| **4. Verification** | Local Process / Kernel Native | **Zero LLM (Native)** | Deterministic test execution (`bun test`), producing tamper-proof test attestations. |
+| **5. Code Review** | Pi Subagent (`immune-brain-reviewer`) | **Strong Tier** | Adversarial review over immutable Git blob `ReviewBundle`s before final Kernel settlement. |
+
+---
+
 ## The 7 Skills
 
 | Skill | Type | When to use | What it does |
@@ -268,25 +376,28 @@ flowchart TD
     end
 ```
 
-### Core Logic: Three Pillars
+### Core Architecture & Deterministic Guarantees
 
 1. **Two Paths**
    - **Host-native Path**: Daily conversation, code inspections, and ad-hoc fixes stay 100% native with zero workflow overhead.
    - **Managed Path**: Explicitly entered via `imm-brainstorm`, `imm-planner`, or `imm-loop`, strictly governed by the Assurance Kernel.
 
 2. **Authority & Contract**
-   - **TaskIntent (`.intent.json`)**: Machine-readable behavioral contract locking `scope_hint` (file boundaries), `risk` tier, and `acceptance` descriptors.
+   - **TaskIntent (`.intent.json`)**: Machine-readable behavioral contract locking `scope_hint` (file boundaries), `risk` tier, and deterministic `acceptance` descriptors (Verification Descriptor v2).
    - **Native Gate (Enrollment)**: The single human-authority confirmation gate; Kernel atomically acquires exclusive workspace ownership (`.imm/state/kernel.sqlite` CAS) to prevent concurrency conflicts and scope drift.
+   - **Physical Git Baseline Snapshot**: Enrollment captures repository HEAD and dirty files (`enrollment-baseline.json`); any physical envelope escape (`assertNoEnvelopeEscape`) immediately halts execution.
 
-3. **Deterministic Assurance**
-   - **QA-First**: The Kernel directly runs verification commands and checks exit codes/byte bounds; never relies on conversational claims.
-   - **Risk-Tiered Gates**: `routine` tasks complete upon QA pass; `material` and `critical` tasks require an isolated Review subagent to issue a structured verdict.
+3. **Deterministic Assurance & Immutable Evidence Trail**
+   - **QA-First & Real Process Execution**: The Kernel directly launches sandboxed child processes to run test commands and evaluates exit codes, stdout, and byte bounds; never relies on conversational claims.
+   - **Risk-Tiered Gates with Enforcement Floors**: `routine` tasks complete upon QA pass; `material` and `critical` tasks require an isolated Review subagent. Touching kernel or authority paths is forced to at least `material`.
+   - **Live Refutation**: Subjective Review findings can be refuted by fresh, passing QA evidence; any new edits invalidate counterevidence and re-block the finding.
+   - **Immutable Audit Trail**: Terminal task completion atomically writes signed `TaskRecord`s, Git blob `ReviewBundle`s, and QA Attestations to `.imm/audit/<task-id>/`, fully tracked in Git.
    - **Unattended Batch**: Serial execution driven by GitHub Issues and bound by `plan_digest`, where each child independently completes its own Enrollment → QA → Review → Commit cycle.
 
 Key invariants:
 
 - **One active step at a time**, edits only inside that step's boundary.
-- **Scope (`scope_hint`) is frozen at enrollment** — out-of-scope files are ignored.
+- **Scope (`scope_hint`) is frozen at enrollment** — out-of-scope files are physically denied and intercepted.
 - **Evidence before closure** — QA is the only authority that can close a step.
 - **Findings carry evidence** — a refuted Review finding suppresses work only while the QA evidence bound to it stays fresh for the current revision, intent hash, and diff; when that evidence goes stale the finding blocks again, and nothing stored is rewritten by the invalidation.
 - **Batches are opt-in and bounded** — an unattended batch exists only after you confirm the Host's `start_unattended_batch`; each child keeps its own enrollment, QA, review, and settlement.
@@ -352,7 +463,7 @@ docs/specs/                           # Living specs (updated in place)
 
 ## FAQ
 
-**Do I need to learn all 6 skills?** No. Most of the time you only need `/imm-planner` (to plan and enroll a task) and `/imm-loop` (to build and verify it). Use `imm-brainstorm` when requirements need clarifying first, and the maintenance skills (`imm-pr-fix`, etc.) only when specific repair needs arise. Ordinary chat and simple edits don't need any skills at all.
+**Do I need to learn all 7 skills?** No. Most of the time you only need `/imm-planner` (to plan and enroll a task) and `/imm-loop` (to build and verify it). Use `imm-brainstorm` when requirements need clarifying first, and the maintenance skills (`imm-pr-fix`, etc.) only when specific repair needs arise. Ordinary chat and simple edits don't need any skills at all.
 
 **What if I interrupt or close the session mid-task?** State is safely stored on disk (`.imm/` + TaskIntent). In Pi or Claude Code, simply re-enter `/imm-loop` to resume — the Kernel projection is authoritative.
 
@@ -365,6 +476,12 @@ docs/specs/                           # Living specs (updated in place)
 **Can it run a whole Initiative without me?** Only as far as you authorize. Confirm `start_unattended_batch` with the Initiative slug and the runner works through the published, non-`critical` children serially on one batch branch — parking as soon as a child needs a human decision or the run hits a budget, authorization, or commit failure. A parked run waits for you indefinitely: neither the confirmation dialog nor the authorization it grants times out. It never pushes, opens PRs, or settles user decisions for you.
 
 **Can I switch between hosts (e.g. plan in Claude Code, code in Pi)?** Yes. Immune-Brain's contracts and state live entirely on disk in the repository, decoupled from conversation sessions. You can leverage Claude Code for deep architectural thinking and Spec planning, then switch to Pi to run `imm-loop` for code execution and deterministic QA. Interrupted tasks can be resumed in either host at any time.
+
+**What if the task discovers the scope is insufficient mid-execution?** The Executor adheres strictly to a fail-closed YAGNI red-line and is physically barred from modifying out-of-scope files. When an expansion is truly required, the Executor aborts and yields a `replan_required` route; `imm-planner` then revises the Spec and `TaskIntent`, presenting a new native confirmation dialog before execution resumes.
+
+**Where is the terminal Audit Trail stored and how is it verified?** Settled records are saved to `.imm/audit/<task-id>/` and tracked in Git. Each directory contains the immutable `TaskRecord`, the bound `diff_hash`, raw QA process exit-code attestations, and the Reviewer's signed verdict bundle.
+
+**Why are preferences kept in AGENTS.md / CLAUDE.md instead of an external config.toml?** Immune-Brain embraces host-native simplicity with zero external configuration files. Declaring preferences (such as Initiative carriers and communication instructions) in tracked agent instruction files ensures that configuration is version-controlled, visible across all collaborators, and free from environment drift.
 
 **Which AI coding assistants are supported?** Pi and Claude Code are the supported hosts (Claude Code version >= `2.1.236`). Both hosts run on the exact same Kernel authority, assurance guarantees, and multi-skill pipeline.
 
@@ -392,7 +509,7 @@ npm publish --access public   # requires npm login / NPM_TOKEN
 # or
 bun run changeset:publish
 ```
-The package publishes to npm as `immune-brain` (current release `3.6.7`) with `publishConfig.access=public` already set. After the initial publish, all future releases go through changesets.
+The package publishes to npm as `immune-brain` (current release `4.6.0`) with `publishConfig.access=public` already set. After the initial publish, all future releases go through changesets.
 
 See `CHANGELOG.md` and `.changeset/config.json` (changelog: `@changesets/changelog-github`, repo: `dereknex/immune-brain`).
 
