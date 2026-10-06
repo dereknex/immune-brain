@@ -1548,8 +1548,17 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			});
 			const tool = tools[0];
 			await tool.execute("advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, makeCtx(root, makeUI()));
-			const verdict = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK, snapshot_digest: snapshotDigest(latestReviewSnapshot), decision: "pass", approval: { kind: "review", authority_role: "reviewer", summary: "passed" } };
-			const submitted = await tool.execute("submit", { task_id: TASK, action: { op: "submit_review", verdict } }, undefined, undefined, makeCtx(root, makeUI()));
+			// A review pass claims the reviewed change set, so the fixture lists
+			// the snapshot's own dirty_files (BR-DEC-3).
+			const verdict = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK, snapshot_digest: snapshotDigest(latestReviewSnapshot), decision: "pass", approval: { kind: "review", authority_role: "reviewer", summary: "passed", inspected_paths: [...latestReviewSnapshot.dirty_files] } };
+			const context = makeCtx(root, makeUI());
+			// Missing-path control through the real extension surface: dropping a
+			// claimed path is a correctable invalid verdict that applies nothing.
+			const partial = { ...verdict, approval: { ...verdict.approval, inspected_paths: [] } };
+			const invalid = await capturedToolFailure(tool.execute("submit", { task_id: TASK, action: { op: "submit_review", verdict: partial } }, undefined, undefined, makeCtx(root, makeUI())));
+			expect(invalid).toMatchObject({ operation: "submit_review", state: "blocked", code: "verdict_invalid" });
+			expect(invalid.message).toContain("omits reviewed changed paths");
+			const submitted = await tool.execute("submit", { task_id: TASK, action: { op: "submit_review", verdict } }, undefined, undefined, context);
 			expect(JSON.parse(submitted.content[0].text)).toMatchObject({
 				state: "completed",
 				next_action: "none",

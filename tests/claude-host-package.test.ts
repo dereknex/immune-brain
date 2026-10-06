@@ -212,6 +212,15 @@ describe("claude host package", () => {
     expect(reviewer).toContain("A blocked `submit_review` is recovered only through its returned `recovery_action`");
   });
 
+  it("reviewer definition states the inspected_paths requirement and its read-before-claim rule", () => {
+    const reviewer = readFileSync(resolve(PLUGIN_ROOT, "agents/immune-brain-reviewer.md"), "utf8").replace(/\s+/g, " ");
+    expect(reviewer).toContain("A pass verdict's approval must carry `inspected_paths`");
+    expect(reviewer).toContain("A path may be listed only after its diff was read");
+    expect(reviewer).toContain("deleted paths included");
+    expect(reviewer).toContain("lists a path outside the change set");
+    expect(reviewer).toContain("duplicates a path");
+  });
+
   it("reviewer definition declares exactly the native read-only tool boundary", () => {
     const source = readFileSync(resolve(PLUGIN_ROOT, "agents/immune-brain-reviewer.md"), "utf8");
     const match = /^---\n([\s\S]*?)\n---\n/.exec(source);

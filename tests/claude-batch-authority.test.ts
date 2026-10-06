@@ -554,7 +554,7 @@ describe("batch foreground Executor integration", () => {
 				expect(progression.active(task)?.operation_id).toBe(ready.operation_id);
 				const verdict = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: task,
 					snapshot_digest: ready.snapshot_digest, decision: "pass",
-					approval: { kind: "review", authority_role: "reviewer", summary: "fixture implementation verified" } };
+					approval: { kind: "review", authority_role: "reviewer", summary: "fixture implementation verified", inspected_paths: [`impl-${n}.txt`] } };
 				if (host === "claude") {
 					const agentId = `agent-${n}`, sessionId = `review-${slug}`;
 					client.host.observe({ type: "SubagentStart", sessionId, agentId, agent: REVIEWER_AGENT, taskId: task, operationId: ready.operation_id });
@@ -629,7 +629,7 @@ describe("batch foreground closeout", () => {
 				expect(ready.state).toBe("review_ready");
 				const verdict = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: task,
 					snapshot_digest: ready.snapshot_digest, decision: "pass",
-					approval: { kind: "review", authority_role: "reviewer", summary: "fixture implementation verified" } };
+					approval: { kind: "review", authority_role: "reviewer", summary: "fixture implementation verified", inspected_paths: [`impl-${n}.txt`] } };
 				const agentId = `agent-${n}`, sessionId = `review-${slug}`;
 				client.host.observe({ type: "SubagentStart", sessionId, agentId, agent: REVIEWER_AGENT, taskId: task, operationId: ready.operation_id });
 				client.host.observe({ type: "PostToolUse", sessionId, agentId, toolName: AGENT_TOOL, result: JSON.stringify(verdict), taskId: task, operationId: ready.operation_id });
@@ -687,7 +687,7 @@ describe("batch foreground closeout boundaries", () => {
 		const advanced: any = await client.callTool("advance_assurance", { task_id: task });
 		const verdict = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: task,
 			snapshot_digest: advanced.snapshot_digest, decision: "pass",
-			approval: { kind: "review", authority_role: "reviewer", summary: "fixture implementation verified" } };
+			approval: { kind: "review", authority_role: "reviewer", summary: "fixture implementation verified", inspected_paths: [impl] } };
 		const sessionId = `review-${slug}`, agentId = `agent-${task}`;
 		client.host.observe({ type: "SubagentStart", sessionId, agentId, agent: REVIEWER_AGENT, taskId: task, operationId: advanced.operation_id });
 		client.host.observe({ type: "PostToolUse", sessionId, agentId, toolName: AGENT_TOOL, result: JSON.stringify(verdict), taskId: task, operationId: advanced.operation_id });

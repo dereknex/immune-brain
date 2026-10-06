@@ -116,7 +116,13 @@ function passVerdict(s: SnapshotDescriptor): AssuranceVerdict {
 		task_id: TASK,
 		snapshot_digest: snapshotDigest(s),
 		decision: "pass",
-		approval: { kind: s.role === "qa" ? "qa" : "review", authority_role: s.role === "qa" ? "qa" : "reviewer", summary: "passed" },
+		approval: {
+			kind: s.role === "qa" ? "qa" : "review",
+			authority_role: s.role === "qa" ? "qa" : "reviewer",
+			summary: "passed",
+			// A review pass claims the reviewed change set (BR-DEC-3); QA never carries it.
+			...(s.role === "review" ? { inspected_paths: [...s.dirty_files] } : {}),
+		},
 	};
 }
 
@@ -1690,6 +1696,27 @@ describe("claude host resolve_finding", () => {
 			recovery_action: mismatch,
 		});
 		expect((await parent.coordinator.advance(TASK, ctx) as { operation_id: string }).operation_id).toBe(parentReady.operation_id);
+
+		// Positive control for the Claude call site: a receipt and a parent verdict
+		// that both claim the full change set are fingerprint-equal and settle.
+		const pathsHost = new ClaudeReviewHost();
+		const paths = makeCoordinator({ host: pathsHost });
+		const pathsReady = await paths.coordinator.advance(TASK, ctx) as { operation_id: string };
+		completeReview(pathsHost, pathsReady.operation_id, JSON.stringify(verdict()));
+		expect(await submitClaudeReview(pathsHost, paths.coordinator, ctx, TASK, verdict())).toEqual({ state: "completed" });
+
+		// Missing-path control: a receipt whose pass omits a reviewed changed path is
+		// invalid, not a mismatch. isReviewVerdictValid fails for both parent and
+		// receipt, so the reservation is kept, the verdict is correctable, and no
+		// same-host recovery_action is offered (the verdict itself must be fixed).
+		const coverageHost = new ClaudeReviewHost();
+		const coverage = makeCoordinator({ host: coverageHost });
+		const coverageReady = await coverage.coordinator.advance(TASK, ctx) as { operation_id: string };
+		const partial = { ...verdict(), approval: { ...verdict().approval, inspected_paths: [] } };
+		completeReview(coverageHost, coverageReady.operation_id, JSON.stringify(partial));
+		const coverageResult = await submitClaudeReview(coverageHost, coverage.coordinator, ctx, TASK, partial);
+		expect(coverageResult).toMatchObject({ state: "blocked", code: "verdict_invalid" });
+		expect("recovery_action" in coverageResult ? coverageResult.recovery_action : undefined).toBeUndefined();
 
 		const invalidHost = new ClaudeReviewHost();
 		const invalid = makeCoordinator({ host: invalidHost });

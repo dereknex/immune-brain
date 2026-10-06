@@ -1,0 +1,210 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "review-pass-path-coverage",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "review-pass-path-coverage",
+    "goal": "Implement S3 of docs/specs/review-settlement-hardening.spec.md: a Review pass verdict must list the changed paths the reviewer inspected, and a pass that omits any changed path of the reviewed revision is rejected as a correctable invalid verdict.",
+    "acceptance": [
+      {
+        "id": "RSH-S3-A1",
+        "assertion": "Per S3 of docs/specs/review-settlement-hardening.spec.md (BR-REQ-5, BR-DEC-3): for the review role, parseAssuranceVerdict requires approval.inspected_paths on a pass verdict as an array of unique repository-relative path strings. A pass is rejected with code verdict_invalid, naming the missing paths, when the field is absent, is not an array of strings, contains a duplicate, contains a path outside the reviewed change set, or omits any path of the reviewed change set (changed_paths for a Git review revision, dirty_files for a legacy bundle); deleted paths are part of the required set. A pass listing exactly the reviewed change set is accepted, including an empty list for an empty change set. The rejection keeps the reservation and follows the existing single-correction path. Rework verdicts and QA-role verdicts are unchanged and reject the field as unknown. The list is checked at the coordinator and is not written into the Kernel approval or TaskRecord, so no Kernel schema, persisted record or replay path changes. Every consumer of parseAssuranceVerdict (coordinator, the Claude parent-versus-receipt fingerprint comparison, and both Pi extension call sites) passes the reviewed change set and has a positive and a missing-path control. The reviewer prompt, the reviewer agent definition and the Loop contract state the field and that a path may be listed only after its diff was read. The generated Claude bundle matches the runtime source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\",\n      \"tests/pi-canary-assurance-progression.test.ts\",\n      \"tests/pi-canary-assurance-authority.test.ts\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/managed-authority-failure-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/review-pass-path-coverage.md",
+      "docs/plans/review-pass-path-coverage.intent.json",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/agents/immune-brain-reviewer.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-loop.md",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "tests/batch-plan-reconfirmation.test.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/helpers/pi-canary-assurance-harness.ts",
+      "tests/host-neutral-assurance-coordinator.test.ts",
+      "tests/managed-authority-failure-contract.test.ts",
+      "tests/pi-canary-assurance-authority.test.ts",
+      "tests/pi-canary-assurance-progression.test.ts",
+      "tests/pi-canary-work-extension.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/review-pass-path-coverage.intent.json",
+    "content_hash": "sha256:26d64859781d9efa34abdc560b4e6c5b9760faa23cabaf6254974739667b7f6c"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:1ccb1809d3d6c8e10f9bc94ea5ae70de475b6a6fb95947c2ccaa020d640dd415",
+  "git_base_head": "c7aafba2b6b51719bba321ab22084c9dd90ba877",
+  "attestations": [
+    {
+      "id": "approval-qa-f5204539",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:26d64859781d9efa34abdc560b4e6c5b9760faa23cabaf6254974739667b7f6c",
+      "diff_hash": "sha256:6b68b6fca321c5966803d6ff78cad083606861a24308645f57ec9d01ae86c18e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:5f815a9c10399ef7eff07589ab134dfb59c7354d551832024591e3b1e68de95d",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RSH-S3-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:5f815a9c10399ef7eff07589ab134dfb59c7354d551832024591e3b1e68de95d"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-a8b5c523",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:26d64859781d9efa34abdc560b4e6c5b9760faa23cabaf6254974739667b7f6c",
+      "diff_hash": "sha256:6b68b6fca321c5966803d6ff78cad083606861a24308645f57ec9d01ae86c18e",
+      "actor_id": "parent-mediated-review",
+      "summary": "RSH-S3-A1 holds: parseAssuranceVerdict requires review-role approval.inspected_paths covering exactly snapshot.dirty_files (changed_paths for v5 manifests, bundle dirty_files for legacy), rejects absent/malformed/duplicate/foreign/missing with the offending paths named, keeps the reservation via verdictCorrectionRequired for one correction, strips the list from the settled approval, leaves QA and rework verdicts rejecting it as unknown, and the prompt, reviewer definition, Loop contract and regenerated dist bundle all state it with positive and missing-path controls at the coordinator, Claude fingerprint and both Pi call sites.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "c7aafba2b6b51719bba321ab22084c9dd90ba877",
+        "review_commit": "5ea28ce5f254bc39ab401c57a195d399f092fbdd",
+        "review_tree": "addb74466aecc0bee939015f1578395b151a1b31",
+        "manifest_digest": "sha256:088bbd6e0df9e7dbd526da2b310ec97354b499f06f32388b5ef377b3c4f33cca"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-0f548f267836-1-review-1",
+          "acceptance_id": "RSH-S3-A1",
+          "summary": "tests/pi-canary-assurance-authority.test.ts:84 imports type SnapshotDescriptor from runtime/assurance/host_port, which exports only ReviewRequest, HostReviewReservation and AssuranceHostPort, so `bun run typecheck` reports a missing export if tsconfig includes tests/",
+          "anchor": "sha256:8c4e8673655c48052e142fe566b68873b51ed14a4dc5514e6d45ba025458e289",
+          "evidence": {
+            "trigger": "tsc -p tsconfig.json resolving `type SnapshotDescriptor = import(\"../plugins/immune-brain/runtime/assurance/host_port\").SnapshotDescriptor` at tests/pi-canary-assurance-authority.test.ts:84; host_port.ts in revision 5ea28ce5 declares no SnapshotDescriptor export, so the alias is an unresolved member (TS2694) whenever tests/ is in the checked project; bun test strips types, which is why the QA descriptor did not surface it",
+            "caller_chain": [
+              "tests/pi-canary-assurance-authority.test.ts:84",
+              "plugins/immune-brain/runtime/assurance/host_port.ts",
+              "package.json scripts.typecheck (tsc -p tsconfig.json)"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "RSH-S3-A1"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-RSH-S3-A1-6f4ad7cb-61b629",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RSH-S3-A1",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=16288B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:review-pass-path-coverage:2026-10-06T02:49:40.947Z",
+      "at": "2026-10-06T02:49:40.947Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:768e4572f47f84b0e14f90dc26dd8d08228b77f35e57d83bdda8de02ef61a4c1",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-34c4d84aecdda120",
+        "issued_at": "2026-10-06T02:49:41.194Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:review-pass-path-coverage:2026-10-06T03:29:38.807Z",
+      "at": "2026-10-06T03:29:38.807Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-pass-path-coverage.intent.json"
+    },
+    {
+      "id": "request_rework:review-pass-path-coverage:2026-10-06T03:29:56.590Z",
+      "at": "2026-10-06T03:29:56.590Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:9957f1d601abd07b40ac1e9a804876e7ef849ba74e5c100b320bec08ecbb881d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-97ebbcc62c62ad0d",
+        "issued_at": "2026-10-06T03:29:56.590Z"
+      }
+    },
+    {
+      "id": "resolve_finding:review-pass-path-coverage:2026-10-06T03:46:53.062Z",
+      "at": "2026-10-06T03:46:53.062Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-RSH-S3-A1-6f4ad7cb-61b629\naction_v2_sha256:e0a4053fb511ee0bc088e08779831f3d8e57a96d76fe7927f4156eb38cfc9f42"
+    },
+    {
+      "id": "freeze_artifacts:review-pass-path-coverage:2026-10-06T03:46:59.459Z",
+      "at": "2026-10-06T03:46:59.459Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-pass-path-coverage.intent.json"
+    },
+    {
+      "id": "record_approval:review-pass-path-coverage:2026-10-06T03:47:17.565Z",
+      "at": "2026-10-06T03:47:17.565Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-f5204539\naction_v2_sha256:8243ee96a3144f222420d6a96440ff0f1e061ee6e73d8b365f7182c7719f731a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-806678ef0fddaa71",
+        "issued_at": "2026-10-06T03:47:17.565Z"
+      }
+    },
+    {
+      "id": "record_approval:review-pass-path-coverage:2026-10-06T03:56:51.597Z",
+      "at": "2026-10-06T03:56:51.597Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-a8b5c523\naction_v2_sha256:c81fd33604cb540f481264600bd4e1a186dc5397e113599af1ff0affb1f4fb85",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-085c74a28a22c611",
+        "issued_at": "2026-10-06T03:56:51.597Z"
+      }
+    },
+    {
+      "id": "complete:review-pass-path-coverage:2026-10-06T03:56:53.167Z",
+      "at": "2026-10-06T03:56:53.167Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:23d325ea4d3fe80825c54befd113337c603071ddcc1ff33c892b051c67698b60"
+    }
+  ]
+}

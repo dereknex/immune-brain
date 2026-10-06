@@ -195,10 +195,15 @@ async function fixture(host: "pi" | "claude", settle: "done" | "active" | "stopp
 			// The Reviewer response is a fixture seam, not a fabricated attestation:
 			// real frozen QA, reservation, capability and Kernel settlement execute.
 			expect(readFileSync(join(root, "src/child-1.txt"), "utf8")).toBe("implemented\n");
+			// A pass claims the reviewed change set (BR-DEC-3), which is exactly
+			// what the fixture's scope_hint selects: the intent sidecar plus the
+			// implementation file when the sidecar is in scope, and the file alone
+			// when the scope_hint is `src/**` and the sidecar is outside it.
+			const inspected = includeSidecar ? [`docs/plans/${task}.intent.json`, "src/child-1.txt"] : ["src/child-1.txt"];
 			expect(await coordinator.submitReview(task, { cwd: root } as never, {
 				contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: task,
 				snapshot_digest: advanced.snapshot_digest, decision: "pass",
-				approval: { kind: "review", authority_role: "reviewer", summary: "Fixture Reviewer checked revised delivery after actual QA" },
+				approval: { kind: "review", authority_role: "reviewer", summary: "Fixture Reviewer checked revised delivery after actual QA", inspected_paths: inspected },
 			})).toMatchObject({ state: "completed" });
 		} else expect(advanced).toMatchObject({ state: "completed" });
 		const audit = readAuditTaskPair(root, task, runId)!;

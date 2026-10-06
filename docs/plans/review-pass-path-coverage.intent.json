@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "review-pass-path-coverage",
-  "owner": "user",
   "goal": "Implement S3 of docs/specs/review-settlement-hardening.spec.md: a Review pass verdict must list the changed paths the reviewer inspected, and a pass that omits any changed path of the reviewed revision is rejected as a correctable invalid verdict.",
   "acceptance": [
     {
@@ -20,13 +19,19 @@
     "plugins/immune-brain/dist/imm-loop.md",
     "plugins/immune-brain/runtime/assurance/coordinator.ts",
     "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "tests/batch-plan-reconfirmation.test.ts",
+    "tests/claude-batch-authority.test.ts",
     "tests/claude-host-authority.test.ts",
     "tests/claude-host-package.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/helpers/pi-canary-assurance-harness.ts",
     "tests/host-neutral-assurance-coordinator.test.ts",
     "tests/managed-authority-failure-contract.test.ts",
     "tests/pi-canary-assurance-authority.test.ts",
-    "tests/pi-canary-assurance-progression.test.ts"
+    "tests/pi-canary-assurance-progression.test.ts",
+    "tests/pi-canary-work-extension.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

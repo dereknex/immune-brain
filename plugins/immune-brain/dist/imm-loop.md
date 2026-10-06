@@ -236,6 +236,12 @@ write planning artifacts, mutate Kernel state, or settle decisions. Report all
 substantiated blockers in one round, tied to acceptance or a concrete regression;
 separate optional advice from blockers. Suggestions alone do not justify rework.
 Use the returned verdict schema exactly, including omission of unsupported fields.
+A Review pass verdict's approval must carry `inspected_paths`: an array of
+unique repository-relative path strings listing every path of the reviewed
+change set, deleted paths included; an empty change set is listed as an empty
+array. A path may be listed only after its diff was read. A pass that omits any
+changed path, lists a path outside the change set, or duplicates a path is
+rejected as a correctable invalid verdict.
 
 `dispatch_role` for `qa`, `code-review`, or `ui-review` is used only when an
 explicit runtime-supported role boundary requests it, followed by the returned

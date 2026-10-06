@@ -287,6 +287,24 @@ describe("foreground assurance progression", () => {
 		expect(h.counts().applyCount).toBe(2);
 	});
 
+	test("a Review pass through the Pi extension must claim the whole reviewed change set", async () => {
+		const h = makeHarness();
+		expect((await h.progression.advance(TASK, ctx)).state).toBe("review_ready");
+		const claim = (paths: unknown) => ({
+			...passVerdict(snapshot("review")),
+			approval: { ...passVerdict(snapshot("review")).approval, inspected_paths: paths },
+		});
+		// Missing-path control: rejected as a correctable invalid verdict, the
+		// reservation survives, and nothing is applied.
+		const omitted = await h.progression.submitReview(TASK, ctx, claim([]));
+		expect(omitted).toMatchObject({ state: "blocked", code: "verdict_invalid" });
+		expect((omitted as { reason: string }).reason).toContain("omits reviewed changed paths");
+		expect(h.counts().applyCount).toBe(1);
+		// Positive control: the exact change set settles through the same reservation.
+		expect(await h.progression.submitReview(TASK, ctx, claim(["src/change.ts"]))).toEqual({ state: "completed" });
+		expect(h.counts().applyCount).toBe(2);
+	});
+
 	test("malformed Parent verdict is retryable without a Review authority write", async () => {
 		const h = makeHarness();
 		expect((await h.progression.advance(TASK, ctx)).state).toBe("review_ready");

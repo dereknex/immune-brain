@@ -95,7 +95,13 @@ function passVerdict(s: SnapshotDescriptor): AssuranceVerdict {
 		task_id: TASK,
 		snapshot_digest: snapshotDigest(s),
 		decision: "pass",
-		approval: { kind: s.role === "qa" ? "qa" : "review", authority_role: s.role === "qa" ? "qa" : "reviewer", summary: "passed" },
+		approval: {
+			kind: s.role === "qa" ? "qa" : "review",
+			authority_role: s.role === "qa" ? "qa" : "reviewer",
+			summary: "passed",
+			// A review pass claims the reviewed change set (BR-DEC-3); QA never carries it.
+			...(s.role === "review" ? { inspected_paths: [...s.dirty_files] } : {}),
+		},
 	};
 }
 
@@ -322,6 +328,33 @@ describe("host-neutral assurance coordinator", () => {
 		// same evidence a blocking finding would carry.
 		expect(records[0].anchor).toMatch(/^sha256:[0-9a-f]{64}$/);
 		expect(records[0].evidence).toMatchObject({ violated: { kind: "acceptance", ref: "A1" } });
+	});
+
+	test("a pass verdict that omits a reviewed changed path is a correctable invalid verdict", async () => {
+		const host = new FakeReviewHost();
+		const h = makeCoordinator({ host });
+		const ready = await h.coordinator.advance(TASK, ctx);
+		expect(ready.state).toBe("review_ready");
+		const claim = (paths: unknown) => ({
+			...passVerdict(snapshot("review")),
+			approval: { ...passVerdict(snapshot("review")).approval, inspected_paths: paths },
+		});
+
+		// Missing path: rejected, the reservation survives, and nothing settles.
+		const omitted = await h.coordinator.submitReview(TASK, ctx, claim([]));
+		expect(omitted).toMatchObject({ state: "blocked", code: "verdict_invalid" });
+		expect((omitted as { reason: string }).reason).toContain("omits reviewed changed paths: src/change.ts");
+		expect(h.counts().applyCount).toBe(1);
+		// The retained reservation demands one correction instead of a new envelope.
+		expect(await h.coordinator.advance(TASK, ctx)).toMatchObject({
+			state: "blocked",
+			code: "verdict_invalid",
+			reason: "Review verdict correction is required before advancing",
+		});
+
+		// Single-correction path: the complete claim settles the same reservation.
+		expect(await h.coordinator.submitReview(TASK, ctx, claim(["src/change.ts"]))).toEqual({ state: "completed" });
+		expect(h.counts().applyCount).toBe(2);
 	});
 
 	test("structured Review rework returns fresh finding and acceptance identities before repair", async () => {

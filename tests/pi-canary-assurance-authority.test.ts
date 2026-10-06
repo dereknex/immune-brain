@@ -1,16 +1,86 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, mock, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
+
+// The Kernel QA delivery workspace is a dependency-free checkout, so `typebox`
+// belongs to the running Host rather than to this tree. Register the seam only
+// when the real package cannot be imported here, so an ordinary suite run keeps
+// it, and clear the registry afterwards so no Host-facing sibling test file in
+// the same process inherits the mock.
+try { await import("typebox"); } catch {
+	const optional = Symbol("optional");
+	mock.module("typebox", () => ({ Type: {
+		Array: (items: object) => ({ type: "array", items }),
+		Boolean: () => ({ type: "boolean" }),
+		Literal: (value: unknown) => ({ const: value }),
+		Null: () => ({ type: "null" }),
+		Number: () => ({ type: "number" }),
+		Object: (properties: Record<string, unknown>, options: Record<string, unknown> = {}) => ({
+			type: "object", properties,
+			required: Object.entries(properties).filter(([, value]) => !value[optional]).map(([key]) => key),
+			...options,
+		}),
+		Optional: (schema: Record<string, unknown>) => ({ ...schema, [optional]: true }),
+		Record: (_key: object, value: object) => ({ type: "object", additionalProperties: value }),
+		String: (options: object = {}) => ({ type: "string", ...options }),
+		Union: (anyOf: object[]) => ({ anyOf }),
+		Unknown: () => ({}),
+	} }));
+}
+// `imm-canary-work` also loads `pi-canary-assurance`, which imports the Pi host
+// UI packages. Seam them under the same condition, for the same reason.
+try { await import("@earendil-works/pi-coding-agent"); } catch {
+	class DynamicBorder {
+		constructor(private style: (text: string) => string) {}
+		render(width: number) { return [this.style("─".repeat(Math.max(0, width)))]; }
+	}
+	mock.module("@earendil-works/pi-coding-agent", () => ({ DynamicBorder }));
+}
+try { await import("@earendil-works/pi-tui"); } catch {
+	class Text {
+		constructor(private text: string) {}
+		setText(text: string) { this.text = text; }
+		render() { return this.text.split("\n"); }
+		invalidate() {}
+	}
+	class Container {
+		private children: Array<{ render(width: number): string[] }> = [];
+		addChild(child: { render(width: number): string[] }) { this.children.push(child); }
+		render(width: number) { return this.children.flatMap((child) => child.render(width)); }
+		invalidate() { for (const child of this.children) (child as { invalidate?: () => void }).invalidate?.(); }
+	}
+	class SelectList {
+		onSelect?: (item: unknown) => void;
+		onCancel?: () => void;
+		private selected = 0;
+		constructor(private items: Array<{ label: string }>) {}
+		render() { return this.items.map((item, index) => `${index === this.selected ? "> " : "  "}${item.label}`); }
+		handleInput(input: string) {
+			if (input === "\u001b[B") this.selected = Math.min(this.items.length - 1, this.selected + 1);
+			else if (input === "\u001b[A") this.selected = Math.max(0, this.selected - 1);
+			else if (input === "\r") this.onSelect?.(this.items[this.selected]!);
+			else if (input === "\u001b") this.onCancel?.();
+		}
+	}
+	mock.module("@earendil-works/pi-tui", () => ({
+		Container, SelectList, Text,
+		sliceByColumn: (text: string, start: number, width?: number) => text.slice(start, width === undefined ? undefined : start + width),
+		truncateToWidth: (text: string, width: number, marker = "") => text.length <= width ? text : `${text.slice(0, Math.max(0, width - marker.length))}${marker}`,
+		visibleWidth: (text: string) => text.length,
+	}));
+}
+afterAll(() => mock.restore());
+
+const {
 	buildSnapshot,
 	snapshotDigest,
 	buildReviewPrompt,
 	parseAssuranceVerdict,
 	reviewReworkFindings,
-	type SnapshotDescriptor,
-} from "../plugins/immune-brain/.pi-extension/imm-canary-work.ts";
+} = await import("../plugins/immune-brain/.pi-extension/imm-canary-work.ts");
+type SnapshotDescriptor = import("../plugins/immune-brain/runtime/assurance/host_port").SnapshotDescriptor;
 import { findingsDigestV2 } from "../plugins/immune-brain/runtime/kernel/reducer";
 import { runDeterministicQa } from "../plugins/immune-brain/runtime/assurance/qa";
 import {
@@ -70,6 +140,8 @@ function passVerdict(s: SnapshotDescriptor) {
 			kind: s.role === "qa" ? "qa" : "review",
 			authority_role: s.role === "qa" ? "qa" : "reviewer",
 			summary: "verified",
+			// A review pass claims the reviewed change set (BR-DEC-3); QA never carries it.
+			...(s.role === "review" ? { inspected_paths: [...s.dirty_files] } : {}),
 		},
 	});
 }
@@ -177,8 +249,68 @@ describe("canary assurance authority", () => {
 		expect(prompt).toContain("evidence.trigger");
 		expect(prompt).toContain("caller_chain");
 		expect(prompt).toContain("security_boundary");
+		expect(prompt).toContain('"inspected_paths"');
+		expect(prompt).toContain("A path may be listed only after its diff was read");
+		expect(prompt).toContain("deleted paths included");
 		expect(prompt).not.toContain("counterevidence");
 		expect(prompt).not.toContain("refuted");
+	});
+
+	test("a review pass must claim the whole reviewed change set", () => {
+		const s = snapshot();
+		const verdict = (paths: unknown) => {
+			const base = JSON.parse(passVerdict(s)) as { approval: Record<string, unknown> };
+			if (paths === undefined) delete base.approval.inspected_paths;
+			else base.approval.inspected_paths = paths;
+			return JSON.stringify(base);
+		};
+
+		// Positive: the exact change set settles, and the field is checked but not
+		// carried into the Kernel approval.
+		const parsed = parseAssuranceVerdict(verdict(["src/new.ts"]), s);
+		expect(parsed.decision).toBe("pass");
+		expect(parsed.approval).toEqual({ kind: "review", authority_role: "reviewer", summary: "verified" });
+
+		// Every rejection names the offending paths and is a parse failure, which
+		// the coordinator reports as verdict_invalid while keeping the reservation.
+		expect(() => parseAssuranceVerdict(verdict(undefined), s)).toThrow(/inspected_paths is required/);
+		expect(() => parseAssuranceVerdict(verdict([]), s)).toThrow(/omits reviewed changed paths: src\/new\.ts/);
+		expect(() => parseAssuranceVerdict(verdict("src/new.ts"), s)).toThrow(/must be an array of repository-relative path strings/);
+		expect(() => parseAssuranceVerdict(verdict(["src/new.ts", 7]), s)).toThrow(/must be an array of repository-relative path strings/);
+		expect(() => parseAssuranceVerdict(verdict(["src/new.ts", "src/new.ts"]), s)).toThrow(/lists a duplicate path: src\/new\.ts/);
+		expect(() => parseAssuranceVerdict(verdict(["src/new.ts", "src/outside.ts"]), s)).toThrow(/outside the reviewed change set: src\/outside\.ts/);
+
+		// A deleted path is part of the required set, not something to omit.
+		const withDeletion = snapshot({ dirty_files: ["src/new.ts", "src/old.ts"] });
+		expect(() => parseAssuranceVerdict(
+			JSON.stringify({ ...JSON.parse(passVerdict(withDeletion)), approval: { kind: "review", authority_role: "reviewer", summary: "verified", inspected_paths: ["src/new.ts"] } }),
+			withDeletion,
+		)).toThrow(/omits reviewed changed paths: src\/old\.ts/);
+		expect(parseAssuranceVerdict(
+			JSON.stringify({ ...JSON.parse(passVerdict(withDeletion)), approval: { kind: "review", authority_role: "reviewer", summary: "verified", inspected_paths: ["src/new.ts", "src/old.ts"] } }),
+			withDeletion,
+		).decision).toBe("pass");
+
+		// An empty change set is claimed as an empty list.
+		const empty = snapshot({ dirty_files: [] });
+		expect(parseAssuranceVerdict(
+			JSON.stringify({ ...JSON.parse(passVerdict(empty)), approval: { kind: "review", authority_role: "reviewer", summary: "verified", inspected_paths: [] } }),
+			empty,
+		).decision).toBe("pass");
+	});
+
+	test("QA passes and rework verdicts still reject the field as unknown", () => {
+		const qa = snapshot({ role: "qa" });
+		expect(parseAssuranceVerdict(passVerdict(qa), qa).decision).toBe("pass");
+		const withPaths = JSON.parse(passVerdict(qa)) as { approval: Record<string, unknown> };
+		withPaths.approval.inspected_paths = ["src/new.ts"];
+		expect(() => parseAssuranceVerdict(JSON.stringify(withPaths), qa)).toThrow(/unknown field: inspected_paths/);
+		// A rework verdict keeps its shape: findings, no approval, and no path list.
+		const rework = JSON.parse(reworkVerdict(snapshot())) as Record<string, unknown>;
+		const reviewRework = { ...rework, approval: { kind: "review", authority_role: "reviewer", summary: "x", inspected_paths: [] } };
+		expect(() => parseAssuranceVerdict(JSON.stringify(reviewRework), snapshot())).toThrow(/rework verdict must omit approval/);
+		delete (reviewRework as Record<string, unknown>).approval;
+		expect(parseAssuranceVerdict(JSON.stringify(reviewRework), snapshot()).decision).toBe("rework");
 	});
 
 	test("deterministic QA runs fixed descriptors without executor-authored evidence", async () => {

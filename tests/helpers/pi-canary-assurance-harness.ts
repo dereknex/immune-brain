@@ -80,14 +80,21 @@ function reviewBundle(): ReviewBundle {
 	} as unknown as ReviewBundle;
 }
 
-export function passVerdict(s: SnapshotDescriptor): AssuranceVerdict {
+export function passVerdict(s: SnapshotDescriptor): AssuranceVerdict & { approval?: Record<string, unknown> } {
 	return {
 		contract: "assurance_kernel/assurance_verdict/v2",
 		role: s.role,
 		task_id: TASK,
 		snapshot_digest: snapshotDigest(s),
 		decision: "pass",
-		approval: { kind: s.role === "qa" ? "qa" : "review", authority_role: s.role === "qa" ? "qa" : "reviewer", summary: "passed" },
+		approval: {
+			kind: s.role === "qa" ? "qa" : "review",
+			authority_role: s.role === "qa" ? "qa" : "reviewer",
+			summary: "passed",
+			// A review pass must claim the reviewed change set (BR-DEC-3). QA
+			// verdicts never carry the field.
+			...(s.role === "review" ? { inspected_paths: [...s.dirty_files] } : {}),
+		},
 	};
 }
 

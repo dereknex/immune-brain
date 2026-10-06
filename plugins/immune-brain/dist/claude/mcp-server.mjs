@@ -1539,8 +1539,9 @@ function buildReviewPrompt(snapshot, evidencePath) {
     acceptance,
     "Reserve the final turn for exactly one strict JSON verdict. Reply with ONLY that object, without markdown fences or commentary.",
     `Every rework finding must carry machine-checkable provenance: evidence.trigger (the concrete inputs or state that reach the defect), a non-empty evidence.caller_chain (ordered repository paths or symbols), and evidence.violated {kind: "acceptance"|"security_boundary", ref}. The anchor is derived from that evidence; a finding without it is rejected and the correction must be resubmitted.`,
-    `PASS shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>"}}`,
-    `A pass verdict may carry non-blocking notes as findings, but every one of them must set kind "advisory"; a blocking finding is a rework verdict and must omit approval: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>"},"findings":[{"id":"review-1","kind":"advisory","acceptance_id":"<id|null>","summary":"<one line>","evidence":{"trigger":"<concrete inputs or state>","caller_chain":["<path-or-symbol>"],"violated":{"kind":"acceptance|security_boundary","ref":"<acceptance id or boundary>"}}}]}`,
+    `A pass verdict's approval must carry inspected_paths: an array of unique repository-relative path strings listing every path of the reviewed change set (changed_paths for a Git review revision, dirty_files for a bundle), deleted paths included; an empty change set is listed as an empty array. A path may be listed only after its diff was read. A pass that omits any changed path, lists a path outside the change set, or duplicates a path is rejected as a correctable invalid verdict.`,
+    `PASS shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>","inspected_paths":["<every changed path of the reviewed change set>"]}}`,
+    `A pass verdict may carry non-blocking notes as findings, but every one of them must set kind "advisory"; a blocking finding is a rework verdict and must omit approval: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>","inspected_paths":["<every changed path of the reviewed change set>"]},"findings":[{"id":"review-1","kind":"advisory","acceptance_id":"<id|null>","summary":"<one line>","evidence":{"trigger":"<concrete inputs or state>","caller_chain":["<path-or-symbol>"],"violated":{"kind":"acceptance|security_boundary","ref":"<acceptance id or boundary>"}}}]}`,
     `REWORK shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"rework","findings":[{"id":"review-1","kind":"blocking|advisory","acceptance_id":"<id|null>","summary":"<one line>","evidence":{"trigger":"<concrete inputs or state>","caller_chain":["<path-or-symbol>"],"violated":{"kind":"acceptance|security_boundary","ref":"<acceptance id or boundary>"}}}]}`,
     `REWORK verdicts must omit the approval field entirely; do not emit "approval": null.`
   ].join(`
@@ -1615,7 +1616,28 @@ function parseAssuranceVerdict(input, snapshot) {
     const expectedRole = snapshot.role === "qa" ? "qa" : "reviewer";
     if (!approval || approval.kind !== expectedKind || approval.authority_role !== expectedRole || typeof approval.summary !== "string" || !approval.summary.trim())
       throw new Error("pass verdict approval is invalid");
-    const unknownApproval = Object.keys(approval).find((key) => !["kind", "authority_role", "summary"].includes(key));
+    if (snapshot.role === "review") {
+      const required = snapshot.dirty_files;
+      const listed = approval.inspected_paths;
+      if (listed === undefined)
+        throw new Error(`review pass verdict approval.inspected_paths is required; it must list every reviewed changed path${required.length ? `: ${required.join(", ")}` : " (none for this change set)"}`);
+      if (!Array.isArray(listed) || listed.some((entry) => typeof entry !== "string" || !entry.trim()))
+        throw new Error("review pass verdict approval.inspected_paths must be an array of repository-relative path strings");
+      const seen = new Set;
+      for (const entry of listed) {
+        if (seen.has(entry))
+          throw new Error(`review pass verdict approval.inspected_paths lists a duplicate path: ${entry}`);
+        seen.add(entry);
+      }
+      const foreign = listed.filter((entry) => !required.includes(entry));
+      if (foreign.length)
+        throw new Error(`review pass verdict approval.inspected_paths lists a path outside the reviewed change set: ${foreign.join(", ")}`);
+      const missing = required.filter((entry) => !seen.has(entry));
+      if (missing.length)
+        throw new Error(`review pass verdict approval.inspected_paths omits reviewed changed paths: ${missing.join(", ")}`);
+    }
+    const allowedApproval = snapshot.role === "review" ? ["kind", "authority_role", "summary", "inspected_paths"] : ["kind", "authority_role", "summary"];
+    const unknownApproval = Object.keys(approval).find((key) => !allowedApproval.includes(key));
     if (unknownApproval)
       throw new Error(`pass verdict approval has unknown field: ${unknownApproval}`);
     const passFindings = raw.findings === undefined ? [] : parseVerdictFindings(raw.findings, snapshot);

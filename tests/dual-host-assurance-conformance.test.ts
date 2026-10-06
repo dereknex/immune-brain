@@ -409,7 +409,13 @@ function passVerdict(s: SnapshotDescriptor): AssuranceVerdict {
 		task_id: TASK,
 		snapshot_digest: snapshotDigest(s),
 		decision: "pass",
-		approval: { kind: s.role === "qa" ? "qa" : "review", authority_role: s.role === "qa" ? "qa" : "reviewer", summary: "passed" },
+		approval: {
+			kind: s.role === "qa" ? "qa" : "review",
+			authority_role: s.role === "qa" ? "qa" : "reviewer",
+			summary: "passed",
+			// A review pass claims the reviewed change set (BR-DEC-3); QA never carries it.
+			...(s.role === "review" ? { inspected_paths: [...s.dirty_files] } : {}),
+		},
 	};
 }
 

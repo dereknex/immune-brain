@@ -125,6 +125,15 @@ describe("Managed native authority failure contract", () => {
 		expect(loop).toContain("Dispatch the same envelope unchanged");
 	});
 
+	test("the Loop contract states the inspected_paths requirement and its read-before-claim rule", () => {
+		const loop = read("plugins/immune-brain/dist/imm-loop.md").replace(/\s+/g, " ");
+		expect(loop).toContain("A Review pass verdict's approval must carry `inspected_paths`");
+		expect(loop).toContain("deleted paths included");
+		expect(loop).toContain("A path may be listed only after its diff was read");
+		expect(loop).toContain("omits any changed path, lists a path outside the change set, or duplicates a path");
+		expect(loop).toContain("rejected as a correctable invalid verdict");
+	});
+
 	test("a post-settlement tracker failure is not a managed authority failure", () => {
 		// The tracker is transport: its failure block is a tracker result carried
 		// beside the authoritative settlement, never a Managed authority failure
