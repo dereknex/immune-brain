@@ -197,12 +197,12 @@ Immune-Brain 的系统级 subagents 按三层设计，避免把上游的大型 a
 - system subagents：父 orchestrator 按需调用的辅助能力；它们可以提供 advisory、planning artifact、active-step bounded execution 或 review evidence，但都不能静默升级成 authority role。
 - `imm-*` authority roles：真正拥有流程决策权的闭环内部角色，例如 `imm-planner`、internal executor、internal QA；system subagents 只能映射或服务于这些角色，不能取代它们。
 
-首版只接受 4 类 system subagent authority class：
+runtime 只存在 4 类 system subagent authority class，举例一律使用 runtime role 名：
 
-- **advisory**：只给出研究、评审或风险意见，例如 `context-mapper`、`scope-reviewer`、`code-reviewer`、`ui-reviewer`。
-- **planning artifact writer**：只写 planning artifact，不改实现，例如 `planner`。
-- **active-step bounded executor**：只在 `imm-loop` 已激活当前 step 后，改动当前 step 范围内的文件，例如 `executor`。
-- **review evidence producer**：只产出闭合判断或复用沉淀所需 evidence / artifact，例如 `qa-verifier`、`knowledge-compounder`。
+- **advisory**：只给出研究、评审或风险意见，例如 internal `arch-explorer`、internal `code-review`、internal `ui-review`、internal `advisory-reviewer`。
+- **planning artifact writer**：只写 planning artifact，不改实现，例如 `imm-planner`。
+- **active-step bounded executor**：只在 `imm-loop` 已激活当前 step 后，改动当前 step 范围内的文件，例如 internal `executor`、internal `pr-fix`、internal `test-fixer`。
+- **review evidence producer**：只产出闭合判断或复用沉淀所需 evidence / artifact，例如 internal `qa`、internal `compounder`。
 
 无论哪一类 subagent：
 
@@ -210,45 +210,6 @@ Immune-Brain 的系统级 subagents 按三层设计，避免把上游的大型 a
 - 都不能跳过 `imm-loop` 的 active-step gate；
 - 都不能把 advisory 结果直接转成 plan rewrite、code edit 或 QA `pass`；
 - 一旦需要超出当前 authority class 的行为，必须回到对应的 `imm-*` role 继续闭环。
-
-#### 首版核心 Subagents
-
-首版核心集合控制在 8 个以内，覆盖一个任务从理解到沉淀的默认闭环：
-
-#### Subagent Manifest Contract（v1）
-
-同一套 manifest contract 适用于核心闭环层、条件风险层和项目专用层。首版要求核心层完整列出这些字段；条件风险层和项目专用层在被正式纳入治理文档时，也必须沿用同一字段集合，而不是再发明另一套描述方式。
-
-首版每个 system subagent 至少要能被稳定描述为以下字段：
-
-- `id` / `version` / `role`
-- `host`
-- `mode`
-- `trigger`
-- `trigger_surface`
-- `invocation_stage`
-- `authority_class`
-- `tools_allowed`
-- `tool_policy`
-- `write_boundary`
-- `input_schema`
-- `output_schema`
-- `failure_mode`
-- `fallback_reason`
-
-如果后续要把文档契约升级成 runtime registry，可以再补充 `state_access`、`timeout_ms` 和 `max_retries`；但首版文档契约不要求为了这些字段引入新的运行时层。
-
-其中：
-
-- `invocation_stage` 说明它主要服务于 `brainstorm / preplan / plan / work / review / compound` 的哪一段。
-- `authority_class` 首版只允许 `advisory`、`planning-artifact-writer`、`active-step-bounded-executor`、`review-evidence-producer`。
-- `write_boundary` 必须写清楚是否只读，还是只允许写 planning artifact、active step 范围文件、或 `docs/solutions/` 这类受控目标。
-
-首版治理要求：
-
-- 核心闭环层必须在文档里逐个写出 manifest-style contract。
-- 条件风险层至少要先声明 trigger、authority class、write/tool boundary 和输出摘要，避免被默认拉进流程。
-- 项目专用层只有在项目类型明确需要时才补充 manifest entry；未启用时必须有清晰 fallback，而不是把它们伪装成核心层成员。
 
 #### Authorization Policy
 
@@ -258,31 +219,21 @@ always prevents dispatch. Without host authorization or reliable dispatch,
 Parent stays solo and reports the fallback instead of claiming child work.
 No agent-local activation mode or override table exists.
 
-所有核心 subagent 的最小输出契约至少包含：
+#### Internal role 与 authority 映射
 
-```json
-{
-  "status": "ok | partial | blocked | failed",
-  "summary": "...",
-  "findings": [],
-  "recommendations": [],
-  "risks": [],
-  "confidence": 0.0
-}
-```
+下表逐项映射 runtime `INTERNAL_ROLE_PROMPTS` 的 role（契约测试会断言表内 role 名集合与该映射的键完全相等，少一个或多一个都失败），这是本文唯一的 role roster：
 
-面向用户的 Markdown 可以更自然，但系统消费层不能只依赖自由散文。
-
-| Subagent | Purpose | Trigger | Invocation stage | Authority class | Write / tool boundary | Output contract | Immune-Brain mapping |
-|---|---|---|---|---|---|---|---|
-| `context-mapper` | 提炼项目结构、关键文件和现有约定 | 新项目、陌生代码库、规划前需要 repo context | `brainstorm`, `plan` | `advisory` | 只读；只做 repo context 读取，不改计划、不改代码、不改运行态 | project map、relevant files、constraints、risks | `imm-brainstorm` / `imm-planner` 的 research 输入 |
-| `scope-reviewer` | 判断目标是否过大、是否需要收缩或有限扩展 | brainstorm 后、计划前、review 暴露 scope 风险时 | `preplan`, `review` | `advisory` | 只读；不写 plan、不决定最终 scope posture | scope posture suggestion、in/out boundary、blocking ambiguity | `imm-brainstorm`（`adversarial` mode） |
-| `planner` | 产出 spec 和可独立闭合的小步计划 | scope 已稳定但还没有 validated plan | `plan` | `planning-artifact-writer` | 只写 `docs/specs/`、`docs/plans/` 和必要 planning memory | spec、iteration plan、validator result、next action | `imm-planner` |
-| `executor` | 执行一个 active step 的最小必要改动 | `imm-loop` 激活 step 后需要交付结果 | `work` | `active-step-bounded-executor` | 只改当前 active step 所需文件；不改计划和 review state | changed files、verification command、verification result、remaining risk | internal executor |
-| `qa-verifier` | 判断当前 step 是否 pass、rework 或 replan | step 有 execution evidence 后 | `review` | `review-evidence-producer` | 只读验证；只通过 runtime review action 记录结论 | decision、evidence、artifacts、notes | internal QA |
-| `code-reviewer` | 做跨 step 或 PR 级技术审查 | PR review、CI 阻塞、宽 diff 或 review feedback | `review` | `advisory` | 只读；不直接修复；修复回到 executor 或 pr-fix | findings、blockers、deferred items、next actions | `imm-code-review` |
-| `ui-reviewer` | 复核 UI/UX、可访问性、响应式和视觉一致性 | 前端、设计或交互变更完成后 | `review` | `advisory` | 只读评审；不直接改 UI；修复回到 executor | UI findings、severity、proof、fix/defer/replan suggestion | `imm-ui-review` |
-| `knowledge-compounder` | 把已验证经验沉淀为可复用知识 | plan 完成并有可复用证据后 | `compound` | `review-evidence-producer` | 只写 `docs/solutions/`（`.imm/memory/` v3 存储已 retired） | solution doc、reuse conditions、evidence | internal Compounder |
+| Internal role | Stable gate | Authority | Tool policy |
+|---|---|---|---|
+| `qa` | — | qa | no tools |
+| `code-review` | `imm-code-review` | advisory | read-only tools |
+| `ui-review` | `imm-ui-review` | advisory | no tools |
+| `executor` | — | executor | workspace tools |
+| `test-fixer` | — | test-repair | delegated test files |
+| `pr-fix` | — | pr-repair | workspace tools |
+| `arch-explorer` | — | advisory | read-only tools |
+| `advisory-reviewer` | — | advisory | no tools |
+| `compounder` | — | compounder | learning tools |
 
 #### 条件风险 Advisory Lenses
 
@@ -318,35 +269,23 @@ separate model-tier mapping or provider configuration.
 
 项目专用层保留 1 类高信号 lens（`debug_hypothesis`）。它不是默认参与者，因为触发条件来自故障场景，而不是所有任务都会遇到的通用 diff 风险。`docs`、`prompt_contract`、`release_readiness`、`ai_eval` 已合并为 `imm-advisory-reviewer` 的显式触发 lens（旧 `docs-verifier`、`prompt-contract-reviewer`、`release-readiness-checker`、`ai-eval-planner` 独立 skill surface 已删除）。
 
-| Subagent | Trigger | Why not core / conditional risk | Fallback when absent | Output |
+| Lens | Trigger | Why not core / conditional risk | Fallback when absent | Output |
 |---|---|---|---|---|
-| `debug_hypothesis`（`imm-advisory-reviewer` lens） | incident、tricky bug、复现困难或需要系统性排查的故障场景 | 它面向调查型任务，不是 steady-state 开发闭环的常驻角色 | 由 `context-mapper` + `code-reviewer` + 当前 active step 的最小复现组合替代 | hypotheses、repro path、missing signals、next probes |
+| `debug_hypothesis`（`imm-advisory-reviewer` lens） | incident、tricky bug、复现困难或需要系统性排查的故障场景 | 它面向调查型任务，不是 steady-state 开发闭环的常驻角色 | 由 internal `arch-explorer` + internal `code-review` + 当前 active step 的最小复现组合替代 | hypotheses、repro path、missing signals、next probes |
 
-对 AI/agent 项目中的 prompt、tool contract、instruction、structured output 或 safety boundary 变更，`imm-advisory-reviewer` 通过 `prompt_contract` lens 只在显式触发时加入；如果当前环境没有这条 dedicated reviewer 路径，回退到 `scope-reviewer` + `imm-code-review` 的基础一致性审查，而不是把它提升成默认 gate。
+对 AI/agent 项目中的 prompt、tool contract、instruction、structured output 或 safety boundary 变更，`imm-advisory-reviewer` 通过 `prompt_contract` lens 只在显式触发时加入；如果当前环境没有这条 dedicated reviewer 路径，回退到 `imm-planner` + `imm-code-review` 的基础一致性审查，而不是把它提升成默认 gate。
 
 对 AI/agent 项目中的 behavior、eval set、rubric、guardrail 或 production monitoring 设计变更，`imm-advisory-reviewer` 通过 `ai_eval` lens 只在显式触发时加入；如果当前环境没有这条 dedicated reviewer 路径，回退到 `imm-planner` 的最小 eval 方案或人工验收路径，而不是把它提升成默认 gate。
 
-对 README、用户文档、setup instructions、usage examples 或 behavior-to-docs delta 变化，`imm-advisory-reviewer` 通过 `docs` lens 只在显式触发时加入；如果当前环境没有这条 dedicated reviewer 路径，回退到 `executor` 的手动 docs check 或 `imm-code-review` 的基础文档一致性检查，而不是把它提升成默认 gate。
+对 README、用户文档、setup instructions、usage examples 或 behavior-to-docs delta 变化，`imm-advisory-reviewer` 通过 `docs` lens 只在显式触发时加入；如果当前环境没有这条 dedicated reviewer 路径，回退到 internal `executor` 的手动 docs check 或 `imm-code-review` 的基础文档一致性检查，而不是把它提升成默认 gate。
 
 对 ship、deploy、rollback、migration rollout、feature flag 或 production switch 变化，`imm-advisory-reviewer` 通过 `release_readiness` lens 只在显式触发时加入；如果当前环境没有这条 dedicated reviewer 路径，回退到 `imm-code-review` 或人工 release checklist，而不是把它提升成默认 gate。
 
-对 incident、tricky bug、复现困难、missing signal 或 hypothesis-driven investigation 场景，`debug_hypothesis` lens 只在显式触发时加入，并通过 `imm-advisory-reviewer` 提供 investigation 审查；如果当前环境没有这条 dedicated reviewer 路径，回退到 `context-mapper` + `imm-code-review` + 当前 step 的最小 repro notes，而不是把它提升成默认 gate。
+对 incident、tricky bug、复现困难、missing signal 或 hypothesis-driven investigation 场景，`debug_hypothesis` lens 只在显式触发时加入，并通过 `imm-advisory-reviewer` 提供 investigation 审查；如果当前环境没有这条 dedicated reviewer 路径，回退到 internal `arch-explorer` + `imm-code-review` + 当前 step 的最小 repro notes，而不是把它提升成默认 gate。
 
 `debug_hypothesis` 仍保持“explicit trigger + fallback”模式；条件风险 reviewer 以及 `docs`、`prompt_contract`、`release_readiness`、`ai_eval` 已合并为 `imm-advisory-reviewer` 的 lens-based 模式（旧 `docs-verifier`、`prompt-contract-reviewer`、`release-readiness-checker`、`ai-eval-planner` skill surface 已删除）。后续若继续扩展，应优先新增 lens 或独立 project-specific slice，而不是回退成 shared runtime platform。
 
-#### 场景化启用矩阵
-
-不同用户和项目类型不应启用同一套 subagent 阵容。默认仍从核心闭环层开始，只有项目风险或交付方式需要时才增加条件风险层：
-
-| Scenario | Default core subagents | Conditional risk subagents | Project-specific focus | Rationale |
-|---|---|---|---|---|
-| Personal projects | `context-mapper`、`scope-reviewer`、`planner`、`executor`、`qa-verifier` | 仅在涉及 auth 或数据迁移时启用 `security`、`data_integrity` lenses | 保持低 ceremony；公开发布前按需补 `release_readiness` lens，完成后再考虑 `knowledge-compounder` | 个人项目最容易被流程成本拖慢，核心闭环足够保证可重入和可验证 |
-| Startup product teams | 核心闭环全量可用，重点使用 `scope-reviewer`、`code-reviewer`、`knowledge-compounder` | 按 diff 触发 `api_contract`、`reliability`、`security` lenses | 快速迭代时只在 ship 前补 `release_readiness` lens，不默认拉满项目专用 agent | 创业团队需要速度和边界控制，条件风险层应服务于关键变更面，项目专用层只在交付前补强信心 |
-| Mature SaaS | 核心闭环全量可用，`code-reviewer` 和 `qa-verifier` 更常驻于 PR/step 闭合 | 频繁按需启用 `security`、`data_integrity`、`api_contract`、`reliability` lenses | release 时补 `release_readiness` lens，incident 时再启 `debug_hypothesis` lens | 成熟 SaaS 的 blast radius 更大，风险 subagent 应由变更面触发，项目专用层则面向发布与故障场景 |
-| AI/agent projects | 核心闭环全量可用，`context-mapper` 和 `scope-reviewer` 用于明确 agent 权限边界 | 优先按需启用 `security` lens | `prompt_contract`/`docs`/`ai_eval` lens 只在 AI 行为、工具契约、评估设计或外部说明面被触发时加入 | AI/agent 项目的主要风险来自行为不稳定、指令冲突和工具权限，需要把评估和契约作为项目专用证据，而不是默认 gate |
-| Open-source SDK/CLI projects | 核心闭环全量可用，重点使用 `code-reviewer`、`knowledge-compounder` | 按需启用 `api_contract`、`security` lenses | `docs`、`release_readiness` lens 只在 public API、CLI UX 或发布说明需要时加入 | SDK/CLI 的用户影响主要体现在 contract、文档和升级路径，项目专用层要面向外部消费者而不是默认扩大流程 |
-
-#### 首版 Non-goals
+#### Non-goals
 
 system subagents 的首版只做治理与契约，不做以下事情：
 

@@ -1,8 +1,49 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
+import { INTERNAL_ROLE_PROMPTS } from "../plugins/immune-brain/runtime/role_prompt_bridge";
 
 const ROOT = resolve(import.meta.dir, "..");
+
+const WORKFLOW_REFERENCE = "docs/reference/workflow-and-subagents.md";
+
+/**
+ * Roster names that were never runtime roles. They came from an upstream agent
+ * list, and the manifest prose that carried them described subagents this
+ * runtime cannot dispatch. Their absence is what keeps the reference from
+ * growing a second roster.
+ */
+const RETIRED_ROSTER_NAMES = [
+	"context-mapper",
+	"scope-reviewer",
+	"qa-verifier",
+	"knowledge-compounder",
+	"code-reviewer",
+	"ui-reviewer",
+] as const;
+
+/** Headings of the deleted manifest prose, matched without their anchor level. */
+const RETIRED_HEADINGS = [
+	"Subagent Manifest Contract",
+	"首版核心 Subagents",
+	"场景化启用矩阵",
+] as const;
+
+function roleMappingRows(markdown: string): string[] {
+	const lines = markdown.split("\n");
+	const headerIndex = lines.findIndex((line) => line.trim().startsWith("| Internal role |"));
+	expect(headerIndex).toBeGreaterThanOrEqual(0);
+	const rows: string[] = [];
+	for (const line of lines.slice(headerIndex + 1)) {
+		const trimmed = line.trim();
+		if (!trimmed.startsWith("|")) break;
+		if (/^\|[\s|:-]+\|$/.test(trimmed)) continue;
+		const name = trimmed.split("|")[1]?.trim().replace(/`/g, "");
+		if (!name) break;
+		rows.push(name);
+	}
+	return rows;
+}
 
 const BINDING_CONTRACTS = [
 	"AGENTS.md",
@@ -59,6 +100,56 @@ describe("subagent activation machinery retirement", () => {
 			}
 		}
 		expect(offenders).toEqual([]);
+	});
+
+	test("the workflow reference retires the manifest prose and its fictional roster", () => {
+		const content = read(WORKFLOW_REFERENCE);
+
+		for (const heading of RETIRED_HEADINGS)
+			expect({ heading, present: content.includes(heading) }).toEqual({ heading, present: false });
+		for (const name of RETIRED_ROSTER_NAMES)
+			expect({ name, present: content.includes(name) }).toEqual({ name, present: false });
+
+		// The minimal JSON output contract belonged to that roster; nothing else
+		// in the runtime emits it.
+		expect(content).not.toContain("ok | partial | blocked | failed");
+		expect(content).not.toContain("\"confidence\": 0.0");
+		expect(content).not.toContain("authority_class");
+
+		// What survives is the boundary prose, not the roster.
+		expect(content).toContain("#### Authority 与 Routing Boundary");
+		expect(content).toContain("#### Authorization Policy");
+		expect(content).toContain("#### 条件风险 Advisory Lenses");
+		expect(content).toContain("#### Subagent Model Selection");
+	});
+
+	test("the one role mapping table equals the runtime INTERNAL_ROLE_PROMPTS keys", () => {
+		const documented = roleMappingRows(read(WORKFLOW_REFERENCE));
+		const runtime = Object.keys(INTERNAL_ROLE_PROMPTS);
+
+		// Exactly one such table: a second mapping is how a second roster returns.
+		expect(read(WORKFLOW_REFERENCE).match(/\| Internal role \|/g)?.length).toBe(1);
+
+		expect({ runtimeMissingFromDoc: runtime.filter((role) => !documented.includes(role)) }).toEqual({
+			runtimeMissingFromDoc: [],
+		});
+		expect({ documentedAbsentFromRuntime: documented.filter((role) => !runtime.includes(role)) }).toEqual({
+			documentedAbsentFromRuntime: [],
+		});
+		expect(new Set(documented).size).toBe(documented.length);
+
+		// Each documented row keeps the authority the runtime declares for it.
+		for (const line of read(WORKFLOW_REFERENCE).split("\n")) {
+			const trimmed = line.trim();
+			if (!trimmed.startsWith("| `")) continue;
+			const cells = trimmed.split("|").map((cell) => cell.trim().replace(/`/g, ""));
+			const role = cells[1];
+			if (!role || !(role in INTERNAL_ROLE_PROMPTS)) continue;
+			const spec = INTERNAL_ROLE_PROMPTS[role as keyof typeof INTERNAL_ROLE_PROMPTS];
+			expect({ role, gate: cells[2] }).toEqual({ role, gate: spec.review_gate ?? "—" });
+			expect({ role, authority: cells[3] }).toEqual({ role, authority: spec.authority });
+			expect({ role, tool_policy: cells[4] }).toEqual({ role, tool_policy: spec.tool_policy });
+		}
 	});
 
 	test("current binding contracts no longer condition behavior on retired config", () => {

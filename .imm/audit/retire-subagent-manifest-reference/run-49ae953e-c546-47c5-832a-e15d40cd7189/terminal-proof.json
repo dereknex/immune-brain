@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "retire-subagent-manifest-reference",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:retire-subagent-manifest-reference:2026-10-06T00:23:16.631Z",
+  "final_record_hash": "sha256:4acf26c789290bfb5d92f03d9ddd467971c1ccc462c44b1738967ccf88adb4c6",
+  "terminalized_at": "2026-10-06T00:23:16.631Z"
+}
