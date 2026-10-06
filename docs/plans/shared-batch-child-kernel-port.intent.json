@@ -1,0 +1,50 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "shared-batch-child-kernel-port",
+  "owner": "user",
+  "goal": "Implement Slice S5 of docs/specs/deepen-authority-seams.spec.md (Initiative deepen-authority-seams): runtime/unattended owns the one production Batch child Kernel port; hosts inject only advanceTask; git operations go through BatchRunnerGitPort alone. Batch preflight decisions do not change.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Per D5 of docs/specs/deepen-authority-seams.spec.md (sources U1, E6): one production child Kernel port in runtime/unattended provides enrollTask (through the single Enrollment entry), projectTask, ownsTaskClaim and validateBatchAuthorization; a host passes only advanceTask. Positive: a child enrolls, projects and is recognised as owned. Negative: a changed recovery projection is refused with 'Kernel recovery projection changed'. Bound: resume ownership is recognised for a claim held by the same Batch. Agreed seams: tests/unattended-batch-run.test.ts, tests/unattended-contracts.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/unattended-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Per D5 and invariant I5 of docs/specs/deepen-authority-seams.spec.md: BatchRunnerKernelPort has no git members and the runner has no git fallback chain. Positive: with no git port injected the runner uses createDefaultBatchGitPort. Negative: an injected BatchRunnerGitPort fully replaces the default and no default git operation runs. Bound: Partial<BatchRunnerKernelPort> overrides still apply to the remaining members. Agreed seams: tests/unattended-batch-run.test.ts, tests/unattended-batch-commit.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/unattended-batch-commit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Per D5 and invariant I4 of docs/specs/deepen-authority-seams.spec.md: Pi advanceTask still returns agent_params from advancePiTask and Claude advanceTask still goes through coordinator.advance; gates, authorization and resume behave as before. Existing assertions in the named suites are not weakened. Agreed seams: tests/pi-batch-authority.test.ts, tests/claude-batch-authority.test.ts, tests/dual-host-assurance-conformance.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/dual-host-assurance-conformance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "plugins/immune-brain/dist/claude/mcp-server.mjs is regenerated from the changed runtime sources and matches a fresh generate; no hand edit to the bundle. Agreed seam: tests/claude-host-package.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/shared-batch-child-kernel-port.md",
+    "docs/plans/shared-batch-child-kernel-port.intent.json",
+    "docs/specs/deepen-authority-seams.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "tests/batch-plan-reconfirmation.test.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/unattended-batch-commit.test.ts",
+    "tests/unattended-batch-run.test.ts",
+    "tests/unattended-contracts.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

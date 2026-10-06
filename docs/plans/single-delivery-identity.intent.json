@@ -1,0 +1,52 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "single-delivery-identity",
+  "owner": "user",
+  "goal": "Implement Slice S2 of docs/specs/deepen-authority-seams.spec.md (Initiative deepen-authority-seams): one function in runtime/workspace_scope.ts computes a TaskRecord's delivery identity; hosts and the CLI stop selecting the identity family. Pre-v4 records stay readable.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Per D2 and invariants I3, I5 of docs/specs/deepen-authority-seams.spec.md (sources U1, E4): runtime/workspace_scope.ts exports one function that returns the delivery identity (diff_hash, changed_paths) for a root and a TaskRecord. Positive: a v4 record with git_base_head yields the revision-family identity and a pre-v4 record yields the index-family identity. Negative: a v4 record without git_base_head throws. Bound: projectAssurance and the Kernel application modules use this function when no provider is supplied, and a supplied diffProvider still overrides it. Agreed seams: tests/kernel-assurance-projection.test.ts, tests/kernel-canary-application.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-assurance-projection.test.ts\",\n      \"tests/kernel-canary-application.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Per D2 and invariant I1 of docs/specs/deepen-authority-seams.spec.md: the Claude adapter, the Pi adapter and commands/kernel.ts obtain delivery identity from the shared function and no longer branch on record.contract to choose between taskRevisionIdentity and taskDiffIdentity. For the same v4 record and for the same pre-v4 record both hosts report the identity the shared function returns; a changed git_base_head changes it. Agreed seams: tests/review-revision-identity-conformance.test.ts, tests/claude-host-authority.test.ts, tests/pi-canary-work-extension.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-revision-identity-conformance.test.ts\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/pi-canary-work-extension.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Per D2 of docs/specs/deepen-authority-seams.spec.md: batch plan reconfirmation delegates the computation to the shared function and keeps its refusal: a settled child that is not v4 or lacks git_base_head is refused, a v4 child reconfirms. Agreed seam: tests/batch-plan-reconfirmation.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-plan-reconfirmation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "plugins/immune-brain/dist/claude/mcp-server.mjs is regenerated from the changed runtime sources and matches a fresh generate; no hand edit to the bundle. Agreed seam: tests/claude-host-package.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/single-delivery-identity.md",
+    "docs/plans/single-delivery-identity.intent.json",
+    "docs/specs/deepen-authority-seams.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/commands/kernel.ts",
+    "plugins/immune-brain/runtime/kernel/application.ts",
+    "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+    "plugins/immune-brain/runtime/kernel/canary_application.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts",
+    "plugins/immune-brain/runtime/workspace_scope.ts",
+    "tests/batch-plan-reconfirmation.test.ts",
+    "tests/claude-host-authority.test.ts",
+    "tests/kernel-assurance-projection.test.ts",
+    "tests/kernel-canary-application.test.ts",
+    "tests/pi-canary-work-extension.test.ts",
+    "tests/review-revision-identity-conformance.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

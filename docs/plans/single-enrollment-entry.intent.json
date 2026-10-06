@@ -1,0 +1,56 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "single-enrollment-entry",
+  "owner": "user",
+  "goal": "Implement Slice S3 of docs/specs/deepen-authority-seams.spec.md (Initiative deepen-authority-seams): runtime/kernel/enrollment.ts exposes one Enrollment entry that issues the capability, rehearses and commits; the four production callers use it. Gate semantics and gate copy do not change.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Per D3 of docs/specs/deepen-authority-seams.spec.md (source U1; CONTEXT.md Enrollment): one exported Enrollment entry issues the capability for a supplied binding, runs the zero-write rehearsal, then commits. Positive: a ready rehearsal enrolls the Task atomically. Negative: a rehearsal that is not ready rejects with its blockers in the single shared 'Kernel enrollment rehearsal failed' message and leaves zero Kernel writes. Bound: replay of a lost Enrollment behaves as before, and runEnrollmentRehearsal remains a zero-write precheck. Agreed seams: tests/kernel-enrollment-transaction.test.ts, tests/kernel-canary-rehearsal.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-enrollment-transaction.test.ts\",\n      \"tests/kernel-canary-rehearsal.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Per the D3 sequence of docs/specs/deepen-authority-seams.spec.md: the entry calls an optional caller checkpoint after a ready rehearsal and before commit. Positive: with no checkpoint or an accepting one, Enrollment commits. Negative: a declining checkpoint returns a cancelled outcome with zero Kernel writes. Bound: once commit has started, cancellation has no effect. The Pi enroll Tool still reports the rehearsing and committing stages and honors abort between them. Agreed seams: tests/pi-canary-enroll-extension.test.ts, tests/enrollment-confirmation-relocation.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-enroll-extension.test.ts\",\n      \"tests/enrollment-confirmation-relocation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Per D3 and invariant I1 of docs/specs/deepen-authority-seams.spec.md: the Claude enroll path, the Pi enroll Tool and both hosts' Batch child enrollment call the single entry; no production caller outside runtime/kernel/enrollment.ts sequences rehearsal and commit itself. Literal-user and derived-child bindings are both accepted. Existing assertions in the named suites are not weakened. Agreed seams: tests/claude-host-authority.test.ts, tests/pi-batch-authority.test.ts, tests/claude-batch-authority.test.ts, tests/enrollment-dirty-scope.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/enrollment-dirty-scope.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "plugins/immune-brain/dist/claude/mcp-server.mjs is regenerated from the changed runtime sources and matches a fresh generate; no hand edit to the bundle. Agreed seam: tests/claude-host-package.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/single-enrollment-entry.md",
+    "docs/plans/single-enrollment-entry.intent.json",
+    "docs/specs/deepen-authority-seams.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/assurance/enrollment.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/kernel/enrollment.ts",
+    "plugins/immune-brain/runtime/kernel/index.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/claude-host-authority.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/enrollment-confirmation-relocation.test.ts",
+    "tests/enrollment-dirty-scope.test.ts",
+    "tests/kernel-canary-rehearsal.test.ts",
+    "tests/kernel-enrollment-transaction.test.ts",
+    "tests/kernel-pi-canary-prepare.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/pi-canary-enroll-extension.test.ts",
+    "tests/pi-canary-package-boundary.test.ts",
+    "tests/pi-canary-user-authority.test.ts",
+    "tests/unattended-batch-plan.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

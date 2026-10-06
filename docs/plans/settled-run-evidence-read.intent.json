@@ -1,0 +1,92 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "settled-run-evidence-read",
+  "owner": "user",
+  "goal": "Implement Slice S6 of docs/specs/deepen-authority-seams.spec.md (Initiative deepen-authority-seams): the Authority Store exposes one Run-exact read of a Task's settled Run; modules outside runtime/kernel stop reading Run rows; the forwarding readTaskRecord export is removed. No schema or migration change.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Per D6 of docs/specs/deepen-authority-seams.spec.md (sources U1, E5): runtime/kernel/storage.ts exposes one read that, for a Task in this worktree, returns the settled Run's identity, its identity-validated record, its proof, whether its audit pair is exported, and the raw bytes needed for byte-exact comparison. Positive: a settled Task returns its own Run. Negative: an active Task or a Task with no Run returns null. Bound: for a Task with two Runs the read never returns the other Run's record or proof. Agreed seams: tests/task-record-durability.test.ts, tests/kernel-enrollment-transaction.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/task-record-durability.test.ts\",\n      \"tests/kernel-enrollment-transaction.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Per D6 and the prohibited-coupling rule of docs/specs/deepen-authority-seams.spec.md: no module outside plugins/immune-brain/runtime/kernel imports sqlite_store or reads Run rows; batch reconfirmation, preflight ownership and batch commit use the settled Run read; audit paths in batch_reconfirmation.ts come from storage_paths.ts; the enroll-<task>-<created_at> Run-id convention is defined once. Positive: reconfirmation, own-claim detection and batch commit behave as before. Negative: the boundary test fails when a module outside runtime/kernel imports sqlite_store. Agreed seams: tests/kernel-r2c2-boundary.test.ts, tests/batch-plan-reconfirmation.test.ts, tests/unattended-batch-commit.test.ts, tests/pi-batch-authority.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-r2c2-boundary.test.ts\",\n      \"tests/batch-plan-reconfirmation.test.ts\",\n      \"tests/unattended-batch-commit.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Per D6 of docs/specs/deepen-authority-seams.spec.md (source E5, docs/adr/0012 'Remaining coarse-key sites'): the run-blind readAuditTaskPair(root, taskId) reads in storage.ts, assurance_projection.ts and the Pi readSettledTaskRecord are Run-aware. Positive: a re-enrolled Task reads its current Run's evidence. Negative: the stale flat pair of an earlier Run is not returned. docs/adr/0012 lists the corrected remaining sites. Agreed seams: tests/kernel-assurance-projection.test.ts, tests/post-freeze-intent-resolution.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-assurance-projection.test.ts\",\n      \"tests/post-freeze-intent-resolution.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "Per D6 of docs/specs/deepen-authority-seams.spec.md: the forwarding readTaskRecord export of runtime/kernel/storage.ts is removed and its callers use readTaskRecordRaw; the Kernel index exposes readTaskRecordRaw and not readTaskRecord. The AssuranceCoordinatorPorts member of the same name is unaffected. Agreed seams: tests/kernel-r2c1-boundary.test.ts, tests/kernel-r2c2-boundary.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-r2c1-boundary.test.ts\",\n      \"tests/kernel-r2c2-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC5",
+      "assertion": "plugins/immune-brain/dist/claude/mcp-server.mjs is regenerated from the changed runtime sources and matches a fresh generate; no hand edit to the bundle. Agreed seam: tests/claude-host-package.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/settled-run-evidence-read.md",
+    "docs/adr/0012-authority-uniqueness-keys.md",
+    "docs/plans/settled-run-evidence-read.intent.json",
+    "docs/specs/deepen-authority-seams.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain/runtime/assurance/qa.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+    "plugins/immune-brain/runtime/kernel/backend_claim.ts",
+    "plugins/immune-brain/runtime/kernel/enrollment.ts",
+    "plugins/immune-brain/runtime/kernel/index.ts",
+    "plugins/immune-brain/runtime/kernel/sqlite_store.ts",
+    "plugins/immune-brain/runtime/kernel/storage.ts",
+    "plugins/immune-brain/runtime/kernel/storage_paths.ts",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts",
+    "tests/batch-plan-reconfirmation.test.ts",
+    "tests/breaking-intent-revision-gate.test.ts",
+    "tests/claude-host-authority.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/enrollment-confirmation-relocation.test.ts",
+    "tests/enrollment-dirty-scope.test.ts",
+    "tests/fixtures/mutation-authority-test-seam.ts",
+    "tests/helpers/pi-canary-assurance-harness.ts",
+    "tests/host-neutral-assurance-coordinator.test.ts",
+    "tests/kernel-assurance-projection.test.ts",
+    "tests/kernel-batch-authority.test.ts",
+    "tests/kernel-canary-application.test.ts",
+    "tests/kernel-canary-authority.test.ts",
+    "tests/kernel-canary-claim-writer-boundary.test.ts",
+    "tests/kernel-canary-drain-transaction.test.ts",
+    "tests/kernel-canary-rehearsal.test.ts",
+    "tests/kernel-canary-rework-authority.test.ts",
+    "tests/kernel-canary-terminal-transaction.test.ts",
+    "tests/kernel-enrollment-transaction.test.ts",
+    "tests/kernel-r2c1-boundary.test.ts",
+    "tests/kernel-r2c2-boundary.test.ts",
+    "tests/pi-batch-acceptance-integration.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/pi-canary-assurance-progression.test.ts",
+    "tests/pi-canary-enroll-extension.test.ts",
+    "tests/pi-canary-user-authority.test.ts",
+    "tests/pi-canary-work-extension.test.ts",
+    "tests/planning-artifact-archival.test.ts",
+    "tests/post-freeze-intent-resolution.test.ts",
+    "tests/review-revision-identity-conformance.test.ts",
+    "tests/rework-root-cause-contract.test.ts",
+    "tests/task-record-durability.test.ts",
+    "tests/unattended-batch-commit.test.ts",
+    "tests/unattended-batch-plan.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

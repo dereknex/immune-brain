@@ -1,0 +1,53 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "host-neutral-verdict-authority",
+  "owner": "user",
+  "goal": "Implement Slice S4 of docs/specs/deepen-authority-seams.spec.md (Initiative deepen-authority-seams): Assurance snapshot capture, capability minting and verdict application move into one host-neutral module in runtime/assurance; both hosts adopt the stricter existing checks and supply only AssuranceHostPort and a confirmation reference.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Per D4 and invariant I2 of docs/specs/deepen-authority-seams.spec.md (sources U1, U2): one host-neutral module captures the Assurance snapshot for both hosts. Positive: a TaskRecord matching the projection is captured. Negative: a mismatch in record_revision, in intent_snapshot.revision, or in intent_ref.content_hash each refuses with 'TaskRecord changed before assurance snapshot capture'. Bound: a v4 record without git_base_head refuses. Agreed seam: tests/host-neutral-assurance-coordinator.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Per the D4 sequence of docs/specs/deepen-authority-seams.spec.md (sources U2, E3): verdict application verifies the snapshot, mints the capability, runs beforeCommit, then commits. Positive: an approval records approval and a rework verdict requests rework and stages the planning-artifact transition. Negative: a snapshot that changed is refused with 'assurance snapshot changed before authority application' before any capability is minted. Bound: when onCommit throws, afterCommit still runs, the first error is rethrown and the committed transition stands. These hold for a Claude-configured and a Pi-configured coordinator. Agreed seams: tests/host-neutral-assurance-coordinator.test.ts, tests/review-revision-identity-conformance.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\",\n      \"tests/review-revision-identity-conformance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Per D4 and invariant I1 of docs/specs/deepen-authority-seams.spec.md (source E1): AssuranceCoordinatorPorts has no per-host buildAssurance, ensureReviewRevision or applyVerdict; a host supplies AssuranceHostPort and a confirmation-reference source only. Claude capabilities carry claude:<actor>; Pi capabilities carry pi-confirm-<16 hex>. Pi host notification stays in the Pi adapter. Existing assertions in the named suites are not weakened. Agreed seams: tests/dual-host-assurance-conformance.test.ts, tests/claude-host-authority.test.ts, tests/pi-canary-work-extension.test.ts, tests/pi-canary-assurance-progression.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/pi-canary-work-extension.test.ts\",\n      \"tests/pi-canary-assurance-progression.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "plugins/immune-brain/dist/claude/mcp-server.mjs is regenerated from the changed runtime sources and matches a fresh generate; no hand edit to the bundle. Agreed seam: tests/claude-host-package.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/host-neutral-verdict-authority.md",
+    "docs/plans/host-neutral-verdict-authority.intent.json",
+    "docs/specs/deepen-authority-seams.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain/runtime/assurance/host_port.ts",
+    "plugins/immune-brain/runtime/assurance/review_evidence.ts",
+    "plugins/immune-brain/runtime/assurance/verdict_authority.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "tests/breaking-intent-revision-gate.test.ts",
+    "tests/claude-host-authority.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/github-issue-projection-contract.test.ts",
+    "tests/helpers/pi-canary-assurance-harness.ts",
+    "tests/host-neutral-assurance-coordinator.test.ts",
+    "tests/pi-canary-assurance-progression.test.ts",
+    "tests/pi-canary-work-extension.test.ts",
+    "tests/review-revision-identity-conformance.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

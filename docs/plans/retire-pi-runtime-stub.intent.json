@@ -1,0 +1,63 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "retire-pi-runtime-stub",
+  "owner": "user",
+  "goal": "Implement Slice S1 of docs/specs/deepen-authority-seams.spec.md (Initiative deepen-authority-seams): delete .pi-extension/runtime-stub.ts so the Pi adapter imports host-neutral runtime modules statically, with Pi behavior unchanged. No Kernel, Assurance or Claude adapter behavior changes.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Per D1 of docs/specs/deepen-authority-seams.spec.md (sources E2, U1): plugins/immune-brain/.pi-extension/runtime-stub.ts no longer exists and nothing imports it; no source file under plugins/immune-brain/.pi-extension loads a runtime module through a dynamic import(); the stub's hand-copied structural types and mirrored constants are gone in favor of the real exports. The package-boundary test asserts this through the import graph or behavior instead of pinning stub source text, and still proves: exactly one registered Pi extension path, one bounded enrollment Tool and no command, TUI-only, the test issuer seam excluded from the shipped extension, and the Pi Enrollment adapter reaching Kernel prepare only through runtime/assurance/enrollment. Negative control: a dynamic runtime import in .pi-extension fails the test. Agreed seam: tests/pi-canary-package-boundary.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-package-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Per D1 and invariant I4 of docs/specs/deepen-authority-seams.spec.md: the Pi enroll, work, assurance-progression and unattended-batch Tools behave exactly as before. readTaskIntent default-path resolution, readSettledTaskRecord and projectAssuranceForTask keep their behavior after moving out of the stub. Existing assertions in the named suites are not weakened, deleted or skipped. Agreed seams: tests/pi-canary-enroll-extension.test.ts, tests/pi-canary-work-extension.test.ts, tests/pi-canary-assurance-progression.test.ts, tests/post-freeze-intent-resolution.test.ts, tests/pi-canary-discovery-regression.test.ts, tests/pi-batch-authority.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-enroll-extension.test.ts\",\n      \"tests/pi-canary-work-extension.test.ts\",\n      \"tests/pi-canary-assurance-progression.test.ts\",\n      \"tests/post-freeze-intent-resolution.test.ts\",\n      \"tests/pi-canary-discovery-regression.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Per D1 of docs/specs/deepen-authority-seams.spec.md: the dual-host conformance suite passes against the stub-free Pi adapter. The only removed assertion is the one pinning a mirrored copy of a constant that now has a single source; every behavioral conformance case remains. Agreed seams: tests/dual-host-assurance-conformance.test.ts, tests/claude-batch-authority.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/claude-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "plugins/immune-brain/dist/claude/mcp-server.mjs is regenerated from the changed runtime sources and matches a fresh generate; no hand edit to the bundle. Agreed seam: tests/claude-host-package.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/retire-pi-runtime-stub.md",
+    "docs/plans/retire-pi-runtime-stub.intent.json",
+    "docs/solutions/contracts.md",
+    "docs/specs/deepen-authority-seams.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-assurance.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-interaction.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-invocations.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-qa-findings.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-tool-failure.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-verification.ts",
+    "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+    "plugins/immune-brain/.pi-extension/tsconfig.json",
+    "plugins/immune-brain/.pi-extension/ux-language.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/helpers/pi-canary-assurance-harness.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/pi-canary-assurance-progression.test.ts",
+    "tests/pi-canary-discovery-regression.test.ts",
+    "tests/pi-canary-enroll-extension.test.ts",
+    "tests/pi-canary-package-boundary.test.ts",
+    "tests/pi-canary-work-extension.test.ts",
+    "tests/post-freeze-intent-resolution.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
