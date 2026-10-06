@@ -331,21 +331,21 @@ class FileHookEventLog {
     } catch {}
   }
 }
+function reservedDispatchPrompt(request) {
+  return `<!-- immune-brain:operation_id=${request.operationId} task_id=${request.taskId} -->
+${request.prompt}`;
+}
+function bindsPrompt(prompt, pending) {
+  return prompt === undefined || prompt === pending.dispatchPrompt;
+}
 function bindsStart(event, pending) {
   if (event.taskId && event.taskId !== pending.request.taskId)
     return false;
-  if (event.prompt !== undefined) {
-    const match = /<!-- immune-brain:operation_id=([^\s]+)\s+task_id=([^\s]+)\s+-->/.exec(event.prompt);
-    if (match) {
-      if (match[1] !== pending.request.operationId || match[2] !== pending.request.taskId)
-        return false;
-    } else if (event.prompt !== pending.request.prompt) {
-      return false;
-    }
-  }
+  if (!bindsPrompt(event.prompt, pending))
+    return false;
   if (event.operationId)
     return event.operationId === pending.request.operationId;
-  return event.prompt !== undefined && event.prompt === pending.request.prompt;
+  return event.prompt !== undefined;
 }
 
 class ClaudeReviewHost {
@@ -367,6 +367,7 @@ class ClaudeReviewHost {
     }
     this.pending.set(request.operationId, {
       request,
+      dispatchPrompt: reservedDispatchPrompt(request),
       initialCursors,
       sessionCursors,
       consumed: false
@@ -375,8 +376,7 @@ class ClaudeReviewHost {
       id: request.operationId,
       dispatch: {
         name: CLAUDE_REVIEWER_AGENT,
-        prompt: `<!-- immune-brain:operation_id=${request.operationId} task_id=${request.taskId} -->
-${request.prompt}`
+        prompt: reservedDispatchPrompt(request)
       }
     };
   }
@@ -476,6 +476,8 @@ ${request.prompt}`
       if (!event.agentId || !event.operationId || event.operationId !== state.request.operationId)
         return;
       if ("taskId" in event && event.taskId && event.taskId !== state.request.taskId)
+        return;
+      if (!bindsPrompt(event.prompt, state))
         return;
       if (state.startEvent && event.sessionId !== state.startEvent.sessionId)
         return;

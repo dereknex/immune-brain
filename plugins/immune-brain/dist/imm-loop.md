@@ -244,8 +244,12 @@ Pass the returned Agent envelope through unchanged. On the Claude Host an Agent
 call always returns an asynchronous launch receipt, which is normal and never a
 configuration fault; the Parent waits for the reviewer to finish before
 `submit_review`. A dispatched reviewer is never continued or re-prompted,
-including through SendMessage. The reserved prompt is dispatched verbatim. A
-blocked `submit_review` is recovered only through its returned `recovery_action`.
+including through SendMessage. The reserved prompt is dispatched verbatim. Any
+edit to it forfeits the reservation: the Host binds a reviewer start only to a
+byte-identical prompt, so appending context, truncating or rewriting the body
+leaves the reservation unobserved and `submit_review` blocked. Dispatch the same
+envelope unchanged. A blocked `submit_review` is recovered only through its
+returned `recovery_action`.
 
 Role dispatches follow the user's interaction language: include
 `"interaction_language"` in the `dispatch_role` or routed role context with

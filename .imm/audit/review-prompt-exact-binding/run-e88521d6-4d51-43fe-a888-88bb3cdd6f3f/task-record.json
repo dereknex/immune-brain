@@ -1,0 +1,162 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "review-prompt-exact-binding",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "review-prompt-exact-binding",
+    "goal": "Implement S2 of docs/specs/review-settlement-hardening.spec.md: the Claude Review Host binds a reviewer start to a reservation only when the dispatched prompt is byte-identical to the reserved prompt.",
+    "acceptance": [
+      {
+        "id": "RSH-S2-A1",
+        "assertion": "Per S2 of docs/specs/review-settlement-hardening.spec.md (BR-REQ-4, BR-DEC-2): when a SubagentStart or the Agent tool input carries a prompt, it binds to a Review reservation only if that prompt equals the reserved dispatch prompt exactly. A prompt that keeps the matching operation_id and task_id marker but appends text, removes text, or rewrites the body does not bind, cannot settle the reservation, and yields a blocked submit_review with the S1 recovery_action; a prompt with a different operation or task marker still does not bind. The byte-identical prompt binds and settles as before, and a start that carries no prompt but an explicit matching operationId binds as before. No marker-only acceptance path remains. Tests cover the exact, appended, truncated, rewritten, foreign-marker and no-prompt controls. The Loop contract states that any edit to the reserved prompt forfeits the reservation. The generated Claude bundle matches the runtime source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/claude-review-host-async-agent.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/managed-authority-failure-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/review-prompt-exact-binding.md",
+      "docs/plans/review-prompt-exact-binding.intent.json",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-loop.md",
+      "plugins/immune-brain/runtime/claude/review_host.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/claude-review-host-async-agent.test.ts",
+      "tests/managed-authority-failure-contract.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/review-prompt-exact-binding.intent.json",
+    "content_hash": "sha256:856116252cd101e80defda6f3a1d46ab1403468484fa7b82cfa951dbf81629e7"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:856116252cd101e80defda6f3a1d46ab1403468484fa7b82cfa951dbf81629e7",
+  "git_base_head": "41804bd253cb981059c3275b6e6a6835d455baab",
+  "attestations": [
+    {
+      "id": "approval-qa-0d045940",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:856116252cd101e80defda6f3a1d46ab1403468484fa7b82cfa951dbf81629e7",
+      "diff_hash": "sha256:340265968b7cb8316d8878a245a4f4a34b167d7dd09e814e4ae57a7b9f4b1bca",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:f51c9031d90039e6c84070f4ac0dd6c171b325f815eedd330c5d8f2675dda0ab",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RSH-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:f51c9031d90039e6c84070f4ac0dd6c171b325f815eedd330c5d8f2675dda0ab"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-4f2ed4cd",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:856116252cd101e80defda6f3a1d46ab1403468484fa7b82cfa951dbf81629e7",
+      "diff_hash": "sha256:340265968b7cb8316d8878a245a4f4a34b167d7dd09e814e4ae57a7b9f4b1bca",
+      "actor_id": "parent-mediated-review",
+      "summary": "Marker-only acceptance is gone: bindsPrompt enforces byte equality against the single reservedDispatchPrompt for both SubagentStart and Agent PostToolUse, the prompt-less explicit-operationId path is preserved, the generated bundle mirrors the runtime, and all six controls are asserted.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "41804bd253cb981059c3275b6e6a6835d455baab",
+        "review_commit": "22f4e8ba0acd15d8d90a62ae88c8e91629b75dbe",
+        "review_tree": "63e6886ee6e2ea4c9c8129da5d82d4b23b13619f",
+        "manifest_digest": "sha256:da58fe5477ecde5772f1a5f7edffce792e8c6f2f711176016d8b2ceaace9f89b"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-14486fd53fbb-1-review-1",
+          "acceptance_id": "RSH-S2-A1",
+          "summary": "The edited-prompt controls stop at the host result; no test drives submit_review to assert the blocked state plus the retained recovery_action for a non-binding prompt.",
+          "anchor": "sha256:4924e441ebc51104371f1d011c8aae723bdc03535096ff9772094e33d0c36180",
+          "evidence": {
+            "trigger": "Dispatch the appended prompt from dispatchWith, then call submitClaudeReview for the reserved task: inspectReviewForTask returns {ok:false, reason:'reserved foreground Agent was not observed', release:false}, which kernel_ports maps to {state:'blocked', recovery_action:RETAINED_REVIEW_RECOVERY}; the mapping is asserted only for the unrelated not-observed case, not composed with the edited-prompt cause.",
+            "caller_chain": [
+              "tests/claude-review-host-async-agent.test.ts:167-291",
+              "plugins/immune-brain/runtime/claude/review_host.ts:497-556 inspectReviewForTask",
+              "plugins/immune-brain/runtime/claude/kernel_ports.ts:163-173 submitClaudeReview",
+              "tests/claude-host-authority.test.ts:1541-1561"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "RSH-S2-A1"
+            }
+          }
+        },
+        {
+          "id": "review-14486fd53fbb-2-review-2",
+          "acceptance_id": "RSH-S2-A1",
+          "summary": "The foreign-marker control varies only operation_id; the task_id variant named by the acceptance is covered transitively by the single equality predicate rather than by its own assertion.",
+          "anchor": "sha256:2cb72299e86c9b22898169e8f7a5ac224037499b19b3d21993b628aebf340de5",
+          "evidence": {
+            "trigger": "A prompt keeping operation_id=OPERATION but a rewritten task_id marker still binds nothing, because reservedDispatchPrompt embeds both identifiers in the compared string; no test constructs that input, so a future marker-format change that drops task_id from the reserved string would not be caught by this suite.",
+            "caller_chain": [
+              "tests/claude-review-host-async-agent.test.ts:228-243",
+              "plugins/immune-brain/runtime/claude/review_host.ts:300-305 reservedDispatchPrompt",
+              "plugins/immune-brain/runtime/claude/review_host.ts:317-319 bindsPrompt"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "RSH-S2-A1"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:review-prompt-exact-binding:2026-10-06T01:27:57.454Z",
+      "at": "2026-10-06T01:27:57.454Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-prompt-exact-binding.intent.json"
+    },
+    {
+      "id": "record_approval:review-prompt-exact-binding:2026-10-06T01:30:05.024Z",
+      "at": "2026-10-06T01:30:05.024Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-0d045940\naction_v2_sha256:cd641a6cb01bb905c29480d5200480512bcdcf78acd8ca59fed2c37f8a3df90e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-6c2f089f3297db31",
+        "issued_at": "2026-10-06T01:30:05.025Z"
+      }
+    },
+    {
+      "id": "record_approval:review-prompt-exact-binding:2026-10-06T01:46:46.012Z",
+      "at": "2026-10-06T01:46:46.012Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-4f2ed4cd\naction_v2_sha256:df4a46cd962fee80e66d703872ab1948cb20fa576e40c251f58ad3aa3fac155d",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-bfcd6ac6341bcdb5",
+        "issued_at": "2026-10-06T01:46:46.013Z"
+      }
+    },
+    {
+      "id": "complete:review-prompt-exact-binding:2026-10-06T01:46:47.155Z",
+      "at": "2026-10-06T01:46:47.155Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:e99aec4bf564a1bf9d78b25285fa84a19abd4b77664e8ad57856f2d5dbc10b8b"
+    }
+  ]
+}

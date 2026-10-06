@@ -277,6 +277,12 @@ export class FileHookEventLog implements HookEventLog {
 
 interface PendingReview {
 	request: ReviewRequest;
+	/**
+	 * The prompt the Host asked the Parent to dispatch, marker line included.
+	 * Hook evidence carries Parent-authored text, so this is the only string a
+	 * dispatched prompt is ever compared against.
+	 */
+	dispatchPrompt: string;
 	initialCursors: Map<string, number>;
 	sessionCursors: Map<string, number>;
 	startEvent?: Extract<ClaudeHookEvent, { type: "SubagentStart" }>;
@@ -286,18 +292,37 @@ interface PendingReview {
 	error?: string;
 }
 
+/**
+ * The reserved dispatch prompt: the reservation marker line followed by the
+ * Kernel-assembled reviewer prompt, byte for byte.
+ *
+ * One place builds it and one place compares against it, so the marker format
+ * cannot drift from what the binding rule accepts.
+ */
+function reservedDispatchPrompt(
+	request: Pick<ReviewRequest, "operationId" | "taskId" | "prompt">,
+): string {
+	return `<!-- immune-brain:operation_id=${request.operationId} task_id=${request.taskId} -->\n${request.prompt}`;
+}
+
+/**
+ * Whether hook evidence carrying a prompt belongs to this reservation.
+ *
+ * The prompt is Parent-authored text, so the marker is not an acceptance path:
+ * a dispatch that keeps the matching `operation_id` and `task_id` marker but
+ * appends, truncates or rewrites the body does not bind and cannot settle. Only
+ * the exact reserved dispatch prompt does. Evidence with no prompt at all is
+ * judged by the identifiers the hook itself supplies.
+ */
+function bindsPrompt(prompt: string | undefined, pending: PendingReview): boolean {
+	return prompt === undefined || prompt === pending.dispatchPrompt;
+}
+
 function bindsStart(event: Extract<ClaudeHookEvent, { type: "SubagentStart" }>, pending: PendingReview): boolean {
 	if (event.taskId && event.taskId !== pending.request.taskId) return false;
-	if (event.prompt !== undefined) {
-		const match = /<!-- immune-brain:operation_id=([^\s]+)\s+task_id=([^\s]+)\s+-->/.exec(event.prompt);
-		if (match) {
-			if (match[1] !== pending.request.operationId || match[2] !== pending.request.taskId) return false;
-		} else if (event.prompt !== pending.request.prompt) {
-			return false;
-		}
-	}
+	if (!bindsPrompt(event.prompt, pending)) return false;
 	if (event.operationId) return event.operationId === pending.request.operationId;
-	return event.prompt !== undefined && event.prompt === pending.request.prompt;
+	return event.prompt !== undefined;
 }
 
 export class ClaudeReviewHost implements AssuranceHostPort {
@@ -321,6 +346,7 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 		}
 		this.pending.set(request.operationId, {
 			request,
+			dispatchPrompt: reservedDispatchPrompt(request),
 			initialCursors,
 			sessionCursors,
 			consumed: false,
@@ -332,7 +358,7 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 			// forwards natively) has no receiver here and is not projected.
 			dispatch: {
 				name: CLAUDE_REVIEWER_AGENT,
-				prompt: `<!-- immune-brain:operation_id=${request.operationId} task_id=${request.taskId} -->\n${request.prompt}`,
+				prompt: reservedDispatchPrompt(request),
 			},
 		};
 	}
@@ -435,6 +461,9 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 			if (event.toolName !== AGENT_TOOL) return;
 			if (!event.agentId || !event.operationId || event.operationId !== state.request.operationId) return;
 			if ("taskId" in event && event.taskId && event.taskId !== state.request.taskId) return;
+			// The `Agent` tool input is where this Host actually reports the
+			// dispatched prompt, so it is bound by the same exactness rule.
+			if (!bindsPrompt(event.prompt, state)) return;
 			if (state.startEvent && event.sessionId !== state.startEvent.sessionId) return;
 			if (state.startEvent && event.agentId !== state.startEvent.agentId) return;
 			if (state.stopEvent && event.sessionId !== state.stopEvent.sessionId) return;

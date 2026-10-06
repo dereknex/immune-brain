@@ -117,6 +117,14 @@ describe("Managed native authority failure contract", () => {
 		expect(protocol).toContain("不得把多个 foreground Agent 假定为并发 batch");
 	});
 
+	test("the Loop contract states that editing the reserved prompt forfeits the reservation", () => {
+		const loop = read("plugins/immune-brain/dist/imm-loop.md").replace(/\s+/g, " ");
+		expect(loop).toContain("The reserved prompt is dispatched verbatim");
+		expect(loop).toContain("Any edit to it forfeits the reservation");
+		expect(loop).toContain("the Host binds a reviewer start only to a byte-identical prompt");
+		expect(loop).toContain("Dispatch the same envelope unchanged");
+	});
+
 	test("a post-settlement tracker failure is not a managed authority failure", () => {
 		// The tracker is transport: its failure block is a tracker result carried
 		// beside the authoritative settlement, never a Managed authority failure

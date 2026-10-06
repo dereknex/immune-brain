@@ -164,6 +164,133 @@ describe("claude review host: dispatch envelope shape", () => {
 	});
 });
 
+describe("claude review host: exact reserved prompt binding", () => {
+	/**
+	 * One dispatch through the recorded shapes, with the Agent tool input prompt
+	 * replaced by `prompt`. The reservation settles only when the reviewer was
+	 * dispatched with the reserved prompt unchanged.
+	 */
+	function dispatchWith(root: string, prompt: string) {
+		const real = join(root, `agent-${RECORDED_AGENT_ID}.jsonl`);
+		writeFileSync(real, transcriptLine(RECORDED_AGENT_ID, VERDICT), { mode: 0o600 });
+		chmodSync(real, 0o600);
+		const link = join(root, `${RECORDED_AGENT_ID}.output`);
+		symlinkSync(real, link);
+
+		const host = new ClaudeReviewHost(new FileHookEventLog(root));
+		const reservation = host.prepareReview(reviewRequest());
+		const reserved = (reservation.dispatch as { prompt: string }).prompt;
+		observeDispatch(host, {
+			sessionId: RECORDED_SESSION,
+			agentId: RECORDED_AGENT_ID,
+			envelope: { ...RECORDED_LAUNCH_ENVELOPE, outputFile: link, prompt },
+			prompt,
+		});
+		return { host, reservation, reserved };
+	}
+
+	test("the reserved prompt binds and settles", () => {
+		const root = mkdtempSync(join(tmpdir(), "imm-review-host-"));
+		try {
+			const { host, reservation, reserved } = dispatchWith(root, reservedPrompt());
+			expect(reserved).toBe(reservedPrompt());
+			expect(host.consumeReview(reservation)).toEqual({
+				ok: true,
+				receipt: { actorId: `claude:${RECORDED_AGENT_ID}`, result: VERDICT },
+			});
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("an appended, truncated or rewritten body does not bind even with the marker intact", () => {
+		const edits: Record<string, string> = {
+			appended: `${reservedPrompt()}\n\nAlso check the migration scripts.`,
+			truncated: reservedPrompt().slice(0, -8),
+			rewritten: `${RESERVATION_MARKER}\nshorter instructions`,
+		};
+		for (const [name, prompt] of Object.entries(edits)) {
+			const root = mkdtempSync(join(tmpdir(), "imm-review-host-"));
+			try {
+				expect(prompt.startsWith(RESERVATION_MARKER), name).toBe(true);
+				const { host, reservation } = dispatchWith(root, prompt);
+				expect({ name, result: host.consumeReview(reservation) }).toEqual({
+					name,
+					result: {
+						ok: false,
+						reason: "reserved foreground Agent was not observed",
+						release: false,
+					},
+				});
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+			}
+		}
+	});
+
+	test("a foreign marker does not bind", () => {
+		const root = mkdtempSync(join(tmpdir(), "imm-review-host-"));
+		try {
+			const foreign = `<!-- immune-brain:operation_id=op-other task_id=${TASK} -->\nreview instructions`;
+			const { host, reservation } = dispatchWith(root, foreign);
+			expect(host.consumeReview(reservation)).toMatchObject({
+				ok: false,
+				reason: "reserved foreground Agent was not observed",
+				release: false,
+			});
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("a start carrying an edited prompt does not bind even when its operation id matches", () => {
+		const root = mkdtempSync(join(tmpdir(), "imm-review-host-"));
+		try {
+			const host = new ClaudeReviewHost(new FileHookEventLog(root));
+			const reservation = host.prepareReview(reviewRequest());
+			const appended = `${reservedPrompt()}\n\nExtra context from the Parent.`;
+			expect(appended.startsWith(RESERVATION_MARKER)).toBe(true);
+
+			// The strongest form of the old marker path: the explicit operation id
+			// matches, and so does the marker inside the prompt. The body differs, so
+			// this start is not the reserved dispatch and must not become the bound
+			// start — while the prompt-less evidence that follows still correlates.
+			host.observe({ type: "SubagentStart", sessionId: RECORDED_SESSION, agent: CLAUDE_REVIEWER_AGENT, agentId: RECORDED_AGENT_ID, operationId: OPERATION, taskId: TASK, prompt: appended });
+			host.observe({ type: "PostToolUse", sessionId: RECORDED_SESSION, agentId: RECORDED_AGENT_ID, toolName: "Agent", result: VERDICT, operationId: OPERATION, taskId: TASK });
+			host.observe({ type: "SubagentStop", sessionId: RECORDED_SESSION, agent: CLAUDE_REVIEWER_AGENT, agentId: RECORDED_AGENT_ID, operationId: OPERATION, taskId: TASK });
+
+			expect(host.consumeReview(reservation)).toEqual({
+				ok: false,
+				reason: "reserved foreground Agent was not observed",
+				release: false,
+			});
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("a start with no prompt still binds through the hook's explicit operation id", () => {
+		const root = mkdtempSync(join(tmpdir(), "imm-review-host-"));
+		try {
+			const host = new ClaudeReviewHost(new FileHookEventLog(root));
+			const reservation = host.prepareReview(reviewRequest());
+
+			// No Parent-authored text anywhere: the identifiers come from the hook,
+			// so exactness has nothing to compare and this keeps binding.
+			host.observe({ type: "SubagentStart", sessionId: RECORDED_SESSION, agent: CLAUDE_REVIEWER_AGENT, agentId: RECORDED_AGENT_ID, operationId: OPERATION, taskId: TASK });
+			host.observe({ type: "PostToolUse", sessionId: RECORDED_SESSION, agentId: RECORDED_AGENT_ID, toolName: "Agent", result: VERDICT, operationId: OPERATION, taskId: TASK });
+			host.observe({ type: "SubagentStop", sessionId: RECORDED_SESSION, agent: CLAUDE_REVIEWER_AGENT, agentId: RECORDED_AGENT_ID, operationId: OPERATION, taskId: TASK });
+
+			expect(host.consumeReview(reservation)).toEqual({
+				ok: true,
+				receipt: { actorId: `claude:${RECORDED_AGENT_ID}`, result: VERDICT },
+			});
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+});
+
 describe("claude review host: recorded async Agent envelope", () => {
 	test("the recorded launch receipt is recognised as a pointer, not a verdict", () => {
 		const launch = parseAsyncAgentLaunch(JSON.stringify(RECORDED_LAUNCH_ENVELOPE));

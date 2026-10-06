@@ -849,9 +849,11 @@ describe("claude host authority", () => {
 	test("native Host hook payload shapes (prompt in tool_input, verdict in tool_response.content) correlate and settle Review", async () => {
 		const host = new ClaudeReviewHost();
 		const h = makeCoordinator({ host });
-		const ready = await h.coordinator.advance(TASK, ctx);
-		const operationId = (ready as { operation_id: string }).operation_id;
-		const reservedPrompt = `<!-- immune-brain:operation_id=${operationId} task_id=${TASK} -->\nreview instructions`;
+		const ready = await h.coordinator.advance(TASK, ctx) as { operation_id: string; agent_params: { name: string; prompt: string } };
+		const operationId = ready.operation_id;
+		// The Host's own reserved dispatch prompt, byte for byte: the marker is
+		// not an acceptance path, so this must equal what prepareReview returned.
+		const reservedPrompt = ready.agent_params.prompt;
 
 		// Native SubagentStart: only carries session_id, agent_id, agent_type
 		const start = parseHookStdin(JSON.stringify({
@@ -1021,9 +1023,12 @@ describe("claude host authority", () => {
 	test("delayed same-task events for a different operation do not settle the new reservation", () => {
 		const host = new ClaudeReviewHost();
 		const reservation = host.prepareReview(reviewRequest("op-new", "reserved-prompt"));
+		const reserved = (reservation.dispatch as { prompt: string }).prompt;
 		reviewLifecycle(host, { agentId: "old", taskId: TASK, operationId: "op-old", result: "old" });
 		expect(host.consumeReview(reservation)).toMatchObject({ ok: false });
-		reviewLifecycle(host, { agentId: "prompt-only", operationId: "op-new", prompt: "reserved-prompt", result: "ok" });
+		// Prompt-only binding is no longer marker-based: the dispatched prompt must
+		// be the reserved dispatch prompt itself, marker line included.
+		reviewLifecycle(host, { agentId: "prompt-only", operationId: "op-new", prompt: reserved, result: "ok" });
 		expect(host.consumeReview(reservation)).toMatchObject({ ok: true, receipt: { result: "ok" } });
 	});
 
