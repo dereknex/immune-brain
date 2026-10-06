@@ -1,0 +1,46 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "planner-provenance-and-agreed-seams",
+  "owner": "user",
+  "goal": "Implement docs/specs/planner-provenance-and-agreed-seams.spec.md: the Planner contract requires a source for every decision and acceptance, multi-TaskIntent Initiatives state an independently verifiable result per Slice, the agreed test seam of each acceptance is recorded in the candidate, and the Reviewer checks delivered tests against agreed seams. Contract text and generated mirrors only; no runtime, schema, validator, or gate change.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Per D1 of docs/specs/planner-provenance-and-agreed-seams.spec.md (BR-REQ-1, BR-REQ-2, BR-REQ-3, BR-DEC-2, BR-DEC-3): plugins/immune-brain/dist/imm-planner.md states that every Spec decision and every acceptance names exactly one source — an upstream BR-* ID, repository evidence, or a delegated technical choice — for plans with or without a Brainstorm manifest, and that a user-owned decision with no source is a defect the Planner removes or returns for clarification. The contract does not require the source to be a BR-DEC item and still permits Direct Planner entry and delegated technical choices. docs/reference/planning-quality-gate.md carries the mirrored sentence in its Brainstorm traceability check and its packaged mirror is in sync. Agreed seams: tests/workflow-decision-closure.test.ts, tests/technical-design-conformance-contract.test.ts, tests/dist-docs-sync-contract.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-decision-closure.test.ts\",\n      \"tests/technical-design-conformance-contract.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Per D2 of docs/specs/planner-provenance-and-agreed-seams.spec.md (BR-REQ-4, BR-DEC-3): for a multi-TaskIntent Initiative only, the Planner contract and the quality gate's TaskIntent decomposition check require each Slice to state what is verifiable when that Slice alone has landed and forbid an acceptance that needs another unfinished Slice's work to pass; they record the wide mechanical refactor exception with a final integrate-and-verify Slice; and they still state that this is Planner judgment, not a TaskIntent schema field or an Enrollment counting rule. The packaged quality-gate mirror is in sync. Agreed seams: tests/technical-design-conformance-contract.test.ts, tests/dist-docs-sync-contract.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/technical-design-conformance-contract.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Per D3 of docs/specs/planner-provenance-and-agreed-seams.spec.md (BR-REQ-5, BR-DEC-1): the Planner contract requires the candidate to record, for each acceptance, the agreed seam — the existing or new test file and the observable boundary — in the Spec's verification and acceptance mapping for complex work or in the acceptance assertion for simple work, states that Executor-added tests exercise the agreed seams and that replacing a seam follows Enrolled Intent Revision, and adds no confirmation: the sentence 'must not weaken acceptance-specific focused verification descriptors or add a mandatory user confirmation' remains and its existing test assertion is unchanged. Agreed seam: tests/workflow-verification-invariants.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-verification-invariants.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "Per D4 of docs/specs/planner-provenance-and-agreed-seams.spec.md (BR-REQ-6): plugins/immune-brain/runtime/prompts/code-review.md and its packaged mirror state that when an acceptance assertion or its referenced Spec names an agreed seam, the Reviewer checks that the delivered tests exercise that acceptance at that seam, that a missing or silently replaced seam is a finding whose violated kind is acceptance with the acceptance id as ref, and that an acceptance naming no seam produces no such finding. plugins/immune-brain/agents/immune-brain-reviewer.md is regenerated and matches its sources. Agreed seams: tests/workflow-verification-invariants.test.ts, tests/claude-host-package.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-verification-invariants.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/planner-provenance-and-agreed-seams.md",
+    "docs/plans/planner-provenance-and-agreed-seams.intent.json",
+    "docs/reference/planning-quality-gate.md",
+    "docs/specs/planner-provenance-and-agreed-seams.spec.md",
+    "plugins/immune-brain/agents/immune-brain-reviewer.md",
+    "plugins/immune-brain/dist/docs/reference/planning-quality-gate.md",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/dist/role-prompts/code-review.md",
+    "plugins/immune-brain/runtime/prompts/code-review.md",
+    "plugins/immune-brain/skills/imm-planner/SKILL.md",
+    "tests/claude-host-package.test.ts",
+    "tests/technical-design-conformance-contract.test.ts",
+    "tests/workflow-decision-closure.test.ts",
+    "tests/workflow-verification-invariants.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
