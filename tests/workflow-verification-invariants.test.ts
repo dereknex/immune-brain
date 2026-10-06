@@ -175,6 +175,26 @@ describe("S4 verification by invariant and environment", () => {
 		expect(contract).not.toContain("browser/simulator subsystem installation");
 	});
 
+	test("Planner records the agreed seam of every acceptance without adding a confirmation", () => {
+		const contract = flat(PLANNER);
+		for (const fragment of [
+			"**Agreed seam recording.** Record, for each acceptance, the agreed seam: the existing or new test file and the observable boundary it exercises",
+			"Complex work records it in the Spec's verification and acceptance mapping; simple work names it in the acceptance assertion",
+			"the native Enrollment gate, and the Initiative review table",
+			"Tests the Executor adds exercise the agreed seams",
+			"replacing a seam is an acceptance change and follows Enrolled Intent Revision",
+		]) {
+			expect(contract).toContain(fragment);
+		}
+		// Bound control (BR-DEC-1 / I1): the pre-existing sentence stays verbatim and
+		// no separate seam confirmation gate is introduced.
+		expect(contract).toContain(
+			"must not weaken acceptance-specific focused verification descriptors or add a mandatory user confirmation",
+		);
+		expect(contract).not.toContain("seam confirmation gate");
+		expect(contract).not.toContain("ask the user to confirm the agreed seam");
+	});
+
 	test("QA and Review role prompts carry the same evidence rules, with packaged mirrors", () => {
 		const qa = flat(QA);
 		for (const fragment of [
@@ -205,6 +225,26 @@ describe("S4 verification by invariant and environment", () => {
 		// Packaged mirrors stay byte-identical to their sources.
 		expect(QA_MIRROR).toBe(QA);
 		expect(REVIEW_MIRROR).toBe(REVIEW);
+	});
+
+	test("the Review prompt checks delivered tests against each agreed seam", () => {
+		for (const prompt of [REVIEW, REVIEW_MIRROR]) {
+			const review = flat(prompt);
+			for (const fragment of [
+				"When an acceptance assertion, or the Spec it references, names an agreed seam",
+				"check that the delivered tests exercise that acceptance at that seam",
+				"A missing seam, or a seam silently replaced by a different one, is a finding",
+				'`violated.kind` of `acceptance` with `ref` the acceptance id',
+				"When no seam is named, its absence is not a finding",
+			]) {
+				expect(review).toContain(fragment);
+			}
+			// Negative control (I3): absence of a seam in historical artifacts is never a defect.
+			expect(review).not.toContain("every acceptance must name a seam");
+			expect(review).not.toContain("an acceptance without a named seam is a finding");
+		}
+		// No new finding field was invented.
+		expect(REVIEW).not.toContain("seam_coverage");
 	});
 
 	test("every motivating invariant class has a complete positive/negative/bound control", () => {

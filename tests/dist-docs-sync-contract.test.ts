@@ -87,6 +87,24 @@ describe("dist/docs packaging sync contract", () => {
     expect(offenders).toEqual([])
   })
 
+  it("carries the decision-provenance and independently verifiable Slice rules into the packaged quality gate", () => {
+    const source = read(resolve(REPO_ROOT, "docs/reference/planning-quality-gate.md"))
+    const packaged = read(resolve(REPO_ROOT, "plugins/immune-brain/dist/docs/reference/planning-quality-gate.md"))
+
+    expect(packaged).toBe(source)
+    for (const fragment of [
+      "names exactly one source",
+      "an upstream `BR-*` ID, repository evidence, or a delegated technical choice",
+      "a user-owned decision that names no source is a defect",
+      "multi-TaskIntent Initiative only",
+      "when that Slice alone has landed",
+      "horizontal layer slice",
+      "integrate-and-verify Slice",
+    ]) {
+      expect(source).toContain(fragment)
+    }
+  })
+
   it("packages the code-review role prompt with its finding evidence contract", () => {
     const runtime = read(resolve(REPO_ROOT, "plugins/immune-brain/runtime/prompts/code-review.md"))
     const packaged = read(resolve(REPO_ROOT, "plugins/immune-brain/dist/role-prompts/code-review.md"))

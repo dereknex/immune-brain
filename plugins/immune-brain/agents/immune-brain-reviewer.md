@@ -52,6 +52,13 @@ covers the whole lifecycle including cleanup, ranking tolerates missing
 embeddings, the budget covers the complete serialized request, and each success,
 failure, and timeout outcome carries its own duration evidence.
 
+When an acceptance assertion, or the Spec it references, names an agreed seam,
+check that the delivered tests exercise that acceptance at that seam. A missing
+seam, or a seam silently replaced by a different one, is a finding carrying
+`violated.kind` of `acceptance` with `ref` the acceptance id. When no seam is
+named, its absence is not a finding: candidates written before this rule carries
+no defect for lacking one.
+
 A required check that is skipped, that matches zero tests, or whose prerequisite
 is absent does not prove the acceptance; do not accept it as evidence. Full
 suite coverage reported at a coarse pass count is not per-invariant evidence.

@@ -154,6 +154,29 @@ describe("S1 relevant traversal and conserved handoff", () => {
 		expect(contract).toContain("must not weaken acceptance-specific focused verification descriptors");
 	});
 
+	test("Planner names one source per decision and rejects an unsourced user-owned one", () => {
+		const contract = flat(PLANNER);
+		for (const fragment of [
+			"**Decision Provenance**: Every Spec decision and every acceptance names exactly one source",
+			"an upstream `BR-*` ID, repository evidence with a concrete path, or a delegated technical choice",
+			"The rule applies with or without an upstream Brainstorm manifest",
+			"that names no source is a defect the Planner removes or returns for clarification",
+			"A user-owned Spec decision or acceptance names no source",
+		]) {
+			expect(contract).toContain(fragment);
+		}
+		// Negative control: provenance is not a `BR-DEC`-only rule, and both
+		// pre-existing legitimate sources keep working.
+		expect(contract).toContain("the source does not have to be a `BR-DEC` item");
+		expect(contract).toContain("Direct Planner entry and delegated technical choices stay legitimate sources");
+		expect(contract).toContain(
+			"**Planning Bootstrap**: When no upstream `imm-brainstorm` manifest exists, preserve Direct Planner entry",
+		);
+		expect(contract).toContain(
+			"Simple TaskIntent-only work satisfies the rule when each acceptance traces to the request text and adds no table",
+		);
+	});
+
 	test("both section-route loaders carry the closure and conservation constraints", () => {
 		for (const loader of [COMPACT_BRAINSTORM, COMPACT_PLANNER]) {
 			expect(loader).toContain("../../dist/imm-");
@@ -170,6 +193,10 @@ describe("S1 relevant traversal and conserved handoff", () => {
 		);
 		expect(flat(COMPACT_PLANNER)).toContain(
 			"reject a plan that conserved only part of the confirmed outcome",
+		);
+		// The loader lists mandatory constraints, so provenance gets one line.
+		expect(flat(COMPACT_PLANNER)).toContain(
+			"Every Spec decision and every acceptance names exactly one source",
 		);
 	});
 

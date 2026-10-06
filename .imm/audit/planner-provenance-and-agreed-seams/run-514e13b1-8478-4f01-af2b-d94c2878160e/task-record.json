@@ -1,0 +1,173 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "planner-provenance-and-agreed-seams",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "planner-provenance-and-agreed-seams",
+    "goal": "Implement docs/specs/planner-provenance-and-agreed-seams.spec.md: the Planner contract requires a source for every decision and acceptance, multi-TaskIntent Initiatives state an independently verifiable result per Slice, the agreed test seam of each acceptance is recorded in the candidate, and the Reviewer checks delivered tests against agreed seams. Contract text and generated mirrors only; no runtime, schema, validator, or gate change.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Per D1 of docs/specs/planner-provenance-and-agreed-seams.spec.md (BR-REQ-1, BR-REQ-2, BR-REQ-3, BR-DEC-2, BR-DEC-3): plugins/immune-brain/dist/imm-planner.md states that every Spec decision and every acceptance names exactly one source — an upstream BR-* ID, repository evidence, or a delegated technical choice — for plans with or without a Brainstorm manifest, and that a user-owned decision with no source is a defect the Planner removes or returns for clarification. The contract does not require the source to be a BR-DEC item and still permits Direct Planner entry and delegated technical choices. docs/reference/planning-quality-gate.md carries the mirrored sentence in its Brainstorm traceability check and its packaged mirror is in sync. Agreed seams: tests/workflow-decision-closure.test.ts, tests/technical-design-conformance-contract.test.ts, tests/dist-docs-sync-contract.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-decision-closure.test.ts\",\n      \"tests/technical-design-conformance-contract.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Per D2 of docs/specs/planner-provenance-and-agreed-seams.spec.md (BR-REQ-4, BR-DEC-3): for a multi-TaskIntent Initiative only, the Planner contract and the quality gate's TaskIntent decomposition check require each Slice to state what is verifiable when that Slice alone has landed and forbid an acceptance that needs another unfinished Slice's work to pass; they record the wide mechanical refactor exception with a final integrate-and-verify Slice; and they still state that this is Planner judgment, not a TaskIntent schema field or an Enrollment counting rule. The packaged quality-gate mirror is in sync. Agreed seams: tests/technical-design-conformance-contract.test.ts, tests/dist-docs-sync-contract.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/technical-design-conformance-contract.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Per D3 of docs/specs/planner-provenance-and-agreed-seams.spec.md (BR-REQ-5, BR-DEC-1): the Planner contract requires the candidate to record, for each acceptance, the agreed seam — the existing or new test file and the observable boundary — in the Spec's verification and acceptance mapping for complex work or in the acceptance assertion for simple work, states that Executor-added tests exercise the agreed seams and that replacing a seam follows Enrolled Intent Revision, and adds no confirmation: the sentence 'must not weaken acceptance-specific focused verification descriptors or add a mandatory user confirmation' remains and its existing test assertion is unchanged. Agreed seam: tests/workflow-verification-invariants.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-verification-invariants.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "Per D4 of docs/specs/planner-provenance-and-agreed-seams.spec.md (BR-REQ-6): plugins/immune-brain/runtime/prompts/code-review.md and its packaged mirror state that when an acceptance assertion or its referenced Spec names an agreed seam, the Reviewer checks that the delivered tests exercise that acceptance at that seam, that a missing or silently replaced seam is a finding whose violated kind is acceptance with the acceptance id as ref, and that an acceptance naming no seam produces no such finding. plugins/immune-brain/agents/immune-brain-reviewer.md is regenerated and matches its sources. Agreed seams: tests/workflow-verification-invariants.test.ts, tests/claude-host-package.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-verification-invariants.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/planner-provenance-and-agreed-seams.md",
+      "docs/plans/planner-provenance-and-agreed-seams.intent.json",
+      "docs/reference/planning-quality-gate.md",
+      "docs/specs/planner-provenance-and-agreed-seams.spec.md",
+      "plugins/immune-brain/agents/immune-brain-reviewer.md",
+      "plugins/immune-brain/dist/docs/reference/planning-quality-gate.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/dist/role-prompts/code-review.md",
+      "plugins/immune-brain/runtime/prompts/code-review.md",
+      "plugins/immune-brain/skills/imm-planner/SKILL.md",
+      "tests/claude-host-package.test.ts",
+      "tests/dist-docs-sync-contract.test.ts",
+      "tests/fixtures/workflow-decision-closure-evidence.json",
+      "tests/technical-design-conformance-contract.test.ts",
+      "tests/workflow-decision-closure.test.ts",
+      "tests/workflow-verification-invariants.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/planner-provenance-and-agreed-seams.intent.json",
+    "content_hash": "sha256:2fca88298cb021ff3e73daf95d79341e66d0ed703c97b1d86715ccd3fa136e2b"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:174e5da207a9c07163641a7fd23523ad6afdd9739c7bf73a64fea8f74bcc9203",
+  "git_base_head": "a7e7d923a3b27484d361f4cce11a3f8ae8efbbe2",
+  "attestations": [
+    {
+      "id": "approval-qa-76b9379f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:2fca88298cb021ff3e73daf95d79341e66d0ed703c97b1d86715ccd3fa136e2b",
+      "diff_hash": "sha256:100f3d07a487c261cc4d11dadfd79d16f33d577d8b216c110d7598e596d1cf69",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:0f4dd40d2ba73170d643ab69aeeeba0759e954d734c825b2e8949b3bc77143af",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:0f4dd40d2ba73170d643ab69aeeeba0759e954d734c825b2e8949b3bc77143af"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:0f4dd40d2ba73170d643ab69aeeeba0759e954d734c825b2e8949b3bc77143af"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:0f4dd40d2ba73170d643ab69aeeeba0759e954d734c825b2e8949b3bc77143af"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:0f4dd40d2ba73170d643ab69aeeeba0759e954d734c825b2e8949b3bc77143af"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-1d14ddc7",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:2fca88298cb021ff3e73daf95d79341e66d0ed703c97b1d86715ccd3fa136e2b",
+      "diff_hash": "sha256:100f3d07a487c261cc4d11dadfd79d16f33d577d8b216c110d7598e596d1cf69",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (parent/tree/commit); AC1-AC4 contract text, mirrors (byte-identical oids), regenerated reviewer definition, fixture hash, and all agreed-seam tests match the spec D1-D4 decisions with negative/bound controls intact.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "a7e7d923a3b27484d361f4cce11a3f8ae8efbbe2",
+        "review_commit": "79fd8337cf67a35c9b93331cd2fa7134559d7a2c",
+        "review_tree": "ee322f5a4561c05de4478893889666b584ea4642",
+        "manifest_digest": "sha256:4280849d2ea0c3bda8527b0f54757cafbb39fa4629213d71ddfbe89970a2e8ba"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:planner-provenance-and-agreed-seams:2026-10-06T10:39:28.192Z",
+      "at": "2026-10-06T10:39:28.192Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:496c6b956ab3b6f82245df52cbdd9f9789bf14e33cfa190537a0314b96da415b",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-b317f318d2dea427",
+        "issued_at": "2026-10-06T10:39:28.455Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:planner-provenance-and-agreed-seams:2026-10-06T10:56:13.554Z",
+      "at": "2026-10-06T10:56:13.554Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/planner-provenance-and-agreed-seams.intent.json"
+    },
+    {
+      "id": "record_approval:planner-provenance-and-agreed-seams:2026-10-06T10:56:20.335Z",
+      "at": "2026-10-06T10:56:20.335Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-76b9379f\naction_v2_sha256:dfddf4e6f8fb21f51d46cc7113a895fe0bcad534dea2833fdf7840e902274cb3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-a7637c570c0fc1b2",
+        "issued_at": "2026-10-06T10:56:20.336Z"
+      }
+    },
+    {
+      "id": "record_approval:planner-provenance-and-agreed-seams:2026-10-06T10:59:22.186Z",
+      "at": "2026-10-06T10:59:22.186Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-1d14ddc7\naction_v2_sha256:8b08f75890c4c8820768f039180866f901168572f8466736ee67c28118f103ea",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-766b5a0b50d8b2c1",
+        "issued_at": "2026-10-06T10:59:22.186Z"
+      }
+    },
+    {
+      "id": "complete:planner-provenance-and-agreed-seams:2026-10-06T10:59:23.668Z",
+      "at": "2026-10-06T10:59:23.668Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:6633b3eae0f3b7b3daa63f5094c5d4f694c09b724218daef6f5792f28a940825"
+    }
+  ]
+}

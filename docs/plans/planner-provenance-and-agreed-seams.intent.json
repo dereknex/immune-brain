@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "planner-provenance-and-agreed-seams",
-  "owner": "user",
   "goal": "Implement docs/specs/planner-provenance-and-agreed-seams.spec.md: the Planner contract requires a source for every decision and acceptance, multi-TaskIntent Initiatives state an independently verifiable result per Slice, the agreed test seam of each acceptance is recorded in the candidate, and the Reviewer checks delivered tests against agreed seams. Contract text and generated mirrors only; no runtime, schema, validator, or gate change.",
   "acceptance": [
     {
@@ -37,10 +36,13 @@
     "plugins/immune-brain/runtime/prompts/code-review.md",
     "plugins/immune-brain/skills/imm-planner/SKILL.md",
     "tests/claude-host-package.test.ts",
+    "tests/dist-docs-sync-contract.test.ts",
+    "tests/fixtures/workflow-decision-closure-evidence.json",
     "tests/technical-design-conformance-contract.test.ts",
     "tests/workflow-decision-closure.test.ts",
     "tests/workflow-verification-invariants.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

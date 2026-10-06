@@ -136,6 +136,39 @@ describe("risk-tiered Technical Design conformance contract", () => {
     ])
   })
 
+  it("requires one named source per decision and acceptance in both contracts", () => {
+    expectAll(PLANNER, [
+      "Decision Provenance",
+      "Every Spec decision and every acceptance names exactly one source",
+      "an upstream `BR-*` ID, repository evidence with a concrete path, or a delegated technical choice",
+      "with or without an upstream Brainstorm manifest",
+      "removes or returns for clarification",
+    ], [
+      "the source must be a `BR-DEC` item",
+    ])
+    expectAll(QUALITY_GATE, [
+      "Brainstorm traceability",
+      "names exactly one source",
+      "an upstream `BR-*` ID, repository evidence, or a delegated technical choice",
+      "a user-owned decision that names no source is a defect",
+    ])
+  })
+
+  it("scopes the independently verifiable Slice rule to multi-TaskIntent Initiatives", () => {
+    for (const text of [PLANNER, QUALITY_GATE]) {
+      expectAll(text, [
+        "multi-TaskIntent Initiative only",
+        "when that Slice alone has landed",
+        "no acceptance may require another unfinished Slice's work to pass",
+        "horizontal layer slice",
+        "wide mechanical refactor",
+        "integrate-and-verify Slice",
+        "Planner judgment",
+        "Enrollment counting rule",
+      ])
+    }
+  })
+
   it("omits compulsory diagram and audit ceremony for Low risk while keeping elevated-risk evidence", () => {
     expectAll(PLANNER, [
       "Medium/High risk Specs record `**Diagram decision**: required|not_required`",

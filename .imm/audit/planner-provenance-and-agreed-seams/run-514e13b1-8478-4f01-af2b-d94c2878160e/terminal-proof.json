@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "planner-provenance-and-agreed-seams",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:planner-provenance-and-agreed-seams:2026-10-06T10:59:23.668Z",
+  "final_record_hash": "sha256:b90d3b5fbea4823757706bb34e8e7eda4cd471817b78c4fbae0b14baf041b542",
+  "terminalized_at": "2026-10-06T10:59:23.668Z"
+}

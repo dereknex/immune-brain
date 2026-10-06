@@ -11,7 +11,9 @@ host-native.
 
 Mandatory constraints before any action: Planner writes a TaskIntent, and a Spec
 only for complex work; it never implements, overwrites an enrolled TaskIntent, or
-grants execution authority — only the native Enrollment gate can. Before
+grants execution authority — only the native Enrollment gate can. Every Spec decision and every acceptance names exactly one source — an upstream
+`BR-*` ID, repository evidence, or a delegated technical choice — and a
+user-owned one with no source is removed or returned for clarification. Before
 handoff it maps every upstream item and required phase exactly once and reports
 each Slice result plus the remaining gap; a plan that conserves a smaller
 deliverable than the confirmed outcome fails that check instead of passing.

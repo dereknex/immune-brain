@@ -283,6 +283,18 @@ describe("claude host package", () => {
     expect(extra.filter((line) => !sources.some((rule) => line === rule.trim()))).toEqual([]);
   });
 
+  it("carries the agreed-seam coverage rule into the generated reviewer definition", () => {
+    const definition = readFileSync(resolve(PLUGIN_ROOT, "agents/immune-brain-reviewer.md"), "utf8");
+    const rolePrompt = readFileSync(resolve(PLUGIN_ROOT, "runtime/prompts/code-review.md"), "utf8").trim();
+    const flat = (text: string) => text.replace(/\s+/g, " ");
+
+    expect(flat(rolePrompt)).toContain("names an agreed seam");
+    // The generated definition is one composition of the role prompt, so the seam
+    // rule reaches the Claude-native reviewer without being restated by hand.
+    expect(flat(definition)).toContain("names an agreed seam");
+    expect(reviewerDefinitionDrift(ROOT)).toBeNull();
+  });
+
   it("the build check fails when the committed reviewer definition differs from the generated one", () => {
     expect(reviewerDefinitionDrift(ROOT)).toBeNull();
 
