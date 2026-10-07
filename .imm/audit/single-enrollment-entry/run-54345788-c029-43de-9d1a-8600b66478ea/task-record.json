@@ -1,0 +1,839 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "single-enrollment-entry",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "single-enrollment-entry",
+    "goal": "Implement Slice S3 of docs/specs/deepen-authority-seams.spec.md (Initiative deepen-authority-seams): runtime/kernel/enrollment.ts exposes one Enrollment entry that issues the capability, rehearses and commits; the four production callers use it. Gate semantics and gate copy do not change.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Per D3 of docs/specs/deepen-authority-seams.spec.md (source U1; CONTEXT.md Enrollment): one exported Enrollment entry issues the capability for a supplied binding, runs the zero-write rehearsal, then commits. Positive: a ready rehearsal enrolls the Task atomically. Negative: a rehearsal that is not ready rejects with its blockers in the single shared 'Kernel enrollment rehearsal failed' message and leaves zero Kernel writes. Bound: replay of a lost Enrollment behaves as before, and runEnrollmentRehearsal remains a zero-write precheck. Agreed seams: tests/kernel-enrollment-transaction.test.ts, tests/kernel-canary-rehearsal.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-enrollment-transaction.test.ts\",\n      \"tests/kernel-canary-rehearsal.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Per the D3 sequence of docs/specs/deepen-authority-seams.spec.md: the entry calls an optional caller checkpoint after a ready rehearsal and before commit. Positive: with no checkpoint or an accepting one, Enrollment commits. Negative: a declining checkpoint returns a cancelled outcome with zero Kernel writes. Bound: once commit has started, cancellation has no effect. The Pi enroll Tool still reports the rehearsing and committing stages and honors abort between them. Agreed seams: tests/pi-canary-enroll-extension.test.ts, tests/enrollment-confirmation-relocation.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-enroll-extension.test.ts\",\n      \"tests/enrollment-confirmation-relocation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Per D3 and invariant I1 of docs/specs/deepen-authority-seams.spec.md: the Claude enroll path, the Pi enroll Tool and both hosts' Batch child enrollment call the single entry; no production caller outside runtime/kernel/enrollment.ts sequences rehearsal and commit itself. Literal-user and derived-child bindings are both accepted. Existing assertions in the named suites are not weakened. Agreed seams: tests/claude-host-authority.test.ts, tests/pi-batch-authority.test.ts, tests/claude-batch-authority.test.ts, tests/enrollment-dirty-scope.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/enrollment-dirty-scope.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "plugins/immune-brain/dist/claude/mcp-server.mjs is regenerated from the changed runtime sources and matches a fresh generate; no hand edit to the bundle. Agreed seam: tests/claude-host-package.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/single-enrollment-entry.md",
+      "docs/plans/single-enrollment-entry.intent.json",
+      "docs/specs/deepen-authority-seams.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/assurance/enrollment.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment.ts",
+      "plugins/immune-brain/runtime/kernel/index.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/enrollment-confirmation-relocation.test.ts",
+      "tests/enrollment-dirty-scope.test.ts",
+      "tests/kernel-canary-rehearsal.test.ts",
+      "tests/kernel-enrollment-transaction.test.ts",
+      "tests/kernel-pi-canary-prepare.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/pi-canary-package-boundary.test.ts",
+      "tests/pi-canary-user-authority.test.ts",
+      "tests/unattended-batch-plan.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/single-enrollment-entry.intent.json",
+    "content_hash": "sha256:7554018647bdb60831b42be004cfa6372157f3195bdf346d3c7401fc93f5dfb3"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:7554018647bdb60831b42be004cfa6372157f3195bdf346d3c7401fc93f5dfb3",
+  "git_base_head": "80d6e3c44b8b700038cbb8c45ff31d37234eeda6",
+  "attestations": [
+    {
+      "id": "approval-qa-a8a4e1a9",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:7554018647bdb60831b42be004cfa6372157f3195bdf346d3c7401fc93f5dfb3",
+      "diff_hash": "sha256:74be4df9840ed1cba8d2e05c28af287ae8663edba2ae8d4843fff52e3f0f672d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:54760c665be38eefbab00efb896270087980db02f7b13804a558c3091a15c3ab",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:54760c665be38eefbab00efb896270087980db02f7b13804a558c3091a15c3ab"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:54760c665be38eefbab00efb896270087980db02f7b13804a558c3091a15c3ab"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:54760c665be38eefbab00efb896270087980db02f7b13804a558c3091a15c3ab"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:54760c665be38eefbab00efb896270087980db02f7b13804a558c3091a15c3ab"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-55bc39ce",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:7554018647bdb60831b42be004cfa6372157f3195bdf346d3c7401fc93f5dfb3",
+      "diff_hash": "sha256:c7465904ac58428b93abc7017c275e351fd9d4997a5702e8de0f3e7987c656a6",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:50b643d77369fcea180a175033370ab83c30b1a951fa496f585e73d6b89ae2c3",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:50b643d77369fcea180a175033370ab83c30b1a951fa496f585e73d6b89ae2c3"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:50b643d77369fcea180a175033370ab83c30b1a951fa496f585e73d6b89ae2c3"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:50b643d77369fcea180a175033370ab83c30b1a951fa496f585e73d6b89ae2c3"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:50b643d77369fcea180a175033370ab83c30b1a951fa496f585e73d6b89ae2c3"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-78d0693a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:7554018647bdb60831b42be004cfa6372157f3195bdf346d3c7401fc93f5dfb3",
+      "diff_hash": "sha256:4dd87218aac2724656096ec89c387601b6420e920bb99c76a601aa5cae203eea",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:f7d5138b7eb847e6fd51a6eddad5daafe26b014d1d27b3438f7ed9e216441c41",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:f7d5138b7eb847e6fd51a6eddad5daafe26b014d1d27b3438f7ed9e216441c41"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:f7d5138b7eb847e6fd51a6eddad5daafe26b014d1d27b3438f7ed9e216441c41"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:f7d5138b7eb847e6fd51a6eddad5daafe26b014d1d27b3438f7ed9e216441c41"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:f7d5138b7eb847e6fd51a6eddad5daafe26b014d1d27b3438f7ed9e216441c41"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-4b52f9f6",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:7554018647bdb60831b42be004cfa6372157f3195bdf346d3c7401fc93f5dfb3",
+      "diff_hash": "sha256:cc56c94faf5d895ba63ea50249275d51a093f2bcd4dcb646cf96a4bfa1335156",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:e2fb64d985809244696c2b2546ba3c7e1f747f1917e8c22b4238862dd01e8e3e",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e2fb64d985809244696c2b2546ba3c7e1f747f1917e8c22b4238862dd01e8e3e"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e2fb64d985809244696c2b2546ba3c7e1f747f1917e8c22b4238862dd01e8e3e"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e2fb64d985809244696c2b2546ba3c7e1f747f1917e8c22b4238862dd01e8e3e"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e2fb64d985809244696c2b2546ba3c7e1f747f1917e8c22b4238862dd01e8e3e"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-711951aa",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:7554018647bdb60831b42be004cfa6372157f3195bdf346d3c7401fc93f5dfb3",
+      "diff_hash": "sha256:edec6b59568e14aeac86cbda54b98a2e602d2cd135d4b4c59f195939e70ee91e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:e33ae55360c8870b753f838c0a77a000c615965d6a17aacc4103d61c1da98fb6",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e33ae55360c8870b753f838c0a77a000c615965d6a17aacc4103d61c1da98fb6"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e33ae55360c8870b753f838c0a77a000c615965d6a17aacc4103d61c1da98fb6"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e33ae55360c8870b753f838c0a77a000c615965d6a17aacc4103d61c1da98fb6"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e33ae55360c8870b753f838c0a77a000c615965d6a17aacc4103d61c1da98fb6"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-4ad8235f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:7554018647bdb60831b42be004cfa6372157f3195bdf346d3c7401fc93f5dfb3",
+      "diff_hash": "sha256:de20399ff24ca539d1043d7369923ede7bd1c6d812f84c2422baec3cc75a2cc9",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:e1df8477cb6ec718a6236dffdbfe2a10f90dc35e6bb38e5f475f924cfee94639",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e1df8477cb6ec718a6236dffdbfe2a10f90dc35e6bb38e5f475f924cfee94639"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e1df8477cb6ec718a6236dffdbfe2a10f90dc35e6bb38e5f475f924cfee94639"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e1df8477cb6ec718a6236dffdbfe2a10f90dc35e6bb38e5f475f924cfee94639"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e1df8477cb6ec718a6236dffdbfe2a10f90dc35e6bb38e5f475f924cfee94639"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-24f58242",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:7554018647bdb60831b42be004cfa6372157f3195bdf346d3c7401fc93f5dfb3",
+      "diff_hash": "sha256:577a9746548199a7c39bac8a7438d8933acbe95a3b86839cea7b9d8203f35175",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:be0c71dfef3bc72bd3943f67f498e3396c33293781514a2185b5e83bc8c17573",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:be0c71dfef3bc72bd3943f67f498e3396c33293781514a2185b5e83bc8c17573"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:be0c71dfef3bc72bd3943f67f498e3396c33293781514a2185b5e83bc8c17573"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:be0c71dfef3bc72bd3943f67f498e3396c33293781514a2185b5e83bc8c17573"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:be0c71dfef3bc72bd3943f67f498e3396c33293781514a2185b5e83bc8c17573"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-f0bd78ef",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:7554018647bdb60831b42be004cfa6372157f3195bdf346d3c7401fc93f5dfb3",
+      "diff_hash": "sha256:577a9746548199a7c39bac8a7438d8933acbe95a3b86839cea7b9d8203f35175",
+      "actor_id": "parent-mediated-review",
+      "summary": "Verified manifest digest, revision parent, tree and changed-path objects; reviewed all changes against AC1–AC4 and embedded passing QA outcomes. No blocking correctness, security or regression findings.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "80d6e3c44b8b700038cbb8c45ff31d37234eeda6",
+        "review_commit": "191de89bf5f76bae10ada1f5bfdd754d66d45c93",
+        "review_tree": "db888a3d189c3f54c539419a9cf672f2ce3edce7",
+        "manifest_digest": "sha256:6905d546bb13755e43d9f8c8ce78d48d45e9d7a6beea4ff192121c5b9091bf5a"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-AC3-dffbb413-87ae59",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC3",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=19404B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "review-53b3befb36e4-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/kernel/enrollment.ts:344–346 的无条件 rehearsal 阻断了新入口的已提交请求重放：同一请求重试会因 TaskRecord 已存在、workspace 已被占用而抛出 EnrollmentRehearsalError，无法到达 enrollCanaryTask:393 的 durable replay。应在首次 Enrollment 的 rehearsal/checkpoint 之前按现有 eventId 和 request digest 查询已提交结果，保留 divergent-request 拒绝，并在 tests/kernel-enrollment-transaction.test.ts 通过 enrollTask 验证重放返回相同结果且不重复写入。",
+      "anchor": "sha256:9980b6a122caec587a7313e1b6e271565baf0e9de091b618ebf0e23204b63893",
+      "evidence": {
+        "trigger": "不变量类别：Enrollment 已提交请求的重放幂等性。使用有效 binding 和固定 now 调用 enrollTask(root, registry, { binding, now }) 成功后，丢失响应并以完全相同的 binding、now 重试。第二次调用签发新的 capability，但 rehearsal 在 enrollment.ts:183–194 检测到已有 TaskRecord 和 workspace owner，返回 not_ready，随后入口抛错，既有重放查询不可达。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/enrollment.ts::enrollTask",
+          "plugins/immune-brain/runtime/kernel/enrollment.ts::runEnrollmentRehearsal",
+          "plugins/immune-brain/runtime/kernel/enrollment.ts::runEnrollmentPreconditionChecks"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "qa-AC3-8acbc30c-45af4f",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC3",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=19402B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "review-527c27becea5-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC2",
+      "source": "review",
+      "review_round": 2,
+      "summary": "AC2 的提交后取消边界缺少约定 seam 的测试：tests/pi-canary-enroll-extension.test.ts:795 仅在 rehearsing 时取消，tests/kernel-canary-rehearsal.test.ts 的 late-cancel 测试也只在 checkpoint 内改变普通布尔值，未验证提交开始后的真实 AbortSignal。请在 Pi Tool 集成测试中于 committing progress 回调触发 controller.abort()，断言仍返回 completed，且 Kernel run、workspace owner 和 backend claim 均已提交。",
+      "anchor": "sha256:ea94c464967138b6e105ec8dd1480a7f59581316895dd275f0a40e53c3a72286",
+      "evidence": {
+        "trigger": "Pi Tool 的 checkpoint 已调用 beginCommit()，随后 committing progress 回调触发真实 host AbortSignal；当前约定的 tests/pi-canary-enroll-extension.test.ts 与 tests/enrollment-confirmation-relocation.test.ts 均未覆盖该输入，因而不能证明 AC2 要求的“once commit has started, cancellation has no effect”。",
+        "caller_chain": [
+          "tests/pi-canary-enroll-extension.test.ts:runTool",
+          "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts:ForegroundEnrollmentCoordinator.run",
+          "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts:executeForegroundEnrollment checkpoint",
+          "plugins/immune-brain/runtime/kernel/enrollment.ts:enrollTask",
+          "plugins/immune-brain/runtime/kernel/enrollment.ts:enrollCanaryTask"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "qa-AC3-89d09811-79295b",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC3",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=19403B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "review-5afc5547de1e-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC2",
+      "source": "review",
+      "review_round": 3,
+      "summary": "plugins/immune-brain/runtime/kernel/enrollment.ts:324 的 overload 将包含 optional checkpoint 的 EnrollmentEntryRequest 声明为始终返回 EnrollCanaryResult，但实现会返回 cancelled 或 enrolled outcome。合法的接口类型调用因此无法可靠处理取消：TypeScript 允许访问 result.record，实际返回 cancelled 时会抛出 TypeError。将返回普通结果的 overload 限定为 checkpoint 缺失或 undefined，并为一般 EnrollmentEntryRequest 提供准确的联合返回类型；补充接口类型请求的类型与取消行为覆盖。",
+      "anchor": "sha256:9b68a250df510371c58228ee6bf93e212845215dce24d691c119d7439279f582",
+      "evidence": {
+        "trigger": "使用有效 binding 和 now 构造 const request: EnrollmentEntryRequest = { binding, now, checkpoint: () => false }，在 ready rehearsal 状态调用 enrollTask(root, registry, request)。该请求匹配返回 EnrollCanaryResult 的第二个 overload，因此 result.record.task_id 能通过类型检查；实际执行到第 367 行返回 { outcome: \"cancelled\" }，record 为 undefined，访问 task_id 抛出 TypeError。checkpoint 返回 true 时同样返回包装 outcome，而不是所声明的普通结果。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/enrollment.ts:EnrollmentEntryRequest",
+          "plugins/immune-brain/runtime/kernel/enrollment.ts:enrollTask overloads",
+          "plugins/immune-brain/runtime/kernel/enrollment.ts:enrollTask checkpoint return"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-4a07dd34dc81-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC2",
+      "source": "review",
+      "review_round": 4,
+      "summary": "imm-canary-enroll.ts:566 同步调用 enrollTask，enrollment.ts:380–388 在 rehearsal、checkpoint 和 commit 之间不让出执行，排队 microtask 的 abort 无法在提交前送达。应在 ready rehearsal 与 checkpoint 之间保留异步让出点，并让 Pi await 该入口。",
+      "anchor": "sha256:a46088c27a4266c6982246668fcea749a7253649b1e66538da3560cf128cb0f0",
+      "evidence": {
+        "trigger": "在 Pi Tool 的 rehearsing progress 回调中执行 queueMicrotask(() => controller.abort())，且 rehearsal 为 ready。当前同步调用在 microtask 执行前通过 checkpoint、设置 slot.committing 并提交；随后 relayAbort 因 slot.committing 为 true 忽略取消。",
+        "caller_chain": [
+          "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts:ForegroundEnrollmentCoordinator.run",
+          "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts:executeForegroundEnrollment",
+          "plugins/immune-brain/runtime/kernel/enrollment.ts:enrollTask",
+          "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts:checkpoint/beginCommit",
+          "plugins/immune-brain/runtime/kernel/enrollment.ts:enrollCanaryTask"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-41ce1c393262-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC3",
+      "source": "review",
+      "review_round": 5,
+      "summary": "plugins/immune-brain/runtime/claude/kernel_ports.ts:602 returns the new async enrollTask without awaiting it inside the existing try/catch, so Enrollment failures bypass the catch and lose the empty-initial-commit diagnostic.",
+      "anchor": "sha256:11667dc2033dc79d4e8ea0ac4eb18c9c79a7bb0525a29ef50ac0ab7b3864262a",
+      "evidence": {
+        "trigger": "In an unborn repository, stage a valid TaskIntent with scope_hint ['src'] and an in-scope file src/task.ts, then accept Claude's native Enrollment confirmation. initializeEnrollmentGitBase creates the empty initial commit; enrollTask's rehearsal subsequently rejects because src/task.ts is already dirty relative to that base. Since enrollTask is async, this rejection bypasses ClaudeRuntime.enroll's catch at lines 603–605, so the error omits '; empty initial commit <hash> remains'.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.enroll",
+          "plugins/immune-brain/runtime/kernel/enrollment.ts:enrollTask",
+          "plugins/immune-brain/runtime/kernel/enrollment.ts:runEnrollmentRehearsal"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC3"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:single-enrollment-entry:2026-10-07T14:00:38.687Z",
+      "at": "2026-10-07T14:00:38.687Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/single-enrollment-entry.intent.json"
+    },
+    {
+      "id": "request_rework:single-enrollment-entry:2026-10-07T14:03:37.212Z",
+      "at": "2026-10-07T14:03:37.212Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:decf31368f7850dad90b06015e09e9d4b87651d3edaefeb23c029e058862d22b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-0ec88890df2daf5b",
+        "issued_at": "2026-10-07T14:03:37.213Z"
+      }
+    },
+    {
+      "id": "resolve_finding:single-enrollment-entry:2026-10-07T14:20:42.854Z",
+      "at": "2026-10-07T14:20:42.854Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-AC3-dffbb413-87ae59\naction_v2_sha256:aa971e683d42ebe9846f029b8d3415d48df6d746783ba56418d66cc7a0ed01f7"
+    },
+    {
+      "id": "freeze_artifacts:single-enrollment-entry:2026-10-07T14:20:48.223Z",
+      "at": "2026-10-07T14:20:48.223Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/single-enrollment-entry.intent.json"
+    },
+    {
+      "id": "record_approval:single-enrollment-entry:2026-10-07T14:23:50.047Z",
+      "at": "2026-10-07T14:23:50.047Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-a8a4e1a9\naction_v2_sha256:d2952627b5d8b4718f4200bb2700ac0c09ac55d78e2376b853f2a9d5b58390b0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-554092f3ac29bc8b",
+        "issued_at": "2026-10-07T14:23:50.048Z"
+      }
+    },
+    {
+      "id": "request_rework:single-enrollment-entry:2026-10-07T14:28:47.767Z",
+      "at": "2026-10-07T14:28:47.767Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:e932c6b89df7e10203a4cc3a9f03bbd2b72593d71950c8cfb8225413ff411b8f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-5002604f3d8abd42",
+        "issued_at": "2026-10-07T14:28:47.767Z"
+      }
+    },
+    {
+      "id": "resolve_finding:single-enrollment-entry:2026-10-07T14:40:36.407Z",
+      "at": "2026-10-07T14:40:36.407Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-53b3befb36e4-1-review-1\naction_v2_sha256:be6255c62c16452888e82808202a0d98c893c08782dc97ba1170778ecedcb1cd"
+    },
+    {
+      "id": "freeze_artifacts:single-enrollment-entry:2026-10-07T14:40:40.951Z",
+      "at": "2026-10-07T14:40:40.951Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/single-enrollment-entry.intent.json"
+    },
+    {
+      "id": "request_rework:single-enrollment-entry:2026-10-07T14:43:25.799Z",
+      "at": "2026-10-07T14:43:25.799Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:bc90dbd666cdaef528b209866c753c4aa1574dccb870933b36f4b70d6f0237bf",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d71d2fe371891167",
+        "issued_at": "2026-10-07T14:43:25.799Z"
+      }
+    },
+    {
+      "id": "resolve_finding:single-enrollment-entry:2026-10-07T15:17:43.209Z",
+      "at": "2026-10-07T15:17:43.209Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-AC3-8acbc30c-45af4f\naction_v2_sha256:4d5e8a6bf0b354d2ec89379a7a0851c84743ed336b9d43e2cc61cf8ef217ba1c"
+    },
+    {
+      "id": "freeze_artifacts:single-enrollment-entry:2026-10-07T15:17:48.219Z",
+      "at": "2026-10-07T15:17:48.219Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/single-enrollment-entry.intent.json"
+    },
+    {
+      "id": "record_approval:single-enrollment-entry:2026-10-07T15:21:02.952Z",
+      "at": "2026-10-07T15:21:02.952Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-55bc39ce\naction_v2_sha256:59b5ac85ad46ae11f3851fd5007ac83e603ea72161eb931be161cd92f38d4fd8",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-9943fa3e38453c7a",
+        "issued_at": "2026-10-07T15:21:02.953Z"
+      }
+    },
+    {
+      "id": "request_rework:single-enrollment-entry:2026-10-07T15:27:14.970Z",
+      "at": "2026-10-07T15:27:14.970Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:615be5d8fd02ff7370ef1dcd654d2902c403d8ddc638d35a0eccf5d367cbfff3",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-02d9fca0849da16f",
+        "issued_at": "2026-10-07T15:27:14.971Z"
+      }
+    },
+    {
+      "id": "resolve_finding:single-enrollment-entry:2026-10-07T15:39:48.725Z",
+      "at": "2026-10-07T15:39:48.725Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-527c27becea5-1-review-1\naction_v2_sha256:72d4da9e6c3fd025199aba419a63cad2fb123a51b525ea1dd3a105532dccea52"
+    },
+    {
+      "id": "freeze_artifacts:single-enrollment-entry:2026-10-07T15:39:53.554Z",
+      "at": "2026-10-07T15:39:53.554Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/single-enrollment-entry.intent.json"
+    },
+    {
+      "id": "request_rework:single-enrollment-entry:2026-10-07T15:42:58.523Z",
+      "at": "2026-10-07T15:42:58.523Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_3\naction_v2_sha256:8094ffd5a2d35213f5589bf53e7cafe8d3f89a27f36c6f28df60e2d129c840e6",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d10470c74d1d7315",
+        "issued_at": "2026-10-07T15:42:58.523Z"
+      }
+    },
+    {
+      "id": "resolve_finding:single-enrollment-entry:2026-10-07T16:11:53.686Z",
+      "at": "2026-10-07T16:11:53.686Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-AC3-89d09811-79295b\naction_v2_sha256:a41e80136349e5908eebb4a63fe56bde6949066ac39952d09136584bd355750d"
+    },
+    {
+      "id": "freeze_artifacts:single-enrollment-entry:2026-10-07T16:11:58.763Z",
+      "at": "2026-10-07T16:11:58.763Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/single-enrollment-entry.intent.json"
+    },
+    {
+      "id": "record_approval:single-enrollment-entry:2026-10-07T16:15:32.005Z",
+      "at": "2026-10-07T16:15:32.005Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-78d0693a\naction_v2_sha256:d7d15fa2b274dad3e18759ebc3a2d5bf344b3a93f6d9924ae00eb6897467ed84",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f2460f7033332aa8",
+        "issued_at": "2026-10-07T16:15:32.005Z"
+      }
+    },
+    {
+      "id": "request_rework:single-enrollment-entry:2026-10-07T16:20:04.440Z",
+      "at": "2026-10-07T16:20:04.440Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_3\naction_v2_sha256:806137c910d5ec577b420c39e616e54cbf3171fb3d4375ad42736879f4824834",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-1196c85acecdd9a8",
+        "issued_at": "2026-10-07T16:20:04.441Z"
+      }
+    },
+    {
+      "id": "resolve_finding:single-enrollment-entry:2026-10-07T16:37:13.262Z",
+      "at": "2026-10-07T16:37:13.262Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-5afc5547de1e-1-review-1\naction_v2_sha256:87379f6af202f5018b498f9624560907afa2c1181ce9632581756141d3d0372d"
+    },
+    {
+      "id": "freeze_artifacts:single-enrollment-entry:2026-10-07T16:37:18.276Z",
+      "at": "2026-10-07T16:37:18.276Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/single-enrollment-entry.intent.json"
+    },
+    {
+      "id": "record_approval:single-enrollment-entry:2026-10-07T16:40:20.714Z",
+      "at": "2026-10-07T16:40:20.714Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-4b52f9f6\naction_v2_sha256:ad6fafe91c81dd77bbfeb9261d0d0481593356a76747b5737b8242e6b4bfb178",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-88193902d443f8ae",
+        "issued_at": "2026-10-07T16:40:20.714Z"
+      }
+    },
+    {
+      "id": "record_approval:single-enrollment-entry:2026-10-07T17:00:39.077Z",
+      "at": "2026-10-07T17:00:39.077Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-711951aa\naction_v2_sha256:b91ed43cc96dbe07b603767d8ac4022dd77918a7c495ed00b590a03fc0fca2c7",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-638ab015186c4778",
+        "issued_at": "2026-10-07T17:00:39.077Z"
+      }
+    },
+    {
+      "id": "request_rework:single-enrollment-entry:2026-10-07T17:10:20.974Z",
+      "at": "2026-10-07T17:10:20.974Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_4\naction_v2_sha256:5ddb23d60f5877b86e7719dec469947e8c1655d02842ecbecddf3a14ff80a048",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-d1b0fa71c83ecbdd",
+        "issued_at": "2026-10-07T17:10:20.974Z"
+      }
+    },
+    {
+      "id": "resolve_finding:single-enrollment-entry:2026-10-07T17:39:19.962Z",
+      "at": "2026-10-07T17:39:19.962Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-4a07dd34dc81-1-review-1\naction_v2_sha256:0ddb6ae46ce20b746fad354aa093896516806caef32a0f4064d7dd432ef49e39"
+    },
+    {
+      "id": "freeze_artifacts:single-enrollment-entry:2026-10-07T17:39:24.776Z",
+      "at": "2026-10-07T17:39:24.776Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/single-enrollment-entry.intent.json"
+    },
+    {
+      "id": "record_approval:single-enrollment-entry:2026-10-07T17:42:11.919Z",
+      "at": "2026-10-07T17:42:11.919Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-4ad8235f\naction_v2_sha256:c3b6dc776e5b6b98a08917a878d67903343eae22361445dcf6468665753f1c76",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-a2e25329c5701cf2",
+        "issued_at": "2026-10-07T17:42:11.919Z"
+      }
+    },
+    {
+      "id": "request_rework:single-enrollment-entry:2026-10-07T17:47:38.664Z",
+      "at": "2026-10-07T17:47:38.664Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_5\naction_v2_sha256:c08fdb635b7ef078d2b17f0f3a36d0b9f5985d88ab388649794ac5694ac58edd",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-bedbaf03c77957d4",
+        "issued_at": "2026-10-07T17:47:38.664Z"
+      }
+    },
+    {
+      "id": "resolve_finding:single-enrollment-entry:2026-10-07T17:57:04.338Z",
+      "at": "2026-10-07T17:57:04.338Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-41ce1c393262-1-review-1\naction_v2_sha256:2d1dfed9f0e641e5bcfbaa29e4e6c11a75c5c58552f100b2a84fd89c0f0f1e40"
+    },
+    {
+      "id": "freeze_artifacts:single-enrollment-entry:2026-10-07T17:57:09.005Z",
+      "at": "2026-10-07T17:57:09.005Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/single-enrollment-entry.intent.json"
+    },
+    {
+      "id": "record_approval:single-enrollment-entry:2026-10-07T17:59:55.651Z",
+      "at": "2026-10-07T17:59:55.651Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-24f58242\naction_v2_sha256:d39a0c5b0fde50f434179d13425255a264b33049d734da528c9173c31abc7e36",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-dcf9c7b7fc3dde89",
+        "issued_at": "2026-10-07T17:59:55.651Z"
+      }
+    },
+    {
+      "id": "record_approval:single-enrollment-entry:2026-10-07T18:06:59.038Z",
+      "at": "2026-10-07T18:06:59.038Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-f0bd78ef\naction_v2_sha256:9707d4af618fb695c8152925dcf9897b51db64ca8b202ccf720c99140431604a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-92ac22766bc3beae",
+        "issued_at": "2026-10-07T18:06:59.038Z"
+      }
+    },
+    {
+      "id": "complete:single-enrollment-entry:2026-10-07T18:07:00.343Z",
+      "at": "2026-10-07T18:07:00.343Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:9f8f81096d7fe72887f58dacd4b038efc0a7a56e1a6d7e1a80e703fca36279bd"
+    }
+  ]
+}

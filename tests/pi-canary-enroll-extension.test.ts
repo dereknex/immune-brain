@@ -1,7 +1,70 @@
 // Simulates the Pi loader (default export factory), verifies the foreground
 // Tool surface and zero writes on every rejection path.
 
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test, mock } from "bun:test";
+// Delivery QA has no node_modules; use the host seam only when the real package
+// is absent. imm-canary-enroll.ts builds its Tool schemas with typebox.
+try { await import("typebox"); } catch {
+	const optional = Symbol("optional");
+	mock.module("typebox", () => ({ Type: {
+		Array: (items: object) => ({ type: "array", items }),
+		Boolean: () => ({ type: "boolean" }),
+		Literal: (value: unknown) => ({ const: value }),
+		Null: () => ({ type: "null" }),
+		Number: () => ({ type: "number" }),
+		Object: (properties: Record<string, any>, options: object = {}) => ({
+			type: "object", properties,
+			required: Object.entries(properties).filter(([, value]) => !value[optional]).map(([key]) => key),
+			...options,
+		}),
+		Optional: (schema: Record<string, unknown>) => ({ ...schema, [optional]: true }),
+		Record: (_key: object, value: object) => ({ type: "object", additionalProperties: value }),
+		String: (options: object) => ({ type: "string", ...options }),
+		Union: (anyOf: object[]) => ({ anyOf }),
+		Unknown: () => ({}),
+	} }));
+}
+try { await import("@earendil-works/pi-coding-agent"); } catch {
+	class DynamicBorder {
+		constructor(private style: (text: string) => string) {}
+		render(width: number) { return [this.style("\u2500".repeat(Math.max(0, width)))]; }
+	}
+	mock.module("@earendil-works/pi-coding-agent", () => ({ DynamicBorder }));
+}
+try { await import("@earendil-works/pi-tui"); } catch {
+	class Text {
+		constructor(private text: string) {}
+		setText(text: string) { this.text = text; }
+		render() { return this.text.split("\n"); }
+		invalidate() {}
+	}
+	class Container {
+		private children: Array<{ render(width: number): string[] }> = [];
+		addChild(child: { render(width: number): string[] }) { this.children.push(child); }
+		render(width: number) { return this.children.flatMap((child) => child.render(width)); }
+		invalidate() { for (const child of this.children) (child as { invalidate?: () => void }).invalidate?.(); }
+	}
+	class SelectList {
+		onSelect?: (item: unknown) => void;
+		onCancel?: () => void;
+		private selected = 0;
+		constructor(private items: Array<{ label: string }>) {}
+		render() { return this.items.map((item, index) => `${index === this.selected ? "> " : "  "}${item.label}`); }
+		handleInput(input: string) {
+			if (input === "\u001b[B") this.selected = Math.min(this.items.length - 1, this.selected + 1);
+			else if (input === "\u001b[A") this.selected = Math.max(0, this.selected - 1);
+			else if (input === "\r") this.onSelect?.(this.items[this.selected]!);
+			else if (input === "\u001b") this.onCancel?.();
+		}
+	}
+	mock.module("@earendil-works/pi-tui", () => ({
+		Container, SelectList, Text,
+		sliceByColumn: (text: string, start: number, width?: number) => text.slice(start, width === undefined ? undefined : start + width),
+		truncateToWidth: (text: string, width: number, marker = "") => text.length <= width ? text : `${text.slice(0, Math.max(0, width - marker.length))}${marker}`,
+		visibleWidth: (text: string) => text.length,
+	}));
+}
+afterAll(() => mock.restore());
 import { mkdtempSync, mkdirSync, writeFileSync, readdirSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -12,8 +75,8 @@ import { createHash } from "node:crypto";
 // tolerate, so these fixtures keep the recorded marker literals locally.
 const AUTHORITY_OBSERVATION_GENERATION_V2 = "automatic-observation/v2";
 const AUTHORITY_OBSERVER_VERSION_V2 = "assurance-kernel-p2a-observer/v2";
-import { assertTaskIntentPreparationStable } from "../plugins/immune-brain/.pi-extension/imm-canary-enroll";
 import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
+import { readTaskRecordRaw, readWorkspaceStateRaw } from "../plugins/immune-brain/runtime/kernel/storage";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import { readWorkspaceRow, withKernelRead } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
@@ -90,6 +153,13 @@ function makeCtx(root: string, ui: FakeUI, mode: Mode, cwdOverride?: string) {
 async function loadExtension() {
 	const mod = await import("../plugins/immune-brain/.pi-extension/imm-canary-enroll");
 	return mod.default;
+}
+
+async function assertTaskIntentPreparationStable(
+	...args: Parameters<typeof import("../plugins/immune-brain/.pi-extension/imm-canary-enroll").assertTaskIntentPreparationStable>
+) {
+	const mod = await import("../plugins/immune-brain/.pi-extension/imm-canary-enroll");
+	return mod.assertTaskIntentPreparationStable(...args);
 }
 
 function makeRoot(): string {
@@ -481,6 +551,7 @@ describe("pi canary enroll handler integration", () => {
 		action: "new" = "new",
 		emitted: Array<{ name: string; payload: Record<string, unknown> }> = [],
 		sessionShutdown: Array<(event: unknown, ctx: ReturnType<typeof makeCtx>) => Promise<void>> = [],
+		onStage?: (stage: string) => void,
 	): Promise<any> {
 		const factory = await loadExtension();
 		let tool: { execute: (...args: any[]) => Promise<any> } | undefined;
@@ -500,7 +571,10 @@ describe("pi canary enroll handler integration", () => {
 			{ action, task_id: TASK },
 			ui.signal,
 			(update: { details?: { stage?: string } }) => {
-				if (update.details?.stage) updates.push(update.details.stage);
+				if (update.details?.stage) {
+					updates.push(update.details.stage);
+					onStage?.(update.details.stage);
+				}
 			},
 			makeCtx(root, ui, "tui"),
 		);
@@ -714,6 +788,107 @@ describe("pi canary enroll handler integration", () => {
 			expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(false);
 			expect(existsSync(join(root, ".imm/state/tasks"))).toBe(false);
 			expect(readBackendClaim(root)?.task_id).toBe(TASK);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("a host cancellation between rehearsal and commit returns cancelled with zero writes", async () => {
+		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
+		try {
+			makeEligibleRepo(root, TASK);
+			const before = authoritySnapshot(root);
+			const updates: string[] = [];
+			const controller = new AbortController();
+			const ui = makeFakeUI(true);
+			ui.signal = controller.signal;
+			// The coordinator relays the host abort until commit begins; the
+			// cancel must land after the rehearsing stage update and before the
+			// committing one, which is exactly the entry's checkpoint window.
+			const result = await runTool(
+				root,
+				ui,
+				updates,
+				"new",
+				[],
+				[],
+				(stage) => { if (stage === "rehearsing") controller.abort(new Error("host cancelled at checkpoint")); },
+			);
+			expect(result.details.state).toBe("cancelled");
+			expect(updates).toEqual(["preparing", "awaiting_confirmation", "revalidating", "rehearsing"]);
+			// The cancelled checkpoint never reached the commit: zero authority.
+			expect(authoritySnapshot(root)).toBe(before);
+			expect(readBackendClaim(root)).toBeNull();
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("a host cancellation during commit cannot un-enroll: the started commit settles", async () => {
+		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
+		try {
+			makeEligibleRepo(root, TASK);
+			const updates: string[] = [];
+			const controller = new AbortController();
+			const ui = makeFakeUI(true);
+			ui.signal = controller.signal;
+			// The abort now lands one stage later, inside the committing
+			// progress, i.e. after the entry's checkpoint already accepted the
+			// commit. Cancellation must have no effect on a started commit.
+			const result = await runTool(
+				root,
+				ui,
+				updates,
+				"new",
+				[],
+				[],
+				(stage) => { if (stage === "committing") controller.abort(new Error("host cancelled during commit")); },
+			);
+			expect(result.details.state).toBe("completed");
+			expect(updates).toContain("committing");
+			// The abort really fired in that window, so the assertions below are
+			// not vacuous: the signal was observed aborted while committing.
+			expect(controller.signal.aborted).toBe(true);
+			// The commit settled: the run, the workspace owner and the backend
+			// claim are all written, exactly as an un-aborted enrollment.
+			const claim = readBackendClaim(root);
+			expect(claim?.task_id).toBe(TASK);
+			expect(readTaskRecordRaw(root, TASK).record?.task_id).toBe(TASK);
+			// `current_working` is the active run's task_id, so this pins the
+			// workspace owner to this task rather than to any truthy string.
+			expect(readWorkspaceStateRaw(root).state.current_working).toBe(TASK);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("a cancellation queued while rehearsing still cancels with zero writes", async () => {
+		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
+		try {
+			makeEligibleRepo(root, TASK);
+			const before = authoritySnapshot(root);
+			const controller = new AbortController();
+			const ui = makeFakeUI(true);
+			ui.signal = controller.signal;
+			const updates: string[] = [];
+			// The host cancels through a queued microtask rather than a direct
+			// call, so the entry must yield between the rehearsal decision and
+			// the checkpoint for the signal to be observed before the commit.
+			const result = await runTool(
+				root,
+				ui,
+				updates,
+				"new",
+				[],
+				[],
+				(stage) => { if (stage === "rehearsing") queueMicrotask(() => controller.abort(new Error("queued host cancel"))); },
+			);
+			expect(result.details.state).toBe("cancelled");
+			expect(updates).toEqual(["preparing", "awaiting_confirmation", "revalidating", "rehearsing"]);
+			// The queued cancel was really delivered before the commit started.
+			expect(controller.signal.aborted).toBe(true);
+			expect(authoritySnapshot(root)).toBe(before);
+			expect(readBackendClaim(root)).toBeNull();
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

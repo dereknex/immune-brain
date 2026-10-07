@@ -37,7 +37,7 @@ import {
 	createEnrollmentAuthorityRegistry,
 	type EnrollmentCapabilityBinding,
 } from "../kernel/enrollment_authority";
-import { enrollCanaryTask, runEnrollmentRehearsal } from "../kernel/enrollment";
+import { enrollTask } from "../kernel/enrollment";
 import { reconcileKernelAuthority, repairKernelAuthority } from "../kernel/storage";
 import { inspectEnrollmentGitBase, enrollmentGitBaseNotice, initializeEnrollmentGitBase } from "../assurance/enrollment_git_base";
 import { preparePiCanary, revalidatePiCanary } from "../kernel/pi_canary_prepare";
@@ -599,21 +599,7 @@ export class ClaudeRuntime {
 				confirmation_ref: gate.confirmation_ref,
 				nonce,
 			};
-			const capability = this.enrollmentRegistry.issue(binding);
-			const input = {
-				task_id: taskId,
-				intent_path: binding.intent_path,
-				intent_revision: binding.intent_revision,
-				preparation_digest: binding.preparation_digest,
-				capability,
-				capability_binding: binding,
-				now,
-			};
-			const rehearsal = runEnrollmentRehearsal(this.cwd, input, capability, this.enrollmentRegistry);
-			if (!rehearsal.rehearsed || rehearsal.evidence.outcome !== "ready") {
-				throw new Error(`Kernel enrollment rehearsal failed: ${rehearsal.evidence.blockers.join("; ")}`);
-			}
-			return enrollCanaryTask(this.cwd, input, this.enrollmentRegistry);
+			return await enrollTask(this.cwd, this.enrollmentRegistry, { binding, now });
 		} catch (error) {
 			if (gitBaseNote) throw new Error(`${error instanceof Error ? error.message : String(error)}${gitBaseNote}`);
 			throw error;
@@ -1243,14 +1229,8 @@ export class ClaudeRuntime {
 					expected_head: batch.binding.expected_head,
 					now,
 				});
-				const enrollmentCapability = this.enrollmentRegistry.issue(derived.binding);
-				const input = {
-					task_id,
-					intent_path: derived.binding.intent_path,
-					intent_revision: derived.binding.intent_revision,
-					preparation_digest: derived.binding.preparation_digest,
-					capability: enrollmentCapability,
-					capability_binding: derived.binding,
+				await enrollTask(root, this.enrollmentRegistry, {
+					binding: derived.binding,
 					batch: {
 						registry: batch.registry,
 						capability: batch.capability,
@@ -1258,13 +1238,8 @@ export class ClaudeRuntime {
 						expected_head: batch.binding.expected_head,
 					},
 					now,
-				};
-				const rehearsal = runEnrollmentRehearsal(root, input, enrollmentCapability, this.enrollmentRegistry);
-				if (!rehearsal.rehearsed || rehearsal.evidence.outcome !== "ready") {
-					throw new Error(`Kernel enrollment rehearsal failed: ${rehearsal.evidence.blockers.join("; ")}`);
-				}
+				});
 				// The enrollment itself is the effect; its record is re-read below.
-				enrollCanaryTask(root, input, this.enrollmentRegistry);
 				const recordRaw = readTaskRecordRaw(root, task_id);
 				return { record_revision: recordRaw.revision };
 			},

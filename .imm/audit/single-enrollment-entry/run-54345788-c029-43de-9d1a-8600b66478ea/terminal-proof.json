@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "single-enrollment-entry",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:single-enrollment-entry:2026-10-07T18:07:00.343Z",
+  "final_record_hash": "sha256:af2fc879687028036397016ab97f0cd2f57c69dd11121b3d03d61fc6694e5275",
+  "terminalized_at": "2026-10-07T18:07:00.343Z"
+}

@@ -17,7 +17,7 @@ import { LITERAL_USER_ACTOR_ID } from "../runtime/kernel/actor_identity";
 import { createEnrollmentAuthorityRegistry } from "../runtime/kernel/enrollment_authority";
 import { preparePiCanary, revalidatePiCanary } from "../runtime/assurance/enrollment";
 import { evaluateCanaryEligibility } from "../runtime/kernel/canary_eligibility";
-import { runEnrollmentRehearsal, enrollCanaryTask } from "../runtime/kernel/enrollment";
+import { enrollTask, EnrollmentRehearsalError } from "../runtime/kernel/enrollment";
 import { reconcileKernelAuthority, withKernelStoreLock } from "../runtime/kernel/storage";
 import { inspectStorageLayout } from "../runtime/kernel/storage_paths";
 import { migrateLegacyLayout } from "../runtime/kernel/storage_layout_migration";
@@ -556,28 +556,26 @@ async function executeForegroundEnrollment(
 			confirmation_ref: `pi-confirm-${createHash("sha256").update(`${taskId}\0${now}\0${nonce}`).digest("hex").slice(0, 16)}`,
 			nonce,
 		};
-		const capability = registry.issue(binding);
-		const input = {
-			task_id: taskId,
-			intent_path: binding.intent_path,
-			intent_revision: binding.intent_revision,
-			preparation_digest: binding.preparation_digest,
-			capability,
-			capability_binding: binding,
-			now,
-		};
 
 		progress("rehearsing", uxText(UX_LANG, "Running the zero-write Kernel owner rehearsal", "正在执行 Kernel 所有者零写入预演"));
-		const rehearsal = await runEnrollmentRehearsal(root, input, capability, registry);
-		if (!rehearsal.rehearsed || rehearsal.evidence.outcome !== "ready")
-			return terminal(action, taskId, "failed", stage, `Kernel enrollment rehearsal failed: ${rehearsal.evidence.blockers.join("; ")}${gitBaseNote}`, "resolve the final-lock preconditions and retry");
-		if (signal.aborted) return cancelled();
-		if (!beginCommit()) return cancelled();
-
-		stage = "committing";
-		onUpdate?.(updateResult(action, taskId, stage, "Kernel enrollment commit owns settlement and is no longer cancellable"));
 		try {
-			const result = await enrollCanaryTask(root, input, registry);
+			// The single Enrollment entry owns issue -> rehearse -> checkpoint ->
+			// commit. The checkpoint keeps the Tool's abort/begin-commit gate
+			// between rehearsal and commit: a declined checkpoint cancels with
+			// zero writes, and once it accepts, commit is no longer cancellable.
+			const outcome = await enrollTask(root, registry, {
+				binding,
+				now,
+				checkpoint: () => {
+					if (signal.aborted) return false;
+					if (!beginCommit()) return false;
+					stage = "committing";
+					onUpdate?.(updateResult(action, taskId, stage, "Kernel enrollment commit owns settlement and is no longer cancellable"));
+					return true;
+				},
+			});
+			if (outcome.outcome === "cancelled") return cancelled();
+			const result = outcome.result;
 			return terminal(
 				action,
 				taskId,
@@ -587,6 +585,9 @@ async function executeForegroundEnrollment(
 				"continue with imm-loop",
 			);
 		} catch (error) {
+			if (error instanceof EnrollmentRehearsalError)
+				return terminal(action, taskId, "failed", stage, `${error.message}${gitBaseNote}`, "resolve the final-lock preconditions and retry");
+			if (stage !== "committing") throw error;
 			const failure = await classifyCommitFailure(root, action, taskId, now, error);
 			failure.summary += gitBaseNote;
 			return failure;

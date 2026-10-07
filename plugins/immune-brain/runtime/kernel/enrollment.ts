@@ -1,7 +1,10 @@
-// P2B0 canary enrollment core. NOT exported from kernel/index.ts.
-// Atomically creates TaskRecord v3 + workspace working claim + backend claim
-// for one confirmed canary task. Requires a valid EnrollmentCapability.
-// No CLI, runtime route, or production issuer exists in P2B0.
+// Canary enrollment core. NOT exported from kernel/index.ts.
+// Atomically creates TaskRecord v4 + workspace working claim + backend claim
+// for one confirmed canary task through a valid EnrollmentCapability.
+// Production callers go through the single `enrollTask` entry (D3): it issues
+// the capability, rehearses zero-write, runs the optional caller checkpoint,
+// then commits. `runEnrollmentRehearsal` stays exported as a zero-write
+// precheck for tests and diagnostics only.
 
 import { readRunRowByTask, withKernelRead } from "./sqlite_store";
 import { readTaskIntent } from "./intent";
@@ -52,6 +55,48 @@ export interface EnrollCanaryInput {
 	batch?: EnrollBatchContext;
 	now: string;
 }
+
+/**
+ * A rehearsal that is not ready rejects through this single typed error so the
+ * "Kernel enrollment rehearsal failed" message is produced in exactly one place
+ * (deepen-authority-seams D3). Callers that decorate it — the Pi enroll Tool
+ * appends its empty-initial-commit note — read `message` or `blockers`.
+ */
+export class EnrollmentRehearsalError extends Error {
+	readonly blockers: readonly string[];
+	constructor(blockers: readonly string[]) {
+		super(`Kernel enrollment rehearsal failed: ${blockers.join("; ")}`);
+		this.name = "EnrollmentRehearsalError";
+		this.blockers = blockers;
+	}
+}
+
+/**
+ * The one Enrollment entry's request. The entry issues the capability for this
+ * binding itself, so a caller supplies the binding, not a pre-issued capability.
+ */
+export interface EnrollmentEntryRequest {
+	binding: EnrollmentCapabilityBinding;
+	/** Present only for a batch-derived child enrollment. */
+	batch?: EnrollBatchContext;
+	now: string;
+	/**
+	 * Optional caller checkpoint run after a ready rehearsal and before the
+	 * commit. Declining cancels the Enrollment with zero Kernel writes; once the
+	 * commit has started, cancellation has no effect.
+	 */
+	checkpoint?: () => boolean;
+}
+
+/** The same request with a mandatory checkpoint: the entry yields a discriminated outcome. */
+export interface EnrollmentEntryRequestWithCheckpoint extends EnrollmentEntryRequest {
+	checkpoint: () => boolean;
+}
+
+/** The entry's outcome when a checkpoint is supplied: enrolled, or cancelled. */
+export type EnrollmentEntryOutcome =
+	| { outcome: "enrolled"; result: EnrollCanaryResult }
+	| { outcome: "cancelled" };
 
 export interface EnrollCanaryResult {
 	record: TaskRecord;
@@ -256,6 +301,104 @@ export function runEnrollmentRehearsal(
 
 function enrollmentEventId(taskId: string, now: string): string {
 	return `enroll-${taskId}-${now}`;
+}
+
+/**
+ * The single Enrollment entry (deepen-authority-seams D3): issues the
+ * capability for the supplied binding, runs the zero-write rehearsal, calls the
+ * optional caller checkpoint, and commits. A rehearsal that is not ready
+ * rejects with its blockers in the one shared message and writes nothing; a
+ * declined checkpoint cancels with zero writes; once commit has started,
+ * cancellation has no effect. Replay of a lost Enrollment keeps today's
+ * behavior because the commit step is the unchanged durable operation.
+ */
+/**
+ * A request that supplies no checkpoint, or one that is `undefined`. Only such
+ * a request is guaranteed to return the plain result: the entry has no caller
+ * window in which it could cancel.
+ */
+export interface EnrollmentEntryRequestWithoutCheckpoint extends EnrollmentEntryRequest {
+	checkpoint?: undefined;
+}
+
+/**
+ * The one Cancellation boundary. Between the readiness decision and the
+ * caller checkpoint the entry yields once, so a cancellation already queued by
+ * the host (a microtask, an already-resolved signal) is observed by the
+ * checkpoint instead of losing the race against the synchronous step that
+ * follows. Zero writes either way.
+ */
+const CANCELLATION_BOUNDARY = Promise.resolve();
+
+export async function enrollTask(
+	root: string,
+	registry: EnrollmentAuthorityRegistry,
+	request: EnrollmentEntryRequestWithCheckpoint,
+): Promise<EnrollmentEntryOutcome>;
+export async function enrollTask(
+	root: string,
+	registry: EnrollmentAuthorityRegistry,
+	request: EnrollmentEntryRequestWithoutCheckpoint,
+): Promise<EnrollCanaryResult>;
+/**
+ * The general interface shape, whose checkpoint is optional: the caller can
+ * still hold it back, so the return has to stay the full union. Without this
+ * overload a value typed `EnrollmentEntryRequest` matches neither of the two
+ * above and the call does not compile, even though the runtime answers it.
+ */
+export async function enrollTask(
+	root: string,
+	registry: EnrollmentAuthorityRegistry,
+	request: EnrollmentEntryRequest,
+): Promise<EnrollCanaryResult | EnrollmentEntryOutcome>;
+export async function enrollTask(
+	root: string,
+	registry: EnrollmentAuthorityRegistry,
+	request: EnrollmentEntryRequest,
+): Promise<EnrollCanaryResult | EnrollmentEntryOutcome> {
+	const { binding, batch, now, checkpoint } = request;
+	// (1) Issue the capability for the supplied binding.
+	const capability = registry.issue(binding);
+	const input: EnrollCanaryInput = {
+		task_id: binding.task_id,
+		intent_path: binding.intent_path,
+		intent_revision: binding.intent_revision,
+		preparation_digest: binding.preparation_digest,
+		capability,
+		capability_binding: binding,
+		...(batch ? { batch } : {}),
+		now,
+	};
+	// Replay of a lost Enrollment: the exact request already committed here, so
+	// the durable operation is the only correct answer. This must precede the
+	// rehearsal, whose precondition checks would otherwise report the now-existing
+	// TaskRecord and workspace owner as blockers and make the durable replay
+	// unreachable. A request committed for a different binding throws, so the
+	// divergent-request refusal is preserved.
+	const { eventId, digest } = digestForEnrollment(input);
+	const committed = readCommittedEnrollmentResult(root, input.task_id, eventId, digest);
+	if (committed) {
+		const result: EnrollCanaryResult = {
+			record: committed.record,
+			backend_claim: committed.claim,
+			workspace: { revision: "", state: committed.workspace },
+		};
+		return checkpoint ? { outcome: "enrolled", result } : result;
+	}
+	// (2) Rehearse: not ready rejects with the blockers and writes nothing.
+	const rehearsal = runEnrollmentRehearsal(root, input, capability, registry);
+	if (!rehearsal.rehearsed || rehearsal.evidence.outcome !== "ready")
+		throw new EnrollmentRehearsalError(rehearsal.evidence.blockers);
+	// The boundary: a cancellation the host queued while the rehearsal ran is
+	// delivered here, before the checkpoint can start the commit.
+	await CANCELLATION_BOUNDARY;
+	// (3) Optional caller checkpoint: declining cancels before any write.
+	if (checkpoint && !checkpoint()) return { outcome: "cancelled" };
+	// (4) Commit; not cancellable from here. Without a caller checkpoint the
+	// entry is the plain durable operation the replay of a lost Enrollment
+	// already handles inside `enrollCanaryTask`.
+	const result = enrollCanaryTask(root, input, registry);
+	return checkpoint ? { outcome: "enrolled", result } : result;
 }
 
 function digestForEnrollment(input: EnrollCanaryInput): {

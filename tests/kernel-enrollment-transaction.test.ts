@@ -44,7 +44,7 @@ import {
 	capabilityActionFor,
 	createCanaryApplication,
 } from "../plugins/immune-brain/runtime/kernel/canary_application";
-import { enrollCanaryTask, runEnrollmentRehearsal } from "../plugins/immune-brain/runtime/kernel/enrollment";
+import { enrollCanaryTask, enrollTask, runEnrollmentRehearsal, type EnrollmentEntryRequest } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import { preparePiCanary, readGitHead } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import {
 	createEnrollmentAuthorityRegistry,
@@ -397,6 +397,60 @@ describe("enrollment transaction", () => {
 		expect(replayed.backend_claim).toEqual(first.backend_claim);
 		expect(withKernelRead(root, (db) => readRunRowByTask(db, taskId))).toEqual(runBefore);
 		expect(registry.isConsumed(cap)).toBe(true);
+	});
+
+	test("a lost enrollment response replays through the single entry, and a divergent request is refused", async () => {
+		const root = makeRoot();
+		const taskId = "task-entry-replay-entry";
+		writeIntent(root, taskId);
+		const binding = bindingFor(root, taskId);
+		const first = await enrollTask(root, registry, { binding, now: "2026-08-12T00:00:00.000Z" });
+		const runBefore = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
+		// A retry of the exact same request answers from the durable operation
+		// instead of failing the rehearsal on the now-existing record and owner.
+		const replayed = await enrollTask(root, registry, { binding, now: "2026-08-12T00:00:00.000Z" });
+		expect(replayed.record).toEqual(first.record);
+		expect(replayed.backend_claim).toEqual(first.backend_claim);
+		expect(withKernelRead(root, (db) => readRunRowByTask(db, taskId))).toEqual(runBefore);
+		// A different binding for the same event is still refuse: the committed
+		// operation was written for a different request.
+		await expect(
+			enrollTask(root, registry, {
+				binding: { ...binding, nonce: "nonce-divergent" },
+				now: "2026-08-12T00:00:00.000Z",
+			}),
+		).rejects.toThrow(/different request/);
+		// A caller-supplied checkpoint sees the replay as enrolled, not cancelled.
+		const outcome = await enrollTask(root, registry, {
+			binding,
+			now: "2026-08-12T00:00:00.000Z",
+			checkpoint: () => false,
+		});
+		expect(outcome).toEqual({ outcome: "enrolled", result: first });
+	});
+
+	// A request typed through the general interface still resolves to the
+	// discriminated outcome: a checkpoint that declines cancels with zero
+	// writes, and one that accepts enrolls. The overload surfaces must never
+	// let a caller read `.record` off a value that can be cancelled.
+	test("a request typed as EnrollmentEntryRequest carries the discriminated outcome", async () => {
+		const root = makeRoot();
+		const taskId = "task-entry-union-type";
+		writeIntent(root, taskId);
+		const binding = bindingFor(root, taskId);
+		const request: EnrollmentEntryRequest = {
+			binding,
+			now: "2026-08-12T00:00:00.000Z",
+			checkpoint: () => false,
+		};
+		const before = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
+		const cancelled = await enrollTask(root, registry, request);
+		expect(cancelled).toEqual({ outcome: "cancelled" });
+		expect(withKernelRead(root, (db) => readRunRowByTask(db, taskId))).toEqual(before);
+
+		const accepted = await enrollTask(root, registry, { ...request, checkpoint: () => true });
+		if (accepted.outcome !== "enrolled") throw new Error("expected an enrolled outcome");
+		expect(accepted.result.record.task_id).toBe(taskId);
 	});
 
 	test("a different enrollment request for the same event is refused through enrollCanaryTask", () => {

@@ -11,7 +11,7 @@ import {
 	deriveChildEnrollment,
 	type BatchAuthorityRegistry,
 } from "../runtime/kernel/batch_authority";
-import { runEnrollmentRehearsal, enrollCanaryTask } from "../runtime/kernel/enrollment";
+import { enrollTask } from "../runtime/kernel/enrollment";
 import { createEnrollmentAuthorityRegistry } from "../runtime/kernel/enrollment_authority";
 import {
 	startBatch,
@@ -256,14 +256,8 @@ export async function executePiUnattendedBatch(
 				expected_head: b.binding.expected_head,
 				now,
 			});
-			const enrollmentCapability = enrollmentRegistry.issue(derived.binding);
-			const input = {
-				task_id,
-				intent_path: derived.binding.intent_path,
-				intent_revision: derived.binding.intent_revision,
-				preparation_digest: derived.binding.preparation_digest,
-				capability: enrollmentCapability,
-				capability_binding: derived.binding,
+			await enrollTask(taskRoot, enrollmentRegistry, {
+				binding: derived.binding,
 				batch: {
 					registry: b.registry,
 					capability: b.capability,
@@ -271,12 +265,7 @@ export async function executePiUnattendedBatch(
 					expected_head: b.binding.expected_head,
 				},
 				now,
-			};
-			const rehearsal = await runEnrollmentRehearsal(taskRoot, input, enrollmentCapability, enrollmentRegistry);
-			if (!rehearsal.rehearsed || rehearsal.evidence.outcome !== "ready") {
-				throw new Error(`Kernel enrollment rehearsal failed: ${rehearsal.evidence.blockers.join("; ")}`);
-			}
-			await enrollCanaryTask(taskRoot, input, enrollmentRegistry);
+			});
 			const recordRaw = await readTaskRecord(taskRoot, task_id);
 			return { record_revision: recordRaw.revision };
 		},

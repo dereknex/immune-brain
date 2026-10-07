@@ -303,6 +303,53 @@ async function submitObservedReview(
 }
 
 describe("claude host authority", () => {
+	// The migrated Claude enroll path awaits the single Enrollment entry inside
+	// its try/catch, so a rehearsal rejection still carries the empty-initial-
+	// commit diagnostic the synchronous predecessor appended.
+	test("an enrollment rehearsal rejection keeps the empty initial commit diagnostic", async () => {
+		const root = mkdtempSync(join(tmpdir(), "claude-unborn-enroll-"));
+		const taskId = "unborn-enroll-diagnostic";
+		const intent = {
+			contract: "assurance_kernel/task_intent/v1",
+			task_id: taskId,
+			owner: "user",
+			goal: "exercise the unborn-repository enrollment diagnostic",
+			acceptance: [{ id: "acc-1", assertion: "the artifact exists", verification: "bun test" }],
+			scope_hint: ["src", `docs/plans/${taskId}.intent.json`],
+			risk: "routine",
+			revision: 1,
+		};
+		mkdirSync(join(root, ".imm", "state"), { recursive: true });
+		mkdirSync(join(root, "src"), { recursive: true });
+		mkdirSync(join(root, "docs", "plans"), { recursive: true });
+		writeFileSync(join(root, "docs", "plans", `${taskId}.intent.json`), `${JSON.stringify(intent, null, 2)}\n`);
+		writeFileSync(join(root, "src", "task.ts"), "export const value = 1;\n");
+		// An unborn repository with the in-scope file already staged: the entry's
+		// empty initial commit makes that file dirty relative to the base, so
+		// the rehearsal refuses.
+		execFileSync("git", ["init", "-q", "-b", "main"], { cwd: root, stdio: "ignore" });
+		execFileSync("git", ["add", "-A"], { cwd: root, stdio: "ignore" });
+		const runtime = new ClaudeRuntime({
+			cwd: root,
+			env: ENV,
+			interactive: true,
+			permissionMode: "manual",
+			requestConfirmation: async ({ operation }) => ({ decision: "accept", requestId: `nested-${operation}` }),
+		});
+		const error = await runtime.enroll(taskId, {
+			taskId,
+			sessionId: "s",
+			toolCallId: "enroll",
+			requiresUserInteraction: true,
+			interactive: true,
+			permissionMode: "manual",
+		}).then(() => null, (cause: unknown) => cause as Error);
+		expect(error).toBeInstanceOf(Error);
+		expect((error as Error).message).toMatch(/; empty initial commit [0-9a-f]{7,40} remains/);
+		// The refusal leaves no Kernel authority behind.
+		expect(existsSync(join(root, ".imm", "state", "workspace.json"))).toBe(false);
+	});
+
 	test("privileged tools use the standard MCP destructive hint without vendor permission metadata", () => {
 		const tools = listMcpTools();
 		for (const name of ["enroll", "request_authorization", "approve_breaking_intent_revision", "stop"]) {
@@ -1295,11 +1342,21 @@ function authorityState(root: string) {
 	const run = withKernelRead(root, (db) => readRunRowByTask(db, RESOLVE_TASK));
 	const dbPath = join(root, ".imm", "state", "kernel.sqlite");
 	const stat = statSync(dbPath);
+	// The store's logical content, not its physical bytes: a rejected or rolled
+	// back transaction still leaves SQLite with more allocated pages, so the file
+	// size (and any inode churn around it) is a storage artifact rather than an
+	// authority write. Dumping every table is strictly stronger than comparing a
+	// byte count, because it also catches an in-place change of equal length.
+	const store = withKernelRead(root, (db) =>
+		(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as { name: string }[])
+			.map(({ name }) => `${name}=${JSON.stringify(db.prepare(`SELECT * FROM "${name}"`).all())}`)
+			.join(";"),
+	);
 	return {
 		run: run ? `${run.state}/${run.claim_status}/${run.revision}/${run.record_json}` : "ENOENT",
 		claim: readBackendClaim(root),
 		workspace: readWorkspaceStateRaw(root).state.current_working ?? null,
-		db: { ino: stat.ino, size: stat.size },
+		db: { ino: stat.ino, store },
 		retired: [
 			join(root, ".imm", "state", "tasks"),
 			join(root, ".imm", "state", "workspace.json"),
@@ -1407,6 +1464,9 @@ describe("claude host resolve_finding", () => {
 		const root = makeResolveFindingRoot();
 		const mcp = await resolveFindingRuntime(root);
 		const original = authorityState(root);
+		// Non-vacuity: the store digest must actually carry the durable rows,
+		// otherwise "byte-identical" would compare two empty strings.
+		expect(original.db.store).toContain("runs=");
 
 		// Structural rejection, before the Kernel is reached.
 		await expect(mcp.callTool("resolve_finding", { task_id: RESOLVE_TASK })).rejects.toThrow("finding_id is required");
@@ -1540,6 +1600,9 @@ describe("claude host resolve_finding", () => {
 		const root = makeResolveFindingRoot(false);
 		const mcp = await resolveFindingRuntime(root);
 		const original = authorityState(root);
+		// Non-vacuity: the store digest must actually carry the durable rows,
+		// otherwise "byte-identical" would compare two empty strings.
+		expect(original.db.store).toContain("runs=");
 
 		await expect(mcp.callTool("refute_finding", { task_id: RESOLVE_TASK })).rejects.toThrow("finding_id is required");
 		await expect(mcp.callTool("refute_finding", { task_id: RESOLVE_TASK, finding_id: "f-blocking" }))

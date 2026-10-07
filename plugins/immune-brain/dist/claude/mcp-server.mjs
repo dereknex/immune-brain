@@ -8099,6 +8099,14 @@ function deriveChildEnrollment(root, registry, input) {
 }
 
 // plugins/immune-brain/runtime/kernel/enrollment.ts
+class EnrollmentRehearsalError extends Error {
+  blockers;
+  constructor(blockers) {
+    super(`Kernel enrollment rehearsal failed: ${blockers.join("; ")}`);
+    this.name = "EnrollmentRehearsalError";
+    this.blockers = blockers;
+  }
+}
 function runEnrollmentPreconditionChecks(root, input, capability, registry, mode, beforeLock, onReady) {
   const blockers = [];
   let validated = null;
@@ -8206,6 +8214,39 @@ function runEnrollmentRehearsal(root, input, capability, registry) {
 }
 function enrollmentEventId(taskId, now) {
   return `enroll-${taskId}-${now}`;
+}
+var CANCELLATION_BOUNDARY = Promise.resolve();
+async function enrollTask(root, registry, request) {
+  const { binding, batch, now, checkpoint } = request;
+  const capability = registry.issue(binding);
+  const input = {
+    task_id: binding.task_id,
+    intent_path: binding.intent_path,
+    intent_revision: binding.intent_revision,
+    preparation_digest: binding.preparation_digest,
+    capability,
+    capability_binding: binding,
+    ...batch ? { batch } : {},
+    now
+  };
+  const { eventId, digest } = digestForEnrollment(input);
+  const committed = readCommittedEnrollmentResult(root, input.task_id, eventId, digest);
+  if (committed) {
+    const result = {
+      record: committed.record,
+      backend_claim: committed.claim,
+      workspace: { revision: "", state: committed.workspace }
+    };
+    return checkpoint ? { outcome: "enrolled", result } : result;
+  }
+  const rehearsal = runEnrollmentRehearsal(root, input, capability, registry);
+  if (!rehearsal.rehearsed || rehearsal.evidence.outcome !== "ready")
+    throw new EnrollmentRehearsalError(rehearsal.evidence.blockers);
+  await CANCELLATION_BOUNDARY;
+  if (checkpoint && !checkpoint())
+    return { outcome: "cancelled" };
+  const result = enrollCanaryTask(root, input, registry);
+  return checkpoint ? { outcome: "enrolled", result } : result;
 }
 function digestForEnrollment(input) {
   const eventId = enrollmentEventId(input.task_id, input.now);
@@ -13015,21 +13056,7 @@ class ClaudeRuntime {
         confirmation_ref: gate.confirmation_ref,
         nonce
       };
-      const capability = this.enrollmentRegistry.issue(binding);
-      const input = {
-        task_id: taskId,
-        intent_path: binding.intent_path,
-        intent_revision: binding.intent_revision,
-        preparation_digest: binding.preparation_digest,
-        capability,
-        capability_binding: binding,
-        now
-      };
-      const rehearsal = runEnrollmentRehearsal(this.cwd, input, capability, this.enrollmentRegistry);
-      if (!rehearsal.rehearsed || rehearsal.evidence.outcome !== "ready") {
-        throw new Error(`Kernel enrollment rehearsal failed: ${rehearsal.evidence.blockers.join("; ")}`);
-      }
-      return enrollCanaryTask(this.cwd, input, this.enrollmentRegistry);
+      return await enrollTask(this.cwd, this.enrollmentRegistry, { binding, now });
     } catch (error) {
       if (gitBaseNote)
         throw new Error(`${error instanceof Error ? error.message : String(error)}${gitBaseNote}`);
@@ -13544,14 +13571,8 @@ class ClaudeRuntime {
           expected_head: batch.binding.expected_head,
           now
         });
-        const enrollmentCapability = this.enrollmentRegistry.issue(derived.binding);
-        const input = {
-          task_id,
-          intent_path: derived.binding.intent_path,
-          intent_revision: derived.binding.intent_revision,
-          preparation_digest: derived.binding.preparation_digest,
-          capability: enrollmentCapability,
-          capability_binding: derived.binding,
+        await enrollTask(root, this.enrollmentRegistry, {
+          binding: derived.binding,
           batch: {
             registry: batch.registry,
             capability: batch.capability,
@@ -13559,12 +13580,7 @@ class ClaudeRuntime {
             expected_head: batch.binding.expected_head
           },
           now
-        };
-        const rehearsal = runEnrollmentRehearsal(root, input, enrollmentCapability, this.enrollmentRegistry);
-        if (!rehearsal.rehearsed || rehearsal.evidence.outcome !== "ready") {
-          throw new Error(`Kernel enrollment rehearsal failed: ${rehearsal.evidence.blockers.join("; ")}`);
-        }
-        enrollCanaryTask(root, input, this.enrollmentRegistry);
+        });
         const recordRaw = readTaskRecordRaw(root, task_id);
         return { record_revision: recordRaw.revision };
       },

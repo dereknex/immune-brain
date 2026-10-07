@@ -1,7 +1,70 @@
 // Validates 2026-08-20-015 relocate-enrollment-confirmation.
 // Three acceptances: single confirmation for routine, Enrollment defers descriptor execution to QA, digest binding.
 
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test, mock } from "bun:test";
+// Delivery QA has no node_modules; use the host seam only when the real package
+// is absent. imm-canary-enroll.ts builds its Tool schemas with typebox.
+try { await import("typebox"); } catch {
+	const optional = Symbol("optional");
+	mock.module("typebox", () => ({ Type: {
+		Array: (items: object) => ({ type: "array", items }),
+		Boolean: () => ({ type: "boolean" }),
+		Literal: (value: unknown) => ({ const: value }),
+		Null: () => ({ type: "null" }),
+		Number: () => ({ type: "number" }),
+		Object: (properties: Record<string, any>, options: object = {}) => ({
+			type: "object", properties,
+			required: Object.entries(properties).filter(([, value]) => !value[optional]).map(([key]) => key),
+			...options,
+		}),
+		Optional: (schema: Record<string, unknown>) => ({ ...schema, [optional]: true }),
+		Record: (_key: object, value: object) => ({ type: "object", additionalProperties: value }),
+		String: (options: object) => ({ type: "string", ...options }),
+		Union: (anyOf: object[]) => ({ anyOf }),
+		Unknown: () => ({}),
+	} }));
+}
+try { await import("@earendil-works/pi-coding-agent"); } catch {
+	class DynamicBorder {
+		constructor(private style: (text: string) => string) {}
+		render(width: number) { return [this.style("\u2500".repeat(Math.max(0, width)))]; }
+	}
+	mock.module("@earendil-works/pi-coding-agent", () => ({ DynamicBorder }));
+}
+try { await import("@earendil-works/pi-tui"); } catch {
+	class Text {
+		constructor(private text: string) {}
+		setText(text: string) { this.text = text; }
+		render() { return this.text.split("\n"); }
+		invalidate() {}
+	}
+	class Container {
+		private children: Array<{ render(width: number): string[] }> = [];
+		addChild(child: { render(width: number): string[] }) { this.children.push(child); }
+		render(width: number) { return this.children.flatMap((child) => child.render(width)); }
+		invalidate() { for (const child of this.children) (child as { invalidate?: () => void }).invalidate?.(); }
+	}
+	class SelectList {
+		onSelect?: (item: unknown) => void;
+		onCancel?: () => void;
+		private selected = 0;
+		constructor(private items: Array<{ label: string }>) {}
+		render() { return this.items.map((item, index) => `${index === this.selected ? "> " : "  "}${item.label}`); }
+		handleInput(input: string) {
+			if (input === "\u001b[B") this.selected = Math.min(this.items.length - 1, this.selected + 1);
+			else if (input === "\u001b[A") this.selected = Math.max(0, this.selected - 1);
+			else if (input === "\r") this.onSelect?.(this.items[this.selected]!);
+			else if (input === "\u001b") this.onCancel?.();
+		}
+	}
+	mock.module("@earendil-works/pi-tui", () => ({
+		Container, SelectList, Text,
+		sliceByColumn: (text: string, start: number, width?: number) => text.slice(start, width === undefined ? undefined : start + width),
+		truncateToWidth: (text: string, width: number, marker = "") => text.length <= width ? text : `${text.slice(0, Math.max(0, width - marker.length))}${marker}`,
+		visibleWidth: (text: string) => text.length,
+	}));
+}
+afterAll(() => mock.restore());
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, readdirSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
