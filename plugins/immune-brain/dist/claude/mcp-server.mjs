@@ -2849,6 +2849,14 @@ function taskRevisionIdentity(projectRoot, scopeHint, baseHead, taskId) {
     changed_paths: Object.keys(snapshot.changed_paths).sort(comparePaths)
   };
 }
+function taskDeliveryIdentity(projectRoot, record) {
+  if (record.contract === "assurance_kernel/task_record/v4") {
+    if (!record.git_base_head)
+      throw new Error("TaskRecord v4 is missing git_base_head");
+    return taskRevisionIdentity(projectRoot, record.intent_snapshot.scope_hint, record.git_base_head, record.task_id);
+  }
+  return taskDiffIdentity(projectRoot, record.intent_snapshot.scope_hint, record.task_id);
+}
 function taskCommitRevisionIdentity(projectRoot, scopeHint, baseHead, commit) {
   const requested = resolve2(projectRoot);
   if (lstatSync2(requested).isSymbolicLink())
@@ -7004,7 +7012,7 @@ function projectFromRecord(record, recordRevision, workspaceRevision, snapshot) 
     })
   };
 }
-async function projectAssurance(root, taskId, diffProvider) {
+async function projectAssurance(root, taskId, diffProvider = taskDeliveryIdentity) {
   const fail = (error, claim = null) => ({
     contract: "assurance_kernel/assurance_projection/v1",
     task_id: taskId,
@@ -7113,7 +7121,8 @@ async function projectAssurance(root, taskId, diffProvider) {
 
 // plugins/immune-brain/runtime/kernel/application.ts
 function applyTaskAction(input) {
-  const { root, task_id, prior_intent_token, registry, capability, diffProvider } = input;
+  const { root, task_id, prior_intent_token, registry, capability } = input;
+  const diffProvider = input.diffProvider ?? taskDeliveryIdentity;
   return withKernelStoreLock(root, () => {
     const current = readTaskRecordRaw(root, task_id);
     if (!current.record)
@@ -7408,7 +7417,7 @@ function createCanaryApplication(registry) {
         record: current.record
       };
     });
-    const diffHash = asTaskDiffSnapshot(input.diffProvider(input.root, snapshot.record)).diff_hash;
+    const diffHash = asTaskDiffSnapshot((input.diffProvider ?? taskDeliveryIdentity)(input.root, snapshot.record)).diff_hash;
     if (operation.op === "stop" && !("capability" in operation))
       throw new KernelInvariantError(["stop requires user authority capability"]);
     const hasBoundSpec = boundSpecPath(snapshot.intent_snapshot) !== undefined;
@@ -10583,11 +10592,11 @@ async function captureBatchReconfirmation(root, record, children) {
     const capturedProof = JSON.parse(decode(capture(proofPath)));
     if (!matchesLocalProof(local.terminal_proof_json, capturedProof) || !matchesLocalProof(local.terminal_proof_json, pair.proof))
       refuse();
-    const identity = taskRevisionIdentity(root, r.intent_snapshot.scope_hint, r.git_base_head, r.task_id);
+    const identity = taskDeliveryIdentity(root, r);
     const projection = await projectAssurance(root, child.task_id, (cwd, task) => {
       if (task.contract !== "assurance_kernel/task_record/v4" || !task.git_base_head)
         refuse();
-      return taskRevisionIdentity(cwd, task.intent_snapshot.scope_hint, task.git_base_head, task.task_id);
+      return taskDeliveryIdentity(cwd, task);
     });
     if (projection.error || projection.claim || projection.projection.run_id !== run || projection.projection.lifecycle !== "done" || !projection.projection.completion_ready || projection.projection.intent_content_hash !== currentHash || projection.projection.diff_hash !== identity.diff_hash || !projection.projection.fresh_approval_kinds.includes("qa") || projection.projection.risk !== "routine" && !projection.projection.fresh_approval_kinds.includes("review"))
       refuse();
@@ -10621,7 +10630,7 @@ async function captureBatchReconfirmation(root, record, children) {
       if (!pair || pair.record.contract !== "assurance_kernel/task_record/v4" || !pair.record.git_base_head)
         refuse();
       const local = withKernelRead(root, (db) => readRunRowByTask(db, c.task));
-      const diff = taskRevisionIdentity(root, pair.record.intent_snapshot.scope_hint, pair.record.git_base_head, c.task);
+      const diff = taskDeliveryIdentity(root, pair.record);
       if (localRunId(root, c.task) !== c.run || JSON.stringify(local) !== c.local || JSON.stringify(diff) !== c.identity)
         refuse();
     }
@@ -12648,12 +12657,7 @@ async function driveInterruptedChild(input, child) {
 
 // plugins/immune-brain/runtime/claude/kernel_ports.ts
 function diffSnapshotOf(root, record) {
-  if (record.contract === "assurance_kernel/task_record/v4") {
-    if (!record.git_base_head)
-      throw new Error("TaskRecord v4 is missing git_base_head");
-    return taskRevisionIdentity(root, record.intent_snapshot.scope_hint, record.git_base_head, record.task_id);
-  }
-  return taskDiffIdentity(root, record.intent_snapshot.scope_hint, record.task_id);
+  return taskDeliveryIdentity(root, record);
 }
 function diffHashOf(root, record) {
   return diffSnapshotOf(root, record).diff_hash;

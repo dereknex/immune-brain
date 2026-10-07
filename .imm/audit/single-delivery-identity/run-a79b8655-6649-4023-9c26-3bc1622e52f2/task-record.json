@@ -1,0 +1,351 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "single-delivery-identity",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "single-delivery-identity",
+    "goal": "Implement Slice S2 of docs/specs/deepen-authority-seams.spec.md (Initiative deepen-authority-seams): one function in runtime/workspace_scope.ts computes a TaskRecord's delivery identity; hosts and the CLI stop selecting the identity family. Pre-v4 records stay readable.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Per D2 and invariants I3, I5 of docs/specs/deepen-authority-seams.spec.md (sources U1, E4): runtime/workspace_scope.ts exports one function that returns the delivery identity (diff_hash, changed_paths) for a root and a TaskRecord. Positive: a v4 record with git_base_head yields the revision-family identity and a pre-v4 record yields the index-family identity. Negative: a v4 record without git_base_head throws. Bound: projectAssurance and the Kernel application modules use this function when no provider is supplied, and a supplied diffProvider still overrides it. Agreed seams: tests/kernel-assurance-projection.test.ts, tests/kernel-canary-application.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-assurance-projection.test.ts\",\n      \"tests/kernel-canary-application.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Per D2 and invariant I1 of docs/specs/deepen-authority-seams.spec.md: the Claude adapter, the Pi adapter and commands/kernel.ts obtain delivery identity from the shared function and no longer branch on record.contract to choose between taskRevisionIdentity and taskDiffIdentity. For the same v4 record and for the same pre-v4 record both hosts report the identity the shared function returns; a changed git_base_head changes it. Agreed seams: tests/review-revision-identity-conformance.test.ts, tests/claude-host-authority.test.ts, tests/pi-canary-work-extension.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-revision-identity-conformance.test.ts\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/pi-canary-work-extension.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Per D2 of docs/specs/deepen-authority-seams.spec.md: batch plan reconfirmation delegates the computation to the shared function and keeps its refusal: a settled child that is not v4 or lacks git_base_head is refused, a v4 child reconfirms. Agreed seam: tests/batch-plan-reconfirmation.test.ts. Revision 2 note: the revision-1 descriptor allotted 120000ms for this suite, but it is a heavy integration suite (~95s in a local delivery tree, ~1.4x slower under Kernel QA materialization), so the first QA round timed out at exactly the limit with the suite otherwise green; the descriptor timeout is raised to 300000ms to match the suite's real runtime. No assertion or test changed.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-plan-reconfirmation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "plugins/immune-brain/dist/claude/mcp-server.mjs is regenerated from the changed runtime sources and matches a fresh generate; no hand edit to the bundle. Agreed seam: tests/claude-host-package.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/single-delivery-identity.md",
+      "docs/plans/single-delivery-identity.intent.json",
+      "docs/specs/deepen-authority-seams.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/commands/kernel.ts",
+      "plugins/immune-brain/runtime/kernel/application.ts",
+      "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+      "plugins/immune-brain/runtime/kernel/canary_application.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts",
+      "plugins/immune-brain/runtime/workspace_scope.ts",
+      "tests/batch-plan-reconfirmation.test.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/kernel-assurance-projection.test.ts",
+      "tests/kernel-canary-application.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/review-revision-identity-conformance.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/single-delivery-identity.intent.json",
+    "content_hash": "sha256:1761ef6fcbee2f8c822aa8582fa27c42dc3aa81768af1f24513607c54a47cf5b"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:9413e8108214132f390cd5740daa8603d13e2bf58167347ef17a00cd094b79f1",
+  "git_base_head": "778344687d617089016e153e24dff9c6e65d98b3",
+  "attestations": [
+    {
+      "id": "approval-qa-e025fd3d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:1761ef6fcbee2f8c822aa8582fa27c42dc3aa81768af1f24513607c54a47cf5b",
+      "diff_hash": "sha256:faa96ee8dad0ead93bbf8194725988aa0c3278c5b30d210d44732bc17b8c8338",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:7dd5fd532c484aa89f1ac2aae75d5159462350a033234a0994eea707d5a0f429",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:7dd5fd532c484aa89f1ac2aae75d5159462350a033234a0994eea707d5a0f429"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:7dd5fd532c484aa89f1ac2aae75d5159462350a033234a0994eea707d5a0f429"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:7dd5fd532c484aa89f1ac2aae75d5159462350a033234a0994eea707d5a0f429"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:7dd5fd532c484aa89f1ac2aae75d5159462350a033234a0994eea707d5a0f429"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-fe5537c6",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:1761ef6fcbee2f8c822aa8582fa27c42dc3aa81768af1f24513607c54a47cf5b",
+      "diff_hash": "sha256:0a798889f58295d210b4443baf2e296c0421e2b7665d0cfcf50094c25e01743a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:26574d30ed0695549c0c138809fc55585b7b62b71ddad5bbba95df291bde828c",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:26574d30ed0695549c0c138809fc55585b7b62b71ddad5bbba95df291bde828c"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:26574d30ed0695549c0c138809fc55585b7b62b71ddad5bbba95df291bde828c"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:26574d30ed0695549c0c138809fc55585b7b62b71ddad5bbba95df291bde828c"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:26574d30ed0695549c0c138809fc55585b7b62b71ddad5bbba95df291bde828c"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-2ee7ea7c",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:1761ef6fcbee2f8c822aa8582fa27c42dc3aa81768af1f24513607c54a47cf5b",
+      "diff_hash": "sha256:0a798889f58295d210b4443baf2e296c0421e2b7665d0cfcf50094c25e01743a",
+      "actor_id": "parent-mediated-review",
+      "summary": "已验证 manifest、snapshot、diff 摘要及 immutable commit 的唯一 parent、tree、全部变更路径；共享 delivery identity 保留 v4/pre-v4 行为、provider override 与 batch refusal，验收 seam 和生成 bundle 与 Kernel QA 通过证据一致，未发现阻断问题。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "778344687d617089016e153e24dff9c6e65d98b3",
+        "review_commit": "b4005181e364541d82da927f627762853945ffc3",
+        "review_tree": "103600a98b3142759310330f360dea92196b510e",
+        "manifest_digest": "sha256:40752c7ac6753290607fded4288ef6d3341cf3f9202a979ce1fd685431081054"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-AC3-a47f7de9-a13cdd",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC3",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1, timed out) stdout=28B stderr=2223B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "review-60ef45c07310-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "AC2 的双宿主 identity 验收缺少 Pi 行为覆盖：tests/review-revision-identity-conformance.test.ts:220-241 的新增测试只调用 Claude 的 diffSnapshotOf 和 Kernel 的 projectAssurance，未调用 Pi 宿主；已有双宿主测试仅比较 v4 Review revision。请在约定 seam 中通过实际 Pi projection/port，对同一个 v4、pre-v4 record 及变更后的 git_base_head 比较两宿主与共享 selector 的 identity。",
+      "anchor": "sha256:9f4a0533d26fb0f9dde319f6417dabda1224d7aa3d5b1b4d3604dee3d75e8dee",
+      "evidence": {
+        "trigger": "同一 pre-v4 TaskRecord 交给 Claude 和 Pi，或同一 v4 record 的 git_base_head 改变时，新增 conformance 测试没有取得 Pi 的结果；即使 Pi 在这些输入下报告错误 identity，该测试仍会通过。直接按 AC2 检查的 unchanged tests/pi-canary-work-extension.test.ts 和 tests/claude-host-authority.test.ts 也没有该双宿主 legacy/base-head 对照。",
+        "caller_chain": [
+          "tests/review-revision-identity-conformance.test.ts:220",
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:projectAssuranceForTask",
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:diffSnapshotOf",
+          "plugins/immune-brain/runtime/workspace_scope.ts:taskDeliveryIdentity"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-60ef45c07310-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "AC3 指定的 pre-v4 与缺失 git_base_head 拒绝边界未在约定 batch seam 中验证。tests/batch-plan-reconfirmation.test.ts:300-359 的负向矩阵覆盖 batch baseline、proof 和 delivery drift，但没有 settled child 的 record contract/base-head 控制。请在该 suite 添加两种 child record 输入的拒绝断言，并保留现有 v4 成功及零写入检查。",
+      "anchor": "sha256:3ad019da17b7600622ed4ea31f57bd13e031729bd47d1de1c70134a1a3a98978",
+      "evidence": {
+        "trigger": "settled child 的 TaskRecord 为 pre-v4，或为 v4 但缺少 git_base_head。为核对 AC3 明确命名的 seam 而读取的 unchanged tests/batch-plan-reconfirmation.test.ts 没有构造这两种输入；其中 missing-baseline 修改的是 BatchRunStateRecord.base_head，而非 child TaskRecord.git_base_head，因此不覆盖该拒绝边界。",
+        "caller_chain": [
+          "tests/batch-plan-reconfirmation.test.ts:300",
+          "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts:captureBatchReconfirmation",
+          "plugins/immune-brain/runtime/workspace_scope.ts:taskDeliveryIdentity"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC3"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:single-delivery-identity:2026-10-07T11:21:13.608Z",
+      "at": "2026-10-07T11:21:13.608Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/single-delivery-identity.intent.json"
+    },
+    {
+      "id": "request_rework:single-delivery-identity:2026-10-07T11:24:31.328Z",
+      "at": "2026-10-07T11:24:31.328Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:3116cdfdd06490eb9f5da51edaa24502b58fbcfb7d101c82b336941fddf529b0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-1acde92ff95a2ed6",
+        "issued_at": "2026-10-07T11:24:31.329Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:single-delivery-identity:2026-10-07T11:56:38.166Z",
+      "at": "2026-10-07T11:56:38.166Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:32a78e2ea256b738ac49c11c41e03379dba0c126cb8e7a554a4e641bd59088c3",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-89211124c943e673",
+        "issued_at": "2026-10-07T11:56:38.680Z"
+      }
+    },
+    {
+      "id": "resolve_finding:single-delivery-identity:2026-10-07T11:56:53.930Z",
+      "at": "2026-10-07T11:56:53.930Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-AC3-a47f7de9-a13cdd\naction_v2_sha256:8fbaea0f653c4c9163a9d9ca6ee514ef24269ef710804eb01984990e28a988a2"
+    },
+    {
+      "id": "freeze_artifacts:single-delivery-identity:2026-10-07T11:56:59.535Z",
+      "at": "2026-10-07T11:56:59.535Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/single-delivery-identity.intent.json"
+    },
+    {
+      "id": "record_approval:single-delivery-identity:2026-10-07T12:00:56.523Z",
+      "at": "2026-10-07T12:00:56.523Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e025fd3d\naction_v2_sha256:765f67674d7504bf31e56ed92fe8f257bf4f0b4442227e6ad8338cbee1698c40",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-612ecd8b559d56e7",
+        "issued_at": "2026-10-07T12:00:56.524Z"
+      }
+    },
+    {
+      "id": "request_rework:single-delivery-identity:2026-10-07T12:03:28.788Z",
+      "at": "2026-10-07T12:03:28.788Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:eb3c23835e677e3badce9e263af6ba115cc3402aca1cf7963c17980c428ae4a3",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-0fd7bf63cf2d4b2f",
+        "issued_at": "2026-10-07T12:03:28.788Z"
+      }
+    },
+    {
+      "id": "resolve_finding:single-delivery-identity:2026-10-07T12:14:50.386Z",
+      "at": "2026-10-07T12:14:50.386Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-60ef45c07310-1-review-1\naction_v2_sha256:d518dc2e91daff209b9d36da405c6accc4fcde0192e4b3a2ace5b69d79446b3a"
+    },
+    {
+      "id": "resolve_finding:single-delivery-identity:2026-10-07T12:14:55.976Z",
+      "at": "2026-10-07T12:14:55.976Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-60ef45c07310-2-review-2\naction_v2_sha256:8c619de06ab8224e04104e3bae7fe338503470612f216eab00a4697dabe4193e"
+    },
+    {
+      "id": "freeze_artifacts:single-delivery-identity:2026-10-07T12:15:01.921Z",
+      "at": "2026-10-07T12:15:01.921Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/single-delivery-identity.intent.json"
+    },
+    {
+      "id": "record_approval:single-delivery-identity:2026-10-07T12:19:24.438Z",
+      "at": "2026-10-07T12:19:24.438Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-fe5537c6\naction_v2_sha256:c178a7d2a00cb5ec640eab68bcd4927e8bff08a34a3f77cac3f0bdf59d4007d3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-ddddfe2f835ac2cf",
+        "issued_at": "2026-10-07T12:19:24.438Z"
+      }
+    },
+    {
+      "id": "record_approval:single-delivery-identity:2026-10-07T12:22:09.781Z",
+      "at": "2026-10-07T12:22:09.781Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-2ee7ea7c\naction_v2_sha256:ced2fce640ebff6b58f3f209dc3c09ab9d6a4f0d421ec81d941722e905fca36c",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-a33b600c95b8f034",
+        "issued_at": "2026-10-07T12:22:09.781Z"
+      }
+    },
+    {
+      "id": "complete:single-delivery-identity:2026-10-07T12:22:11.603Z",
+      "at": "2026-10-07T12:22:11.603Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:4c9c3e441b2c992fb360d943b297604a751b68f4734721ad243300a31c36718e"
+    }
+  ]
+}

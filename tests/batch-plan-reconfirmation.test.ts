@@ -300,7 +300,7 @@ describe("bounded batch plan reconfirmation", () => {
 	it("independently refuses every invalid binding with exact nonempty authority/audit/index/ref bytes", async () => {
 		const f = await fixture("pi"), restore = restorePoint(f.root);
 		const row = withKernelRead(f.root, db => readRunRowByTask(db, f.task))!;
-		for (const failure of ["digest", "missing-baseline", "order", "task", "slice", "dependencies", "pending-intent", "foreign-run", "late-run", "stale-delivery", "dirty-unrelated", "head", "branch", "commits", "child-commit", "short-oid", "nonhex-oid", "commit-evidence", "proof-timestamp"]) {
+		for (const failure of ["digest", "missing-baseline", "order", "task", "slice", "dependencies", "pending-intent", "foreign-run", "late-run", "stale-delivery", "dirty-unrelated", "head", "branch", "commits", "child-commit", "short-oid", "nonhex-oid", "commit-evidence", "proof-timestamp", "child-pre-v4", "child-missing-base"]) {
 		try {
 		const preflight = await projectBatchPreflight({ root: f.root, initiative_slug: f.slug });
 		expect(preflight.ok).toBe(true);
@@ -328,6 +328,31 @@ describe("bounded batch plan reconfirmation", () => {
 				put(f.root, path, { ...proof, terminalized_at: new Date(Date.parse(proof.terminalized_at) + 1000).toISOString() });
 				git(f.root, "add", path); break;
 			}
+			// The settled child's TaskRecord itself: a pre-v4 contract, or a v4
+			// contract whose git_base_head is missing. The audit pair and the SQLite
+			// run row are rewritten consistently so the refusal is attributable to
+			// the record contract, not to divergent evidence bytes.
+			case "child-pre-v4":
+			case "child-missing-base": {
+				const recordPath = `.imm/audit/${f.task}/${f.runId}/task-record.json`;
+				const settled = JSON.parse(readFileSync(join(f.root, recordPath), "utf8")) as Record<string, unknown>;
+				const { git_base_head: _childBase, ...withoutBase } = settled;
+				const mutated = failure === "child-pre-v4"
+					? { ...withoutBase, contract: "assurance_kernel/task_record/v3" }
+					: { ...withoutBase, contract: "assurance_kernel/task_record/v4" };
+				const bytes = `${JSON.stringify(mutated, null, 2)}\n`;
+				writeFileSync(join(f.root, recordPath), bytes);
+				const proofPath = `.imm/audit/${f.task}/${f.runId}/terminal-proof.json`;
+				const proof = JSON.parse(readFileSync(join(f.root, proofPath), "utf8")) as Record<string, unknown>;
+				proof.final_record_hash = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+				put(f.root, proofPath, proof);
+				git(f.root, "add", recordPath, proofPath);
+				withKernelTransaction(f.root, db => {
+					db.prepare("UPDATE runs SET record_json = ?, terminal_proof_json = ? WHERE run_id = ?")
+						.run(bytes, JSON.stringify(proof), f.runId);
+				});
+				break;
+			}
 			case "stale-delivery": writeFileSync(join(f.root, "src/child-1.txt"), "changed after QA\n"); git(f.root, "add", "src/child-1.txt"); break;
 			case "dirty-unrelated": writeFileSync(join(f.root, "unrelated.txt"), "unrelated\n"); git(f.root, "add", "unrelated.txt"); break;
 			case "head": git(f.root, "commit", "--allow-empty", "--only", "-qm", "external HEAD movement"); break;
@@ -346,8 +371,9 @@ describe("bounded batch plan reconfirmation", () => {
 		expect(snapshot(f.root), failure).toEqual(before);
 		} finally {
 			restore();
-			if (failure === "foreign-run" || failure === "late-run") withKernelTransaction(f.root, db => {
-				db.prepare("UPDATE runs SET enrollment_event_id = ?, created_at = ? WHERE run_id = ?").run(row.enrollment_event_id, row.created_at, f.runId);
+			if (failure === "foreign-run" || failure === "late-run" || failure === "child-pre-v4" || failure === "child-missing-base") withKernelTransaction(f.root, db => {
+				db.prepare("UPDATE runs SET enrollment_event_id = ?, created_at = ?, record_json = ?, terminal_proof_json = ? WHERE run_id = ?")
+					.run(row.enrollment_event_id, row.created_at, row.record_json, row.terminal_proof_json, f.runId);
 			});
 		}
 		}

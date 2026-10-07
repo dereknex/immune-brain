@@ -42,7 +42,7 @@ import { reconcileKernelAuthority, repairKernelAuthority } from "../kernel/stora
 import { inspectEnrollmentGitBase, enrollmentGitBaseNotice, initializeEnrollmentGitBase } from "../assurance/enrollment_git_base";
 import { preparePiCanary, revalidatePiCanary } from "../kernel/pi_canary_prepare";
 import { runDeterministicQa } from "../assurance/qa";
-import { taskDiffIdentity, taskRevisionIdentity } from "../workspace_scope";
+import { taskDeliveryIdentity } from "../workspace_scope";
 import { batchReason } from "../unattended/batch_reasons";
 import { deriveAuthorizationOperation } from "../authorization_operation";
 import { LITERAL_USER_ACTOR_ID, canonicalActorId } from "../kernel/actor_identity";
@@ -96,11 +96,7 @@ export function diffSnapshotOf(root: string, record: TaskRecord): {
 	diff_hash: string;
 	changed_paths: readonly string[];
 } {
-	if (record.contract === "assurance_kernel/task_record/v4") {
-		if (!record.git_base_head) throw new Error("TaskRecord v4 is missing git_base_head");
-		return taskRevisionIdentity(root, record.intent_snapshot.scope_hint, record.git_base_head, record.task_id);
-	}
-	return taskDiffIdentity(root, record.intent_snapshot.scope_hint, record.task_id);
+	return taskDeliveryIdentity(root, record);
 }
 
 export function diffHashOf(root: string, record: TaskRecord): string {

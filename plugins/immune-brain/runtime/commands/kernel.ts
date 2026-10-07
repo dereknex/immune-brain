@@ -29,7 +29,7 @@ import {
 import { inspectSpecBinding } from "../kernel/spec_binding";
 import { projectTask, resolveProjectedRisk } from "../kernel/completion";
 import { deriveAssuranceAuthorization } from "../kernel/assurance_projection";
-import { taskDiffIdentity, taskRevisionIdentity } from "../workspace_scope";
+import { taskDeliveryIdentity } from "../workspace_scope";
 import type { TaskIntentV1, TaskRisk } from "../kernel/types";
 import {
 	canonicalDescriptorBytes,
@@ -273,10 +273,7 @@ function runInspect(root: string): KernelExecution {
 		const workspaceState = readWorkspaceStateRaw(root);
 		let identity;
 		try {
-			identity =
-				record.contract === "assurance_kernel/task_record/v4"
-					? taskRevisionIdentity(root, intent.scope_hint, record.git_base_head, intent.task_id)
-					: taskDiffIdentity(root, intent.scope_hint, intent.task_id);
+			identity = taskDeliveryIdentity(root, record);
 		} catch (error) {
 			return sourceFailure("inspect", error);
 		}

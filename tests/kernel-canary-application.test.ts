@@ -19,6 +19,7 @@ import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugi
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { readBackendClaim, readTaskTombstone } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
+import { taskDeliveryIdentity } from "../plugins/immune-brain/runtime/workspace_scope";
 import { createMutationAuthorityCapabilityForTest } from "./fixtures/mutation-authority-test-seam";
 import { boundSpecPath, readBoundActiveSpec } from "../plugins/immune-brain/runtime/kernel/spec_binding";
 import { KernelInvariantError } from "../plugins/immune-brain/runtime/kernel/validation";
@@ -107,6 +108,7 @@ function capabilityFor(
 	op: "record_approval" | "stop",
 	at: string,
 	payload: { approval?: Record<string, unknown>; reason?: string },
+	diffHash: string = DIFF,
 ) {
 	const actor_id = authority_kind === "user" ? "user" : `${authority_kind}-1`;
 	const action = capabilityActionFor({ op, task_id: TASK, at, actor_id, ...payload });
@@ -117,7 +119,7 @@ function capabilityFor(
 		expected_record_hash: readTaskRecord(root, TASK).revision,
 		intent_revision: 1,
 		intent_content_hash: INTENT_HASH,
-		diff_hash: DIFF,
+		diff_hash: diffHash,
 		actor_id,
 		confirmation_ref: `conf-${authority_kind}`,
 		findings_digest: null,
@@ -328,5 +330,58 @@ describe("Spec binding at freeze", () => {
 		const result = execute({ op: "stop", capability, reason: "halt", actor_id: "user" });
 		expect(result.record).toMatchObject({ lifecycle: "stopped", artifact_state: "frozen" });
 		expect(result.workspace.state.current_working).toBeNull();
+	});
+
+	test("delivery identity defaults to the shared selector; a supplied diffProvider overrides it", () => {
+		freeze();
+		const record = readTaskRecord(root, TASK).record;
+		if (!record) throw new Error("fixture TaskRecord did not parse");
+		const shared = taskDeliveryIdentity(root, record).diff_hash;
+		expect(shared).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(shared).not.toBe(DIFF);
+		const at = "2026-08-12T10:00:01.000Z";
+		const atLater = "2026-08-12T10:00:01.500Z";
+		const atOverride = "2026-08-12T10:00:02.000Z";
+		const approvalFor = (id: string, diffHash: string) => ({
+			id,
+			kind: "qa",
+			authority_role: "qa",
+			task_revision: 1,
+			intent_content_hash: INTENT_HASH,
+			diff_hash: diffHash,
+			actor_id: "qa-1",
+			summary: "all descriptors passed",
+		});
+		// No provider: the capability must be bound to the identity the shared
+		// selector computes, or authority validation fails closed.
+		const sharedApproval = approvalFor("ap-qa-shared", shared);
+		const recorded = app.execute({
+			root,
+			task_id: TASK,
+			operation: { op: "record_approval", approval: sharedApproval, capability: capabilityFor("qa", "record_approval", at, { approval: sharedApproval }, shared), actor_id: "qa-1" },
+			prior_intent_token: token(),
+			now: at,
+		});
+		expect(recorded.record.attestations.some((a) => a.id === "ap-qa-shared")).toBe(true);
+		// The same DIFF-bound capability without a provider no longer validates,
+		// proving the default really is the shared selector and not DIFF.
+		const diffApproval = approvalFor("ap-qa-diff", DIFF);
+		expect(() => app.execute({
+			root,
+			task_id: TASK,
+			operation: { op: "record_approval", approval: diffApproval, capability: capabilityFor("qa", "record_approval", atLater, { approval: diffApproval }, DIFF), actor_id: "qa-1" },
+			prior_intent_token: token(),
+			now: atLater,
+		})).toThrow(/diff hash mismatch/);
+		// A supplied provider still overrides the default.
+		const overridden = app.execute({
+			root,
+			task_id: TASK,
+			operation: { op: "record_approval", approval: diffApproval, capability: capabilityFor("qa", "record_approval", atOverride, { approval: diffApproval }, DIFF), actor_id: "qa-1" },
+			prior_intent_token: token(),
+			diffProvider: () => ({ diff_hash: DIFF, changed_paths: [] as const }),
+			now: atOverride,
+		});
+		expect(overridden.record.attestations.some((a) => a.id === "ap-qa-diff")).toBe(true);
 	});
 });

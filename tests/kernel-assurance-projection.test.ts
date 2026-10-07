@@ -15,6 +15,7 @@ import { auditRunTerminalProofPath } from "../plugins/immune-brain/runtime/kerne
 import {
 	commitTerminalLocked,
 	readAuditTaskPair,
+	readTaskRecord,
 	readWorkspaceStateRaw,
 	retryStoreFollowUps,
 	revisionForContent,
@@ -26,7 +27,7 @@ import {
 	withKernelRead,
 	withKernelTransaction,
 } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
-import { taskDiffIdentity } from "../plugins/immune-brain/runtime/workspace_scope";
+import { taskDeliveryIdentity, taskDiffIdentity, taskRevisionIdentity } from "../plugins/immune-brain/runtime/workspace_scope";
 
 const TASK = "canary-projection-task";
 const INTENT = {
@@ -551,6 +552,68 @@ describe("dynamic changed-path review gate", () => {
 			projection = (await projectAssurance(root, TIER_TASK, tierDiff)).projection;
 			expect(projection.risk).toBe("material");
 			expect(projection.next_obligation).toBe("run_review");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("shared delivery identity selector (deepen-authority-seams D2)", () => {
+	test("a v4 record with git_base_head yields the revision-family identity", () => {
+		const root = makeEnrolledRoot();
+		try {
+			const record = readTaskRecord(root, TASK).record;
+			if (!record) throw new Error("fixture TaskRecord did not parse");
+			expect(taskDeliveryIdentity(root, record)).toEqual(
+				taskRevisionIdentity(root, INTENT.scope_hint, record.git_base_head, TASK),
+			);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("a pre-v4 record yields the index-family identity", () => {
+		const root = makeEnrolledRoot();
+		try {
+			const record = readTaskRecord(root, TASK).record;
+			if (!record) throw new Error("fixture TaskRecord did not parse");
+			const { git_base_head: _base, ...rest } = record;
+			const preV4 = { ...rest, contract: "assurance_kernel/task_record/v3" };
+			expect(taskDeliveryIdentity(root, preV4)).toEqual(
+				taskDiffIdentity(root, INTENT.scope_hint),
+			);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("a v4 record without git_base_head throws", () => {
+		const root = makeEnrolledRoot();
+		try {
+			const record = readTaskRecord(root, TASK).record;
+			if (!record) throw new Error("fixture TaskRecord did not parse");
+			expect(() => taskDeliveryIdentity(root, { ...record, git_base_head: undefined })).toThrow(
+				/TaskRecord v4 is missing git_base_head/,
+			);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("projectAssurance uses the shared selector when no provider is supplied; a supplied provider overrides it", async () => {
+		const root = makeEnrolledRoot();
+		try {
+			const record = readTaskRecord(root, TASK).record;
+			if (!record) throw new Error("fixture TaskRecord did not parse");
+			const shared = await projectAssurance(root, TASK);
+			expect(shared.error).toBeNull();
+			expect(shared.projection.diff_hash).toBe(taskDeliveryIdentity(root, record).diff_hash);
+			const overrideHash = `sha256:${"e".repeat(64)}`;
+			const overridden = await projectAssurance(root, TASK, () => ({
+				diff_hash: overrideHash,
+				changed_paths: [] as const,
+			}));
+			expect(overridden.projection.diff_hash).toBe(overrideHash);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

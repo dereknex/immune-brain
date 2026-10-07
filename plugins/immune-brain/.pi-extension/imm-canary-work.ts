@@ -71,7 +71,7 @@ import { resolveUxLanguage, uxText } from "./ux-language";
 
 /** Host-native UI language; see ux-language.ts. Resolved once per process. */
 const UX_LANG = resolveUxLanguage();
-import { taskDiffIdentity, taskRevisionIdentity, captureGitTaskSnapshot } from "../runtime/workspace_scope";
+import { taskDeliveryIdentity, captureGitTaskSnapshot } from "../runtime/workspace_scope";
 import { reviewAdvisoryRecords, reviewReworkFindings } from "../runtime/assurance/coordinator";
 import {
 	AssuranceProgression,
@@ -856,7 +856,7 @@ export default function (
 				const stagedRecord = await readTaskRecord(ctx.cwd, taskId);
 				if (!stagedRecord.record || stagedRecord.revision !== projection.projection.record_revision)
 					throw new Error("TaskRecord changed while preparing the breaking revision");
-				stagedNextDiffHash = diffHashOf(ctx.cwd, stagedRecord.record);
+				stagedNextDiffHash = taskDeliveryIdentity(ctx.cwd, stagedRecord.record).diff_hash;
 			} catch (error) {
 				let restoreError: unknown;
 				try { restoreStagedIntent(); } catch (err) { restoreError = err; }
@@ -1031,7 +1031,7 @@ export default function (
 					if (nextIntent && (!liveRecord?.record || liveRecord.revision !== projection.projection.record_revision || !stagedNextDiffHash))
 						throw new Error("TaskRecord changed before the breaking revision digest");
 					const operationDiffHash = liveRecord?.record
-						? diffHashOf(ctx.cwd, liveRecord.record)
+						? taskDeliveryIdentity(ctx.cwd, liveRecord.record).diff_hash
 						: projection.projection.diff_hash;
 					if (nextIntent && operationDiffHash !== stagedNextDiffHash)
 						throw new Error("staged next-state diff changed after native confirmation");
@@ -1229,24 +1229,16 @@ async function markGithubTaskTerminal(
 }
 
 /**
- * One record-aware freshness identity. v4 derives the scoped revision digest
- * from the immutable Enrollment base so committed and staged task work share a
- * single diff_hash with Review; v3 keeps the legacy HEAD -> index digest.
+ * The shared delivery identity selector: one function in workspace_scope.ts
+ * picks the identity family per TaskRecord contract. This adapter-level alias
+ * only narrows the record type for the Kernel ports that expect it; the dual-host
+ * conformance seam imports it so both hosts' reportable identity is comparable.
  */
-function diffSnapshotOf(root: string, record: TaskRecord): {
+export function diffSnapshotOf(root: string, record: TaskRecord): {
 	diff_hash: string;
 	changed_paths: string[];
 } {
-	if (record.contract === "assurance_kernel/task_record/v4") {
-		if (!record.git_base_head)
-			throw new Error("TaskRecord v4 is missing git_base_head");
-		return taskRevisionIdentity(root, record.intent_snapshot.scope_hint, record.git_base_head, record.task_id);
-	}
-	return taskDiffIdentity(root, record.intent_snapshot.scope_hint, record.task_id);
-}
-
-function diffHashOf(root: string, record: TaskRecord): string {
-	return diffSnapshotOf(root, record).diff_hash;
+	return taskDeliveryIdentity(root, record);
 }
 
 // Translation-only adapter for the internal Kernel assurance projection. All
@@ -1318,7 +1310,7 @@ function overviewRailState(lifecycle: string, obligation: string): TaskRailState
 }
 
 export async function projectAssuranceForTask(root: string, taskId: string): Promise<AssuranceProjectionResult> {
-	return projectAssurance(root, taskId, diffSnapshotOf);
+	return projectAssurance(root, taskId);
 }
 
 /**

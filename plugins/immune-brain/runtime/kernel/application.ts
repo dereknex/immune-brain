@@ -9,6 +9,7 @@ import {
 	type MutationAuthorityRegistry,
 } from "./authority_port";
 import { asTaskDiffSnapshot } from "./completion";
+import { taskDeliveryIdentity } from "../workspace_scope";
 import { canonicalIntentHash, readTaskIntent } from "./intent";
 import {
 	inspectIntentTokenPair,
@@ -51,8 +52,9 @@ export interface ApplyTaskActionInput {
 	/** Paired mutation authority registry that must recognize every supplied capability. */
 	registry: MutationAuthorityRegistry;
 	capability?: MutationAuthorityCapabilityV2;
-	/** Trusted injected diff provider; the action's diff_hash is only an expectation. */
-	diffProvider: (root: string, record: TaskRecord) => string | { diff_hash: string; changed_paths?: readonly string[] };
+	/** Trusted injected diff provider; the action's diff_hash is only an expectation.
+	 * Defaults to the shared delivery identity selector when omitted. */
+	diffProvider?: (root: string, record: TaskRecord) => string | { diff_hash: string; changed_paths?: readonly string[] };
 	/**
 	 * Terminal commit mode: record + workspace + active-claim removal + task
 	 * tombstone converge through one recoverable terminal transaction marker
@@ -71,7 +73,8 @@ export interface ApplyTaskActionInput {
 export function applyTaskAction(
 	input: ApplyTaskActionInput,
 ): StoredTaskMutationV3 {
-	const { root, task_id, prior_intent_token, registry, capability, diffProvider } = input;
+	const { root, task_id, prior_intent_token, registry, capability } = input;
+	const diffProvider = input.diffProvider ?? taskDeliveryIdentity;
 	return withKernelStoreLock(root, () => {
 		const current = readTaskRecordRaw(root, task_id);
 		if (!current.record)

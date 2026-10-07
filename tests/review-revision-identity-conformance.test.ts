@@ -8,8 +8,9 @@ import {
 	diffSnapshotOf,
 	ensureClaudeReviewRevision,
 } from "../plugins/immune-brain/runtime/claude/kernel_ports";
-import { ensureTaskReviewRevision } from "../plugins/immune-brain/.pi-extension/imm-canary-work";
+import { ensureTaskReviewRevision, diffSnapshotOf as piDiffSnapshotOf, projectAssuranceForTask } from "../plugins/immune-brain/.pi-extension/imm-canary-work";
 import { projectAssurance } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
+import { taskDeliveryIdentity, taskDiffIdentity } from "../plugins/immune-brain/runtime/workspace_scope";
 import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import {
@@ -214,5 +215,45 @@ describe("Review revision identity conformance", () => {
 		const pi = await ensureTaskReviewRevision(root, TASK, projection);
 		expect(claude).toEqual(pi);
 		expect(claude?.review_ref).toMatch(/^refs\/immune-brain\/reviews\/[a-f0-9]{16}\/[^/]+\/[^/]+\/[a-f0-9]+$/);
+	});
+
+	test("the delivery identity both hosts report is the shared selector's, and a changed git_base_head changes it", async () => {
+		const root = makeReviewReadyRoot();
+		const record = readTaskRecord(root, TASK).record;
+		if (!record) throw new Error("fixture TaskRecord did not parse");
+		// v4: both host projections and both host record-level selectors agree
+		// with the shared selector.
+		const shared = taskDeliveryIdentity(root, record);
+		expect(diffSnapshotOf(root, record)).toEqual(shared);
+		expect(piDiffSnapshotOf(root, record)).toEqual(shared);
+		const claudeProjection = await new ClaudeRuntime({ cwd: root, interactive: false }).status(TASK);
+		expect(claudeProjection.error).toBeNull();
+		expect(claudeProjection.projection.diff_hash).toBe(shared.diff_hash);
+		const piProjection = await projectAssuranceForTask(root, TASK);
+		expect(piProjection.error).toBeNull();
+		expect(piProjection.projection.diff_hash).toBe(shared.diff_hash);
+		// pre-v4: both hosts' record-level identity stays the index family and
+		// equals the shared selector for the same record.
+		const { git_base_head: _base, ...rest } = record;
+		const preV4 = { ...rest, contract: "assurance_kernel/task_record/v3" };
+		expect(diffSnapshotOf(root, preV4 as never)).toEqual(taskDeliveryIdentity(root, preV4));
+		expect(piDiffSnapshotOf(root, preV4 as never)).toEqual(taskDeliveryIdentity(root, preV4));
+		expect(taskDeliveryIdentity(root, preV4)).toEqual(taskDiffIdentity(root, INTENT.scope_hint));
+		// A changed git_base_head changes the identity on both hosts' projections.
+		execFileSync("git", ["commit", "--allow-empty", "-qm", "other base"], { cwd: root, stdio: "ignore", env: GIT_ENV });
+		const otherBase = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+		const run = withKernelRead(root, (db) => readRunRowByTask(db, TASK));
+		if (!run) throw new Error("fixture run is missing");
+		const recordJson = JSON.parse(run.record_json) as Record<string, unknown>;
+		recordJson.git_base_head = otherBase;
+		withKernelTransaction(root, (db) => {
+			updateRunRecord(db, run.run_id, run.revision, `${JSON.stringify(recordJson, null, 2)}\n`, NOW);
+		});
+		const movedShared = taskDeliveryIdentity(root, { ...record, git_base_head: otherBase });
+		expect(movedShared.diff_hash).not.toBe(shared.diff_hash);
+		const claudeMoved = await new ClaudeRuntime({ cwd: root, interactive: false }).status(TASK);
+		expect(claudeMoved.projection.diff_hash).toBe(movedShared.diff_hash);
+		const piMoved = await projectAssuranceForTask(root, TASK);
+		expect(piMoved.projection.diff_hash).toBe(movedShared.diff_hash);
 	});
 });

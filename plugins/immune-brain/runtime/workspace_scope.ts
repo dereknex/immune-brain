@@ -671,6 +671,40 @@ export function taskRevisionIdentity(
 	};
 }
 
+/**
+ * Structural record shape shared by every TaskRecord contract family, so the
+ * delivery identity selector never needs the full Kernel record type.
+ */
+export interface TaskDeliveryRecord {
+	contract: string;
+	task_id: string;
+	intent_snapshot: { scope_hint: unknown };
+	git_base_head?: string;
+}
+
+/**
+ * The one delivery identity selector (deepen-authority-seams D2): given a root
+ * and a TaskRecord, a v4 record with `git_base_head` yields the scoped revision
+ * identity, a v4 record without it throws, and a pre-v4 record keeps the
+ * index-family identity. Hosts, the CLI, and batch reconfirmation call this
+ * function instead of branching on `record.contract` themselves.
+ */
+export function taskDeliveryIdentity(
+	projectRoot: string,
+	record: TaskDeliveryRecord,
+): GitTaskDiffIdentity {
+	if (record.contract === "assurance_kernel/task_record/v4") {
+		if (!record.git_base_head) throw new Error("TaskRecord v4 is missing git_base_head");
+		return taskRevisionIdentity(
+			projectRoot,
+			record.intent_snapshot.scope_hint,
+			record.git_base_head,
+			record.task_id,
+		);
+	}
+	return taskDiffIdentity(projectRoot, record.intent_snapshot.scope_hint, record.task_id);
+}
+
 /** The same v4 identity for an immutable delivered commit, without touching the index. */
 export function taskCommitRevisionIdentity(projectRoot: string, scopeHint: unknown, baseHead: string, commit: string): GitTaskDiffIdentity {
 	const requested = resolve(projectRoot);

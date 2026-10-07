@@ -20,6 +20,7 @@ import {
 	reconcileKernelAuthority,
 } from "./storage";
 import { projectTask, resolveProjectedRisk } from "./completion";
+import { taskDeliveryIdentity } from "../workspace_scope";
 import type { AssuranceObligation, TaskIntentV1, TaskRecord, TaskRecordV3 } from "./types";
 import type { TaskRecordV2 } from "./legacy_task_record";
 
@@ -244,7 +245,9 @@ function projectFromRecord(
 /**
  * One closed read-only projection for a task. The injected diffProvider keeps
  * this module free of git/worktree concerns; hosts supply it from their own
- * task-scope diff implementation.
+ * task-scope diff implementation. When no provider is supplied the shared
+ * delivery identity selector (workspace_scope.taskDeliveryIdentity) computes
+ * it; a supplied provider still overrides it (I5).
  *
  * Error semantics:
  * - no authority facts          -> error null, claim null, empty projection
@@ -257,7 +260,7 @@ function projectFromRecord(
 export async function projectAssurance(
 	root: string,
 	taskId: string,
-	diffProvider: (root: string, record: TaskRecord) => TaskDiffSnapshot,
+	diffProvider: (root: string, record: TaskRecord) => TaskDiffSnapshot = taskDeliveryIdentity,
 ): Promise<AssuranceProjectionResult> {
 	const fail = (
 		error: string,

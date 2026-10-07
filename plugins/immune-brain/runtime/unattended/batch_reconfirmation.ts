@@ -5,7 +5,7 @@ import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../kerne
 import { projectAssurance } from "../kernel/assurance_projection";
 import { localRunId, readAuditTaskPair, readSecureProjectBytes, readWorkspaceStateRaw } from "../kernel/storage";
 import { readRunRowByTask, withKernelRead } from "../kernel/sqlite_store";
-import { taskRevisionIdentity, taskCommitRevisionIdentity, pathMatchesScope } from "../workspace_scope";
+import { taskDeliveryIdentity, taskCommitRevisionIdentity, pathMatchesScope } from "../workspace_scope";
 import { projectTask } from "../kernel/completion";
 import { isTerminalBatchState, type BatchRunStateRecord } from "./batch_state";
 import type { BatchPlanChild } from "./types";
@@ -138,10 +138,10 @@ export async function captureBatchReconfirmation(root: string, record: BatchRunS
 		if (!capture(recordPath).equals(Buffer.from(local.record_json))) refuse();
 		const capturedProof = JSON.parse(decode(capture(proofPath)));
 		if (!matchesLocalProof(local.terminal_proof_json, capturedProof) || !matchesLocalProof(local.terminal_proof_json, pair.proof)) refuse();
-		const identity = taskRevisionIdentity(root, r.intent_snapshot.scope_hint, r.git_base_head, r.task_id);
+		const identity = taskDeliveryIdentity(root, r);
 		const projection = await projectAssurance(root, child.task_id, (cwd, task) => {
 			if (task.contract !== "assurance_kernel/task_record/v4" || !task.git_base_head) refuse();
-			return taskRevisionIdentity(cwd, task.intent_snapshot.scope_hint, task.git_base_head, task.task_id);
+			return taskDeliveryIdentity(cwd, task);
 		});
 		if (projection.error || projection.claim || projection.projection.run_id !== run || projection.projection.lifecycle !== "done" ||
 			!projection.projection.completion_ready || projection.projection.intent_content_hash !== currentHash || projection.projection.diff_hash !== identity.diff_hash ||
@@ -175,7 +175,7 @@ export async function captureBatchReconfirmation(root: string, record: BatchRunS
 			const pair = readAuditTaskPair(root, c.task, c.run);
 			if (!pair || pair.record.contract !== "assurance_kernel/task_record/v4" || !pair.record.git_base_head) refuse();
 			const local = withKernelRead(root, db => readRunRowByTask(db, c.task));
-			const diff = taskRevisionIdentity(root, pair.record.intent_snapshot.scope_hint, pair.record.git_base_head, c.task);
+			const diff = taskDeliveryIdentity(root, pair.record);
 			if (localRunId(root, c.task) !== c.run || JSON.stringify(local) !== c.local || JSON.stringify(diff) !== c.identity) refuse();
 		}
 	};

@@ -14,6 +14,7 @@ import {
 } from "./authority_port";
 import { applyTaskAction } from "./application";
 import { asTaskDiffSnapshot } from "./completion";
+import { taskDeliveryIdentity } from "../workspace_scope";
 import { readTaskIntent } from "./intent";
 import {
 	inspectIntentTokenPair,
@@ -67,8 +68,9 @@ export interface CanaryExecuteInput {
 	task_id: string;
 	operation: CanaryOperation;
 	prior_intent_token: TaskIntentIdentityToken;
-	/** Trusted injected diff provider; the application derives the diff identity. */
-	diffProvider: (root: string, record: TaskRecord) => string | { diff_hash: string; changed_paths?: readonly string[] };
+	/** Trusted injected diff provider; the application derives the diff identity.
+	 * Defaults to the shared delivery identity selector when omitted. */
+	diffProvider?: (root: string, record: TaskRecord) => string | { diff_hash: string; changed_paths?: readonly string[] };
 	now?: string;
 }
 
@@ -313,7 +315,7 @@ export function createCanaryApplication(
 				record: current.record,
 			};
 		});
-		const diffHash = asTaskDiffSnapshot(input.diffProvider(input.root, snapshot.record)).diff_hash;
+		const diffHash = asTaskDiffSnapshot((input.diffProvider ?? taskDeliveryIdentity)(input.root, snapshot.record)).diff_hash;
 		if (operation.op === "stop" && !("capability" in operation))
 			throw new KernelInvariantError(["stop requires user authority capability"]);
 		const hasBoundSpec = boundSpecPath(snapshot.intent_snapshot) !== undefined;
