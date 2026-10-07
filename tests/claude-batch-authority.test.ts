@@ -460,7 +460,7 @@ describe("batch foreground Executor integration", () => {
 			? client.callTool("start_unattended_batch", { initiative_slug: slug })
 			: executePiBatchOnce({ root: fixture.root, initiativeSlug: slug, readInitiative: async () => fixture.observation,
 				confirmBatch: async () => { confirmations++; return "accept"; } });
-		const { getSharedPiProgression } = await import("../plugins/immune-brain/.pi-extension/runtime-stub");
+		const { getSharedPiProgression } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
 		const { createPiAssuranceProgressionPorts } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
 		const { REVIEWER_AGENT, AGENT_TOOL } = await import("../plugins/immune-brain/runtime/claude/review_host");
 		const progression = host === "pi" ? await getSharedPiProgression() : client.runtime.coordinator;

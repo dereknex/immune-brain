@@ -4,10 +4,41 @@
 // test issuer, or callback bridge ships.
 
 import { describe, expect, test } from "bun:test";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const ROOT = resolve(__dirname, "..");
+const PI_EXTENSION_DIR = join(ROOT, "plugins/immune-brain/.pi-extension");
+
+function extensionSourceFiles(): Array<[string, string]> {
+	return readdirSync(PI_EXTENSION_DIR)
+		.filter((name) => name.endsWith(".ts"))
+		.map((name) => [name, readFileSync(join(PI_EXTENSION_DIR, name), "utf8")] as [string, string]);
+}
+
+/**
+ * Dynamic import calls whose argument is a runtime-module specifier, or a
+ * computed expression that cannot be proven non-runtime. Literal imports of
+ * non-runtime modules (node builtins, extension-local siblings) pass.
+ */
+function dynamicRuntimeImports(source: string): string[] {
+	const hits: string[] = [];
+	for (const match of source.matchAll(/\bimport\s*\(\s*(?:\/\*[\s\S]*?\*\/\s*)?([^)]*?)\s*\)/g)) {
+		const arg = match[1].trim();
+		const literal = /^["']([^"']+)["']$/.exec(arg)?.[1];
+		if (literal) {
+			if (literal.includes("runtime/")) hits.push(literal);
+			continue;
+		}
+		hits.push(arg);
+	}
+	return hits;
+}
+
+function staticRuntimeImports(source: string): string[] {
+	return [...source.matchAll(/(?:^|\n)\s*(?:import|export)\s[^;'"]*?from\s*["'](\.\.\/runtime\/[^"']+)["']/g)]
+		.map((match) => match[1]);
+}
 
 describe("pi canary package boundary", () => {
 	test("package.json registers exactly the Pi extension path", () => {
@@ -72,15 +103,38 @@ describe("pi canary package boundary", () => {
 		}
 	});
 
+	test("the retired runtime-stub adapter is gone and nothing references it", () => {
+		expect(existsSync(join(PI_EXTENSION_DIR, "runtime-stub.ts"))).toBe(false);
+		for (const [file, source] of extensionSourceFiles()) {
+			expect({ file, references: source.includes("runtime-stub") }).toEqual({ file, references: false });
+		}
+	});
+
+	test("no Pi source loads a runtime module through a dynamic import", () => {
+		for (const [file, source] of extensionSourceFiles()) {
+			expect({ file, hits: dynamicRuntimeImports(source) }).toEqual({ file, hits: [] });
+		}
+		// Negative control: the retired adapter's literal and computed dynamic
+		// runtime imports both fail this check; a non-runtime literal passes.
+		expect(dynamicRuntimeImports('const mod = await import("../runtime/kernel/storage.ts");')).toHaveLength(1);
+		expect(dynamicRuntimeImports('const mod = await import(runtimePath("storage"));')).toHaveLength(1);
+		expect(dynamicRuntimeImports('const mod = await import("./pi-canary-interaction");')).toHaveLength(0);
+	});
+
+	test("every static runtime import from the Pi extension resolves to a shipped module", () => {
+		for (const [file, source] of extensionSourceFiles()) {
+			for (const specifier of staticRuntimeImports(source)) {
+				const base = resolve(PI_EXTENSION_DIR, specifier);
+				expect({ file, specifier, resolves: existsSync(`${base}.ts`) }).toEqual({ file, specifier, resolves: true });
+			}
+		}
+	});
+
 	test("Pi Enrollment adapter reaches Kernel prepare only through the shared Enrollment boundary", () => {
-		const stub = readFileSync(join(ROOT, "plugins/immune-brain/.pi-extension/runtime-stub.ts"), "utf8");
-		const enroll = readFileSync(join(ROOT, "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts"), "utf8");
-		expect(stub).toContain('runtimePath("assurance/enrollment")');
-		expect(stub).not.toContain('kernelPath("pi_canary_prepare")');
+		const enroll = readFileSync(join(PI_EXTENSION_DIR, "imm-canary-enroll.ts"), "utf8");
 		expect(enroll).toContain("preparePiCanary");
 		expect(enroll).toContain("revalidatePiCanary");
-		expect(enroll).toContain('from "./runtime-stub"');
+		expect(enroll).toContain('from "../runtime/assurance/enrollment"');
 		expect(enroll).not.toContain("pi_canary_prepare");
-		expect(enroll).not.toContain("runtime/assurance/enrollment");
 	});
 });

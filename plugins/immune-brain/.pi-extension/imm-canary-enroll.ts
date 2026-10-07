@@ -9,27 +9,24 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Type } from "typebox";
 import { createHash, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
-// The Kernel runtime graph is never type-checked from this extension: static
-// imports resolve to ./runtime-stub.ts (relative so the Pi extension loader
-// can resolve them at runtime), and the stub forwards to the real Kernel
-// modules via dynamic import.
+// The Pi adapter imports the host-neutral runtime modules statically, exactly
+// as the Claude adapter does. Kernel prepare is reached only through the
+// shared Enrollment boundary (runtime/assurance/enrollment), never directly
+// from the Kernel's own prepare module.
+import { LITERAL_USER_ACTOR_ID } from "../runtime/kernel/actor_identity";
+import { createEnrollmentAuthorityRegistry } from "../runtime/kernel/enrollment_authority";
+import { preparePiCanary, revalidatePiCanary } from "../runtime/assurance/enrollment";
+import { evaluateCanaryEligibility } from "../runtime/kernel/canary_eligibility";
+import { runEnrollmentRehearsal, enrollCanaryTask } from "../runtime/kernel/enrollment";
+import { reconcileKernelAuthority, withKernelStoreLock } from "../runtime/kernel/storage";
+import { inspectStorageLayout } from "../runtime/kernel/storage_paths";
+import { migrateLegacyLayout } from "../runtime/kernel/storage_layout_migration";
 import {
-	LITERAL_USER_ACTOR_ID,
-	createEnrollmentAuthorityRegistry,
-	preparePiCanary,
-	revalidatePiCanary,
-	evaluateCanaryEligibility,
-	reconcileKernelAuthority,
-	readTaskIntent,
-	runEnrollmentRehearsal,
-	enrollCanaryTask,
-	withKernelStoreLock,
-	inspectStorageLayout,
-	migrateLegacyLayout,
 	inspectEnrollmentGitBase,
 	enrollmentGitBaseNotice,
 	initializeEnrollmentGitBase,
-} from "./runtime-stub";
+} from "../runtime/assurance/enrollment_git_base";
+import { readTaskIntentForRecord } from "./imm-canary-work";
 import {
 	presentTaskRail,
 	presentTaskRailResult,
@@ -315,7 +312,7 @@ async function executeForegroundEnrollment(
 		signal.throwIfAborted();
 		progress("preparing", uxText(UX_LANG, `Preparing immutable Kernel owners for ${taskId}`, `正在为 ${taskId} 准备不可变 Kernel 所有者`));
 		const now = new Date().toISOString();
-		let taskIntent: Awaited<ReturnType<typeof readTaskIntent>>;
+		let taskIntent: Awaited<ReturnType<typeof readTaskIntentForRecord>>;
 
 		// Storage-layout gate (BR-REQ-005/006): enrollment is the stateful
 		// mutation boundary. Kernel transaction markers recover under the
@@ -387,10 +384,10 @@ async function executeForegroundEnrollment(
 		}
 
 		try {
-			taskIntent = await readTaskIntent(root, taskId);
+			taskIntent = await readTaskIntentForRecord(root, taskId);
 		} catch (error) {
 			const message = errorMessage(error);
-			// `readTaskIntent` reports an absent sidecar semantically now, so the
+			// `readTaskIntentForRecord` reports an absent sidecar semantically now, so the
 			// "missing" classification must recognise that wording as well as the raw
 			// filesystem errors; otherwise a missing file is misreported as a schema
 			// defect and the operator is told to repair fields that do not exist.
@@ -518,7 +515,7 @@ async function executeForegroundEnrollment(
 		{
 			let liveEarly: string | null = null;
 			try {
-				liveEarly = (await readTaskIntent(resolve(root), taskId)).content_hash;
+				liveEarly = (await readTaskIntentForRecord(resolve(root), taskId)).content_hash;
 			} catch {
 				liveEarly = null;
 			}
@@ -529,7 +526,7 @@ async function executeForegroundEnrollment(
 		{
 			let liveContentHash: string | null = null;
 			try {
-				liveContentHash = (await readTaskIntent(resolve(root), taskId)).content_hash;
+				liveContentHash = (await readTaskIntentForRecord(resolve(root), taskId)).content_hash;
 			} catch {
 				liveContentHash = null;
 			}

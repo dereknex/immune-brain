@@ -25,6 +25,7 @@ const RETIRED_PROGRESS_FILES = [
 	"plugins/immune-brain/.pi-extension/index.ts",
 	"plugins/immune-brain/.pi-extension/progress_client.ts",
 	"plugins/immune-brain/.pi-extension/progress_views.ts",
+	"plugins/immune-brain/.pi-extension/runtime-stub.ts",
 	"tests/pi-progress-extension.test.ts",
 ];
 
@@ -34,7 +35,6 @@ const HELPER_FILES = [
 	"plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
 	"plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts",
 	"plugins/immune-brain/.pi-extension/pi-canary-verification.ts",
-	"plugins/immune-brain/.pi-extension/runtime-stub.ts",
 ];
 
 async function loadExtensions(source: string) {

@@ -1,23 +1,27 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { createHash, randomUUID } from "node:crypto";
+// The Pi batch adapter imports the host-neutral runtime modules statically,
+// exactly as the Claude adapter does; the adapter-owned helpers it drives
+// (the shared session progression accessors and the batch projection) live in
+// ./imm-canary-work.ts next to the assurance machinery they use.
+import { readTaskRecord, readAuditTaskPair } from "../runtime/kernel/storage";
 import {
 	createBatchAuthorityRegistry,
 	deriveChildEnrollment,
+	type BatchAuthorityRegistry,
+} from "../runtime/kernel/batch_authority";
+import { runEnrollmentRehearsal, enrollCanaryTask } from "../runtime/kernel/enrollment";
+import { createEnrollmentAuthorityRegistry } from "../runtime/kernel/enrollment_authority";
+import {
 	startBatch,
 	batchQaFailureFacts,
-	readTaskRecord,
-	advancePiTask,
-	projectAssuranceForTask,
-	runEnrollmentRehearsal,
-	enrollCanaryTask,
-	createEnrollmentAuthorityRegistry,
-	type BatchAuthorityRegistry,
 	type BatchRunnerKernelPort,
-	type BatchRunnerGitPort,
 	type BatchRunReport,
-	type InitiativeObservationReader,
-} from "./runtime-stub";
+} from "../runtime/unattended/batch_runner";
+import type { BatchRunnerGitPort } from "../runtime/unattended/batch_git";
+import type { InitiativeObservationReader } from "../runtime/unattended/types";
+import { advancePiTask, projectAssuranceForTask } from "./imm-canary-work";
 import { batchReason } from "../runtime/unattended/batch_reasons";
 import {
 	authorizeBatch,
@@ -32,6 +36,32 @@ import {
 	requestAuthorityDialog,
 } from "./pi-canary-interaction";
 import { throwToolFailure } from "./pi-canary-tool-failure";
+
+/**
+ * Read the immutable terminal audit record for a settled child.
+ *
+ * A child reaches Kernel settlement before the batch commits it, and settlement
+ * clears the live state record, so the batch resume preflight must resolve the
+ * child's authorized scope from the audit pair instead. Read-only: neither the
+ * audit pair nor this reader mutates Kernel state. Currently caller-free: the
+ * shared `batch_preflight.ts` performs its own settled read, and the
+ * settled-run-evidence-read Slice makes this reader Run-aware.
+ */
+export async function readSettledTaskRecord(
+	root: string,
+	taskId: string,
+): Promise<{ scope_hint: string[]; intent_path: string | undefined } | null> {
+	const pair = readAuditTaskPair(root, taskId);
+	if (!pair?.record) return null;
+	const record = pair.record as {
+		intent_snapshot?: { scope_hint?: string[] };
+		intent_ref?: { path?: string };
+	};
+	return {
+		scope_hint: record.intent_snapshot?.scope_hint ?? [],
+		intent_path: record.intent_ref?.path,
+	};
+}
 
 
 /**

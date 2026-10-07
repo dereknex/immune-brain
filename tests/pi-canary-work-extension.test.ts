@@ -1349,7 +1349,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 	for (const [failure, attempts] of [["EINTR", 2], ["EAGAIN", 2], ["EACCES", 1], ["semantic", 1], ["foreign-claim", 1]] as const) {
 		test(`registered Tool stops after ${attempts} initial projections on ${failure}`, async () => {
 			const root = makeEnrolledRoot();
-			const runtime = require("../plugins/immune-brain/.pi-extension/runtime-stub.ts");
+			const runtime = require("../plugins/immune-brain/runtime/kernel/assurance_projection.ts");
 			const project = runtime.projectAssurance;
 			const before = await readTaskRecord(root, TASK);
 			let qaCalls = 0;

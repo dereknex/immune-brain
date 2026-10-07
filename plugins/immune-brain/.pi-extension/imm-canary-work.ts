@@ -92,38 +92,51 @@ import {
 	type SnapshotDescriptor,
 } from "./pi-canary-assurance-progression";
 
-// The Kernel runtime graph is never type-checked from this extension: static
-// imports resolve to ./runtime-stub.ts (relative so the Pi extension loader
-// can resolve them at runtime), and the stub forwards to the real Kernel
-// modules via dynamic import.
+// The Pi adapter imports the host-neutral runtime modules statically, exactly
+// as the Claude adapter does; the retired dynamic-import isolation layer is
+// gone. The adapter-owned logic that used to live behind it (the
+// record-aware intent read, the tracker terminal wrapper, the shared batch
+// progression accessors) is defined below, next to the machinery it uses.
+import { LITERAL_USER_ACTOR_ID } from "../runtime/kernel/actor_identity";
 import {
-	createMutationAuthorityRegistry,
-	createCanaryApplication,
-	buildLoopAction,
-	buildLoopRoleDispatch,
-	readBackendClaim,
-	readTaskTombstone,
-	markGithubTaskTerminal,
 	reconcileKernelAuthority,
 	repairKernelAuthority,
 	readTaskRecord,
+	readTaskRecordRaw,
 	withKernelStoreLockForTask,
-	inspectStorageLayout,
-	migrateLegacyLayout,
+} from "../runtime/kernel/storage";
+import { inspectStorageLayout } from "../runtime/kernel/storage_paths";
+import { migrateLegacyLayout } from "../runtime/kernel/storage_layout_migration";
+import {
 	readTaskIntent,
 	parseTaskIntentV1,
 	canonicalIntentHash,
-	projectAssurance,
-	findingsDigestV2,
-	capabilityActionFor,
+	type ReadTaskIntentResult,
+} from "../runtime/kernel/intent";
+import { readBackendClaim, readTaskTombstone } from "../runtime/kernel/backend_claim";
+import {
+	createMutationAuthorityRegistry,
 	digestOfAction,
-	type AssuranceProjectionResult,
-	type TaskRecordRead,
-	type CanaryApplication,
-	type MutationAuthorityRegistry,
 	type CapabilityBindingV2,
-	LITERAL_USER_ACTOR_ID,
-} from "./runtime-stub";
+	type MutationAuthorityRegistry,
+} from "../runtime/kernel/authority_port";
+import {
+	createCanaryApplication,
+	capabilityActionFor,
+	type CanaryApplication,
+} from "../runtime/kernel/canary_application";
+import { findingsDigestV2 } from "../runtime/kernel/reducer";
+import {
+	projectAssurance,
+	type AssuranceProjectionResult,
+} from "../runtime/kernel/assurance_projection";
+import type { TaskApprovalV2, TaskRecord } from "../runtime/kernel/types";
+import type { RoleDelegationContext } from "../runtime/role_prompt_bridge";
+import { buildLoopAction, buildLoopRoleDispatch } from "../runtime/loop_contract";
+import {
+	runGithubTrackerOperation,
+	type GithubTrackerResult,
+} from "../runtime/github_issue_tracker";
 import { invocationRegistry } from "./pi-canary-assurance-progression";
 
 const LOOP_OWNERS = ["plan", "kernel", "brainstorm", "planner", "loop"] as const;
@@ -277,9 +290,9 @@ export function createPiAssuranceProgressionPorts(
 	dependencies: CanaryWorkExtensionDependencies = {},
 ): AssuranceProgressionPorts {
 	return {
-		projectTask: (root, taskId) => projectAssuranceState(root, taskId),
-		readTaskRecord: (root, taskId) => readTaskRecord(root, taskId),
-		readTaskIntent: (root, taskId) => readTaskIntent(root, taskId),
+		projectTask: (root, taskId) => projectAssuranceForTask(root, taskId),
+		readTaskRecord: async (root, taskId) => readTaskRecord(root, taskId),
+		readTaskIntent: async (root, taskId) => readTaskIntentForRecord(root, taskId),
 		buildAssurance: (root, taskId, role, projection) =>
 			(dependencies.buildAssurance ?? buildAssuranceSnapshot)(root, taskId, role, projection),
 		ensureReviewRevision: (root, taskId, projection) => ensureTaskReviewRevision(root, taskId, projection),
@@ -308,6 +321,40 @@ export function createPiAssuranceProgressionPorts(
 
 const GLOBAL_PI_PROGRESSION_KEY = Symbol.for("immune_brain.pi_assurance_progression");
 
+/**
+ * The shared session progression the batch adapter advances children through.
+ * The work extension publishes the instance at load; this accessor is the
+ * lazy fallback that builds one from the production ports when no extension
+ * factory has run (tests, direct batch drives). Both paths publish under the
+ * same global key, so a batch Review reservation and the session's
+ * submit_review always share one progression instance.
+ */
+export async function getSharedPiProgression(): Promise<AssuranceProgression> {
+	let progression = (globalThis as any)[GLOBAL_PI_PROGRESSION_KEY] as AssuranceProgression | undefined;
+	if (!progression) {
+		progression = new AssuranceProgression(createPiAssuranceProgressionPorts());
+		(globalThis as any)[GLOBAL_PI_PROGRESSION_KEY] = progression;
+	}
+	return progression;
+}
+
+/**
+ * Advance one task through the shared session progression and translate the
+ * progression result into the batch runner's advance report shape.
+ */
+export async function advancePiTask(root: string, taskId: string): Promise<any> {
+	const progression = await getSharedPiProgression();
+	const result = await progression.advance(taskId, { cwd: root });
+	const facts = { diagnostics: result.diagnostics, environment_failure: result.environment_failure, recovery: result.recovery };
+	if (result.state === "completed") return { state: "completed", ...facts };
+	if (result.state === "stopped") return { state: "stopped", ...facts };
+	if (result.state === "rework") return { state: "rework", operation: result.operation, summary: result.summary, ...facts };
+	if (result.state === "review_ready") return { state: "review_ready", operation_id: result.operation_id, agent_params: result.agent_params, ...facts };
+	if (result.state === "review_preparation_failed") return { state: result.state, operation: result.operation, operation_id: result.operation_id, reason: result.reason, ...facts };
+	if (result.state === "blocked") return { state: "blocked", reason: result.reason, ...facts };
+	return { state: "failed", reason: (result as { reason?: string }).reason ?? "advance failed", ...facts };
+}
+
 export default function (
 	pi: ExtensionAPI,
 	dependencies: CanaryWorkExtensionDependencies = {},
@@ -323,7 +370,7 @@ export default function (
 		try {
 			const claim = await readBackendClaim(ctx.cwd);
 			if (!claim) return;
-			const projection = await projectAssuranceState(ctx.cwd, claim.task_id);
+			const projection = await projectAssuranceForTask(ctx.cwd, claim.task_id);
 			if (projection.error) {
 				presentTaskRail(ctx, {
 					task_id: claim.task_id,
@@ -592,7 +639,7 @@ export default function (
 				throwIfCanaryToolFailure(taskId, action.op, enriched);
 				return toolResult(JSON.stringify(enriched, null, 2), enriched);
 			}
-			const projection = await projectAssuranceState(ctx.cwd, taskId);
+			const projection = await projectAssuranceForTask(ctx.cwd, taskId);
 			if (projection.error) {
 				const nextAction = recoveryActionForAssuranceFailure(projection.error) ?? "inspect authority state";
 				const details = {
@@ -634,7 +681,7 @@ export default function (
 					taskId,
 					operation: toCanaryOperation(action, "executor") as { op: string; actor_id: string },
 				})) as unknown as { revision: string; record: { lifecycle: string; artifact_state: string } };
-				const updated = await projectAssuranceState(ctx.cwd, taskId);
+				const updated = await projectAssuranceForTask(ctx.cwd, taskId);
 				const taskState = updated.error
 					? { lifecycle: result.record.lifecycle, artifact_state: result.record.artifact_state }
 					: updated.projection;
@@ -710,15 +757,18 @@ export default function (
 			_ctx: ExtensionContext,
 		) => {
 			const { action } = params;
+			// The Tool schema is intentionally broader than loop_contract's input
+			// types (model-supplied JSON); loop_contract narrows and validates at
+			// runtime, so these boundary casts are type-level only.
 			const result = action.op === "route"
 				? await buildLoopAction({
 					ownership: action.ownership,
 					target: action.target,
-					context: action.context,
+					context: action.context as RoleDelegationContext | undefined,
 					scope_expansion: action.scope_expansion,
-					kernel_operation: action.kernel_operation,
+					kernel_operation: action.kernel_operation as Parameters<typeof buildLoopAction>[0]["kernel_operation"],
 				})
-				: await buildLoopRoleDispatch({ role: action.role, context: action.context });
+				: await buildLoopRoleDispatch({ role: action.role, context: action.context as RoleDelegationContext });
 			const details = loopResultDetails(result, action.op);
 			return toolResult(JSON.stringify(result, null, 2), details);
 		},
@@ -775,14 +825,14 @@ export default function (
 			return { state: "blocked", reason };
 		}
 		try {
-		const projection = await projectAssuranceState(ctx.cwd, taskId);
+		const projection = await projectAssuranceForTask(ctx.cwd, taskId);
 		if (projection.error || !projection.claim) {
 			const reason = projection.error ?? "no active backend claim";
 			notifyOnce(ctx, `authorization-claim:${taskId}:${reason}`, `cannot authorize ${taskId}: ${reason}`, "error");
 			progression.closeInvocation(invocation);
 			return { state: "blocked", reason };
 		}
-		const priorIntent = await readTaskIntent(ctx.cwd, taskId);
+		const priorIntent = await readTaskIntentForRecord(ctx.cwd, taskId);
 		const sidecar = nextIntent ? join(ctx.cwd, priorIntent.intent_ref.path) : undefined;
 		const priorBytes = sidecar ? readFileSync(sidecar) : undefined;
 		const stagedSnapshot = sidecar ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : undefined;
@@ -1009,7 +1059,7 @@ export default function (
 						task_id: taskId,
 						operation: { ...exactOperation, capability, actor_id: LITERAL_USER_ACTOR_ID } as never,
 						prior_intent_token: priorIntent.token,
-						diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => diffSnapshotOf(root, record),
+						diffProvider: (root: string, record: TaskRecord) => diffSnapshotOf(root, record),
 						now,
 					})) as unknown as { record: { lifecycle: string; artifact_state: string; intent_ref: { path: string }; intent_snapshot: { scope_hint: string[] } } };
 					if (exactOperation.op === "stop") progression.releaseStoppedReview(taskId);
@@ -1029,7 +1079,7 @@ export default function (
 			} catch (error) {
 				const reason = error instanceof Error ? error.message : String(error);
 				if (operation === "stop") {
-					const terminal = await projectAssuranceState(ctx.cwd, taskId).catch(() => null);
+					const terminal = await projectAssuranceForTask(ctx.cwd, taskId).catch(() => null);
 					if (terminal && !terminal.error && terminal.projection.lifecycle === "stopped") {
 						progression.releaseStoppedReview(taskId);
 						return { state: "applied", operation, lifecycle: "stopped", delivery_error: reason };
@@ -1046,7 +1096,7 @@ export default function (
 		if (ctx.mode !== "tui") return { state: "blocked", reason: "imm_kernel_canary mutation is TUI-only" };
 		if (progression.isInvocationOpen(taskId))
 			return { state: "blocked", reason: `task ${taskId} already has an open invocation; concurrent assure/authorize is rejected` };
-		const projection = await projectAssuranceState(ctx.cwd, taskId);
+		const projection = await projectAssuranceForTask(ctx.cwd, taskId);
 		if (projection.error || !projection.claim)
 			return { state: "blocked", reason: projection.error ?? "no active backend claim" };
 		await dependencies.authorizationBeforeRecordRead?.();
@@ -1136,8 +1186,8 @@ export async function recordCancelledUserDecision(
 			},
 			actor_id: LITERAL_USER_ACTOR_ID,
 		} as never,
-		prior_intent_token: (await readTaskIntent(ctx.cwd, taskId)).token,
-		diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => diffSnapshotOf(root, record),
+		prior_intent_token: (await readTaskIntentForRecord(ctx.cwd, taskId)).token,
+		diffProvider: (root: string, record: TaskRecord) => diffSnapshotOf(root, record),
 		now: new Date().toISOString(),
 	});
 	return { recorded: true, finding_id: findingId };
@@ -1159,11 +1209,31 @@ export function buildUserDecisionOperation(record: {
 }
 
 /**
+ * Read the TaskIntent through the TaskRecord's `intent_ref.path`.
+ *
+ * `freeze_artifacts` binds the sidecar in place, so a post-freeze read must
+ * follow the record instead of guessing a default path; with no record yet
+ * (pre-enrollment) the Kernel resolves the sidecar that exists. Same contract
+ * as the Claude adapter's `readTaskIntentForRecord`.
+ */
+export function readTaskIntentForRecord(root: string, taskId: string): ReadTaskIntentResult {
+	const currentPath = readTaskRecordRaw(root, taskId).record?.intent_ref.path;
+	return readTaskIntent(root, taskId, currentPath);
+}
+
+async function markGithubTaskTerminal(
+	root: string,
+	input: { task_id: string; phase: "done" | "stopped"; terminal_event_id: string },
+): Promise<GithubTrackerResult> {
+	return runGithubTrackerOperation(root, { op: "mark-terminal", ...input });
+}
+
+/**
  * One record-aware freshness identity. v4 derives the scoped revision digest
  * from the immutable Enrollment base so committed and staged task work share a
  * single diff_hash with Review; v3 keeps the legacy HEAD -> index digest.
  */
-function diffSnapshotOf(root: string, record: NonNullable<TaskRecordRead["record"]>): {
+function diffSnapshotOf(root: string, record: TaskRecord): {
 	diff_hash: string;
 	changed_paths: string[];
 } {
@@ -1175,7 +1245,7 @@ function diffSnapshotOf(root: string, record: NonNullable<TaskRecordRead["record
 	return taskDiffIdentity(root, record.intent_snapshot.scope_hint, record.task_id);
 }
 
-function diffHashOf(root: string, record: NonNullable<TaskRecordRead["record"]>): string {
+function diffHashOf(root: string, record: TaskRecord): string {
 	return diffSnapshotOf(root, record).diff_hash;
 }
 
@@ -1196,7 +1266,7 @@ async function buildTaskOverview(root: string): Promise<{
 	const claim = await readBackendClaim(root);
 	let active: TaskOverviewEntry | null = null;
 	if (claim) {
-		const projection = await projectAssuranceState(root, claim.task_id);
+		const projection = await projectAssuranceForTask(root, claim.task_id);
 		if (!projection.error) {
 			const state = projection.projection;
 			const obligation = String(state.next_obligation);
@@ -1247,7 +1317,7 @@ function overviewRailState(lifecycle: string, obligation: string): TaskRailState
 	return "Working";
 }
 
-async function projectAssuranceState(root: string, taskId: string): Promise<AssuranceProjectionResult> {
+export async function projectAssuranceForTask(root: string, taskId: string): Promise<AssuranceProjectionResult> {
 	return projectAssurance(root, taskId, diffSnapshotOf);
 }
 
@@ -1352,7 +1422,7 @@ async function applyAssuranceVerdict(
 	hooks: { beforeCommit?: () => Promise<void>; onCommit?: () => void; afterCommit?: () => Promise<void> } = {},
 	authorityKind: "qa" | "review" | "user" = snapshot.role,
 ): Promise<void> {
-	const fresh = await projectAssuranceState(ctx.cwd, snapshot.task_id);
+	const fresh = await projectAssuranceForTask(ctx.cwd, snapshot.task_id);
 	if (
 		fresh.error ||
 		fresh.claim?.task_id !== snapshot.task_id ||
@@ -1377,7 +1447,7 @@ async function applyAssuranceVerdict(
 		].filter(Boolean).join(", ")}`);
 	}
 	const { registry, app } = await authorityPair();
-	const priorIntentToken = (await readTaskIntent(ctx.cwd, snapshot.task_id)).token;
+	const priorIntentToken = (await readTaskIntentForRecord(ctx.cwd, snapshot.task_id)).token;
 	const commitAndApply = async <T>(apply: () => Promise<T>): Promise<T> => {
 		invocationRegistry.commit(invocation);
 		const settlement = apply();
@@ -1415,7 +1485,7 @@ async function applyAssuranceVerdict(
 				actor_id: actorId,
 			},
 			prior_intent_token: priorIntentToken,
-			diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => diffSnapshotOf(root, record),
+			diffProvider: (root: string, record: TaskRecord) => diffSnapshotOf(root, record),
 			now,
 		}))) as unknown as { record: { lifecycle: string; artifact_state: string; intent_ref: { path: string }; intent_snapshot: { scope_hint: string[] }; findings?: Array<{ kind: string; status: string }> } };
 		stagePlanningArtifactTransition(ctx.cwd, result.record);
@@ -1432,7 +1502,7 @@ async function applyAssuranceVerdict(
 	}
 	const now = new Date().toISOString();
 	const advisories = verdict.decision === "pass" ? reviewAdvisoryRecords(verdict) : [];
-	const approval = {
+	const approval: TaskApprovalV2 = {
 		id: `approval-${snapshot.role}-${randomUUID().slice(0, 8)}`,
 		kind: snapshot.role === "qa" ? "qa" : "review",
 		authority_role: snapshot.role === "qa" ? "qa" : "reviewer",
@@ -1469,7 +1539,7 @@ async function applyAssuranceVerdict(
 		task_id: snapshot.task_id,
 		operation: { op: "record_approval", capability, approval, actor_id: actorId },
 		prior_intent_token: priorIntentToken,
-		diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => diffSnapshotOf(root, record),
+		diffProvider: (root: string, record: TaskRecord) => diffSnapshotOf(root, record),
 		now,
 	}));
 }
@@ -1587,7 +1657,7 @@ async function buildAssuranceSnapshot(
 }
 
 function qaOutcomes(
-	record: NonNullable<TaskRecordRead["record"]>,
+	record: TaskRecord,
 ): Record<string, { status: "passed" | "failed" | "blocked"; summary: string }> {
 	return Object.fromEntries(
 		record.attestations
@@ -1682,7 +1752,7 @@ async function executeOrdinaryOperation(
 	const operation = input.operation.op === "revise_intent"
 		? { ...input.operation, next_intent: await parseTaskIntentV1(input.operation.next_intent) }
 		: input.operation;
-	const priorIntent = await readTaskIntent(ctx.cwd, input.taskId);
+	const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
 	const sidecar = join(ctx.cwd, priorIntent.intent_ref.path);
 	const priorBytes = operation.op === "revise_intent" ? readFileSync(sidecar) : null;
 	// A content-changing revision writes the sidecar before the kernel's drift
@@ -1703,7 +1773,7 @@ async function executeOrdinaryOperation(
 			task_id: input.taskId,
 			operation: operation as never,
 			prior_intent_token: priorIntent.token,
-			diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => diffSnapshotOf(root, record),
+			diffProvider: (root: string, record: TaskRecord) => diffSnapshotOf(root, record),
 			now: new Date().toISOString(),
 		});
 		if (operation.op === "freeze_artifacts" || operation.op === "stop")
@@ -1787,7 +1857,7 @@ async function enrichAssuranceResult(
 		const taskState = { error: typeof result.reason === "string" ? result.reason : "authority projection unavailable" };
 		return { ...result, task_state: taskState, next_action: nextActionForAssuranceResult(result, taskState) };
 	}
-	const projection = await projectAssuranceState(ctx.cwd, taskId);
+	const projection = await projectAssuranceForTask(ctx.cwd, taskId);
 	const taskState: AssuranceTaskState = projection.error
 		? { error: projection.error }
 		: projection.projection;

@@ -2,9 +2,9 @@
 // projection that binds a task's backend claim, TaskRecord v3, workspace,
 // attestations, findings, and completion facts into one closed result.
 //
-// This module is deliberately INTERNAL to the Kernel runtime: it is imported
-// by the Pi extension only through the structural runtime-stub adapter and is
-// never re-exported from ./index.ts. Hosts consume the projection without
+// This module is deliberately INTERNAL to the Kernel runtime: both host
+// adapters import it statically and it is never re-exported from ./index.ts.
+// Hosts consume the projection without
 // reconstructing evidence/approval freshness or authorization readiness.
 //
 // It does not know about Pi session state, pending native Review verdicts,

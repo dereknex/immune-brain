@@ -148,7 +148,7 @@ describe("Host adapter intent resolution parity", () => {
 	// exact shape of the original defect, so it stays banned at the source level.
 	const adapters = [
 		"plugins/immune-brain/runtime/claude/kernel_ports.ts",
-		"plugins/immune-brain/.pi-extension/runtime-stub.ts",
+		"plugins/immune-brain/.pi-extension/imm-canary-work.ts",
 	];
 
 	for (const relativePath of adapters) {

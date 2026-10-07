@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "retire-pi-runtime-stub",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:retire-pi-runtime-stub:2026-10-06T23:16:53.529Z",
+  "final_record_hash": "sha256:a2e929874b3d14c1f4ce1e53b51a0ebc96e06d0efb2a349e19781823b576ba1c",
+  "terminalized_at": "2026-10-06T23:16:53.529Z"
+}

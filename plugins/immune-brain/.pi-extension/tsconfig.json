@@ -14,7 +14,7 @@
 	"include": [
 		"imm-canary-enroll.ts",
 		"imm-canary-work.ts",
-		"pi-canary-assurance-progression.ts",
-		"runtime-stub.ts"
+		"imm-unattended-batch.ts",
+		"pi-canary-assurance-progression.ts"
 	]
 }

@@ -6,7 +6,7 @@ import {
 	type AssuranceVerdict,
 	type SnapshotDescriptor,
 } from "../../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
-import type { AssuranceProjectionResult } from "../../plugins/immune-brain/.pi-extension/runtime-stub.ts";
+import type { AssuranceProjectionResult } from "../../plugins/immune-brain/runtime/kernel/assurance_projection";
 import type { ReviewBundle } from "../../plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts";
 
 export const TASK = "phase3-task";

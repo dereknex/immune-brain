@@ -24,12 +24,7 @@ import {
 } from "../plugins/immune-brain/runtime/staged_intent";
 import { deriveAuthorizationOperation } from "../plugins/immune-brain/runtime/authorization_operation";
 import { projectTerminalTrackerState } from "../plugins/immune-brain/runtime/assurance/coordinator";
-import {
-	LITERAL_USER_ACTOR_ID,
-	canonicalActorId,
-	isLiteralUserActor,
-} from "../plugins/immune-brain/runtime/kernel/actor_identity";
-import { LITERAL_USER_ACTOR_ID as PI_STUB_LITERAL_USER } from "../plugins/immune-brain/.pi-extension/runtime-stub";
+import { LITERAL_USER_ACTOR_ID, canonicalActorId, isLiteralUserActor } from "../plugins/immune-brain/runtime/kernel/actor_identity";
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
@@ -2625,10 +2620,10 @@ describe("dual-host assurance conformance", () => {
 		});
 	});
 
-	// S12 ACT-3: the literal-user identity is one value for both Hosts, and the
-	// extension's mirrored constant cannot drift from the Kernel's.
+	// S12 ACT-3: the literal-user identity is one value for both Hosts. The
+	// retired extension stub's mirrored copy is gone; both host adapters now
+	// import the single kernel constant, so drift is structurally impossible.
 	test("records one literal-user identity across both Hosts", () => {
-		expect(PI_STUB_LITERAL_USER).toBe(LITERAL_USER_ACTOR_ID);
 		// The Hosts' two spellings are one identity; the recorded value is canonical.
 		expect(canonicalActorId("user")).toBe(LITERAL_USER_ACTOR_ID);
 		expect(canonicalActorId(LITERAL_USER_ACTOR_ID)).toBe(LITERAL_USER_ACTOR_ID);

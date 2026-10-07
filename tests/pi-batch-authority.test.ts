@@ -784,10 +784,10 @@ describe("acc-pi-batch-gate", () => {
 
 	it("review-pi-batch-projection-scope: projectAssuranceForTask successfully projects existing enrolled records", async () => {
 		const fixture = createBatchFixture("proj-scope");
-		const { projectAssuranceForTask } = await import("../plugins/immune-brain/.pi-extension/runtime-stub");
+		const { projectAssuranceForTask } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
 
 		// The enrolled record lives in the store; the workspace itself stays free.
-		const { readTaskIntent } = await import("../plugins/immune-brain/.pi-extension/runtime-stub");
+		const { readTaskIntent } = await import("../plugins/immune-brain/runtime/kernel/intent");
 		const read = await readTaskIntent(fixture.root, "proj-scope-c1", "docs/plans/proj-scope-c1.intent.json");
 		seedKernelRunForTest(fixture.root, {
 			task_id: "proj-scope-c1",
@@ -1138,7 +1138,7 @@ describe("acc-pi-batch-gate", () => {
 	});
 
 	it("review-1: shared progression retains review reservation for foreground submit_review", async () => {
-		const { getSharedPiProgression } = await import("../plugins/immune-brain/.pi-extension/runtime-stub");
+		const { getSharedPiProgression } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
 		const progression1 = await getSharedPiProgression();
 		const progression2 = await getSharedPiProgression();
 		expect(progression1).toBe(progression2);

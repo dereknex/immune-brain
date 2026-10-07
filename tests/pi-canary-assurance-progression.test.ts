@@ -428,18 +428,21 @@ test("host hooks never project active state and publish terminal projection only
 	const root = resolve(import.meta.dir, "..");
 	const enrollment = readFileSync(resolve(root, "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts"), "utf8");
 	const work = readFileSync(resolve(root, "plugins/immune-brain/.pi-extension/imm-canary-work.ts"), "utf8");
-	const stub = readFileSync(resolve(root, "plugins/immune-brain/.pi-extension/runtime-stub.ts"), "utf8");
-	// Durable absence guards: the retired mark-active projection is fully deleted.
+	const batch = readFileSync(resolve(root, "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts"), "utf8");
+	// Durable absence guards: the retired mark-active projection is fully deleted
+	// from every Pi adapter source that owns tracker or batch glue.
 	expect(enrollment).not.toContain("markGithubTaskActive");
 	expect(enrollment).not.toContain("github_issue_tracker");
-	expect(stub).not.toContain("markGithubTaskActive");
-	expect(stub).not.toContain("mark-active");
+	expect(work).not.toContain("markGithubTaskActive");
+	expect(work).not.toContain("mark-active");
+	expect(batch).not.toContain("markGithubTaskActive");
+	expect(batch).not.toContain("mark-active");
 	// Terminal projection stays gated behind fresh Assurance plus exact tombstone
 	// reads. The projection step itself is shared with the Claude Host, so the
 	// gate is: fresh projection, then the exact tombstone, then that shared step,
 	// which is the only thing that reaches the tracker.
 	const enrichment = work.indexOf("async function enrichAssuranceResult");
-	const freshProjection = work.indexOf("await projectAssuranceState", enrichment);
+	const freshProjection = work.indexOf("await projectAssuranceForTask", enrichment);
 	const sharedProjection = work.indexOf("projectTerminalTrackerState({", freshProjection);
 	const tombstoneRead = work.indexOf("await readTaskTombstone", sharedProjection);
 	const trackerCall = work.indexOf("markGithubTaskTerminal", tombstoneRead);

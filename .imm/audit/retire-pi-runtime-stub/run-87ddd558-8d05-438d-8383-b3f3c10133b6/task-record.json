@@ -1,0 +1,231 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "retire-pi-runtime-stub",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "retire-pi-runtime-stub",
+    "goal": "Implement Slice S1 of docs/specs/deepen-authority-seams.spec.md (Initiative deepen-authority-seams): delete .pi-extension/runtime-stub.ts so the Pi adapter imports host-neutral runtime modules statically, with Pi behavior unchanged. No Kernel, Assurance or Claude adapter behavior changes.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Per D1 of docs/specs/deepen-authority-seams.spec.md (sources E2, U1): plugins/immune-brain/.pi-extension/runtime-stub.ts no longer exists and nothing imports it; no source file under plugins/immune-brain/.pi-extension loads a runtime module through a dynamic import(); the stub's hand-copied structural types and mirrored constants are gone in favor of the real exports. The package-boundary test asserts this through the import graph or behavior instead of pinning stub source text, and still proves: exactly one registered Pi extension path, one bounded enrollment Tool and no command, TUI-only, the test issuer seam excluded from the shipped extension, and the Pi Enrollment adapter reaching Kernel prepare only through runtime/assurance/enrollment. Negative control: a dynamic runtime import in .pi-extension fails the test. Agreed seam: tests/pi-canary-package-boundary.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-package-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Per D1 and invariant I4 of docs/specs/deepen-authority-seams.spec.md: the Pi enroll, work, assurance-progression and unattended-batch Tools behave exactly as before. readTaskIntent default-path resolution, readSettledTaskRecord and projectAssuranceForTask keep their behavior after moving out of the stub. Existing assertions in the named suites are not weakened, deleted or skipped. Agreed seams: tests/pi-canary-enroll-extension.test.ts, tests/pi-canary-work-extension.test.ts, tests/pi-canary-assurance-progression.test.ts, tests/post-freeze-intent-resolution.test.ts, tests/pi-batch-authority.test.ts. Revision 2 note: the revision-1 descriptor also named tests/pi-canary-discovery-regression.test.ts, which imports the host-provided @earendil-works/pi-coding-agent loader unconditionally and so cannot execute in the node_modules-free delivery tree (it failed there identically at the pristine pre-change HEAD): the stub removal itself is exonerated, only the descriptor was wrong. The discovery suite stays covered by the full-suite CI run, and factory discovery with zero load errors is proven in the delivery tree by the enroll, work and unattended-batch suites loading the real factories.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-enroll-extension.test.ts\",\n      \"tests/pi-canary-work-extension.test.ts\",\n      \"tests/pi-canary-assurance-progression.test.ts\",\n      \"tests/post-freeze-intent-resolution.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Per D1 of docs/specs/deepen-authority-seams.spec.md: the dual-host conformance suite passes against the stub-free Pi adapter. The only removed assertion is the one pinning a mirrored copy of a constant that now has a single source; every behavioral conformance case remains. Agreed seams: tests/dual-host-assurance-conformance.test.ts, tests/claude-batch-authority.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/claude-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "plugins/immune-brain/dist/claude/mcp-server.mjs is regenerated from the changed runtime sources and matches a fresh generate; no hand edit to the bundle. Agreed seam: tests/claude-host-package.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/retire-pi-runtime-stub.md",
+      "docs/plans/retire-pi-runtime-stub.intent.json",
+      "docs/solutions/contracts.md",
+      "docs/specs/deepen-authority-seams.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-interaction.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-invocations.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-qa-findings.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-tool-failure.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-verification.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/.pi-extension/tsconfig.json",
+      "plugins/immune-brain/.pi-extension/ux-language.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/helpers/pi-canary-assurance-harness.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/pi-canary-assurance-progression.test.ts",
+      "tests/pi-canary-discovery-regression.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/pi-canary-package-boundary.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/post-freeze-intent-resolution.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/retire-pi-runtime-stub.intent.json",
+    "content_hash": "sha256:e3715396f1cdb21e9617c401441b4a2b804a5c1a29a4b5111c4d2e6adbd085da"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:8ce640a53b7248c693ba4679cf12ab387a8a252de32b2ac85fc49393b27a098d",
+  "git_base_head": "c9ba1c36051b96156ed68ba04051b94d0487d627",
+  "attestations": [
+    {
+      "id": "approval-qa-efa08440",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:e3715396f1cdb21e9617c401441b4a2b804a5c1a29a4b5111c4d2e6adbd085da",
+      "diff_hash": "sha256:59edb899508c28793b16c70b52ccdf91076fe8d4e5ab5a0b5a82c31f85473637",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:46deac4657e3831b67ed7fa07f33e53ba92e31897fda2e77dfeeb8daaba0af77",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:46deac4657e3831b67ed7fa07f33e53ba92e31897fda2e77dfeeb8daaba0af77"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:46deac4657e3831b67ed7fa07f33e53ba92e31897fda2e77dfeeb8daaba0af77"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:46deac4657e3831b67ed7fa07f33e53ba92e31897fda2e77dfeeb8daaba0af77"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:46deac4657e3831b67ed7fa07f33e53ba92e31897fda2e77dfeeb8daaba0af77"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-8696d8f9",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:e3715396f1cdb21e9617c401441b4a2b804a5c1a29a4b5111c4d2e6adbd085da",
+      "diff_hash": "sha256:59edb899508c28793b16c70b52ccdf91076fe8d4e5ab5a0b5a82c31f85473637",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 manifest digest、base、单一父提交、review tree 和全部 17 个变更路径；静态导入替换及 helper 迁移保留原有行为，未发现阻断问题，AC1–AC4 的 Kernel QA evidence 均通过。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "c9ba1c36051b96156ed68ba04051b94d0487d627",
+        "review_commit": "554156987993778e8162276de0270e4d6ea998c6",
+        "review_tree": "f68d4791c885c9025bbdead862e9a10191dc8dc3",
+        "manifest_digest": "sha256:097389640e85818bd839d400c013566e9f8a5264f26c2b5a9dcc9b74d47e685d"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-AC2-f12c778b-858637",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC2",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=18658B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:retire-pi-runtime-stub:2026-10-06T14:22:14.140Z",
+      "at": "2026-10-06T14:22:14.140Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/retire-pi-runtime-stub.intent.json"
+    },
+    {
+      "id": "request_rework:retire-pi-runtime-stub:2026-10-06T14:25:59.182Z",
+      "at": "2026-10-06T14:25:59.182Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:82229105d0dac04fe0ef527078cbddf69c4e1d9f7d06e20e6e4a1f8f25df56e8",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-e4e4a2d3005a2c74",
+        "issued_at": "2026-10-06T14:25:59.183Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:retire-pi-runtime-stub:2026-10-06T23:08:42.918Z",
+      "at": "2026-10-06T23:08:42.918Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:e1cdf1a1be6629a2cad2b2174a40c19c475fea45cda6524c827de03145eac314",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-a7471a4e81b09cb3",
+        "issued_at": "2026-10-06T23:08:43.482Z"
+      }
+    },
+    {
+      "id": "resolve_finding:retire-pi-runtime-stub:2026-10-06T23:10:51.281Z",
+      "at": "2026-10-06T23:10:51.281Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-AC2-f12c778b-858637\naction_v2_sha256:94fb4f6051030ad934011e826da0ac2aea68a94a39488f477c459b0dfc8e90d8"
+    },
+    {
+      "id": "freeze_artifacts:retire-pi-runtime-stub:2026-10-06T23:10:56.782Z",
+      "at": "2026-10-06T23:10:56.782Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/retire-pi-runtime-stub.intent.json"
+    },
+    {
+      "id": "record_approval:retire-pi-runtime-stub:2026-10-06T23:14:40.462Z",
+      "at": "2026-10-06T23:14:40.462Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-efa08440\naction_v2_sha256:0982ba4ebdbe32c837f3011f9bbec875b9e424a560a5e499a77277b325dc9da5",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-709b2e0832cc5a61",
+        "issued_at": "2026-10-06T23:14:40.463Z"
+      }
+    },
+    {
+      "id": "record_approval:retire-pi-runtime-stub:2026-10-06T23:16:51.978Z",
+      "at": "2026-10-06T23:16:51.978Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-8696d8f9\naction_v2_sha256:60aebf2de09d10ab20fe0c09e8a7cb192c6af25b976efe67a8d67824eb24ba84",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-90ecc5d3a230e83b",
+        "issued_at": "2026-10-06T23:16:51.978Z"
+      }
+    },
+    {
+      "id": "complete:retire-pi-runtime-stub:2026-10-06T23:16:53.529Z",
+      "at": "2026-10-06T23:16:53.529Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:b94aea5cf425c57a7a103004875629cb2c081339230f57034a20fa54b1947275"
+    }
+  ]
+}

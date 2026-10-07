@@ -11,8 +11,8 @@
     },
     {
       "id": "AC2",
-      "assertion": "Per D1 and invariant I4 of docs/specs/deepen-authority-seams.spec.md: the Pi enroll, work, assurance-progression and unattended-batch Tools behave exactly as before. readTaskIntent default-path resolution, readSettledTaskRecord and projectAssuranceForTask keep their behavior after moving out of the stub. Existing assertions in the named suites are not weakened, deleted or skipped. Agreed seams: tests/pi-canary-enroll-extension.test.ts, tests/pi-canary-work-extension.test.ts, tests/pi-canary-assurance-progression.test.ts, tests/post-freeze-intent-resolution.test.ts, tests/pi-canary-discovery-regression.test.ts, tests/pi-batch-authority.test.ts.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-enroll-extension.test.ts\",\n      \"tests/pi-canary-work-extension.test.ts\",\n      \"tests/pi-canary-assurance-progression.test.ts\",\n      \"tests/post-freeze-intent-resolution.test.ts\",\n      \"tests/pi-canary-discovery-regression.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      "assertion": "Per D1 and invariant I4 of docs/specs/deepen-authority-seams.spec.md: the Pi enroll, work, assurance-progression and unattended-batch Tools behave exactly as before. readTaskIntent default-path resolution, readSettledTaskRecord and projectAssuranceForTask keep their behavior after moving out of the stub. Existing assertions in the named suites are not weakened, deleted or skipped. Agreed seams: tests/pi-canary-enroll-extension.test.ts, tests/pi-canary-work-extension.test.ts, tests/pi-canary-assurance-progression.test.ts, tests/post-freeze-intent-resolution.test.ts, tests/pi-batch-authority.test.ts. Revision 2 note: the revision-1 descriptor also named tests/pi-canary-discovery-regression.test.ts, which imports the host-provided @earendil-works/pi-coding-agent loader unconditionally and so cannot execute in the node_modules-free delivery tree (it failed there identically at the pristine pre-change HEAD): the stub removal itself is exonerated, only the descriptor was wrong. The discovery suite stays covered by the full-suite CI run, and factory discovery with zero load errors is proven in the delivery tree by the enroll, work and unattended-batch suites loading the real factories.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-enroll-extension.test.ts\",\n      \"tests/pi-canary-work-extension.test.ts\",\n      \"tests/pi-canary-assurance-progression.test.ts\",\n      \"tests/post-freeze-intent-resolution.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
     },
     {
       "id": "AC3",
@@ -59,5 +59,5 @@
     "tests/post-freeze-intent-resolution.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 2
 }
