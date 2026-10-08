@@ -8,6 +8,7 @@ import {
 } from "../kernel/intent";
 import { readTaskRecordRaw } from "../kernel/storage";
 import { inspectSpecBinding, type SpecBindingInspection } from "../kernel/spec_binding";
+import { projectParallelGroups } from "./batch_schedule";
 import type {
 	BatchPlan,
 	BatchPlanBudget,
@@ -147,6 +148,7 @@ export async function projectBatchPlan(
 	const order = dependencyOrder(trackerObservation);
 	const closures = dependencyClosures(order);
 	const children: BatchPlanChild[] = [];
+	const scopeHints = new Map<string, string[]>();
 	for (const task of order) {
 		const blockedBy = closures.get(task.task_id)!;
 		const child = { task_id: task.task_id, slice_id: task.slice_id, blocked_by: blockedBy };
@@ -187,6 +189,7 @@ export async function projectBatchPlan(
 				});
 				continue;
 			}
+			scopeHints.set(task.task_id, [...read.intent.scope_hint]);
 			children.push({
 				...child,
 				status: "enrollable",
@@ -233,5 +236,12 @@ export async function projectBatchPlan(
 		enrollable,
 		plan_digest: planDigest,
 		budget: budget(input, enrollable.length),
+		...projectParallelGroups(
+			enrollable.map((child) => ({
+				task_id: child.task_id,
+				blocked_by: child.blocked_by,
+				scope_hint: scopeHints.get(child.task_id)!,
+			})),
+		),
 	};
 }

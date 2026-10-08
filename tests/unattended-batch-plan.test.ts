@@ -325,6 +325,13 @@ describe("unattended batch plan projection", () => {
 				max_children: 3,
 				qa_failure_limit: 2,
 			});
+			// Every fixture child shares `tests/**`, so none can start together: the
+			// projection serializes them and names who each one waits behind.
+			expect(first.parallel_groups).toEqual([["base"], ["unbound"], ["final"]]);
+			expect(first.scope_conflicts).toEqual([
+				{ task_id: "unbound", overlaps_with: ["base"] },
+				{ task_id: "final", overlaps_with: ["unbound"] },
+			]);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
@@ -494,6 +501,61 @@ describe("unattended batch plan projection", () => {
 				expect(readTaskRecordRaw(root, task_id).record).toBeNull();
 				expect(readBackendClaim(root) ?? null).toBeNull();
 			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("batch plan parallel groups", () => {
+	function planRoot(scopes: Record<string, string[]>): string {
+		const root = mkdtempSync(join(tmpdir(), "imm-batch-groups-"));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		const paths = Object.entries(scopes).map(([taskId, scope]) => writeIntent(root, taskId, "material", scope));
+		execFileSync("git", ["add", ...paths], { cwd: root });
+		return root;
+	}
+
+	function tasks(edges: Record<string, string[]>): GithubInitiativeObservation["tasks"] {
+		return Object.entries(edges).map(([task_id, blocked_by], index) => ({
+			task_id,
+			slice_id: `S${index + 1}`,
+			issue_number: index + 2,
+			blocked_by,
+		}));
+	}
+
+	it("groups ready children with provably disjoint scopes and leaves plan_digest unchanged", async () => {
+		const root = planRoot({
+			alpha: ["runtime/alpha/**"],
+			beta: ["runtime/beta/b.ts"],
+			gamma: ["docs/gamma.md"],
+			delta: ["runtime/alpha/deep/file.ts"],
+			omega: ["tests/omega.test.ts"],
+		});
+		try {
+			const plan = await projectBatchPlan(root, "batch", { confirmation_time: CONFIRMATION_TIME }, async () =>
+				observation(tasks({ alpha: [], beta: [], gamma: [], delta: [], omega: ["alpha", "beta"] })));
+
+			// delta nests under alpha's pattern prefix, so it waits for the next wave.
+			expect(plan.parallel_groups).toEqual([["alpha", "beta", "gamma"], ["delta", "omega"]]);
+			expect(plan.scope_conflicts).toEqual([{ task_id: "delta", overlaps_with: ["alpha"] }]);
+			const digestInput = plan.enrollable;
+			expect(plan.plan_digest).toBe(`sha256:${createHash("sha256").update(stableStringify(digestInput)).digest("hex")}`);
+			expect(digestInput.every((child) => !("scope_hint" in child))).toBe(true);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("keeps a dependent behind its blocker even when scopes are disjoint", async () => {
+		const root = planRoot({ first: ["runtime/a.ts"], second: ["docs/b.md"] });
+		try {
+			const plan = await projectBatchPlan(root, "batch", { confirmation_time: CONFIRMATION_TIME }, async () =>
+				observation(tasks({ first: [], second: ["first"] })));
+
+			expect(plan.parallel_groups).toEqual([["first"], ["second"]]);
+			expect(plan.scope_conflicts).toEqual([]);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

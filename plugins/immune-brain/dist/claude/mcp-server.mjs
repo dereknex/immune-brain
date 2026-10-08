@@ -11173,6 +11173,81 @@ async function captureBatchReconfirmation(root, record, children) {
 
 // plugins/immune-brain/runtime/unattended/batch_plan.ts
 import { createHash as createHash19 } from "node:crypto";
+
+// plugins/immune-brain/runtime/unattended/batch_schedule.ts
+var IN_FLIGHT_STATES = new Set([
+  "lane_admitted",
+  "enrolled",
+  "settled",
+  "lane_committed"
+]);
+var DONE_STATES = new Set(["committed", "integrated", "released"]);
+var WILDCARD = /[*?[\]{}!]/;
+function scopePrefix(entry) {
+  if (typeof entry !== "string")
+    return [];
+  let value = entry.trim().toLowerCase();
+  while (value.startsWith("./"))
+    value = value.slice(2);
+  if (!value || value.startsWith("/") || value.includes("\\"))
+    return [];
+  const wildcard = value.search(WILDCARD);
+  const literal = wildcard === -1 ? value : value.slice(0, value.lastIndexOf("/", wildcard) + 1);
+  const segments = literal.split("/").filter((segment) => segment.length > 0);
+  if (segments.some((segment) => segment === "." || segment === ".."))
+    return [];
+  return segments;
+}
+function prefixOverlaps(left, right) {
+  if (!left.length || !right.length)
+    return true;
+  const shared = Math.min(left.length, right.length);
+  for (let index = 0;index < shared; index += 1)
+    if (left[index] !== right[index])
+      return false;
+  return true;
+}
+function scopesOverlap(left, right) {
+  if (!left.length || !right.length)
+    return true;
+  const rightPrefixes = right.map(scopePrefix);
+  return left.some((entry) => {
+    const prefix = scopePrefix(entry);
+    return rightPrefixes.some((other) => prefixOverlaps(prefix, other));
+  });
+}
+function projectParallelGroups(children) {
+  const remaining = [...children];
+  const placed = new Set;
+  const groups = [];
+  const conflicts = new Map;
+  while (remaining.length) {
+    const ready = remaining.filter((child) => child.blocked_by.every((id) => placed.has(id)));
+    if (!ready.length)
+      throw new Error("Initiative Task dependencies must form an acyclic graph");
+    const wave = [];
+    for (const child of ready) {
+      const overlapped = wave.filter((member) => scopesOverlap(child.scope_hint, member.scope_hint));
+      if (overlapped.length) {
+        const known = conflicts.get(child.task_id) ?? new Set;
+        for (const member of overlapped)
+          known.add(member.task_id);
+        conflicts.set(child.task_id, known);
+        continue;
+      }
+      wave.push(child);
+    }
+    groups.push(wave.map((child) => child.task_id));
+    for (const child of wave) {
+      placed.add(child.task_id);
+      remaining.splice(remaining.indexOf(child), 1);
+    }
+  }
+  const scopeConflicts = children.filter((child) => conflicts.has(child.task_id)).map((child) => ({ task_id: child.task_id, overlaps_with: [...conflicts.get(child.task_id)].sort() }));
+  return { parallel_groups: groups, scope_conflicts: scopeConflicts };
+}
+
+// plugins/immune-brain/runtime/unattended/batch_plan.ts
 var ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var DEFAULT_QA_FAILURE_LIMIT = 2;
 function specBindingReason(inspection) {
@@ -11283,6 +11358,7 @@ async function projectBatchPlan(root, initiativeSlug, input, readInitiative = ob
   const order = dependencyOrder(trackerObservation);
   const closures = dependencyClosures(order);
   const children = [];
+  const scopeHints = new Map;
   for (const task of order) {
     const blockedBy = closures.get(task.task_id);
     const child = { task_id: task.task_id, slice_id: task.slice_id, blocked_by: blockedBy };
@@ -11324,6 +11400,7 @@ async function projectBatchPlan(root, initiativeSlug, input, readInitiative = ob
         });
         continue;
       }
+      scopeHints.set(task.task_id, [...read.intent.scope_hint]);
       children.push({
         ...child,
         status: "enrollable",
@@ -11369,7 +11446,12 @@ async function projectBatchPlan(root, initiativeSlug, input, readInitiative = ob
     children,
     enrollable,
     plan_digest: planDigest,
-    budget: budget(input, enrollable.length)
+    budget: budget(input, enrollable.length),
+    ...projectParallelGroups(enrollable.map((child) => ({
+      task_id: child.task_id,
+      blocked_by: child.blocked_by,
+      scope_hint: scopeHints.get(child.task_id)
+    })))
   };
 }
 

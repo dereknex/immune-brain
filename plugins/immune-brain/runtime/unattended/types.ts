@@ -49,6 +49,18 @@ export interface BatchPlanChild {
 	intent_content_hash: string | null;
 }
 
+/** Start waves of enrollable children: each is ready and pairwise scope-disjoint. */
+export type BatchPlanParallelGroups = string[][];
+
+/**
+ * A ready child held out of a start wave because its scope cannot be proved
+ * disjoint from the listed children, so it serializes after them.
+ */
+export interface BatchPlanScopeConflict {
+	task_id: string;
+	overlaps_with: string[];
+}
+
 export interface BatchPlan {
 	contract: "assurance_kernel/batch_plan/v1";
 	initiative_slug: string;
@@ -58,6 +70,9 @@ export interface BatchPlan {
 	enrollable: BatchPlanDigestChild[];
 	plan_digest: string;
 	budget: BatchPlanBudget;
+	/** Additive projection; not part of `plan_digest`. */
+	parallel_groups: BatchPlanParallelGroups;
+	scope_conflicts: BatchPlanScopeConflict[];
 }
 
 export interface ProjectBatchPlanInput {
