@@ -9,14 +9,14 @@ Prune stale current documentation from one Git repository through explicit
 invocation, comprehensive inventory, evidence-based candidate narrowing,
 one exact user-approved manifest, and bounded current-only mutation. This is
 a standalone host-native maintenance entry, not a Managed Path continuation
-and not an `imm-loop` internal-role dispatch.
+and not an `imm-run` internal-role dispatch.
 
 ## Authority Boundary
 
 This Skill prunes documentation
 without creating or mutating
 TaskIntent, TaskRecord, Kernel, Spec, or Plan authority. An already active
-Managed task remains owned by `imm-loop`. Read-only inventory and manifest
+Managed task remains owned by `imm-run`. Read-only inventory and manifest
 production remain available. Classify each candidate overlapping the active
 TaskIntent `scope_hint` as `BLOCKED_ACTIVE_SCOPE` and continue auditing
 unaffected candidates. If the routing owner or scope cannot be read reliably,

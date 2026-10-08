@@ -21,7 +21,7 @@ const HOST_NEUTRAL_OBLIGATIONS = ["role-boundary route", "Kernel stop operation"
 
 describe("loop contract v4 alignment", () => {
 	test("packaged loop contract instructs the Kernel path and not the retired autowork playbook", () => {
-		const dist = read("plugins/immune-brain/dist/imm-loop.md");
+		const dist = read("plugins/immune-brain/dist/imm-run.md");
 		for (const token of KERNEL_SURFACE) {
 			expect(dist).toContain(token);
 		}
@@ -35,7 +35,7 @@ describe("loop contract v4 alignment", () => {
 	});
 
 	test("packaged loop contract names the native Claude read-only dispatch route", () => {
-		const dist = read("plugins/immune-brain/dist/imm-loop.md").replace(/\s+/g, " ");
+		const dist = read("plugins/immune-brain/dist/imm-run.md").replace(/\s+/g, " ");
 		expect(dist).toContain("On the Claude Host a read-only internal role is dispatched through the `Agent` tool by its plugin agent type");
 		for (const agent of ["immune-brain:immune-brain-qa", "immune-brain:immune-brain-ui-review", "immune-brain:immune-brain-advisory-reviewer"])
 			expect(dist).toContain(agent);
@@ -49,7 +49,7 @@ describe("loop contract v4 alignment", () => {
 	});
 
 	test("packaged loop contract tells Claude to wait and forbids continuing a reviewer", () => {
-		const dist = read("plugins/immune-brain/dist/imm-loop.md").replace(/\s+/g, " ");
+		const dist = read("plugins/immune-brain/dist/imm-run.md").replace(/\s+/g, " ");
 		expect(dist).toContain("Pass the returned Agent envelope through unchanged");
 		expect(dist).toContain("On the Claude Host an Agent call always returns an asynchronous launch receipt, which is normal and never a configuration fault");
 		expect(dist).toContain("the Parent waits for the reviewer to finish before `submit_review`");
@@ -61,14 +61,14 @@ describe("loop contract v4 alignment", () => {
 
 	test("plugin README no longer names the removed imm-autowork command", () => {
 		const readme = read("plugins/immune-brain/README.md");
-		expect(readme).not.toMatch(/imm-loop` consumes `imm-autowork/);
+		expect(readme).not.toMatch(/imm-run` consumes `imm-autowork/);
 		expect(readme).not.toContain("imm-autowork");
 		expect(readme).not.toMatch(/Retired after v4 storage retirement/);
 	});
 
 	test("public Loop loader points to the packaged Kernel surface", () => {
-		const skill = read("plugins/immune-brain/skills/imm-loop/SKILL.md");
-		expect(skill).toContain("dist/imm-loop.md");
+		const skill = read("plugins/immune-brain/skills/imm-run/SKILL.md");
+		expect(skill).toContain("dist/imm-run.md");
 		expect(skill).toContain("canonical contract");
 	});
 });

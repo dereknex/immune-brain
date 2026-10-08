@@ -53,11 +53,11 @@ describe("skill registry consistency", () => {
     expect(registry.map((entry) => entry.name)).toEqual([
       "imm-brainstorm",
       "imm-planner",
-      "imm-loop",
+      "imm-run",
       "imm-pr-fix",
       "imm-doc-prune",
-      "imm-agent-doc-maintain",
-      "imm-review-retro",
+      "imm-doc-slim",
+      "imm-retro",
     ])
   })
 

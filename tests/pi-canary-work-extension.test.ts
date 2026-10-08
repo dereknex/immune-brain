@@ -884,7 +884,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			ctx,
 		);
 		expect(JSON.parse(action.content[0].text)).toMatchObject({
-			entry: "imm-loop",
+			entry: "imm-run",
 			next: "executor",
 			context: { role: "executor", tool_policy: "workspace tools" },
 		});

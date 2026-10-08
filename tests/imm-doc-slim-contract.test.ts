@@ -3,10 +3,10 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dir, "..");
-const DIST = resolve(ROOT, "plugins/immune-brain/dist/imm-agent-doc-maintain.md");
+const DIST = resolve(ROOT, "plugins/immune-brain/dist/imm-doc-slim.md");
 const SKILL = resolve(
   ROOT,
-  "plugins/immune-brain/skills/imm-agent-doc-maintain/SKILL.md",
+  "plugins/immune-brain/skills/imm-doc-slim/SKILL.md",
 );
 const REGISTRY = readFileSync(
   resolve(ROOT, "plugins/immune-brain/skills/registry.yaml"),
@@ -24,16 +24,16 @@ function registryEntry(name: string): string {
   return REGISTRY.slice(start, end < 0 ? undefined : end);
 }
 
-describe("imm-agent-doc-maintain contract", () => {
+describe("imm-doc-slim contract", () => {
   test("is a compact loader referencing the owned packaged contract", () => {
-    expect(loader).toContain("name: imm-agent-doc-maintain");
-    expect(loader).toContain("dist/imm-agent-doc-maintain.md");
+    expect(loader).toContain("name: imm-doc-slim");
+    expect(loader).toContain("dist/imm-doc-slim.md");
     expect(loader).toContain("standalone host-native");
   });
 
   test("is registered as a canonical standalone maintenance Skill", () => {
-    const entry = registryEntry("imm-agent-doc-maintain");
-    expect(entry).toContain("path: skills/imm-agent-doc-maintain/SKILL.md");
+    const entry = registryEntry("imm-doc-slim");
+    expect(entry).toContain("path: skills/imm-doc-slim/SKILL.md");
     expect(entry).toContain("role: execute");
     expect(entry).toContain("role_class: repair");
     expect(entry).toContain("canonical: true");
@@ -193,14 +193,14 @@ describe("imm-agent-doc-maintain contract", () => {
       "without creating or mutating TaskIntent, TaskRecord, Kernel, Spec, or Plan authority",
     );
     expect(contract).toContain(
-      "An already active Managed task remains owned by `imm-loop`",
+      "An already active Managed task remains owned by `imm-run`",
     );
   });
 
   test("is standalone host-native and not a Loop internal role", () => {
     expect(contract).toContain("standalone host-native");
     expect(contract).toContain("not a Managed Path continuation");
-    expect(contract).toContain("not an `imm-loop` internal-role dispatch");
+    expect(contract).toContain("not an `imm-run` internal-role dispatch");
     expect(contract).toContain("does not invoke `imm-doc-prune`");
   });
 

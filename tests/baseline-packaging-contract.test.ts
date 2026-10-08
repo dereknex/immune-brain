@@ -146,7 +146,7 @@ describe("immune-brain BASELINE packaging contract", () => {
   })
 
   it("keeps Kernel risk obligations in the canonical Loop contract", () => {
-    const loop = read(resolve(DIST_DIR, "imm-loop.md"))
+    const loop = read(resolve(DIST_DIR, "imm-run.md"))
     expect(loop).toContain("Fresh QA suffices for routine work")
     expect(loop).toContain("material and critical work additionally require fresh independent Review")
     expect(loop).toContain("submit_review")

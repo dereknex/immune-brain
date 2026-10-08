@@ -250,7 +250,7 @@ async function classifyCommitFailure(
 				"completed",
 				"committing",
 				`Kernel enrollment committed for ${taskId}; terminal receipt was recovered from authoritative owners`,
-				"continue with imm-loop",
+				"continue with imm-run",
 			);
 		}
 		if (
@@ -403,7 +403,7 @@ async function executeForegroundEnrollment(
 				"route_incumbent",
 				stage,
 				`Kernel task ${authority.owner_task_id} already owns this workspace`,
-				`continue ${authority.owner_task_id} through imm-loop without re-enrollment`,
+				`continue ${authority.owner_task_id} through imm-run without re-enrollment`,
 			);
 		if (authority.state === "repairable_stale_claim")
 			return terminal(
@@ -582,7 +582,7 @@ async function executeForegroundEnrollment(
 				"completed",
 				stage,
 				`Kernel enrollment completed: task ${result.record.task_id} state=${result.record.lifecycle}:${result.record.artifact_state} backend=${result.backend_claim.backend}`,
-				"continue with imm-loop",
+				"continue with imm-run",
 			);
 		} catch (error) {
 			if (error instanceof EnrollmentRehearsalError)

@@ -98,7 +98,7 @@ describe("current Pi-only contracts", () => {
   it("does not publish retired host selectors or host-specific workflow fields", () => {
     const activePaths = [
       "plugins/immune-brain/runtime/commands/kernel.ts",
-      "plugins/immune-brain/dist/imm-loop.md",
+      "plugins/immune-brain/dist/imm-run.md",
       "plugins/immune-brain/dist/role-prompts/compounder.md",
     ];
     for (const path of activePaths) {

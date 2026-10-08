@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 import { dirname, resolve } from "node:path"
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..")
-const SKILL_DIST = "plugins/immune-brain/dist/imm-loop.md"
+const SKILL_DIST = "plugins/immune-brain/dist/imm-run.md"
 const INTERNAL_REVIEW = "plugins/immune-brain/dist/role-prompts/code-review.md"
 const RETIRED_PACKAGED_ACTIVATION = [
 	"plugins/immune-brain/dist/docs/specs/automatic-subagent-activation.spec.md",

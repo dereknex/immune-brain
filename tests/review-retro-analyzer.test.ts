@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
-import { run } from "../plugins/immune-brain/skills/imm-review-retro/scripts/review_retro.ts";
+import { run } from "../plugins/immune-brain/skills/imm-retro/scripts/review_retro.ts";
 
 const ROOT = resolve(import.meta.dir, "fixtures/review-retro");
 const CONTRACT_ROOT = resolve(import.meta.dir, "fixtures/review-retro-contract");

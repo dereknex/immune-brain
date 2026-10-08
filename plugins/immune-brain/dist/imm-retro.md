@@ -1,14 +1,14 @@
 ---
-name: imm-review-retro
+name: imm-retro
 description: Use when the user explicitly requests Immune-Brain ranking of models by cross-model review load or a project usage retro.
 ---
 
-# Immune-Brain: Review Retro
+# Immune-Brain: Retro
 
 Rank models by how much code review their own edits triggered, and report
 basic project usage over a look-back window the user supplies in days. This
 is a standalone host-native analysis entry, not a Managed Path continuation
-and not an `imm-loop` internal-role dispatch. It reviews no diff — a diff
+and not an `imm-run` internal-role dispatch. It reviews no diff — a diff
 review is `code-review`.
 
 ## Boundary
@@ -20,12 +20,12 @@ Blocked: code, test, Spec, Plan, or `.imm/` edits; session-log writes;
 Kernel, TaskIntent, or TaskRecord mutation; Compounder or scheduled runs;
 `.imm/audit/` lifecycle statistics.
 
-An already active Managed task remains owned by `imm-loop`. This Skill does
+An already active Managed task remains owned by `imm-run`. This Skill does
 not create or resume Managed authority.
 
 ## Invocation
 
-Requires explicit invocation: `imm-review-retro` or `/imm-review-retro`.
+Requires explicit invocation: `imm-retro` or `/imm-retro`.
 Ordinary questions such as "which model is worse" stay host-native and do
 not enter this Skill.
 

@@ -138,7 +138,7 @@ describe("pi canary package boundary", () => {
 		expect(enroll).not.toContain("pi_canary_prepare");
 	});
 
-	test("the four production callers use the single Enrollment entry and none sequences rehearsal and commit", () => {
+	test("the production callers use the single Enrollment entry and none sequences rehearsal and commit", () => {
 		// D3: runtime/kernel/enrollment.ts's enrollTask is the only production
 		// sequencer of capability issue -> zero-write rehearsal -> commit. No
 		// caller outside it references the two primitives, so no host adapter,
@@ -155,13 +155,18 @@ describe("pi canary package boundary", () => {
 			}
 			return collected;
 		};
+		// A caller is a module that imports the entry. Matching the import rather
+		// than a literal `enrollTask(` call keeps the shared batch port counted:
+		// it invokes the entry through an injectable alias.
+		const importsEntry = (source: string): boolean =>
+			/import\s*\{[^}]*\benrollTask\b[^}]*\}\s*from\s*"[^"]*kernel\/enrollment"/.test(source);
 		const entryCalls = new Set<string>();
 		const sequencers: string[] = [];
 		for (const [name, source] of productionSources()) {
 			// The entry module itself is the sequencer, not a caller; the batch
 			// runner's `enrollTask` is a Kernel-port member, not this entry.
 			const isSequencerOrPort = name === "runtime/kernel/enrollment.ts" || name === "runtime/unattended/batch_runner.ts";
-			const callsEntry = source.includes("enrollTask(") && !isSequencerOrPort;
+			const callsEntry = importsEntry(source) && !isSequencerOrPort;
 			const usesRehearsal = /\brunEnrollmentRehearsal\s*\(/.test(source);
 			const usesCommit = /\benrollCanaryTask\s*\(/.test(source);
 			if (callsEntry) entryCalls.add(name);
@@ -170,12 +175,18 @@ describe("pi canary package boundary", () => {
 			if (!isSequencerOrPort && (usesRehearsal || usesCommit))
 				sequencers.push(`${name}:${usesRehearsal ? "rehearsal" : ""}${usesCommit ? "commit" : ""}`);
 		}
-		// Claude enroll path, Claude batch child, Pi enroll Tool, Pi batch child.
+		// Pi enroll Tool, Claude enroll path, and the one shared Batch child
+		// Kernel port that serves both Hosts' batch children.
 		expect([...entryCalls].sort()).toEqual([
 			"imm-canary-enroll.ts",
-			"imm-unattended-batch.ts",
 			"runtime/claude/kernel_ports.ts",
+			"runtime/unattended/batch_kernel_port.ts",
 		]);
+		// Both Hosts' batch children reach the entry only through that port.
+		const sources = new Map(productionSources());
+		for (const host of ["imm-unattended-batch.ts", "runtime/claude/kernel_ports.ts"])
+			expect(sources.get(host)).toMatch(/\bcreateBatchKernelPort\s*\(/);
+		expect(importsEntry(sources.get("imm-unattended-batch.ts") ?? "")).toBe(false);
 		expect(sequencers).toEqual([]);
 		// Boundary: the Pi enroll Tool supplies its abort/begin-commit gate as
 		// the entry's checkpoint and reports the rehearsing and committing stages
@@ -186,14 +197,14 @@ describe("pi canary package boundary", () => {
 		expect(enroll).toContain("checkpoint:");
 		// Negative controls: a source that calls both primitives outside the entry
 		// is flagged, and a caller that calls the entry is counted.
-		const positive = 'enrollTask(root, registry, { binding, now });';
+		const positive = 'import { enrollTask, EnrollmentRehearsalError } from "../runtime/kernel/enrollment";';
 		const negative = 'runEnrollmentRehearsal(root, input, cap, registry);\nenrollCanaryTask(root, input, registry);';
-		expect(positive.includes("enrollTask(")).toBe(true);
+		expect(importsEntry(positive)).toBe(true);
 		expect(/\brunEnrollmentRehearsal\s*\(/.test(negative)).toBe(true);
 		expect(/\benrollCanaryTask\s*\(/.test(negative)).toBe(true);
 		// A Kernel-port member call is not the entry and does not sequence.
 		const portCall = 'await input.kernel.enrollTask({ root: input.root, task_id: child.task_id });';
-		expect(portCall.includes("enrollTask(")).toBe(true);
+		expect(importsEntry(portCall)).toBe(false);
 		expect(/\brunEnrollmentRehearsal\s*\(/.test(portCall)).toBe(false);
 	});
 });

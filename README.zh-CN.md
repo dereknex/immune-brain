@@ -11,10 +11,10 @@
 Immune-Brain 为 AI 编程工具（**Pi** 与 **Claude Code**）提供结构化的工程工作流保障：
 
 - **日常对话零负担** — 普通问答、单点代码修改与探索性对话完全保持 Host 原生体验，不拦截、不强加流程。
-- **需要严谨时显式启用** — 遇到复杂功能开发或高保证任务时，显式调用 `imm-brainstorm`、`imm-planner` 或 `imm-loop`。
+- **需要严谨时显式启用** — 遇到复杂功能开发或高保证任务时，显式调用 `imm-brainstorm`、`imm-planner` 或 `imm-run`。
 - **计划变为可追踪的任务**（`TaskIntent` + `TaskRecord`） — 进度落盘持久化（Git + `.imm/`），会话重启或上下文清理后仍可无缝恢复。
 - **质量由代码强制保障** — 自动化 QA 验收与隔离式 Reviewer 审查必须通过，任务才会结算完成。
-- **已就绪的 Initiative 可以整批运行** — 一次确认的 Batch Authorization 让 `imm-loop` 串行推进已发布 Initiative 的各个 child，而每个 child 仍然独立 Enrollment、独立 QA/Review、独立结算。
+- **已就绪的 Initiative 可以整批运行** — 一次确认的 Batch Authorization 让 `imm-run` 串行推进已发布 Initiative 的各个 child，而每个 child 仍然独立 Enrollment、独立 QA/Review、独立结算。
 
 Pi 与 Claude Code 是支持的宿主。未声明的适配器仍不受支持。Claude Code 最低版本为 `2.1.236`，这是已通过交互式 server-initiated MCP elicitation 验证的最低版本。当前真实 Host 证据见 `docs/verification/claude-native-elicitation-authority-conformance.md`；历史报告归档于 `docs/verification/archive/`。
 
@@ -96,8 +96,8 @@ Planner 会在 `docs/plans/` 生成 `TaskIntent` 与 living Spec（锁定文件�
 
 检查无误并确认后，才会正式锁定范围并开放执行权限。
 
-**3. 用 `imm-loop` 自动执行与验收：**
-输入 `/imm-loop`（或 "开始 imm-loop"），工作流引擎会自动：
+**3. 用 `imm-run` 自动执行与验收：**
+输入 `/imm-run`（或 "开始 imm-run"），工作流引擎会自动：
 - 调度 Executor 仅在锁定的 scope 范围内编写代码。
 - 自动运行确定性 QA 验收命令。
 - 对 material/critical 任务分发隔离的 Reviewer 子代理审查代码。
@@ -114,18 +114,18 @@ Immune-Brain 提供两种清晰的工作模式：日常轻量编码走 **Host-na
 | 日常编码、快速改动、普通问答 | 正常自然语言对话（"帮我改下文案"、"解释这段代码"） | **Host-native**：标准 Pi / Claude Code 行为，零流程开销 |
 | 想法模糊，需要梳理边界与风险 | `/imm-brainstorm` "帮我梳理一下通知系统的方案" | → `imm-brainstorm` 提问澄清、分析约束与风险（只读，不改代码） |
 | 目标明确，需要正规计划与规格 | `/imm-planner` "规划一下深色模式功能" | → `imm-planner` 产出 `TaskIntent` + Spec，包含可执行验收条件 |
-| 计划已确认，准备执行与验证 | `/imm-loop` | → Executor 在范围内实现 → 确定性 QA 验收 → 隔离 Review 审查 → 任务结算 |
-| 会话中断或需恢复未完成任务 | `/imm-loop` | → 从磁盘状态（`.imm/`）无缝恢复，以 Kernel projection 为准 |
+| 计划已确认，准备执行与验证 | `/imm-run` | → Executor 在范围内实现 → 确定性 QA 验收 → 隔离 Review 审查 → 任务结算 |
+| 会话中断或需恢复未完成任务 | `/imm-run` | → 从磁盘状态（`.imm/`）无缝恢复，以 Kernel projection 为准 |
 | 已发布的 Initiative 可以整批跑了 | "把 initiative `<slug>` 无人值守跑完" | → Host 的 `start_unattended_batch`：一次原生确认绑定有序 plan digest，child 串行执行 |
-| 跨 Host 协作（Claude 规划 + Pi 编码） | 在 Claude Code 中调 `/imm-planner`，切到 Pi 输入 `/imm-loop` | → Spec 与 TaskIntent 共享于 Git，Pi 原生弹窗准入并执行 QA/Review 闭环 |
+| 跨 Host 协作（Claude 规划 + Pi 编码） | 在 Claude Code 中调 `/imm-planner`，切到 Pi 输入 `/imm-run` | → Spec 与 TaskIntent 共享于 Git，Pi 原生弹窗准入并执行 QA/Review 闭环 |
 | PR 被评论 / CI 挂了 | 对该 PR 使用 `/imm-pr-fix` | → 独立修复：在当前 PR 内针对性修复，不创建新 managed 任务 |
 | 文档过时需要清理 | `/imm-doc-prune` | → 只读审计过时文档，仅删除经哈希审批的条目 |
-| Agent 指令文件膨胀 | `/imm-agent-doc-maintain` | → 将 tracked `AGENTS.md` / `CLAUDE.md` 压到最小必要上下文 |
-| 想知道哪个模型的改动总被审查 | `/imm-review-retro` | → 按模型排名审查负载，并从 session logs 汇报项目使用量 |
+| Agent 指令文件膨胀 | `/imm-doc-slim` | → 将 tracked `AGENTS.md` / `CLAUDE.md` 压到最小必要上下文 |
+| 想知道哪个模型的改动总被审查 | `/imm-retro` | → 按模型排名审查负载，并从 session logs 汇报项目使用量 |
 
 > **核心原则：Skill 显式调用**
 > - **普通输入保持 Host-native**：自然语言提问绝不自动绑架流程或发起 Enrollment。你完全自主决定何时开启严格工程保障。
-> - **Managed 工作流显式启动**：需要澄清用 `imm-brainstorm`，制定计划用 `imm-planner`，执行与恢复用 `imm-loop`。
+> - **Managed 工作流显式启动**：需要澄清用 `imm-brainstorm`，制定计划用 `imm-planner`，执行与恢复用 `imm-run`。
 
 ### 跨 Host 协作：Claude Code 规划 + Pi 编码执行
 
@@ -136,7 +136,7 @@ Immune-Brain 的核心状态与契约完全去会话化（Session-neutral），�
 ```text
 ┌───────────────────────────────────┐    Git 追踪制品（落盘共享）    ┌───────────────────────────────────┐
 │         Claude Code 终端          │ ───────────────────────────> │              Pi 终端              │
-│  1. /imm-brainstorm (澄清与约束)    │     docs/specs/*.spec.md     │  1. /imm-loop (原生 TUI 弹窗准入)   │
+│  1. /imm-brainstorm (澄清与约束)    │     docs/specs/*.spec.md     │  1. /imm-run (原生 TUI 弹窗准入)   │
 │  2. /imm-planner    (编写计划/规格) │    docs/plans/*.intent.json  │  2. Executor 编码 + QA 自动化验收   │
 └───────────────────────────────────┘                              └───────────────────────────────────┘
 ```
@@ -151,7 +151,7 @@ Immune-Brain 的核心状态与契约完全去会话化（Session-neutral），�
    - **暂存至 Git**：规划完成后停在 Enrollment 之前，将生成的 Spec 和 TaskIntent 加入 Git 暂存（`git add docs/`）。
 2. **切换到 Pi 中进行代码编写与闭环执行**
    - **启动 Pi**：在同一个项目工作区中打开 Pi。
-   - **确认准入并执行**：运行 `/imm-loop`。Pi 会自动检测到暂存的 `TaskIntent`，并在 Pi 原生 TUI 弹窗中提示 Enrollment 确认。
+   - **确认准入并执行**：运行 `/imm-run`。Pi 会自动检测到暂存的 `TaskIntent`，并在 Pi 原生 TUI 弹窗中提示 Enrollment 确认。
    - **自动执行与验收**：
      - Executor 角色严格在 `scope_hint` 限定的文件内编写代码。
      - Kernel 自动运行 acceptance 命令进行确定性 QA 验收，不依赖口头汇报。
@@ -159,7 +159,7 @@ Immune-Brain 的核心状态与契约完全去会话化（Session-neutral），�
      - 验证全部通过后，Kernel 原子落盘证据至 `.imm/audit/<task-id>/` 并释放工作区锁定。
 3. **为什么可以无缝切换？**
    - **状态落盘，解耦会话**：所有任务契约（TaskIntent）、设计规格（Spec）和执行状态（`.imm/state/kernel.sqlite`）均持久化在磁盘上，不绑定任何特定 AI 会话的上下文。
-   - **双向断点恢复**：无论在哪个 Host 暂停或关闭会话，随时可以在 Pi 或 Claude Code 中重新输入 `/imm-loop` 无缝恢复，Kernel projection 确保进度与证据不丢失。
+   - **双向断点恢复**：无论在哪个 Host 暂停或关闭会话，随时可以在 Pi 或 Claude Code 中重新输入 `/imm-run` 无缝恢复，Kernel projection 确保进度与证据不丢失。
 
 ---
 
@@ -267,7 +267,7 @@ Immune-Brain 的核心假设是：**不要让弱模型做架构决策，把它�
 |---|---|---|---|
 | **1. 方案规划 (Brainstorm)** | Claude Code (`/imm-brainstorm`) | **Strong Tier** (旗舰模型) | 利用长上下文与强推理，与开发者深入讨论方案、挖掘隐性约束并排除伪需求。 |
 | **2. 计划制定 (Planner)** | Claude Code (`/imm-planner`) | **Strong Tier** (旗舰模型) | 编写精确到文件行号的 Living Spec，生成携带 `VerificationDescriptor` 的 `TaskIntent`，完成 Devil's Advocate 预审。 |
-| **3. 代码实现 (Executor)** | Pi (`imm-loop`) | **Fast / Mid Tier** (经济模型) | 在 Pi TUI 弹窗确认冻结 Scope 后，小模型在信封内按图索骥写代码，遵守 YAGNI 极简红线。 |
+| **3. 代码实现 (Executor)** | Pi (`imm-run`) | **Fast / Mid Tier** (经济模型) | 在 Pi TUI 弹窗确认冻结 Scope 后，小模型在信封内按图索骥写代码，遵守 YAGNI 极简红线。 |
 | **4. QA 确认 (Verification)** | 本地进程 / Kernel Native | **无需模型 (零 LLM)** | 由 Kernel 直接执行测试脚本（如 `bun test`），严格依照退出码和标准输出出具不可篡改的 Attestation。 |
 | **5. 代码审查 (Review)** | Pi Subagent (`immune-brain-reviewer`) | **Strong Tier** (高智力模型) | 调度隔离的只读审查子代理，基于不可变 Git blob 打包的 `ReviewBundle` 进行对抗性审计，通过后 Kernel 结算归档。 |
 
@@ -279,15 +279,15 @@ Immune-Brain 的核心假设是：**不要让弱模型做架构决策，把它�
 |---|---|---|---|
 | `imm-brainstorm` | Managed 入口 | 需求存在实质歧义 | 框架化问题、提出开放问题，不做实现 |
 | `imm-planner` | Managed 入口 | 目标清晰 | 编写/修订 `TaskIntent` 与 spec，不负责 Enrollment 与构建 |
-| `imm-loop` | Managed 协调器 | 计划已验证 | 通过 foreground Tools 协调 执行 → QA → Review → 收尾 |
+| `imm-run` | Managed 协调器 | 计划已验证 | 通过 foreground Tools 协调 执行 → QA → Review → 收尾 |
 | `imm-pr-fix` | 独立 | PR 需修复 | 原地修复单个 PR，不触及 managed authority |
 | `imm-doc-prune` | 独立 | 清理过时文档 | 仅删除哈希绑定的 manifest 条目 |
-| `imm-agent-doc-maintain` | 独立 | Agent instruction 膨胀 | 将 tracked AGENTS/CLAUDE/GEMINI.md 压到最小必要上下文 |
-| `imm-review-retro` | 独立 | 比较模型的审查负载 | 排名被审查代码的作者并汇报项目使用量 |
+| `imm-doc-slim` | 独立 | Agent instruction 膨胀 | 将 tracked AGENTS/CLAUDE/GEMINI.md 压到最小必要上下文 |
+| `imm-retro` | 独立 | 比较模型的审查负载 | 排名被审查代码的作者并汇报项目使用量 |
 
-Executor、QA、Review、Compounder 等为 `imm-loop` 内部调度的角色，无需手动调用。
+Executor、QA、Review、Compounder 等为 `imm-run` 内部调度的角色，无需手动调用。
 
-所有 7 个 Skill 均显式调用。新需求开发时：若需求含糊先调 `imm-brainstorm`，目标清晰直接调 `imm-planner`，完成确认后调 `imm-loop` 推进闭环。
+所有 7 个 Skill 均显式调用。新需求开发时：若需求含糊先调 `imm-brainstorm`，目标清晰直接调 `imm-planner`，完成确认后调 `imm-run` 推进闭环。
 
 ### Managed Path 入口（brainstorm → planner → loop）
 
@@ -307,9 +307,9 @@ Executor、QA、Review、Compounder 等为 `imm-loop` 内部调度的角色，�
 - **边界：** 不编写业务实现代码、不经 revision 流程不覆盖已 Enrolled 的 TaskIntent，不擅自赋予执行权限 — 仅当前 Host 原生确认窗口具备授权能力。
 - **产出：** 纳入 Git 版本控制、等待 Enrollment 确认的 `TaskIntent`。
 
-#### `imm-loop` — Managed 执行与质量保障
+#### `imm-run` — Managed 执行与质量保障
 
-- **触发方式：** 显式调用 `/imm-loop`（启动、恢复或检查 managed 任务）。
+- **触发方式：** 显式调用 `/imm-run`（启动、恢复或检查 managed 任务）。
 - **职责：** 通过前台 Tool 驱动任务端到端闭环 — Executor 仅在冻结的 scope 内修改代码，确定性 QA 逐项运行验收条件，隔离的 Reviewer 子代理审计 material/critical 任务，最后由 Kernel 结算落盘凭证。会话中断后从磁盘状态自动恢复，以 Kernel projection 为真源。
 - **边界：** 绝不跳过或弱化失败检查、无用户原生授权绝不执行、遇到版本或权限偏移立即 fail-closed。
 - **Finding 证据：** 每一项 Review finding 均携带可机器核验的 provenance（`trigger`、`caller_chain`、`violated`）。若新鲜且通过的 QA 证据已证明某项 finding 声称的 acceptance 通过，则标记为 `refuted`，仅在证据过期时才会重新阻塞。
@@ -330,12 +330,12 @@ Executor、QA、Review、Compounder 等为 `imm-loop` 内部调度的角色，�
 - **触发方式：** 显式要求清理当前过时的文档。
 - **职责：** 只读审计文档时效性，根据用户明确审批的哈希绑定 manifest 进行精准删除，每次修改后立即重验。
 
-#### `imm-agent-doc-maintain` — Agent 指令文件瘦身
+#### `imm-doc-slim` — Agent 指令文件瘦身
 
 - **触发方式：** 显式要求精简版本控制下的 `AGENTS.md` / `CLAUDE.md` / `GEMINI.md`。
 - **职责：** 遵循与 `imm-doc-prune` 相同的「只读审计 + 哈希清单审批」模式，仅保留无法直接推导的必要规则。
 
-#### `imm-review-retro` — 审查负载与项目使用回顾
+#### `imm-retro` — 审查负载与项目使用回顾
 
 - **触发方式：** 显式要求跨模型审查复盘或项目使用量回顾。
 - **职责：** 从 pi session logs 按模型排名被审查代码的作者，并汇报 sessions/turns/编辑量/工具分布。只读；不审查 diff。
@@ -356,7 +356,7 @@ flowchart TD
         EG -->|确认| KS[(".imm/state/kernel.sqlite<br/>原子生成 TaskRecord<br/>独占 Workspace Claim")]
     end
 
-    subgraph Loop ["3. 执行与验证循环 (imm-loop)"]
+    subgraph Loop ["3. 执行与验证循环 (imm-run)"]
         KS --> EX["Executor 角色<br/>在 scope_hint 范围内修改代码"]
         EX --> FRZ["advance_assurance<br/>制品冻结 (active:frozen)"]
         FRZ --> QA["确定性 QA 引擎<br/>原子运行 acceptance 校验命令<br/>生成 QA Attestation"]
@@ -383,7 +383,7 @@ flowchart TD
 
 1. **双轨制 (Two Paths)**
    - **Host-native Path**：日常对话、代码检视、单点修改，不触碰 Kernel 权限，零流程开销。
-   - **Managed Path**：由 `imm-brainstorm` / `imm-planner` / `imm-loop` 显式驱动，全程受 Kernel 约束。
+   - **Managed Path**：由 `imm-brainstorm` / `imm-planner` / `imm-run` 显式驱动，全程受 Kernel 约束。
 
 2. **权限与契约 (Authority & Contract)**
    - **TaskIntent (`.intent.json`)**：机器契约本体，严格锁定 `scope_hint`（文件修改范围）、`risk`（风险层级）与 `acceptance`（绑定 Verification Descriptor v2 的确定性断言）。
@@ -412,7 +412,7 @@ flowchart TD
 
 当一个 Initiative 下已经有多个就绪的 child，可以把它们作为一批串行跑完，而不用逐个任务手动推进。
 
-- **入口显式：** Host 的 privileged tool `start_unattended_batch`（参数为 Initiative slug）。未调用之前不存在任何 batch state、分支或授权；未调用时 `imm-loop` 行为与逐任务 Enrollment 完全一致。
+- **入口显式：** Host 的 privileged tool `start_unattended_batch`（参数为 Initiative slug）。未调用之前不存在任何 batch state、分支或授权；未调用时 `imm-run` 行为与逐任务 Enrollment 完全一致。
 - **一次确认、一个 digest：** 原生 gate（Pi TUI 弹窗或 Claude MCP elicitation）展示有序 child 列表与共享 plan digest，这一次 literal-user 确认就是全部 Batch Authorization。
 - **每个 child 的 authority 不变：** 每个 child 仍由 Kernel 单独 Enrollment、冻结、QA、Review 并以自己的 `TaskRecord` 结算。批次只是一次授权的覆盖范围，不是新的授权层级。
 - **边界：** 只跑已发布且非 `critical` 的 child，在专属 batch 分支上串行执行；一旦某个 child 需要人决策，或遇到预算/截止时间/授权/提交失败就暂停，被阻塞 child 的依赖项标记为跳过而不是调序。runner 不 push、不开 PR、不代替用户结算 decision、也不创建/切换/删除 Git worktree。
@@ -465,19 +465,19 @@ docs/specs/                           # Living specs（原地更新）
 
 ## 常见问题
 
-**需要记住所有 Skill 吗？** 不需要。日常开发核心只需两个：`/imm-planner`（规划与确认任务）和 `/imm-loop`（执行与验证）。需求模糊时用 `/imm-brainstorm`，维护类任务（如 `/imm-pr-fix`）按需使用。普通问答与即时小修改无需任何 Skill。
+**需要记住所有 Skill 吗？** 不需要。日常开发核心只需两个：`/imm-planner`（规划与确认任务）和 `/imm-run`（执行与验证）。需求模糊时用 `/imm-brainstorm`，维护类任务（如 `/imm-pr-fix`）按需使用。普通问答与即时小修改无需任何 Skill。
 
-**中途关闭会话会怎样？** 状态已落盘保存（`.imm/` + TaskIntent）。在 Pi 或 Claude Code 中重新输入 `/imm-loop` 即可恢复，以 Kernel projection 状态为准。
+**中途关闭会话会怎样？** 状态已落盘保存（`.imm/` + TaskIntent）。在 Pi 或 Claude Code 中重新输入 `/imm-run` 即可恢复，以 Kernel projection 状态为准。
 
 **为什么 enrollment 要弹窗确认？** 所有风险等级（`routine`/`material`/`critical`）在获得执行授权前都必须经由人工显式确认。在 Pi 中是原生 TUI 对话框，在 Claude Code 中是原生 MCP elicitation 弹窗。确认界面绑定 staged digest，让你清楚看到被锁定的文件范围和验收要求。
 
-**QA 失败怎么办？** QA 返回 `rework` 或 `replan_required`，`imm-loop` 会自动路由回 Executor 或 `imm-planner` 调整范围，无需手动重置。
+**QA 失败怎么办？** QA 返回 `rework` 或 `replan_required`，`imm-run` 会自动路由回 Executor 或 `imm-planner` 调整范围，无需手动重置。
 
 **Review finding 突然不再阻塞了？** 它被反证了：新鲜的确定性 QA 证据表明它声称的 acceptance 是通过的。反证绑定到那份具体证据，所以证据一旦对当前 revision、intent hash 或 diff 失效，该 finding 会重新阻塞。
 
 **能不能整个 Initiative 不用我盯着？** 只能在你授权范围内。用 Initiative slug 确认 `start_unattended_batch` 后，runner 会在一个 batch 分支上串行推进已发布且非 `critical` 的 child — 一旦某个 child 需要人决策，或遇到预算/截止时间/授权/提交失败就暂停。它不会替你 push、开 PR 或结算用户决策。
 
-**可以在不同 Host 之间切换吗（例如 Claude Code 规划、Pi 编码）？** 可以。Immune-Brain 的契约与状态完全落盘于代码仓库，解耦了会话上下文。你可以用 Claude Code 进行深度推理与制定 Spec，再切换到 Pi 跑 `imm-loop` 编码并完成 QA 闭环；中途随时可以用 `/imm-loop` 双向恢复。
+**可以在不同 Host 之间切换吗（例如 Claude Code 规划、Pi 编码）？** 可以。Immune-Brain 的契约与状态完全落盘于代码仓库，解耦了会话上下文。你可以用 Claude Code 进行深度推理与制定 Spec，再切换到 Pi 跑 `imm-run` 编码并完成 QA 闭环；中途随时可以用 `/imm-run` 双向恢复。
 
 **任务执行中途发现 Scope 不够用怎么办？** Executor 遵循严格的 Fail-closed 极简红线，严禁自行越界修改范围外文件。若发现必须扩充范围，Executor 会主动停止并返回 `replan_required` 路线；随后由 `imm-planner` 修订 Spec 与 `TaskIntent` 并生成新的 diff，重新弹出原生确认窗口经由人工授权（Replan）后，方可继续执行。
 

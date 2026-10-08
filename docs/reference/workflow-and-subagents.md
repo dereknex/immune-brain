@@ -1,8 +1,8 @@
 # Public Skill 目录与系统 Subagent 参考
 
 本页描述 Immune-Brain 的六个 user-facing Skill 入口及其内部 role/runtime 合同。
-Managed Path 入口是 `imm-brainstorm`、`imm-planner` 和 `imm-loop`；`imm-pr-fix`、
-`imm-doc-prune` 和 `imm-agent-doc-maintain` 是独立 host-native 维护 Skill。下文的 executor、QA、Review、explorer、advisory、
+Managed Path 入口是 `imm-brainstorm`、`imm-planner` 和 `imm-run`；`imm-pr-fix`、
+`imm-doc-prune` 和 `imm-doc-slim` 是独立 host-native 维护 Skill。下文的 executor、QA、Review、explorer、advisory、
 Compounder 以及 Loop 内部 repair role 都不是额外可安装 Skill。
 
 本页从主 [README.md](../../README.md) 拆出，便于单独阅读与打印。内容与仓库契约测试中的「用户文档表面」一致：**契约测试会将本文与 README 合并后做断言**。
@@ -113,7 +113,7 @@ Loop Engineering Discipline enhances the existing `Step` evidence loop; it is no
 对单步外的代码审查进行结构化处理（PR review、反馈回路、CI 失败归并）；
 输出 blocker/fix/defer，并明确区分“当前边界可直接修”与“需要新 follow-up plan”；
 review 还应附带一个 bounded `follow_up` handoff，把最小修复边界、成功目标和验证提示交给下一轮；
-前者进入 `imm-planner` 收敛成 validated one-step / small-step plan，再由 `imm-loop` 的
+前者进入 `imm-planner` 收敛成 validated one-step / small-step plan，再由 `imm-run` 的
 internal executor 执行，
 后者则直接路由回 `imm-planner` 生成新的 follow-up slice。
 
@@ -163,13 +163,13 @@ internal executor 执行，
 ### Public Skills and internal role boundaries
 
 The table below deliberately separates the three discoverable Managed Skills from roles that only
-`imm-loop` dispatches internally.
+`imm-run` dispatches internally.
 
 | Surface | Write boundary | Output |
 |---|---|---|
 | `imm-brainstorm` | Read-only by default; optional `docs/brainstorms/` artifact | Problem frame, assumptions, risks, next-stage handoff |
 | `imm-planner` | `docs/specs/`, `docs/plans/`, and planning memory | Validated Spec/Plan and verification paths |
-| `imm-loop` | Current workflow boundary through explicit runtime actions | Execution, QA, Review, repair, learning, or terminal next action |
+| `imm-run` | Current workflow boundary through explicit runtime actions | Execution, QA, Review, repair, learning, or terminal next action |
 | Internal `executor` | Active Step or accepted same-boundary follow-up only | Execution evidence |
 | Internal `qa` | Evidence and review decision fields only | `pass` / `rework` / `replan` |
 | Internal `code-review` / `ui-review` | Read-only review evidence | Findings and stable gate decisions |
@@ -186,8 +186,8 @@ Immune-Brain 的系统级 subagents 按三层设计，避免把上游的大型 a
 2. **条件风险层**：仅在任务触及对应风险时启用，例如 security、data、API、reliability、UI 或 release readiness；不作为每次任务的默认参与者。
 3. **项目专用层**：仅面向特定项目类型启用，例如 AI eval、prompt contract、docs verification 或 debug investigation。
 
-这些 subagents 只能提供受控执行或 advisory 输入，不能绕过 `imm-loop` 的 active-step
-或 authority gate，也不能替代 `imm-brainstorm`、`imm-planner` 或 `imm-loop` 的边界判断。
+这些 subagents 只能提供受控执行或 advisory 输入，不能绕过 `imm-run` 的 active-step
+或 authority gate，也不能替代 `imm-brainstorm`、`imm-planner` 或 `imm-run` 的边界判断。
 
 #### Authority 与 Routing Boundary
 
@@ -201,13 +201,13 @@ runtime 只存在 4 类 system subagent authority class，举例一律使用 run
 
 - **advisory**：只给出研究、评审或风险意见，例如 internal `arch-explorer`、internal `code-review`、internal `ui-review`、internal `advisory-reviewer`。
 - **planning artifact writer**：只写 planning artifact，不改实现，例如 `imm-planner`。
-- **active-step bounded executor**：只在 `imm-loop` 已激活当前 step 后，改动当前 step 范围内的文件，例如 internal `executor`、internal `pr-fix`、internal `test-fixer`。
+- **active-step bounded executor**：只在 `imm-run` 已激活当前 step 后，改动当前 step 范围内的文件，例如 internal `executor`、internal `pr-fix`、internal `test-fixer`。
 - **review evidence producer**：只产出闭合判断或复用沉淀所需 evidence / artifact，例如 internal `qa`、internal `compounder`。
 
 无论哪一类 subagent：
 
 - 都不能直接决定最终 scope posture；
-- 都不能跳过 `imm-loop` 的 active-step gate；
+- 都不能跳过 `imm-run` 的 active-step gate；
 - 都不能把 advisory 结果直接转成 plan rewrite、code edit 或 QA `pass`；
 - 一旦需要超出当前 authority class 的行为，必须回到对应的 `imm-*` role 继续闭环。
 
@@ -291,6 +291,6 @@ system subagents 的首版只做治理与契约，不做以下事情：
 
 - 不实现完整自动调度平台或 runtime registry。
 - 不复制任何上游项目的完整 agent roster。
-- 不允许 subagent 绕过 `imm-loop` 激活 step、绕过 internal executor 改实现，或绕过 internal QA 记录闭合结论。
+- 不允许 subagent 绕过 `imm-run` 激活 step、绕过 internal executor 改实现，或绕过 internal QA 记录闭合结论。
 - 不引入 agent-to-agent 通信、长期 party state 或全局 subagent memory。
 - 不在首版默认常驻大规模项目专用 roster。

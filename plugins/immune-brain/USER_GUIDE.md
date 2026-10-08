@@ -4,7 +4,7 @@
 
 Immune-Brain 是一套 **Skill-explicit Managed Path** 的 Pi 与 Claude Code 工作流。
 
-普通 host input 保持 host-native，不执行自然语言 Managed 路由。只有显式进入 `imm-brainstorm`、`imm-planner` 或 `imm-loop` 才启动新的 Managed workflow；已有 Assurance owner 始终通过 `imm-loop` 恢复。
+普通 host input 保持 host-native，不执行自然语言 Managed 路由。只有显式进入 `imm-brainstorm`、`imm-planner` 或 `imm-run` 才启动新的 Managed workflow；已有 Assurance owner 始终通过 `imm-run` 恢复。
 
 核心目标有两个：
 
@@ -13,9 +13,9 @@ Immune-Brain 是一套 **Skill-explicit Managed Path** 的 Pi 与 Claude Code �
 
 ## Public Skill surface
 
-用户可发现的 Skill 有七个：`imm-brainstorm`、`imm-planner`、`imm-loop`、`imm-pr-fix`、`imm-doc-prune`、`imm-agent-doc-maintain` 和 `imm-review-retro`。
-执行、QA、Review、repair 和 learning 都由 `imm-loop` 与 runtime
-内部 roles/tools 完成；它们没有独立的 public Skill 或兼容 alias。`imm-pr-fix`、`imm-doc-prune`、`imm-agent-doc-maintain` 和 `imm-review-retro` 是 host-native 独立入口，不进入 Managed Path。
+用户可发现的 Skill 有七个：`imm-brainstorm`、`imm-planner`、`imm-run`、`imm-pr-fix`、`imm-doc-prune`、`imm-doc-slim` 和 `imm-retro`。
+执行、QA、Review、repair 和 learning 都由 `imm-run` 与 runtime
+内部 roles/tools 完成；它们没有独立的 public Skill 或兼容 alias。`imm-pr-fix`、`imm-doc-prune`、`imm-doc-slim` 和 `imm-retro` 是 host-native 独立入口，不进入 Managed Path。
 `executor`、`code-review`、`pr-fix` 和 `test-fixer` 使用 Code Quality Guard 的正确性约束；
 QA 仍只消费验收 evidence，不执行 Clean Code 风格门禁。
 
@@ -25,10 +25,10 @@ QA 仍只消费验收 evidence，不执行 Clean Code 风格门禁。
 
 Host 不再按自然语言请求自动选择 Managed phase。用户显式调用 public Skill 后，Skill 负责进入对应 workflow；active Assurance projection 保持权威，但不会自动改写普通输入。
 
-1. 已有 Assurance projection、TaskIntent、TaskRecord 或 reviewer follow-up：保持现有 owner，用户显式进入 `imm-loop` 后继续。
+1. 已有 Assurance projection、TaskIntent、TaskRecord 或 reviewer follow-up：保持现有 owner，用户显式进入 `imm-run` 后继续。
 2. 普通 host input：保持 host-native，不扫描 `.imm`，不创建 task authority。
 3. 显式 `imm-brainstorm`：澄清实质歧义；显式 `imm-planner`：创建候选 Spec/TaskIntent。
-4. 显式 `imm-loop`：消费已验证 Plan 或恢复 active task；literal-user Enrollment 由当前 Host 的原生 gate 承担。
+4. 显式 `imm-run`：消费已验证 Plan 或恢复 active task；literal-user Enrollment 由当前 Host 的原生 gate 承担。
 5. Fast-Track 只压缩 Managed Path，不绕过 TaskIntent scope、Enrollment、QA、Review、authorization 或 completion。
 
 显式 Skill 直接使用项目现有结构，只创建当前 Spec、TaskIntent 或执行结果需要的目录和文件；不会安装、覆盖或校验项目级 `AGENTS.md`、`IMMUNE.md`、`CONTEXT.md` 契约。
@@ -52,7 +52,7 @@ Host 不再按自然语言请求自动选择 Managed phase。用户显式调用 
 
 ### 1. 显式进入 Skill
 
-用户显式调用 `imm-brainstorm`、`imm-planner` 或 `imm-loop`。普通 host input
+用户显式调用 `imm-brainstorm`、`imm-planner` 或 `imm-run`。普通 host input
 不会扫描 `.imm`、不会安装项目契约，也不会因为包含 mutation 词而自动改写为 Skill 调用。
 
 ### 2. 继续当前 owner
@@ -60,7 +60,7 @@ Host 不再按自然语言请求自动选择 Managed phase。用户显式调用 
 - 只读、解释、review-only、Plan-only、明确 no-modification：host-native，不 Enrollment；
 - 有实质歧义的 mutation：`imm-brainstorm`；
 - 清晰的新 mutation：`imm-planner`；
-- 已有 Assurance owner：`imm-loop`。
+- 已有 Assurance owner：`imm-run`。
 
 ### 3. 执行非变更请求
 
@@ -105,7 +105,7 @@ v3 mutating commands 已退出生产路径。历史 v3 State Ledger 只能通过
 | --- | --- |
 | `imm-brainstorm` | 澄清关键需求、约束和风险；不写计划或代码 |
 | `imm-planner` | 为清晰的仓库变更创建或修订候选 Spec/TaskIntent；不自动 Enrollment |
-| `imm-loop` | 消费已验证计划并协调执行、QA、Review、repair 与 settlement；不绕过 Planner 或 authority gate |
+| `imm-run` | 消费已验证计划并协调执行、QA、Review、repair 与 settlement；不绕过 Planner 或 authority gate |
 
 ### Internal runtime operations
 
@@ -133,7 +133,7 @@ The following are runtime tools or TUI operations, not public Skills:
 
 Legacy v3 mutation entrypoints are retired and are not new-task operation paths。
 历史兼容 alias 也不再作为 public Skill；需要执行、Review 或 learning 时，统一由
-`imm-loop` 通过内部 runtime role dispatch 完成。
+`imm-run` 通过内部 runtime role dispatch 完成。
 
 ## 配置
 

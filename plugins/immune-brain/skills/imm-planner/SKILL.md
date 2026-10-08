@@ -35,7 +35,7 @@ own routes instead of these stages.
 - handoff after validation: [Output style](../../dist/imm-planner.md#output-style), [Next Action](../../dist/imm-planner.md#next-action)
 - `mode: page_design` instead of standard planning: [Optional page_design mode](../../dist/imm-planner.md#optional-page_design-mode)
 - multiple-TaskIntent Initiative before carrier selection or publication: [Initiative Carrier Preference](../../dist/imm-planner.md#initiative-carrier-preference)
-- revision of an enrolled intent or cross-scope review findings instead of standard planning: [Enrolled Intent Revision](../../dist/imm-planner.md#enrolled-intent-revision), [Decisions and Recovery](../../dist/imm-loop.md#decisions-and-recovery)
+- revision of an enrolled intent or cross-scope review findings instead of standard planning: [Enrolled Intent Revision](../../dist/imm-planner.md#enrolled-intent-revision), [Decisions and Recovery](../../dist/imm-run.md#decisions-and-recovery)
 - settlement design: [Settlement-Design Contract](../../dist/imm-planner.md#settlement-design-contract)
 - retirement design: [Retirement Completion Contract](../../dist/imm-planner.md#retirement-completion-contract)
 - optional research dispatch: [Research Dispatch](../../dist/imm-planner.md#research-dispatch)

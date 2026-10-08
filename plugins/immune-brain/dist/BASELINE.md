@@ -55,11 +55,11 @@ framing does not load that execution guidance.
 
 Ordinary host input stays host-native and does not run natural-language Managed
 routing. A new Managed workflow starts only from explicit `imm-brainstorm`,
-`imm-planner`, or `imm-loop` Skill entry.
+`imm-planner`, or `imm-run` Skill entry.
 
 1. **Continue an existing Managed owner explicitly**: an active Assurance
    projection, TaskIntent, TaskRecord, reviewer `follow_up`, or other nonterminal
-   Managed owner remains authoritative; the user resumes it with `imm-loop`.
+   Managed owner remains authoritative; the user resumes it with `imm-run`.
 2. **Start explicitly**: the selected Immune-Brain Skill owns its planning or
    coordination work. It creates only requested artifacts and their required
    parent directories. Explicit Planner entry also owns absent routing-policy
@@ -84,7 +84,7 @@ Compounder state. It may explain, inspect, or review without Enrollment.
 
 The matching Managed owner drives execution, evidence, QA, Review, and
 completion without switching to a non-authoritative path. Scope expansion
-returns to `imm-planner`; an enrolled task resumes through `imm-loop` from the
+returns to `imm-planner`; an enrolled task resumes through `imm-run` from the
 current Assurance projection. Do not create or mutate workflow state while
 classifying a non-mutating request.
 
@@ -191,7 +191,7 @@ An absence test is transitional scaffolding proving an in-progress deletion rath
 
 ## Hub skill anatomy
 
-The public Skills `imm-brainstorm`, `imm-planner`, and `imm-loop` carry the
+The public Skills `imm-brainstorm`, `imm-planner`, and `imm-run` carry the
 repo's user-facing workflow authority. Execution, QA, review, repair,
 exploration, and learning are internal runtime roles dispatched by Loop through
 packaged role prompts; they are not additional public Skills. Keep explicit

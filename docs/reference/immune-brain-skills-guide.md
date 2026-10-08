@@ -5,15 +5,15 @@ Immune-Brain 的 shipped public Skill surface 固定为七个入口：三个 Man
 | Public Skill | 责任 | 下一步 |
 | --- | --- | --- |
 | `imm-brainstorm` | 澄清需求、范围、假设和风险；`adversarial`/`roundtable` 是内部模式 | `imm-planner` |
-| `imm-planner` | 创建或修订 Spec、Plan 和候选 TaskIntent；不自动 Enrollment | `imm-loop` |
-| `imm-loop` | 消费 validated Plan，协调执行、QA、Review、repair、learning 和恢复 | Kernel Tool / Planner / terminal |
+| `imm-planner` | 创建或修订 Spec、Plan 和候选 TaskIntent；不自动 Enrollment | `imm-run` |
+| `imm-run` | 消费 validated Plan，协调执行、QA、Review、repair、learning 和恢复 | Kernel Tool / Planner / terminal |
 | `imm-pr-fix` | 独立 host-native PR repair；不进入 Managed Path | GitHub PR / host-native |
 | `imm-doc-prune` | 独立 host-native 文档清理；显式 manifest 批准后执行；不进入 Managed Path | host-native |
-| `imm-agent-doc-maintain` | 独立 host-native agent instruction 整理；显式 manifest 批准后执行；不进入 Managed Path | host-native |
-| `imm-review-retro` | 独立 host-native 审查负载与项目使用量回顾；不进入 Managed Path | host-native |
+| `imm-doc-slim` | 独立 host-native agent instruction 整理；显式 manifest 批准后执行；不进入 Managed Path | host-native |
+| `imm-retro` | 独立 host-native 审查负载与项目使用量回顾；不进入 Managed Path | host-native |
 
 旧的 Executor、QA、Review、repair、explorer、advisory、Compounder 和 Init entry
-不再是可发现的 Skill。它们分别是 `imm-loop` 的内部 role、runtime capability 或 TUI/Tool
+不再是可发现的 Skill。它们分别是 `imm-run` 的内部 role、runtime capability 或 TUI/Tool
 操作；没有 alias、feature flag 或第二个 public surface。
 
 ## 协作拓扑
@@ -27,7 +27,7 @@ graph TD
     Route -->|重大歧义| Brainstorm[imm-brainstorm]
     Route -->|清晰仓库变更| Planner[imm-planner]
     Brainstorm --> Planner
-    Planner --> Loop[imm-loop]
+    Planner --> Loop[imm-run]
     Loop --> Executor[internal executor]
     Loop --> QA[internal qa]
     Loop --> Review[internal code-review/ui-review]
@@ -51,7 +51,7 @@ Planner 是清晰仓库变更的默认规划阶段。它读取 routing projectio
 声明 Scope、Result、Verification、风险和 rollback 约束。Plan-only 输出保持
 non-authoritative；Enrollment 由 literal user 和当前 Host 的原生 gate 拥有。
 
-### `imm-loop`
+### `imm-run`
 
 Loop 是唯一的执行协调 public Skill。它通过 `buildLoopAction` 和
 `buildLoopRoleDispatch` 选择内部 action/role，并保持每个 boundary 的 authority：
@@ -78,7 +78,7 @@ the artifacts and parent directories needed for the current request; runtime doe
 not install or validate project-wide instruction files.
 
 Pi runtime 的 public loader 应发现七个 Skill，其中三个 Managed Path 入口与四个
-host-native 独立 Skill（`imm-pr-fix`、`imm-doc-prune`、`imm-agent-doc-maintain` 和 `imm-review-retro`）。Canary Enrollment、Kernel evidence、
+host-native 独立 Skill（`imm-pr-fix`、`imm-doc-prune`、`imm-doc-slim` 和 `imm-retro`）。Canary Enrollment、Kernel evidence、
 Review authorization 和 terminal settlement 通过当前 Host 的 foreground Tools/native gates 完成：
 
 - `imm_canary_enrollment`：准备、rehearsal、literal-user confirmation、revalidation、commit。
@@ -86,7 +86,7 @@ Review authorization 和 terminal settlement 通过当前 Host 的 foreground To
 - `imm-code-review` / `imm-ui-review`：Review Gate identifiers，实际 dispatch 由 Loop role bridge 负责。
 
 Canary Work 和 Work 不再是用户工作流入口。相关 extension/tool source 仅作为 runtime
-实现保留，用户继续工作时进入 `imm-loop`。
+实现保留，用户继续工作时进入 `imm-run`。
 
 ## Surface 与验证
 

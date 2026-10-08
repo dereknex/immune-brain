@@ -152,14 +152,14 @@ describe("imm-doc-prune contract", () => {
       "without creating or mutating\nTaskIntent, TaskRecord, Kernel, Spec, or Plan authority",
     );
     expect(contract).toContain(
-      "An already active\nManaged task remains owned by `imm-loop`",
+      "An already active\nManaged task remains owned by `imm-run`",
     );
   });
 
   test("is standalone host-native and not a Loop internal role", () => {
     expect(contract).toContain("standalone host-native");
     expect(contract).toContain("not a Managed Path continuation");
-    expect(contract).toContain("not an `imm-loop` internal-role dispatch");
+    expect(contract).toContain("not an `imm-run` internal-role dispatch");
   });
 
   test("verification re-scans residual names, links, and generated parity", () => {

@@ -18,10 +18,10 @@ skills:
     role_class: authority
     canonical: true
     output_artifacts: [validated_plan]
-    next_actions: [imm-loop]
+    next_actions: [imm-run]
     boundary: Owns plan creation and revision; no executor edits.
-  - name: imm-loop
-    path: skills/imm-loop/SKILL.md
+  - name: imm-run
+    path: skills/imm-run/SKILL.md
     role: coordinate
     title: Run
     role_class: coordinator
@@ -47,19 +47,19 @@ skills:
     output_artifacts: [prune_report]
     next_actions: []
     boundary: Prune stale current documentation after explicit manifest approval; no Managed authority mutation or authority-artifact deletion.
-  - name: imm-agent-doc-maintain
-    path: skills/imm-agent-doc-maintain/SKILL.md
+  - name: imm-doc-slim
+    path: skills/imm-doc-slim/SKILL.md
     role: execute
-    title: Agent Doc Maintain
+    title: Doc Slim
     role_class: repair
     canonical: true
     output_artifacts: [maintain_report]
     next_actions: []
     boundary: Minimize tracked agent-instruction context after explicit manifest approval; no Managed authority mutation, contract installation, or reference-document creation.
-  - name: imm-review-retro
-    path: skills/imm-review-retro/SKILL.md
+  - name: imm-retro
+    path: skills/imm-retro/SKILL.md
     role: execute
-    title: Review Retro
+    title: Retro
     role_class: discovery
     canonical: true
     output_artifacts: [retro_report]

@@ -9,7 +9,7 @@ description: Use when the user explicitly requests Immune-Brain repair of GitHub
 
 Repair blockers on one GitHub pull request without creating or mutating
 TaskIntent, TaskRecord, Kernel, Spec, or Plan authority. An already active
-Managed task remains owned by `imm-loop`; stop and direct the user there when
+Managed task remains owned by `imm-run`; stop and direct the user there when
 the target PR is part of that task.
 
 ## Workflow

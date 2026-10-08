@@ -74,15 +74,15 @@
     "contracts": [
       {
         "path": "plugins/immune-brain/dist/imm-brainstorm.md",
-        "sha256": "sha256:9840874c54980f8657d39ffe1d5c3857dde53201e677e5bfdc1524f6072d4b3e"
+        "sha256": "sha256:aae7eb5bde769f1e6abb5f92698170bab088e0957f4cc3ca23c1bfa2272efbfd"
       },
       {
         "path": "plugins/immune-brain/dist/imm-planner.md",
-        "sha256": "sha256:aea73ff8da4ffc235abcece6779d196c30fb3d4782c0ae54c65aba3c3b50d574"
+        "sha256": "sha256:ebb03bfb9be43d1c37166e80382886615f3480df5af97c32cd9c373cb7b3248d"
       },
       {
         "path": "plugins/immune-brain/BASELINE.md",
-        "sha256": "sha256:393fe58781de38762479c48cf64c33d5b7554db5a543466b90ba81d5fc3cf663"
+        "sha256": "sha256:366f8dcea24bbb52ce31a43130eedfb74cbc19258dcf4ef577a19b3dca13e7e2"
       }
     ],
     "runner_source": {

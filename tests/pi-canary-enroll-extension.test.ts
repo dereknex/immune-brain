@@ -782,7 +782,7 @@ describe("pi canary enroll handler integration", () => {
 			expect(existsSync(join(root, ".imm/state/transactions"))).toBe(false);
 			const second = await runTool(root, makeFakeUI(true));
 			expect(second.details.state).toBe("route_incumbent");
-			expect(second.details.next_action).toContain("imm-loop");
+			expect(second.details.next_action).toContain("imm-run");
 			expect(second.details.summary).toMatch(/already owns/i);
 			// The refused second enrollment wrote nothing.
 			expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(false);

@@ -4,7 +4,7 @@
 // Observed on 2026-09-05: `freeze_artifacts` was refused with "artifact freeze
 // requires one scope-bound active Spec" and the coordinator reported
 // `settlement_unknown`, because the failure arrived after the mutation was
-// in flight. `imm-loop` treats that state as "call advance_assurance once to
+// in flight. `imm-run` treats that state as "call advance_assurance once to
 // reconcile", so the Loop reissued the same call and got the same refusal. The
 // rejection writes nothing, and the record revision proves it.
 

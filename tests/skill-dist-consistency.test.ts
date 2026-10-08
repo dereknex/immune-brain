@@ -63,11 +63,11 @@ describe("skill dist consistency", () => {
 	test.each([
 		["imm-brainstorm", "clarify requirements with Immune-Brain", "explain this function", "requirement clarification"],
 		["imm-planner", "plan a Spec with Immune-Brain", "fix this bug", "Spec and TaskIntent planning"],
-		["imm-loop", "resume my Immune-Brain task", "continue explaining", "execution or resumption"],
+		["imm-run", "resume my Immune-Brain task", "continue explaining", "execution or resumption"],
 		["imm-pr-fix", "repair PR feedback with Immune-Brain", "review this function", "GitHub PR review feedback"],
 		["imm-doc-prune", "prune stale docs with Immune-Brain", "explain this document", "stale current documentation"],
-		["imm-agent-doc-maintain", "minimize AGENTS.md with Immune-Brain", "what does this instruction mean", "tracked AGENTS.md"],
-		["imm-review-retro", "review-retro with Immune-Brain", "review this function", "cross-model review load"],
+		["imm-doc-slim", "minimize AGENTS.md with Immune-Brain", "what does this instruction mean", "tracked AGENTS.md"],
+		["imm-retro", "review-retro with Immune-Brain", "review this function", "cross-model review load"],
 	])("%s: explicit '%s', not ordinary '%s'", (name, _explicit, _ordinary, scope) => {
 		const loader = read(join(SKILLS_DIR, name, "SKILL.md"));
 		const metadata = Bun.YAML.parse(loader.match(/^---\n([\s\S]*?)\n---/)![1]) as { description: string };
@@ -99,7 +99,7 @@ describe("skill dist consistency", () => {
 				linkedSections(item.skill, route);
 			}
 			const common = linkedSections(item.skill, routeLine(loader, "common:"));
-			if (["imm-brainstorm", "imm-planner", "imm-loop"].includes(item.name)) {
+			if (["imm-brainstorm", "imm-planner", "imm-run"].includes(item.name)) {
 				expect(common).toContain("Stage only explicit task-owned paths");
 				expect(common).toContain("Never use `git add .` or `git add -A` in a dirty worktree");
 				expect(common).toContain("Do not create, switch, or delete Git worktrees");
@@ -159,7 +159,7 @@ describe("skill dist consistency", () => {
 		expect(normal).not.toContain("buildBrainstormEnsembleRequest");
 		expect(linkedSections(brainPath, routeLine(brain, "explicit thorough interrogation:")))
 			.toContain("Seed the fixed framing roots");
-		const loopPath = join(SKILLS_DIR, "imm-loop/SKILL.md");
+		const loopPath = join(SKILLS_DIR, "imm-run/SKILL.md");
 		const loop = read(loopPath);
 		const steady = linkedSections(loopPath, routeLine(loop, "steady execution:"));
 		expect(steady).not.toContain("For `settlement_unknown`");
@@ -198,7 +198,7 @@ describe("skill dist consistency", () => {
 	});
 
 	test("maintenance audits stop at manifests and mutation routes expose all guards", () => {
-		for (const name of ["imm-doc-prune", "imm-agent-doc-maintain"]) {
+		for (const name of ["imm-doc-prune", "imm-doc-slim"]) {
 			const path = join(SKILLS_DIR, name, "SKILL.md");
 			const loader = read(path);
 			const audit = linkedSections(path, routeLine(loader, "common:")) +
@@ -215,13 +215,13 @@ describe("skill dist consistency", () => {
 	test("every public skill has a packaged counterpart", () => {
 		const skills = publicSkills();
 		expect(skills.map((item) => item.name).sort()).toEqual([
-			"imm-agent-doc-maintain",
 			"imm-brainstorm",
 			"imm-doc-prune",
-			"imm-loop",
+			"imm-doc-slim",
 			"imm-planner",
 			"imm-pr-fix",
-			"imm-review-retro",
+			"imm-retro",
+			"imm-run",
 		]);
 		for (const item of skills) {
 			expect(read(item.skill).length).toBeGreaterThan(0);
@@ -235,7 +235,7 @@ describe("skill dist consistency", () => {
 		expect(contract).toContain("untrusted data");
 		expect(contract).toContain("Stop on detached HEAD, zero matches, multiple matches");
 		expect(contract).toContain("without creating or mutating\nTaskIntent, TaskRecord, Kernel, Spec, or Plan authority");
-		expect(contract).toContain("An already active\nManaged task remains owned by `imm-loop`");
+		expect(contract).toContain("An already active\nManaged task remains owned by `imm-run`");
 	});
 
 	test("every packaged contract document is declared with a source-of-truth", () => {
@@ -269,7 +269,7 @@ describe("skill dist consistency", () => {
 
 		// Every owned skill contract is tracked
 		expect(SKILL_OWNED_ENTRIES.map((e) => e.packaged).sort()).toEqual(
-			["imm-agent-doc-maintain.md", "imm-brainstorm.md", "imm-doc-prune.md", "imm-loop.md", "imm-planner.md", "imm-pr-fix.md", "imm-review-retro.md"].sort(),
+			["imm-brainstorm.md", "imm-doc-prune.md", "imm-doc-slim.md", "imm-planner.md", "imm-pr-fix.md", "imm-retro.md", "imm-run.md"].sort(),
 		);
 	});
 
@@ -302,7 +302,7 @@ describe("skill dist consistency", () => {
 	});
 
 	test("Planner and Loop entry points remain section-free loaders", () => {
-		for (const skill of ["imm-planner", "imm-loop"]) {
+		for (const skill of ["imm-planner", "imm-run"]) {
 			const text = read(join(SKILLS_DIR, skill, "SKILL.md"));
 			expect(text).toContain(`../../dist/${skill}.md`);
 			expect(text).toContain("canonical contract");

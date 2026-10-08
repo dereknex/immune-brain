@@ -1,5 +1,5 @@
 ---
-name: imm-loop
+name: imm-run
 description: Use when the user explicitly requests execution or resumption of an Immune-Brain task.
 ---
 
@@ -9,7 +9,7 @@ This skill adheres to the **[BASELINE.md](BASELINE.md)**.
 
 ## Kernel Canary Routing and Authority
 
-Only explicit `imm-loop` entry starts or resumes this loop. Ordinary host input
+Only explicit `imm-run` entry starts or resumes this loop. Ordinary host input
 stays host-native; it never resumes a Managed owner implicitly. Read the current
 Host's `status` projection first and verify the exact active backend claim,
 TaskIntent, and TaskRecord. Invalid or contradictory projections fail closed. A
@@ -25,7 +25,7 @@ assume either way. For a GitHub-carried Initiative, `tracker_projection_failed` 
 `awaiting_user_initiative_confirmation` blocks that Enrollment until the same
 complete carrier batch succeeds; report the stable carrier reason and its exact
 retry action instead of enrolling. A carrier command the Host refused, cancelled,
-or never ran is not a completed batch, and a later `imm-loop` entry does not
+or never ran is not a completed batch, and a later `imm-run` entry does not
 clear it. This pre-Enrollment gate is distinct from the post-settlement tracker
 projection below, which never blocks the Loop.
 
@@ -53,7 +53,7 @@ read-only boundary remains prompt text; the Pi dispatch rules are unchanged.
 
 Before a child dispatch, read the [Subagent Dispatch Protocol](docs/reference/subagent-dispatch-protocol.md#authorization-authority).
 Never load an internal role as a public Skill or spawn another loop process.
-The standalone `imm-pr-fix`, `imm-doc-prune`, and `imm-agent-doc-maintain` are host-native
+The standalone `imm-pr-fix`, `imm-doc-prune`, and `imm-doc-slim` are host-native
 maintenance entries, never dispatched as the Loop role. Internal `test-fixer`
 and `pr-fix` repairs remain bounded by the enrolled TaskIntent.
 
@@ -115,7 +115,7 @@ not bypass them. Do not poll or create detached jobs.
 
 The only unattended batch entry is the privileged Host tool `start_unattended_batch`
 with its `initiative_slug` parameter. That parameter is the opt-in: absent the call,
-`imm-loop` behavior is byte-identical to per-task Enrollment, and no batch state,
+`imm-run` behavior is byte-identical to per-task Enrollment, and no batch state,
 branch, or Batch Authorization exists. The Standalone Hosts expose the same tool
 name and the same single parameter; it is never a batch of tasks the Host chose.
 When an Initiative is referenced by its tracker Issue (e.g. `github #<number>`),

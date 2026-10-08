@@ -36,7 +36,7 @@ const REJECTED = [
   "plugins/immune-brain/.cursor-plugin",
   "plugins/immune-brain/.opencode-plugin",
 ];
-const SKILLS = ["imm-brainstorm", "imm-planner", "imm-loop", "imm-pr-fix", "imm-doc-prune", "imm-agent-doc-maintain"];
+const SKILLS = ["imm-brainstorm", "imm-planner", "imm-run", "imm-pr-fix", "imm-doc-prune", "imm-doc-slim"];
 
 describe("claude host package", () => {
   it("ships one versioned Pi+Claude allowlist and rejects undeclared hosts", () => {
@@ -211,7 +211,7 @@ describe("claude host package", () => {
       "plugins/immune-brain/.claude-plugin/plugin.json",
       "plugins/immune-brain/.mcp.json",
       "plugins/immune-brain/runtime/claude/mcp_server.ts",
-      "plugins/immune-brain/skills/imm-loop/SKILL.md",
+      "plugins/immune-brain/skills/imm-run/SKILL.md",
     ]) expect(files).toContain(required);
     expect(files.some((path: string) => path.startsWith("tests/"))).toBe(false);
     expect(files.some((path: string) => path.startsWith(".cursor-plugin/"))).toBe(false);
@@ -414,6 +414,6 @@ describe("claude host package", () => {
 
   it("does not fork the public Skill contracts", () => {
     const dist = readdirSync(resolve(PLUGIN_ROOT, "dist")).filter((name) => name.startsWith("imm-") && name.endsWith(".md"));
-    expect(dist.sort()).toEqual(["imm-agent-doc-maintain.md", "imm-brainstorm.md", "imm-doc-prune.md", "imm-loop.md", "imm-planner.md", "imm-pr-fix.md", "imm-review-retro.md"]);
+    expect(dist.sort()).toEqual(["imm-brainstorm.md", "imm-doc-prune.md", "imm-doc-slim.md", "imm-planner.md", "imm-pr-fix.md", "imm-retro.md", "imm-run.md"]);
   });
 });

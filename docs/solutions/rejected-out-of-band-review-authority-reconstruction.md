@@ -9,7 +9,7 @@ next_reuse_scenarios:
 key_files:
   - plugins/immune-brain/runtime/state_ledger.ts
   - plugins/immune-brain/runtime/immune_brain_runtime.ts
-  - plugins/immune-brain/dist/imm-loop.md
+  - plugins/immune-brain/dist/imm-run.md
   - tests/imm-follow-up-runtime.test.ts
   - docs/specs/2026-07-14-passed-review-followup-reopen.spec.md
 ---

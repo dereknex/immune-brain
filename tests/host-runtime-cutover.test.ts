@@ -10,7 +10,7 @@ const TS_RUNTIME = resolve(PLUGIN_ROOT, "runtime/v4_runtime.ts");
 const PI_FACING_CONTRACTS = [
 	"README.md",
 	"docs/user_manual.md",
-	"plugins/immune-brain/dist/imm-loop.md",
+	"plugins/immune-brain/dist/imm-run.md",
 ];
 
 /** Production host runtime paths that must not contain python3 startup. */

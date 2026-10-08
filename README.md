@@ -11,10 +11,10 @@
 Immune-Brain brings a structured engineering workflow to AI coding assistants (**Pi** and **Claude Code**):
 
 - **Zero overhead for normal chat & coding** — Ordinary questions, quick edits, and exploratory chat stay 100% host-native. Immune-Brain never interrupts normal conversation.
-- **Explicit trigger when rigor matters** — When you want engineering discipline, invoke `imm-brainstorm`, `imm-planner`, or `imm-loop`.
+- **Explicit trigger when rigor matters** — When you want engineering discipline, invoke `imm-brainstorm`, `imm-planner`, or `imm-run`.
 - **Plans become trackable tasks** (`TaskIntent` + `TaskRecord`) — Progress lives on disk (Git + `.imm/`), surviving restarts and context wipes.
 - **Quality is enforced by code, not promises** — Automated QA and isolated review subagents must pass before a task can complete.
-- **Ready Initiatives can run as a batch** — One confirmed batch authorization lets `imm-loop` work through a published Initiative's children serially, while every child is still enrolled, QA'd, reviewed, and settled on its own.
+- **Ready Initiatives can run as a batch** — One confirmed batch authorization lets `imm-run` work through a published Initiative's children serially, while every child is still enrolled, QA'd, reviewed, and settled on its own.
 
 Pi and Claude Code are the supported hosts. Undeclared adapters remain unsupported. Minimum Claude Code is `2.1.236`, the lowest version verified with interactive server-initiated MCP elicitation. Current real-Host evidence is recorded in [Claude native elicitation conformance](docs/verification/claude-native-elicitation-authority-conformance.md); historical reports remain under [docs/verification/archive/](docs/verification/archive/). Either host can use the model provider you configure — Immune-Brain works on top of Kernel authority, not a vendor chat.
 
@@ -96,8 +96,8 @@ Planner authors a `TaskIntent` and living Spec (scoped files, risk tier, accepta
 
 Review the scope and confirm enrollment. No code or authority writes happen before your explicit confirmation.
 
-**3. Run and verify with `imm-loop`**:
-Run `/imm-loop` (or say "Start imm-loop"). The engine will:
+**3. Run and verify with `imm-run`**:
+Run `/imm-run` (or say "Start imm-run"). The engine will:
 - Dispatch an Executor to write code strictly within the frozen scope.
 - Run deterministic QA acceptance checks.
 - Dispatch an isolated Review subagent for material/critical changes.
@@ -114,18 +114,18 @@ Immune-Brain provides two clean modes: **Host-native** for daily coding, and **M
 | Daily coding, quick fix, general Q&A | Normal conversation ("Fix typo in README", "Explain this function") | **Host-native**: Standard Pi / Claude Code behavior. Zero workflow overhead. |
 | Fuzzy idea, needs scoping & risk analysis | `/imm-brainstorm` "Help me think through webhook support" | → `imm-brainstorm` frames requirements, constraints, and risks (read-only, no code edits) |
 | Clear goal, want formal plan & specs | `/imm-planner` "Plan the webhook feature" | → `imm-planner` writes `TaskIntent` + Specs with testable acceptance checks |
-| Plan confirmed, ready to build & verify | `/imm-loop` | → Executor builds within scope → deterministic QA verifies → isolated Review checks → task settles |
-| Session interrupted or resuming a task | `/imm-loop` | → Resumes existing task seamlessly from on-disk state (`.imm/`) |
+| Plan confirmed, ready to build & verify | `/imm-run` | → Executor builds within scope → deterministic QA verifies → isolated Review checks → task settles |
+| Session interrupted or resuming a task | `/imm-run` | → Resumes existing task seamlessly from on-disk state (`.imm/`) |
 | Ready Initiative to run unattended | "Run initiative `<slug>` unattended" | → Host's `start_unattended_batch`: one native confirmation covers ordered plan digest, children run serially |
-| Cross-host workflow (Claude plan + Pi code) | Run `/imm-planner` in Claude Code, switch to Pi and run `/imm-loop` | → Staged Spec & TaskIntent are shared on disk; Pi confirms via native TUI and executes loop |
+| Cross-host workflow (Claude plan + Pi code) | Run `/imm-planner` in Claude Code, switch to Pi and run `/imm-run` | → Staged Spec & TaskIntent are shared on disk; Pi confirms via native TUI and executes loop |
 | PR has review comments or failing CI | `/imm-pr-fix` on that PR | → Standalone repair: minimal scoped fix in place, no managed task created |
 | Project docs out of date | `/imm-doc-prune` | → Read-only audit; deletes only user-approved stale docs from manifest |
-| Agent instructions bloated | `/imm-agent-doc-maintain` | → Minimizes tracked `AGENTS.md` / `CLAUDE.md` to essential non-discoverable rules |
-| Which model's edits keep coming back for review | `/imm-review-retro` | → Ranks models by review load and reports project usage from session logs |
+| Agent instructions bloated | `/imm-doc-slim` | → Minimizes tracked `AGENTS.md` / `CLAUDE.md` to essential non-discoverable rules |
+| Which model's edits keep coming back for review | `/imm-retro` | → Ranks models by review load and reports project usage from session logs |
 
 > **Core Principle: Skill-Explicit Entry**
 > - **Ordinary input stays host-native**: Natural language queries never automatically start planning or task enrollment. You choose when to turn on engineering rigor.
-> - **Managed work starts with explicit skills**: Use `imm-brainstorm` to clarify, `imm-planner` to plan, and `imm-loop` to execute and resume.
+> - **Managed work starts with explicit skills**: Use `imm-brainstorm` to clarify, `imm-planner` to plan, and `imm-run` to execute and resume.
 
 ### Cross-Host Workflow: Plan in Claude Code, Build in Pi
 
@@ -136,7 +136,7 @@ This enables a best-of-both-worlds workflow: **leverage Claude Code's deep reaso
 ```text
 ┌───────────────────────────────────┐    Git-Tracked Artifacts on Disk   ┌───────────────────────────────────┐
 │            Claude Code            │ ─────────────────────────────────> │                Pi                 │
-│  1. /imm-brainstorm (Clarify)     │        docs/specs/*.spec.md        │  1. /imm-loop (Native TUI Modal)  │
+│  1. /imm-brainstorm (Clarify)     │        docs/specs/*.spec.md        │  1. /imm-run (Native TUI Modal)  │
 │  2. /imm-planner    (Spec/Intent) │       docs/plans/*.intent.json     │  2. Executor (Code) + QA Engine   │
 └───────────────────────────────────┘                                    └───────────────────────────────────┘
 ```
@@ -151,7 +151,7 @@ This enables a best-of-both-worlds workflow: **leverage Claude Code's deep reaso
    - **Stage in Git**: Stage the generated artifacts (`git add docs/`). You can stop before Enrollment without executing.
 2. **Phase 2: Code Implementation & Execution in Pi**
    - **Launch Pi**: Open Pi in the same repository workspace.
-   - **Enroll & run**: Enter `/imm-loop`. Pi discovers the staged `TaskIntent` and opens its native TUI modal confirmation for Enrollment.
+   - **Enroll & run**: Enter `/imm-run`. Pi discovers the staged `TaskIntent` and opens its native TUI modal confirmation for Enrollment.
    - **Automated loop**:
      - **Executor** writes implementation code strictly inside `scope_hint`.
      - **Deterministic QA engine** directly runs acceptance commands against exit codes.
@@ -159,7 +159,7 @@ This enables a best-of-both-worlds workflow: **leverage Claude Code's deep reaso
      - Upon pass, Kernel atomically settles terminal audit records in `.imm/audit/<task-id>/` and releases the workspace claim.
 3. **Why Cross-Host Switching Works Seamlessly**
    - **Session-neutral state**: All contracts and authority records live in the repository and local SQLite CAS, completely independent of any individual AI chat session.
-   - **Bidirectional resumption**: Interrupted tasks can be resumed at any point in either Pi or Claude Code with `/imm-loop`.
+   - **Bidirectional resumption**: Interrupted tasks can be resumed at any point in either Pi or Claude Code with `/imm-run`.
 
 ---
 
@@ -264,7 +264,7 @@ Without explicit cost levers, multi-agent workflows compound expenses exponentia
 |---|---|---|---|
 | **1. Brainstorming** | Claude Code (`/imm-brainstorm`) | **Strong Tier** | Long-context dialogue, uncovering latent constraints and pruning pseudo-requirements. |
 | **2. Planning** | Claude Code (`/imm-planner`) | **Strong Tier** | Line-pinned Living Specs, `VerificationDescriptor` bindings, and Devil's Advocate audits. |
-| **3. Implementation** | Pi (`imm-loop`) | **Fast / Mid Tier** | Native modal enrollment, mechanical coding within frozen scopes, adhering to YAGNI gates. |
+| **3. Implementation** | Pi (`imm-run`) | **Fast / Mid Tier** | Native modal enrollment, mechanical coding within frozen scopes, adhering to YAGNI gates. |
 | **4. Verification** | Local Process / Kernel Native | **Zero LLM (Native)** | Deterministic test execution (`bun test`), producing tamper-proof test attestations. |
 | **5. Code Review** | Pi Subagent (`immune-brain-reviewer`) | **Strong Tier** | Adversarial review over immutable Git blob `ReviewBundle`s before final Kernel settlement. |
 
@@ -276,15 +276,15 @@ Without explicit cost levers, multi-agent workflows compound expenses exponentia
 |---|---|---|---|
 | `imm-brainstorm` | Managed entry | Requirements are ambiguous | Frames the problem, surfaces open questions, no code edits |
 | `imm-planner` | Managed entry | Goal is clear | Authors / revises `TaskIntent` and specs; does not enroll or build |
-| `imm-loop` | Managed coordinator | Plan is validated | Drives execution → QA → Review → completion via foreground tools |
+| `imm-run` | Managed coordinator | Plan is validated | Drives execution → QA → Review → completion via foreground tools |
 | `imm-pr-fix` | Standalone | CI failed / review comments on a PR | Repairs one PR in place, no managed authority |
 | `imm-doc-prune` | Standalone | Stale current docs | Deletes only the hash-approved manifest entries |
-| `imm-agent-doc-maintain` | Standalone | Bloated agent instructions | Minimizes tracked AGENTS/CLAUDE/GEMINI.md to necessary context |
-| `imm-review-retro` | Standalone | Compare models by review load | Ranks authors of reviewed code and reports project usage |
+| `imm-doc-slim` | Standalone | Bloated agent instructions | Minimizes tracked AGENTS/CLAUDE/GEMINI.md to necessary context |
+| `imm-retro` | Standalone | Compare models by review load | Ranks authors of reviewed code and reports project usage |
 
-Internal roles (Executor, QA, Review, Compounder) are dispatched by `imm-loop` — you never invoke them directly.
+Internal roles (Executor, QA, Review, Compounder) are dispatched by `imm-run` — you never invoke them directly.
 
-All 7 skills are invoked explicitly. For new features, start with `imm-brainstorm` (if requirements are uncertain) or `imm-planner` (if requirements are clear), then proceed to `imm-loop` once enrolled.
+All 7 skills are invoked explicitly. For new features, start with `imm-brainstorm` (if requirements are uncertain) or `imm-planner` (if requirements are clear), then proceed to `imm-run` once enrolled.
 
 ### Managed Path entries (brainstorm → planner → loop)
 
@@ -304,9 +304,9 @@ The three Managed skills form one continuous pipeline with a single authority mo
 - **What it never does:** implements code, overwrites an enrolled TaskIntent without a revision flow, or grants execution authority — only the native Enrollment gate can.
 - **Exit:** Git-tracked `TaskIntent` awaiting enrollment confirmation.
 
-#### `imm-loop` — managed execution & assurance
+#### `imm-run` — managed execution & assurance
 
-- **Trigger:** explicit `/imm-loop` (start, resume, or check a managed task).
+- **Trigger:** explicit `/imm-run` (start, resume, or check a managed task).
 - **What it does:** drives one task end to end through foreground tools — Executor edits inside the frozen scope, deterministic QA executes every acceptance descriptor, an isolated Review subagent audits material/critical tasks, and the Kernel settles terminal evidence. Interrupted workflows resume from on-disk state; the Kernel projection is authoritative.
 - **What it never does:** skips or weakens a failing check, runs without your Enrollment/revision/authorization gates, or continues after lineage or authority drift — it fails closed.
 - **Finding evidence:** every Review finding carries machine-checkable provenance (`trigger`, `caller_chain`, `violated`). A claim that fresh passing QA evidence already contradicts is recorded as `refuted` and only blocks again if that evidence goes stale.
@@ -327,12 +327,12 @@ The three repair/maintenance skills are host-native: they never create a managed
 - **Trigger:** explicit request to prune stale current documentation.
 - **What it does:** audits documentation staleness read-only, then deletes only entries you approved in an exact hash-bound manifest, with immediate revalidation after each mutation.
 
-#### `imm-agent-doc-maintain` — agent instruction minimization
+#### `imm-doc-slim` — agent instruction minimization
 
 - **Trigger:** explicit request to minimize tracked `AGENTS.md` / `CLAUDE.md` / `GEMINI.md`.
 - **What it does:** keeps only the necessary non-discoverable rules in agent instruction files, under the same read-only-audit + hash-bound-manifest-approval model as `imm-doc-prune`.
 
-#### `imm-review-retro` — review load and project usage
+#### `imm-retro` — review load and project usage
 
 - **Trigger:** explicit request for a cross-model review retro or project usage look-back.
 - **What it does:** ranks models by how much review their own edits triggered, plus sessions/turns/edits/tool mix, from pi session logs. Read-only. Not a diff review.
@@ -353,7 +353,7 @@ flowchart TD
         EG -->|Confirm| KS[(".imm/state/kernel.sqlite<br/>Atomic TaskRecord<br/>Exclusive Workspace Claim")]
     end
 
-    subgraph Loop ["3. Execution & Assurance Loop (imm-loop)"]
+    subgraph Loop ["3. Execution & Assurance Loop (imm-run)"]
         KS --> EX["Executor Role<br/>Edit code strictly inside scope_hint"]
         EX --> FRZ["advance_assurance<br/>Artifacts frozen (active:frozen)"]
         FRZ --> QA["Deterministic QA Engine<br/>Run acceptance verification commands<br/>Generate QA Attestation"]
@@ -380,7 +380,7 @@ flowchart TD
 
 1. **Two Paths**
    - **Host-native Path**: Daily conversation, code inspections, and ad-hoc fixes stay 100% native with zero workflow overhead.
-   - **Managed Path**: Explicitly entered via `imm-brainstorm`, `imm-planner`, or `imm-loop`, strictly governed by the Assurance Kernel.
+   - **Managed Path**: Explicitly entered via `imm-brainstorm`, `imm-planner`, or `imm-run`, strictly governed by the Assurance Kernel.
 
 2. **Authority & Contract**
    - **TaskIntent (`.intent.json`)**: Machine-readable behavioral contract locking `scope_hint` (file boundaries), `risk` tier, and deterministic `acceptance` descriptors (Verification Descriptor v2).
@@ -409,7 +409,7 @@ Key invariants:
 
 When an Initiative has several ready children, you can run them as one serial batch instead of task by task.
 
-- **Entry is explicit:** the Host's privileged `start_unattended_batch` tool, taking the Initiative slug. Nothing batch-related exists until it is called — without it, `imm-loop` behaves exactly like per-task enrollment and creates no batch state, branch, or authorization.
+- **Entry is explicit:** the Host's privileged `start_unattended_batch` tool, taking the Initiative slug. Nothing batch-related exists until it is called — without it, `imm-run` behaves exactly like per-task enrollment and creates no batch state, branch, or authorization.
 - **One confirmation, one digest:** the native gate (Pi TUI dialog or Claude MCP elicitation) shows the ordered child list and the shared plan digest; that single literal-user act is the whole Batch Authorization.
 - **Per-child authority survives:** every child is still enrolled, frozen, QA'd, reviewed, and settled by the Kernel on its own `TaskRecord`. The batch is the scope of one authorization, never a new authority layer.
 - **Closeout is automatic:** when a child reaches `done` in the foreground, the same call commits it and enrolls the next child, or marks the batch `completed`, with no new gate. A parked or stopped child is never committed for you, and a failed continuation is reported beside the result with `start_unattended_batch` as the retry. A fast-forward commit you add to the batch branch is adopted; any other HEAD movement still stops the run.
@@ -463,19 +463,19 @@ docs/specs/                           # Living specs (updated in place)
 
 ## FAQ
 
-**Do I need to learn all 7 skills?** No. Most of the time you only need `/imm-planner` (to plan and enroll a task) and `/imm-loop` (to build and verify it). Use `imm-brainstorm` when requirements need clarifying first, and the maintenance skills (`imm-pr-fix`, etc.) only when specific repair needs arise. Ordinary chat and simple edits don't need any skills at all.
+**Do I need to learn all 7 skills?** No. Most of the time you only need `/imm-planner` (to plan and enroll a task) and `/imm-run` (to build and verify it). Use `imm-brainstorm` when requirements need clarifying first, and the maintenance skills (`imm-pr-fix`, etc.) only when specific repair needs arise. Ordinary chat and simple edits don't need any skills at all.
 
-**What if I interrupt or close the session mid-task?** State is safely stored on disk (`.imm/` + TaskIntent). In Pi or Claude Code, simply re-enter `/imm-loop` to resume — the Kernel projection is authoritative.
+**What if I interrupt or close the session mid-task?** State is safely stored on disk (`.imm/` + TaskIntent). In Pi or Claude Code, simply re-enter `/imm-run` to resume — the Kernel projection is authoritative.
 
 **Why does enrollment show a confirmation dialog?** All risk levels (`routine`/`material`/`critical`) require explicit human confirmation before execution authority is granted. In Pi, this is a native TUI modal dialog; in Claude Code, it is a native MCP elicitation gate. It binds the staged digest so you see exactly what will be tracked.
 
-**QA failed — what now?** QA returns `rework` or `replan_required`. `imm-loop` routes back to the executor or to `imm-planner` for scope changes. No manual reset needed.
+**QA failed — what now?** QA returns `rework` or `replan_required`. `imm-run` routes back to the executor or to `imm-planner` for scope changes. No manual reset needed.
 
 **A review finding stopped blocking — why?** It was refuted: fresh deterministic QA evidence shows the acceptance it names passes. The refutation is bound to that exact evidence, so the finding blocks again the moment the evidence goes stale for the current revision, intent hash, or diff.
 
 **Can it run a whole Initiative without me?** Only as far as you authorize. Confirm `start_unattended_batch` with the Initiative slug and the runner works through the published, non-`critical` children serially on one batch branch — parking as soon as a child needs a human decision or the run hits a budget, authorization, or commit failure. A parked run waits for you indefinitely: neither the confirmation dialog nor the authorization it grants times out. It never pushes, opens PRs, or settles user decisions for you.
 
-**Can I switch between hosts (e.g. plan in Claude Code, code in Pi)?** Yes. Immune-Brain's contracts and state live entirely on disk in the repository, decoupled from conversation sessions. You can leverage Claude Code for deep architectural thinking and Spec planning, then switch to Pi to run `imm-loop` for code execution and deterministic QA. Interrupted tasks can be resumed in either host at any time.
+**Can I switch between hosts (e.g. plan in Claude Code, code in Pi)?** Yes. Immune-Brain's contracts and state live entirely on disk in the repository, decoupled from conversation sessions. You can leverage Claude Code for deep architectural thinking and Spec planning, then switch to Pi to run `imm-run` for code execution and deterministic QA. Interrupted tasks can be resumed in either host at any time.
 
 **What if the task discovers the scope is insufficient mid-execution?** The Executor adheres strictly to a fail-closed YAGNI red-line and is physically barred from modifying out-of-scope files. When an expansion is truly required, the Executor aborts and yields a `replan_required` route; `imm-planner` then revises the Spec and `TaskIntent`, presenting a new native confirmation dialog before execution resumes.
 

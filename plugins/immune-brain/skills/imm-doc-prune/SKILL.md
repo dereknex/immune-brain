@@ -8,7 +8,7 @@ description: Use when the user explicitly requests Immune-Brain pruning of stale
 Use [`../../dist/imm-doc-prune.md`](../../dist/imm-doc-prune.md) as the canonical
 contract index, not a whole-document read. This is a
 standalone host-native maintenance entry, not a Managed Path continuation
-and not an `imm-loop` internal-role dispatch.
+and not an `imm-run` internal-role dispatch.
 
 Mandatory constraints: audit is read-only. Mutation requires exact hash-bound
 manifest approval and immediate revalidation. Preserve active Managed ownership;

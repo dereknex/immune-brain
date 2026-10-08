@@ -28,7 +28,7 @@ describe("Skill-explicit workflow routing contract", () => {
       "Continue an existing Managed owner",
       "explicit `imm-brainstorm`",
       "imm-planner",
-      "imm-loop",
+      "imm-run",
     ]);
     expect(BASELINE).not.toContain("Repository-mutating requests use Managed Path by default");
   });
@@ -59,7 +59,7 @@ describe("Skill-explicit workflow routing contract", () => {
 
   it("aligns project constitutions and packaged consumers", () => {
     expectAll(ROOT_IMMUNE, ["Skill-explicit Managed Path", "显式 Immune-Brain Skill", "literal-user Enrollment"]);
-    expectAll(README, ["Managed Path starts only from explicit `imm-brainstorm`, `imm-planner`, or", "standalone `imm-pr-fix`,\n`imm-doc-prune`, `imm-agent-doc-maintain`, and `imm-review-retro` stay", "ordinary host input"]);
+    expectAll(README, ["Managed Path starts only from explicit `imm-brainstorm`, `imm-planner`, or", "standalone `imm-pr-fix`,\n`imm-doc-prune`, `imm-doc-slim`, and `imm-retro` stay", "ordinary host input"]);
     expectAll(USER_GUIDE, ["Skill-explicit Managed Path", "普通 host input 保持 host-native"]);
     expectAll(PLANNER_SKILL, ["entered explicitly by the user", "Planner may request the native Enrollment gate", "only that gate grants execution authority"]);
     expect(PLANNER_SKILL).not.toContain("never enrolls a task");
@@ -81,7 +81,7 @@ describe("Skill-explicit workflow routing contract", () => {
       "写状态的命令会在首次修改前自动执行同一迁移",
       "所有决策历史保存在 State Ledger 中",
       "代码变更和 UI 变更会自动触发对应的审查流程",
-      "`imm-loop` 是最省心的入口",
+      "`imm-run` 是最省心的入口",
     ]) {
       expect(USER_GUIDE).not.toContain(retiredClaim);
     }

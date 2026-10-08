@@ -1,6 +1,6 @@
 // The Initiative carrier gate is declared fail-closed by the Planner but is
 // performed by the Loop. When the rule lived only in `imm-planner.md`, a denied
-// `publish-initiative` batch was reported correctly and then a later `imm-loop`
+// `publish-initiative` batch was reported correctly and then a later `imm-run`
 // entry enrolled anyway — a hard contract gate that was fail-open in practice.
 //
 // The Kernel cannot enforce this: the contract forbids storing Issue identity in
@@ -17,7 +17,7 @@ const REPO_ROOT = resolve(import.meta.dir, "..");
 const read = (path: string) => readFileSync(resolve(REPO_ROOT, path), "utf-8");
 
 const PLANNER = read("plugins/immune-brain/dist/imm-planner.md");
-const LOOP = read("plugins/immune-brain/dist/imm-loop.md");
+const LOOP = read("plugins/immune-brain/dist/imm-run.md");
 
 describe("Initiative carrier Enrollment gate", () => {
 	it("the Planner still declares the gate", () => {
@@ -54,11 +54,11 @@ describe("Initiative carrier Enrollment gate", () => {
 	});
 
 	it("a later Loop entry does not clear a failed carrier batch", () => {
-		expect(LOOP).toContain("a later `imm-loop` entry does not\nclear it");
+		expect(LOOP).toContain("a later `imm-run` entry does not\nclear it");
 	});
 
 	it("the pre-Enrollment gate stays distinct from post-settlement projection", () => {
-		// `imm-loop.md` also states a tracker failure is never a Loop blocker; that
+		// `imm-run.md` also states a tracker failure is never a Loop blocker; that
 		// clause is about the opted-in GitHub projection after settlement. Without
 		// this separation the two rules read as contradictory.
 		expect(LOOP).toContain("distinct from the post-settlement tracker");

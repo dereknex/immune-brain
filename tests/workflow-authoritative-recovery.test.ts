@@ -22,8 +22,8 @@ const ROOT = join(__dirname, "..");
 const read = (path: string) => readFileSync(join(ROOT, path), "utf8");
 const flat = (text: string) => text.replace(/\s+/g, " ");
 
-const LOOP = read("plugins/immune-brain/dist/imm-loop.md");
-const LOOP_LOADER = read("plugins/immune-brain/skills/imm-loop/SKILL.md");
+const LOOP = read("plugins/immune-brain/dist/imm-run.md");
+const LOOP_LOADER = read("plugins/immune-brain/skills/imm-run/SKILL.md");
 const H1 = read("docs/reports/workflow-summary-host-followup.md");
 
 /** Lifecycle stages that a Managed workflow distinguishes; none implies another. */

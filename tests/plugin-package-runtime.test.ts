@@ -533,7 +533,7 @@ describe("plugin package runtime cutover parity", () => {
 
 	it("ships canonical Planner and Loop tracker authority contracts", () => {
 		const plannerPacked = readFileSync(join(REPO_ROOT, "plugins/immune-brain/dist/imm-planner.md"), "utf8");
-		const loopPacked = readFileSync(join(REPO_ROOT, "plugins/immune-brain/dist/imm-loop.md"), "utf8");
+		const loopPacked = readFileSync(join(REPO_ROOT, "plugins/immune-brain/dist/imm-run.md"), "utf8");
 		const carrierSection = (contract: string) => {
 			const section = contract.match(
 				/### Initiative Carrier Preference\n\n[\s\S]*?(?=\n### Verification Descriptor Discipline)/,

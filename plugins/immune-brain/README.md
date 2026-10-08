@@ -8,7 +8,7 @@ trigger shim that loads its full instructions from `dist/<name>.md` only on
 invocation. Execution, review, QA, and learning capabilities remain internal
 runtime roles or tools. `imm-pr-fix` is the standalone host-native repair
 entry, `imm-doc-prune` is the standalone host-native document maintenance
-entry, and `imm-agent-doc-maintain` is the standalone host-native
+entry, and `imm-doc-slim` is the standalone host-native
 agent-instruction maintenance entry; Loop's repair role remains internal.
 Shared rules live in [`BASELINE.md`](BASELINE.md); current workflow behavior
 lives in the focused modules under [`runtime/`](runtime/), while `imm_core.ts`
@@ -18,32 +18,32 @@ and repair roles; it is not a QA or style-only gate.
 
 ## Public Skill surface
 
-The package exposes seven Skills: `imm-brainstorm`, `imm-planner`, `imm-loop`,
-`imm-pr-fix`, `imm-doc-prune`, `imm-agent-doc-maintain`, and `imm-review-retro`. The first three enter or continue the Managed Path;
+The package exposes seven Skills: `imm-brainstorm`, `imm-planner`, `imm-run`,
+`imm-pr-fix`, `imm-doc-prune`, `imm-doc-slim`, and `imm-retro`. The first three enter or continue the Managed Path;
 `imm-pr-fix` repairs one PR directly, `imm-doc-prune` prunes stale current
-documentation, `imm-agent-doc-maintain` minimizes tracked agent-instruction
-context, and `imm-review-retro` ranks models by review load and reports project usage, all without Managed authority. Internal roles
+documentation, `imm-doc-slim` minimizes tracked agent-instruction
+context, and `imm-retro` ranks models by review load and reports project usage, all without Managed authority. Internal roles
 are dispatched by the runtime through packaged prompts under
 `dist/role-prompts/`; Loop never discovers them through Skill loading. Skills use the project's existing files and create only the artifacts
 the user explicitly requested.
 
 Managed Path starts only from explicit `imm-brainstorm`, `imm-planner`, or
-`imm-loop` entry; ordinary host input and standalone `imm-pr-fix`,
-`imm-doc-prune`, `imm-agent-doc-maintain`, and `imm-review-retro` stay
+`imm-run` entry; ordinary host input and standalone `imm-pr-fix`,
+`imm-doc-prune`, `imm-doc-slim`, and `imm-retro` stay
 host-native and are not classified by natural-language routing.
 
-- An active Assurance projection remains authoritative and resumes only when the user explicitly enters `imm-loop`.
+- An active Assurance projection remains authoritative and resumes only when the user explicitly enters `imm-run`.
 - Explicit `imm-brainstorm` frames ambiguity; explicit `imm-planner` plans clear work.
-- `imm-loop` consumes validated plans and active task recovery; Planner artifacts remain candidates for later literal-user Enrollment in the current Host's native gate.
+- `imm-run` consumes validated plans and active task recovery; Planner artifacts remain candidates for later literal-user Enrollment in the current Host's native gate.
 - Fast-Track compresses Managed Path without bypassing TaskIntent scope, Enrollment, QA, Review, authorization, or completion.
-- An opted-in serial batch hands each enrolled child to foreground Parent implementation before QA; the Parent dispatches required Review, then resumes the same valid batch for Kernel settlement reconciliation and one scope-bound commit. See [Unattended Batch Opt-In](dist/imm-loop.md#unattended-batch-opt-in).
+- An opted-in serial batch hands each enrolled child to foreground Parent implementation before QA; the Parent dispatches required Review, then resumes the same valid batch for Kernel settlement reconciliation and one scope-bound commit. See [Unattended Batch Opt-In](dist/imm-run.md#unattended-batch-opt-in).
 
 ```mermaid
 flowchart LR
   request[request] --> explicit{explicit Managed Skill?}
-  explicit -->|yes| skill[imm-brainstorm / imm-planner / imm-loop]
+  explicit -->|yes| skill[imm-brainstorm / imm-planner / imm-run]
   explicit -->|no| host[host-native]
-  owner[active Assurance owner] --> loop[imm-loop recovery]
+  owner[active Assurance owner] --> loop[imm-run recovery]
   skill --> native[Current Host native Enrollment]
   native --> loop
 ```
@@ -55,7 +55,7 @@ roles attach to this line but never own it.
 
 ```mermaid
 flowchart LR
-  loop[imm-loop] --> executor[internal executor]
+  loop[imm-run] --> executor[internal executor]
   executor -->|evidence| qa[internal QA]
   qa -->|pass| review[internal Review]
   qa -->|rework| executor
@@ -119,11 +119,11 @@ in the next major release.
 | ------- | ---- | -------- |
 | `imm-brainstorm` | brainstorm; framing; canonical | Problem framing only; no implementation or QA closure. |
 | `imm-planner` | plan; authority; canonical | Owns plan creation and revision; no executor edits. |
-| `imm-loop` | coordinate; coordinator; canonical | Coordinate the validated plan through execution, review, and settlement; no planning bypass. |
+| `imm-run` | coordinate; coordinator; canonical | Coordinate the validated plan through execution, review, and settlement; no planning bypass. |
 | `imm-pr-fix` | execute; repair; canonical | Repair one GitHub PR directly; no Managed authority mutation or scope expansion. |
 | `imm-doc-prune` | execute; repair; canonical | Prune stale current documentation after explicit manifest approval; no Managed authority mutation or authority-artifact deletion. |
-| `imm-agent-doc-maintain` | execute; repair; canonical | Minimize tracked agent-instruction context after explicit manifest approval; no Managed authority mutation, contract installation, or reference-document creation. |
-| `imm-review-retro` | execute; discovery; canonical | Rank models by review load and report project usage from pi session logs. Read-only. No Managed Path mutation. |
+| `imm-doc-slim` | execute; repair; canonical | Minimize tracked agent-instruction context after explicit manifest approval; no Managed authority mutation, contract installation, or reference-document creation. |
+| `imm-retro` | execute; discovery; canonical | Rank models by review load and report project usage from pi session logs. Read-only. No Managed Path mutation. |
 <!-- END GENERATED: skill-registry-role-map -->
 
 The authoritative public role manifest is [`skills/registry.yaml`](skills/registry.yaml).
@@ -135,7 +135,7 @@ and transitions live in the runtime bridge.
 Whether a change requires code review, UI review, or both is decided
 deterministically by `determineRequiredReviewGates` in
 [`runtime/imm_core.ts`](runtime/imm_core.ts) from the changed-file set — the
-runtime is the single source of truth. `imm-loop` consumes Kernel / Loop
+runtime is the single source of truth. `imm-run` consumes Kernel / Loop
 `review_required` projections and invokes the pending gate automatically; a
 recorded reviewer `pass` is keyed to the changed-files signature, so a later
 follow-up that alters the signature reopens the gate.
@@ -205,4 +205,4 @@ Tests are Bun contract tests. Run the immune-brain suite from this directory:
 bun test tests/
 ```
 
-Broader `imm_core` / `imm-loop` contract tests live in the repo-root `tests/` directory. Consistency guards (`plugins/immune-brain/tests/skill-registry-consistency.test.ts`, `plugins/immune-brain/tests/host-manifest-consistency.test.ts`) keep the registry, skill shims, `dist` files, and host manifests aligned.
+Broader `imm_core` / `imm-run` contract tests live in the repo-root `tests/` directory. Consistency guards (`plugins/immune-brain/tests/skill-registry-consistency.test.ts`, `plugins/immune-brain/tests/host-manifest-consistency.test.ts`) keep the registry, skill shims, `dist` files, and host manifests aligned.

@@ -11,7 +11,7 @@ Ordinary host work that does not create or mutate Managed authority. It includes
 _Avoid_: Direct Path, unmanaged fallback
 
 **Managed Path**:
-The authority-governed workflow entered only through `imm-brainstorm`, `imm-planner`, or `imm-loop`. Existing Managed ownership remains authoritative but resumes only through explicit `imm-loop` entry.
+The authority-governed workflow entered only through `imm-brainstorm`, `imm-planner`, or `imm-run`. Existing Managed ownership remains authoritative but resumes only through explicit `imm-run` entry.
 _Avoid_: automatic routing, default mutation path
 
 **Brainstorm**:
@@ -214,7 +214,7 @@ _Avoid_: current acceptance field, QA attestation
 
 ## Architecture Map
 
-- Public entries: `plugins/immune-brain/skills/imm-brainstorm/`, `imm-planner/`, and `imm-loop/` enter or continue the Managed Path; `imm-pr-fix/` is the standalone host-native PR repair Skill, `imm-doc-prune/` is the standalone host-native document maintenance Skill, `imm-agent-doc-maintain/` is the standalone host-native agent-instruction maintenance Skill, and `imm-review-retro/` is the standalone host-native review-load and project-usage retro Skill.
+- Public entries: `plugins/immune-brain/skills/imm-brainstorm/`, `imm-planner/`, and `imm-run/` enter or continue the Managed Path; `imm-pr-fix/` is the standalone host-native PR repair Skill, `imm-doc-prune/` is the standalone host-native document maintenance Skill, `imm-doc-slim/` is the standalone host-native agent-instruction maintenance Skill, and `imm-retro/` is the standalone host-native review-load and project-usage retro Skill.
 - Planning artifacts: `docs/specs/` stores active Specs; `docs/plans/*.intent.json` stores active TaskIntents despite the historical directory name. Frozen artifacts move under the corresponding `archive/` directories.
 - Kernel authority: `plugins/immune-brain/runtime/kernel/` owns TaskIntent parsing, Enrollment, TaskRecord reduction/storage, claims, projections, and completion.
 - Worktree state: `.imm/state/kernel.sqlite` holds current authority — each run's TaskRecord, workspace ownership, claim state, run identity and terminal proof, written in one transaction per mutation. `.imm/audit/<task-id>/` stores settled terminal evidence (tracked); the database, its WAL/SHM siblings and backups are Git-ignored runtime state, and `.imm/state/tasks/*.json` survives only as retired layout that the explicit migration diagnoses.

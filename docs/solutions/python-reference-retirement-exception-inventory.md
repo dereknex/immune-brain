@@ -92,7 +92,7 @@ supplies the three defaults, so its role assertions compare hardcoded constants
 against a static registry — a self-consistency check now covered by
 `tests/skill-registry-metadata-contract.test.ts`. Its one dynamic guard,
 `require_skill(agent_hint)`, is genuinely absent: a Plan may name a skill that
-does not exist and the runtime stores the hint and hands it to `imm-loop` for
+does not exist and the runtime stores the hint and hands it to `imm-run` for
 dispatch. Restoring it means the runtime reads `registry.yaml`, which ships
 beside the runtime in the Claude, Cursor, and Codex channels but not in the
 OpenCode npm package. That leaves failing closed, which breaks a channel, or

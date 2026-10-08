@@ -33,7 +33,7 @@ const flat = (text: string) => text.replace(/\s+/g, " ");
 const BASELINE = read("plugins/immune-brain/BASELINE.md");
 const BASELINE_DIST = read("plugins/immune-brain/dist/BASELINE.md");
 const BASELINE_SKILLS = read("plugins/immune-brain/skills/BASELINE.md");
-const LOOP = read("plugins/immune-brain/dist/imm-loop.md");
+const LOOP = read("plugins/immune-brain/dist/imm-run.md");
 const BRAINSTORM = read("plugins/immune-brain/dist/imm-brainstorm.md");
 const PLANNER = read("plugins/immune-brain/dist/imm-planner.md");
 

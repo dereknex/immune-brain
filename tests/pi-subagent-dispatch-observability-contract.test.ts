@@ -75,7 +75,7 @@ test("interactive dispatch contracts are foreground-only and do not poll", () =>
 });
 
 test("canonical Loop contract describes direct QA and Parent-mediated Review verdict flow", () => {
-	const contract = read("plugins/immune-brain/dist/imm-loop.md");
+	const contract = read("plugins/immune-brain/dist/imm-run.md");
 	expect(contract).toContain("advance_assurance");
 	expect(contract).toMatch(/foreground|前台/i);
 	expect(contract).toMatch(/submit_review|structured verdict/);

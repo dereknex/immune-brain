@@ -1,14 +1,14 @@
 ---
-name: imm-review-retro
+name: imm-retro
 description: Use when the user explicitly requests Immune-Brain ranking of models by cross-model review load or a project usage retro.
 ---
 
-# Immune-Brain: Review Retro
+# Immune-Brain: Retro
 
-Use [`../../dist/imm-review-retro.md`](../../dist/imm-review-retro.md) as the
+Use [`../../dist/imm-retro.md`](../../dist/imm-retro.md) as the
 canonical contract index, not a whole-document read. This is a
 standalone host-native analysis entry, not a Managed Path continuation
-and not an `imm-loop` internal-role dispatch.
+and not an `imm-run` internal-role dispatch.
 
 Mandatory constraints: read-only on pi session logs. Do not edit code, tests,
 Specs, or workflow state. Do not write session logs or `.imm/` files.
@@ -18,6 +18,6 @@ Read each linked heading body up to the next heading; nested sections and
 references load only under their own condition. Never read the whole contract
 or all references as an entry prerequisite.
 
-- common: [Boundary](../../dist/imm-review-retro.md#boundary), [Invocation](../../dist/imm-review-retro.md#invocation)
-- running the analyzer: [Counting rules](../../dist/imm-review-retro.md#counting-rules), [CLI](../../dist/imm-review-retro.md#cli)
-- interpreting the report: [Report](../../dist/imm-review-retro.md#report), [Caveats](../../dist/imm-review-retro.md#caveats)
+- common: [Boundary](../../dist/imm-retro.md#boundary), [Invocation](../../dist/imm-retro.md#invocation)
+- running the analyzer: [Counting rules](../../dist/imm-retro.md#counting-rules), [CLI](../../dist/imm-retro.md#cli)
+- interpreting the report: [Report](../../dist/imm-retro.md#report), [Caveats](../../dist/imm-retro.md#caveats)

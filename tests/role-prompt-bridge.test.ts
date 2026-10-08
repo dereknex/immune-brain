@@ -58,7 +58,7 @@ describe("internal role-prompt bridge", () => {
 				ownership: "brainstorm",
 				target: "architecture-exploration",
 			}),
-		).toEqual({ entry: "imm-loop", next: "arch-explorer" });
+		).toEqual({ entry: "imm-run", next: "arch-explorer" });
 		const archAction = buildLoopAction({
 			ownership: "brainstorm",
 			target: "architecture-exploration",
@@ -145,7 +145,7 @@ describe("internal role-prompt bridge", () => {
 				},
 			}),
 		).toEqual({
-			entry: "imm-loop",
+			entry: "imm-run",
 			next: "none",
 			reason: "no_reusable_learning",
 		});
@@ -163,7 +163,7 @@ describe("internal role-prompt bridge", () => {
 				},
 			}),
 		).toEqual({
-			entry: "imm-loop",
+			entry: "imm-run",
 			next: "none",
 			reason: "no_reusable_learning",
 		});
@@ -271,9 +271,9 @@ describe("internal role-prompt bridge", () => {
 		expect(pkg.files).toContain("plugins/immune-brain/dist");
 	});
 	it("keeps canonical Loop role dispatch on the internal bridge", () => {
-		const content = read("plugins/immune-brain/dist/imm-loop.md");
+		const content = read("plugins/immune-brain/dist/imm-run.md");
 		expect(content.replace(/\s+/g, " ")).toContain("role-boundary route");
-		expect(content).toContain("standalone `imm-pr-fix`, `imm-doc-prune`, and `imm-agent-doc-maintain` are host-native");
+		expect(content).toContain("standalone `imm-pr-fix`, `imm-doc-prune`, and `imm-doc-slim` are host-native");
 		expect(content).toContain("never dispatched as the Loop role");
 		expect(content).not.toMatch(/public\s+Skills\s+remain available as rollback shims/);
 		expect(content).not.toContain("dispatch an isolated read-only `imm-qa`");

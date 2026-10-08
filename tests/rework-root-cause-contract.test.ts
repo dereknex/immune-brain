@@ -38,7 +38,7 @@ describe("rework generalization rule", () => {
 	});
 
 	it("requires the second rework to generalize or refute", () => {
-		const loop = readFlat("plugins/immune-brain/dist/imm-loop.md");
+		const loop = readFlat("plugins/immune-brain/dist/imm-run.md");
 		expect(loop).toContain("On the second rework of one acceptance id or anchor");
 		expect(loop).toContain("covers every known trigger class of the violated invariant");
 		expect(loop).toContain("`refute_finding` bound to fresh QA evidence");

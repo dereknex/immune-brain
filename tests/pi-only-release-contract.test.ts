@@ -37,7 +37,7 @@ describe("Pi-only release contract", () => {
       "package.json",
       "README.md",
       "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
-      "plugins/immune-brain/skills/imm-loop/SKILL.md",
+      "plugins/immune-brain/skills/imm-run/SKILL.md",
       "plugins/immune-brain/runtime/plugin_version.ts",
       "plugins/immune-brain/runtime/kernel/completion.ts",
       ".claude-plugin/marketplace.json",

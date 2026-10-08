@@ -17,7 +17,7 @@ key_files:
   - tests/planner-ensemble-contract.test.ts
   - tests/immune-brain-config-runtime.test.ts
   - tests/activation-config-runtime.test.ts
-  - plugins/immune-brain/dist/imm-loop.md
+  - plugins/immune-brain/dist/imm-run.md
   - plugins/immune-brain/bin/imm-autowork
   - plugins/immune-brain/dist/imm-work.md
   - docs/reference/subagent-dispatch-protocol.md
@@ -58,9 +58,9 @@ and syncs the State Ledger. Material ambiguity routes to `imm-brainstorm`.
 Planning exits only when a validated Plan exists and no implementation edits
 have been made.
 
-### `imm-loop`: Do and check
+### `imm-run`: Do and check
 
-`imm-loop` starts from a validated Plan or accepted same-boundary follow-up. In
+`imm-run` starts from a validated Plan or accepted same-boundary follow-up. In
 the current host conversation it consumes `imm-autowork` checkpoints, executes
 one active Step at a time, records evidence, obtains independent QA, runs the
 runtime-required review gate, and returns review follow-up through `imm-work`.
@@ -70,7 +70,7 @@ When every Step closes, it reports the explicit `imm-compounder` handoff.
 
 - State continuity lives in `.imm/memory/current_iteration.json`; `HANDOFF.md` is a human-readable convenience summary.
 - Planner owns scope, Executor owns implementation, QA owns Step closure, reviewer owns findings, and Compounder owns Learning extraction.
-- `imm-loop` cannot replace planning or skip Step activation, execution evidence, QA, or a required review gate.
+- `imm-run` cannot replace planning or skip Step activation, execution evidence, QA, or a required review gate.
 - L2S-WF adds no shell alias, parallel execution system, or alternate workflow state.
 - Use `imm-brainstorm` first when material questions remain; use ordinary `imm-work` when manually continuing an already active Step.
 
@@ -230,7 +230,7 @@ Host-specific rituals (Codex, Claude Code, Cursor) live in
 ### Evidence
 
 - [docs/specs/archive/run-completion-loop.spec.md](docs/specs/archive/run-completion-loop.spec.md) 定义 `imm-loop` 的 outer completion loop、review selection、same-boundary follow-up、stop conditions、run_status 和 no new driver boundary。
-- [plugins/immune-brain/dist/imm-loop.md](plugins/immune-brain/dist/imm-loop.md) 记录 Run Completion Loop、code/UI review gates、explicit subagent activation intent、environment/cost/authorization gates 和 compounder handoff only after review closure。
+- [plugins/immune-brain/dist/imm-run.md](plugins/immune-brain/dist/imm-run.md) 记录 Run Completion Loop、code/UI review gates、explicit subagent activation intent、environment/cost/authorization gates 和 compounder handoff only after review closure。
 - [README.md](README.md) 在用户入口和推荐 workflow 中记录同一合同。
 - `tests/test_skill_contracts.py` 锁定 skill contract、README/workflow docs、Spec 三处合同表面，并防止 `must dispatch` / `always dispatch` 语义。
 - `python3 -m unittest tests.test_skill_contracts.SkillContractTests.test_run_completion_loop_contract_is_documented tests.test_skill_contracts.SkillContractTests.test_run_completion_loop_rejects_new_driver_and_default_pass tests.test_skill_contracts.SkillContractTests.test_run_completion_loop_status_contract` 通过。
@@ -270,7 +270,7 @@ Host-specific rituals (Codex, Claude Code, Cursor) live in
 
 - [docs/specs/archive/run-review-closure-runtime-gate.spec.md](docs/specs/archive/run-review-closure-runtime-gate.spec.md) 定义 material/UI review gate、multi-round follow-up resurfacing、budget visibility 和 no authority expansion。
 - `.imm/imm-autowork.py` 通过 `_review_gates_for_changed_files` 和 `_build_snapshot(..., stop_reason="review_required")` 在 completion boundary 上派生 gate。
-- [plugins/immune-brain/dist/imm-loop.md](plugins/immune-brain/dist/imm-loop.md) 与 [plugins/immune-brain/dist/registry.yaml](plugins/immune-brain/dist/registry.yaml) 暴露 executable review gate 与 `imm-code-review` / `imm-ui-review` routes。
+- [plugins/immune-brain/dist/imm-run.md](plugins/immune-brain/dist/imm-run.md) 与 [plugins/immune-brain/dist/registry.yaml](plugins/immune-brain/dist/registry.yaml) 暴露 executable review gate 与 `imm-code-review` / `imm-ui-review` routes。
 - `python3 -m unittest tests.test_imm_autowork.ImmAutoworkTests.test_completed_material_run_requires_code_review_gate tests.test_imm_autowork.ImmAutoworkTests.test_completed_ui_run_requires_ui_review_gate tests.test_imm_autowork.ImmAutoworkTests.test_follow_up_completion_requires_review_before_compounder tests.test_imm_autowork.ImmAutoworkTests.test_multi_round_follow_up_resurfaces_review_gate tests.test_skill_contracts.SkillContractTests.test_run_runtime_review_gate_contract tests.test_skill_contracts.SkillContractTests.test_run_registry_includes_review_gate_routes tests.test_immune_brain_plugin_package.PluginPackageTest.test_packaged_runtime_matches_repo_runtime_sources` 通过。
 - `python3 .imm/imm-plan.py docs/plans/2026-06-25-003-feat-run-review-closure-runtime-gate-plan.md --json` 通过。
 - `current_iteration_state.dehydrate_closed_steps` 在本轮 closure 前返回 `0`（closed steps 无 `child_evidence` / `focus_delta` 需要脱水）。

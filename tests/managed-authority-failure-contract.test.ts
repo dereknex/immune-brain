@@ -8,10 +8,10 @@ const read = (path: string) => readFileSync(join(ROOT, path), "utf8");
 const CONTRACTS = [
 	"plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
 	"plugins/immune-brain/skills/imm-planner/SKILL.md",
-	"plugins/immune-brain/skills/imm-loop/SKILL.md",
+	"plugins/immune-brain/skills/imm-run/SKILL.md",
 	"plugins/immune-brain/dist/imm-brainstorm.md",
 	"plugins/immune-brain/dist/imm-planner.md",
-	"plugins/immune-brain/dist/imm-loop.md",
+	"plugins/immune-brain/dist/imm-run.md",
 	"plugins/immune-brain/BASELINE.md",
 	"plugins/immune-brain/dist/BASELINE.md",
 ];
@@ -48,7 +48,7 @@ describe("Managed native authority failure contract", () => {
 	});
 
 	test("carrier prerequisite covers only identified GitHub-carried Initiatives", () => {
-		const loop = read("plugins/immune-brain/dist/imm-loop.md").replace(/\s+/g, " ");
+		const loop = read("plugins/immune-brain/dist/imm-run.md").replace(/\s+/g, " ");
 		expect(loop).toContain(
 			"only when the candidate belongs to an identified GitHub-carried Initiative",
 		);
@@ -64,7 +64,7 @@ describe("Managed native authority failure contract", () => {
 	});
 
 	test("awaiting-user handling keeps one unambiguous owner and outcome", () => {
-		const loop = read("plugins/immune-brain/dist/imm-loop.md").replace(/\s+/g, " ");
+		const loop = read("plugins/immune-brain/dist/imm-run.md").replace(/\s+/g, " ");
 		expect(loop).toContain(
 			"On `awaiting_user`, invoke `request_authorization` directly",
 		);
@@ -78,7 +78,7 @@ describe("Managed native authority failure contract", () => {
 	});
 
 	test("revision preparation preserves enrolled sidecars until Kernel applies it", () => {
-		const loop = read("plugins/immune-brain/dist/imm-loop.md").replace(/\s+/g, " ");
+		const loop = read("plugins/immune-brain/dist/imm-run.md").replace(/\s+/g, " ");
 		const planner = read("plugins/immune-brain/dist/imm-planner.md").replace(/\s+/g, " ");
 		expect(loop).toContain(
 			"Do not overwrite enrolled intent sidecars or ask for chat pre-confirmation",
@@ -94,7 +94,7 @@ describe("Managed native authority failure contract", () => {
 
 	test("Planner and Loop own exact delivery preparation without widening Git authority", () => {
 		const baseline = read("plugins/immune-brain/BASELINE.md").replace(/\s+/g, " ");
-		const loop = read("plugins/immune-brain/dist/imm-loop.md").replace(/\s+/g, " ");
+		const loop = read("plugins/immune-brain/dist/imm-run.md").replace(/\s+/g, " ");
 		const planner = read("plugins/immune-brain/dist/imm-planner.md").replace(/\s+/g, " ");
 		expect(baseline).toContain("This staging authority does not grant commit, push, broad staging, or authority over pre-existing user changes");
 		expect(loop).toContain("Before `advance_assurance`, inspect ownership and stage only the exact task-owned paths needed for delivery");
@@ -118,7 +118,7 @@ describe("Managed native authority failure contract", () => {
 	});
 
 	test("the Loop contract states that editing the reserved prompt forfeits the reservation", () => {
-		const loop = read("plugins/immune-brain/dist/imm-loop.md").replace(/\s+/g, " ");
+		const loop = read("plugins/immune-brain/dist/imm-run.md").replace(/\s+/g, " ");
 		expect(loop).toContain("The reserved prompt is dispatched verbatim");
 		expect(loop).toContain("Any edit to it forfeits the reservation");
 		expect(loop).toContain("the Host binds a reviewer start only to a byte-identical prompt");
@@ -126,7 +126,7 @@ describe("Managed native authority failure contract", () => {
 	});
 
 	test("the Loop contract states the inspected_paths requirement and its read-before-claim rule", () => {
-		const loop = read("plugins/immune-brain/dist/imm-loop.md").replace(/\s+/g, " ");
+		const loop = read("plugins/immune-brain/dist/imm-run.md").replace(/\s+/g, " ");
 		expect(loop).toContain("A Review pass verdict's approval must carry `inspected_paths`");
 		expect(loop).toContain("deleted paths included");
 		expect(loop).toContain("A path may be listed only after its diff was read");
@@ -144,7 +144,7 @@ describe("Managed native authority failure contract", () => {
 		// The contract the agent actually reads states the separation, and no
 		// contract turns a tracker failure into a blocker or into advice to repeat
 		// the settling mutation.
-		expect(read("plugins/immune-brain/dist/imm-loop.md")).toContain("distinct from the post-settlement tracker");
+		expect(read("plugins/immune-brain/dist/imm-run.md")).toContain("distinct from the post-settlement tracker");
 		for (const path of CONTRACTS) {
 			expect({ path, repeats: /tracker[^\n]{0,80}(retry the (mutation|settlement)|is a blocker)/i.test(read(path)) }).toEqual({
 				path,

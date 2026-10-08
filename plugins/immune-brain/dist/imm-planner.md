@@ -12,7 +12,7 @@ This skill adheres to the **[BASELINE.md](BASELINE.md)**.
 `imm-planner` is entered explicitly by the user for a clear repository mutation.
 Ordinary host input does not invoke this Skill through natural-language routing.
 An active Assurance projection remains authoritative and is resumed only through
-an explicit `imm-loop` entry; explicit Planner entry owns planning and the later
+an explicit `imm-run` entry; explicit Planner entry owns planning and the later
 native Enrollment gate.
 
 Plan-only output remains non-authoritative. Planner creates or validates a
@@ -91,7 +91,7 @@ resolved wrapper and use the resolved `imm-kernel` wrapper for every Kernel
 command below. Do not assume either bare command is available on shell `PATH`.
 Then route deterministically:
 
-- an active Kernel claim remains with `imm-loop` for foreground Kernel Tool
+- an active Kernel claim remains with `imm-run` for foreground Kernel Tool
   coordination, except a Loop-requested revision follows Enrolled Intent Revision
   below to prepare a non-authoritative proposal for that same owner;
 - an active or otherwise nonterminal v3 Plan remains on its existing v3 route;
@@ -484,7 +484,7 @@ preparation does not apply the revision or authorize expanded execution.
 
 ## Planning Rules
 
-- **Entry Contract**: Use when Spec/TaskIntent planning is needed. An already enrolled owner remains on its current Kernel authority and resumes only through explicit `imm-loop`; a validated candidate still needs native Enrollment.
+- **Entry Contract**: Use when Spec/TaskIntent planning is needed. An already enrolled owner remains on its current Kernel authority and resumes only through explicit `imm-run`; a validated candidate still needs native Enrollment.
 - **Output Language Gate**: Before writing or revising any Spec or Plan, read the project output language policy from `AGENTS.md`, `IMMUNE.md`, or Immune-Brain plugin config. Default Spec and Plan prose to English unless the current user request, project instructions, or host/user preference contains an explicit document-language instruction. A reply-language instruction does not change document language. Keep schema fields, CLI commands, file paths, code identifiers, enum values, JSON keys, and canonical terms such as `Step`, `Plan`, `Spec`, `Verification`, `Discovery cache`, and `Devil's Advocate Audit` literal.
 - **Clarification Supplement**: If an upstream `imm-brainstorm` manifest exists, verify that every `BR-Q-*` item is resolved and every confirmed framing decision is represented; must not repeat, reopen, or rewrite confirmed decisions. Ask only a focused omission, repository-conflict, or invalidated-assumption delta tied to concrete evidence. Resolve a local delta here; return to `imm-brainstorm` when it reopens multiple product branches or changes the overall goal or Scope. Finalization requires no unresolved supplement and no unconfirmed decision introduced by Planner.
 - **Planning Bootstrap**: When no upstream `imm-brainstorm` manifest exists, preserve Direct Planner entry by resolving repository facts and deriving ordinary technical choices. An already-clear request takes the zero-question fast path to a non-blocking correction summary. Discovery of an unresolved user-owned goal, user, scope, behavior, compatibility preference, risk acceptance, or success criterion returns to `imm-brainstorm`; Planner does not convert product uncertainty into a silent assumption or duplicate Brainstorm's interview.
@@ -510,7 +510,7 @@ preparation does not apply the revision or authorize expanded execution.
   table when one exists, without any added confirmation. Tests the Executor adds
   exercise the agreed seams, and replacing a seam is an acceptance change and
   follows Enrolled Intent Revision.
-- **Review Mapping**: In-scope rework stays with the enrolled TaskIntent and explicit `imm-loop` entry. Cross-scope findings become a Planner decision delta with concrete missing paths and verification evidence; do not create a successor prose Plan.
+- **Review Mapping**: In-scope rework stays with the enrolled TaskIntent and explicit `imm-run` entry. Cross-scope findings become a Planner decision delta with concrete missing paths and verification evidence; do not create a successor prose Plan.
 - **Decision Provenance**: Every Spec decision and every acceptance names exactly one source: an upstream `BR-*` ID, repository evidence with a concrete path, or a delegated technical choice as defined by Clarification supplement. The rule applies with or without an upstream Brainstorm manifest, and the source does not have to be a `BR-DEC` item: Direct Planner entry and delegated technical choices stay legitimate sources. A user-owned decision — goal, user, scope, observable behavior, compatibility preference, risk acceptance, or success criterion — that names no source is a defect the Planner removes or returns for clarification under the existing Clarification supplement routes. Simple TaskIntent-only work satisfies the rule when each acceptance traces to the request text and adds no table.
 - **Brainstorm Manifest Mapping**: Record every upstream `BR-*` item in a Spec `Brainstorm Trace` when the work is complex, otherwise on the TaskIntent, mapped to acceptance, a captured decision, or an explicit reason for deferral or exclusion. Resolve every `BR-Q-*` item before handoff. Do not silently narrow confirmed framing.
 - **Handoff Completeness Check**: Before reporting a candidate as handoff-ready, confirm every upstream item and required phase is mapped exactly once, that required phases are delivered rather than excused by a reason, and that no confirmed outcome was conserved as a smaller deliverable. Reject a narrowed deliverable as a completeness failure; ask again only for a new material delta, never to reconfirm an unchanged clear request or an already-confirmed decision.
@@ -565,7 +565,7 @@ optional advisory dispatch fails, continue inline and record the reason.
 
 - **Allowed**: Write a TaskIntent. Add a Spec only for complex work. Activate an absent routing policy under Kernel TaskIntent Routing. Initiative planning carriers and necessary domain vocabulary.
 - **Blocked**: Implementation edits, direct Kernel-store writes, enrolled intent overwrites, and QA/Review decisions.
-- **Workflow guard**: Execution continues through native Enrollment and explicit `imm-loop`. Planner owns design and decomposition, not execution authority.
+- **Workflow guard**: Execution continues through native Enrollment and explicit `imm-run`. Planner owns design and decomposition, not execution authority.
 
 ## Output artifact
 
@@ -618,6 +618,6 @@ a State Ledger. Keep historical Plan validation strictly read-only.
 ## Next Action
 
 - Gate: Reference closure and clarification are complete; every upstream `BR-*` item is represented; no unresolved user decision remains; Planner-introduced decision deltas are confirmed; the candidate is Git-tracked and validates with `valid: true` and `enrollment_ready: true`; each acceptance has concrete focused verification. Plan-only requests stop here.
-- If gates pass: for Kernel-managed work, invoke the current Host's native Enrollment Tool directly without chat pre-confirmation. Its single literal-user gate binds the TaskIntent revision, content hash, and preparation digest, validates Enrollment preconditions without executing acceptance descriptors, and enrolls the task to continue through `imm-loop`.
+- If gates pass: for Kernel-managed work, invoke the current Host's native Enrollment Tool directly without chat pre-confirmation. Its single literal-user gate binds the TaskIntent revision, content hash, and preparation digest, validates Enrollment preconditions without executing acceptance descriptors, and enrolls the task to continue through `imm-run`.
 - If the native gate fails: preserve candidate artifacts and report the stable reason plus exactly one same-Host recovery action. Do not suggest another Host, worktree, Direct Path, unmanaged implementation, or automatic retry.
 - If gates are not met: state which validation failures, unresolved verification paths, or material decision deltas remain; do not name a next skill.

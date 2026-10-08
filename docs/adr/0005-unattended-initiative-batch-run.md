@@ -66,7 +66,7 @@ the enrolled TaskIntent.
    reported beside it with one retry action, `start_unattended_batch`.
 6. `critical` children are never batched, the runner never pushes, opens a pull
    request, resolves a user decision, or creates, switches, or deletes a Git
-   worktree, and default `imm-loop` behavior is unchanged when the batch tool is
+   worktree, and default `imm-run` behavior is unchanged when the batch tool is
    not invoked.
 
 ## Rejected Alternatives
@@ -87,5 +87,5 @@ the enrolled TaskIntent.
   batches, headless and CI-hosted runs, batches spanning multiple worktrees, and
   automatic PR creation for a completed batch branch.
 - The bound Spec is archived byte-preserving with the settled task; the contract
-  text in `IMMUNE.md`, `CONTEXT.md`, and `dist/imm-loop.md` remains the living
+  text in `IMMUNE.md`, `CONTEXT.md`, and `dist/imm-run.md` remains the living
   description of the shipped behavior.

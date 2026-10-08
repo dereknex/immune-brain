@@ -120,27 +120,27 @@ describe("Loop execution and repair routing", () => {
 
 	it("keeps Kernel and non-Kernel work under Loop with explicit next authorities", () => {
 		expect(resolveLoopRoute({ ownership: "plan", target: "step" })).toEqual({
-		entry: "imm-loop",
+		entry: "imm-run",
 		next: "executor",
 	});
 		expect(resolveLoopRoute({ ownership: "plan", target: "test-repair" })).toEqual({
-		entry: "imm-loop",
+		entry: "imm-run",
 		next: "test-fixer",
 	});
 		expect(resolveLoopRoute({ ownership: "plan", target: "pr-repair" })).toEqual({
-		entry: "imm-loop",
+		entry: "imm-run",
 		next: "pr-fix",
 	});
 		expect(resolveLoopRoute({ ownership: "kernel", target: "step" })).toEqual({
-		entry: "imm-loop",
+		entry: "imm-run",
 		next: "imm_kernel_canary",
 	});
 		expect(resolveLoopRoute({ ownership: "kernel", target: "test-repair" })).toEqual({
-		entry: "imm-loop",
+		entry: "imm-run",
 		next: "imm_kernel_canary",
 	});
 		expect(resolveLoopRoute({ ownership: "plan", target: "step", scope_expansion: true })).toEqual({
-			entry: "imm-loop",
+			entry: "imm-run",
 			next: "imm-planner",
 		});
 
@@ -172,14 +172,14 @@ describe("Loop execution and repair routing", () => {
 			kernel_operation: "advance_assurance",
 		});
 		expect(kernelAction).toEqual({
-			entry: "imm-loop",
+			entry: "imm-run",
 			next: "imm_kernel_canary",
 			tool: { name: "imm_kernel_canary", operation: "advance_assurance" },
 		});
 	});
 
 	it("documents internal execution routing with no public role shims", () => {
-		const loop = read("plugins/immune-brain/dist/imm-loop.md");
+		const loop = read("plugins/immune-brain/dist/imm-run.md");
 		// Routing and Kernel ownership are stated as obligations: the packaged
 		// contract is shared by both Hosts, so it never names one Host's tools.
 		expect(loop.replace(/\s+/g, " ")).toContain("role-boundary route");

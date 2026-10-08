@@ -49,14 +49,14 @@ describe("Canary Slash Command retirement", () => {
 		}
 	});
 
-	test("public docs route lifecycle actions through natural language and imm-loop", () => {
+	test("public docs route lifecycle actions through natural language and imm-run", () => {
 		for (const file of [
 			"README.md",
 			"plugins/immune-brain/README.md",
 			"plugins/immune-brain/USER_GUIDE.md",
 			"docs/user_manual.md",
-			"plugins/immune-brain/skills/imm-loop/SKILL.md",
-			"plugins/immune-brain/dist/imm-loop.md",
+			"plugins/immune-brain/skills/imm-run/SKILL.md",
+			"plugins/immune-brain/dist/imm-run.md",
 		]) {
 			const source = readFileSync(join(ROOT, file), "utf8");
 			expect(source, file).not.toMatch(/\/imm-canary-(new|enroll|assure|authorize|succeed)/);
@@ -64,6 +64,7 @@ describe("Canary Slash Command retirement", () => {
 		const releaseNotes = readFileSync(join(ROOT, "CHANGELOG.md"), "utf8");
 		expect(releaseNotes).toContain("2.2.0");
 		expect(releaseNotes).toMatch(/Slash Commands.*removed/i);
+		// The 2.2.0 release note is a historical record and keeps the Skill's old name.
 		expect(releaseNotes).toContain("imm-loop");
 	});
 });

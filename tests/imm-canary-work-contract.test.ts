@@ -11,11 +11,11 @@ function read(rel: string): string {
 	return readFileSync(join(ROOT, rel), "utf8");
 }
 
-describe("imm-loop Kernel routing contract", () => {
+describe("imm-run Kernel routing contract", () => {
 	test("Pi task stop names its native gate separately from interruption", () => {
 		// The packaged contract states the stop obligation for both Hosts; the Pi
 		// README keeps the Pi tool spelling it documents for Pi users.
-		const contract = read("plugins/immune-brain/dist/imm-loop.md");
+		const contract = read("plugins/immune-brain/dist/imm-run.md");
 		expect(contract.replace(/\s+/g, " ")).toContain("Kernel stop operation");
 		expect(contract).toContain("not task termination");
 		const readme = read("plugins/immune-brain/README.md");
@@ -42,7 +42,7 @@ describe("imm-loop Kernel routing contract", () => {
 			"plugins/immune-brain/dist/registry.yaml",
 		]) {
 			const registry = read(rel);
-			expect(registry).toContain("path: skills/imm-loop/SKILL.md");
+			expect(registry).toContain("path: skills/imm-run/SKILL.md");
 			expect(registry).toContain("role: coordinate");
 			expect(registry).not.toContain("imm-canary-work");
 		}
@@ -55,9 +55,9 @@ describe("imm-loop Kernel routing contract", () => {
 	});
 
 	test("public Loop loader points to the canonical Kernel contract", () => {
-		const entry = read("plugins/immune-brain/skills/imm-loop/SKILL.md");
-		const dist = read("plugins/immune-brain/dist/imm-loop.md");
-		expect(entry).toContain("dist/imm-loop.md");
+		const entry = read("plugins/immune-brain/skills/imm-run/SKILL.md");
+		const dist = read("plugins/immune-brain/dist/imm-run.md");
+		expect(entry).toContain("dist/imm-run.md");
 		expect(entry).toContain("canonical contract");
 		expect(dist).toMatch(/Kernel Canary Routing/i);
 		expect(dist).toMatch(/task tombstone|terminal/i);

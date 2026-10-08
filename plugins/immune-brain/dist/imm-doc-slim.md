@@ -1,20 +1,20 @@
 ---
-name: imm-agent-doc-maintain
+name: imm-doc-slim
 description: Use when the user explicitly requests Immune-Brain minimization of tracked AGENTS.md, CLAUDE.md, or GEMINI.md.
 ---
 
-# Immune-Brain: Agent Doc Maintain
+# Immune-Brain: Doc Slim
 
 Minimize tracked agent instruction files in one Git repository to the smallest
 set of persistent rules that are non-obvious, repeatable, stable, and costly to
 violate. This is a standalone host-native maintenance entry, not a Managed Path
-continuation and not an `imm-loop` internal-role dispatch.
+continuation and not an `imm-run` internal-role dispatch.
 
 ## Authority Boundary
 
 This Skill maintains agent instruction files without creating or mutating
 TaskIntent, TaskRecord, Kernel, Spec, or Plan authority. An already active
-Managed task remains owned by `imm-loop`. Read-only inventory and manifest
+Managed task remains owned by `imm-run`. Read-only inventory and manifest
 production remain available. Classify each candidate overlapping the active
 TaskIntent `scope_hint` as `BLOCKED_ACTIVE_SCOPE` and continue auditing
 unaffected candidates. If the routing owner or scope cannot be read reliably,
@@ -23,12 +23,12 @@ deletion of evidence-proven content remains that Skill's separate job.
 
 ## Invocation
 
-Requires explicit invocation: `imm-agent-doc-maintain` or
-`/imm-agent-doc-maintain`. Ordinary "is this AGENTS.md too long?" questions stay
+Requires explicit invocation: `imm-doc-slim` or
+`/imm-doc-slim`. Ordinary "is this AGENTS.md too long?" questions stay
 host-native and do not enter this Skill.
 
-- `imm-agent-doc-maintain audit`: read-only. Produce the manifest and stop.
-- `imm-agent-doc-maintain`: produce the manifest, then wait for exact manifest
+- `imm-doc-slim audit`: read-only. Produce the manifest and stop.
+- `imm-doc-slim`: produce the manifest, then wait for exact manifest
   approval before any mutation.
 
 No automatic invocation. No daemon, no telemetry, no automatic learning, no
@@ -52,7 +52,7 @@ commit.
 
 2. **Resolve Managed ownership.** Read the existing routing projection without
    creating authority. An already active Managed task remains owned by
-   `imm-loop`. A candidate overlapping its `scope_hint` is
+   `imm-run`. A candidate overlapping its `scope_hint` is
    `BLOCKED_ACTIVE_SCOPE`; continue auditing unaffected candidates. If the
    routing owner or scope cannot be read reliably, fail closed for mutation.
 
