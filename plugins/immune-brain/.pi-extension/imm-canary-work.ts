@@ -1,3 +1,7 @@
+import { buildAssuranceSnapshot, stagePlanningArtifactTransition } from "../runtime/assurance/verdict_authority";
+export { buildSnapshot, ensureReviewRevision as ensureTaskReviewRevision } from "../runtime/assurance/verdict_authority";
+export type { SnapshotDescriptorInput } from "../runtime/assurance/verdict_authority";
+import type { ConfirmationReferenceSource } from "../runtime/assurance/host_port";
 // P3 Pi lifecycle extension: the only production route for Kernel canary
 // assurance after enrollment.
 //
@@ -24,18 +28,11 @@ import { PLUGIN_VERSION } from "../runtime/plugin_version";
 import { findResumableBatchSlugForTask } from "../runtime/unattended/batch_preflight";
 import { executePiUnattendedBatch } from "./imm-unattended-batch";
 import {
-	parseVerificationDescriptor,
-	type VerificationDescriptor,
 } from "./pi-canary-verification";
 import {
-	captureReviewBundle,
-	captureReviewManifest,
 	listReviewRefs,
 	reconcileReviewRefs,
 	writeNativeReviewEvidence,
-	type ReviewBundle,
-	type ReviewManifestV5,
-	type ReviewRevision,
 } from "./pi-canary-review-bundle";
 import type { InvocationToken } from "./pi-canary-invocations";
 import { runDeterministicQa } from "../runtime/assurance/qa";
@@ -46,7 +43,6 @@ import {
 import {
 	renderCanaryCall,
 	renderCanaryResult,
-	type AssuranceRole,
 } from "./pi-canary-assurance";
 import {
 	USER_ATTENTION_EVENT,
@@ -71,8 +67,7 @@ import { resolveUxLanguage, uxText } from "./ux-language";
 
 /** Host-native UI language; see ux-language.ts. Resolved once per process. */
 const UX_LANG = resolveUxLanguage();
-import { taskDeliveryIdentity, captureGitTaskSnapshot } from "../runtime/workspace_scope";
-import { reviewAdvisoryRecords, reviewReworkFindings } from "../runtime/assurance/coordinator";
+import { taskDeliveryIdentity } from "../runtime/workspace_scope";
 import {
 	AssuranceProgression,
 	buildReviewPrompt,
@@ -87,9 +82,7 @@ import {
 	REVIEW_TIMING_PROFILES,
 	REVIEW_VERDICT_VALIDATION_TIMEOUT_MS,
 	type AssuranceProgressionPorts,
-	type AssuranceVerdict,
 	type HostContext,
-	type SnapshotDescriptor,
 } from "./pi-canary-assurance-progression";
 
 // The Pi adapter imports the host-neutral runtime modules statically, exactly
@@ -130,14 +123,14 @@ import {
 	projectAssurance,
 	type AssuranceProjectionResult,
 } from "../runtime/kernel/assurance_projection";
-import type { TaskApprovalV2, TaskRecord } from "../runtime/kernel/types";
+import type { TaskRecord } from "../runtime/kernel/types";
 import type { RoleDelegationContext } from "../runtime/role_prompt_bridge";
 import { buildLoopAction, buildLoopRoleDispatch } from "../runtime/loop_contract";
 import {
 	runGithubTrackerOperation,
 	type GithubTrackerResult,
 } from "../runtime/github_issue_tracker";
-import { invocationRegistry } from "./pi-canary-assurance-progression";
+import { reviewReworkFindings } from "../runtime/assurance/coordinator";
 
 const LOOP_OWNERS = ["plan", "kernel", "brainstorm", "planner", "loop"] as const;
 const LOOP_TARGETS = [
@@ -191,60 +184,6 @@ export type AuthorizeOperation =
 	| "authorize-rework"
 	| "stop";
 
-export interface SnapshotDescriptorInput {
-	root: string;
-	task_id: string;
-	role: AssuranceRole;
-	run_id?: string | null;
-	record_revision: string;
-	workspace_revision: string;
-	intent_revision: number;
-	intent_content_hash: string;
-	diff_hash: string;
-	lifecycle: string;
-	artifact_state: string;
-	risk?: "routine" | "material" | "critical";
-	fresh_acceptance_ids: string[];
-	missing_acceptance_ids: string[];
-	stale_attestation_ids: string[];
-	acceptance: Array<{ id: string; assertion: string; verification: string }>;
-	dirty_files?: string[];
-	review_bundle_digest?: string | null;
-	/** Present only when Review authority binds an immutable Git revision (v4). */
-	review_revision?: {
-		contract: "assurance_kernel/review_revision_identity/v1";
-		base_head: string;
-		review_commit: string;
-		review_tree: string;
-		manifest_digest: string;
-	};
-}
-
-export function buildSnapshot(input: SnapshotDescriptorInput): SnapshotDescriptor {
-	return {
-		contract: "assurance_kernel/assurance_snapshot/v2",
-		task_id: input.task_id,
-		run_id: input.run_id ?? null,
-		role: input.role,
-		record_revision: input.record_revision,
-		workspace_revision: input.workspace_revision,
-		intent_revision: input.intent_revision,
-		intent_content_hash: input.intent_content_hash,
-		diff_hash: input.diff_hash,
-		lifecycle: input.lifecycle,
-		artifact_state: input.artifact_state,
-		risk: input.risk ?? "material",
-		fresh_acceptance_ids: input.fresh_acceptance_ids,
-		missing_acceptance_ids: input.missing_acceptance_ids,
-		stale_attestation_ids: input.stale_attestation_ids,
-		acceptance: input.acceptance,
-		dirty_files: [...(input.dirty_files ?? [])].sort(),
-		review_bundle_digest: input.review_bundle_digest ?? null,
-		...(input.review_revision ? { review_revision: input.review_revision } : {}),
-		root: resolve(input.root),
-	};
-}
-
 export interface CanaryWorkExtensionDependencies {
 	buildAssurance?: typeof buildAssuranceSnapshot;
 	runQa?: typeof runDeterministicQa;
@@ -290,25 +229,15 @@ export function createPiAssuranceProgressionPorts(
 	dependencies: CanaryWorkExtensionDependencies = {},
 ): AssuranceProgressionPorts {
 	return {
+		confirmationReference: piConfirmationReference,
+		onReworkApplied: (ctx, taskId, count) => notifyHost(ctx, `rework-parked:${taskId}`, `rework applied: review parked for replan with ${count} finding(s)`, "warning"),
 		projectTask: (root, taskId) => projectAssuranceForTask(root, taskId),
 		readTaskRecord: async (root, taskId) => readTaskRecord(root, taskId),
 		readTaskIntent: async (root, taskId) => readTaskIntentForRecord(root, taskId),
-		buildAssurance: (root, taskId, role, projection) =>
-			(dependencies.buildAssurance ?? buildAssuranceSnapshot)(root, taskId, role, projection),
-		ensureReviewRevision: (root, taskId, projection) => ensureTaskReviewRevision(root, taskId, projection),
 		runQa: (snapshot, descriptors, options) =>
 			(dependencies.runQa ?? runDeterministicQa)(snapshot, descriptors, options),
 		writeReviewEvidence: (input) =>
 			(dependencies.writeReviewEvidence ?? writeNativeReviewEvidence)(input),
-		applyVerdict: (ctx, input) =>
-			applyAssuranceVerdict(
-				ctx,
-				input.snapshot,
-				input.verdict,
-				input.invocation,
-				input.actorId,
-				input.hooks,
-			),
 		applyOrdinaryOperation: (ctx, input) => executeOrdinaryOperation(ctx, input),
 		advanceBeforeProjection: dependencies.advanceBeforeProjection,
 		qaBeforeProjection: dependencies.qaBeforeProjection,
@@ -316,6 +245,7 @@ export function createPiAssuranceProgressionPorts(
 		qaOnAuthorityCommit: dependencies.qaOnAuthorityCommit,
 		qaAfterAuthorityCommit: dependencies.qaAfterAuthorityCommit,
 		qaJobTimeoutMs: dependencies.qaJobTimeoutMs,
+		...(dependencies.buildAssurance ? { authorityOverrides: { buildAssurance: dependencies.buildAssurance } } : {}),
 	} satisfies AssuranceProgressionPorts;
 }
 
@@ -1317,48 +1247,6 @@ export async function projectAssuranceForTask(root: string, taskId: string): Pro
  * Publish and prove the task-scoped synthetic revision for a v4 record. v3
  * records keep the legacy full-source bundle and return null here.
  */
-export async function ensureTaskReviewRevision(
-	root: string,
-	taskId: string,
-	projection: AssuranceProjectionResult,
-): Promise<ReviewRevision | null> {
-	const current = await readTaskRecord(root, taskId);
-	const record = current.record;
-	if (!record) throw new Error(`task ${taskId} has no TaskRecord before Review preparation`);
-	if (current.revision !== projection.projection.record_revision)
-		throw new Error("TaskRecord changed before Review preparation");
-	if (record.contract !== "assurance_kernel/task_record/v4") return null;
-	if (!record.git_base_head)
-		throw new Error("Review revision requires a TaskRecord v4 git_base_head");
-	const manifest = captureReviewManifest(root, {
-		taskId,
-		baseHead: record.git_base_head,
-		scopeHint: record.intent_snapshot.scope_hint,
-		expectedDiffHash: projection.projection.diff_hash,
-		intentRevision: projection.projection.intent_revision,
-		intentContentHash: projection.projection.intent_content_hash,
-		recordRevision: projection.projection.record_revision,
-		workspaceRevision: projection.projection.workspace_revision,
-		lifecycle: projection.projection.lifecycle,
-		artifactState: projection.projection.artifact_state,
-		risk: record.intent_snapshot.risk,
-		// The same outcomes the Review snapshot is built from. A preflight stand-in
-		// only matched the settled QA attestation because deterministic QA happens to
-		// write that exact summary, so the submit-time digest comparison held by
-		// coincidence rather than by construction.
-		outcomes: qaOutcomes(record),
-	});
-	return {
-		contract: "assurance_kernel/review_revision/v1",
-		base_head: manifest.base_head,
-		review_tree: manifest.review_tree,
-		review_commit: manifest.review_commit,
-		review_ref: manifest.review_ref,
-		diff_hash: manifest.diff_hash,
-		manifest_digest: manifest.manifest_digest,
-	};
-}
-
 /**
  * Review refs are reconstructible evidence transport, never workflow authority.
  * A ref survives only while its task owns a nonterminal TaskRecord.
@@ -1402,266 +1290,12 @@ function notifyHost(ctx: HostContext, key: string, message: string, level: "warn
 	if (ui) notifyOnce({ ui }, key, message, level);
 }
 
-async function applyAssuranceVerdict(
-	// The coordinator port hands these a `HostContext`, not the Pi
-	// `ExtensionContext`. Both functions only ever read `cwd`; declaring the
-	// wider host type made the port assignment unsound.
-	ctx: HostContext,
-	snapshot: SnapshotDescriptor,
-	verdict: AssuranceVerdict,
-	invocation: InvocationToken,
-	actorId: string,
-	hooks: { beforeCommit?: () => Promise<void>; onCommit?: () => void; afterCommit?: () => Promise<void> } = {},
-	authorityKind: "qa" | "review" | "user" = snapshot.role,
-): Promise<void> {
-	const fresh = await projectAssuranceForTask(ctx.cwd, snapshot.task_id);
-	if (
-		fresh.error ||
-		fresh.claim?.task_id !== snapshot.task_id ||
-		fresh.projection.record_revision !== snapshot.record_revision ||
-		fresh.projection.workspace_revision !== snapshot.workspace_revision ||
-		fresh.projection.intent_revision !== snapshot.intent_revision ||
-		fresh.projection.intent_content_hash !== snapshot.intent_content_hash ||
-		fresh.projection.diff_hash !== snapshot.diff_hash ||
-		fresh.projection.lifecycle !== snapshot.lifecycle ||
-		fresh.projection.artifact_state !== snapshot.artifact_state
-	) {
-		throw new Error(`assurance snapshot changed before authority application: ${[
-			fresh.error,
-			fresh.claim?.task_id !== snapshot.task_id ? "claim" : null,
-			fresh.projection.record_revision !== snapshot.record_revision ? "record_revision" : null,
-			fresh.projection.workspace_revision !== snapshot.workspace_revision ? "workspace_revision" : null,
-			fresh.projection.intent_revision !== snapshot.intent_revision ? "intent_revision" : null,
-			fresh.projection.intent_content_hash !== snapshot.intent_content_hash ? "intent_content_hash" : null,
-			fresh.projection.diff_hash !== snapshot.diff_hash ? "diff_hash" : null,
-			fresh.projection.lifecycle !== snapshot.lifecycle ? `lifecycle(${snapshot.lifecycle}->${fresh.projection.lifecycle})` : null,
-			fresh.projection.artifact_state !== snapshot.artifact_state ? `artifact_state(${snapshot.artifact_state}->${fresh.projection.artifact_state})` : null,
-		].filter(Boolean).join(", ")}`);
-	}
-	const { registry, app } = await authorityPair();
-	const priorIntentToken = (await readTaskIntentForRecord(ctx.cwd, snapshot.task_id)).token;
-	const commitAndApply = async <T>(apply: () => Promise<T>): Promise<T> => {
-		invocationRegistry.commit(invocation);
-		const settlement = apply();
-		let hookError: unknown;
-		try { hooks.onCommit?.(); } catch (error) { hookError = error; }
-		const result = await settlement;
-		try { await hooks.afterCommit?.(); } catch (error) { hookError ??= error; }
-		if (hookError) throw hookError;
-		return result;
-	};
-	if (verdict.decision === "rework") {
-		const findings = reviewReworkFindings(verdict);
-		const now = new Date().toISOString();
-		const capability = await mintCapability(registry, {
-			authority_kind: authorityKind,
-			task_id: snapshot.task_id,
-			run_id: snapshot.run_id,
-			action_kind: "request_rework",
-			expected_record_hash: snapshot.record_revision,
-			intent_revision: snapshot.intent_revision,
-			intent_content_hash: snapshot.intent_content_hash,
-			diff_hash: snapshot.diff_hash,
-			actor_id: actorId,
-			findings,
-			now,
-		});
-		await hooks.beforeCommit?.();
-		const result = (await commitAndApply(async () => app.execute({
-			root: ctx.cwd,
-			task_id: snapshot.task_id,
-			operation: {
-				op: "request_rework",
-				capability,
-				findings: findings as never[],
-				actor_id: actorId,
-			},
-			prior_intent_token: priorIntentToken,
-			diffProvider: (root: string, record: TaskRecord) => diffSnapshotOf(root, record),
-			now,
-		}))) as unknown as { record: { lifecycle: string; artifact_state: string; intent_ref: { path: string }; intent_snapshot: { scope_hint: string[] }; findings?: Array<{ kind: string; status: string }> } };
-		stagePlanningArtifactTransition(ctx.cwd, result.record);
-		const parked = (result.record as { findings?: Array<{ kind: string; status: string }> }).findings?.some(
-			(finding) => finding.kind === "replan_required" && finding.status === "open",
-		);
-		if (parked) notifyHost(
-			ctx,
-			`rework-parked:${snapshot.task_id}`,
-			`rework applied: review parked for replan with ${findings.length} finding(s)`,
-			"warning",
-		);
-		return;
-	}
-	const now = new Date().toISOString();
-	const advisories = verdict.decision === "pass" ? reviewAdvisoryRecords(verdict) : [];
-	const approval: TaskApprovalV2 = {
-		id: `approval-${snapshot.role}-${randomUUID().slice(0, 8)}`,
-		kind: snapshot.role === "qa" ? "qa" : "review",
-		authority_role: snapshot.role === "qa" ? "qa" : "reviewer",
-		task_revision: snapshot.intent_revision,
-		intent_content_hash: snapshot.intent_content_hash,
-		diff_hash: snapshot.diff_hash,
-		actor_id: actorId,
-		summary: verdict.approval!.summary,
-		// Trusted revision identity comes from the host-verified snapshot, never
-		// from the reviewer payload.
-		...(snapshot.role === "review" && snapshot.review_revision
-			? { review_revision: snapshot.review_revision }
-			: {}),
-		...(snapshot.role === "review" && advisories.length > 0
-			? { advisory_findings: advisories }
-			: {}),
-	};
-	const capability = await mintCapability(registry, {
-		authority_kind: snapshot.role,
-		task_id: snapshot.task_id,
-		run_id: snapshot.run_id,
-		action_kind: "record_approval",
-		expected_record_hash: snapshot.record_revision,
-		intent_revision: snapshot.intent_revision,
-		intent_content_hash: snapshot.intent_content_hash,
-		diff_hash: snapshot.diff_hash,
-		actor_id: actorId,
-		approval,
-		now,
-	});
-	await hooks.beforeCommit?.();
-	await commitAndApply(async () => app.execute({
-		root: ctx.cwd,
-		task_id: snapshot.task_id,
-		operation: { op: "record_approval", capability, approval, actor_id: actorId },
-		prior_intent_token: priorIntentToken,
-		diffProvider: (root: string, record: TaskRecord) => diffSnapshotOf(root, record),
-		now,
-	}));
-}
-
-async function buildAssuranceSnapshot(
-	root: string,
-	taskId: string,
-	role: AssuranceRole,
-	projection: AssuranceProjectionResult,
-): Promise<{
-	snapshot: SnapshotDescriptor;
-	descriptors: Map<string, VerificationDescriptor>;
-	reviewBundle: ReviewBundle | null;
-	reviewManifest: ReviewManifestV5 | null;
-}> {
-	const record = await readTaskRecord(root, taskId);
-	if (
-		!record.record ||
-		record.revision !== projection.projection.record_revision ||
-		record.record.intent_snapshot.revision !== projection.projection.intent_revision ||
-		record.record.intent_ref.content_hash !== projection.projection.intent_content_hash
-	) {
-		throw new Error("TaskRecord changed before assurance snapshot capture");
-	}
-	const intent = record.record.intent_snapshot;
-	const acceptance = intent.acceptance;
-	const descriptors = new Map<string, VerificationDescriptor>();
-	// Review resumes from settled outcomes without resolving verification tools.
-	for (const item of role === "qa" ? acceptance : []) {
-		const descriptor = parseVerificationDescriptor(item.verification);
-		descriptors.set(item.id, descriptor);
-	}
-	// `git_base_head` is optional on the read shape because v3 records carry
-	// none, so the contract test alone does not prove it is present.
-	const baseHead = record.record.contract === "assurance_kernel/task_record/v4"
-		? record.record.git_base_head
-		: undefined;
-	if (record.record.contract === "assurance_kernel/task_record/v4" && !baseHead)
-		throw new Error("TaskRecord v4 is missing its Enrollment git_base_head");
-	const reviewRevision = baseHead
-		? {
-			contract: "assurance_kernel/review_revision_identity/v1" as const,
-			base_head: baseHead,
-			review_commit: "",
-			review_tree: "",
-			manifest_digest: "",
-		}
-		: null;
-	const reviewBundle = role === "review" && !reviewRevision
-		? captureReviewBundle(
-				root,
-				intent.scope_hint,
-				projection.projection.diff_hash,
-				qaOutcomes(record.record),
-			)
-		: null;
-	const reviewManifest = role === "review" && reviewRevision
-		? captureReviewManifest(root, {
-				taskId,
-				baseHead: reviewRevision.base_head,
-				scopeHint: intent.scope_hint,
-				expectedDiffHash: projection.projection.diff_hash,
-				intentRevision: projection.projection.intent_revision,
-				intentContentHash: projection.projection.intent_content_hash,
-				recordRevision: projection.projection.record_revision,
-				workspaceRevision: projection.projection.workspace_revision,
-				lifecycle: projection.projection.lifecycle,
-				artifactState: projection.projection.artifact_state,
-				risk: intent.risk,
-				outcomes: qaOutcomes(record.record),
-			})
-		: null;
-	const taskSnapshot = !reviewBundle && !reviewManifest
-		? captureGitTaskSnapshot(root, intent.scope_hint, taskId)
-		: null;
-	const dirtyFiles = reviewManifest
-		? Object.keys(reviewManifest.changed_paths)
-		: reviewBundle
-			? Object.keys(reviewBundle.dirty_files)
-			: Object.keys(taskSnapshot!.staged_files);
-	return {
-		snapshot: buildSnapshot({
-				root,
-				task_id: taskId,
-				role,
-				run_id: projection.projection.run_id,
-				record_revision: projection.projection.record_revision,
-				workspace_revision: projection.projection.workspace_revision,
-				intent_revision: projection.projection.intent_revision,
-				intent_content_hash: projection.projection.intent_content_hash,
-				diff_hash: projection.projection.diff_hash,
-				lifecycle: projection.projection.lifecycle,
-				artifact_state: projection.projection.artifact_state,
-				risk: intent.risk,
-				fresh_acceptance_ids: projection.projection.fresh_acceptance_ids,
-				missing_acceptance_ids: projection.projection.missing_acceptance_ids,
-				stale_attestation_ids: projection.projection.stale_attestation_ids,
-				acceptance,
-				dirty_files: dirtyFiles,
-				review_bundle_digest: reviewManifest?.manifest_digest ?? reviewBundle?.bundle_digest ?? null,
-				review_revision: reviewManifest
-					? {
-							contract: "assurance_kernel/review_revision_identity/v1",
-							base_head: reviewManifest.base_head,
-							review_commit: reviewManifest.review_commit,
-							review_tree: reviewManifest.review_tree,
-							manifest_digest: reviewManifest.manifest_digest,
-						}
-						: undefined,
-		}),
-		descriptors,
-		reviewBundle,
-		reviewManifest,
-	};
-}
-
-function qaOutcomes(
-	record: TaskRecord,
-): Record<string, { status: "passed" | "failed" | "blocked"; summary: string }> {
-	return Object.fromEntries(
-		record.attestations
-			.filter((item) => item.kind === "qa")
-			.flatMap((item) => item.acceptance_results)
-			.map((result) => [result.acceptance_id, { status: result.status, summary: result.summary }]),
-	);
-}
-
 // The invocation registry is shared with the progression module's
 // module-scoped registry (see the top-level import above); commit/cancel
 // semantics are identical to the previous extension implementation.
+
+const piConfirmationReference: ConfirmationReferenceSource = ({ snapshot, now }) =>
+	`pi-confirm-${createHash("sha256").update(`${snapshot.task_id}\0${now}\0${snapshot.intent_revision}\0${snapshot.intent_content_hash}\0${snapshot.diff_hash}`).digest("hex").slice(0, 16)}`;
 
 async function mintCapability(
 	registry: MutationAuthorityRegistry,
@@ -1948,33 +1582,6 @@ function prepareActionArgs<Params>(args: unknown): Params {
 		// Unchanged input keeps the normal host schema error authoritative.
 	}
 	return input as Params;
-}
-
-function stagePlanningArtifactTransition(root: string, record: {
-	intent_ref: { path: string };
-	intent_snapshot: { scope_hint: string[] };
-}): void {
-	const intentActive = record.intent_ref.path.replace("docs/plans/archive/", "docs/plans/");
-	const intentArchive = intentActive.replace("docs/plans/", "docs/plans/archive/");
-	const specActive = record.intent_snapshot.scope_hint.find((path) =>
-		/^docs\/specs\/(?!archive\/)[^/]+\.spec\.md$/.test(path)
-		&& record.intent_snapshot.scope_hint.includes(path.replace("docs/specs/", "docs/specs/archive/")),
-	);
-	const candidates = [
-		intentActive,
-		intentArchive,
-		...(specActive ? [specActive, specActive.replace("docs/specs/", "docs/specs/archive/")] : []),
-	];
-	const paths = candidates.filter((path) => existsSync(join(root, path)) || execFileSync(
-		"git",
-		["ls-files", "--cached", "--", path],
-		{ cwd: root, encoding: "utf8" },
-	).trim().length > 0);
-	if (paths.length === 0) return;
-	execFileSync("git", ["add", "--", ...paths], {
-		cwd: root,
-		stdio: ["ignore", "pipe", "pipe"],
-	});
 }
 
 function failCanaryTool(

@@ -50,7 +50,12 @@ import { AssuranceCoordinator, type AssuranceCoordinatorPorts } from "../runtime
 import type { AssuranceHostPort, HostReviewReservation, ReviewRequest } from "../runtime/assurance/host_port";
 import { reservedAgentParams } from "./pi-canary-native-review";
 
-export type AssuranceProgressionPorts = Omit<AssuranceCoordinatorPorts, "host">;
+import type { VerdictAuthority } from "../runtime/assurance/verdict_authority";
+
+export type AssuranceProgressionPorts = Omit<AssuranceCoordinatorPorts, "host"> & {
+	/** Optional test seam; production authority is owned by the coordinator. */
+	authorityOverrides?: Partial<VerdictAuthority>;
+};
 
 class PiReviewHost implements AssuranceHostPort {
 	readonly host = "pi" as const;
@@ -75,6 +80,6 @@ class PiReviewHost implements AssuranceHostPort {
 export class AssuranceProgression extends AssuranceCoordinator {
 	constructor(ports: AssuranceProgressionPorts) {
 		(ports as AssuranceCoordinatorPorts).host = new PiReviewHost();
-		super(ports as AssuranceCoordinatorPorts);
+		super(ports as AssuranceCoordinatorPorts, ports.authorityOverrides);
 	}
 }

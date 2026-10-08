@@ -74,6 +74,7 @@ export interface McpRuntimeOptions {
 	cwd?: string;
 	env?: Record<string, string | undefined>;
 	ports?: AssuranceCoordinatorPorts;
+	authorityOverrides?: Partial<import("../assurance/verdict_authority").VerdictAuthority>;
 	host?: ClaudeReviewHost;
 	interactive?: boolean;
 	requestConfirmation?: NativeConfirmationPort;
@@ -89,6 +90,7 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 		env: options.env ?? process.env,
 		host,
 		ports: options.ports,
+		authorityOverrides: options.authorityOverrides,
 		interactive: options.interactive,
 		requestConfirmation: options.requestConfirmation,
 		batchKernel: options.batchKernel,

@@ -26,103 +26,12 @@ import { PLUGIN_VERSION } from "../plugins/immune-brain/runtime/plugin_version";
 import { createMcpRuntime } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { captureReviewManifest } from "../plugins/immune-brain/.pi-extension/pi-canary-review-bundle";
 import { snapshotDigest, type SnapshotDescriptor } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
+import { mockHostSdkForDeliveryTree } from "./helpers/pi-canary-assurance-harness";
 import { QaPreparationError } from "../plugins/immune-brain/runtime/assurance/qa";
 import { readRunRowByTask, updateRunRecord, withKernelRead, withKernelTransaction } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 
-async function hostPackagesAvailable(): Promise<boolean> {
-	for (const specifier of [
-		"typebox",
-		"typebox/value",
-		"@earendil-works/pi-coding-agent",
-		"@earendil-works/pi-tui",
-	]) {
-		try { await import(specifier); }
-		catch { return false; }
-	}
-	return true;
-}
-
-if (!(await hostPackagesAvailable())) {
-	const optional = Symbol("optional");
-	const Type = {
-		Array: (items: object) => ({ type: "array", items }),
-		Boolean: () => ({ type: "boolean" }),
-		Literal: (value: unknown) => ({ const: value }),
-		Null: () => ({ type: "null" }),
-		Number: () => ({ type: "number" }),
-		Object: (properties: Record<string, any>, options: Record<string, unknown> = {}) => ({
-			type: "object",
-			properties,
-			required: Object.entries(properties).filter(([, value]) => !value[optional]).map(([key]) => key),
-			...options,
-		}),
-		Optional: (schema: Record<string, unknown>) => ({ ...schema, [optional]: true }),
-		Record: (_key: object, value: object) => ({ type: "object", additionalProperties: value }),
-		String: () => ({ type: "string" }),
-		Union: (anyOf: object[]) => ({ anyOf }),
-		Unknown: () => ({}),
-	};
-	const Check = (schema: any, value: any): boolean => {
-		if (schema.anyOf) return schema.anyOf.some((item: any) => Check(item, value));
-		if ("const" in schema) return value === schema.const;
-		if (schema.type === "null") return value === null;
-		if (schema.type === "array") return Array.isArray(value) && value.every((item) => Check(schema.items, item));
-		if (schema.type === "object") {
-			if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-			if ((schema.required ?? []).some((key: string) => !(key in value))) return false;
-			for (const [key, child] of Object.entries(schema.properties ?? {}))
-				if (key in value && !Check(child, value[key])) return false;
-			if (schema.additionalProperties === false
-				&& Object.keys(value).some((key) => !(key in (schema.properties ?? {})))) return false;
-			if (schema.additionalProperties && typeof schema.additionalProperties === "object")
-				return Object.values(value).every((item) => Check(schema.additionalProperties, item));
-			return true;
-		}
-		return schema.type === undefined || typeof value === schema.type;
-	};
-	class Text {
-		constructor(private text: string) {}
-		setText(text: string) { this.text = text; }
-		render() { return this.text.split("\n"); }
-		invalidate() {}
-	}
-	class Container {
-		private children: Array<{ render(width: number): string[] }> = [];
-		addChild(child: { render(width: number): string[] }) { this.children.push(child); }
-		render(width: number) { return this.children.flatMap((child) => child.render(width)); }
-		invalidate() { for (const child of this.children) (child as any).invalidate?.(); }
-	}
-	class DynamicBorder {
-		constructor(private style: (text: string) => string) {}
-		render(width: number) { return [this.style("─".repeat(Math.max(0, width)))]; }
-	}
-	class SelectList {
-		onSelect?: (item: any) => void;
-		onCancel?: () => void;
-		private selected = 0;
-		constructor(private items: any[]) {}
-		render() { return this.items.map((item, index) => `${index === this.selected ? "> " : "  "}${item.label}`); }
-		handleInput(input: string) {
-			if (input === "\u001b[B") this.selected = Math.min(this.items.length - 1, this.selected + 1);
-			else if (input === "\u001b[A") this.selected = Math.max(0, this.selected - 1);
-			else if (input === "\r") this.onSelect?.(this.items[this.selected]);
-			else if (input === "\u001b") this.onCancel?.();
-		}
-	}
-	mock.module("typebox", () => ({ Type }));
-	mock.module("typebox/value", () => ({ Check }));
-	mock.module("@earendil-works/pi-coding-agent", () => ({ DynamicBorder }));
-	mock.module("@earendil-works/pi-tui", () => ({
-		Container,
-		SelectList,
-		Text,
-		sliceByColumn: (text: string, start: number, width?: number) => text.slice(start, width === undefined ? undefined : start + width),
-		truncateToWidth: (text: string, width: number, marker = "") => text.length <= width
-			? text
-			: `${text.slice(0, Math.max(0, width - marker.length))}${marker}`,
-		visibleWidth: (text: string) => text.length,
-	}));
-}
+await mockHostSdkForDeliveryTree();
+afterAll(() => mock.restore());
 
 const { Check } = await import("typebox/value");
 const {

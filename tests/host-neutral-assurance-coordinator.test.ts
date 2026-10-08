@@ -1,5 +1,14 @@
-import { describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { buildAssuranceSnapshot, createVerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
+import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
+import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
+import { projectAssurance } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
+import { createMutationAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/authority_port";
+import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
+import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
+import { afterAll, describe, expect, test } from "bun:test";
+import { readdirSync, readFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
 	AssuranceCoordinator,
@@ -123,7 +132,7 @@ function makeCoordinator(overrides: {
 	risk?: "routine" | "material" | "critical";
 	host?: FakeReviewHost;
 	project?: AssuranceCoordinatorPorts["projectTask"];
-	assurance?: AssuranceCoordinatorPorts["buildAssurance"];
+	assurance?: VerdictAuthority["buildAssurance"];
 	qa?: AssuranceCoordinatorPorts["runQa"];
 	record?: AssuranceCoordinatorPorts["readTaskRecord"];
 	qaJobTimeoutMs?: number;
@@ -136,8 +145,9 @@ function makeCoordinator(overrides: {
 	let nextObligation: AssuranceProjectionResult["projection"]["next_obligation"] = "run_qa";
 	let findings: Array<{ id?: string; acceptance_id?: string | null; kind: string; status: string }> = [];
 	const host = overrides.host ?? new FakeReviewHost();
-	const ports: AssuranceCoordinatorPorts = {
+	const ports: AssuranceCoordinatorPorts & Partial<VerdictAuthority> = {
 		host,
+		confirmationReference: ({ actorId }) => `fixture:${actorId}`,
 		projectTask: overrides.project ?? (async () => {
 			const fresh = projection(currentLifecycle, nextObligation, risk, artifactState);
 			fresh.projection.blocking_finding_ids = findings.filter(f => f.kind === "blocking" && f.status === "open").map(f => f.id!);
@@ -181,7 +191,8 @@ function makeCoordinator(overrides: {
 			}
 		},
 	};
-	return { coordinator: new AssuranceCoordinator(ports), ports, host, counts: () => ({ applyCount }), qaRuns: () => qaRuns };
+	const coordinator = new AssuranceCoordinator(ports, ports);
+	return { coordinator, authority: coordinator.authority, ports, host, counts: () => ({ applyCount }), qaRuns: () => qaRuns };
 }
 
 describe("host-neutral assurance coordinator", () => {
@@ -199,8 +210,8 @@ describe("host-neutral assurance coordinator", () => {
 	});
 	for (const stage of ["build", "write", "reserve"] as const) test(`Review ${stage} failure preserves fresh QA and resumes only run_review after repair`, async () => {
 		const h = makeCoordinator();
-		const originalBuild = h.ports.buildAssurance, originalWrite = h.ports.writeReviewEvidence, originalReserve = h.host.prepareReview;
-		h.ports.buildAssurance = async (...args) => {
+		const originalBuild = h.authority.buildAssurance, originalWrite = h.ports.writeReviewEvidence, originalReserve = h.host.prepareReview;
+		h.authority.buildAssurance = async (...args) => {
 			if (stage === "build" && args[2] === "review") throw new Error("fixture Review preparation unavailable");
 			return originalBuild(...args);
 		};
@@ -211,7 +222,7 @@ describe("host-neutral assurance coordinator", () => {
 			next_action: expect.stringContaining("retain fresh QA"),
 		} });
 		expect(h.coordinator.active(TASK)).toBeNull(); expect(h.qaRuns()).toBe(1); expect(h.counts().applyCount).toBe(1);
-		h.ports.buildAssurance = originalBuild; h.ports.writeReviewEvidence = originalWrite; h.host.prepareReview = originalReserve;
+		h.authority.buildAssurance = originalBuild; h.ports.writeReviewEvidence = originalWrite; h.host.prepareReview = originalReserve;
 		expect((await h.coordinator.advance(TASK, ctx)).state).toBe("review_ready");
 		expect(h.qaRuns()).toBe(1); expect(h.counts().applyCount).toBe(1);
 	});
@@ -666,4 +677,103 @@ describe("host-neutral assurance coordinator", () => {
 		const sum = Object.values(timings.stage_ms).reduce((a, b) => a + b, 0);
 		expect(Math.abs(sum - timings.total_ms)).toBeLessThanOrEqual(Object.keys(timings.stage_ms).length);
 	});
+});
+
+const authorityRoots: string[] = [];
+afterAll(() => { for (const root of authorityRoots) rmSync(root, { recursive: true, force: true }); });
+function authorityFixture() {
+ const root = mkdtempSync(join(tmpdir(), "s4-authority-")); authorityRoots.push(root);
+ const taskId = "s4-verdict";
+ const intent = parseTaskIntentV1({ contract: "assurance_kernel/task_intent/v1", task_id: taskId,
+  owner: "user", goal: "exercise shared verdict authority", risk: "material", revision: 1,
+  scope_hint: ["src/work.ts", `docs/plans/archive/${taskId}.intent.json`],
+  acceptance: [{ id: "A1", assertion: "work passes", verification: JSON.stringify({
+   contract: "assurance_kernel/verification_descriptor/v2", command: { executable: "bun", argv: ["test", "src/work.ts"], cwd: ".", timeout_ms: 1000, max_output_bytes: 1024 }, environment: { prepare: null, writable_paths: [] } }) }] });
+ mkdirSync(join(root, "src"), { recursive: true }); mkdirSync(join(root, "docs/plans/archive"), { recursive: true });
+ writeFileSync(join(root, "src/work.ts"), "export const value = 1;\n");
+ writeFileSync(join(root, `docs/plans/archive/${taskId}.intent.json`), JSON.stringify(intent, null, 2)+"\n");
+ const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "fixture", GIT_AUTHOR_EMAIL: "f@f", GIT_COMMITTER_NAME: "fixture", GIT_COMMITTER_EMAIL: "f@f" } }).trim();
+ git("init", "-q"); git("add", "-A"); git("commit", "-qm", "base"); const base = git("rev-parse", "HEAD");
+ writeFileSync(join(root, "src/work.ts"), "export const value = 2;\n"); git("add", "src/work.ts");
+ // A planning artifact outside scope_hint, so the projection still sees a clean
+ // scope while the post-commit staging side effect has something observable to
+ // stage: the record's intent_ref points at the archive copy, whose active
+ // counterpart is this untracked file.
+ writeFileSync(join(root, `docs/plans/${taskId}.intent.json`), JSON.stringify(intent, null, 2)+"\n");
+ const hash = canonicalIntentHash(intent);
+ seedKernelRunForTest(root, { task_id: taskId, created_at: "2026-08-12T10:00:00.000Z", updated_at: "2026-08-12T10:00:00.000Z", record: {
+  contract: "assurance_kernel/task_record/v4", task_id: taskId, intent_snapshot: intent,
+  intent_ref: { path: `docs/plans/archive/${taskId}.intent.json`, content_hash: hash }, lifecycle: "active", artifact_state: "frozen",
+  baseline: hash, git_base_head: base, attestations: [], findings: [], history: [],
+ } });
+ return { root, taskId, git };
+}
+
+describe("shared verdict authority through host-configured coordinators", () => {
+ for (const host of ["claude-code", "pi"] as const) {
+  const source = ({ snapshot, actorId, now }: Parameters<import("../plugins/immune-brain/runtime/assurance/host_port").ConfirmationReferenceSource>[0]) =>
+   host === "claude-code" ? `claude:${actorId}` : `pi-confirm-${require("node:crypto").createHash("sha256").update(`${snapshot.task_id}\0${now}\0${snapshot.intent_revision}\0${snapshot.intent_content_hash}\0${snapshot.diff_hash}`).digest("hex").slice(0,16)}`;
+  function configured(f: ReturnType<typeof authorityFixture>, registry = createMutationAuthorityRegistry()) {
+   const issued: string[] = []; const issue = registry.issue.bind(registry);
+   registry.issue = (binding, at) => { issued.push(binding.confirmation_ref); return issue(binding, at); };
+   const coordinator = new AssuranceCoordinator({ host: { host, prepareReview: () => { throw new Error("unused"); }, releaseReview: () => {} },
+    confirmationReference: source, projectTask: (r,t) => projectAssurance(r,t),
+    readTaskRecord: async (r,t) => readTaskRecordRaw(r,t), readTaskIntent: async () => ({}),
+    runQa: async () => { throw new Error("unused"); }, writeReviewEvidence: () => { throw new Error("unused"); }, applyOrdinaryOperation: async () => {},
+   });
+   const authority = createVerdictAuthority({ confirmationReference: source, commitInvocation: t => coordinator.commitInvocation(t) }, registry);
+   Object.assign(coordinator.authority, authority);
+   return { coordinator, issued };
+  }
+  test(`${host}: capture validates all three identities and the v4 base`, async () => {
+   const f = authorityFixture(); const h = configured(f); const p = await projectAssurance(f.root,f.taskId);
+   expect((await h.coordinator.authority.buildAssurance(f.root,f.taskId,"qa",p)).snapshot.task_id).toBe(f.taskId);
+   for (const key of ["record_revision", "intent_revision", "intent_content_hash"] as const) {
+    const bad = { ...p, projection: { ...p.projection, [key]: key === "intent_revision" ? p.projection.intent_revision+1 : "changed" } };
+    await expect(h.coordinator.authority.buildAssurance(f.root,f.taskId,"qa",bad)).rejects.toThrow("TaskRecord changed before assurance snapshot capture");
+   }
+   const current = readTaskRecordRaw(f.root,f.taskId);
+   const missingBase = { ...current, record: { ...current.record!, git_base_head: undefined } };
+   await expect(buildAssuranceSnapshot(f.root,f.taskId,"qa",p, () => missingBase as typeof current)).rejects.toThrow("missing its Enrollment git_base_head");
+  });
+  test(`${host}: stale snapshot refuses before minting; approval hook errors retain the committed transition`, async () => {
+   const f=authorityFixture(); const h=configured(f); const p=await projectAssurance(f.root,f.taskId);
+   const { snapshot:s }=await h.coordinator.authority.buildAssurance(f.root,f.taskId,"qa",p);
+   const verdict: AssuranceVerdict={ contract:"assurance_kernel/assurance_verdict/v2", role:"qa",task_id:f.taskId,snapshot_digest:snapshotDigest(s),decision:"pass",approval:{kind:"qa",authority_role:"qa",summary:"passed"} };
+   const invocation=h.coordinator.openInvocation(f.taskId); const before=readTaskRecordRaw(f.root,f.taskId).revision;
+   await expect(h.coordinator.authority.applyVerdict({cwd:f.root},{taskId:f.taskId,snapshot:{...s,diff_hash:"changed"},verdict,invocation,actorId:"deterministic-qa"})).rejects.toThrow("assurance snapshot changed before authority application");
+   expect(h.issued).toEqual([]);expect(readTaskRecordRaw(f.root,f.taskId).revision).toBe(before);
+   const order:string[]=[];const first=new Error("onCommit failed");
+   await expect(h.coordinator.authority.applyVerdict({cwd:f.root},{taskId:f.taskId,snapshot:s,verdict,invocation,actorId:"deterministic-qa",hooks:{beforeCommit:async()=>{expect(h.issued.length).toBe(1);order.push("before");},onCommit:()=>{order.push("on");throw first;},afterCommit:async()=>{order.push("after");throw new Error("after failed");}}})).rejects.toBe(first);
+   expect(order).toEqual(["before","on","after"]);expect(readTaskRecordRaw(f.root,f.taskId).record!.attestations).toHaveLength(1);
+   expect(h.issued[0]).toMatch(host==="pi"?/^pi-confirm-[a-f0-9]{16}$/:/^claude:deterministic-qa$/);h.coordinator.closeInvocation(invocation);
+  });
+  test(`${host}: rework commits findings, runs afterCommit before staging, and stages the planning artifact`, async () => {
+   const f=authorityFixture();const h=configured(f);const p=await projectAssurance(f.root,f.taskId);const {snapshot:s}=await h.coordinator.authority.buildAssurance(f.root,f.taskId,"qa",p);
+   const invocation=h.coordinator.openInvocation(f.taskId);
+   const reworkVerdict={contract:"assurance_kernel/assurance_verdict/v2",role:"qa",task_id:f.taskId,snapshot_digest:snapshotDigest(s),decision:"rework",findings:[{id:"qa-finding",kind:"blocking",acceptance_id:"A1",summary:"failed",findings_digest:"sha256:"+"a".repeat(64)}]} as const;
+   let sawUnstagedInAfterCommit=false;
+   await h.coordinator.authority.applyVerdict({cwd:f.root},{taskId:f.taskId,snapshot:s,invocation,actorId:"qa",verdict:reworkVerdict,hooks:{afterCommit:async()=>{expect(readTaskRecordRaw(f.root,f.taskId).record!.artifact_state).toBe("active");sawUnstagedInAfterCommit=!f.git("diff","--cached","--name-only").includes(`docs/plans/${f.taskId}.intent.json`);}}});
+   // afterCommit runs before the post-commit staging side effect, matching the
+   // hook lifecycle the Pi adapter has always provided.
+   expect(sawUnstagedInAfterCommit).toBe(true);
+   expect(f.git("diff","--cached","--name-only").split("\n").filter(Boolean)).toContain(`docs/plans/${f.taskId}.intent.json`);
+   expect(readTaskRecordRaw(f.root,f.taskId).record!.findings.some(x=>x.id==="qa-finding")).toBe(true);h.coordinator.closeInvocation(invocation);
+  });
+  test(`${host}: a staging failure after commit cannot skip afterCommit or mask the first hook error`, async () => {
+   const f=authorityFixture();const h=configured(f);const p=await projectAssurance(f.root,f.taskId);const {snapshot:s}=await h.coordinator.authority.buildAssurance(f.root,f.taskId,"qa",p);
+   const invocation=h.coordinator.openInvocation(f.taskId);
+   const reworkVerdict={contract:"assurance_kernel/assurance_verdict/v2",role:"qa",task_id:f.taskId,snapshot_digest:snapshotDigest(s),decision:"rework",findings:[{id:"qa-staging",kind:"blocking",acceptance_id:"A1",summary:"failed",findings_digest:"sha256:"+"a".repeat(64)}]} as const;
+   const onCommitError=new Error("onCommit failed");
+   writeFileSync(join(f.root, ".git", "index.lock"), "");
+   let afterRan=false;
+   await expect(h.coordinator.authority.applyVerdict({cwd:f.root},{taskId:f.taskId,snapshot:s,invocation,actorId:"qa",verdict:reworkVerdict,hooks:{onCommit:()=>{throw onCommitError;},afterCommit:async()=>{afterRan=true;}}})).rejects.toBe(onCommitError);
+   // The committed transition stands and the lifecycle completed, so the host's
+   // ambiguous-state handling never sees a masking staging error.
+   expect(afterRan).toBe(true);
+   expect(readTaskRecordRaw(f.root,f.taskId).record!.findings.some(x=>x.id==="qa-staging")).toBe(true);
+   rmSync(join(f.root, ".git", "index.lock"));
+   h.coordinator.closeInvocation(invocation);
+  });
+ }
 });

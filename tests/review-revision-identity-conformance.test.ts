@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, mock, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -8,7 +8,6 @@ import {
 	diffSnapshotOf,
 	ensureClaudeReviewRevision,
 } from "../plugins/immune-brain/runtime/claude/kernel_ports";
-import { ensureTaskReviewRevision, diffSnapshotOf as piDiffSnapshotOf, projectAssuranceForTask } from "../plugins/immune-brain/.pi-extension/imm-canary-work";
 import { projectAssurance } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 import { taskDeliveryIdentity, taskDiffIdentity } from "../plugins/immune-brain/runtime/workspace_scope";
 import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
@@ -20,6 +19,18 @@ import {
 	withKernelTransaction,
 } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
+import { mockHostSdkForDeliveryTree } from "./helpers/pi-canary-assurance-harness";
+
+// The deterministic QA delivery tree has no `node_modules`, so the Host-provided
+// packages behind the Pi adapter need the conditional stand-in seam before the
+// adapter module is instantiated (memory #3390). Register first, load next.
+await mockHostSdkForDeliveryTree();
+afterAll(() => mock.restore());
+const {
+	ensureTaskReviewRevision,
+	diffSnapshotOf: piDiffSnapshotOf,
+	projectAssuranceForTask,
+} = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
 
 /**
  * The submit-time Review identity check re-derives the revision and compares

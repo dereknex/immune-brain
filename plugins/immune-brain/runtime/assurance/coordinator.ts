@@ -15,7 +15,9 @@ import {
 	VerificationAbortedError,
 } from "./verification";
 import { createInvocationRegistry, type InvocationState, type InvocationToken } from "./invocations";
-import type { ReviewBundle, ReviewManifestV5, ReviewRevision } from "./review_evidence";
+import type { ReviewBundle, ReviewManifestV5 } from "./review_evidence";
+import { createVerdictAuthority, type VerdictAuthority } from "./verdict_authority";
+import type { ConfirmationReferenceSource } from "./host_port";
 import { buildRoleDelegationPacket, STATIC_REVIEW_RULES } from "../role_prompt_bridge";
 import type { AssuranceProjectionResult } from "../kernel/assurance_projection";
 import type { TaskIntentIdentityToken } from "../kernel/intent_token_registry";
@@ -355,51 +357,17 @@ export type ActiveAssuranceState =
 
 export interface AssuranceCoordinatorPorts {
 	host: AssuranceHostPort;
+	confirmationReference: ConfirmationReferenceSource;
+	onReworkApplied?: (ctx: HostContext, taskId: string, findingsCount: number) => void;
 	projectTask(root: string, taskId: string): Promise<AssuranceProjectionResult>;
 	readTaskRecord(root: string, taskId: string): Promise<TaskRecordRead>;
 	readTaskIntent(root: string, taskId: string): Promise<TaskIntentRead>;
-	buildAssurance(
-		root: string,
-		taskId: string,
-		role: AssuranceRole,
-		projection: AssuranceProjectionResult,
-	): Promise<{
-		snapshot: SnapshotDescriptor;
-		descriptors: Map<string, VerificationDescriptor>;
-		reviewBundle: ReviewBundle | null;
-		reviewManifest?: ReviewManifestV5 | null;
-	}>;
-	/**
-	 * Publish and prove the deterministic task-scoped revision before QA runs, so
-	 * a preparation failure can never consume or fake a settled QA attestation.
-	 * Returns null for records still on the legacy v3 bundle path.
-	 */
-	ensureReviewRevision?(
-		root: string,
-		taskId: string,
-		projection: AssuranceProjectionResult,
-	): Promise<ReviewRevision | null>;
 	runQa(
 		snapshot: SnapshotDescriptor,
 		descriptors: Map<string, VerificationDescriptor>,
 		options: { signal?: AbortSignal; onProgress?: (progress: QaVerificationProgress) => void },
 	): Promise<AssuranceVerdict>;
 	writeReviewEvidence(input: { snapshot: SnapshotDescriptor; evidence: ReviewBundle | ReviewManifestV5 }): { path: string; remove(): void };
-	applyVerdict(
-		ctx: HostContext,
-		input: {
-			taskId: string;
-			snapshot: SnapshotDescriptor;
-			verdict: AssuranceVerdict;
-			invocation: InvocationToken;
-			actorId: string;
-			hooks?: {
-				beforeCommit?: () => Promise<void>;
-				onCommit?: () => void;
-				afterCommit?: () => Promise<void>;
-			};
-		},
-	): Promise<void>;
 	applyOrdinaryOperation(ctx: HostContext, input: { taskId: string; operation: { op: string; actor_id: string } }): Promise<unknown>;
 	advanceBeforeProjection?: () => Promise<void>;
 	qaBeforeProjection?: () => Promise<void>;
@@ -766,7 +734,14 @@ export class AssuranceCoordinator {
 	private sessionActive = true;
 	private sessionGeneration = 0;
 
-	constructor(private readonly ports: AssuranceCoordinatorPorts) {}
+	readonly authority: VerdictAuthority;
+	constructor(private readonly ports: AssuranceCoordinatorPorts, authorityOverrides: Partial<VerdictAuthority> = {}) {
+		this.authority = { ...createVerdictAuthority({
+			confirmationReference: ports.confirmationReference,
+			commitInvocation: token => this.commitInvocation(token),
+			onReworkApplied: ports.onReworkApplied,
+		}), ...authorityOverrides };
+	}
 
 	onSessionStart(): void {
 		this.sessionActive = true;
@@ -1013,9 +988,9 @@ export class AssuranceCoordinator {
 				progress("preparing_review_revision", "Proving the immutable Review revision before QA");
 				try {
 					if (parked.record?.contract === "assurance_kernel/task_record/v4") {
-						if (!this.ports.ensureReviewRevision)
+						if (!this.authority.ensureReviewRevision)
 							throw new Error("v4 Review revision preparation is unavailable");
-						await this.ports.ensureReviewRevision(ctx.cwd, taskId, projection);
+						await this.authority.ensureReviewRevision(ctx.cwd, taskId, projection);
 					}
 				} catch (error) {
 					return { state: "blocked", reason: `review revision preparation failed: ${boundedAssuranceError(error)}` };
@@ -1029,7 +1004,7 @@ export class AssuranceCoordinator {
 				progress("capturing_snapshot", "Capturing the immutable QA snapshot");
 				await this.ports.qaBeforeProjection?.();
 				ensureOperationLive();
-				const assurance = await this.ports.buildAssurance(ctx.cwd, taskId, "qa", projection);
+				const assurance = await this.authority.buildAssurance(ctx.cwd, taskId, "qa", projection);
 				ensureOperationLive();
 				// Preparation counts against the same ceiling as the checks, so the
 				// aggregate clock starts before the first prepared group runs. A host
@@ -1067,7 +1042,7 @@ export class AssuranceCoordinator {
 				try {
 					progress("settling_qa", "Settling deterministic QA through the Kernel revision boundary");
 					authorityBoundaryStarted = true;
-					await this.ports.applyVerdict(ctx, {
+					await this.authority.applyVerdict(ctx, {
 						taskId,
 						snapshot: assurance.snapshot,
 						verdict: qaVerdict,
@@ -1130,10 +1105,10 @@ export class AssuranceCoordinator {
 			authorityBoundaryStarted = false;
 			if (aborted()) return this.reviewPreparationFailed(taskId, operationId, "host cancellation after QA authority settlement");
 			progress("preparing_review", "Preparing the reserved foreground Review evidence");
-			let review: Awaited<ReturnType<AssuranceCoordinatorPorts["buildAssurance"]>>;
+			let review: Awaited<ReturnType<VerdictAuthority["buildAssurance"]>>;
 			let evidence: { path: string; remove(): void };
 			try {
-				review = await this.ports.buildAssurance(ctx.cwd, taskId, "review", fresh);
+				review = await this.authority.buildAssurance(ctx.cwd, taskId, "review", fresh);
 				const payload = review.reviewManifest ?? review.reviewBundle;
 				if (!payload) throw new Error("review evidence is missing after QA settlement");
 				evidence = this.ports.writeReviewEvidence({ snapshot: review.snapshot, evidence: payload });
@@ -1243,9 +1218,9 @@ export class AssuranceCoordinator {
 		}
 		if (reservation.snapshot.review_revision) {
 			try {
-				if (!this.ports.ensureReviewRevision)
+				if (!this.authority.ensureReviewRevision)
 					throw new Error("v4 Review revision verification is unavailable");
-				const revision = await this.ports.ensureReviewRevision(ctx.cwd, taskId, fresh);
+				const revision = await this.authority.ensureReviewRevision(ctx.cwd, taskId, fresh);
 				if (!revision || revision.base_head !== reservation.snapshot.review_revision.base_head || revision.review_commit !== reservation.snapshot.review_revision.review_commit || revision.review_tree !== reservation.snapshot.review_revision.review_tree || revision.manifest_digest !== reservation.snapshot.review_revision.manifest_digest)
 					throw new Error("Review revision changed before submission");
 			} catch (error) {
@@ -1261,7 +1236,7 @@ export class AssuranceCoordinator {
 		const invocation = this.openInvocation(taskId);
 		this.releaseReviewReservation(taskId, reservation);
 		try {
-			await this.ports.applyVerdict(ctx, {
+			await this.authority.applyVerdict(ctx, {
 				taskId,
 				snapshot: reservation.snapshot,
 				verdict,

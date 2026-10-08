@@ -187,7 +187,7 @@ describe("foreground assurance progression", () => {
 		const h = makeHarness();
 		let attempts = 0;
 		h.ports.readTaskRecord = async () => ({ record: { contract: "assurance_kernel/task_record/v4", git_base_head: "a".repeat(40), findings: [] } } as never);
-		h.ports.ensureReviewRevision = async () => {
+		h.authority.ensureReviewRevision = async () => {
 			attempts += 1;
 			throw new Error("synthetic revision unavailable");
 		};
@@ -199,8 +199,8 @@ describe("foreground assurance progression", () => {
 
 	test("post-QA Review preparation is retryable and preserves run_review", async () => {
 		const h = makeHarness();
-		const originalBuild = h.ports.buildAssurance;
-		h.ports.buildAssurance = async (root, taskId, role, current) => {
+		const originalBuild = h.authority.buildAssurance;
+		h.authority.buildAssurance = async (root, taskId, role, current) => {
 			if (role === "review") throw new Error("manifest unavailable");
 			return originalBuild(root, taskId, role, current);
 		};
@@ -212,7 +212,7 @@ describe("foreground assurance progression", () => {
 
 	test("already-settled Review snapshot failure is retryable and preserves run_review", async () => {
 		const h = makeHarness({ project: async () => projection("active", "run_review") });
-		h.ports.buildAssurance = async () => { throw new Error("snapshot unavailable"); };
+		h.authority.buildAssurance = async () => { throw new Error("snapshot unavailable"); };
 		const result = await h.progression.advance(TASK, ctx);
 		expect(result).toMatchObject({ state: "review_preparation_failed", operation: "review" });
 		expect(h.counts().applyCount).toBe(0);
@@ -222,8 +222,8 @@ describe("foreground assurance progression", () => {
 	test("already-settled Review cancellation before reservation is retryable", async () => {
 		const controller = new AbortController();
 		const h = makeHarness({ project: async () => projection("active", "run_review") });
-		const originalBuild = h.ports.buildAssurance;
-		h.ports.buildAssurance = async (...args) => {
+		const originalBuild = h.authority.buildAssurance;
+		h.authority.buildAssurance = async (...args) => {
 			controller.abort();
 			return originalBuild(...args);
 		};
@@ -328,8 +328,8 @@ describe("foreground assurance progression", () => {
 		let qaSettled = false;
 		const h = makeHarness();
 		h.ports.projectTask = async () => projection("active", qaSettled ? "run_review" : "run_qa");
-		const applyVerdict = h.ports.applyVerdict;
-		h.ports.applyVerdict = async (applyCtx, input) => {
+		const applyVerdict = h.authority.applyVerdict;
+		h.authority.applyVerdict = async (applyCtx, input) => {
 			await applyVerdict(applyCtx, input);
 			if (input.snapshot.role === "qa") qaSettled = true;
 		};

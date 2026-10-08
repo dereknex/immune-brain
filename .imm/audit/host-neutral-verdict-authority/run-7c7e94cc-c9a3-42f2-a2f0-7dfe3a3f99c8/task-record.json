@@ -1,0 +1,264 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "host-neutral-verdict-authority",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "host-neutral-verdict-authority",
+    "goal": "Implement Slice S4 of docs/specs/deepen-authority-seams.spec.md (Initiative deepen-authority-seams): Assurance snapshot capture, capability minting and verdict application move into one host-neutral module in runtime/assurance; both hosts adopt the stricter existing checks and supply only AssuranceHostPort and a confirmation reference.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Per D4 and invariant I2 of docs/specs/deepen-authority-seams.spec.md (sources U1, U2): one host-neutral module captures the Assurance snapshot for both hosts. Positive: a TaskRecord matching the projection is captured. Negative: a mismatch in record_revision, in intent_snapshot.revision, or in intent_ref.content_hash each refuses with 'TaskRecord changed before assurance snapshot capture'. Bound: a v4 record without git_base_head refuses. Agreed seam: tests/host-neutral-assurance-coordinator.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Per the D4 sequence of docs/specs/deepen-authority-seams.spec.md (sources U2, E3): verdict application verifies the snapshot, mints the capability, runs beforeCommit, then commits. Positive: an approval records approval and a rework verdict requests rework and stages the planning-artifact transition. Negative: a snapshot that changed is refused with 'assurance snapshot changed before authority application' before any capability is minted. Bound: when onCommit throws, afterCommit still runs, the first error is rethrown and the committed transition stands. These hold for a Claude-configured and a Pi-configured coordinator. Agreed seams: tests/host-neutral-assurance-coordinator.test.ts, tests/review-revision-identity-conformance.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\",\n      \"tests/review-revision-identity-conformance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Per D4 and invariant I1 of docs/specs/deepen-authority-seams.spec.md (source E1): AssuranceCoordinatorPorts has no per-host buildAssurance, ensureReviewRevision or applyVerdict; a host supplies AssuranceHostPort and a confirmation-reference source only. Claude capabilities carry claude:<actor>; Pi capabilities carry pi-confirm-<16 hex>. Pi host notification stays in the Pi adapter. Existing assertions in the named suites are not weakened. Agreed seams: tests/dual-host-assurance-conformance.test.ts, tests/claude-host-authority.test.ts, tests/pi-canary-work-extension.test.ts, tests/pi-canary-assurance-progression.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/pi-canary-work-extension.test.ts\",\n      \"tests/pi-canary-assurance-progression.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "plugins/immune-brain/dist/claude/mcp-server.mjs is regenerated from the changed runtime sources and matches a fresh generate; no hand edit to the bundle. Agreed seam: tests/claude-host-package.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/host-neutral-verdict-authority.md",
+      "docs/plans/host-neutral-verdict-authority.intent.json",
+      "docs/specs/deepen-authority-seams.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/assurance/host_port.ts",
+      "plugins/immune-brain/runtime/assurance/review_evidence.ts",
+      "plugins/immune-brain/runtime/assurance/verdict_authority.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "tests/breaking-intent-revision-gate.test.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/github-issue-projection-contract.test.ts",
+      "tests/helpers/pi-canary-assurance-harness.ts",
+      "tests/host-neutral-assurance-coordinator.test.ts",
+      "tests/pi-canary-assurance-progression.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/review-revision-identity-conformance.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/host-neutral-verdict-authority.intent.json",
+    "content_hash": "sha256:0adb6ae7390f54aeba027168b376e5014a7d95d4ef144007e34f6387a6a4f5cc"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:0adb6ae7390f54aeba027168b376e5014a7d95d4ef144007e34f6387a6a4f5cc",
+  "git_base_head": "b5a046f0e4c25f9c01daeb0ed143a5051fcd464d",
+  "attestations": [
+    {
+      "id": "approval-qa-d682095d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:0adb6ae7390f54aeba027168b376e5014a7d95d4ef144007e34f6387a6a4f5cc",
+      "diff_hash": "sha256:0bebc9b492e85786c712a7ab0670179271ebce155605778dc16da1980d0587c8",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:75ed69280bfafd6718b944d48b61577960166bfd31578e848487ea7e6835e10f",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:75ed69280bfafd6718b944d48b61577960166bfd31578e848487ea7e6835e10f"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:75ed69280bfafd6718b944d48b61577960166bfd31578e848487ea7e6835e10f"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:75ed69280bfafd6718b944d48b61577960166bfd31578e848487ea7e6835e10f"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:75ed69280bfafd6718b944d48b61577960166bfd31578e848487ea7e6835e10f"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-8887b85d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:0adb6ae7390f54aeba027168b376e5014a7d95d4ef144007e34f6387a6a4f5cc",
+      "diff_hash": "sha256:5565a8610606cb3073a6c7be15180bba293288f00f09e40e2bca4257c6e3df61",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:4d15e01f43442be2eb776e12bde772af7789c7a4b6a9ea857b36b17e294a6d0d",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:4d15e01f43442be2eb776e12bde772af7789c7a4b6a9ea857b36b17e294a6d0d"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:4d15e01f43442be2eb776e12bde772af7789c7a4b6a9ea857b36b17e294a6d0d"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:4d15e01f43442be2eb776e12bde772af7789c7a4b6a9ea857b36b17e294a6d0d"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:4d15e01f43442be2eb776e12bde772af7789c7a4b6a9ea857b36b17e294a6d0d"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-5ab6e1e7",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:0adb6ae7390f54aeba027168b376e5014a7d95d4ef144007e34f6387a6a4f5cc",
+      "diff_hash": "sha256:5565a8610606cb3073a6c7be15180bba293288f00f09e40e2bca4257c6e3df61",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 immutable revision 的 base、单一 parent、tree、manifest digest、snapshot digest 及全部 changed object IDs；共享 authority、两端适配、验收测试与生成 bundle 未发现阻断性缺陷，AC1–AC4 的执行结果采用 manifest 中 Kernel QA 的通过证据。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "b5a046f0e4c25f9c01daeb0ed143a5051fcd464d",
+        "review_commit": "8820da87f142ccdea24f0c18096fbd50bd3bfc48",
+        "review_tree": "0354490a07985f52b099ac0d7bf301154017fd56",
+        "manifest_digest": "sha256:8f0b292f64afdc3966fcde057caf6f8b8b4bc6b444107df9aab589bb52a2ecbb"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-cb695d154d83-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/assurance/verdict_authority.ts:337 将 planning-artifact staging 放在 afterCommit 前，却未捕获 staging 错误。rework 已提交后，git add 失败会跳过 afterCommit，并覆盖此前 onCommit 抛出的首个错误，违反 AC2 的提交后 hook 生命周期不变量，也回退了原 Pi 路径先执行 afterCommit 的保证。应捕获 staging 错误，确保 afterCommit 始终执行并保留首个错误；在约定测试 seam 增加 rework staging 失败的覆盖。",
+      "anchor": "sha256:17772c442482d2ceccda80e947dd82d1894222913f0ee5b2eecb1de4043234f8",
+      "evidence": {
+        "trigger": "有效的 QA rework verdict 通过快照校验并由 app.execute 成功提交；onCommit 抛出错误 E1，同时仓库存在 .git/index.lock，导致随后 stagePlanningArtifactTransition 的 git add 抛出 E2。当前实现直接传播 E2，既不执行 afterCommit，也不重新抛出 E1。tests/host-neutral-assurance-coordinator.test.ts:734-750 只覆盖 approval 的 hook 错误和 staging 成功的 rework，未覆盖这一提交后 hook 生命周期不变量的失败分支。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.advanceOnce",
+          "plugins/immune-brain/runtime/assurance/verdict_authority.ts:createVerdictAuthority.applyVerdict",
+          "plugins/immune-brain/runtime/assurance/verdict_authority.ts:stagePlanningArtifactTransition"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC2"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:host-neutral-verdict-authority:2026-10-07T23:52:03.542Z",
+      "at": "2026-10-07T23:52:03.542Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/host-neutral-verdict-authority.intent.json"
+    },
+    {
+      "id": "record_approval:host-neutral-verdict-authority:2026-10-07T23:53:55.775Z",
+      "at": "2026-10-07T23:53:55.775Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-d682095d\naction_v2_sha256:2a34a5d1ab354716e405872d22bca02d206c3e2d723b5a42c234b283b44c1eb4",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d6fff773ee242e32",
+        "issued_at": "2026-10-07T23:53:55.776Z"
+      }
+    },
+    {
+      "id": "request_rework:host-neutral-verdict-authority:2026-10-07T23:58:05.150Z",
+      "at": "2026-10-07T23:58:05.150Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:2f1e3f2575a0a8545a3a4510141926801d1671982088c29584a1cc2f2aec54f7",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-2965f1b4de05a823",
+        "issued_at": "2026-10-07T23:58:05.150Z"
+      }
+    },
+    {
+      "id": "resolve_finding:host-neutral-verdict-authority:2026-10-08T01:14:16.003Z",
+      "at": "2026-10-08T01:14:16.003Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-cb695d154d83-1-review-1\naction_v2_sha256:eaa4f1de41d2540f0846378063e35989a8004fc858392348cc3e30d9d58e372a"
+    },
+    {
+      "id": "freeze_artifacts:host-neutral-verdict-authority:2026-10-08T01:14:23.227Z",
+      "at": "2026-10-08T01:14:23.227Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/host-neutral-verdict-authority.intent.json"
+    },
+    {
+      "id": "record_approval:host-neutral-verdict-authority:2026-10-08T01:16:49.023Z",
+      "at": "2026-10-08T01:16:49.023Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-8887b85d\naction_v2_sha256:37ec8965ba7d0d44be2e19d2c53c4f19d9de5548cfdc39f8c764247a05fe850d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-2e3a80aa789da54f",
+        "issued_at": "2026-10-08T01:16:49.024Z"
+      }
+    },
+    {
+      "id": "record_approval:host-neutral-verdict-authority:2026-10-08T01:21:38.424Z",
+      "at": "2026-10-08T01:21:38.424Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-5ab6e1e7\naction_v2_sha256:5d4bfeb89e49f43daaffb43e343f184cf9a3bf1bbafaf515e990b03e9d860e50",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-f0f5872f67efa95d",
+        "issued_at": "2026-10-08T01:21:38.424Z"
+      }
+    },
+    {
+      "id": "complete:host-neutral-verdict-authority:2026-10-08T01:21:40.415Z",
+      "at": "2026-10-08T01:21:40.415Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:fe78100d3d1d5eb51ea8027618285a598f5476aadf72f2aa790e57d0036a272c"
+    }
+  ]
+}

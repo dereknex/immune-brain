@@ -1,3 +1,4 @@
+import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
 import { afterAll, describe, expect, mock, setDefaultTimeout, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -463,6 +464,7 @@ function sharedKernel(
 	const token = {};
 	return {
 		host,
+		confirmationReference: ({ actorId }) => `fixture:${actorId}`,
 		projectTask: async () => {
 			if (holder && holder !== token) {
 				return { error: "concurrent continuation rejected", claim: null, projection: projection({ lifecycle, artifactState, nextObligation, risk, recordRevision, contract }).projection };
@@ -522,12 +524,12 @@ function sharedKernel(
 		releaseClaim() { holder = null; },
 		claude() {
 			const host = new ClaudeReviewHost();
-			return { host, coordinator: new AssuranceCoordinator(portsFor(host)) };
+			return { host, coordinator: new AssuranceCoordinator(portsFor(host), portsFor(host)) };
 		},
 		pi() {
 			const ports = portsFor({ host: "pi", prepareReview: () => ({ id: "x", dispatch: {} }), releaseReview: () => undefined });
 			const { host: _ignored, ...rest } = ports;
-			return new AssuranceProgression(rest);
+			return new AssuranceProgression({ ...rest, authorityOverrides: rest });
 		},
 		stale() { recordRevision = "stale"; },
 		future() { contract = "assurance_kernel/task_record/v99"; },
@@ -595,7 +597,7 @@ function projectVerificationCoordinator(root: string, host: "pi" | "claude") {
 		? createPiAssuranceProgressionPorts()
 		: new ClaudeRuntime({ cwd: root, env: HOST_ENV, host: new ClaudeReviewHost(), interactive: true }).kernelPorts();
 	return {
-		coordinator: host === "pi" ? new AssuranceProgression(ports) : new AssuranceCoordinator(ports),
+		coordinator: host === "pi" ? new AssuranceProgression({ ...ports, authorityOverrides: ports }) : new AssuranceCoordinator(ports, ports),
 		ports,
 	};
 }

@@ -1,3 +1,11 @@
+import type { SnapshotDescriptor } from "./coordinator";
+
+export type ConfirmationReferenceSource = (input: {
+	snapshot: SnapshotDescriptor;
+	actorId: string;
+	now: string;
+}) => string;
+
 export interface ReviewRequest {
 	taskId: string;
 	operationId: string;

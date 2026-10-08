@@ -1,28 +1,21 @@
-import { randomUUID } from "node:crypto";
+import { stagePlanningArtifactTransition, type VerdictAuthority } from "../assurance/verdict_authority";
+export { ensureReviewRevision as ensureClaudeReviewRevision } from "../assurance/verdict_authority";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import {
 	AssuranceCoordinator,
-	reviewAdvisoryRecords,
-	reviewReworkFindings,
 	type AssuranceCoordinatorPorts,
 	type AssuranceSubmitReviewResult,
-	type AssuranceVerdict,
 	type HostContext,
-	type SnapshotDescriptor,
 } from "../assurance/coordinator";
 import {
-	type VerificationDescriptor,
 } from "../assurance/verification";
 import {
-	captureReviewManifest,
 	writeNativeReviewEvidence,
-	type ReviewRevision,
 } from "../assurance/review_evidence";
-import { parseVerificationDescriptor } from "../verification_descriptor";
 import { projectAssurance, type AssuranceProjection, type AssuranceProjectionResult } from "../kernel/assurance_projection";
-import { type TaskApprovalV2, type TaskFinding, type TaskRecord } from "../kernel/types";
+import { type TaskFinding, type TaskRecord } from "../kernel/types";
 import { findingsDigestV2 } from "../kernel/reducer";
 import { readTaskRecord, readTaskRecordRaw, recoverKernelStoreFollowUps } from "../kernel/storage";
 import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../kernel/intent";
@@ -211,150 +204,6 @@ function assertProjectionBinding(before: AssuranceProjectionResult, after: Assur
 	}
 }
 
-function qaOutcomes(record: { attestations: Array<{ kind: string; acceptance_results: Array<{ acceptance_id: string; status: "passed" | "failed" | "blocked"; summary: string }> }> }) {
-	return Object.fromEntries(
-		record.attestations.filter((item) => item.kind === "qa").flatMap((item) => item.acceptance_results)
-			.map((result) => [result.acceptance_id, { status: result.status, summary: result.summary }]),
-	);
-}
-
-/**
- * Publish the task-scoped synthetic revision for a v4 record and return the
- * exact identity the Review snapshot binds.
- *
- * `submitReview` re-derives this identity and compares all four fields —
- * `manifest_digest` included — against the reservation. Returning the bare
- * commit identity therefore compared a real digest against `undefined` and
- * failed every v4 submission with "Review revision changed before submission",
- * so the manifest is recomputed here rather than only the commit. The outcomes
- * come from the same `qaOutcomes` the Review snapshot is built from, which
- * makes the two digests equal by construction instead of by coincidence.
- *
- * v3 records keep the legacy full-source bundle and return null.
- */
-export async function ensureClaudeReviewRevision(
-	root: string,
-	taskId: string,
-	projection: AssuranceProjectionResult,
-): Promise<ReviewRevision | null> {
-	const current = await readTaskRecord(root, taskId);
-	const record = current.record;
-	if (!record) throw new Error(`task ${taskId} has no TaskRecord`);
-	if (current.revision !== projection.projection.record_revision)
-		throw new Error("TaskRecord changed before Review revision preparation");
-	if (record.contract !== "assurance_kernel/task_record/v4") return null;
-	if (!record.git_base_head)
-		throw new Error("Review revision requires a TaskRecord v4 git_base_head");
-	const manifest = captureReviewManifest(root, {
-		taskId,
-		baseHead: record.git_base_head,
-		scopeHint: record.intent_snapshot.scope_hint,
-		expectedDiffHash: projection.projection.diff_hash,
-		intentRevision: projection.projection.intent_revision,
-		intentContentHash: projection.projection.intent_content_hash,
-		recordRevision: projection.projection.record_revision,
-		workspaceRevision: projection.projection.workspace_revision,
-		lifecycle: projection.projection.lifecycle,
-		artifactState: projection.projection.artifact_state,
-		risk: record.intent_snapshot.risk,
-		outcomes: qaOutcomes(record),
-	});
-	return {
-		contract: "assurance_kernel/review_revision/v1",
-		base_head: manifest.base_head,
-		review_tree: manifest.review_tree,
-		review_commit: manifest.review_commit,
-		review_ref: manifest.review_ref,
-		diff_hash: manifest.diff_hash,
-		manifest_digest: manifest.manifest_digest,
-	};
-}
-
-async function buildAssuranceSnapshot(
-	root: string,
-	taskId: string,
-	role: "qa" | "review",
-	projection: AssuranceProjectionResult,
-) {
-	const read = await readTaskRecord(root, taskId);
-	const record = read.record;
-	if (!record || read.revision !== projection.projection.record_revision) throw new Error("TaskRecord changed before assurance snapshot capture");
-	const intent = record.intent_snapshot;
-	const descriptors = new Map<string, VerificationDescriptor>();
-	for (const item of role === "qa" ? intent.acceptance : []) {
-		const descriptor = parseVerificationDescriptor(item.verification);
-		descriptors.set(item.id, descriptor);
-	}
-	const reviewBundle = null;
-	const reviewManifest = role === "review"
-		? captureReviewManifest(root, {
-			taskId,
-			baseHead: record.git_base_head,
-			scopeHint: intent.scope_hint,
-			expectedDiffHash: projection.projection.diff_hash,
-			intentRevision: projection.projection.intent_revision,
-			intentContentHash: projection.projection.intent_content_hash,
-			recordRevision: projection.projection.record_revision,
-			workspaceRevision: projection.projection.workspace_revision,
-			lifecycle: projection.projection.lifecycle,
-			artifactState: projection.projection.artifact_state,
-			risk: intent.risk,
-			outcomes: qaOutcomes(record),
-		})
-		: null;
-	const dirtyFiles = reviewManifest ? Object.keys(reviewManifest.changed_paths) : [];
-	const snapshot: SnapshotDescriptor = {
-		contract: "assurance_kernel/assurance_snapshot/v2",
-		task_id: taskId,
-		run_id: projection.projection.run_id,
-		role,
-		record_revision: projection.projection.record_revision,
-		workspace_revision: projection.projection.workspace_revision,
-		intent_revision: projection.projection.intent_revision,
-		intent_content_hash: projection.projection.intent_content_hash,
-		diff_hash: projection.projection.diff_hash,
-		lifecycle: projection.projection.lifecycle,
-		artifact_state: projection.projection.artifact_state,
-		risk: intent.risk,
-		fresh_acceptance_ids: projection.projection.fresh_acceptance_ids,
-		missing_acceptance_ids: projection.projection.missing_acceptance_ids,
-		stale_attestation_ids: projection.projection.stale_attestation_ids,
-		acceptance: intent.acceptance,
-		dirty_files: dirtyFiles,
-		review_bundle_digest: reviewManifest?.manifest_digest ?? null,
-		root,
-		...(reviewManifest
-			? {
-				review_revision: {
-					contract: "assurance_kernel/review_revision_identity/v1",
-					base_head: reviewManifest.base_head,
-					review_commit: reviewManifest.review_commit,
-					review_tree: reviewManifest.review_tree,
-					manifest_digest: reviewManifest.manifest_digest,
-				},
-			}
-			: {}),
-	};
-	return { snapshot, descriptors, reviewBundle, reviewManifest };
-}
-
-function stagePlanningArtifactTransition(root: string, record: { intent_ref: { path: string }; intent_snapshot: { scope_hint: string[] } }): void {
-	const intentActive = record.intent_ref.path.replace("docs/plans/archive/", "docs/plans/");
-	const intentArchive = intentActive.replace("docs/plans/", "docs/plans/archive/");
-	const specActive = record.intent_snapshot.scope_hint.find((path) =>
-		/^docs\/specs\/(?!archive\/)[^/]+\.spec\.md$/.test(path)
-		&& record.intent_snapshot.scope_hint.includes(path.replace("docs/specs/", "docs/specs/archive/")),
-	);
-	const candidates = [
-		intentActive,
-		intentArchive,
-		...(specActive ? [specActive, specActive.replace("docs/specs/", "docs/specs/archive/")] : []),
-	];
-	const paths = candidates.filter((path) => existsSync(join(root, path)) || execFileSync("git", ["ls-files", "--cached", "--", path], { cwd: root, encoding: "utf8" }).trim().length > 0);
-	if (paths.length === 0) return;
-	execFileSync("git", ["add", "--", ...paths], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
-}
-
 async function mintCapability(
 	registry: MutationAuthorityRegistry,
 	input: {
@@ -424,6 +273,8 @@ export interface ClaudeRuntimeOptions {
 	 * actually wires was never constructed once.
 	 */
 	ports?: Partial<AssuranceCoordinatorPorts>;
+	/** Optional authority test seam, separate from host ports. */
+	authorityOverrides?: Partial<VerdictAuthority>;
 	interactive?: boolean;
 	permissionMode?: PermissionMode;
 	requestConfirmation?: NativeConfirmationPort;
@@ -480,7 +331,8 @@ export class ClaudeRuntime {
 			...this.createKernelPorts(),
 			...options.ports,
 			host: this.host,
-		});
+			confirmationReference: ({ actorId }) => `claude:${actorId}`,
+		}, options.authorityOverrides);
 	}
 
 	observe(event: ClaudeHookEvent): void {
@@ -513,14 +365,12 @@ export class ClaudeRuntime {
 	private createKernelPorts(): AssuranceCoordinatorPorts {
 		return {
 			host: this.host,
+			confirmationReference: ({ actorId }) => `claude:${actorId}`,
 			projectTask: (root, taskId) => projectAssurance(root, taskId, diffSnapshotOf),
 			readTaskRecord: async (root, taskId) => readTaskRecord(root, taskId),
 			readTaskIntent: async (root, taskId) => readTaskIntentForRecord(root, taskId),
-			buildAssurance: (root, taskId, role, projection) => buildAssuranceSnapshot(root, taskId, role, projection),
-			ensureReviewRevision: (root, taskId, projection) => ensureClaudeReviewRevision(root, taskId, projection),
 			runQa: (snapshot, descriptors, options) => runDeterministicQa(snapshot, descriptors, options),
 			writeReviewEvidence: (input) => writeNativeReviewEvidence(input.evidence),
-			applyVerdict: (ctx, input) => this.applyVerdict(ctx, input),
 			applyOrdinaryOperation: (ctx, input) => this.executeOrdinary(ctx, input),
 		};
 	}
@@ -894,94 +744,6 @@ export class ClaudeRuntime {
 		// try/catch has closed, so observation can never roll the staged intent back
 		// or turn a committed mutation into an exception.
 		return this.withTerminalTracker(taskId, committed);
-	}
-
-	private async applyVerdict(
-		ctx: HostContext,
-		input: {
-			taskId: string;
-			snapshot: SnapshotDescriptor;
-			verdict: AssuranceVerdict;
-			invocation: { /* token */ };
-			actorId: string;
-			hooks?: { beforeCommit?: () => Promise<void>; onCommit?: () => void; afterCommit?: () => Promise<void> };
-		},
-	): Promise<void> {
-		const { registry, app } = await this.authority();
-		const priorIntentToken = (await readTaskIntentForRecord(ctx.cwd, input.taskId)).token;
-		const now = new Date().toISOString();
-		const commitAndApply = async <T>(apply: () => Promise<T>): Promise<T> => {
-			this.coordinator.commitInvocation(input.invocation as never);
-			const settlement = apply();
-			input.hooks?.onCommit?.();
-			const result = await settlement;
-			await input.hooks?.afterCommit?.();
-			return result;
-		};
-		if (input.verdict.decision === "rework") {
-			const findings = reviewReworkFindings(input.verdict);
-			const capability = await mintCapability(registry, {
-				authority_kind: input.snapshot.role,
-				task_id: input.taskId,
-				run_id: input.snapshot.run_id,
-				action_kind: "request_rework",
-				expected_record_hash: input.snapshot.record_revision,
-				intent_revision: input.snapshot.intent_revision,
-				intent_content_hash: input.snapshot.intent_content_hash,
-				diff_hash: input.snapshot.diff_hash,
-				actor_id: input.actorId,
-				findings,
-				now,
-				confirmation_ref: `claude:${input.actorId}`,
-			});
-			await input.hooks?.beforeCommit?.();
-			const result = await commitAndApply(async () => app.execute({
-				root: ctx.cwd,
-				task_id: input.taskId,
-				operation: { op: "request_rework", capability, findings: findings as never[], actor_id: input.actorId },
-				prior_intent_token: priorIntentToken,
-				diffProvider: diffSnapshotOf,
-				now,
-			}));
-			stagePlanningArtifactTransition(ctx.cwd, result.record);
-			return;
-		}
-		const advisories = input.verdict.decision === "pass" ? reviewAdvisoryRecords(input.verdict) : [];
-		const approval: TaskApprovalV2 = {
-			id: `approval-${input.snapshot.role}-${randomUUID().slice(0, 8)}`,
-			kind: input.snapshot.role === "qa" ? "qa" : "review",
-			authority_role: input.snapshot.role === "qa" ? "qa" : "reviewer",
-			task_revision: input.snapshot.intent_revision,
-			intent_content_hash: input.snapshot.intent_content_hash,
-			diff_hash: input.snapshot.diff_hash,
-			actor_id: input.actorId,
-			summary: input.verdict.approval!.summary,
-			...(input.snapshot.role === "review" && input.snapshot.review_revision ? { review_revision: input.snapshot.review_revision } : {}),
-			...(input.snapshot.role === "review" && advisories.length > 0 ? { advisory_findings: advisories } : {}),
-		};
-		const capability = await mintCapability(registry, {
-			authority_kind: input.snapshot.role,
-			task_id: input.taskId,
-			run_id: input.snapshot.run_id,
-			action_kind: "record_approval",
-			expected_record_hash: input.snapshot.record_revision,
-			intent_revision: input.snapshot.intent_revision,
-			intent_content_hash: input.snapshot.intent_content_hash,
-			diff_hash: input.snapshot.diff_hash,
-			actor_id: input.actorId,
-			approval,
-			now,
-			confirmation_ref: `claude:${input.actorId}`,
-		});
-		await input.hooks?.beforeCommit?.();
-		await commitAndApply(async () => app.execute({
-			root: ctx.cwd,
-			task_id: input.taskId,
-			operation: { op: "record_approval", capability, approval, actor_id: input.actorId },
-			prior_intent_token: priorIntentToken,
-			diffProvider: diffSnapshotOf,
-			now,
-		}));
 	}
 
 	private async executeOrdinary(ctx: HostContext, input: { taskId: string; operation: { op: string; actor_id: string; next_intent?: unknown; finding_id?: string; attestation_id?: string } }) {

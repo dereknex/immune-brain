@@ -1,3 +1,4 @@
+import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
 import { execFileSync } from "node:child_process";
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
@@ -250,8 +251,9 @@ function makeCoordinator(overrides: {
 	let artifactState: "active" | "frozen" = "frozen";
 	let nextObligation: "run_qa" | "run_review" | "complete" | "none" = "run_qa";
 	const host = overrides.host ?? new ClaudeReviewHost();
-	const ports: AssuranceCoordinatorPorts = {
+	const ports: AssuranceCoordinatorPorts & Partial<VerdictAuthority> = {
 		host,
+		confirmationReference: ({ actorId }) => `fixture:${actorId}`,
 		projectTask: overrides.project ?? (async () => projection(currentLifecycle, nextObligation, risk, artifactState)),
 		readTaskRecord: async () => ({ record: { findings: [] } }),
 		readTaskIntent: async () => ({ token: "intent-token" }),
@@ -286,7 +288,7 @@ function makeCoordinator(overrides: {
 			}
 		},
 	};
-	return { coordinator: new AssuranceCoordinator(ports), host, ports, counts: () => ({ applyCount }) };
+	return { coordinator: new AssuranceCoordinator(ports, ports), host, ports, counts: () => ({ applyCount }) };
 }
 
 async function submitObservedReview(
@@ -730,7 +732,7 @@ describe("claude host authority", () => {
 	test("malformed Parent verdict keeps the Review reservation for a matching retry", async () => {
 		const host = new ClaudeReviewHost();
 		const h = makeCoordinator({ host });
-		const mcp = createMcpRuntime({ cwd: ROOT, env: ENV, ports: h.ports, host });
+		const mcp = createMcpRuntime({ cwd: ROOT, env: ENV, ports: h.ports, authorityOverrides: h.ports, host });
 		await handleJsonRpc({
 			jsonrpc: "2.0",
 			id: 1,
@@ -1203,18 +1205,11 @@ describe("claude host authority", () => {
 	});
 
 	test("both Host adapters mint request_rework findings through the shared verdict mapping", () => {
-		// Both adapters build the findings array independently, so parity is
-		// pinned to the shared mapping and to the Kernel digest that binds the
-		// capability. A host that inlines its own mapping (and drops the anchor)
-		// would mint a digest the Kernel would refuse.
-		const hosts = [
-			["claude", readFileSync(resolve("plugins/immune-brain/runtime/claude/kernel_ports.ts"), "utf8")],
-			["pi", readFileSync(resolve("plugins/immune-brain/.pi-extension/imm-canary-work.ts"), "utf8")],
-		] as const;
-		for (const [name, source] of hosts) {
-			expect({ name, sharedMapping: /reviewReworkFindings\(\s*(input\.)?verdict\s*\)/.test(source) }).toEqual({ name, sharedMapping: true });
-			expect({ name, kernelDigest: source.includes("findingsDigestV2(input.findings") }).toEqual({ name, kernelDigest: true });
-		}
+		// Both coordinators now use the same authority module, whose mapping
+		// preserves Review provenance and whose capability binds the Kernel digest.
+		const source = readFileSync(resolve("plugins/immune-brain/runtime/assurance/verdict_authority.ts"), "utf8");
+		expect(source).toMatch(/reviewReworkFindings\(verdict\)/);
+		expect(source).toContain("findingsDigestV2(findings)");
 	});
 });
 
