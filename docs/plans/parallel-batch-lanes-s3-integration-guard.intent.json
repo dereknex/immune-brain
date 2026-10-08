@@ -1,0 +1,32 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "parallel-batch-lanes-s3-integration-guard",
+  "owner": "user",
+  "goal": "Implement Slice S3 of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes): integration reruns the deterministic QA descriptors of the child and of every sibling integrated since the lane base on the candidate commit before the batch branch moves, and every integration failure leaves the batch branch unmoved, parks the child, skips its dependents and keeps the Lane.",
+  "acceptance": [
+    {
+      "id": "PBL-S3-A1",
+      "assertion": "Per Temporal sequence step 2 and the Failure and Interruption paragraphs of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes) (source: user decision D7): the candidate commit is accepted only after those descriptors pass on it; the rerun is an orchestration guard that records no Kernel attestation and no finding. Positive: a passing rerun fast-forwards the batch branch and the child becomes integrated. Negative: a sibling change that makes the child's descriptor fail on the candidate leaves the batch branch head unchanged, sets the child needs_human with batch_integration_check_failed, sets its dependents skipped_blocked and keeps the Lane and its branch; a plumbing conflict or identity mismatch does the same with batch_integration_conflict; a child whose scope is disjoint from the failed one still integrates. Bound: an interruption between building the candidate and the fast-forward resumes to exactly one commit for that child with no duplicate; no ref and no working tree is written before acceptance. Closes assumption A4. Agreed seams: tests/unattended-batch-integration.test.ts (new), tests/unattended-batch-lanes.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-integration.test.ts\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/parallel-batch-lanes-s3-integration-guard.md",
+    "docs/plans/parallel-batch-lanes-s3-integration-guard.intent.json",
+    "docs/specs/parallel-batch-lanes.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/assurance/qa.ts",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+    "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/unattended/types.ts",
+    "tests/unattended-batch-integration.test.ts",
+    "tests/unattended-batch-lanes.test.ts",
+    "tests/unattended-contracts.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

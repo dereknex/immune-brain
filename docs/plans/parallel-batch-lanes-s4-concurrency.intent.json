@@ -1,0 +1,46 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "parallel-batch-lanes-s4-concurrency",
+  "owner": "user",
+  "goal": "Implement Slice S4 of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes): max_parallel above 1 runs several Lanes at once, the report returns handoffs[], a parked Lane no longer blocks scope-disjoint siblings, and QA failures count per child.",
+  "acceptance": [
+    {
+      "id": "PBL-S4-A1",
+      "assertion": "Per Interfaces (Report), State transitions and Temporal sequence steps 1-5 of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes) (sources: user decisions D5, D6; ADR 0013 consequence on per-child QA failure counting): with max_parallel above 1 the reconcile tick keeps up to that many Lanes in flight, emits one provision or executor handoff per child in handoffs[], and integrates settled children serially in settle order. Positive: two scope-disjoint ready children are in flight together and both integrate, each as one commit on the batch branch. Negative: a child whose scope overlaps an in-flight Lane waits until that Lane is integrated; a parked Lane does not stop a disjoint sibling from starting, settling or integrating; a lost or unreadable Lane becomes needs_human with batch_lane_lost and nothing is inferred from terminal text. Bound: the in-flight count never exceeds max_parallel; qa_failure_limit applies to each child separately; batch_parallel_unsupported no longer occurs; a batch without max_parallel is still the serial v1 run. Agreed seam: tests/unattended-batch-lanes.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "PBL-S4-A2",
+      "assertion": "Per Interfaces of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes) (source: user decision D6; repository evidence that each Lane has its own Host session and store): Claude Code and Pi return equal handoffs[] for the same lane-mode fixture, and Review reservations made in two concurrent Lanes never bind to each other's run. Negative: a Review verdict submitted for one Lane's reservation is refused in the other Lane. Bound: the serial handoff field stays absent in lane mode and handoffs stays absent in serial mode. Closes assumption A5. Agreed seams: tests/dual-host-assurance-conformance.test.ts, tests/claude-batch-authority.test.ts, tests/pi-batch-authority.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/parallel-batch-lanes-s4-concurrency.md",
+    "IMMUNE.md",
+    "docs/plans/parallel-batch-lanes-s4-concurrency.intent.json",
+    "docs/specs/parallel-batch-lanes.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-run.md",
+    "plugins/immune-brain/runtime/claude/interaction.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "plugins/immune-brain/runtime/unattended/batch_schedule.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/unattended/types.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/packaged-contract-tool-surface.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/unattended-batch-lanes.test.ts",
+    "tests/unattended-contracts.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

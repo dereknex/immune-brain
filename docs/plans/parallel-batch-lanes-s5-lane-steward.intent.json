@@ -1,0 +1,52 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "parallel-batch-lanes-s5-lane-steward",
+  "owner": "user",
+  "goal": "Implement Slice S5 of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes): the lane-steward role is routable with its packaged mirror, an integrated clean Lane receives a release handoff, and the batch records the Lane released once its path is gone.",
+  "acceptance": [
+    {
+      "id": "PBL-S5-A1",
+      "assertion": "Per Roles and contracts of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes) (sources: user decisions D3, D4, D9, D10): lane-steward is an Internal Role with a prompt under runtime/prompts and a byte-identical packaged mirror, routed by the loop contract; the prompt states the goal and deliverable (supply a Lane on the named branch at the named base, prepare it by the project's own instructions, start one allowlisted Executor Host there with an explicit imm-run entry, return the path, release a clean integrated Lane) and reports that it cannot supply a Lane rather than improvising; the Executor Host allowlist is the constant claude-code and pi. Positive: the role resolves and its mirror matches. Negative: the prompt, the runtime and the imm-run contract contain no workspace-tool name, command, path or agent kind and assume no language or package manager; a provision handoff offers only allowlisted hosts. Bound: no new public skill is added. Agreed seams: tests/role-prompt-bridge.test.ts, tests/role-prompt-bundled-layout.test.ts, tests/loop-execution-routing.test.ts, tests/dist-docs-sync-contract.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/role-prompt-bridge.test.ts\",\n      \"tests/role-prompt-bundled-layout.test.ts\",\n      \"tests/loop-execution-routing.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "PBL-S5-A2",
+      "assertion": "Per Interfaces (release handoff) and State transitions of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes) (source: user decision D8; ADR 0013 consequence on surviving terminal evidence): after a child is integrated, its Lane is clean and its .imm/audit/<task_id>/ pair is reachable from the batch branch, the report carries a release handoff for lane-steward, and a later tick that observes the Lane path gone records the child released. Positive: release is emitted and removal is observed as released. Negative: no release handoff for a parked, failed, dirty or unintegrated Lane, and none when the audit pair is not reachable from the batch branch; the runtime itself removes no worktree and deletes no branch. Bound: a Lane that is still present stays integrated and the batch still completes. Agreed seam: tests/unattended-batch-lanes.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/parallel-batch-lanes-s5-lane-steward.md",
+    "CONTEXT.md",
+    "docs/plans/parallel-batch-lanes-s5-lane-steward.intent.json",
+    "docs/specs/parallel-batch-lanes.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-run.md",
+    "plugins/immune-brain/dist/role-prompts/lane-steward.md",
+    "plugins/immune-brain/runtime/claude/interaction.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/claude/role_agents.ts",
+    "plugins/immune-brain/runtime/loop_contract.ts",
+    "plugins/immune-brain/runtime/prompts/lane-steward.md",
+    "plugins/immune-brain/runtime/role_prompt_bridge.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/unattended/types.ts",
+    "scripts/dist-sync-manifest.ts",
+    "scripts/sync-dist-docs.ts",
+    "tests/dist-docs-sync-contract.test.ts",
+    "tests/imm-core-barrel-retirement.test.ts",
+    "tests/loop-execution-routing.test.ts",
+    "tests/packaged-contract-tool-surface.test.ts",
+    "tests/role-prompt-bridge.test.ts",
+    "tests/role-prompt-bundled-layout.test.ts",
+    "tests/unattended-batch-lanes.test.ts",
+    "tests/unattended-contracts.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
