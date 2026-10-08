@@ -1,5 +1,0 @@
----
-"immune-brain": minor
----
-
-Assurance snapshot capture, Review-revision proof, capability minting and verdict application now live in one host-neutral module, `runtime/assurance/verdict_authority.ts`. The coordinator constructs that authority itself, so both hosts supply only their `AssuranceHostPort`, a confirmation-reference source (`claude:<actor>` / `pi-confirm-<16 hex>`) and an optional rework-parked notice; `AssuranceCoordinatorPorts` no longer carries per-host `buildAssurance`, `ensureReviewRevision` or `applyVerdict`. The Claude adapter thereby adopts the stricter checks the Pi adapter already enforced: capture validates record revision, intent revision and intent content hash together, refuses a v4 record without `git_base_head`, and verdict application re-verifies the whole snapshot before any capability is minted. Hook ordering is now identical on both hosts — `beforeCommit` → mint → commit → `afterCommit`, with the first hook error rethrown while the committed transition stands.
