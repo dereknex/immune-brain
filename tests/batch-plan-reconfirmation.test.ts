@@ -43,7 +43,7 @@ import { projectBatchPreflight } from "../plugins/immune-brain/runtime/unattende
 import { taskCommitRevisionIdentity } from "../plugins/immune-brain/runtime/workspace_scope";
 import * as batchState from "../plugins/immune-brain/runtime/unattended/batch_state";
 import * as batchRunner from "../plugins/immune-brain/runtime/unattended/batch_runner";
-import { commitBatchChild, lookupBatchCommit } from "../plugins/immune-brain/runtime/unattended/batch_git";
+import { commitBatchChild, lookupBatchCommit, runBatchGitPreflight } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import type { BatchRunnerGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
 import type { TaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/types";
@@ -143,8 +143,13 @@ async function fixture(host: "pi" | "claude", settle: "done" | "active" | "stopp
 	let gateFacts: unknown;
 	const tools: any[] = [];
 	// Getter-backed port allows per-test crash injection while preserving the real Git operation.
-	const batchGit: BatchRunnerGitPort = { commitChild: async (...args) => gitPort?.commitChild
-		? gitPort.commitChild(...args) : commitBatchChild({ root: args[0], taskId: args[1], batchId: args[2], expectedHead: args[3], branch: args[4], intentPath: args[5] }) };
+	const batchGit: BatchRunnerGitPort = {
+		preflight: (input) => runBatchGitPreflight(input),
+		commitChild: async (...args) => gitPort?.commitChild
+			? gitPort.commitChild(...args) : commitBatchChild({ root: args[0], taskId: args[1], batchId: args[2], expectedHead: args[3], branch: args[4], intentPath: args[5] }),
+		lookupBatchCommit: (root, taskId, batchId, expectedHead, branch) =>
+			lookupBatchCommit({ root, taskId, batchId, expectedHead, branch }),
+	};
 	registerPiBatch({ registerTool: (tool: unknown) => tools.push(tool), events: { emit() {} } } as never,
 		{ readInitiative: async () => observation, batchGit });
 	const tool = tools.find(t => t.name === "start_unattended_batch");

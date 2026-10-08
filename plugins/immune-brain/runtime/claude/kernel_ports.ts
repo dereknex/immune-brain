@@ -49,21 +49,16 @@ import { readTaskTombstone } from "../kernel/backend_claim";
 import {
 	authorizeBatch,
 	projectBatchPreflight,
-	readActiveClaimTaskId,
-	isOwnBatchClaim,
 	findResumableBatchSlugForTask,
 } from "../unattended/batch_preflight";
 import {
 	startBatch,
-	batchQaFailureFacts,
 	type BatchRunnerKernelPort,
 	type BatchRunReport,
 } from "../unattended/batch_runner";
+import { createBatchKernelPort } from "../unattended/batch_kernel_port";
 import {
 	createBatchAuthorityRegistry,
-	deriveChildEnrollment,
-	type BatchAuthorityRegistry,
-	type BatchAuthorizationBinding,
 } from "../kernel/batch_authority";
 import {
 	type BatchRunnerGitPort,
@@ -938,17 +933,30 @@ export class ClaudeRuntime {
 		now = new Date().toISOString();
 		const capability = this.batchRegistry.issue(binding, recoveryChildren as any, now);
 
-		const basePort = this.createBatchKernelPort(this.batchRegistry, capability, binding);
-		const kernelPort: BatchRunnerKernelPort = {
-			...basePort,
-			ownsTaskClaim: (taskId) => {
-				if (isResuming && taskId === readActiveClaimTaskId(this.cwd)) {
-					// Re-verify the CURRENT claim identity synchronously.
-					return isOwnBatchClaim(this.cwd, existingBatch!, taskId, batchBranch);
-				}
-				return basePort.ownsTaskClaim(taskId);
-			},
+		// review-batch-partial-port-fabricates-enrollment: the production child
+		// Kernel port is the shared runtime/unattended one; this Host supplies
+		// only its own advanceTask progression seam (D5).
+		const advanceTask: BatchRunnerKernelPort["advanceTask"] = async (root, taskId) => {
+			const result = await this.coordinator.advance(taskId, { cwd: root });
+			const facts = { diagnostics: result.diagnostics, environment_failure: result.environment_failure, recovery: result.recovery };
+			if (result.state === "completed") return { state: "completed", ...facts };
+			if (result.state === "stopped") return { state: "stopped", ...facts };
+			if (result.state === "rework") return { state: "rework", operation: result.operation, summary: result.summary, ...facts };
+			if (result.state === "review_ready") return { state: "review_ready", operation_id: result.operation_id, ...facts };
+			if (result.state === "review_preparation_failed") return { state: result.state, operation: result.operation, operation_id: result.operation_id, reason: result.reason, ...facts };
+			if (result.state === "blocked") return { state: "blocked", reason: result.reason, ...facts };
+			return { state: "failed", reason: (result as { reason?: string }).reason ?? "advance failed", ...facts };
 		};
+		const kernelPort = createBatchKernelPort({
+			root: this.cwd,
+			enrollmentRegistry: this.enrollmentRegistry,
+			registry: this.batchRegistry,
+			capability,
+			binding,
+			advanceTask,
+			resume: { isResuming, existingBatch, batchBranch },
+			overrides: this.batchKernel,
+		});
 		const report = await startBatch({
 			root: this.cwd,
 			batch_id: batchId,
@@ -972,69 +980,6 @@ export class ClaudeRuntime {
 			state: "started",
 			batch_id: batchId,
 			report,
-		};
-	}
-
-	private createBatchKernelPort(
-		registry: BatchAuthorityRegistry,
-		capability: object,
-		binding: BatchAuthorizationBinding,
-	): BatchRunnerKernelPort {
-		// review-batch-partial-port-fabricates-enrollment: construct real production port first, never fabricate stubs
-		const realPort: BatchRunnerKernelPort = {
-			enrollTask: async ({ root, task_id, batch }) => {
-				const now = new Date().toISOString();
-				const derived = deriveChildEnrollment(root, batch.registry, {
-					capability: batch.capability,
-					binding,
-					task_id,
-					expected_head: batch.binding.expected_head,
-					now,
-				});
-				await enrollTask(root, this.enrollmentRegistry, {
-					binding: derived.binding,
-					batch: {
-						registry: batch.registry,
-						capability: batch.capability,
-						binding,
-						expected_head: batch.binding.expected_head,
-					},
-					now,
-				});
-				// The enrollment itself is the effect; its record is re-read below.
-				const recordRaw = readTaskRecordRaw(root, task_id);
-				return { record_revision: recordRaw.revision };
-			},
-			advanceTask: async (root, taskId) => {
-				const result = await this.coordinator.advance(taskId, { cwd: root });
-				const facts = { diagnostics: result.diagnostics, environment_failure: result.environment_failure, recovery: result.recovery };
-				if (result.state === "completed") return { state: "completed", ...facts };
-				if (result.state === "stopped") return { state: "stopped", ...facts };
-				if (result.state === "rework") return { state: "rework", operation: result.operation, summary: result.summary, ...facts };
-				if (result.state === "review_ready") return { state: "review_ready", operation_id: result.operation_id, ...facts };
-				if (result.state === "review_preparation_failed") return { state: result.state, operation: result.operation, operation_id: result.operation_id, reason: result.reason, ...facts };
-				if (result.state === "blocked") return { state: "blocked", reason: result.reason, ...facts };
-				return { state: "failed", reason: (result as { reason?: string }).reason ?? "advance failed", ...facts };
-			},
-			projectTask: async (root, taskId) => {
-				const fresh = await projectAssurance(root, taskId, diffSnapshotOf);
-				if (!fresh.claim || fresh.projection.lifecycle !== "active" || fresh.error !== null) return fresh;
-				const { record, revision } = readTaskRecordRaw(root, taskId);
-				if (!record || revision !== fresh.projection.record_revision) throw new Error(`Kernel recovery projection changed for ${taskId}`);
-				return { ...fresh, ...batchQaFailureFacts(record) };
-			},
-			ownsTaskClaim: (taskId) => {
-				return registry.isChildConsumed(capability, taskId);
-			},
-			validateBatchAuthorization: (input) => {
-				return input.registry.inspect(input.capability, input.binding as never);
-			},
-		};
-
-		if (!this.batchKernel) return realPort;
-		return {
-			...realPort,
-			...this.batchKernel,
 		};
 	}
 }

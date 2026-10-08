@@ -12401,6 +12401,13 @@ async function lookupBatchCommit(input) {
   }
   return { commit };
 }
+function createDefaultBatchGitPort() {
+  return {
+    preflight: runBatchGitPreflight,
+    commitChild: (root, taskId, batchId, head, branch, intentPath) => commitBatchChild({ root, taskId, batchId, expectedHead: head, branch, intentPath }),
+    lookupBatchCommit: (root, taskId, batchId, expectedHead, branch) => lookupBatchCommit({ root, taskId, batchId, expectedHead, branch })
+  };
+}
 
 // plugins/immune-brain/runtime/unattended/batch_runner.ts
 function batchQaFailureFacts(record) {
@@ -12410,6 +12417,9 @@ function batchQaFailureFacts(record) {
     last_qa_failure_at: failed.at(-1)?.at ?? null,
     recovery_findings: record.findings.filter((f) => f.status === "open").map((f) => ({ id: f.id, kind: f.kind, status: f.status, acceptance_id: f.acceptance_id }))
   };
+}
+function batchGitPortOf(input) {
+  return input.git ?? createDefaultBatchGitPort();
 }
 function dependentsOf(record, taskId) {
   return record.children.filter((child) => child.blocked_by.includes(taskId));
@@ -12550,12 +12560,8 @@ async function validatePersistedRun(input, record) {
         throw new Error("uncommitted batch child has a commit");
       continue;
     }
-    const evidence = input.git?.lookupBatchCommit ? await input.git.lookupBatchCommit(input.root, child.task_id, record.batch_id, undefined, record.branch) : input.kernel.lookupBatchCommit ? await input.kernel.lookupBatchCommit(input.root, child.task_id, record.batch_id, undefined, record.branch) : await lookupBatchCommit({
-      root: input.root,
-      taskId: child.task_id,
-      batchId: record.batch_id,
-      branch: record.branch
-    });
+    const git = batchGitPortOf(input);
+    const evidence = await git.lookupBatchCommit(input.root, child.task_id, record.batch_id, undefined, record.branch);
     if (!evidence || evidence.commit !== child.commit) {
       if (evidence === null && typeof child.commit === "string" && child.commit.length > 0 && existsSync10(join15(input.root, ".git"))) {
         const reach = spawnSync9("git", ["-C", input.root, "merge-base", "--is-ancestor", child.commit, "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
@@ -12734,15 +12740,7 @@ async function startBatchLocked(input) {
     } catch (error) {
       return reportFor({ ...prepareBatchRunState(input), batch_state: "rejected" }, error instanceof Error ? error.message : String(error), "Correct the authorization or plan, then re-confirm the batch.");
     }
-    const preflightResult = input.git?.preflight ? await input.git.preflight({
-      root: input.root,
-      initiative_slug: input.initiative_slug,
-      base_head: input.base_head
-    }) : input.kernel.gitPreflight ? await input.kernel.gitPreflight({
-      root: input.root,
-      initiative_slug: input.initiative_slug,
-      base_head: input.base_head
-    }) : runBatchGitPreflight({
+    const preflightResult = await batchGitPortOf(input).preflight({
       root: input.root,
       initiative_slug: input.initiative_slug,
       base_head: input.base_head
@@ -12983,13 +12981,7 @@ async function driveInterruptedChild(input, child) {
     if (child.state === "settled") {
       let existing = null;
       try {
-        existing = input.git?.lookupBatchCommit ? await input.git.lookupBatchCommit(input.root, child.task_id, input.batch_id, head, record.branch) : input.kernel.lookupBatchCommit ? await input.kernel.lookupBatchCommit(input.root, child.task_id, input.batch_id, head, record.branch) : await lookupBatchCommit({
-          root: input.root,
-          taskId: child.task_id,
-          batchId: input.batch_id,
-          expectedHead: head,
-          branch: record.branch
-        });
+        existing = await batchGitPortOf(input).lookupBatchCommit(input.root, child.task_id, input.batch_id, head, record.branch);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: `commit lookup failed: ${message}` } : c);
@@ -13005,22 +12997,7 @@ async function driveInterruptedChild(input, child) {
       }
       const planChild = input.children.find((c) => c.task_id === child.task_id);
       const intentPath = planChild?.intent_path ?? undefined;
-      const doCommit = async () => {
-        if (input.git?.commitChild) {
-          return input.git.commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath);
-        }
-        if (input.kernel.commitChild) {
-          return input.kernel.commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath);
-        }
-        return commitBatchChild({
-          root: input.root,
-          taskId: child.task_id,
-          batchId: input.batch_id,
-          expectedHead: head,
-          branch: record.branch,
-          intentPath
-        });
-      };
+      const doCommit = async () => batchGitPortOf(input).commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath);
       if (existing && !record.commits.length && existsSync10(join15(input.root, ".git")) && !ownUnpersistedBatchHead(input.root, record, existing.commit))
         throw new Error("first unpersisted batch commit provenance is invalid");
       const adopted = existing ?? await doCommit().catch((error) => {
@@ -13077,6 +13054,61 @@ async function driveInterruptedChild(input, child) {
     }
   }
   return null;
+}
+
+// plugins/immune-brain/runtime/unattended/batch_kernel_port.ts
+function createBatchKernelPort(input) {
+  const project = input.deps?.projectAssurance ?? projectAssurance;
+  const readRecord = input.deps?.readTaskRecordRaw ?? readTaskRecordRaw;
+  const deriveEnrollment = input.deps?.deriveChildEnrollment ?? deriveChildEnrollment;
+  const enrollKernelTask = input.deps?.enrollTask ?? enrollTask;
+  const base = {
+    enrollTask: async ({ root, task_id, batch }) => {
+      const now = new Date().toISOString();
+      const derived = deriveEnrollment(root, batch.registry, {
+        capability: batch.capability,
+        binding: input.binding,
+        task_id,
+        expected_head: batch.binding.expected_head,
+        now
+      });
+      await enrollKernelTask(root, input.enrollmentRegistry, {
+        binding: derived.binding,
+        batch: {
+          registry: batch.registry,
+          capability: batch.capability,
+          binding: input.binding,
+          expected_head: batch.binding.expected_head
+        },
+        now
+      });
+      const recordRaw = readRecord(root, task_id);
+      return { record_revision: recordRaw.revision };
+    },
+    advanceTask: input.advanceTask,
+    projectTask: async (root, taskId) => {
+      const fresh = await project(root, taskId);
+      if (!fresh.claim || fresh.projection.lifecycle !== "active" || fresh.error !== null)
+        return fresh;
+      const { record, revision } = readRecord(root, taskId);
+      if (!record || revision !== fresh.projection.record_revision)
+        throw new Error(`Kernel recovery projection changed for ${taskId}`);
+      return { ...fresh, ...batchQaFailureFacts(record) };
+    },
+    ownsTaskClaim: (taskId) => input.registry.isChildConsumed(input.capability, taskId),
+    validateBatchAuthorization: (request) => request.registry.inspect(request.capability, request.binding)
+  };
+  const port = { ...base, ...input.overrides ?? {} };
+  const overriddenOwnsTaskClaim = port.ownsTaskClaim;
+  return {
+    ...port,
+    ownsTaskClaim: (taskId) => {
+      if (input.resume.isResuming && taskId === readActiveClaimTaskId(input.root)) {
+        return isOwnBatchClaim(input.root, input.resume.existingBatch, taskId, input.resume.batchBranch);
+      }
+      return overriddenOwnsTaskClaim(taskId);
+    }
+  };
 }
 
 // plugins/immune-brain/runtime/claude/kernel_ports.ts
@@ -13721,16 +13753,33 @@ class ClaudeRuntime {
       return batchReason("cancelled_before_execution");
     now = new Date().toISOString();
     const capability = this.batchRegistry.issue(binding, recoveryChildren, now);
-    const basePort = this.createBatchKernelPort(this.batchRegistry, capability, binding);
-    const kernelPort = {
-      ...basePort,
-      ownsTaskClaim: (taskId) => {
-        if (isResuming && taskId === readActiveClaimTaskId(this.cwd)) {
-          return isOwnBatchClaim(this.cwd, existingBatch, taskId, batchBranch);
-        }
-        return basePort.ownsTaskClaim(taskId);
-      }
+    const advanceTask = async (root, taskId) => {
+      const result = await this.coordinator.advance(taskId, { cwd: root });
+      const facts = { diagnostics: result.diagnostics, environment_failure: result.environment_failure, recovery: result.recovery };
+      if (result.state === "completed")
+        return { state: "completed", ...facts };
+      if (result.state === "stopped")
+        return { state: "stopped", ...facts };
+      if (result.state === "rework")
+        return { state: "rework", operation: result.operation, summary: result.summary, ...facts };
+      if (result.state === "review_ready")
+        return { state: "review_ready", operation_id: result.operation_id, ...facts };
+      if (result.state === "review_preparation_failed")
+        return { state: result.state, operation: result.operation, operation_id: result.operation_id, reason: result.reason, ...facts };
+      if (result.state === "blocked")
+        return { state: "blocked", reason: result.reason, ...facts };
+      return { state: "failed", reason: result.reason ?? "advance failed", ...facts };
     };
+    const kernelPort = createBatchKernelPort({
+      root: this.cwd,
+      enrollmentRegistry: this.enrollmentRegistry,
+      registry: this.batchRegistry,
+      capability,
+      binding,
+      advanceTask,
+      resume: { isResuming, existingBatch, batchBranch },
+      overrides: this.batchKernel
+    });
     const report = await startBatch({
       root: this.cwd,
       batch_id: batchId,
@@ -13752,70 +13801,6 @@ class ClaudeRuntime {
       state: "started",
       batch_id: batchId,
       report
-    };
-  }
-  createBatchKernelPort(registry, capability, binding) {
-    const realPort = {
-      enrollTask: async ({ root, task_id, batch }) => {
-        const now = new Date().toISOString();
-        const derived = deriveChildEnrollment(root, batch.registry, {
-          capability: batch.capability,
-          binding,
-          task_id,
-          expected_head: batch.binding.expected_head,
-          now
-        });
-        await enrollTask(root, this.enrollmentRegistry, {
-          binding: derived.binding,
-          batch: {
-            registry: batch.registry,
-            capability: batch.capability,
-            binding,
-            expected_head: batch.binding.expected_head
-          },
-          now
-        });
-        const recordRaw = readTaskRecordRaw(root, task_id);
-        return { record_revision: recordRaw.revision };
-      },
-      advanceTask: async (root, taskId) => {
-        const result = await this.coordinator.advance(taskId, { cwd: root });
-        const facts = { diagnostics: result.diagnostics, environment_failure: result.environment_failure, recovery: result.recovery };
-        if (result.state === "completed")
-          return { state: "completed", ...facts };
-        if (result.state === "stopped")
-          return { state: "stopped", ...facts };
-        if (result.state === "rework")
-          return { state: "rework", operation: result.operation, summary: result.summary, ...facts };
-        if (result.state === "review_ready")
-          return { state: "review_ready", operation_id: result.operation_id, ...facts };
-        if (result.state === "review_preparation_failed")
-          return { state: result.state, operation: result.operation, operation_id: result.operation_id, reason: result.reason, ...facts };
-        if (result.state === "blocked")
-          return { state: "blocked", reason: result.reason, ...facts };
-        return { state: "failed", reason: result.reason ?? "advance failed", ...facts };
-      },
-      projectTask: async (root, taskId) => {
-        const fresh = await projectAssurance(root, taskId, diffSnapshotOf);
-        if (!fresh.claim || fresh.projection.lifecycle !== "active" || fresh.error !== null)
-          return fresh;
-        const { record, revision } = readTaskRecordRaw(root, taskId);
-        if (!record || revision !== fresh.projection.record_revision)
-          throw new Error(`Kernel recovery projection changed for ${taskId}`);
-        return { ...fresh, ...batchQaFailureFacts(record) };
-      },
-      ownsTaskClaim: (taskId) => {
-        return registry.isChildConsumed(capability, taskId);
-      },
-      validateBatchAuthorization: (input) => {
-        return input.registry.inspect(input.capability, input.binding);
-      }
-    };
-    if (!this.batchKernel)
-      return realPort;
-    return {
-      ...realPort,
-      ...this.batchKernel
     };
   }
 }

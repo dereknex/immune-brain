@@ -21,7 +21,10 @@ import {
 	type StartBatchInput,
 	type BatchChildAdvanceResult,
 } from "../plugins/immune-brain/runtime/unattended/batch_runner";
+import type { BatchRunnerGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
+import { createBatchKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
 import type { AssuranceProjectionResult } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
+import type { EnrollmentAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import {
 	projectBatchPreflight,
 	projectBatchDrift,
@@ -30,11 +33,13 @@ import {
 	findResumableBatchSlugForTask,
 } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
 import { BATCH_REASONS, batchReason } from "../plugins/immune-brain/runtime/unattended/batch_reasons";
-import {
-	createBatchAuthorityRegistry,
+import { createBatchAuthorityRegistry,
 	deriveChildEnrollment,
 	computeBatchPlanDigest,
 } from "../plugins/immune-brain/runtime/kernel/batch_authority";
+import { createEnrollmentAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
+import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
+import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 
 const FAR_FUTURE = "2099-01-01T00:00:00.000Z";
 function projectionFacts(): AssuranceProjectionResult["projection"] {
@@ -129,15 +134,16 @@ function input(
 		budget,
 		now: FAR_FUTURE,
 		kernel,
-		git: overrides.git ?? {
+		git: overrides.git ?? ({
 			preflight: () => ({ ok: true, branch: `imm/${overrides.initiative_slug ?? "initiative-slug"}` }),
 			commitChild: kernel.commitChild
-				? (r, t, b, h, ip) => kernel.commitChild!(r, t, b, h, ip)
+				? (root, taskId, batchId, expectedHead, intentPath) =>
+					kernel.commitChild(root, taskId, batchId, expectedHead, intentPath)
 				: async () => ({ commit: "c".padEnd(40, "0") }),
 			lookupBatchCommit: kernel.lookupBatchCommit
-				? (r, t, b, eh) => kernel.lookupBatchCommit!(r, t, b, eh)
+				? (root, taskId, batchId, expectedHead) => kernel.lookupBatchCommit(root, taskId, batchId, expectedHead)
 				: async () => null,
-		},
+		} satisfies BatchRunnerGitPort),
 		...overrides,
 	};
 }
@@ -147,6 +153,8 @@ function scriptedKernel(advances: Record<string, BatchChildAdvanceResult[]>): Ba
 	enrolled: string[];
 	commits: { task_id: string; batch_id: string }[];
 	foreignClaims: Set<string>;
+	commitChild: NonNullable<BatchRunnerGitPort["commitChild"]>;
+	lookupBatchCommit: NonNullable<BatchRunnerGitPort["lookupBatchCommit"]>;
 } {
 	const queue = new Map(Object.entries(advances).map(([k, v]) => [k, [...v]]));
 	return {
@@ -319,6 +327,326 @@ describe("renewed authorization with real enrollment derivation", () => {
 		});
 		}
 	}
+});
+
+// S5/AC1: the one production child Kernel port in runtime/unattended. A Host
+// contributes advanceTask only; enrollment, projection and ownership are shared.
+describe("one production batch child Kernel port", () => {
+	const root = tempRoot();
+
+	/** The batch binding the shared port validates against. */
+	function sharedBinding(planDigest: string = "0".repeat(64), baseHead = "b".repeat(40)) {
+		return {
+			batch_id: "batch-001",
+			initiative_slug: "initiative-slug",
+			plan_digest: planDigest,
+			branch: "main",
+			base_head: baseHead,
+			budget: { max_children: 1, qa_failure_limit: 3 },
+			actor_id: "user",
+			confirmation_ref: "confirm",
+			nonce: "n",
+		};
+	}
+
+	/** One child plan, its registry and the capability covering it. */
+	function sharedPortFixture(deps: Parameters<typeof createBatchKernelPort>[0]["deps"]) {
+		const plan = [child("task-a", "S1")];
+		const registry = createBatchAuthorityRegistry();
+		const planDigest = computeBatchPlanDigest(plan);
+		const binding = sharedBinding(planDigest);
+		const capability = registry.issue(sharedBinding(planDigest), plan, "2026-01-01T00:00:00.000Z");
+		const shared = createBatchKernelPort({
+			root,
+			enrollmentRegistry: createEnrollmentAuthorityRegistry(),
+			registry,
+			capability,
+			binding,
+			deps,
+			advanceTask: async () => ({ state: "completed" }),
+			resume: { isResuming: false, existingBatch: null, batchBranch: "imm/initiative-slug" },
+		});
+		return { registry, capability, binding, shared };
+	}
+
+	/** The port's own seams, recorded so the test asserts what it routed to. */
+	function recordingDeps() {
+		const calls: { enroll: unknown[]; projections: string[] } = { enroll: [], projections: [] };
+		return {
+			calls,
+			deps: {
+				deriveChildEnrollment: () => ({
+					binding: {
+						...sharedBinding(),
+						task_id: "task-a",
+						intent_path: "docs/plans/task-a.intent.json",
+						intent_revision: 1,
+						intent_content_hash: "sha256:intent",
+						preparation_digest: "sha256:preparation",
+					} as never,
+				}),
+				enrollTask: async (
+					_root: string,
+					_registry: EnrollmentAuthorityRegistry,
+					request: { binding: { task_id: string } },
+				) => {
+					calls.enroll.push(request);
+					return { record_revision: "enrolled-revision" };
+				},
+				projectAssurance: async (_root: string, taskId: string): Promise<AssuranceProjectionResult> => {
+					calls.projections.push(taskId);
+					return {
+						contract: "assurance_kernel/assurance_projection/v1",
+						task_id: taskId,
+						error: null,
+						claim: { task_id: taskId, lifecycle_status: "active" },
+						projection: { ...projectionFacts(), lifecycle: "active", record_revision: "port-revision" } as never,
+					};
+				},
+				readTaskRecordRaw: () => ({
+					revision: "port-revision",
+					record: { history: [], findings: [] } as never,
+				}),
+			},
+		};
+	}
+
+	it("AC1: enrolls through the Enrollment entry, projects, and validates the batch binding", async () => {
+		const { calls, deps } = recordingDeps();
+		const { registry, capability, binding, shared } = sharedPortFixture(deps);
+		const batch = { registry, capability, binding: { ...binding, expected_head: "b".repeat(40) } };
+
+		// Positive: enrollment routes through the single Enrollment entry, and
+		// the shared port reports the revision of the record it re-readwards.
+		const enrolled = await shared.enrollTask!({ root, task_id: "task-a", batch });
+		expect(enrolled).toEqual({ record_revision: "port-revision" });
+		expect(calls.enroll).toHaveLength(1);
+		expect((calls.enroll[0] as { binding: { task_id: string } }).binding.task_id).toBe("task-a");
+
+		// Positive: projection for a claimed child carries the shared QA facts.
+		const projected = await shared.projectTask!(root, "task-a");
+		expect(calls.projections).toEqual(["task-a"]);
+		expect(projected.projection.record_revision).toBe("port-revision");
+		expect((projected as { qa_failure_count?: number }).qa_failure_count).toBeDefined();
+
+		// Positive: authorization validation accepts the issued capability bound
+		// to exactly this batch_id, plan_digest and base_head.
+		expect(shared.validateBatchAuthorization!({
+			registry: registry as never,
+			capability,
+			binding: {
+				batch_id: binding.batch_id, plan_digest: binding.plan_digest, base_head: binding.base_head,
+				initiative_slug: binding.initiative_slug, budget: binding.budget,
+			},
+		})).toMatchObject({ batch_id: "batch-001", plan_digest: binding.plan_digest });
+
+		// Negative: a fabricated capability and a drifted binding are both refused.
+		expect(() => shared.validateBatchAuthorization!({
+			registry: registry as never, capability: {} as never,
+			binding: {
+				batch_id: binding.batch_id, plan_digest: binding.plan_digest, base_head: binding.base_head,
+				initiative_slug: binding.initiative_slug, budget: binding.budget,
+			},
+		})).toThrow();
+		expect(() => shared.validateBatchAuthorization!({
+			registry: registry as never, capability,
+			binding: {
+				batch_id: binding.batch_id, plan_digest: binding.plan_digest, base_head: "c".repeat(40),
+				initiative_slug: binding.initiative_slug, budget: binding.budget,
+			},
+		})).toThrow();
+
+		// Positive/negative: ownership follows registry consumption, not a stub.
+		expect(shared.ownsTaskClaim("task-a")).toBe(false);
+		registry.consumeChild(capability, binding, "task-a");
+		expect(shared.ownsTaskClaim("task-a")).toBe(true);
+		expect(shared.ownsTaskClaim("task-foreign")).toBe(false);
+
+		// D5: the shared port owns every Kernel-facing member, nothing git-shaped.
+		expect(Object.keys(shared).sort()).toEqual([
+			"advanceTask", "enrollTask", "ownsTaskClaim", "projectTask", "validateBatchAuthorization",
+		]);
+	});
+
+	it("AC1: a changed recovery projection is refused", async () => {
+		const { deps } = recordingDeps();
+		// The recovery path re-reads the committed record and compares it with
+		// the projection it just took; a revision that moved under it means the
+		// projection is stale, so recovery cannot trust it.
+		deps.readTaskRecordRaw = () => ({ revision: "drifted-revision", record: null });
+		const { shared } = sharedPortFixture(deps);
+		await expect(shared.projectTask!(root, "task-a")).rejects.toThrow(
+			"Kernel recovery projection changed for task-a",
+		);
+	});
+
+	it("AC1: resume re-verifies the CURRENT claim of the same Batch", async () => {
+		const resumeRoot = tempRoot();
+		try {
+			const git = (...args: string[]) => execFileSync("git", args, { cwd: resumeRoot, encoding: "utf8", env: {
+				...process.env, GIT_AUTHOR_NAME: "test", GIT_AUTHOR_EMAIL: "test@example.test",
+				GIT_COMMITTER_NAME: "test", GIT_COMMITTER_EMAIL: "test@example.test",
+			} }).trim();
+			git("init", "-q");
+			git("config", "core.hooksPath", "/dev/null");
+			mkdirSync(join(resumeRoot, "docs/plans"), { recursive: true });
+			writeFileSync(join(resumeRoot, "docs/plans/seed.json"), "{}");
+			git("add", "docs/plans"); git("commit", "-qm", "seed");
+			const batchBranch = "imm/initiative-slug";
+			git("checkout", "-qb", batchBranch);
+			const base = git("rev-parse", "HEAD");
+			const claimAt = "2026-08-12T00:00:00.000Z";
+			const intent = {
+				contract: "assurance_kernel/task_intent/v1", task_id: "task-a", goal: "resume fixture",
+				acceptance: [{ id: "A1", assertion: "a1", verification: "bun test tests/x.test.ts" }],
+				scope_hint: ["docs/plans"], risk: "routine" as const, revision: 1, owner: "user",
+			};
+			seedKernelRunForTest(resumeRoot, {
+				task_id: "task-a",
+				enrollment_event_id: `enroll-task-a-${claimAt}`, created_at: claimAt, updated_at: claimAt,
+				record: {
+					contract: "assurance_kernel/task_record/v4", task_id: "task-a",
+					intent_snapshot: intent,
+					intent_ref: {
+						path: "docs/plans/task-a.intent.json",
+						content_hash: canonicalIntentHash(parseTaskIntentV1(intent)),
+					},
+					lifecycle: "active", artifact_state: "active", baseline: `sha256:${"a".repeat(64)}`,
+					git_base_head: base, attestations: [], findings: [], history: [],
+				},
+			});
+			const plan = [child("task-a", "S1")];
+			const registry = createBatchAuthorityRegistry();
+			const planDigest = computeBatchPlanDigest(plan);
+			const binding = sharedBinding(planDigest, base);
+			const capability = registry.issue(sharedBinding(planDigest, base), plan, "2026-01-01T00:00:00.000Z");
+			const existingBatch = {
+				contract: "assurance_kernel/batch_run_state/v1", batch_id: "batch-001",
+				initiative_slug: "initiative-slug", plan_digest: planDigest, base_head: base,
+				branch: batchBranch, confirmation_time: "2026-01-01T00:00:00.000Z",
+				budget: { max_children: 1, qa_failure_limit: 3 }, batch_state: "needs_human",
+				children: [{ task_id: "task-a", slice_id: "S1", state: "needs_human" }],
+				consecutive_qa_failures: 0, commits: [], created_at: "2026-01-01T00:00:00.000Z",
+				updated_at: "2026-09-01T00:00:00.000Z",
+			} as unknown as BatchRunStateRecord;
+			const { deps } = recordingDeps();
+			const resumePort = (isResuming: boolean) => createBatchKernelPort({
+				root: resumeRoot,
+				enrollmentRegistry: createEnrollmentAuthorityRegistry(),
+				registry, capability, binding, deps,
+				advanceTask: async () => ({ state: "completed" }),
+				resume: { isResuming, existingBatch, batchBranch },
+			});
+			// Bound: a resume re-verifies the CURRENT claim identity synchronously,
+			// so a claim still held by this Batch keeps ownership even though the
+			// registry-derived port has not consumed the slot yet.
+			expect(registry.consumedChildren(capability)).toEqual([]);
+			expect(resumePort(true).ownsTaskClaim("task-a")).toBe(true);
+			expect(resumePort(false).ownsTaskClaim("task-a")).toBe(false);
+		} finally { rmSync(resumeRoot, { recursive: true, force: true }); }
+	});
+});
+
+// S5/AC2: git operations go through BatchRunnerGitPort alone. The runner has no
+// git fallback chain over optional Kernel-port members.
+describe("one batch git seam", () => {
+	/** One real git repository root with a committed HEAD and no branch yet. */
+	function gitRoot(baseHead: { value: string }): string {
+		const root = tempRoot();
+		const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8", env: {
+			...process.env, GIT_AUTHOR_NAME: "test", GIT_AUTHOR_EMAIL: "test@example.test",
+			GIT_COMMITTER_NAME: "test", GIT_COMMITTER_EMAIL: "test@example.test",
+		} }).trim();
+		git("init", "-q");
+		git("config", "core.hooksPath", "/dev/null");
+		mkdirSync(join(root, "docs/plans"), { recursive: true });
+		writeFileSync(join(root, "docs/plans/seed.json"), "{}");
+		git("add", "docs/plans"); git("commit", "-qm", "seed");
+		baseHead.value = git("rev-parse", "HEAD");
+		return root;
+	}
+
+	it("AC2: with no git port injected the runner uses createDefaultBatchGitPort", async () => {
+		const root = tempRoot();
+		try {
+			const plan = [child("task-a", "S1")];
+			// No `git` member: the runner must fall back to the default adapter,
+			// whose preflight rejects a root that is not a Git repository. A Host
+			// KERNEL-only override cannot supply git, so this exercises the
+			// default path with no seam supplied at all.
+			const request = input(root, plan, scriptedKernel({ "task-a": [{ state: "completed" }] }));
+			const { git: _omit, ...noGitSeam } = request;
+			const report = await startBatch(noGitSeam as never);
+			expect(report.batch_state).toBe("rejected");
+			expect(report.reason).toBe("not_a_git_repository");
+			expect(report.children.every((c) => c.state === "pending")).toBe(true);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
+	it("AC2: an injected BatchRunnerGitPort fully replaces the default and no default git operation runs", async () => {
+		const root = tempRoot();
+		try {
+			const plan = [child("task-a", "S1")];
+			const kernel = scriptedKernel({ "task-a": [{ state: "completed" }] });
+			const seen: string[] = [];
+			// One injected port: every git operation the runner needs reaches it.
+			// The root has no Git repository at all, so any default-adapter git
+			// operation would either fail the run or leave its durable evidence.
+			const committed = new Map<string, string>();
+			const request = input(root, plan, kernel, {
+				git: {
+					preflight: (input) => {
+						seen.push(`preflight:${input.initiative_slug}`);
+						return { ok: true as const, branch: `imm/${input.initiative_slug}` };
+					},
+					commitChild: async (_root, taskId, batchId) => {
+						seen.push(`commit:${taskId}`);
+						committed.set(taskId, "f".repeat(40));
+						return { commit: committed.get(taskId)! };
+					},
+					lookupBatchCommit: async (_root, taskId, batchId) => {
+						seen.push(`lookup:${taskId}`);
+						const commit = committed.get(taskId);
+						// Before the commit exists the runner must create it, never
+						// adopt one; afterwards it must find its own evidence.
+						return commit ? { commit } : null;
+					},
+				},
+			});
+			const report = await startBatch(request);
+			expect(report.batch_state).toBe("completed");
+			// Every git operation the runner needs reached the injected port, and
+			// nothing else touched the repository: the recovery lookup, the
+			// mandatory preflight, the commit and its post-commit verification.
+			expect(seen).toEqual([
+				"preflight:initiative-slug", "lookup:task-a", "commit:task-a", "lookup:task-a",
+			]);
+			// No default git operation ran: the default adapter cannot act without
+			// a repository, and it persists durable commit evidence when it does.
+			expect(existsSync(join(root, ".git"))).toBe(false);
+			expect(existsSync(join(root, ".imm/state/batches/commits"))).toBe(false);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
+	it("AC2: BatchRunnerKernelPort overrides still apply to the remaining members", async () => {
+		const root = tempRoot();
+		try {
+			const plan = [child("task-a", "S1")];
+			const kernel = scriptedKernel({ "task-a": [{ state: "completed" }] });
+			// The overrides object is a Partial<KernelPort>; supplying only
+			// advanceTask keeps the shared production members for the rest.
+			const request = input(root, plan, {
+				...kernel,
+				advanceTask: async (_root, taskId) => {
+					expect(taskId).toBe("task-a");
+					return { state: "completed" };
+				},
+			});
+			const report = await startBatch(request);
+			expect(report.batch_state).toBe("completed");
+			expect(kernel.enrolled).toEqual(["task-a"]);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
 });
 
 describe("single-claim recovery matrix", () => {

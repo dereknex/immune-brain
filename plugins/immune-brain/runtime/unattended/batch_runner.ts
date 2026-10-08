@@ -24,11 +24,8 @@ export function batchQaFailureFacts(record: Pick<TaskRecord, "history"> & { find
 import type { BatchPlanChild } from "./types";
 import { ownUnpersistedBatchHead, takeReconfirmation } from "./batch_reconfirmation";
 import {
+	createDefaultBatchGitPort,
 	type BatchRunnerGitPort,
-	type BatchGitPreflightResult,
-	runBatchGitPreflight,
-	commitBatchChild,
-	lookupBatchCommit,
 } from "./batch_git";
 import { classifyBatchLineage, expectedBatchHead } from "./batch_preflight";
 import {
@@ -43,7 +40,9 @@ import {
 	writeBatchRunReport,
 } from "./batch_state";
 
-/** Kernel-facing ports the driver needs. Host adapters supply these. */
+/** Kernel-facing ports the driver needs. Host adapters supply these. Git
+ * operations are not Kernel-port members: the runner drives them through
+ * BatchRunnerGitPort alone (D5 of docs/specs/deepen-authority-seams.spec.md). */
 export interface BatchRunnerKernelPort {
 	/** Enroll one child through the batch-derived capability. */
 	enrollTask(input: {
@@ -57,31 +56,6 @@ export interface BatchRunnerKernelPort {
 	}): Promise<{ record_revision: string }>;
 	/** Drive one enrolled child toward its own Kernel terminal settlement. */
 	advanceTask(root: string, taskId: string): Promise<BatchChildAdvanceResult>;
-	/** Scope-bound commit after Kernel reports a child done. */
-	commitChild?(
-		root: string,
-		taskId: string,
-		batchId: string,
-		head: string,
-		branch?: string,
-		intentPath?: string,
-	): Promise<{ commit: string }>;
-	/** review-3(5th round): read the already-created batch commit for a child,
-	 * or null when none exists. Lets crash recovery adopt an existing commit
-	 * instead of replaying the commitChild mutation. */
-	lookupBatchCommit?(
-		root: string,
-		taskId: string,
-		batchId: string,
-		expectedHead?: string,
-		branch?: string,
-	): Promise<{ commit: string } | null>;
-	/** Optional Git preflight check. */
-	gitPreflight?(input: {
-		root: string;
-		initiative_slug: string;
-		base_head: string;
-	}): Promise<BatchGitPreflightResult> | BatchGitPreflightResult;
 	/** review-2(5th round): read-only claim projection for enrollment
 	 * reconciliation after an interruption between enrollTask and its state
 	 * persistence. Uses the real AssuranceProjectionResult contract; batch
@@ -127,6 +101,12 @@ export interface StartBatchInput {
 	now: string;
 	kernel: BatchRunnerKernelPort;
 	git?: BatchRunnerGitPort;
+}
+
+/** One git seam: the injected BatchRunnerGitPort, or the default adapter over
+ * the real repository operations when the Host supplies none. */
+function batchGitPortOf(input: StartBatchInput): BatchRunnerGitPort {
+	return input.git ?? createDefaultBatchGitPort();
 }
 
 export type { BatchRunReport } from "./batch_state";
@@ -340,16 +320,10 @@ async function validatePersistedRun(input: StartBatchInput, record: BatchRunStat
 			if (child.commit !== null) throw new Error("uncommitted batch child has a commit");
 			continue;
 		}
-		const evidence = input.git?.lookupBatchCommit
-			? await input.git.lookupBatchCommit(input.root, child.task_id, record.batch_id, undefined, record.branch)
-			: input.kernel.lookupBatchCommit
-				? await input.kernel.lookupBatchCommit(input.root, child.task_id, record.batch_id, undefined, record.branch)
-				: await lookupBatchCommit({
-					root: input.root,
-					taskId: child.task_id,
-					batchId: record.batch_id,
-					branch: record.branch,
-				});
+		const git = batchGitPortOf(input);
+		const evidence = await git.lookupBatchCommit(
+			input.root, child.task_id, record.batch_id, undefined, record.branch,
+		);
 		if (!evidence || evidence.commit !== child.commit) {
 			// Distinguish an unreachable recorded commit (external HEAD regression)
 			// from a fabricated record: reachability is only checkable in a real repo.
@@ -620,23 +594,11 @@ async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport>
 		}
 
 		// Mandatory batch branch preflight: run before any child is enrolled.
-		const preflightResult = input.git?.preflight
-			? await input.git.preflight({
-				root: input.root,
-				initiative_slug: input.initiative_slug,
-				base_head: input.base_head,
-			})
-			: input.kernel.gitPreflight
-				? await input.kernel.gitPreflight({
-					root: input.root,
-					initiative_slug: input.initiative_slug,
-					base_head: input.base_head,
-				})
-				: runBatchGitPreflight({
-					root: input.root,
-					initiative_slug: input.initiative_slug,
-					base_head: input.base_head,
-				});
+		const preflightResult = await batchGitPortOf(input).preflight({
+			root: input.root,
+			initiative_slug: input.initiative_slug,
+			base_head: input.base_head,
+		});
 
 		if (!preflightResult.ok) {
 			const rejected = prepareBatchRunState({ ...input, now: input.now });
@@ -1027,23 +989,9 @@ async function driveInterruptedChild(
 			// review-1(6th round): a lookup failure must fail closed, not fall
 			// through to commitChild, which could replay an existing commit.
 			try {
-				existing = input.git?.lookupBatchCommit
-					? await input.git.lookupBatchCommit(input.root, child.task_id, input.batch_id, head, record.branch)
-					: input.kernel.lookupBatchCommit
-						? await input.kernel.lookupBatchCommit(
-							input.root,
-							child.task_id,
-							input.batch_id,
-							head,
-							record.branch,
-						)
-						: await lookupBatchCommit({
-							root: input.root,
-							taskId: child.task_id,
-							batchId: input.batch_id,
-							expectedHead: head,
-							branch: record.branch,
-						});
+				existing = await batchGitPortOf(input).lookupBatchCommit(
+					input.root, child.task_id, input.batch_id, head, record.branch,
+				);
 			} catch (error: unknown) {
 				const message =
 					error instanceof Error ? error.message : String(error);
@@ -1075,22 +1023,10 @@ async function driveInterruptedChild(
 			}
 			const planChild = input.children.find((c) => c.task_id === child.task_id);
 			const intentPath = planChild?.intent_path ?? undefined;
-			const doCommit = async () => {
-				if (input.git?.commitChild) {
-					return input.git.commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath);
-				}
-				if (input.kernel.commitChild) {
-					return input.kernel.commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath);
-				}
-				return commitBatchChild({
-					root: input.root,
-					taskId: child.task_id,
-					batchId: input.batch_id,
-					expectedHead: head,
-					branch: record.branch,
-					intentPath,
-				});
-			};
+			const doCommit = async () =>
+				batchGitPortOf(input).commitChild(
+					input.root, child.task_id, input.batch_id, head, record.branch, intentPath,
+				);
 			if (existing && !record.commits.length && existsSync(join(input.root, ".git")) && !ownUnpersistedBatchHead(input.root, record, existing.commit))
 				throw new Error("first unpersisted batch commit provenance is invalid");
 			const adopted =

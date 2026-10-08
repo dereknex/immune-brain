@@ -37,6 +37,7 @@ import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canar
 import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { withKernelTransaction } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
+import { createDefaultBatchGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 
 // The Kernel QA delivery workspace is a dependency-free checkout of the frozen
@@ -314,7 +315,13 @@ function releaseWorkspaceForTest(root: string): void {
 // Every test here drives a real host runtime and temporary Git repositories, so
 // the per-test bound must clear bun's 5s default even under the Kernel QA
 // minimal environment (which is slower than an interactive session).
-setDefaultTimeout(60_000);
+// Deterministic QA runs these files in the Kernel's minimal environment (no
+// node_modules, HOME/TMPDIR reset), which is roughly 1.5x slower than an
+// interactive session. The three end-to-end integration tests below drive real
+// QA and Review through the shared coordinator and already exceed 25s here, so
+// 60s leaves no headroom for a slower machine and turns a slow pass into a
+// timeout failure.
+setDefaultTimeout(120_000);
 
 const TASK = "dual-host-task";
 const ROOT = "/tmp/dual-host-assurance";
@@ -988,22 +995,25 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => claudeFixture.observation,
 				batchKernel: {
-					enrollTask: async () => ({ record_revision: "r" }),
-					advanceTask: async () => ({ state: "completed" }),
-					commitChild: async () => {
+				enrollTask: async () => ({ record_revision: "r" }),
+				advanceTask: async () => ({ state: "completed" }),
+				validateBatchAuthorization: (input) => {
+						const validated = input.registry.inspect(input.capability, input.binding as never);
+						claudeBinding = validated;
+						return validated;
+					},
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
+				commitChild: async () => {
 						writeFileSync(join(claudeFixture.root, "dummy.txt"), "c");
 						execFileSync("git", ["add", "dummy.txt"], { cwd: claudeFixture.root });
 						execFileSync("git", ["commit", "-q", "-m", "c commit"], { cwd: claudeFixture.root });
 						const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: claudeFixture.root, encoding: "utf8" }).trim();
 						return { commit };
 					},
-					lookupBatchCommit: async () => null,
-					validateBatchAuthorization: (input) => {
-						const validated = input.registry.inspect(input.capability, input.binding as never);
-						claudeBinding = validated;
-						return validated;
-					},
-				},
+				lookupBatchCommit: async () => null,
+			},
 				requestConfirmation: async () => ({ decision: "accept", requestId: "req-c-acc" }),
 			});
 			claudeRuntime.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
@@ -1021,22 +1031,25 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => piFixture.observation,
 				batchKernel: {
-					enrollTask: async () => ({ record_revision: "r" }),
-					advanceTask: async () => ({ state: "completed" }),
-					commitChild: async () => {
+				enrollTask: async () => ({ record_revision: "r" }),
+				advanceTask: async () => ({ state: "completed" }),
+				validateBatchAuthorization: (input) => {
+						const validated = input.registry.inspect(input.capability, input.binding as never);
+						piBinding = validated;
+						return validated;
+					},
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
+				commitChild: async () => {
 						writeFileSync(join(piFixture.root, "dummy.txt"), "p");
 						execFileSync("git", ["add", "dummy.txt"], { cwd: piFixture.root });
 						execFileSync("git", ["commit", "-q", "-m", "p commit"], { cwd: piFixture.root });
 						const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: piFixture.root, encoding: "utf8" }).trim();
 						return { commit };
 					},
-					lookupBatchCommit: async () => null,
-					validateBatchAuthorization: (input) => {
-						const validated = input.registry.inspect(input.capability, input.binding as never);
-						piBinding = validated;
-						return validated;
-					},
-				},
+				lookupBatchCommit: async () => null,
+			},
 				confirmBatch: async () => "accept",
 			});
 
@@ -1272,13 +1285,16 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => cf.observation,
 				batchKernel: {
-					advanceTask: async () => {
+				advanceTask: async () => {
 						cStep++;
 						if (cStep === 1) return { state: "review_ready", operation_id: "c-op", agent_params: { prompt: "review" } as never };
 						releaseWorkspaceForTest(cf.root);
 						return { state: "completed" };
 					},
-					commitChild: async () => {
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
+				commitChild: async () => {
 						writeFileSync(join(cf.root, "dummy.txt"), `${Date.now()}`);
 						execFileSync("git", ["add", "dummy.txt"], { cwd: cf.root });
 						execFileSync("git", ["commit", "-q", "-m", "c commit"], { cwd: cf.root });
@@ -1286,8 +1302,8 @@ describe("dual-host assurance conformance", () => {
 						cLastCommit = commit;
 						return { commit };
 					},
-					lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
-				},
+				lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
+			},
 				requestConfirmation: async () => {
 					cGates++;
 					return { decision: "accept", requestId: "r-c1" };
@@ -1304,12 +1320,15 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => pf.observation,
 				batchKernel: {
-					advanceTask: async () => {
+				advanceTask: async () => {
 						pStep++;
 						if (pStep === 1) return { state: "review_ready", operation_id: "p-op", agent_params: { prompt: "review" } as never };
 						return { state: "completed" };
 					},
-					commitChild: async () => {
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
+				commitChild: async () => {
 						writeFileSync(join(pf.root, "dummy.txt"), `${Date.now()}`);
 						execFileSync("git", ["add", "dummy.txt"], { cwd: pf.root });
 						execFileSync("git", ["commit", "-q", "-m", "p commit"], { cwd: pf.root });
@@ -1317,8 +1336,8 @@ describe("dual-host assurance conformance", () => {
 						pLastCommit = commit;
 						return { commit };
 					},
-					lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
-				},
+				lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
+			},
 				confirmBatch: async () => {
 					pGates++;
 					return "accept";
@@ -1344,11 +1363,14 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => pf.observation,
 				batchKernel: {
-					advanceTask: async () => {
+				advanceTask: async () => {
 						releaseWorkspaceForTest(pf.root);
 						return { state: "completed" };
 					},
-					commitChild: async () => {
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
+				commitChild: async () => {
 						writeFileSync(join(pf.root, "dummy.txt"), `${Date.now()}`);
 						execFileSync("git", ["add", "dummy.txt"], { cwd: pf.root });
 						execFileSync("git", ["commit", "-q", "-m", "p commit 2"], { cwd: pf.root });
@@ -1356,8 +1378,8 @@ describe("dual-host assurance conformance", () => {
 						pLastCommit = commit;
 						return { commit };
 					},
-					lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
-				},
+				lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
+			},
 				confirmBatch: async () => {
 					pGates++;
 					return "accept";
@@ -1388,12 +1410,15 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => cf.observation,
 				batchKernel: {
-					advanceTask: async () => {
+				advanceTask: async () => {
 						cStep++;
 						if (cStep === 1) return { state: "review_ready", operation_id: "c-op", agent_params: { prompt: "review" } as never };
 						return { state: "completed" };
 					},
-					commitChild: async () => {
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
+				commitChild: async () => {
 						writeFileSync(join(cf.root, "dummy.txt"), `${Date.now()}`);
 						execFileSync("git", ["add", "dummy.txt"], { cwd: cf.root });
 						execFileSync("git", ["commit", "-q", "-m", "c commit"], { cwd: cf.root });
@@ -1401,8 +1426,8 @@ describe("dual-host assurance conformance", () => {
 						cLastCommit = commit;
 						return { commit };
 					},
-					lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
-				},
+				lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
+			},
 				requestConfirmation: async () => ({ decision: "accept", requestId: "r-scope-c1" }),
 			});
 			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
@@ -1416,12 +1441,15 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => pf.observation,
 				batchKernel: {
-					advanceTask: async () => {
+				advanceTask: async () => {
 						pStep++;
 						if (pStep === 1) return { state: "review_ready", operation_id: "p-op", agent_params: { prompt: "review" } as never };
 						return { state: "completed" };
 					},
-					commitChild: async () => {
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
+				commitChild: async () => {
 						writeFileSync(join(pf.root, "dummy.txt"), `${Date.now()}`);
 						execFileSync("git", ["add", "dummy.txt"], { cwd: pf.root });
 						execFileSync("git", ["commit", "-q", "-m", "p commit"], { cwd: pf.root });
@@ -1429,8 +1457,8 @@ describe("dual-host assurance conformance", () => {
 						pLastCommit = commit;
 						return { commit };
 					},
-					lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
-				},
+				lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
+			},
 				confirmBatch: async () => "accept",
 			});
 
@@ -1486,12 +1514,15 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => cf.observation,
 				batchKernel: {
-					advanceTask: async () => {
+				advanceTask: async () => {
 						cStep++;
 						if (cStep === 1) return { state: "review_ready", operation_id: "c-op", agent_params: { prompt: "review" } as never };
 						return { state: "completed" };
 					},
-					commitChild: async () => {
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
+				commitChild: async () => {
 						writeFileSync(join(cf.root, "dummy.txt"), `${Date.now()}`);
 						execFileSync("git", ["add", "dummy.txt"], { cwd: cf.root });
 						execFileSync("git", ["commit", "-q", "-m", "c commit"], { cwd: cf.root });
@@ -1499,8 +1530,8 @@ describe("dual-host assurance conformance", () => {
 						cLastCommit = commit;
 						return { commit };
 					},
-					lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
-				},
+				lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
+			},
 				requestConfirmation: async () => ({ decision: "accept", requestId: "r-dirty-c1" }),
 			});
 			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
@@ -1514,12 +1545,15 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => pf.observation,
 				batchKernel: {
-					advanceTask: async () => {
+				advanceTask: async () => {
 						pStep++;
 						if (pStep === 1) return { state: "review_ready", operation_id: "p-op", agent_params: { prompt: "review" } as never };
 						return { state: "completed" };
 					},
-					commitChild: async () => {
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
+				commitChild: async () => {
 						writeFileSync(join(pf.root, "dummy.txt"), `${Date.now()}`);
 						execFileSync("git", ["add", "dummy.txt"], { cwd: pf.root });
 						execFileSync("git", ["commit", "-q", "-m", "p commit"], { cwd: pf.root });
@@ -1527,8 +1561,8 @@ describe("dual-host assurance conformance", () => {
 						pLastCommit = commit;
 						return { commit };
 					},
-					lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
-				},
+				lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
+			},
 				confirmBatch: async () => "accept",
 			});
 
@@ -1578,7 +1612,7 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => cf.observation,
 				batchKernel: {
-					advanceTask: async () => {
+				advanceTask: async () => {
 						cStep++;
 						if (cStep === 1) return { state: "review_ready", operation_id: "c-op", agent_params: { prompt: "review" } as never };
 						releaseWorkspaceForTest(cf.root);
@@ -1586,7 +1620,10 @@ describe("dual-host assurance conformance", () => {
 						if (existsSync(claimPath)) rmSync(claimPath, { force: true });
 						return { state: "completed" };
 					},
-					commitChild: async () => {
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
+				commitChild: async () => {
 						writeFileSync(join(cf.root, "dummy.txt"), `${Date.now()}`);
 						execFileSync("git", ["add", "dummy.txt"], { cwd: cf.root });
 						execFileSync("git", ["commit", "-q", "-m", "c commit"], { cwd: cf.root });
@@ -1594,8 +1631,8 @@ describe("dual-host assurance conformance", () => {
 						cLastCommit = commit;
 						return { commit };
 					},
-					lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
-				},
+				lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
+			},
 				requestConfirmation: async () => ({ decision: "accept", requestId: "r-ar-c1" }),
 			});
 			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
@@ -1609,7 +1646,7 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => pf.observation,
 				batchKernel: {
-					advanceTask: async () => {
+				advanceTask: async () => {
 						pStep++;
 						if (pStep === 1) return { state: "review_ready", operation_id: "p-op", agent_params: { prompt: "review" } as never };
 						releaseWorkspaceForTest(pf.root);
@@ -1617,7 +1654,10 @@ describe("dual-host assurance conformance", () => {
 						if (existsSync(claimPath)) rmSync(claimPath, { force: true });
 						return { state: "completed" };
 					},
-					commitChild: async () => {
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
+				commitChild: async () => {
 						writeFileSync(join(pf.root, "dummy.txt"), `${Date.now()}`);
 						execFileSync("git", ["add", "dummy.txt"], { cwd: pf.root });
 						execFileSync("git", ["commit", "-q", "-m", "p commit"], { cwd: pf.root });
@@ -1625,8 +1665,8 @@ describe("dual-host assurance conformance", () => {
 						pLastCommit = commit;
 						return { commit };
 					},
-					lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
-				},
+				lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
+			},
 				confirmBatch: async () => "accept",
 			});
 
@@ -1652,11 +1692,14 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => pf.observation,
 				batchKernel: {
-					advanceTask: async () => {
+				advanceTask: async () => {
 						releaseWorkspaceForTest(pf.root);
 						return { state: "completed" };
 					},
-					commitChild: async () => {
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
+				commitChild: async () => {
 						writeFileSync(join(pf.root, "dummy.txt"), `${Date.now()}`);
 						execFileSync("git", ["add", "dummy.txt"], { cwd: pf.root });
 						execFileSync("git", ["commit", "-q", "-m", "p commit 2"], { cwd: pf.root });
@@ -1664,8 +1707,8 @@ describe("dual-host assurance conformance", () => {
 						pLastCommit = commit;
 						return { commit };
 					},
-					lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
-				},
+				lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
+			},
 				confirmBatch: async () => "accept",
 			});
 
@@ -1689,13 +1732,16 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => cf.observation,
 				batchKernel: {
-					advanceTask: async () => {
+				advanceTask: async () => {
 						cStep++;
 						if (cStep === 1) return { state: "review_ready", operation_id: "c-op", agent_params: { prompt: "review" } as never };
 						releaseWorkspaceForTest(cf.root);
 						return { state: "completed" };
 					},
-					commitChild: async () => {
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
+				commitChild: async () => {
 						writeFileSync(join(cf.root, "dummy.txt"), `${Date.now()}`);
 						execFileSync("git", ["add", "dummy.txt"], { cwd: cf.root });
 						execFileSync("git", ["commit", "-q", "-m", "c commit"], { cwd: cf.root });
@@ -1703,8 +1749,8 @@ describe("dual-host assurance conformance", () => {
 						cLastCommit = commit;
 						return { commit };
 					},
-					lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
-				},
+				lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
+			},
 				requestConfirmation: async () => ({ decision: "accept", requestId: "r-di1" }),
 			});
 			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
@@ -1718,13 +1764,16 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => pf.observation,
 				batchKernel: {
-					advanceTask: async () => {
+				advanceTask: async () => {
 						pStep++;
 						if (pStep === 1) return { state: "review_ready", operation_id: "p-op", agent_params: { prompt: "review" } as never };
 						releaseWorkspaceForTest(pf.root);
 						return { state: "completed" };
 					},
-					commitChild: async () => {
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
+				commitChild: async () => {
 						writeFileSync(join(pf.root, "dummy.txt"), `${Date.now()}`);
 						execFileSync("git", ["add", "dummy.txt"], { cwd: pf.root });
 						execFileSync("git", ["commit", "-q", "-m", "p commit"], { cwd: pf.root });
@@ -1732,8 +1781,8 @@ describe("dual-host assurance conformance", () => {
 						pLastCommit = commit;
 						return { commit };
 					},
-					lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
-				},
+				lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
+			},
 				confirmBatch: async () => "accept",
 			});
 
@@ -1754,11 +1803,14 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => pf.observation,
 				batchKernel: {
-					advanceTask: async () => {
+				advanceTask: async () => {
 						releaseWorkspaceForTest(pf.root);
 						return { state: "completed" };
 					},
-					commitChild: async () => {
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
+				commitChild: async () => {
 						writeFileSync(join(pf.root, "dummy.txt"), `${Date.now()}`);
 						execFileSync("git", ["add", "dummy.txt"], { cwd: pf.root });
 						execFileSync("git", ["commit", "-q", "-m", "p commit 2"], { cwd: pf.root });
@@ -1766,8 +1818,8 @@ describe("dual-host assurance conformance", () => {
 						pLastCommit = commit;
 						return { commit };
 					},
-					lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
-				},
+				lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
+			},
 				confirmBatch: async () => "accept",
 			});
 
@@ -1791,12 +1843,15 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => cf.observation,
 				batchKernel: {
-					advanceTask: async () => {
+				advanceTask: async () => {
 						cStep++;
 						if (cStep === 1) return { state: "review_ready", operation_id: "c-op", agent_params: { prompt: "review" } as never };
 						return { state: "completed" };
 					},
-					commitChild: async () => {
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
+				commitChild: async () => {
 						writeFileSync(join(cf.root, "dummy.txt"), `${Date.now()}`);
 						execFileSync("git", ["add", "dummy.txt"], { cwd: cf.root });
 						execFileSync("git", ["commit", "-q", "-m", "c commit"], { cwd: cf.root });
@@ -1804,8 +1859,8 @@ describe("dual-host assurance conformance", () => {
 						cLastCommit = commit;
 						return { commit };
 					},
-					lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
-				},
+				lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
+			},
 				requestConfirmation: async () => ({ decision: "accept", requestId: "r-sw-c1" }),
 			});
 			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
@@ -1819,12 +1874,15 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => pf.observation,
 				batchKernel: {
-					advanceTask: async () => {
+				advanceTask: async () => {
 						pStep++;
 						if (pStep === 1) return { state: "review_ready", operation_id: "p-op", agent_params: { prompt: "review" } as never };
 						return { state: "completed" };
 					},
-					commitChild: async () => {
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
+				commitChild: async () => {
 						writeFileSync(join(pf.root, "dummy.txt"), `${Date.now()}`);
 						execFileSync("git", ["add", "dummy.txt"], { cwd: pf.root });
 						execFileSync("git", ["commit", "-q", "-m", "p commit"], { cwd: pf.root });
@@ -1832,8 +1890,8 @@ describe("dual-host assurance conformance", () => {
 						pLastCommit = commit;
 						return { commit };
 					},
-					lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
-				},
+				lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
+			},
 				confirmBatch: async () => "accept",
 			});
 
@@ -1925,12 +1983,15 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => cf.observation,
 				batchKernel: {
-					advanceTask: async () => {
+				advanceTask: async () => {
 						cStep++;
 						if (cStep === 1) return { state: "review_ready", operation_id: "c-op", agent_params: { prompt: "review" } as never };
 						return { state: "completed" };
 					},
-					commitChild: async () => {
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
+				commitChild: async () => {
 						writeFileSync(join(cf.root, "dummy.txt"), `${Date.now()}`);
 						execFileSync("git", ["add", "dummy.txt"], { cwd: cf.root });
 						execFileSync("git", ["commit", "-q", "-m", "c commit"], { cwd: cf.root });
@@ -1938,8 +1999,8 @@ describe("dual-host assurance conformance", () => {
 						cLastCommit = commit;
 						return { commit };
 					},
-					lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
-				},
+				lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
+			},
 				requestConfirmation: async () => ({ decision: "accept", requestId: "r-rn-c1" }),
 			});
 			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
@@ -1953,12 +2014,15 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => pf.observation,
 				batchKernel: {
-					advanceTask: async () => {
+				advanceTask: async () => {
 						pStep++;
 						if (pStep === 1) return { state: "review_ready", operation_id: "p-op", agent_params: { prompt: "review" } as never };
 						return { state: "completed" };
 					},
-					commitChild: async () => {
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
+				commitChild: async () => {
 						writeFileSync(join(pf.root, "dummy.txt"), `${Date.now()}`);
 						execFileSync("git", ["add", "dummy.txt"], { cwd: pf.root });
 						execFileSync("git", ["commit", "-q", "-m", "p commit"], { cwd: pf.root });
@@ -1966,8 +2030,8 @@ describe("dual-host assurance conformance", () => {
 						pLastCommit = commit;
 						return { commit };
 					},
-					lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
-				},
+				lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
+			},
 				confirmBatch: async () => "accept",
 			});
 
@@ -2032,7 +2096,10 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => cf.observation,
 				batchKernel: {
-					commitChild: async () => {
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
+				commitChild: async () => {
 						writeFileSync(join(cf.root, "dummy.txt"), `${Date.now()}`);
 						execFileSync("git", ["add", "dummy.txt"], { cwd: cf.root });
 						execFileSync("git", ["commit", "-q", "-m", "c commit"], { cwd: cf.root });
@@ -2040,8 +2107,8 @@ describe("dual-host assurance conformance", () => {
 						cLastCommit = commit;
 						return { commit };
 					},
-					lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
-				},
+				lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
+			},
 				requestConfirmation: async () => ({ decision: "accept", requestId: "r-rp1" }),
 			});
 			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
@@ -2064,7 +2131,10 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => pf.observation,
 				batchKernel: {
-					commitChild: async () => {
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
+				commitChild: async () => {
 						writeFileSync(join(pf.root, "dummy.txt"), `${Date.now()}`);
 						execFileSync("git", ["add", "dummy.txt"], { cwd: pf.root });
 						execFileSync("git", ["commit", "-q", "-m", "p commit"], { cwd: pf.root });
@@ -2072,8 +2142,8 @@ describe("dual-host assurance conformance", () => {
 						pLastCommit = commit;
 						return { commit };
 					},
-					lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
-				},
+				lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
+			},
 				confirmBatch: async () => "accept",
 			};
 			let pRes1 = await executePiUnattendedBatch(replayOptions);
@@ -2112,8 +2182,11 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => pf.observation,
 				batchKernel: {
-					lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
-				},
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
+				lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
+			},
 				confirmBatch: async () => "accept",
 			});
 
@@ -2252,20 +2325,23 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => cf.observation,
 				batchKernel: {
-					advanceTask: async () => {
+				advanceTask: async () => {
 						cStep++;
 						if (cStep === 1) return { state: "review_ready", operation_id: "c-pending", agent_params: { prompt: "review" } as never };
 						return { state: "completed" };
 					},
-					commitChild: async () => {
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
+				commitChild: async () => {
 						writeFileSync(join(cf.root, "src", "impl.ts"), `export const impl = ${cStep}; // pending\n`);
 						execFileSync("git", ["add", "-A"], { cwd: cf.root });
 						execFileSync("git", ["commit", "-q", "-m", "c pending commit"], { cwd: cf.root });
 						cLastCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: cf.root, encoding: "utf8" }).trim();
 						return { commit: cLastCommit };
 					},
-					lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
-				},
+				lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
+			},
 				requestConfirmation: async () => ({ decision: "accept", requestId: "r-pending-1" }),
 			});
 			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
@@ -2368,7 +2444,7 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => cf.observation,
 				batchKernel: {
-					advanceTask: async () => {
+				advanceTask: async () => {
 						cStep++;
 						if (cStep === 1) return { state: "review_ready", operation_id: "c-renew", agent_params: { prompt: "review" } as never };
 						releaseWorkspaceForTest(cf.root);
@@ -2376,15 +2452,18 @@ describe("dual-host assurance conformance", () => {
 						if (existsSync(claimPath)) rmSync(claimPath, { force: true });
 						return { state: "completed" };
 					},
-					commitChild: async () => {
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
+				commitChild: async () => {
 						writeFileSync(join(cf.root, "src", "impl.ts"), `export const impl = ${cStep}; // renew\n`);
 						execFileSync("git", ["add", "-A"], { cwd: cf.root });
 						execFileSync("git", ["commit", "-q", "-m", "c renew commit"], { cwd: cf.root });
 						cLastCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: cf.root, encoding: "utf8" }).trim();
 						return { commit: cLastCommit };
 					},
-					lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
-				},
+				lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
+			},
 				requestConfirmation: async () => ({ decision: "accept", requestId: "r-renew-1" }),
 			});
 			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });

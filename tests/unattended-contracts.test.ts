@@ -314,6 +314,37 @@ if (!unreachable.error || !unreachable.error.includes("lacks evidence")) {
 }
 
 /**
+ * Host SDK seams for a spawned drive process.
+ *
+ * Two properties make an unconditional seam correct here, unlike the in-process
+ * seams this repo requires to be guarded by a failed import:
+ *
+ * 1. The child is a disposable one-shot process that runs only this script, so a
+ *    process-level `mock.module` entry cannot leak into another test.
+ * 2. Attempting the real import stalls: under the deterministic QA environment
+ *    (no node_modules, HOME/TMPDIR/XDG_CACHE_HOME reset, network reachable) Bun
+ *    auto-installs on demand and fetching `@earendil-works/pi-coding-agent` costs
+ *    ~24s, which exceeds the 20s timeout this test gives its own child.
+ *
+ * Only the extension module's import-time bindings are stubbed; the drive itself
+ * never renders a TUI or builds a tool schema, so the stubs are never called.
+ */
+function hostSeamPreamble(): string {
+	return `import { mock } from "bun:test";
+mock.module("typebox", () => ({ Type: new Proxy({}, { get: () => () => ({}) }) }));
+mock.module("@earendil-works/pi-coding-agent", () => ({ DynamicBorder: class { render() { return []; } } }));
+mock.module("@earendil-works/pi-tui", () => ({
+	Text: class { render() { return []; } },
+	Container: class { render() { return []; } },
+	SelectList: class { render() { return []; } },
+	sliceByColumn: () => "",
+	truncateToWidth: (text) => text,
+	visibleWidth: () => 0,
+}));
+`;
+}
+
+/**
  * Drive both Host entries through the real shared runner and Git implementation.
  * Only the tracker and Kernel work are scripted; a Review pause leaves durable
  * enrolled state that the next adapter call must resume without re-enrollment.
@@ -322,7 +353,7 @@ function adapterDriveSource(runtimeDir: string): string {
 	const extensionPath = JSON.stringify(join(runtimeDir, "..", ".pi-extension", "imm-unattended-batch.ts"));
 	const claudePath = JSON.stringify(join(runtimeDir, "claude", "kernel_ports.ts"));
 	const reviewHostPath = JSON.stringify(join(runtimeDir, "claude", "review_host.ts"));
-	return `import assert from "node:assert/strict";
+	return `${hostSeamPreamble()}import assert from "node:assert/strict";
 import { cpSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 const { executePiUnattendedBatch } = await import(${extensionPath});
@@ -664,9 +695,13 @@ describe("unattended batch contract text", () => {
 			// Drive the runtime's Git layer down its real paths — branch preflight,
 			// the scope-bounded child commit, and the commit lookup.
 			writeFileSync(drivePath, driveSource(join(REPO_ROOT, "plugins/immune-brain/runtime")));
+			// `--no-install` is load-bearing: without it Bun auto-installs on demand in
+			// the node_modules-less delivery tree, and each attempt to fetch an
+			// unresolvable package costs tens of seconds, which blows this test's own
+			// budget under deterministic QA.
 			const drive = spawnSync(
 				"bun",
-				[drivePath, root, GUARD_TASK_ID, GUARD_BATCH_ID, GUARD_HEAD, GUARD_COMMIT],
+				["--no-install", drivePath, root, GUARD_TASK_ID, GUARD_BATCH_ID, GUARD_HEAD, GUARD_COMMIT],
 				{
 					cwd: REPO_ROOT,
 					encoding: "utf8",
@@ -712,7 +747,9 @@ describe("unattended batch contract text", () => {
 					root,
 				});
 				writeFileSync(drivePath, adapterDriveSource(join(REPO_ROOT, "plugins/immune-brain/runtime")));
-				const drive = spawnSync("bun", [drivePath, root, scratch, host, scenario], {
+				// Same `--no-install` rationale as the Git-layer drive above: the drive's
+				// `mock.module` seam must not trigger an auto-install fetch.
+				const drive = spawnSync("bun", ["--no-install", drivePath, root, scratch, host, scenario], {
 					cwd: REPO_ROOT,
 					encoding: "utf8",
 					env: { ...process.env, PATH: `${binDir}:${process.env.PATH ?? ""}` },

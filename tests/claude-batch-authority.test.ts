@@ -125,7 +125,7 @@ async function executePiUnattendedBatch(options: Parameters<typeof executePiBatc
 }
 
 import type { BatchRunnerKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_runner";
-import { runBatchGitPreflight } from "../plugins/immune-brain/runtime/unattended/batch_git";
+import { createDefaultBatchGitPort, runBatchGitPreflight } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import { readTaskTombstone } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
@@ -289,6 +289,9 @@ for (const host of ["Pi", "Claude"] as const) {
 					}
 					return { state: "review_ready" as const, operation_id: "op-renew", agent_params: { prompt: "review" } as never };
 				},
+			};
+			const batchGit = {
+				...createDefaultBatchGitPort(),
 				commitChild: async (_root: string, taskId: string) => {
 					const path = `docs/specs/${slug}-c1.spec.md`;
 					mkdirSync(join(fixture.root, "docs", "specs"), { recursive: true });
@@ -303,7 +306,7 @@ for (const host of ["Pi", "Claude"] as const) {
 			};
 			const runtime = createMcpRuntime({
 				cwd: fixture.root, env: ENV, interactive: true,
-				readInitiative: async () => fixture.observation, batchKernel,
+				readInitiative: async () => fixture.observation, batchKernel, batchGit,
 				requestConfirmation: async (request) => ({
 					decision: await gate({ summary: JSON.stringify(request.batchDetails!.budget), signal: request.signal }),
 					requestId: "req-renew",
@@ -315,7 +318,7 @@ for (const host of ["Pi", "Claude"] as const) {
 				if (host === "Claude") return runtime.callTool("start_unattended_batch", { initiative_slug: slug }, { toolCallId: "renew" });
 				return executePiUnattendedBatch({
 					root: fixture.root, initiativeSlug: slug,
-					readInitiative: async () => fixture.observation, batchKernel,
+					readInitiative: async () => fixture.observation, batchKernel, batchGit,
 					confirmBatch: async (details) => gate({ summary: details.summary, signal: details.signal }),
 				});
 			};
@@ -861,6 +864,9 @@ describe("acc-claude-batch-gate", () => {
 			readInitiative: async () => fixture.observation,
 			batchKernel: {
 				advanceTask: async () => { releaseWorkspaceForTest(fixture.root); return { state: "completed" }; },
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
 				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
@@ -905,6 +911,9 @@ describe("acc-claude-batch-gate", () => {
 			batchKernel: {
 				enrollTask: async () => ({ record_revision: "rev-1" }),
 				advanceTask: async () => ({ state: "completed" }),
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
 				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
@@ -1228,6 +1237,9 @@ describe("acc-claude-batch-fail-closed", () => {
 			batchKernel: {
 				enrollTask: async () => ({ record_revision: "rev-settled" }),
 				advanceTask: async () => ({ state: "completed" }),
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
 				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
@@ -1266,6 +1278,9 @@ describe("acc-claude-batch-fail-closed", () => {
 				releaseWorkspaceForTest(fixture.root);
 				return { state: "completed" };
 			},
+		};
+		const batchGit = {
+			...createDefaultBatchGitPort(),
 			commitChild: async (_root, taskId) => {
 				execFileSync("git", ["commit", "--allow-empty", "-qm", `complete ${taskId}`], { cwd: fixture.root });
 				const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
@@ -1278,14 +1293,14 @@ describe("acc-claude-batch-fail-closed", () => {
 			cwd: fixture.root, env: ENV, interactive: true,
 			readInitiative: async () => observation,
 			requestConfirmation: async () => ({ decision: "accept", requestId: `round-${++confirmations}` }),
-			batchKernel,
+			batchKernel, batchGit,
 		});
 		runtime.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
 		try {
 			const start = async (): Promise<any> => host === "claude"
 				? runtime.callTool("start_unattended_batch", { initiative_slug: slug }, { toolCallId: "round" })
 				: executePiUnattendedBatch({ root: fixture.root, initiativeSlug: slug, readInitiative: async () => observation,
-					batchKernel, confirmBatch: async () => { confirmations++; return "accept"; } });
+					batchKernel, batchGit, confirmBatch: async () => { confirmations++; return "accept"; } });
 			const first = await start();
 			expect(first.report?.batch_state).toBe("completed");
 			const oldPath = join(fixture.root, ".imm/state/batches", `${first.batch_id}.json`);
@@ -1447,12 +1462,15 @@ describe("acc-claude-batch-fail-closed", () => {
 			interactive: true,
 			readInitiative: async () => fixture.observation,
 			batchKernel: {
-				// DO NOT override enrollTask — exercise the real Kernel enrollment in createBatchKernelPort!
+				// DO NOT override enrollTask — exercise the real Kernel enrollment in the shared batch Kernel port!
 				advanceTask: async () => {
 					// Clear the task's active claim upon completion so the next child can enroll cleanly
 					releaseWorkspaceForTest(fixture.root);
 					return { state: "completed" };
 				},
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
 				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
@@ -1535,6 +1553,9 @@ describe("acc-claude-batch-fail-closed", () => {
 					releaseWorkspaceForTest(fixture.root);
 					return { state: "completed" };
 				},
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
 				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });

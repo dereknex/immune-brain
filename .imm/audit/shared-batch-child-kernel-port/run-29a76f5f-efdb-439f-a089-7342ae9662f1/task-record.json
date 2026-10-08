@@ -1,0 +1,266 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "shared-batch-child-kernel-port",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "shared-batch-child-kernel-port",
+    "goal": "Implement Slice S5 of docs/specs/deepen-authority-seams.spec.md (Initiative deepen-authority-seams): runtime/unattended owns the one production Batch child Kernel port; hosts inject only advanceTask; git operations go through BatchRunnerGitPort alone. Batch preflight decisions do not change.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Per D5 of docs/specs/deepen-authority-seams.spec.md (sources U1, E6): one production child Kernel port in runtime/unattended provides enrollTask (through the single Enrollment entry), projectTask, ownsTaskClaim and validateBatchAuthorization; a host passes only advanceTask. Positive: a child enrolls, projects and is recognised as owned. Negative: a changed recovery projection is refused with 'Kernel recovery projection changed'. Bound: resume ownership is recognised for a claim held by the same Batch. Agreed seams: tests/unattended-batch-run.test.ts, tests/unattended-contracts.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/unattended-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Per D5 and invariant I5 of docs/specs/deepen-authority-seams.spec.md: BatchRunnerKernelPort has no git members and the runner has no git fallback chain. Positive: with no git port injected the runner uses createDefaultBatchGitPort. Negative: an injected BatchRunnerGitPort fully replaces the default and no default git operation runs. Bound: Partial<BatchRunnerKernelPort> overrides still apply to the remaining members. Agreed seams: tests/unattended-batch-run.test.ts, tests/unattended-batch-commit.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/unattended-batch-commit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Per D5 and invariant I4 of docs/specs/deepen-authority-seams.spec.md: Pi advanceTask still returns agent_params from advancePiTask and Claude advanceTask still goes through coordinator.advance; gates, authorization and resume behave as before. Existing assertions in the named suites are not weakened. Agreed seams: tests/pi-batch-authority.test.ts, tests/claude-batch-authority.test.ts, tests/dual-host-assurance-conformance.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/dual-host-assurance-conformance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "plugins/immune-brain/dist/claude/mcp-server.mjs is regenerated from the changed runtime sources and matches a fresh generate; no hand edit to the bundle. Agreed seam: tests/claude-host-package.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/shared-batch-child-kernel-port.md",
+      "docs/plans/shared-batch-child-kernel-port.intent.json",
+      "docs/specs/deepen-authority-seams.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "tests/batch-plan-reconfirmation.test.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/unattended-batch-commit.test.ts",
+      "tests/unattended-batch-run.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/shared-batch-child-kernel-port.intent.json",
+    "content_hash": "sha256:970fab051c25c5cbeae351d767dccacb6d9d86246981f5430101370f193b45c9"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:970fab051c25c5cbeae351d767dccacb6d9d86246981f5430101370f193b45c9",
+  "git_base_head": "1e5043ec3c0c04cb857ab00fcb393a20f666e47e",
+  "attestations": [
+    {
+      "id": "approval-qa-2febe426",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:970fab051c25c5cbeae351d767dccacb6d9d86246981f5430101370f193b45c9",
+      "diff_hash": "sha256:b94a385b1e56d4e597d22688ee70affaeeab8d549584cf0d3b18a14156724ce0",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:5148c482e8f264fe7345b99d72795cdfc5e9a6c5136d97ec1fe7ae8a6090e6a1",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:5148c482e8f264fe7345b99d72795cdfc5e9a6c5136d97ec1fe7ae8a6090e6a1"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:5148c482e8f264fe7345b99d72795cdfc5e9a6c5136d97ec1fe7ae8a6090e6a1"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:5148c482e8f264fe7345b99d72795cdfc5e9a6c5136d97ec1fe7ae8a6090e6a1"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:5148c482e8f264fe7345b99d72795cdfc5e9a6c5136d97ec1fe7ae8a6090e6a1"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-9a17a66e",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:970fab051c25c5cbeae351d767dccacb6d9d86246981f5430101370f193b45c9",
+      "diff_hash": "sha256:b94a385b1e56d4e597d22688ee70affaeeab8d549584cf0d3b18a14156724ce0",
+      "actor_id": "parent-mediated-review",
+      "summary": "Verified immutable revision provenance, manifest and snapshot digests, and all 12 changed paths; shared Kernel wiring, resume ownership, Git port selection, host progression and generated bundle satisfy AC1–AC4 with embedded passing QA outcomes and no blocking defects found.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "1e5043ec3c0c04cb857ab00fcb393a20f666e47e",
+        "review_commit": "290436593c4695c06c045006cebf75591795acbb",
+        "review_tree": "97edde614fb6eccb1b57f04b946ca570a3f3dccc",
+        "manifest_digest": "sha256:eadef04f37d916c953dd74dca1a03adfd434e9576d24373842c018e7cbf0ee87"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-AC1-78728df6-c0e97d",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=20352B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "qa-AC1-66fced0e-e3d37e",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=17172B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "qa-AC3-66fced0e-ef22e8",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC3",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=15986B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:shared-batch-child-kernel-port:2026-10-08T02:39:16.164Z",
+      "at": "2026-10-08T02:39:16.164Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/shared-batch-child-kernel-port.intent.json"
+    },
+    {
+      "id": "request_rework:shared-batch-child-kernel-port:2026-10-08T02:43:46.900Z",
+      "at": "2026-10-08T02:43:46.900Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:e1937ae1710a30ae784c13abe395e1901211bd86edf51479a2c63dce3ad81233",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-6957b6827db9f92e",
+        "issued_at": "2026-10-08T02:43:46.900Z"
+      }
+    },
+    {
+      "id": "resolve_finding:shared-batch-child-kernel-port:2026-10-08T02:55:12.808Z",
+      "at": "2026-10-08T02:55:12.808Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-AC1-78728df6-c0e97d\naction_v2_sha256:1cf13c09cc12e6fa859ab58364fe039c145381e294556b344c7485d3f9a0ab81"
+    },
+    {
+      "id": "freeze_artifacts:shared-batch-child-kernel-port:2026-10-08T02:55:17.189Z",
+      "at": "2026-10-08T02:55:17.189Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/shared-batch-child-kernel-port.intent.json"
+    },
+    {
+      "id": "request_rework:shared-batch-child-kernel-port:2026-10-08T03:00:06.628Z",
+      "at": "2026-10-08T03:00:06.628Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:6c33c006ced1ac69c0c60636f4e24ba2a9f0c474276c34e96045c3fcc1c12b96",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d4da598339167d12",
+        "issued_at": "2026-10-08T03:00:06.628Z"
+      }
+    },
+    {
+      "id": "resolve_finding:shared-batch-child-kernel-port:2026-10-08T03:53:27.001Z",
+      "at": "2026-10-08T03:53:27.001Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-AC1-66fced0e-e3d37e\naction_v2_sha256:406bfff4cdde679d4e87110b561c6c2f1eb91e1fe0ad7bb6504a30071b8da116"
+    },
+    {
+      "id": "resolve_finding:shared-batch-child-kernel-port:2026-10-08T03:53:32.076Z",
+      "at": "2026-10-08T03:53:32.076Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-AC3-66fced0e-ef22e8\naction_v2_sha256:274452279d41f3888acd59c436c35fdfc10c26d81fed477dc5ce7402363fcfc1"
+    },
+    {
+      "id": "freeze_artifacts:shared-batch-child-kernel-port:2026-10-08T03:53:41.031Z",
+      "at": "2026-10-08T03:53:41.031Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/shared-batch-child-kernel-port.intent.json"
+    },
+    {
+      "id": "record_approval:shared-batch-child-kernel-port:2026-10-08T03:57:03.971Z",
+      "at": "2026-10-08T03:57:03.971Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2febe426\naction_v2_sha256:6200ce41a7fb318678839542dd990cdab3e2b81b9a77938a81bcd0626d54ba81",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-8ab75c6e3789047f",
+        "issued_at": "2026-10-08T03:57:03.971Z"
+      }
+    },
+    {
+      "id": "record_approval:shared-batch-child-kernel-port:2026-10-08T04:00:42.334Z",
+      "at": "2026-10-08T04:00:42.334Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-9a17a66e\naction_v2_sha256:ac6731aba45dcd93c6964bad0a9a8b93c04a9dbfbe9141db839cb932f53b45dd",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-21c3520dc8b412f7",
+        "issued_at": "2026-10-08T04:00:42.334Z"
+      }
+    },
+    {
+      "id": "complete:shared-batch-child-kernel-port:2026-10-08T04:00:43.604Z",
+      "at": "2026-10-08T04:00:43.604Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:ed04bfffd5a929940a69a75e1b98b99d71a8f66ec10adb1aed2c6be68ad6f6f9"
+    }
+  ]
+}

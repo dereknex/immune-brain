@@ -104,6 +104,7 @@ import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 import { readRunRowByTask, withKernelRead, withKernelTransaction } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 import { commitTerminalLocked, readWorkspaceStateRaw, retryStoreFollowUps, serializeWorkspace } from "../plugins/immune-brain/runtime/kernel/storage";
+import { createDefaultBatchGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
 
 /** Claim the workspace for a fixture task through the store. */
 /** Make the live owner run look foreign to an approved batch lineage. */
@@ -693,6 +694,9 @@ describe("acc-pi-batch-gate", () => {
 					releaseWorkspaceForTest(fixture.root);
 					return { state: "completed" };
 				},
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
 				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
@@ -729,6 +733,9 @@ describe("acc-pi-batch-gate", () => {
 					releaseWorkspaceForTest(fixture.root);
 					return { state: "completed" };
 				},
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
 				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
@@ -829,6 +836,9 @@ describe("acc-pi-batch-gate", () => {
 					}
 					return { state: "completed" };
 				},
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
 				commitChild: async (_root: string, taskId: string) => {
 					// Simulate artifact freeze transition during review
 					const activePath = join(fixture.root, "docs", "plans", "review-resume-c1.intent.json");
@@ -882,6 +892,9 @@ describe("acc-pi-batch-gate", () => {
 					releaseWorkspaceForTest(fixture.root);
 					return { state: "completed" };
 				},
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
 				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
@@ -917,6 +930,9 @@ describe("acc-pi-batch-gate", () => {
 					}
 					return { state: "completed" };
 				},
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
 				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
@@ -961,6 +977,9 @@ describe("acc-pi-batch-gate", () => {
 					releaseWorkspaceForTest(fixture.root);
 					return { state: "completed" };
 				},
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
 				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
@@ -996,6 +1015,9 @@ describe("acc-pi-batch-gate", () => {
 					}
 					return { state: "completed" };
 				},
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
 				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
@@ -1062,6 +1084,9 @@ describe("acc-pi-batch-gate", () => {
 					}
 					return { state: "completed" };
 				},
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
 				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
@@ -1201,6 +1226,9 @@ describe("acc-pi-batch-gate", () => {
 					if (step === 1) return { state: "review_ready", operation_id: "op-fr", agent_params: { prompt: "review" } as never };
 					return { state: "completed" };
 				},
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
 				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
@@ -1278,6 +1306,9 @@ describe("acc-pi-batch-gate", () => {
 					if (step === 1) return { state: "review_ready", operation_id: "op-content", agent_params: { prompt: "review" } as never };
 					return { state: "completed" };
 				},
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
 				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
@@ -1345,6 +1376,9 @@ describe("settled-child resume preflight", () => {
 					if (step === 1) return { state: "review_ready", operation_id: "op-settled", agent_params: { prompt: "review" } as never };
 					return { state: "completed" };
 				},
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
 				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
@@ -1381,6 +1415,9 @@ describe("settled-child resume preflight", () => {
 			readInitiative: async () => fixture.observation,
 			batchKernel: {
 				advanceTask: async () => ({ state: "completed" }),
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
 				commitChild: async (_root: string, taskId: string) => {
 					execFileSync("git", ["add", "-A"], { cwd: fixture.root });
 					execFileSync("git", ["commit", "-q", "-m", "settled resume commit"], { cwd: fixture.root });
@@ -1414,6 +1451,9 @@ describe("batch authorization reuse (ADR-0005 Decision 1)", () => {
 					if (step === 1) return { state: "review_ready", operation_id: "op-reuse", agent_params: { prompt: "review" } as never };
 					return { state: "completed" };
 				},
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
 				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
@@ -1446,6 +1486,9 @@ describe("batch authorization reuse (ADR-0005 Decision 1)", () => {
 					releaseWorkspaceForTest(fixture.root);
 					return { state: "completed" };
 				},
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
 				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });

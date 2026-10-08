@@ -5,29 +5,25 @@ import { createHash, randomUUID } from "node:crypto";
 // exactly as the Claude adapter does; the adapter-owned helpers it drives
 // (the shared session progression accessors and the batch projection) live in
 // ./imm-canary-work.ts next to the assurance machinery they use.
-import { readTaskRecord, readAuditTaskPair } from "../runtime/kernel/storage";
+import { readAuditTaskPair } from "../runtime/kernel/storage";
 import {
 	createBatchAuthorityRegistry,
-	deriveChildEnrollment,
 	type BatchAuthorityRegistry,
 } from "../runtime/kernel/batch_authority";
-import { enrollTask } from "../runtime/kernel/enrollment";
 import { createEnrollmentAuthorityRegistry } from "../runtime/kernel/enrollment_authority";
 import {
 	startBatch,
-	batchQaFailureFacts,
 	type BatchRunnerKernelPort,
 	type BatchRunReport,
 } from "../runtime/unattended/batch_runner";
+import { createBatchKernelPort } from "../runtime/unattended/batch_kernel_port";
 import type { BatchRunnerGitPort } from "../runtime/unattended/batch_git";
 import type { InitiativeObservationReader } from "../runtime/unattended/types";
-import { advancePiTask, projectAssuranceForTask } from "./imm-canary-work";
+import { advancePiTask } from "./imm-canary-work";
 import { batchReason } from "../runtime/unattended/batch_reasons";
 import {
 	authorizeBatch,
 	projectBatchPreflight,
-	readActiveClaimTaskId,
-	isOwnBatchClaim,
 } from "../runtime/unattended/batch_preflight";
 import {
 	presentTaskRail,
@@ -247,59 +243,10 @@ export async function executePiUnattendedBatch(
 
 	let activeReviewDispatch: { operation_id: string; agent_params: Record<string, unknown> } | null = null;
 
-	const realPort: BatchRunnerKernelPort = {
-		enrollTask: async ({ root: taskRoot, task_id, batch: b }) => {
-			const derived = await deriveChildEnrollment(taskRoot, b.registry, {
-				capability: b.capability,
-				binding,
-				task_id,
-				expected_head: b.binding.expected_head,
-				now,
-			});
-			await enrollTask(taskRoot, enrollmentRegistry, {
-				binding: derived.binding,
-				batch: {
-					registry: b.registry,
-					capability: b.capability,
-					binding,
-					expected_head: b.binding.expected_head,
-				},
-				now,
-			});
-			const recordRaw = await readTaskRecord(taskRoot, task_id);
-			return { record_revision: recordRaw.revision };
-		},
-		advanceTask: async (taskRoot, taskId) => {
-			const res = await advancePiTask(taskRoot, taskId);
-			if (res.state === "review_ready" && res.agent_params) {
-				activeReviewDispatch = {
-					operation_id: res.operation_id,
-					agent_params: res.agent_params,
-				};
-			}
-			return res;
-		},
-		projectTask: async (taskRoot, taskId) => {
-			const fresh = await projectAssuranceForTask(taskRoot, taskId);
-			if (!fresh.claim || fresh.projection.lifecycle !== "active" || fresh.error !== null) return fresh;
-			const { record, revision } = await readTaskRecord(taskRoot, taskId);
-			if (!record || revision !== fresh.projection.record_revision) throw new Error(`Kernel recovery projection changed for ${taskId}`);
-			return { ...fresh, ...batchQaFailureFacts(record) };
-		},
-		ownsTaskClaim: (taskId) => {
-			if (isResuming && taskId === readActiveClaimTaskId(root)) {
-				// Re-verify the CURRENT claim identity synchronously: a claim swapped
-				// during confirmation is never adopted.
-				return isOwnBatchClaim(root, existingBatch!, taskId, batchBranch);
-			}
-			return batchRegistry.isChildConsumed(capability, taskId);
-		},
-		validateBatchAuthorization: (input) => input.registry.inspect(input.capability, input.binding as never),
-	};
-
-	const rawAdvance = options.batchKernel?.advanceTask ?? realPort.advanceTask;
-	const wrappedAdvance: typeof realPort.advanceTask = async (taskRoot, taskId) => {
-		const res = (await rawAdvance(taskRoot, taskId)) as any;
+	const { advanceTask: overrideAdvanceTask, ...otherOverrides } = options.batchKernel ?? {};
+	const baseAdvanceTask = overrideAdvanceTask ?? advancePiTask;
+	const advanceTask: BatchRunnerKernelPort["advanceTask"] = async (taskRoot, taskId) => {
+		const res = (await baseAdvanceTask(taskRoot, taskId)) as Awaited<ReturnType<typeof advancePiTask>>;
 		if (res.state === "review_ready" && res.agent_params) {
 			activeReviewDispatch = {
 				operation_id: res.operation_id,
@@ -308,12 +255,18 @@ export async function executePiUnattendedBatch(
 		}
 		return res;
 	};
-
-	const kernelPort: BatchRunnerKernelPort = {
-		...realPort,
-		...(options.batchKernel ?? {}),
-		advanceTask: wrappedAdvance,
-	};
+	// The production child Kernel port is the shared runtime/unattended one;
+	// this Host supplies only its own advanceTask progression seam (D5).
+	const kernelPort = createBatchKernelPort({
+		root,
+		enrollmentRegistry,
+		registry: batchRegistry,
+		capability,
+		binding,
+		advanceTask,
+		resume: { isResuming, existingBatch, batchBranch },
+		overrides: otherOverrides,
+	});
 
 	const report = await startBatch({
 		root,
