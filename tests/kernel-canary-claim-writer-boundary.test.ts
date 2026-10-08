@@ -25,7 +25,7 @@ import {
 	type EnrollmentCapabilityBinding,
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { canonicalIntentHash, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
-import { readTaskRecord, withKernelStoreLock } from "../plugins/immune-brain/runtime/kernel/storage";
+import { readTaskRecordRaw, withKernelStoreLock } from "../plugins/immune-brain/runtime/kernel/storage";
 import { createHash } from "node:crypto";
 
 const TASK = "canary-writer-task";
@@ -104,7 +104,7 @@ describe("backend claim writer boundary", () => {
 	test("claim transitions flow through the recoverable transaction owner", () => {
 		// Enrollment created the active claim; the drain transaction converges it.
 		expect(readBackendClaim(root)?.lifecycle_status).toBe("active");
-		const record = readTaskRecord(root, TASK);
+		const record = readTaskRecordRaw(root, TASK);
 		const drainAction = {
 			type: "stop",
 			event_id: `begin_drain:${TASK}:${now}`,
@@ -143,7 +143,7 @@ describe("backend claim writer boundary", () => {
 			authority_kind: "user",
 			task_id: TASK,
 			action_digest: digest(stopAction),
-			expected_record_hash: readTaskRecord(root, TASK).revision,
+			expected_record_hash: readTaskRecordRaw(root, TASK).revision,
 			intent_revision: 1,
 			intent_content_hash: INTENT_HASH,
 			diff_hash: DIFF,

@@ -3,8 +3,8 @@ import { spawnSync } from "node:child_process";
 import { computeBatchPlanDigest, type BatchPlanChild as DigestChild } from "../kernel/batch_authority";
 import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../kernel/intent";
 import { projectAssurance } from "../kernel/assurance_projection";
-import { localRunId, readAuditTaskPair, readSecureProjectBytes, readWorkspaceStateRaw } from "../kernel/storage";
-import { readRunRowByTask, withKernelRead } from "../kernel/sqlite_store";
+import { readAuditTaskPair, readSecureProjectBytes, readSettledRunEvidence, enrollmentEventIdFor, readWorkspaceStateRaw, type SettledRunEvidence } from "../kernel/storage";
+import { auditRunDirPath, auditRunRecordPath, auditRunTerminalProofPath, batchCommitEvidencePath, batchStatePath } from "../kernel/storage_paths";
 import { taskDeliveryIdentity, taskCommitRevisionIdentity, pathMatchesScope } from "../workspace_scope";
 import { projectTask } from "../kernel/completion";
 import { isTerminalBatchState, type BatchRunStateRecord } from "./batch_state";
@@ -31,7 +31,7 @@ export function ownUnpersistedBatchHead(root: string, record: BatchRunStateRecor
 			record.children[0]?.state !== "settled" || record.children.some(c => c.commit !== null)) return false;
 		const task = record.children[0].task_id;
 		if (!id.test(task)) return false;
-		const evidence = JSON.parse(decode(readSecureProjectBytes(root, `.imm/state/batches/commits/${record.batch_id}-${task}.json`)));
+		const evidence = JSON.parse(decode(readSecureProjectBytes(root, batchCommitEvidencePath(record.batch_id, task))));
 		if (evidence.contract !== "assurance_kernel/batch_commit_evidence/v1" || evidence.batch_id !== record.batch_id ||
 			evidence.task_id !== task || evidence.commit !== head || evidence.parent_head !== record.base_head) return false;
 		if (git(root, ["symbolic-ref", "--short", "HEAD"]).trim() !== record.branch) return false;
@@ -39,18 +39,19 @@ export function ownUnpersistedBatchHead(root: string, record: BatchRunStateRecor
 		if (parents.length !== 1 || parents[0] !== record.base_head) return false;
 		const metadata = git(root, ["show", "-s", "--format=%an%x00%s%x00%(trailers:key=Immune-Brain-Batch,valueonly)", head]).split("\0");
 		if (metadata[0] !== batchAuthor || !metadata[1]?.startsWith(`imm(${task}):`) || metadata[2]?.trim() !== record.batch_id) return false;
-		const run = localRunId(root, task);
-		if (!run || !id.test(run)) return false;
+		const settled = readSettledRunEvidence(root, task);
+		if (!settled || settled.lifecycle !== "done") return false;
+		const run = settled.run_id;
+		if (!id.test(run)) return false;
 		const pair = readAuditTaskPair(root, task, run);
 		if (!pair || pair.record.contract !== "assurance_kernel/task_record/v4" || pair.record.lifecycle !== "done" || pair.proof.terminal_lifecycle !== "done") return false;
-		const local = withKernelRead(root, db => readRunRowByTask(db, task));
-		if (!local || local.run_id !== run || local.state !== "done" || !matchesLocalProof(local.terminal_proof_json, pair.proof)) return false;
+		if (!matchesLocalProof(settled.proof_json, pair.proof)) return false;
 		for (const file of ["task-record.json", "terminal-proof.json"]) {
-			const path = `.imm/audit/${task}/${run}/${file}`;
+			const path = `${auditRunDirPath(task, run)}/${file}`;
 			if (!readSecureProjectBytes(root, path).equals(Buffer.from(git(root, ["show", `${head}:${path}`])))) return false;
 		}
 		const paths = git(root, ["diff-tree", "--no-commit-id", "--name-only", "--no-renames", "-z", "-r", head]).split("\0").filter(Boolean);
-		if (!paths.length || paths.some(path => !path.startsWith(`.imm/audit/${task}/${run}/`) &&
+		if (!paths.length || paths.some(path => !path.startsWith(`${auditRunDirPath(task, run)}/`) &&
 			!pair.record.intent_snapshot.scope_hint.some(s => pathMatchesScope(path, s)))) return false;
 		const identity = taskCommitRevisionIdentity(root, pair.record.intent_snapshot.scope_hint, pair.record.git_base_head, head);
 		if (!projectTask(pair.record.intent_snapshot, pair.record, identity.diff_hash, pair.record.intent_ref.content_hash, identity.changed_paths).complete) return false;
@@ -85,7 +86,7 @@ export async function captureBatchReconfirmation(root: string, record: BatchRunS
 	const assertNoCommitEvidence = () => {
 		for (const child of record.children) {
 			if (!id.test(child.task_id)) refuse();
-			const path = `.imm/state/batches/commits/${record.batch_id}-${child.task_id}.json`;
+			const path = batchCommitEvidencePath(record.batch_id, child.task_id);
 			let missing = false;
 			try { readSecureProjectBytes(root, path); }
 			catch (error) {
@@ -96,13 +97,13 @@ export async function captureBatchReconfirmation(root: string, record: BatchRunS
 		}
 	};
 	assertNoCommitEvidence();
-	const statePath = `.imm/state/batches/${record.batch_id}.json`;
+	const statePath = batchStatePath(record.batch_id);
 	const stateBytes = readSecureProjectBytes(root, statePath);
 	if (JSON.stringify(JSON.parse(decode(stateBytes))) !== JSON.stringify(record)) refuse();
 	const files = new Map<string, Buffer>();
 	const capture = (path: string) => { const bytes = readSecureProjectBytes(root, path); files.set(path, bytes); return bytes; };
 	const oldChildren: DigestChild[] = [];
-	const changed: Array<{ task: string; run: string; identity: string; local: string }> = [];
+	const changed: Array<{ task: string; run: string; identity: string; settled: string }> = [];
 	let scope: string[] | null = null;
 	const workspace = readWorkspaceStateRaw(root);
 	if (workspace.state.current_working !== null) refuse();
@@ -121,11 +122,11 @@ export async function captureBatchReconfirmation(root: string, record: BatchRunS
 		if (currentHash !== tracked.content_hash || currentHash !== child.intent_content_hash || current.revision !== child.intent_revision) refuse();
 		if (currentHash === oldHash) continue;
 		if (scope !== null || previous.state === "pending" || previous.state === "skipped_blocked" || current.revision <= old.revision || current.goal !== old.goal || current.owner !== old.owner) refuse();
-		const run = localRunId(root, child.task_id);
-		if (!run || !id.test(run)) refuse();
-		const local = withKernelRead(root, db => readRunRowByTask(db, child.task_id));
-		if (!local || local.run_id !== run || local.state !== "done" || local.enrollment_event_id !== `enroll-${child.task_id}-${local.created_at}` ||
-			Date.parse(local.created_at) > Date.parse(record.updated_at)) refuse();
+		const settled = readSettledRunEvidence(root, child.task_id);
+		if (!settled || settled.lifecycle !== "done") refuse();
+		const run = settled.run_id;
+		if (!id.test(run) || settled.enrollment_event_id !== enrollmentEventIdFor(child.task_id, settled.created_at) ||
+			Date.parse(settled.created_at) > Date.parse(record.updated_at)) refuse();
 		const pair = readAuditTaskPair(root, child.task_id, run);
 		if (!pair || pair.record.contract !== "assurance_kernel/task_record/v4") refuse();
 		const r = pair.record;
@@ -133,11 +134,11 @@ export async function captureBatchReconfirmation(root: string, record: BatchRunS
 			r.git_base_head !== record.base_head || pair.proof.terminal_lifecycle !== "done") refuse();
 		const terminal = r.history.at(-1);
 		if (terminal?.type !== "complete" || terminal.from_state !== "active:frozen" || terminal.to_state !== "done:frozen" || terminal.id !== pair.proof.terminal_event_id) refuse();
-		const recordPath = `.imm/audit/${child.task_id}/${run}/task-record.json`;
-		const proofPath = `.imm/audit/${child.task_id}/${run}/terminal-proof.json`;
-		if (!capture(recordPath).equals(Buffer.from(local.record_json))) refuse();
+		const recordPath = auditRunRecordPath(child.task_id, run);
+		const proofPath = auditRunTerminalProofPath(child.task_id, run);
+		if (!capture(recordPath).equals(Buffer.from(settled.record_json))) refuse();
 		const capturedProof = JSON.parse(decode(capture(proofPath)));
-		if (!matchesLocalProof(local.terminal_proof_json, capturedProof) || !matchesLocalProof(local.terminal_proof_json, pair.proof)) refuse();
+		if (!matchesLocalProof(settled.proof_json, capturedProof) || !matchesLocalProof(settled.proof_json, pair.proof)) refuse();
 		const identity = taskDeliveryIdentity(root, r);
 		const projection = await projectAssurance(root, child.task_id, (cwd, task) => {
 			if (task.contract !== "assurance_kernel/task_record/v4" || !task.git_base_head) refuse();
@@ -148,7 +149,7 @@ export async function captureBatchReconfirmation(root: string, record: BatchRunS
 			!projection.projection.fresh_approval_kinds.includes("qa") ||
 			(projection.projection.risk !== "routine" && !projection.projection.fresh_approval_kinds.includes("review"))) refuse();
 		scope = r.intent_snapshot.scope_hint;
-		changed.push({ task: child.task_id, run, identity: JSON.stringify(identity), local: JSON.stringify(local) });
+		changed.push({ task: child.task_id, run, identity: JSON.stringify(identity), settled: JSON.stringify(settled) });
 	}
 	if (computeBatchPlanDigest(oldChildren) !== record.plan_digest || changed.length !== 1 || scope === null) refuse();
 	const confirmedScope = scope;
@@ -161,7 +162,7 @@ export async function captureBatchReconfirmation(root: string, record: BatchRunS
 	for (const entry of entries) {
 		const code = entry.slice(0, 2), path = entry.slice(3);
 		if (code[1] !== " " || !["A", "M", "D"].includes(code[0]!) ||
-			(!path.startsWith(`.imm/audit/${owner.task}/${owner.run}/`) &&
+			(!path.startsWith(`${auditRunDirPath(owner.task, owner.run)}/`) &&
 			!confirmedScope.some(s => pathMatchesScope(path, s)))) refuse();
 	}
 	const flagsBytes = git(root, ["ls-files", "-v"]);
@@ -172,11 +173,15 @@ export async function captureBatchReconfirmation(root: string, record: BatchRunS
 	if (head() !== record.base_head || branch() !== record.branch) refuse();
 	const assertDeliveryUnchanged = () => {
 		for (const c of changed) {
+			let settled: SettledRunEvidence | null;
+			try {
+				settled = readSettledRunEvidence(root, c.task);
+			} catch { refuse(); }
+			if (!settled || settled.run_id !== c.run || JSON.stringify(settled) !== c.settled) refuse();
 			const pair = readAuditTaskPair(root, c.task, c.run);
 			if (!pair || pair.record.contract !== "assurance_kernel/task_record/v4" || !pair.record.git_base_head) refuse();
-			const local = withKernelRead(root, db => readRunRowByTask(db, c.task));
 			const diff = taskDeliveryIdentity(root, pair.record);
-			if (localRunId(root, c.task) !== c.run || JSON.stringify(local) !== c.local || JSON.stringify(diff) !== c.identity) refuse();
+			if (JSON.stringify(diff) !== c.identity) refuse();
 		}
 	};
 	const assertUnchanged = () => {

@@ -94,7 +94,6 @@ import { LITERAL_USER_ACTOR_ID } from "../runtime/kernel/actor_identity";
 import {
 	reconcileKernelAuthority,
 	repairKernelAuthority,
-	readTaskRecord,
 	readTaskRecordRaw,
 	withKernelStoreLockForTask,
 } from "../runtime/kernel/storage";
@@ -232,7 +231,7 @@ export function createPiAssuranceProgressionPorts(
 		confirmationReference: piConfirmationReference,
 		onReworkApplied: (ctx, taskId, count) => notifyHost(ctx, `rework-parked:${taskId}`, `rework applied: review parked for replan with ${count} finding(s)`, "warning"),
 		projectTask: (root, taskId) => projectAssuranceForTask(root, taskId),
-		readTaskRecord: async (root, taskId) => readTaskRecord(root, taskId),
+		readTaskRecord: async (root, taskId) => readTaskRecordRaw(root, taskId),
 		readTaskIntent: async (root, taskId) => readTaskIntentForRecord(root, taskId),
 		runQa: (snapshot, descriptors, options) =>
 			(dependencies.runQa ?? runDeterministicQa)(snapshot, descriptors, options),
@@ -783,7 +782,7 @@ export default function (
 					cwd: ctx.cwd,
 					stdio: ["ignore", "pipe", "pipe"],
 				});
-				const stagedRecord = await readTaskRecord(ctx.cwd, taskId);
+				const stagedRecord = await readTaskRecordRaw(ctx.cwd, taskId);
 				if (!stagedRecord.record || stagedRecord.revision !== projection.projection.record_revision)
 					throw new Error("TaskRecord changed while preparing the breaking revision");
 				stagedNextDiffHash = taskDeliveryIdentity(ctx.cwd, stagedRecord.record).diff_hash;
@@ -801,7 +800,7 @@ export default function (
 		let userDecisionOperation: ReturnType<typeof buildUserDecisionOperation> | undefined;
 		if (operation === "resolve-user-decision") {
 			try {
-				const current = await readTaskRecord(ctx.cwd, taskId);
+				const current = await readTaskRecordRaw(ctx.cwd, taskId);
 				if (!current.record) throw new Error(`task ${taskId} has no TaskRecord v2`);
 				if (current.revision !== projection.projection.record_revision)
 					throw new Error("task record changed while preparing user decision");
@@ -957,7 +956,7 @@ export default function (
 					if (nextIntent) await dependencies.authorizationAfterSidecarStage?.();
 					// Re-read the owner record after confirmation and compare the staged
 					// candidate digest immediately before capability issuance.
-					const liveRecord = nextIntent ? await readTaskRecord(ctx.cwd, taskId) : null;
+					const liveRecord = nextIntent ? await readTaskRecordRaw(ctx.cwd, taskId) : null;
 					if (nextIntent && (!liveRecord?.record || liveRecord.revision !== projection.projection.record_revision || !stagedNextDiffHash))
 						throw new Error("TaskRecord changed before the breaking revision digest");
 					const operationDiffHash = liveRecord?.record
@@ -1001,7 +1000,7 @@ export default function (
 					return { state: "applied", operation, lifecycle: result.record.lifecycle };
 			} catch (error) {
 				if (stagedSnapshot) {
-					const current = await readTaskRecord(ctx.cwd, taskId);
+					const current = await readTaskRecordRaw(ctx.cwd, taskId);
 					if (current.record?.intent_snapshot.revision === priorIntent.intent.revision) restoreStagedIntent();
 				}
 				throw error;
@@ -1030,7 +1029,7 @@ export default function (
 		if (projection.error || !projection.claim)
 			return { state: "blocked", reason: projection.error ?? "no active backend claim" };
 		await dependencies.authorizationBeforeRecordRead?.();
-		const read = await readTaskRecord(ctx.cwd, taskId);
+		const read = await readTaskRecordRaw(ctx.cwd, taskId);
 		if (!read.record) return { state: "blocked", reason: `task ${taskId} has no TaskRecord v3` };
 		if (read.revision !== projection.projection.record_revision)
 			return { state: "blocked", reason: "TaskRecord changed while deriving authorization operation" };
@@ -1094,7 +1093,7 @@ export async function recordCancelledUserDecision(
 	snapshotDigestRef: string,
 ): Promise<{ recorded: boolean; finding_id: string }> {
 	const findingId = `user-decision-${operation}`;
-	const current = await readTaskRecord(ctx.cwd, taskId);
+	const current = await readTaskRecordRaw(ctx.cwd, taskId);
 	const openDecision = current.record?.findings.find(
 		(finding) =>
 			finding.kind === "unresolved_user_decision" && finding.status === "open",
@@ -1264,7 +1263,7 @@ async function reconcileReviewRevisionRefs(root: string): Promise<{ removed: str
 		for (const entry of listed) {
 			if (live.has(entry.taskId)) continue;
 			try {
-				const record = await readTaskRecord(root, entry.taskId);
+				const record = await readTaskRecordRaw(root, entry.taskId);
 				if (record.record && record.record.lifecycle === "active" && claim?.task_id === entry.taskId)
 					live.add(entry.taskId);
 			} catch {
@@ -1410,7 +1409,7 @@ async function executeOrdinaryOperation(
 		return result;
 	} catch (error) {
 		if (priorBytes) {
-			const current = await readTaskRecord(ctx.cwd, input.taskId);
+			const current = await readTaskRecordRaw(ctx.cwd, input.taskId);
 			if (current.record?.intent_snapshot.revision === priorIntent.intent.revision && priorStaged) {
 				restoreStagedIntentShared(ctx.cwd, priorStaged);
 			}

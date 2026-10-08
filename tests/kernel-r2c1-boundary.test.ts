@@ -95,7 +95,7 @@ describe("P2C1 boundary invariants", () => {
 		expect(typeof (kernel as Record<string, unknown>).writeTaskRecord).toBe("undefined");
 		expect(typeof (kernel as Record<string, unknown>).applyTaskAction).toBe("undefined");
 		expect(typeof (kernel as Record<string, unknown>).reduceTask).toBe("function");
-		expect(typeof kernel.readTaskRecord).toBe("function");
+		expect(typeof kernel.readTaskRecordRaw).toBe("function");
 	});
 
 	test("v3 routing, readiness, receipt, and observation files untouched by intent module", () => {

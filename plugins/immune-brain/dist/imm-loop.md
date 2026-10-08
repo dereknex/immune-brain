@@ -69,7 +69,9 @@ Continue while the current projection has a valid action:
    to the user. If a file mixes pre-existing user changes with task changes and
    the task-owned hunks cannot be isolated reliably, stop with that ownership
    conflict instead of staging the whole file. Staging grants no commit or push
-   authority. Executor checks are diagnostic evidence, not a QA or Review approval.
+   authority. Complete the [Executor Delivery Evidence](role-prompts/executor.md#delivery-evidence)
+   table before the first Assurance attempt and update affected rows after repair.
+   Executor checks are diagnostic evidence, not a QA or Review approval.
 2. Call `advance_assurance` in the foreground and consume its direct terminal
    result. The Kernel freezes the artifacts itself before QA: it binds Git
    content identity in place without relocating source paths. A simple task has

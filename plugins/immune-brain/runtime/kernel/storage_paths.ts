@@ -212,6 +212,19 @@ export function auditTerminalProofPath(taskId: string): string {
 	return `${auditTaskDirPath(taskId)}/terminal-proof.json`;
 }
 
+/** Unattended batch run state: `.imm/state/batches/<batch-id>.json`. */
+export function batchStatePath(batchId: string): string {
+	if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(batchId))
+		throw new Error(`invalid batch identity: ${batchId}`);
+	return `${BATCH_STATE_RELATIVE}/${batchId}.json`;
+}
+
+/** Durable batch child commit evidence: `.imm/state/batches/commits/<batch-id>-<task-id>.json`. */
+export function batchCommitEvidencePath(batchId: string, taskId: string): string {
+	validateTaskId(taskId);
+	return `${BATCH_STATE_RELATIVE}/commits/${batchId}-${taskId}.json`;
+}
+
 /** Historical v3 machine evidence root under the tracked audit store. */
 export function legacyV3Path(...segments: string[]): string {
 	for (const segment of segments)

@@ -5,7 +5,7 @@ import { createHash, randomUUID } from "node:crypto";
 // exactly as the Claude adapter does; the adapter-owned helpers it drives
 // (the shared session progression accessors and the batch projection) live in
 // ./imm-canary-work.ts next to the assurance machinery they use.
-import { readAuditTaskPair } from "../runtime/kernel/storage";
+import { readSettledTaskEvidence } from "../runtime/kernel/storage";
 import {
 	createBatchAuthorityRegistry,
 	type BatchAuthorityRegistry,
@@ -34,28 +34,26 @@ import {
 import { throwToolFailure } from "./pi-canary-tool-failure";
 
 /**
- * Read the immutable terminal audit record for a settled child.
+ * Read the Authority Store's settled Run evidence for a child and project its
+ * scope and intent sidecar from that Run only.
  *
  * A child reaches Kernel settlement before the batch commits it, and settlement
  * clears the live state record, so the batch resume preflight must resolve the
- * child's authorized scope from the audit pair instead. Read-only: neither the
- * audit pair nor this reader mutates Kernel state. Currently caller-free: the
- * shared `batch_preflight.ts` performs its own settled read, and the
- * settled-run-evidence-read Slice makes this reader Run-aware.
+ * child's authorized scope from the settled run instead. Read-only: neither the
+ * store read nor this reader mutates Kernel state. Currently caller-free: the
+ * shared `batch_preflight.ts` performs its own settled read, and this reader
+ * answers with the current Run's evidence — an earlier Run's exported pair or
+ * a stale flat pair is never returned for a re-enrolled Task.
  */
 export async function readSettledTaskRecord(
 	root: string,
 	taskId: string,
 ): Promise<{ scope_hint: string[]; intent_path: string | undefined } | null> {
-	const pair = readAuditTaskPair(root, taskId);
-	if (!pair?.record) return null;
-	const record = pair.record as {
-		intent_snapshot?: { scope_hint?: string[] };
-		intent_ref?: { path?: string };
-	};
+	const settled = readSettledTaskEvidence(root, taskId);
+	if (!settled) return null;
 	return {
-		scope_hint: record.intent_snapshot?.scope_hint ?? [],
-		intent_path: record.intent_ref?.path,
+		scope_hint: settled.record.intent_snapshot.scope_hint ?? [],
+		intent_path: settled.record.intent_ref?.path,
 	};
 }
 

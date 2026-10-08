@@ -24,7 +24,7 @@ import { findingsDigestV2 } from "../plugins/immune-brain/runtime/kernel/reducer
 import { anchorForEvidence } from "../plugins/immune-brain/runtime/kernel/refutation";
 import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { confirmationRef, evaluateNativeGate, PRIVILEGED_OPERATIONS } from "../plugins/immune-brain/runtime/claude/interaction";
-import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
+import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
 import { projectAssurance } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { probeHost } from "../plugins/immune-brain/runtime/claude/capability";
@@ -807,7 +807,7 @@ describe("claude host authority", () => {
 		const registry = createMutationAuthorityRegistry();
 		const app = createCanaryApplication(registry);
 		const apply = async (operation: Record<string, unknown>, at: string) => {
-			const prior = await readTaskIntent(fixture.root, taskId, readTaskRecord(fixture.root, taskId).record!.intent_ref.path);
+			const prior = await readTaskIntent(fixture.root, taskId, readTaskRecordRaw(fixture.root, taskId).record!.intent_ref.path);
 			return app.execute({
 				root: fixture.root,
 				task_id: taskId,
@@ -820,7 +820,7 @@ describe("claude host authority", () => {
 		const rework = async (id: string, at: string) => {
 			await apply({ op: "freeze_artifacts", actor_id: "executor" }, at);
 			execFileSync("git", ["add", "-A"], { cwd: fixture.root });
-			const record = readTaskRecord(fixture.root, taskId);
+			const record = readTaskRecordRaw(fixture.root, taskId);
 			// Only a recurring security boundary parks a task for a user decision, so
 		// the authorization path is exercised through that supported trigger.
 		const evidence = {
@@ -1370,7 +1370,7 @@ describe("claude host revise_intent", () => {
 		expect(tool?.inputSchema.required).toEqual(["task_id", "next_intent"]);
 		expect(tool?.annotations).toEqual({ readOnlyHint: false });
 		await mcp.callTool("revise_intent", { task_id: RESOLVE_TASK, next_intent: next });
-		expect(readTaskRecord(root, RESOLVE_TASK).record?.intent_snapshot).toEqual(next);
+		expect(readTaskRecordRaw(root, RESOLVE_TASK).record?.intent_snapshot).toEqual(next);
 		const bytes = readFileSync(join(root, path), "utf8");
 		const staged = () => execFileSync("git", ["show", `:${path}`], { cwd: root, encoding: "utf8" });
 		expect(JSON.parse(bytes)).toEqual(next);
@@ -1393,7 +1393,7 @@ describe("claude host revise_intent", () => {
 		record.attestations.push({
 			id: "qa-before-revision", kind: "qa", authority_role: "qa", task_revision: 1,
 			intent_content_hash: RESOLVE_INTENT_HASH,
-			diff_hash: diffHashOf(root, readTaskRecord(root, RESOLVE_TASK).record!),
+			diff_hash: diffHashOf(root, readTaskRecordRaw(root, RESOLVE_TASK).record!),
 			actor_id: "qa-host", summary: "descriptor passed",
 			acceptance_results: [{ acceptance_id: "A1", status: "passed", summary: "A1 passed" }],
 		});
@@ -1434,13 +1434,13 @@ describe("claude host resolve_finding", () => {
 
 		const root = makeResolveFindingRoot(false);
 		const mcp = await resolveFindingRuntime(root);
-		const before = readTaskRecord(root, RESOLVE_TASK).record;
+		const before = readTaskRecordRaw(root, RESOLVE_TASK).record;
 		if (!before) throw new Error("fixture TaskRecord did not parse");
 		expect((await projectAssurance(root, RESOLVE_TASK, diffSnapshotOf)).projection.next_obligation).toBe("resolve_findings");
 
 		await mcp.callTool("resolve_finding", { task_id: RESOLVE_TASK, finding_id: "f-blocking" });
 
-		const after = readTaskRecord(root, RESOLVE_TASK).record;
+		const after = readTaskRecordRaw(root, RESOLVE_TASK).record;
 		if (!after) throw new Error("TaskRecord did not parse after resolution");
 		// Exactly the named finding moved, and nothing else did.
 		expect(after.findings.map((item) => [item.id, item.status])).toEqual([
@@ -1568,7 +1568,7 @@ describe("claude host resolve_finding", () => {
 			authority_role: "qa",
 			task_revision: 1,
 			intent_content_hash: RESOLVE_INTENT_HASH,
-			diff_hash: diffHashOf(root, readTaskRecord(root, RESOLVE_TASK).record!),
+			diff_hash: diffHashOf(root, readTaskRecordRaw(root, RESOLVE_TASK).record!),
 			actor_id: "qa-host",
 			summary: "descriptor passed",
 			acceptance_results: [{ acceptance_id: "A1", status: "passed", summary: "A1 passed" }],
@@ -1578,7 +1578,7 @@ describe("claude host resolve_finding", () => {
 
 		await mcp.callTool("refute_finding", { task_id: RESOLVE_TASK, finding_id: "f-blocking", attestation_id: "qa-live" });
 
-		const after = readTaskRecord(root, RESOLVE_TASK).record;
+		const after = readTaskRecordRaw(root, RESOLVE_TASK).record;
 		if (!after) throw new Error("TaskRecord did not parse after refutation");
 		expect(after.findings.find((item) => item.id === "f-blocking")).toMatchObject({
 			status: "refuted",

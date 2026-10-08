@@ -35,7 +35,7 @@ import {
 } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import {
 	KernelStoreConflictError,
-	readTaskRecord,
+	readTaskRecordRaw,
 	readAuditTaskPair,
 	reconcileKernelAuthority,
 	repairKernelAuthority,
@@ -122,7 +122,7 @@ afterEach(() => {
 });
 
 function token() {
-	const record = readTaskRecord(root, TASK).record;
+	const record = readTaskRecordRaw(root, TASK).record;
 	return readTaskIntent(root, TASK, record?.intent_ref.path).token;
 }
 
@@ -165,7 +165,7 @@ function approveQa() {
 		authority_kind: "qa",
 		task_id: TASK,
 		action_digest: digestOfAction(action),
-		expected_record_hash: readTaskRecord(root, TASK).revision,
+		expected_record_hash: readTaskRecordRaw(root, TASK).revision,
 		intent_revision: 1,
 		intent_content_hash: INTENT_HASH,
 		diff_hash: DIFF,
@@ -184,7 +184,7 @@ function completeTask(at = "2026-08-12T10:00:04.000Z") {
 }
 
 function stopCapability(at: string, overrides: Record<string, unknown> = {}) {
-	const record = readTaskRecord(root, TASK);
+	const record = readTaskRecordRaw(root, TASK);
 	const digest = (a: Record<string, unknown>) => createHash("sha256").update(JSON.stringify(a)).digest("hex");
 	return createMutationAuthorityCapabilityForTest(mutationRegistry, {
 		authority_kind: "user",
@@ -259,7 +259,7 @@ describe("terminal ownership transfer", () => {
 		expect(projection.state).toBe("terminal_owner");
 		expect(projection.diagnostic).toBeNull();
 		// The committed owner facts are untouched and the file is not rewritten.
-		expect(readTaskRecord(root, TASK).record).toBeNull();
+		expect(readTaskRecordRaw(root, TASK).record).toBeNull();
 		expect(readAuditTaskPair(root, TASK)?.proof.terminal_lifecycle).toBe("done");
 		expect(before.owner_task_id).toBe(TASK);
 		expect(existsSync(join(root, ".imm/state/active-claim.json"))).toBe(true);
@@ -286,7 +286,7 @@ describe("terminal ownership transfer", () => {
 		expect(() =>
 			execute({ op: "freeze_artifacts", actor_id: "executor-1" }, "2026-08-12T10:00:00.500Z"),
 		).toThrow(/simulated freeze crash/);
-		expect(readTaskRecord(root, TASK).record?.artifact_state).toBe("active");
+		expect(readTaskRecordRaw(root, TASK).record?.artifact_state).toBe("active");
 		setAfterTaskTransactionWriteForTest(null);
 		const retry = execute(
 			{ op: "freeze_artifacts", actor_id: "executor-1" },
@@ -297,7 +297,7 @@ describe("terminal ownership transfer", () => {
 		expect(existsSync(join(root, "docs/plans/archive", `${TASK}.intent.json`))).toBe(false);
 		expect(existsSync(join(root, "docs/specs", "canary-terminal-task.spec.md"))).toBe(true);
 		expect(existsSync(join(root, "docs/specs/archive", "canary-terminal-task.spec.md"))).toBe(false);
-		const recovered = readTaskRecord(root, TASK);
+		const recovered = readTaskRecordRaw(root, TASK);
 		expect(recovered.record).toMatchObject({
 			artifact_state: "frozen",
 			intent_ref: { path: `docs/plans/${TASK}.intent.json` },
@@ -387,7 +387,7 @@ describe("terminal ownership transfer", () => {
 		expect(first.record.lifecycle).toBe("stopped");
 		// Same task and instant, different reason: the committed result answers the
 		// request that was authorized, not this one.
-		const record = readTaskRecord(root, TASK);
+		const record = readTaskRecordRaw(root, TASK);
 		const digest = (a: Record<string, unknown>) =>
 			createHash("sha256").update(JSON.stringify(a)).digest("hex");
 		const at = "2026-08-12T10:00:01.000Z";
@@ -422,7 +422,7 @@ describe("terminal ownership transfer", () => {
 			}),
 		).toThrow(/different request/i);
 		// The settled facts are untouched by the refused request.
-		expect(readTaskRecord(root, TASK).revision).toBe(record.revision);
+		expect(readTaskRecordRaw(root, TASK).revision).toBe(record.revision);
 		expect(readTaskTombstone(root, TASK)?.terminal_lifecycle).toBe("stopped");
 	});
 
@@ -483,7 +483,7 @@ describe("terminal ownership transfer", () => {
 		const exported = withKernelRead(root, (db) => readRunRowByTask(db, TASK))!;
 		expect(exported.audit_exported_at).not.toBeNull();
 		expect(exported.state).toBe("done");
-		expect(readTaskRecord(root, TASK).record).toBeNull();
+		expect(readTaskRecordRaw(root, TASK).record).toBeNull();
 		expect(readAuditTaskPair(root, TASK)?.record.lifecycle).toBe("done");
 	});
 

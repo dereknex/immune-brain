@@ -25,7 +25,7 @@ import {
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { canonicalIntentHash, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
-import { readTaskRecord, withKernelStoreLock } from "../plugins/immune-brain/runtime/kernel/storage";
+import { readTaskRecordRaw, withKernelStoreLock } from "../plugins/immune-brain/runtime/kernel/storage";
 
 const TASK = "canary-auth-task";
 const INTENT = {
@@ -97,13 +97,13 @@ afterEach(() => {
 });
 
 function token() {
-	const record = readTaskRecord(root, TASK).record;
+	const record = readTaskRecordRaw(root, TASK).record;
 	if (!record) throw new Error("missing TaskRecord");
 	return readTaskIntent(root, TASK, record.intent_ref.path).token;
 }
 
 function drainCapability(registry = mutationRegistryA, overrides: Record<string, unknown> = {}) {
-	const record = readTaskRecord(root, TASK);
+	const record = readTaskRecordRaw(root, TASK);
 	const digest = (a: Record<string, unknown>) => createHash("sha256").update(JSON.stringify(a)).digest("hex");
 	const { expected_record_hash: _r, expected_workspace_hash: _w, diff_hash: _d, ...rest } =
 		beginDrainCapabilityAction(TASK, now) as unknown as Record<string, unknown>;
@@ -123,7 +123,7 @@ function drainCapability(registry = mutationRegistryA, overrides: Record<string,
 }
 
 function stopActionCapability(registry = mutationRegistryA, overrides: Record<string, unknown> = {}, issuedAt?: string) {
-	const record = readTaskRecord(root, TASK);
+	const record = readTaskRecordRaw(root, TASK);
 	const digest = (a: Record<string, unknown>) => createHash("sha256").update(JSON.stringify(a)).digest("hex");
 	return createMutationAuthorityCapabilityForTest(registry, {
 		authority_kind: "user",
@@ -168,7 +168,7 @@ describe("canary application authority pairing", () => {
 				now,
 			}),
 		).toThrow(/capability|authority/i);
-		expect(readTaskRecord(root, TASK).record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
+		expect(readTaskRecordRaw(root, TASK).record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
 		expect(mutationRegistryB.isConsumed(foreign)).toBe(false);
 	});
 

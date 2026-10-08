@@ -733,6 +733,7 @@ var KERNEL_STORE_SCHEMA_VERSION = 1;
 var FILE_STORE_CLAIM_RELATIVE = ".imm/state/active-claim.json";
 var FILE_STORE_WORKSPACE_RELATIVE = ".imm/state/workspace.json";
 var FILE_STORE_TRANSACTIONS_RELATIVE = ".imm/state/transactions";
+var BATCH_STATE_RELATIVE = ".imm/state/batches";
 function stateDatabasePath() {
   return KERNEL_DB_RELATIVE;
 }
@@ -779,6 +780,15 @@ function auditTaskRecordPath(taskId) {
 }
 function auditTerminalProofPath(taskId) {
   return `${auditTaskDirPath(taskId)}/terminal-proof.json`;
+}
+function batchStatePath(batchId) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(batchId))
+    throw new Error(`invalid batch identity: ${batchId}`);
+  return `${BATCH_STATE_RELATIVE}/${batchId}.json`;
+}
+function batchCommitEvidencePath(batchId, taskId) {
+  validateTaskId(taskId);
+  return `${BATCH_STATE_RELATIVE}/commits/${batchId}-${taskId}.json`;
 }
 function listEntries(root, relativePath) {
   const candidate = resolve(root, relativePath);
@@ -3941,10 +3951,21 @@ function readWorkspaceStateRaw(root) {
     state: { contract: "assurance_kernel/workspace/v1", current_working: null }
   };
 }
-function recordFromRun(run) {
-  const record = parseTaskRecord(JSON.parse(run.record_json));
+function settledRecordFromRun(run) {
+  let record;
+  try {
+    record = parseTaskRecord(JSON.parse(run.record_json));
+  } catch {
+    record = parseTaskRecordV3(JSON.parse(run.record_json));
+  }
   if (record.task_id !== run.task_id)
     throw new KernelStoreSecurityError("task record identity is inconsistent with its run");
+  return record;
+}
+function recordFromRun(run) {
+  const record = settledRecordFromRun(run);
+  if (record.contract !== TASK_RECORD_CONTRACT_V4)
+    throw new KernelInvariantError([`a live run must hold a v4 record, found ${record.contract}`]);
   return record;
 }
 function readTaskRecordRaw(root, taskId) {
@@ -3970,6 +3991,46 @@ function readCommittedRecord(root, taskId) {
       throw new KernelStoreConflictError(`task ${taskId} is ${run.state} without a committed terminal proof`);
     const record = recordFromRun(run);
     return { revision: canonicalRecordHash(record), record };
+  });
+  return read ?? null;
+}
+function enrollmentEventIdFor(taskId, createdAt) {
+  validateTaskId4(taskId);
+  return `enroll-${taskId}-${createdAt}`;
+}
+function readSettledRunEvidence(root, taskId) {
+  validateTaskId4(taskId);
+  const read = withKernelRead(root, (db) => {
+    const run = readRunRowByTask(db, taskId);
+    if (!run || run.state === "active")
+      return null;
+    if (run.terminal_proof_json === null)
+      throw new KernelStoreSecurityError(`task ${taskId} is ${run.state} without a committed terminal proof`);
+    const record = settledRecordFromRun(run);
+    const record_revision = canonicalRecordHash(record);
+    const record_revision_raw = revisionForContent(run.record_json);
+    const proof = parseTaskTombstone(JSON.parse(run.terminal_proof_json));
+    if (proof.task_id !== taskId)
+      throw new KernelStoreSecurityError("settled run proof identity is inconsistent");
+    if (proof.final_record_hash !== record_revision_raw)
+      throw new KernelStoreSecurityError("settled run proof does not match its task record");
+    if (record.lifecycle !== run.state || proof.terminal_lifecycle !== run.state)
+      throw new KernelStoreSecurityError(`settled run facts disagree: run state ${run.state}, record lifecycle ${record.lifecycle}, proof terminal ${proof.terminal_lifecycle}`);
+    return {
+      contract: "assurance_kernel/settled_run_evidence/v1",
+      task_id: taskId,
+      run_id: run.run_id,
+      created_at: run.created_at,
+      enrollment_event_id: run.enrollment_event_id,
+      lifecycle: run.state,
+      record,
+      record_revision,
+      record_revision_raw,
+      record_json: run.record_json,
+      proof,
+      proof_json: run.terminal_proof_json,
+      audit_exported: run.audit_exported_at !== null
+    };
   });
   return read ?? null;
 }
@@ -4017,9 +4078,6 @@ function readAuditTaskPair(root, taskId, runId) {
   }
   return { recordRevision, record, proof };
 }
-function readTaskRecord(root, taskId) {
-  return readTaskRecordRaw(root, taskId);
-}
 function exportTerminalAudit(root, run) {
   runAuditExportFault();
   if (!run.terminal_proof_json)
@@ -4040,6 +4098,32 @@ function convergePendingRelocations(root, db) {
       convergeArtifactRelocation(root, relocation);
     setPendingRelocations(db, run.run_id, null);
   }
+}
+function readSettledTaskEvidence(root, taskId) {
+  validateTaskId4(taskId);
+  const localRun = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
+  if (!localRun) {
+    const legacy = readAuditTaskPair(root, taskId);
+    if (!legacy)
+      return null;
+    return {
+      runId: null,
+      record: legacy.record,
+      recordRevision: legacy.recordRevision,
+      proof: legacy.proof
+    };
+  }
+  if (localRun.state === "active")
+    return null;
+  const settled = readSettledRunEvidence(root, taskId);
+  if (!settled)
+    return null;
+  return {
+    runId: settled.run_id,
+    record: settled.record,
+    recordRevision: settled.record_revision_raw,
+    proof: settled.proof
+  };
 }
 function withKernelStoreLockForTask(root, taskId, operation) {
   validateTaskId4(taskId);
@@ -4423,7 +4507,8 @@ function reconcileKernelAuthority(root, taskId) {
   if (legacy)
     return conflictProjection(taskId, legacy);
   try {
-    const audit = readAuditTaskPair(root, taskId);
+    const localRun = localRunId(root, taskId);
+    const audit = readAuditTaskPair(root, taskId, localRun ?? undefined);
     if (audit)
       return {
         contract: "assurance_kernel/authority_projection/v1",
@@ -5177,7 +5262,7 @@ async function projectAssurance(root, taskId, diffProvider = taskDeliveryIdentit
     }
     let read;
     try {
-      read = await readTaskRecord(root, taskId);
+      read = await readTaskRecordRaw(root, taskId);
     } catch (error) {
       if (!terminalOwner || !(error instanceof Error) || !error.message.startsWith("TaskRecord v2"))
         throw error;
@@ -5201,7 +5286,7 @@ async function projectAssurance(root, taskId, diffProvider = taskDeliveryIdentit
           }
         };
       }
-      const auditPair = await readAuditTaskPair(root, taskId);
+      const auditPair = await readAuditTaskPair(root, taskId, localRunId(root, taskId) ?? undefined);
       if (!auditPair)
         return fail(`task ${taskId} has no terminal audit pair`, claim);
       const workspace = await readWorkspaceStateRaw(root);
@@ -8596,7 +8681,7 @@ function runEnrollmentRehearsal(root, input, capability, registry) {
   };
 }
 function enrollmentEventId(taskId, now) {
-  return `enroll-${taskId}-${now}`;
+  return enrollmentEventIdFor(taskId, now);
 }
 var CANCELLATION_BOUNDARY = Promise.resolve();
 async function enrollTask(root, registry, request) {
@@ -9067,7 +9152,7 @@ function attemptRef(snapshotDigest) {
 function deliveryTreeForSnapshot(snapshot, writeTree) {
   if (snapshot.review_revision?.review_tree)
     return snapshot.review_revision.review_tree;
-  const record = readTaskRecord(snapshot.root, snapshot.task_id).record;
+  const record = readTaskRecordRaw(snapshot.root, snapshot.task_id).record;
   if (!record || record.contract !== "assurance_kernel/task_record/v4" || !record.git_base_head)
     throw new Error("QA delivery requires a TaskRecord v4 git_base_head");
   const captured = captureGitTaskRevisionSnapshot(snapshot.root, record.intent_snapshot.scope_hint, record.git_base_head, snapshot.task_id);
@@ -10888,7 +10973,7 @@ function ownUnpersistedBatchHead(root, record, head) {
     const task = record.children[0].task_id;
     if (!id.test(task))
       return false;
-    const evidence = JSON.parse(decode(readSecureProjectBytes(root, `.imm/state/batches/commits/${record.batch_id}-${task}.json`)));
+    const evidence = JSON.parse(decode(readSecureProjectBytes(root, batchCommitEvidencePath(record.batch_id, task))));
     if (evidence.contract !== "assurance_kernel/batch_commit_evidence/v1" || evidence.batch_id !== record.batch_id || evidence.task_id !== task || evidence.commit !== head || evidence.parent_head !== record.base_head)
       return false;
     if (git4(root, ["symbolic-ref", "--short", "HEAD"]).trim() !== record.branch)
@@ -10899,22 +10984,24 @@ function ownUnpersistedBatchHead(root, record, head) {
     const metadata = git4(root, ["show", "-s", "--format=%an%x00%s%x00%(trailers:key=Immune-Brain-Batch,valueonly)", head]).split("\x00");
     if (metadata[0] !== batchAuthor || !metadata[1]?.startsWith(`imm(${task}):`) || metadata[2]?.trim() !== record.batch_id)
       return false;
-    const run = localRunId(root, task);
-    if (!run || !id.test(run))
+    const settled = readSettledRunEvidence(root, task);
+    if (!settled || settled.lifecycle !== "done")
+      return false;
+    const run = settled.run_id;
+    if (!id.test(run))
       return false;
     const pair = readAuditTaskPair(root, task, run);
     if (!pair || pair.record.contract !== "assurance_kernel/task_record/v4" || pair.record.lifecycle !== "done" || pair.proof.terminal_lifecycle !== "done")
       return false;
-    const local = withKernelRead(root, (db) => readRunRowByTask(db, task));
-    if (!local || local.run_id !== run || local.state !== "done" || !matchesLocalProof(local.terminal_proof_json, pair.proof))
+    if (!matchesLocalProof(settled.proof_json, pair.proof))
       return false;
     for (const file of ["task-record.json", "terminal-proof.json"]) {
-      const path = `.imm/audit/${task}/${run}/${file}`;
+      const path = `${auditRunDirPath(task, run)}/${file}`;
       if (!readSecureProjectBytes(root, path).equals(Buffer.from(git4(root, ["show", `${head}:${path}`]))))
         return false;
     }
     const paths = git4(root, ["diff-tree", "--no-commit-id", "--name-only", "--no-renames", "-z", "-r", head]).split("\x00").filter(Boolean);
-    if (!paths.length || paths.some((path) => !path.startsWith(`.imm/audit/${task}/${run}/`) && !pair.record.intent_snapshot.scope_hint.some((s) => pathMatchesScope(path, s))))
+    if (!paths.length || paths.some((path) => !path.startsWith(`${auditRunDirPath(task, run)}/`) && !pair.record.intent_snapshot.scope_hint.some((s) => pathMatchesScope(path, s))))
       return false;
     const identity = taskCommitRevisionIdentity(root, pair.record.intent_snapshot.scope_hint, pair.record.git_base_head, head);
     if (!projectTask(pair.record.intent_snapshot, pair.record, identity.diff_hash, pair.record.intent_ref.content_hash, identity.changed_paths).complete)
@@ -10944,7 +11031,7 @@ async function captureBatchReconfirmation(root, record, children) {
     for (const child of record.children) {
       if (!id.test(child.task_id))
         refuse();
-      const path = `.imm/state/batches/commits/${record.batch_id}-${child.task_id}.json`;
+      const path = batchCommitEvidencePath(record.batch_id, child.task_id);
       let missing = false;
       try {
         readSecureProjectBytes(root, path);
@@ -10959,7 +11046,7 @@ async function captureBatchReconfirmation(root, record, children) {
     }
   };
   assertNoCommitEvidence();
-  const statePath = `.imm/state/batches/${record.batch_id}.json`;
+  const statePath = batchStatePath(record.batch_id);
   const stateBytes = readSecureProjectBytes(root, statePath);
   if (JSON.stringify(JSON.parse(decode(stateBytes))) !== JSON.stringify(record))
     refuse();
@@ -10994,11 +11081,11 @@ async function captureBatchReconfirmation(root, record, children) {
       continue;
     if (scope !== null || previous.state === "pending" || previous.state === "skipped_blocked" || current.revision <= old.revision || current.goal !== old.goal || current.owner !== old.owner)
       refuse();
-    const run = localRunId(root, child.task_id);
-    if (!run || !id.test(run))
+    const settled = readSettledRunEvidence(root, child.task_id);
+    if (!settled || settled.lifecycle !== "done")
       refuse();
-    const local = withKernelRead(root, (db) => readRunRowByTask(db, child.task_id));
-    if (!local || local.run_id !== run || local.state !== "done" || local.enrollment_event_id !== `enroll-${child.task_id}-${local.created_at}` || Date.parse(local.created_at) > Date.parse(record.updated_at))
+    const run = settled.run_id;
+    if (!id.test(run) || settled.enrollment_event_id !== enrollmentEventIdFor(child.task_id, settled.created_at) || Date.parse(settled.created_at) > Date.parse(record.updated_at))
       refuse();
     const pair = readAuditTaskPair(root, child.task_id, run);
     if (!pair || pair.record.contract !== "assurance_kernel/task_record/v4")
@@ -11009,12 +11096,12 @@ async function captureBatchReconfirmation(root, record, children) {
     const terminal = r.history.at(-1);
     if (terminal?.type !== "complete" || terminal.from_state !== "active:frozen" || terminal.to_state !== "done:frozen" || terminal.id !== pair.proof.terminal_event_id)
       refuse();
-    const recordPath = `.imm/audit/${child.task_id}/${run}/task-record.json`;
-    const proofPath = `.imm/audit/${child.task_id}/${run}/terminal-proof.json`;
-    if (!capture(recordPath).equals(Buffer.from(local.record_json)))
+    const recordPath = auditRunRecordPath(child.task_id, run);
+    const proofPath = auditRunTerminalProofPath(child.task_id, run);
+    if (!capture(recordPath).equals(Buffer.from(settled.record_json)))
       refuse();
     const capturedProof = JSON.parse(decode(capture(proofPath)));
-    if (!matchesLocalProof(local.terminal_proof_json, capturedProof) || !matchesLocalProof(local.terminal_proof_json, pair.proof))
+    if (!matchesLocalProof(settled.proof_json, capturedProof) || !matchesLocalProof(settled.proof_json, pair.proof))
       refuse();
     const identity = taskDeliveryIdentity(root, r);
     const projection = await projectAssurance(root, child.task_id, (cwd, task) => {
@@ -11025,7 +11112,7 @@ async function captureBatchReconfirmation(root, record, children) {
     if (projection.error || projection.claim || projection.projection.run_id !== run || projection.projection.lifecycle !== "done" || !projection.projection.completion_ready || projection.projection.intent_content_hash !== currentHash || projection.projection.diff_hash !== identity.diff_hash || !projection.projection.fresh_approval_kinds.includes("qa") || projection.projection.risk !== "routine" && !projection.projection.fresh_approval_kinds.includes("review"))
       refuse();
     scope = r.intent_snapshot.scope_hint;
-    changed.push({ task: child.task_id, run, identity: JSON.stringify(identity), local: JSON.stringify(local) });
+    changed.push({ task: child.task_id, run, identity: JSON.stringify(identity), settled: JSON.stringify(settled) });
   }
   if (computeBatchPlanDigest(oldChildren) !== record.plan_digest || changed.length !== 1 || scope === null)
     refuse();
@@ -11036,7 +11123,7 @@ async function captureBatchReconfirmation(root, record, children) {
   const entries = statusBytes.split("\x00").filter(Boolean);
   for (const entry of entries) {
     const code = entry.slice(0, 2), path = entry.slice(3);
-    if (code[1] !== " " || !["A", "M", "D"].includes(code[0]) || !path.startsWith(`.imm/audit/${owner.task}/${owner.run}/`) && !confirmedScope.some((s) => pathMatchesScope(path, s)))
+    if (code[1] !== " " || !["A", "M", "D"].includes(code[0]) || !path.startsWith(`${auditRunDirPath(owner.task, owner.run)}/`) && !confirmedScope.some((s) => pathMatchesScope(path, s)))
       refuse();
   }
   const flagsBytes = git4(root, ["ls-files", "-v"]);
@@ -11050,12 +11137,19 @@ async function captureBatchReconfirmation(root, record, children) {
     refuse();
   const assertDeliveryUnchanged = () => {
     for (const c of changed) {
+      let settled;
+      try {
+        settled = readSettledRunEvidence(root, c.task);
+      } catch {
+        refuse();
+      }
+      if (!settled || settled.run_id !== c.run || JSON.stringify(settled) !== c.settled)
+        refuse();
       const pair = readAuditTaskPair(root, c.task, c.run);
       if (!pair || pair.record.contract !== "assurance_kernel/task_record/v4" || !pair.record.git_base_head)
         refuse();
-      const local = withKernelRead(root, (db) => readRunRowByTask(db, c.task));
       const diff = taskDeliveryIdentity(root, pair.record);
-      if (localRunId(root, c.task) !== c.run || JSON.stringify(local) !== c.local || JSON.stringify(diff) !== c.identity)
+      if (JSON.stringify(diff) !== c.identity)
         refuse();
     }
   };
@@ -11456,8 +11550,7 @@ function isOwnBatchClaim(root, existingBatch, taskId, batchBranch) {
   }
   let rec = null;
   try {
-    const run = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
-    rec = run ? JSON.parse(run.record_json) : null;
+    rec = readTaskRecordRaw(root, taskId).record;
   } catch {
     return false;
   }
@@ -11466,7 +11559,7 @@ function isOwnBatchClaim(root, existingBatch, taskId, batchBranch) {
   const lineageHeads = [existingBatch.base_head].concat(Array.isArray(existingBatch.commits) ? existingBatch.commits : []).concat((existingBatch.adopted_heads ?? []).map((adoption) => adoption.to));
   if (!lineageHeads.includes(rec.git_base_head))
     return false;
-  if (claim.enrollment_event_id !== `enroll-${taskId}-${claim.created_at}`)
+  if (claim.enrollment_event_id !== enrollmentEventIdFor(taskId, claim.created_at))
     return false;
   const createdAt = Date.parse(claim.created_at);
   if (!Number.isFinite(createdAt) || createdAt > Date.parse(existingBatch.updated_at))
@@ -11489,11 +11582,10 @@ function authorizedScopeOf(root, taskId, state) {
   } catch {}
   if (scope.length === 0 && state === "settled") {
     try {
-      const localRun = localRunId(root, taskId);
-      const settled = readAuditTaskPair(root, taskId, localRun ?? undefined);
-      const snapshot = settled?.record?.intent_snapshot;
+      const settled = readSettledTaskEvidence(root, taskId);
+      const snapshot = settled?.record.intent_snapshot;
       scope = snapshot?.scope_hint ?? [];
-      recordedIntentPath = recordedIntentPath ?? settled?.record?.intent_ref?.path;
+      recordedIntentPath = recordedIntentPath ?? settled?.record.intent_ref?.path;
     } catch {}
   }
   if (scope.length === 0) {
@@ -12169,24 +12261,39 @@ function readBatchCommitEvidence(root, batchId, taskId) {
   }
   return null;
 }
+function proofEquals(a, b) {
+  return serializeTaskTombstone(a) === serializeTaskTombstone(b);
+}
+function requireMatchingSettledAudit(auditPair, settled) {
+  if (settled.runId === null)
+    return;
+  if (auditPair.recordRevision !== settled.recordRevision || !proofEquals(auditPair.proof, settled.proof)) {
+    throw new Error("batch commit exported audit pair does not match the settled run");
+  }
+}
 async function commitBatchChild(input) {
   const { root, taskId, batchId, expectedHead, branch: expectedBranch } = input;
-  const localRun = localRunId(root, taskId);
-  const auditPair = readAuditTaskPair(root, taskId, localRun ?? undefined);
+  const settled = readSettledTaskEvidence(root, taskId);
+  if (!settled) {
+    throw new Error(`cannot commit child ${taskId}: task is not settled done (no settled run)`);
+  }
+  const auditPair = readAuditTaskPair(root, taskId, settled.runId ?? undefined);
   if (!auditPair) {
     throw new Error(`cannot commit child ${taskId}: task is not settled done (audit pair missing)`);
   }
-  const lifecycle = "lifecycle" in auditPair.record ? auditPair.record.lifecycle : auditPair.record.phase;
-  if (lifecycle !== "done") {
-    throw new Error(`cannot commit child ${taskId}: task is not settled done (lifecycle is ${lifecycle})`);
+  requireMatchingSettledAudit(auditPair, settled);
+  const settledLifecycle = "lifecycle" in settled.record ? settled.record.lifecycle : settled.record.phase;
+  if (settledLifecycle !== "done") {
+    throw new Error(`cannot commit child ${taskId}: task is not settled done (lifecycle is ${settledLifecycle})`);
   }
-  if (auditPair.proof.terminal_lifecycle !== "done") {
+  if (settled.proof.terminal_lifecycle !== "done") {
     throw new Error(`cannot commit child ${taskId}: terminal proof lifecycle is not done`);
   }
-  if (auditPair.record.task_id !== taskId || auditPair.proof.task_id !== taskId) {
+  if (settled.record.task_id !== taskId || settled.proof.task_id !== taskId) {
     throw new Error(`cannot commit child ${taskId}: audit task id mismatch`);
   }
-  const intentSnapshot = auditPair.record.intent_snapshot;
+  const authoritative = settled.runId === null ? auditPair.record : settled.record;
+  const intentSnapshot = authoritative.intent_snapshot;
   const goal = typeof intentSnapshot.goal === "string" ? intentSnapshot.goal : "";
   const scopeHint = Array.isArray(intentSnapshot.scope_hint) ? intentSnapshot.scope_hint.filter((s) => typeof s === "string") : [];
   if (expectedBranch !== undefined) {
@@ -12236,7 +12343,7 @@ async function commitBatchChild(input) {
     spawnSync8("git", ["-C", root, "reset", "--quiet"], { stdio: ["ignore", "ignore", "ignore"] });
     throw new Error("dirty_outside_scope");
   }
-  const record = auditPair.record;
+  const record = authoritative;
   const qa = [...record.attestations ?? []].reverse().find((item) => item.kind === "qa");
   if (record.contract === "assurance_kernel/task_record/v4" && qa?.diff_hash) {
     if (!record.git_base_head)
@@ -12360,6 +12467,17 @@ async function lookupBatchCommit(input) {
       throw new Error(`batch_head_lineage_broken: current branch ${currentBranch} does not match expected branch ${expectedBranch}`);
     }
   }
+  const adopted = readSettledTaskEvidence(root, taskId);
+  const auditPair = adopted ? readAuditTaskPair(root, taskId, adopted.runId ?? undefined) : null;
+  if (!adopted || !auditPair) {
+    throw new Error(`batch_head_lineage_broken: adopted commit lacks terminal audit pair for ${taskId}`);
+  }
+  requireMatchingSettledAudit(auditPair, adopted);
+  const authoritative = adopted.runId !== null ? adopted.record : auditPair.record;
+  const lifecycle = "lifecycle" in authoritative ? authoritative.lifecycle : authoritative.phase;
+  if (lifecycle !== "done") {
+    throw new Error(`batch_head_lineage_broken: adopted commit task lifecycle is not done: ${lifecycle}`);
+  }
   if (expectedHead !== undefined) {
     const currentHeadResult = spawnSync8("git", ["-C", root, "rev-parse", "HEAD"], {
       encoding: "utf8",
@@ -12379,16 +12497,7 @@ async function lookupBatchCommit(input) {
     if (parents.length !== 1 || parents[0] !== expectedHead) {
       throw new Error(`batch_head_lineage_broken: adopted commit parent ${parents.join(",")} does not match expected_head ${expectedHead}`);
     }
-    const adoptedRun = localRunId(root, taskId);
-    const auditPair = readAuditTaskPair(root, taskId, adoptedRun ?? undefined);
-    if (!auditPair) {
-      throw new Error(`batch_head_lineage_broken: adopted commit lacks terminal audit pair for ${taskId}`);
-    }
-    const lifecycle = "lifecycle" in auditPair.record ? auditPair.record.lifecycle : auditPair.record.phase;
-    if (lifecycle !== "done") {
-      throw new Error(`batch_head_lineage_broken: adopted commit task lifecycle is not done: ${lifecycle}`);
-    }
-    const scopeHint = Array.isArray(auditPair.record.intent_snapshot.scope_hint) ? auditPair.record.intent_snapshot.scope_hint.filter((s) => typeof s === "string") : [];
+    const scopeHint = Array.isArray(authoritative.intent_snapshot.scope_hint) ? authoritative.intent_snapshot.scope_hint.filter((s) => typeof s === "string") : [];
     const deltaResult = spawnSync8("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", expectedHead, commit], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     if (deltaResult.status !== 0) {
       throw new Error("batch_head_lineage_broken: failed to inspect adopted commit delta");
@@ -13282,7 +13391,7 @@ class ClaudeRuntime {
       host: this.host,
       confirmationReference: ({ actorId }) => `claude:${actorId}`,
       projectTask: (root, taskId) => projectAssurance(root, taskId, diffSnapshotOf),
-      readTaskRecord: async (root, taskId) => readTaskRecord(root, taskId),
+      readTaskRecord: async (root, taskId) => readTaskRecordRaw(root, taskId),
       readTaskIntent: async (root, taskId) => readTaskIntentForRecord(root, taskId),
       runQa: (snapshot, descriptors, options) => runDeterministicQa(snapshot, descriptors, options),
       writeReviewEvidence: (input) => writeNativeReviewEvidence(input.evidence),
@@ -13466,7 +13575,7 @@ class ClaudeRuntime {
       if ("blocked" in derived)
         throw new Error(derived.blocked);
       if (derived.operation === "resolve-user-decision") {
-        const record = await readTaskRecord(this.cwd, taskId);
+        const record = await readTaskRecordRaw(this.cwd, taskId);
         const open = (record.record?.findings ?? []).filter((finding) => finding.kind === "unresolved_user_decision" && finding.status === "open");
         if (open.length !== 1)
           throw new Error(`resolve-user-decision requires exactly one open user decision; found ${open.length}`);
@@ -13498,7 +13607,7 @@ class ClaudeRuntime {
         writeFileSync8(sidecar, `${JSON.stringify(nextIntent, null, 2)}
 `);
         execFileSync8("git", ["add", "--", priorIntent.intent_ref.path], { cwd: this.cwd, stdio: ["ignore", "pipe", "pipe"] });
-        const preparedRecord = await readTaskRecord(this.cwd, taskId);
+        const preparedRecord = await readTaskRecordRaw(this.cwd, taskId);
         if (!preparedRecord.record) {
           throw new NativeAuthorityError("workspace_changed", "TaskRecord changed before the breaking revision digest");
         }
@@ -13521,7 +13630,7 @@ class ClaudeRuntime {
       });
     } catch (error) {
       if (stagedSnapshot) {
-        const current = await readTaskRecord(this.cwd, taskId);
+        const current = await readTaskRecordRaw(this.cwd, taskId);
         if (current.record?.intent_snapshot.revision === priorIntent.intent.revision) {
           restoreStagedIntent2();
         }
@@ -13580,7 +13689,7 @@ class ClaudeRuntime {
         stagePlanningArtifactTransition(this.cwd, result.record);
     } catch (error) {
       if (stagedSnapshot) {
-        const current = await readTaskRecord(this.cwd, taskId);
+        const current = await readTaskRecordRaw(this.cwd, taskId);
         if (current.record?.intent_snapshot.revision === priorIntent.intent.revision) {
           restoreStagedIntent2();
         }
@@ -13618,7 +13727,7 @@ class ClaudeRuntime {
       return result;
     } catch (error) {
       if (priorStaged) {
-        const current = await readTaskRecord(ctx.cwd, input.taskId);
+        const current = await readTaskRecordRaw(ctx.cwd, input.taskId);
         if (current.record?.intent_snapshot.revision === priorIntent.intent.revision)
           restoreStagedIntent(ctx.cwd, priorStaged);
       }

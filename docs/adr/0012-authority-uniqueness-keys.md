@@ -59,8 +59,16 @@ project transition-plan rule that any interim path needs an expiry.
    Both fall back to the flat pair from (1), so a settlement exported from
    another worktree can be read as this worktree's terminal evidence. Exit: pass
    the run identity once (1) retires the flat layout.
-3. **One live run per task is a schema constraint, not a lookup.**
-   `runs.task_id TEXT NOT NULL UNIQUE` is what makes the `readRunRowByTask`
+   S6 narrowed the ceiling: the terminal reads now bind to this worktree's own
+   run — `readSettledRunEvidence`/`readSettledTaskEvidence` in
+   `runtime/kernel/storage.ts`, the claim-loss read in
+   `runtime/kernel/assurance_projection.ts` and the Pi `readSettledTaskRecord`
+   all answer from the Authority Store's terminal run, and the exported pair of
+   an earlier run is never projected as this worktree's evidence. The flat pair
+   from (1) remains the last-resort read only where no Kernel store exists
+   (legacy terminals and repository fixtures), so bit (1)'s exit still governs
+   the remaining coarse key.
+3. **One live run per task is a schema constraint, not a lookup.**   `runs.task_id TEXT NOT NULL UNIQUE` is what makes the `readRunRowByTask`
    reads (roughly a dozen call sites in `runtime/kernel/`) safe today. Any feature
    that allows a second live run for one task — re-run, retry-as-new-run — must
    move those call sites to run identity instead of relaxing the constraint.

@@ -18,7 +18,7 @@ import {
 import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { readBackendClaim, readTaskTombstone } from "../plugins/immune-brain/runtime/kernel/backend_claim";
-import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
+import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
 import { taskDeliveryIdentity } from "../plugins/immune-brain/runtime/workspace_scope";
 import { createMutationAuthorityCapabilityForTest } from "./fixtures/mutation-authority-test-seam";
 import { boundSpecPath, readBoundActiveSpec } from "../plugins/immune-brain/runtime/kernel/spec_binding";
@@ -88,7 +88,7 @@ beforeEach(() => {
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 function token() {
-	const record = readTaskRecord(root, TASK).record;
+	const record = readTaskRecordRaw(root, TASK).record;
 	return readTaskIntent(root, TASK, record?.intent_ref.path).token;
 }
 
@@ -116,7 +116,7 @@ function capabilityFor(
 		authority_kind,
 		task_id: TASK,
 		action_digest: digestOfAction(action),
-		expected_record_hash: readTaskRecord(root, TASK).revision,
+		expected_record_hash: readTaskRecordRaw(root, TASK).revision,
 		intent_revision: 1,
 		intent_content_hash: INTENT_HASH,
 		diff_hash: diffHash,
@@ -161,7 +161,7 @@ describe("canary application v3 semantic operations", () => {
 	test("unknown operations and raw action injection fail closed", () => {
 		expect(() => execute({ op: "evil_operation", actor_id: "x" } as never)).toThrow(KernelInvariantError);
 		expect(() => execute({ op: "complete", type: "stop", actor_id: "x" } as never)).toThrow(/not eligible|artifact/i);
-		expect(readTaskRecord(root, TASK).record?.lifecycle).toBe("active");
+		expect(readTaskRecordRaw(root, TASK).record?.lifecycle).toBe("active");
 	});
 
 	test("exact ordinary replay is idempotent and conflicting reuse fails", () => {
@@ -190,7 +190,7 @@ describe("canary application v3 semantic operations", () => {
 
 	test("privileged mutation without capability performs zero writes", () => {
 		expect(() => execute({ op: "stop", reason: "halt", actor_id: "user" } as never)).toThrow(/capability|authority/i);
-		expect(readTaskRecord(root, TASK).record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
+		expect(readTaskRecordRaw(root, TASK).record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
 	});
 
 	test("privileged stop consumes exact user authority and terminalizes", () => {
@@ -262,7 +262,7 @@ describe("canary application v3 semantic operations", () => {
 			authority_kind: "user",
 			task_id: TASK,
 			action_digest: digestOfAction(action as never),
-			expected_record_hash: readTaskRecord(root, TASK).revision,
+			expected_record_hash: readTaskRecordRaw(root, TASK).revision,
 			intent_revision: 1,
 			intent_content_hash: INTENT_HASH,
 			diff_hash: `sha256:${"0".repeat(64)}`,
@@ -318,7 +318,7 @@ describe("Spec binding at freeze", () => {
 			`source_missing: docs/specs/${TASK}.spec.md`,
 		);
 		// The refusal wrote nothing: the record is still active and unfrozen.
-		expect(readTaskRecord(root, TASK).record).toMatchObject({
+		expect(readTaskRecordRaw(root, TASK).record).toMatchObject({
 			lifecycle: "active",
 			artifact_state: "active",
 		});
@@ -334,7 +334,7 @@ describe("Spec binding at freeze", () => {
 
 	test("delivery identity defaults to the shared selector; a supplied diffProvider overrides it", () => {
 		freeze();
-		const record = readTaskRecord(root, TASK).record;
+		const record = readTaskRecordRaw(root, TASK).record;
 		if (!record) throw new Error("fixture TaskRecord did not parse");
 		const shared = taskDeliveryIdentity(root, record).diff_hash;
 		expect(shared).toMatch(/^sha256:[0-9a-f]{64}$/);

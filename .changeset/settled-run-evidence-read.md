@@ -1,0 +1,5 @@
+---
+"immune-brain": minor
+---
+
+Add the Run-exact settled-Run read behind the Authority Store: `readSettledRunEvidence` returns a Task's settled Run with its identity-validated record, its proof, its raw bytes, and whether its audit pair has been exported, and never answers from live state. `readSettledTaskEvidence` layers that read over the legacy flat layout, so pre-store terminals keep resolving without ever projecting another worktree's run. The run-blind `readAuditTaskPair` terminals in `assurance_projection.ts`, the batch preflight/commit/reconfirmation paths and the Pi `readSettledTaskRecord` now bind to this worktree's own run, so a re-enrolled Task reads its current Run's evidence and an earlier Run's exported pair is never returned. Batch children reconfirm their audit paths through `storage_paths.ts` instead of `.imm/` literals, the `enroll-<task>-<created_at>` convention is defined once (`enrollmentEventIdFor`), and the forwarding `readTaskRecord` export is gone — callers use `readTaskRecordRaw`. No schema change; the bundle is regenerated from these sources.

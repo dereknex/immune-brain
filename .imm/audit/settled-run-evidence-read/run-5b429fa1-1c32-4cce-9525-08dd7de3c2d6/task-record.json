@@ -1,0 +1,1039 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "settled-run-evidence-read",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "settled-run-evidence-read",
+    "goal": "Implement Slice S6 of docs/specs/deepen-authority-seams.spec.md (Initiative deepen-authority-seams): the Authority Store exposes one Run-exact read of a Task's settled Run; modules outside runtime/kernel stop reading Run rows; the forwarding readTaskRecord export is removed. No schema or migration change.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Per D6 of docs/specs/deepen-authority-seams.spec.md (sources U1, E5): runtime/kernel/storage.ts exposes one read that, for a Task in this worktree, returns the settled Run's identity, its identity-validated record, its proof, whether its audit pair is exported, and the raw bytes needed for byte-exact comparison. Positive: a settled Task returns its own Run. Negative: an active Task or a Task with no Run returns null. Bound: for a Task with two Runs the read never returns the other Run's record or proof. Agreed seams: tests/task-record-durability.test.ts, tests/kernel-enrollment-transaction.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/task-record-durability.test.ts\",\n      \"tests/kernel-enrollment-transaction.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Per D6 and the prohibited-coupling rule of docs/specs/deepen-authority-seams.spec.md: no module outside plugins/immune-brain/runtime/kernel imports sqlite_store or reads Run rows; batch reconfirmation, preflight ownership and batch commit use the settled Run read; audit paths in batch_reconfirmation.ts come from storage_paths.ts; the enroll-<task>-<created_at> Run-id convention is defined once. Positive: reconfirmation, own-claim detection and batch commit behave as before. Negative: the boundary test fails when a module outside runtime/kernel imports sqlite_store. Agreed seams: tests/kernel-r2c2-boundary.test.ts, tests/batch-plan-reconfirmation.test.ts, tests/unattended-batch-commit.test.ts, tests/pi-batch-authority.test.ts. Evidence-binding invariant: before consuming an exported audit pair to create or adopt a batch child commit, its raw record revision and its complete parsed terminal proof must equal the current local settled Run evidence. Apply the same comparison to new commits, first-child recovery and every later child commit/persist recovery. Positive: a second child produced by commitBatchChild is found after a commit/persist interruption. Negative: changing only the exported proof lifecycle, terminal event id or terminalized_at is refused without changing HEAD, index, refs or persistent evidence; restoring the original proof restores success. Verify these controls through lookupBatchCommit in tests/unattended-batch-commit.test.ts, with the first child already committed.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-r2c2-boundary.test.ts\",\n      \"tests/batch-plan-reconfirmation.test.ts\",\n      \"tests/unattended-batch-commit.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Per D6 of docs/specs/deepen-authority-seams.spec.md (source E5, docs/adr/0012 'Remaining coarse-key sites'): the run-blind readAuditTaskPair(root, taskId) reads in storage.ts, assurance_projection.ts and the Pi readSettledTaskRecord are Run-aware. Positive: a re-enrolled Task reads its current Run's evidence. Negative: the stale flat pair of an earlier Run is not returned. docs/adr/0012 lists the corrected remaining sites. Agreed seams: tests/kernel-assurance-projection.test.ts, tests/post-freeze-intent-resolution.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-assurance-projection.test.ts\",\n      \"tests/post-freeze-intent-resolution.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "Per D6 of docs/specs/deepen-authority-seams.spec.md: the forwarding readTaskRecord export of runtime/kernel/storage.ts is removed and its callers use readTaskRecordRaw; the Kernel index exposes readTaskRecordRaw and not readTaskRecord. The AssuranceCoordinatorPorts member of the same name is unaffected. Agreed seams: tests/kernel-r2c1-boundary.test.ts, tests/kernel-r2c2-boundary.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-r2c1-boundary.test.ts\",\n      \"tests/kernel-r2c2-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "plugins/immune-brain/dist/claude/mcp-server.mjs is regenerated from the changed runtime sources and matches a fresh generate; no hand edit to the bundle. Agreed seam: tests/claude-host-package.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/settled-run-evidence-read.md",
+      "docs/adr/0012-authority-uniqueness-keys.md",
+      "docs/plans/settled-run-evidence-read.intent.json",
+      "docs/specs/deepen-authority-seams.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/assurance/qa.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+      "plugins/immune-brain/runtime/kernel/backend_claim.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment.ts",
+      "plugins/immune-brain/runtime/kernel/index.ts",
+      "plugins/immune-brain/runtime/kernel/sqlite_store.ts",
+      "plugins/immune-brain/runtime/kernel/storage.ts",
+      "plugins/immune-brain/runtime/kernel/storage_paths.ts",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts",
+      "tests/batch-plan-reconfirmation.test.ts",
+      "tests/breaking-intent-revision-gate.test.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/enrollment-confirmation-relocation.test.ts",
+      "tests/enrollment-dirty-scope.test.ts",
+      "tests/fixtures/mutation-authority-test-seam.ts",
+      "tests/helpers/pi-canary-assurance-harness.ts",
+      "tests/host-neutral-assurance-coordinator.test.ts",
+      "tests/kernel-assurance-projection.test.ts",
+      "tests/kernel-batch-authority.test.ts",
+      "tests/kernel-canary-application.test.ts",
+      "tests/kernel-canary-authority.test.ts",
+      "tests/kernel-canary-claim-writer-boundary.test.ts",
+      "tests/kernel-canary-drain-transaction.test.ts",
+      "tests/kernel-canary-rehearsal.test.ts",
+      "tests/kernel-canary-rework-authority.test.ts",
+      "tests/kernel-canary-terminal-transaction.test.ts",
+      "tests/kernel-enrollment-transaction.test.ts",
+      "tests/kernel-r2c1-boundary.test.ts",
+      "tests/kernel-r2c2-boundary.test.ts",
+      "tests/pi-batch-acceptance-integration.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/pi-canary-assurance-progression.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/pi-canary-user-authority.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/planning-artifact-archival.test.ts",
+      "tests/post-freeze-intent-resolution.test.ts",
+      "tests/review-revision-identity-conformance.test.ts",
+      "tests/rework-root-cause-contract.test.ts",
+      "tests/task-record-durability.test.ts",
+      "tests/unattended-batch-commit.test.ts",
+      "tests/unattended-batch-plan.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/settled-run-evidence-read.intent.json",
+    "content_hash": "sha256:ab1b209899bee0ab33174a9a03a4749c6407833305cdaad7b8dda7ea2a23aeae"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:63f741fd53b477400317b90a25302c3d791fa3d85256a4c8921a5bb9db56460f",
+  "git_base_head": "80dc66fcf3038415c785646d21806578be26ed3e",
+  "attestations": [
+    {
+      "id": "approval-qa-2b752a86",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:63f741fd53b477400317b90a25302c3d791fa3d85256a4c8921a5bb9db56460f",
+      "diff_hash": "sha256:656281e2a726afa1fffb5c3cae41938f23bf82720faf4e7f79f1b657c50d43b4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:f78f610da72d6c5ade27d5e4500a2b2f67a0e23757d221046794200981a76f8f",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:f78f610da72d6c5ade27d5e4500a2b2f67a0e23757d221046794200981a76f8f"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:f78f610da72d6c5ade27d5e4500a2b2f67a0e23757d221046794200981a76f8f"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:f78f610da72d6c5ade27d5e4500a2b2f67a0e23757d221046794200981a76f8f"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:f78f610da72d6c5ade27d5e4500a2b2f67a0e23757d221046794200981a76f8f"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:f78f610da72d6c5ade27d5e4500a2b2f67a0e23757d221046794200981a76f8f"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-957092f5",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:63f741fd53b477400317b90a25302c3d791fa3d85256a4c8921a5bb9db56460f",
+      "diff_hash": "sha256:13ff4f9708b844149052ef6541d1ae9b3f3c15117dd86812804c3a9501c4c35e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:7363417275b5bdc4974086713438d62eb10a37f681b1c03711c313e2258e9a41",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:7363417275b5bdc4974086713438d62eb10a37f681b1c03711c313e2258e9a41"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:7363417275b5bdc4974086713438d62eb10a37f681b1c03711c313e2258e9a41"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:7363417275b5bdc4974086713438d62eb10a37f681b1c03711c313e2258e9a41"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:7363417275b5bdc4974086713438d62eb10a37f681b1c03711c313e2258e9a41"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:7363417275b5bdc4974086713438d62eb10a37f681b1c03711c313e2258e9a41"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-5912f9bf",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:63f741fd53b477400317b90a25302c3d791fa3d85256a4c8921a5bb9db56460f",
+      "diff_hash": "sha256:6308366fa32d7ed89bbeac5775449cde012000178c5e6a66e2f77a6534d77b54",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:b8633c81a4900dbbc891d74e6e4887e45d4df8adaf46597a23f587a20ec3217a",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:b8633c81a4900dbbc891d74e6e4887e45d4df8adaf46597a23f587a20ec3217a"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:b8633c81a4900dbbc891d74e6e4887e45d4df8adaf46597a23f587a20ec3217a"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:b8633c81a4900dbbc891d74e6e4887e45d4df8adaf46597a23f587a20ec3217a"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:b8633c81a4900dbbc891d74e6e4887e45d4df8adaf46597a23f587a20ec3217a"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:b8633c81a4900dbbc891d74e6e4887e45d4df8adaf46597a23f587a20ec3217a"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-5d0e04d0",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:63f741fd53b477400317b90a25302c3d791fa3d85256a4c8921a5bb9db56460f",
+      "diff_hash": "sha256:fee9b4773d9510fedf30be2c671f9f77b806bf805e68023e4f709d1f74005ce7",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:2030527d72fc07bb6d4b94f83fe36a70fe20ea21b46d5e18a413800997e4d658",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:2030527d72fc07bb6d4b94f83fe36a70fe20ea21b46d5e18a413800997e4d658"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:2030527d72fc07bb6d4b94f83fe36a70fe20ea21b46d5e18a413800997e4d658"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:2030527d72fc07bb6d4b94f83fe36a70fe20ea21b46d5e18a413800997e4d658"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:2030527d72fc07bb6d4b94f83fe36a70fe20ea21b46d5e18a413800997e4d658"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:2030527d72fc07bb6d4b94f83fe36a70fe20ea21b46d5e18a413800997e4d658"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-557b9477",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:63f741fd53b477400317b90a25302c3d791fa3d85256a4c8921a5bb9db56460f",
+      "diff_hash": "sha256:5d2e094da5d2ab4bb7a931dc1a3a2edb2417c81dfd293ce41cfc638cb4d57ebf",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:3834844e9b54104fa0d5d48aa6e554f68a8e91a244c67a62fae8c565033ddac2",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:3834844e9b54104fa0d5d48aa6e554f68a8e91a244c67a62fae8c565033ddac2"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:3834844e9b54104fa0d5d48aa6e554f68a8e91a244c67a62fae8c565033ddac2"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:3834844e9b54104fa0d5d48aa6e554f68a8e91a244c67a62fae8c565033ddac2"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:3834844e9b54104fa0d5d48aa6e554f68a8e91a244c67a62fae8c565033ddac2"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:3834844e9b54104fa0d5d48aa6e554f68a8e91a244c67a62fae8c565033ddac2"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-4bca9b59",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:63f741fd53b477400317b90a25302c3d791fa3d85256a4c8921a5bb9db56460f",
+      "diff_hash": "sha256:459302af0dc8a9ec859a42e6f86ead0a89a30fbca79d6d80b0056c7438b3810c",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:306d51086cb2c6763db605898040fae07172fda5cda987c14c67f4bfa7c168ce",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:306d51086cb2c6763db605898040fae07172fda5cda987c14c67f4bfa7c168ce"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:306d51086cb2c6763db605898040fae07172fda5cda987c14c67f4bfa7c168ce"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:306d51086cb2c6763db605898040fae07172fda5cda987c14c67f4bfa7c168ce"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:306d51086cb2c6763db605898040fae07172fda5cda987c14c67f4bfa7c168ce"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:306d51086cb2c6763db605898040fae07172fda5cda987c14c67f4bfa7c168ce"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-2d7d1157",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:63f741fd53b477400317b90a25302c3d791fa3d85256a4c8921a5bb9db56460f",
+      "diff_hash": "sha256:3d6503f6ff3b1b2707a77cdc3b9f59ca630ac7d4fa34f01f51f20d43d85ef770",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:b81b2a8379890ed7abdd7b0bc46ae889b07fbfd6d717defa5e50e2165ec6b2e4",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:b81b2a8379890ed7abdd7b0bc46ae889b07fbfd6d717defa5e50e2165ec6b2e4"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:b81b2a8379890ed7abdd7b0bc46ae889b07fbfd6d717defa5e50e2165ec6b2e4"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:b81b2a8379890ed7abdd7b0bc46ae889b07fbfd6d717defa5e50e2165ec6b2e4"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:b81b2a8379890ed7abdd7b0bc46ae889b07fbfd6d717defa5e50e2165ec6b2e4"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:b81b2a8379890ed7abdd7b0bc46ae889b07fbfd6d717defa5e50e2165ec6b2e4"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-5b24638f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:63f741fd53b477400317b90a25302c3d791fa3d85256a4c8921a5bb9db56460f",
+      "diff_hash": "sha256:b54fe4aabdc8bca26d836a11e54d47194b727c7e8e3458bdc7541b63fa61f86c",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:e1c4e7a77878f58769b3a8c8e9d21cefebf4f268edf4627fd48f3b66994013df",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:e1c4e7a77878f58769b3a8c8e9d21cefebf4f268edf4627fd48f3b66994013df"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:e1c4e7a77878f58769b3a8c8e9d21cefebf4f268edf4627fd48f3b66994013df"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:e1c4e7a77878f58769b3a8c8e9d21cefebf4f268edf4627fd48f3b66994013df"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:e1c4e7a77878f58769b3a8c8e9d21cefebf4f268edf4627fd48f3b66994013df"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:e1c4e7a77878f58769b3a8c8e9d21cefebf4f268edf4627fd48f3b66994013df"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-4abacd10",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:ab1b209899bee0ab33174a9a03a4749c6407833305cdaad7b8dda7ea2a23aeae",
+      "diff_hash": "sha256:5f67a73ee9335ffebe1ccac8b2952a4daf3518bf082b951d1594862bf4ac0ec7",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:184ccd558e7b636bb3429a2d6e2b443cd69c347be150abd0881beb2bc5d094e0",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:184ccd558e7b636bb3429a2d6e2b443cd69c347be150abd0881beb2bc5d094e0"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:184ccd558e7b636bb3429a2d6e2b443cd69c347be150abd0881beb2bc5d094e0"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:184ccd558e7b636bb3429a2d6e2b443cd69c347be150abd0881beb2bc5d094e0"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:184ccd558e7b636bb3429a2d6e2b443cd69c347be150abd0881beb2bc5d094e0"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:184ccd558e7b636bb3429a2d6e2b443cd69c347be150abd0881beb2bc5d094e0"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-e168b989",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:ab1b209899bee0ab33174a9a03a4749c6407833305cdaad7b8dda7ea2a23aeae",
+      "diff_hash": "sha256:5f67a73ee9335ffebe1ccac8b2952a4daf3518bf082b951d1594862bf4ac0ec7",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 manifest digest、单一 parent、review tree 及全部变更 blob；settled Run 读取、完整 proof 比较与恢复路径符合 acceptance，结合 Kernel QA 通过证据，未发现阻断问题。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "80dc66fcf3038415c785646d21806578be26ed3e",
+        "review_commit": "af4b96d0d47f754d8afdd1926ffba0f92591c89b",
+        "review_tree": "d734a30eff9fb8553536f83dd976e6a93e8be91b",
+        "manifest_digest": "sha256:6dc201d3cc9b0b133b6391f808c1a00ef9fe7313b833672dd9dd31a549746a2f"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-2fab1a7d0dc3-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "readSettledTaskEvidence 在本地 Run 仍 active 时也 fallback 到 run-blind audit pair，可能返回其他 worktree Run 的 terminal evidence；batch_git.commitBatchChild 与 Pi readSettledTaskRecord 因此可能把未 settle 的本地 Task 当成已 settle。最小修复：fallback 前区分 active 本地 Run 与没有本地 Run 的历史证据场景，active 时直接返回 null，并在约定 seam 添加 active 本地 Run 与 stale pair 共存的拒绝断言。",
+      "anchor": "sha256:d5b59c0b901909e3be4e551eee29e5e949af2e274032112842b267c1b4985dea",
+      "evidence": {
+        "trigger": "本地 store 中 task-a 的当前 Run 为 active，同时 .imm/audit/task-a/run-foreign/ 存在有效的 done record/proof，当前 Run 尚无 audit export。该状态已由 tests/kernel-enrollment-transaction.test.ts:220–276 的 fixture 建立。readSettledRunEvidence 返回 null 后，readSettledTaskEvidence 无条件调用 readAuditTaskPair(root, taskId)；storage_paths.ts:189–204 会选择唯一的 run-foreign 目录，wrapper 返回 runId:null 和 foreign terminal record。commitBatchChild 随后再次使用无 Run 参数读取同一 pair，done 检查通过；满足其余 Git lineage、scope 和 delivery 检查时可以提交尚未 settled 的本地 Task。base revision 的 batch commit 使用 localRunId 指定 active 本地 Run，原本会因其 audit pair 不存在而拒绝。新增测试仅断言底层 readSettledRunEvidence 返回 null，未覆盖 wrapper 的 fallback，因此未关闭当前本地 Run 优先、旧 Run 不得替代这一 invariant。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:commitBatchChild",
+          "plugins/immune-brain/runtime/kernel/storage.ts:readSettledTaskEvidence",
+          "plugins/immune-brain/runtime/kernel/storage.ts:readSettledRunEvidence",
+          "plugins/immune-brain/runtime/kernel/storage.ts:readAuditTaskPair",
+          "plugins/immune-brain/runtime/kernel/storage_paths.ts:auditEvidencePaths"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-b12415883a1f-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC2",
+      "source": "review",
+      "review_round": 2,
+      "summary": "batch_git.ts:471–484 将原先针对 auditPair 的 done/proof 检查替换为 settled 检查，却仍从 auditPair 获取 scope 和 attestation，且不校验它与 store evidence 一致。store 为 done、导出 pair 被替换成自洽的 stopped record/proof 时，旧实现会拒绝，新实现可继续提交。应在使用导出 pair 前比对其 recordRevision 与 settled.recordRevision，并验证 proof 与 settled.proof 一致；scope 和 attestation 应取自已验证的 store record。",
+      "anchor": "sha256:b9fe42064c870a3bfaed01cd7f071df29d529d4393a9771859a2c08b995ab255",
+      "evidence": {
+        "trigger": "本地 Run 已 settled done；其 run-scoped audit record 被替换为合法的 stopped record，terminal-proof.json 同步改为 stopped 并更新 final_record_hash，使 readAuditTaskPair 验证通过。该导出 record 不含 QA attestation，Git branch/HEAD 正确，待提交路径位于其 scope_hint 内。commitBatchChild 的 lifecycle/proof 检查只检查 store 的 done evidence，因此绕过原先对 stopped audit pair 的拒绝并继续提交。这属于 validation precedes merge 的覆盖缺口：分别验证 store 和 export 并未验证两者是同一份 settlement evidence。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:createDefaultBatchGitPort.commitChild",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:commitBatchChild",
+          "plugins/immune-brain/runtime/kernel/storage.ts:readSettledTaskEvidence",
+          "plugins/immune-brain/runtime/kernel/storage.ts:readAuditTaskPair",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:commitBatchChild scope and attestation checks"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-b12415883a1f-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC3",
+      "source": "review",
+      "review_round": 2,
+      "summary": "AC3 在约定 seam 的负向覆盖缺失：tests/kernel-assurance-projection.test.ts 仅替换 reader 名称，未验证当前 Run 与 stale flat pair 并存时的 projection；tests/post-freeze-intent-resolution.test.ts:201 新测试调用 storage helper 且构造 foreign Run 目录，未通过 Pi readSettledTaskRecord 验证拒绝旧 flat pair。应在这两个约定文件中分别通过 projectAssurance 和 Pi readSettledTaskRecord 验证返回当前 Run 的 evidence，并拒绝旧 flat pair。",
+      "anchor": "sha256:1f3fcca3447afb5a218ba4d5d55697fb4be553b822875c521abb96dfa40d49c3",
+      "evidence": {
+        "trigger": "当前本地 Run 与同 task_id 的旧 .imm/audit/<task-id>/task-record.json、terminal-proof.json 同时存在，且两份 evidence 的 intent、scope 或 lifecycle 不同。现有 AC3 suites 未通过 projectAssurance 和 Pi readSettledTaskRecord 在该状态下断言结果；新增测试只调用 readSettledTaskEvidence 并放置 foreign run-scoped pair，因此无法保护 AC3 指定的 stale-flat-pair invariant。",
+        "caller_chain": [
+          "tests/kernel-assurance-projection.test.ts",
+          "plugins/immune-brain/runtime/kernel/assurance_projection.ts:projectAssurance",
+          "tests/post-freeze-intent-resolution.test.ts",
+          "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:readSettledTaskRecord",
+          "plugins/immune-brain/runtime/kernel/storage.ts:readSettledTaskEvidence"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "qa-AC3-21c5a7ac-9b5da2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC3",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=4147B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "review-b34a57c49534-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC3",
+      "source": "review",
+      "review_round": 3,
+      "summary": "readSettledTaskEvidence 的两次独立 DB 读之间存在 settlement 交错窗口：settlement 提交但 export 未完成时，第二次读取看到 done，legacy fallback 返回另一 Run 的 pair。最小修复：用一次 DB 读区分 absent、active、terminal，仅在 absent 时允许 legacy fallback，并在约定 seam 增加 settlement 交错回归覆盖。",
+      "anchor": "sha256:00003ab4ba5d9f27ef0ed8d72146b6118a92d5daf4f4450a7d705403c44348be",
+      "evidence": {
+        "trigger": "本地 Run B 为 active，磁盘上只有早先 Run A 的有效 audit pair。storage.ts:1162 的 readSettledRunEvidence 读取 B 后返回 null；另一进程随后提交 B 的 settlement 而其 audit export 尚未完成；storage.ts:1170–1173 的第二次读取看到 B 为 done，跳过仅拒绝 active 的分支，执行 :1175 的 run-blind readAuditTaskPair，选到唯一已导出的 A，最终返回 runId:null 与 A 的 record/proof，Pi reader 因而投影 A 的 scope 和 intent_path。这属于 Run-exact evidence isolation 的覆盖缺口：顺序执行的 active、settled 与 stale-pair 检查未覆盖两次读取之间的状态转换。",
+        "caller_chain": [
+          "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts#readSettledTaskRecord",
+          "plugins/immune-brain/runtime/kernel/storage.ts#readSettledTaskEvidence",
+          "plugins/immune-brain/runtime/kernel/storage.ts#readAuditTaskPair",
+          "plugins/immune-brain/runtime/kernel/storage_paths.ts#auditEvidencePaths"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-384f19f5bd1f-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC2",
+      "source": "review",
+      "review_round": 4,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_git.ts:478–490 弱化了导出 proof 的校验：proof-only 修改可让 batch 提交与 settled Run 矛盾的审计证据。提交前应比较完整 proof（至少 lifecycle/terminal_event_id/final_record_hash 逐字段），并在 tests/unattended-batch-commit.test.ts 增加仅修改导出 proof 的负向测试。",
+      "anchor": "sha256:1659ad060176fd4b54d17d6a2ae32d7b5f01bd9e066a2f03fd43610b24396bb4",
+      "evidence": {
+        "trigger": "validation precedes merge 的覆盖缺口：本地 Run、record 和 store proof 均为 done，导出的 task-record.json 保持原字节，仅将同一 Run 的 terminal-proof.json 中 terminal_lifecycle 改为 stopped，保留 task_id、final_record_hash 和 terminal_event_id。storage.ts:1065–1100 的 readAuditTaskPair 接受该 pair；batch_git.ts:478–482 只比较 hash 和 event id，489 行检查的又是 store proof，因此全部通过并在 588–638 行提交矛盾的导出 proof、记录成功。base revision 的 batch_git.ts:470 会拒绝该输入。新增 record-identity guard 和测试同时替换 record/proof，未覆盖同一 invariant 下的 proof-only 修改。未改动的 backend_claim.ts:152–184 因 readAuditTaskPair 直接调用 parseTaskTombstone 而检查；它分别允许 done/stopped，不负责与 record lifecycle 比较。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_git.ts#commitBatchChild",
+          "plugins/immune-brain/runtime/kernel/storage.ts#readAuditTaskPair",
+          "plugins/immune-brain/runtime/kernel/backend_claim.ts#parseTaskTombstone"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-0f0c25d344c9-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "review",
+      "review_round": 5,
+      "summary": "readSettledRunEvidence 未校验 Run state、record.lifecycle 与 proof.terminal_lifecycle 一致，return 互相矛盾的 settled evidence；tests/task-record-durability.test.ts:1519–1559 的 non-canonical 种子正是该矛盾态并断言成功。应在返回前校验三者一致，将 non-canonical 测试改用真实 terminal record，并在约定 seam 增加矛盾时拒绝的测试。",
+      "anchor": "sha256:47e99fffd0df5621f5e40868c31ac436d6eab2f7429a103f263b1713887f6fcb",
+      "evidence": {
+        "trigger": "生命周期一致性这一 invariant 存在覆盖缺口：Run row 的 state 为 done，record_json 是合法的 lifecycle=active、artifact_state=active TaskRecord，terminal_proof_json 的 terminal_lifecycle 为 done 且 final_record_hash 正确绑定这些 active record 原始字节。当前 readSettledRunEvidence 仅核验 task_id 和字节 hash，返回 lifecycle=done 的 evidence，其中 record.lifecycle 仍为 active。相同校验也无法拒绝 record.lifecycle=done、proof.terminal_lifecycle=stopped 的组合；现有 hash 篡改测试不能覆盖生命周期矛盾。",
+        "caller_chain": [
+          "tests/task-record-durability.test.ts::settled run evidence binds the proof to the raw committed bytes",
+          "plugins/immune-brain/runtime/kernel/storage.ts::readSettledRunEvidence",
+          "plugins/immune-brain/runtime/kernel/storage.ts::settledRecordFromRun"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-8400b23c1564-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC2",
+      "source": "review",
+      "review_round": 6,
+      "summary": "lookupBatchCommit 只比较 exported record hash，未比较 exported proof 与 settled Run proof；后续 child 的 commit/persist 中断恢复可接受被改写的 terminal proof。应复用 proofEquals 比较整份 proof，并在 tests/unattended-batch-commit.test.ts 覆盖第二个 child 的中断恢复。",
+      "anchor": "sha256:ec79788a61618f7bcd049d739617a853e899efd4427d3e35b948d7d89d67b438",
+      "evidence": {
+        "trigger": "证据绑定 invariant 存在覆盖缺口：batch 已持久化第一个 child 的 commit；第二个 child 完成 commitBatchChild 并写入 durable commit evidence 后，在持久化 committed child 状态前中断。保持 task-record.json 和 proof.final_record_hash 不变，仅将第二个 child 的 exported proof.terminal_lifecycle 改为 stopped，或改写 terminal_event_id/terminalized_at。readAuditTaskPair 仍通过身份和 hash 检查；lookupBatchCommit 在 805–814 只比较 recordRevision，随后从 store record 得到 done 并返回 commit。当前 commitBatchChild 的整份 proof 校验只覆盖新提交；ownUnpersistedBatchHead 的额外校验只覆盖首个 child，不能封闭同一 invariant 的后续 child 恢复路径。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_runner.ts::driveInterruptedChild",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts::lookupBatchCommit",
+          "plugins/immune-brain/runtime/kernel/storage.ts::readSettledTaskEvidence",
+          "plugins/immune-brain/runtime/kernel/storage.ts::readAuditTaskPair"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:settled-run-evidence-read:2026-10-08T10:28:13.719Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "kernel",
+      "review_round": 6,
+      "summary": "Review exhausted its 5-round rework budget; a durable replan is required."
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:settled-run-evidence-read:2026-10-08T07:10:13.453Z",
+      "at": "2026-10-08T07:10:13.453Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/settled-run-evidence-read.intent.json"
+    },
+    {
+      "id": "record_approval:settled-run-evidence-read:2026-10-08T07:13:45.960Z",
+      "at": "2026-10-08T07:13:45.960Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2b752a86\naction_v2_sha256:9ec2fe816952d9dcb36bc38a19ffb501330d056b22ec2e47d3836dffc99d252f",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-5c22d99cd7ad898e",
+        "issued_at": "2026-10-08T07:13:45.960Z"
+      }
+    },
+    {
+      "id": "request_rework:settled-run-evidence-read:2026-10-08T07:19:16.149Z",
+      "at": "2026-10-08T07:19:16.149Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:49115ded531126031acbfebd4accef1b1269028cc97392f779612da1e1738714",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-9ca2f7a461e4f9e9",
+        "issued_at": "2026-10-08T07:19:16.149Z"
+      }
+    },
+    {
+      "id": "resolve_finding:settled-run-evidence-read:2026-10-08T07:33:45.889Z",
+      "at": "2026-10-08T07:33:45.889Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-2fab1a7d0dc3-1-review-1\naction_v2_sha256:d67b417da86860dda76ad74649f69a6162e3c46f6904180fff123f742dd1cbe0"
+    },
+    {
+      "id": "freeze_artifacts:settled-run-evidence-read:2026-10-08T07:33:52.446Z",
+      "at": "2026-10-08T07:33:52.446Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/settled-run-evidence-read.intent.json"
+    },
+    {
+      "id": "record_approval:settled-run-evidence-read:2026-10-08T07:38:06.747Z",
+      "at": "2026-10-08T07:38:06.747Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-957092f5\naction_v2_sha256:e53e91015a2e96b529a61bd47c43204af4e86545a9bc158716f6f30c033fee51",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-c6888435bc01d091",
+        "issued_at": "2026-10-08T07:38:06.748Z"
+      }
+    },
+    {
+      "id": "request_rework:settled-run-evidence-read:2026-10-08T07:44:15.473Z",
+      "at": "2026-10-08T07:44:15.473Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:e77320c405929e5cc1524bfdfea59219ff6256081b455cd402ae209bca8796f6",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-0bb0d16434703e25",
+        "issued_at": "2026-10-08T07:44:15.473Z"
+      }
+    },
+    {
+      "id": "resolve_finding:settled-run-evidence-read:2026-10-08T08:04:36.268Z",
+      "at": "2026-10-08T08:04:36.268Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-b12415883a1f-1-review-1\naction_v2_sha256:54e18a7fb2338bface2fc94b8b946be50cb220f8b904da83543229d540260c88"
+    },
+    {
+      "id": "resolve_finding:settled-run-evidence-read:2026-10-08T08:04:44.165Z",
+      "at": "2026-10-08T08:04:44.165Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-b12415883a1f-2-review-2\naction_v2_sha256:a122b16d744f4119d16d4e306b756dc13132e1eb34dcb78be70217f64cbe940c"
+    },
+    {
+      "id": "freeze_artifacts:settled-run-evidence-read:2026-10-08T08:04:51.323Z",
+      "at": "2026-10-08T08:04:51.323Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/settled-run-evidence-read.intent.json"
+    },
+    {
+      "id": "request_rework:settled-run-evidence-read:2026-10-08T08:09:02.773Z",
+      "at": "2026-10-08T08:09:02.773Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_3\naction_v2_sha256:a60a0804c6a7faa10a2f94c169f12b5333bf15b5aa4cda45e68d8b15e1720853",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-99f04a636aa64281",
+        "issued_at": "2026-10-08T08:09:02.774Z"
+      }
+    },
+    {
+      "id": "resolve_finding:settled-run-evidence-read:2026-10-08T08:11:04.728Z",
+      "at": "2026-10-08T08:11:04.728Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-AC3-21c5a7ac-9b5da2\naction_v2_sha256:d976343114d978de6225b1a3510ca62bcd932a285f1410ab744eaaa2b7187938"
+    },
+    {
+      "id": "freeze_artifacts:settled-run-evidence-read:2026-10-08T08:11:12.096Z",
+      "at": "2026-10-08T08:11:12.096Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/settled-run-evidence-read.intent.json"
+    },
+    {
+      "id": "record_approval:settled-run-evidence-read:2026-10-08T08:15:14.361Z",
+      "at": "2026-10-08T08:15:14.361Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5912f9bf\naction_v2_sha256:a95ea74afe15dc9fb492a3baea4cf5fae44efda766ddac1e70eaacb37c67d3b1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-893cfb5a92e2ddfc",
+        "issued_at": "2026-10-08T08:15:14.361Z"
+      }
+    },
+    {
+      "id": "request_rework:settled-run-evidence-read:2026-10-08T08:26:53.384Z",
+      "at": "2026-10-08T08:26:53.384Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_3\naction_v2_sha256:c56137359abcbcff074c3dcbefb6515c471f39b427f8cffe3af04601b07065fb",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-76f519a6d845aea7",
+        "issued_at": "2026-10-08T08:26:53.384Z"
+      }
+    },
+    {
+      "id": "resolve_finding:settled-run-evidence-read:2026-10-08T08:39:30.098Z",
+      "at": "2026-10-08T08:39:30.098Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-b34a57c49534-1-review-1\naction_v2_sha256:f49c192ad5780c56bcd18ebfd24344e901b21cc8840c7f86a96f7abc5c57048e"
+    },
+    {
+      "id": "freeze_artifacts:settled-run-evidence-read:2026-10-08T08:39:41.504Z",
+      "at": "2026-10-08T08:39:41.504Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/settled-run-evidence-read.intent.json"
+    },
+    {
+      "id": "record_approval:settled-run-evidence-read:2026-10-08T08:44:44.299Z",
+      "at": "2026-10-08T08:44:44.299Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5d0e04d0\naction_v2_sha256:ebf314d441cb7bbbda783127f3dc30acdf54edb1906ddab335d22946d0c000d1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-b950e5b547c46f76",
+        "issued_at": "2026-10-08T08:44:44.300Z"
+      }
+    },
+    {
+      "id": "record_approval:settled-run-evidence-read:2026-10-08T09:10:27.343Z",
+      "at": "2026-10-08T09:10:27.343Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-557b9477\naction_v2_sha256:b8eba8b4564470dd1d41b4e8a2381c5126c900f9107d9a0ccb8e69c1f7a295e1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-7f7acd95ea35d343",
+        "issued_at": "2026-10-08T09:10:27.344Z"
+      }
+    },
+    {
+      "id": "request_rework:settled-run-evidence-read:2026-10-08T09:17:34.131Z",
+      "at": "2026-10-08T09:17:34.131Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_4\naction_v2_sha256:4490e1d054f8efdd9f871c258533c21e5902cc36c3b96e1c2fb468eb26a98f7e",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-80f39caeecde42e1",
+        "issued_at": "2026-10-08T09:17:34.132Z"
+      }
+    },
+    {
+      "id": "resolve_finding:settled-run-evidence-read:2026-10-08T09:32:52.646Z",
+      "at": "2026-10-08T09:32:52.646Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-384f19f5bd1f-1-review-1\naction_v2_sha256:c8716f86b1e2b5a250a662a6a3186d7271b90d5aa7ea7eb7eb30744546363c8d"
+    },
+    {
+      "id": "freeze_artifacts:settled-run-evidence-read:2026-10-08T09:33:00.385Z",
+      "at": "2026-10-08T09:33:00.385Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/settled-run-evidence-read.intent.json"
+    },
+    {
+      "id": "record_approval:settled-run-evidence-read:2026-10-08T09:36:46.323Z",
+      "at": "2026-10-08T09:36:46.323Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-4bca9b59\naction_v2_sha256:0b8fca0006e65feb3854f0b8de5d08d2cdb868a86a186e5ad5ee2006d9eb04b1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-544fa5d21a26b2c7",
+        "issued_at": "2026-10-08T09:36:46.323Z"
+      }
+    },
+    {
+      "id": "record_approval:settled-run-evidence-read:2026-10-08T10:04:15.640Z",
+      "at": "2026-10-08T10:04:15.640Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2d7d1157\naction_v2_sha256:52aa9fecc511426fc541cbeaf1a92497793d65d03c5b66de5a66d435410400b6",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-910db57b4ddb03b7",
+        "issued_at": "2026-10-08T10:04:15.640Z"
+      }
+    },
+    {
+      "id": "request_rework:settled-run-evidence-read:2026-10-08T10:10:01.174Z",
+      "at": "2026-10-08T10:10:01.174Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_5\naction_v2_sha256:1c0c323d832bcd51bed709e6b9000e7f10de55376d4c1d98f3012db2d6fb189a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-b1d02667832c6ea2",
+        "issued_at": "2026-10-08T10:10:01.174Z"
+      }
+    },
+    {
+      "id": "resolve_finding:settled-run-evidence-read:2026-10-08T10:19:17.045Z",
+      "at": "2026-10-08T10:19:17.045Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-0f0c25d344c9-1-review-1\naction_v2_sha256:6a541c2bc9ac4cf3425cf006d9eb158b7d8ab06351316c9542229761b0c9a41d"
+    },
+    {
+      "id": "freeze_artifacts:settled-run-evidence-read:2026-10-08T10:19:24.331Z",
+      "at": "2026-10-08T10:19:24.331Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/settled-run-evidence-read.intent.json"
+    },
+    {
+      "id": "record_approval:settled-run-evidence-read:2026-10-08T10:23:12.883Z",
+      "at": "2026-10-08T10:23:12.883Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5b24638f\naction_v2_sha256:3ab61310a947456c7b185a688b0e4a4340b31d0b3b16873dab308723fa93eedd",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-9ff43abbe63af58f",
+        "issued_at": "2026-10-08T10:23:12.884Z"
+      }
+    },
+    {
+      "id": "request_rework:settled-run-evidence-read:2026-10-08T10:28:13.719Z",
+      "at": "2026-10-08T10:28:13.719Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_6\naction_v2_sha256:860fa73ba461f7c305245c34a8165e646090ea6020d6f270acc201646ac282a6",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-0c438fd489d609db",
+        "issued_at": "2026-10-08T10:28:13.719Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:settled-run-evidence-read:2026-10-08T10:49:48.224Z",
+      "at": "2026-10-08T10:49:48.224Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:18dde5f615aa156dfb912cd253bc2c066099d3302569cf94b389274e2770228e",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-24a269071cbf0dd5",
+        "issued_at": "2026-10-08T10:49:49.381Z"
+      }
+    },
+    {
+      "id": "resolve_finding:settled-run-evidence-read:2026-10-08T10:55:00.222Z",
+      "at": "2026-10-08T10:55:00.222Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-8400b23c1564-1-review-1\naction_v2_sha256:feda4a2e233a461d93b7629036d3b6e9e80abcfc3dcfc8b806770e8275af1060"
+    },
+    {
+      "id": "freeze_artifacts:settled-run-evidence-read:2026-10-08T10:55:16.186Z",
+      "at": "2026-10-08T10:55:16.186Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/settled-run-evidence-read.intent.json"
+    },
+    {
+      "id": "record_approval:settled-run-evidence-read:2026-10-08T10:59:22.849Z",
+      "at": "2026-10-08T10:59:22.849Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-4abacd10\naction_v2_sha256:f53a87a16be6cf116b7e1cbfb4989809837db78384b3de6c73c2b86096595f57",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-b0c1b0702a3db610",
+        "issued_at": "2026-10-08T10:59:22.849Z"
+      }
+    },
+    {
+      "id": "record_approval:settled-run-evidence-read:2026-10-08T11:04:01.473Z",
+      "at": "2026-10-08T11:04:01.473Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-e168b989\naction_v2_sha256:5f7ce0b01b5b1dc814a13f1c59d65b0207205f4bf9053cf4f041e095311f869f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-13c93143de5b49f4",
+        "issued_at": "2026-10-08T11:04:01.473Z"
+      }
+    },
+    {
+      "id": "complete:settled-run-evidence-read:2026-10-08T11:04:04.199Z",
+      "at": "2026-10-08T11:04:04.199Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:5526d28c1f3a574656712ae10d0b82ecd83c6b1f4b32a53c797c06c23ec42f89"
+    }
+  ]
+}

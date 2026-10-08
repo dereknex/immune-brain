@@ -15,7 +15,8 @@ import { auditRunTerminalProofPath } from "../plugins/immune-brain/runtime/kerne
 import {
 	commitTerminalLocked,
 	readAuditTaskPair,
-	readTaskRecord,
+	readCommittedRecord,
+	readTaskRecordRaw,
 	readWorkspaceStateRaw,
 	retryStoreFollowUps,
 	revisionForContent,
@@ -243,6 +244,63 @@ describe("kernel assurance projection v3", () => {
 			} finally {
 				rmSync(root, { recursive: true, force: true });
 			}
+		}
+	});
+
+	test("a settled run projects its own evidence, never a stale flat pair", async () => {
+		const root = makeEnrolledRoot();
+		try {
+			terminalize(root, "done");
+			// A stale flat pair of this same logical task reaches the worktree: its
+			// facts disagree with the settled run, and its goal is what a
+			// run-blind read would answer.
+			const flatDir = join(root, ".imm", "audit", TASK);
+			mkdirSync(flatDir, { recursive: true });
+			const staleRecord = {
+				contract: "assurance_kernel/task_record/v2",
+				task_id: TASK,
+				intent: null,
+				lifecycle_status: "terminal",
+				terminal_lifecycle: "stopped",
+				terminal_event_id: `stopped:${TASK}:flat`,
+				finished_at: "2026-08-12T10:00:00.000Z",
+				scope: [],
+				evidence: { git_base_commit: "a".repeat(40), git_head_commit: "b".repeat(40) },
+			};
+			const staleBytes = `${JSON.stringify(staleRecord, null, 2)}\n`;
+			writeFileSync(join(flatDir, "task-record.json"), staleBytes);
+			writeFileSync(
+				join(flatDir, "terminal-proof.json"),
+				`${JSON.stringify(
+					{
+						contract: "assurance_kernel/task_tombstone/v2",
+						task_id: TASK,
+						lifecycle_status: "terminal",
+						terminal_lifecycle: "stopped",
+						terminal_event_id: `stopped:${TASK}:flat`,
+						final_record_hash: revisionForContent(staleBytes),
+						terminalized_at: "2026-08-12T10:00:00.000Z",
+					},
+					null,
+					2,
+				)}\n`,
+			);
+			const run = withKernelRead(root, (db) => readRunRowByTask(db, TASK))!;
+			const result = await projectAssurance(root, TASK, diffOf);
+			// The settled run's own evidence projects; the flat pair is not consulted.
+			expect(result.error).toBeNull();
+			expect(result.projection).toMatchObject({
+				lifecycle: "done",
+				artifact_state: "frozen",
+				next_obligation: "none",
+				run_id: run.run_id,
+			});
+			const committed = readCommittedRecord(root, TASK);
+			expect(committed).not.toBeNull();
+			expect(result.projection.record_revision).toBe(committed!.revision);
+			expect(result.projection.record_revision).not.toBe(revisionForContent(staleBytes));
+		} finally {
+			rmSync(root, { recursive: true, force: true });
 		}
 	});
 
@@ -562,7 +620,7 @@ describe("shared delivery identity selector (deepen-authority-seams D2)", () => 
 	test("a v4 record with git_base_head yields the revision-family identity", () => {
 		const root = makeEnrolledRoot();
 		try {
-			const record = readTaskRecord(root, TASK).record;
+			const record = readTaskRecordRaw(root, TASK).record;
 			if (!record) throw new Error("fixture TaskRecord did not parse");
 			expect(taskDeliveryIdentity(root, record)).toEqual(
 				taskRevisionIdentity(root, INTENT.scope_hint, record.git_base_head, TASK),
@@ -575,7 +633,7 @@ describe("shared delivery identity selector (deepen-authority-seams D2)", () => 
 	test("a pre-v4 record yields the index-family identity", () => {
 		const root = makeEnrolledRoot();
 		try {
-			const record = readTaskRecord(root, TASK).record;
+			const record = readTaskRecordRaw(root, TASK).record;
 			if (!record) throw new Error("fixture TaskRecord did not parse");
 			const { git_base_head: _base, ...rest } = record;
 			const preV4 = { ...rest, contract: "assurance_kernel/task_record/v3" };
@@ -590,7 +648,7 @@ describe("shared delivery identity selector (deepen-authority-seams D2)", () => 
 	test("a v4 record without git_base_head throws", () => {
 		const root = makeEnrolledRoot();
 		try {
-			const record = readTaskRecord(root, TASK).record;
+			const record = readTaskRecordRaw(root, TASK).record;
 			if (!record) throw new Error("fixture TaskRecord did not parse");
 			expect(() => taskDeliveryIdentity(root, { ...record, git_base_head: undefined })).toThrow(
 				/TaskRecord v4 is missing git_base_head/,
@@ -603,7 +661,7 @@ describe("shared delivery identity selector (deepen-authority-seams D2)", () => 
 	test("projectAssurance uses the shared selector when no provider is supplied; a supplied provider overrides it", async () => {
 		const root = makeEnrolledRoot();
 		try {
-			const record = readTaskRecord(root, TASK).record;
+			const record = readTaskRecordRaw(root, TASK).record;
 			if (!record) throw new Error("fixture TaskRecord did not parse");
 			const shared = await projectAssurance(root, TASK);
 			expect(shared.error).toBeNull();

@@ -17,7 +17,7 @@ import {
 import { projectAssurance, type AssuranceProjection, type AssuranceProjectionResult } from "../kernel/assurance_projection";
 import { type TaskFinding, type TaskRecord } from "../kernel/types";
 import { findingsDigestV2 } from "../kernel/reducer";
-import { readTaskRecord, readTaskRecordRaw, recoverKernelStoreFollowUps } from "../kernel/storage";
+import { readTaskRecordRaw, recoverKernelStoreFollowUps } from "../kernel/storage";
 import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../kernel/intent";
 import { capabilityActionFor, createCanaryApplication } from "../kernel/canary_application";
 import {
@@ -362,7 +362,7 @@ export class ClaudeRuntime {
 			host: this.host,
 			confirmationReference: ({ actorId }) => `claude:${actorId}`,
 			projectTask: (root, taskId) => projectAssurance(root, taskId, diffSnapshotOf),
-			readTaskRecord: async (root, taskId) => readTaskRecord(root, taskId),
+			readTaskRecord: async (root, taskId) => readTaskRecordRaw(root, taskId),
 			readTaskIntent: async (root, taskId) => readTaskIntentForRecord(root, taskId),
 			runQa: (snapshot, descriptors, options) => runDeterministicQa(snapshot, descriptors, options),
 			writeReviewEvidence: (input) => writeNativeReviewEvidence(input.evidence),
@@ -608,7 +608,7 @@ export class ClaudeRuntime {
 			const derived = deriveAuthorizationOperation({ readiness: projection.projection.authorization });
 			if ("blocked" in derived) throw new Error(derived.blocked);
 			if (derived.operation === "resolve-user-decision") {
-				const record = await readTaskRecord(this.cwd, taskId);
+				const record = await readTaskRecordRaw(this.cwd, taskId);
 				const open = (record.record?.findings ?? []).filter(
 					(finding) => finding.kind === "unresolved_user_decision" && finding.status === "open",
 				);
@@ -642,7 +642,7 @@ export class ClaudeRuntime {
 			if (sidecar && nextIntent) {
 				writeFileSync(sidecar, `${JSON.stringify(nextIntent, null, 2)}\n`);
 				execFileSync("git", ["add", "--", priorIntent.intent_ref.path], { cwd: this.cwd, stdio: ["ignore", "pipe", "pipe"] });
-				const preparedRecord = await readTaskRecord(this.cwd, taskId);
+				const preparedRecord = await readTaskRecordRaw(this.cwd, taskId);
 				if (!preparedRecord.record) {
 					throw new NativeAuthorityError("workspace_changed", "TaskRecord changed before the breaking revision digest");
 				}
@@ -665,7 +665,7 @@ export class ClaudeRuntime {
 			});
 		} catch (error) {
 			if (stagedSnapshot) {
-				const current = await readTaskRecord(this.cwd, taskId);
+				const current = await readTaskRecordRaw(this.cwd, taskId);
 				if (current.record?.intent_snapshot.revision === priorIntent.intent.revision) {
 					restoreStagedIntent();
 				}
@@ -727,7 +727,7 @@ export class ClaudeRuntime {
 			) stagePlanningArtifactTransition(this.cwd, result.record);
 		} catch (error) {
 			if (stagedSnapshot) {
-				const current = await readTaskRecord(this.cwd, taskId);
+				const current = await readTaskRecordRaw(this.cwd, taskId);
 				if (current.record?.intent_snapshot.revision === priorIntent.intent.revision) {
 					restoreStagedIntent();
 				}
@@ -773,7 +773,7 @@ export class ClaudeRuntime {
 			return result;
 		} catch (error) {
 			if (priorStaged) {
-				const current = await readTaskRecord(ctx.cwd, input.taskId);
+				const current = await readTaskRecordRaw(ctx.cwd, input.taskId);
 				if (current.record?.intent_snapshot.revision === priorIntent.intent.revision)
 					restoreStagedIntentShared(ctx.cwd, priorStaged);
 			}

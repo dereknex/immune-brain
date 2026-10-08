@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -22,8 +22,9 @@ import {
 	computeBatchPlanDigest,
 } from "../plugins/immune-brain/runtime/kernel/batch_authority";
 import type { BatchPlanChild } from "../plugins/immune-brain/runtime/unattended/types";
-import { readAuditTaskPair } from "../plugins/immune-brain/runtime/kernel/storage";
+import { readAuditTaskPair, recoverKernelStoreFollowUps, readSettledTaskEvidence, revisionForContent } from "../plugins/immune-brain/runtime/kernel/storage";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
+import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 
 // Commit-safety fixtures script settlement; explicitly model Parent-ready turns.
 async function finishScriptedHandoffs(input: StartBatchInput, report: Awaited<ReturnType<typeof startBatch>>) {
@@ -461,6 +462,208 @@ describe("acc-batch-scope-bounded-commit", () => {
 		).rejects.toThrow(/not settled done/);
 
 		expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(repo.baseHead);
+	});
+
+
+	it("a settled run's export must be that run's record to commit", async () => {
+		const taskId = "task-export-identity";
+		const intent = parseTaskIntentV1({
+			contract: "assurance_kernel/task_intent/v1",
+			task_id: taskId,
+			owner: "user",
+			goal: "Export identity guard",
+			scope_hint: ["src/feature.ts", "docs/plans/archive/task-export-identity.intent.json"],
+			acceptance: [{ id: "A1", assertion: "a1", verification: "true" }],
+			risk: "routine",
+			revision: 1,
+		});
+		const record = {
+			contract: "assurance_kernel/task_record/v4",
+			task_id: taskId,
+			intent_snapshot: intent,
+			intent_ref: { path: "docs/plans/archive/task-export-identity.intent.json", content_hash: canonicalIntentHash(intent) },
+			lifecycle: "done",
+			artifact_state: "frozen",
+			baseline: `sha256:${"a".repeat(64)}`,
+			git_base_head: repo.baseHead,
+			attestations: [],
+			findings: [],
+			history: [],
+		};
+		const seeded = seedKernelRunForTest(repo.root, { task_id: taskId, record, terminal: { lifecycle: "done" } });
+		recoverKernelStoreFollowUps(repo.root, taskId);
+		expect(readSettledTaskEvidence(repo.root, taskId)?.runId).toBe(seeded.run_id);
+
+		// The export of the settled run is replaced by a locally consistent
+		// stopped pair: its own revision and proof validate, but it is not this
+		// run's record, so it may not decide what this commit contains.
+		const runDir = join(repo.root, ".imm", "audit", taskId, seeded.run_id);
+		const stopped = { ...record, lifecycle: "stopped" };
+		const stoppedBytes = `${JSON.stringify(stopped, null, 2)}\n`;
+		writeFileSync(join(runDir, "task-record.json"), stoppedBytes);
+		writeFileSync(
+			join(runDir, "terminal-proof.json"),
+			`${JSON.stringify(
+				{
+					contract: "assurance_kernel/task_tombstone/v2",
+					task_id: taskId,
+					lifecycle_status: "terminal",
+					terminal_lifecycle: "stopped",
+					terminal_event_id: `stopped:${taskId}:tampered`,
+					final_record_hash: revisionForContent(stoppedBytes),
+					terminalized_at: "2026-08-12T10:00:00.000Z",
+				},
+				null,
+				2,
+			)}\n`,
+		);
+		mkdirSync(join(repo.root, "src"), { recursive: true });
+		writeFileSync(join(repo.root, "src", "feature.ts"), "code\n");
+
+		await expect(
+			commitBatchChild({
+				root: repo.root,
+				taskId,
+				batchId: "batch-export",
+				expectedHead: repo.baseHead,
+			}),
+		).rejects.toThrow(/does not match the settled run/);
+		expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(repo.baseHead);
+	});
+
+	it("a proof-only rewrite of the exported pair is refused", async () => {
+		const taskId = "task-proof-only-rewrite";
+		const intent = parseTaskIntentV1({
+			contract: "assurance_kernel/task_intent/v1",
+			task_id: taskId,
+			owner: "user",
+			goal: "Proof-only rewrite guard",
+			scope_hint: ["src/feature.ts", "docs/plans/archive/task-proof-only-rewrite.intent.json"],
+			acceptance: [{ id: "A1", assertion: "a1", verification: "true" }],
+			risk: "routine",
+			revision: 1,
+		});
+		const record = {
+			contract: "assurance_kernel/task_record/v4",
+			task_id: taskId,
+			intent_snapshot: intent,
+			intent_ref: { path: "docs/plans/archive/task-proof-only-rewrite.intent.json", content_hash: canonicalIntentHash(intent) },
+			lifecycle: "done",
+			artifact_state: "frozen",
+			baseline: `sha256:${"a".repeat(64)}`,
+			git_base_head: repo.baseHead,
+			attestations: [],
+			findings: [],
+			history: [],
+		};
+		const seeded = seedKernelRunForTest(repo.root, { task_id: taskId, record, terminal: { lifecycle: "done" } });
+		recoverKernelStoreFollowUps(repo.root, taskId);
+		expect(readSettledTaskEvidence(repo.root, taskId)?.runId).toBe(seeded.run_id);
+
+		// Only the exported proof is rewritten: the record bytes stay this run's,
+		// the hash still binds them, and only the terminal lifecycle lies. The
+		// pair is internally consistent, so only comparing the whole proof
+		// against the settled run's can refuse it.
+		const runDir = join(repo.root, ".imm", "audit", taskId, seeded.run_id);
+		const recordPath = join(runDir, "task-record.json");
+		const proofPath = join(runDir, "terminal-proof.json");
+		const recordBytes = readFileSync(recordPath, "utf8");
+		writeFileSync(
+			proofPath,
+			`${JSON.stringify(
+				{
+					contract: "assurance_kernel/task_tombstone/v2",
+					task_id: taskId,
+					lifecycle_status: "terminal",
+					terminal_lifecycle: "stopped",
+					terminal_event_id: `stopped:${taskId}:proof-only`,
+					final_record_hash: revisionForContent(recordBytes),
+					terminalized_at: "2026-08-12T10:00:00.000Z",
+				},
+				null,
+				2,
+			)}\n`,
+		);
+		mkdirSync(join(repo.root, "src"), { recursive: true });
+		writeFileSync(join(repo.root, "src", "feature.ts"), "code\n");
+
+		await expect(
+			commitBatchChild({
+				root: repo.root,
+				taskId,
+				batchId: "batch-proof-only",
+				expectedHead: repo.baseHead,
+			}),
+		).rejects.toThrow(/does not match the settled run/);
+		expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(repo.baseHead);
+	});
+
+	it("later-child recovery binds the complete settled proof without writing on refusal", async () => {
+		const batchId = "batch-proof-recovery";
+		const settleAndCommit = async (taskId: string, expectedHead: string) => {
+			const intent = parseTaskIntentV1({
+				contract: "assurance_kernel/task_intent/v1",
+				task_id: taskId, owner: "user", goal: `Implement ${taskId}`,
+				scope_hint: [`src/${taskId}.ts`],
+				acceptance: [{ id: "A1", assertion: "implemented", verification: "true" }],
+				risk: "routine", revision: 1,
+			});
+			const hash = canonicalIntentHash(intent);
+			const record = {
+				contract: "assurance_kernel/task_record/v4", task_id: taskId,
+				intent_snapshot: intent,
+				intent_ref: { path: `docs/plans/${taskId}.intent.json`, content_hash: hash },
+				lifecycle: "done", artifact_state: "frozen", baseline: hash,
+				git_base_head: expectedHead, attestations: [], findings: [], history: [],
+			};
+			const seeded = seedKernelRunForTest(repo.root, { task_id: taskId, record, terminal: { lifecycle: "done" } });
+			recoverKernelStoreFollowUps(repo.root, taskId);
+			mkdirSync(join(repo.root, "src"), { recursive: true });
+			writeFileSync(join(repo.root, "src", `${taskId}.ts`), "implemented\n");
+			const result = await commitBatchChild({ root: repo.root, taskId, batchId, expectedHead });
+			return { ...result, runId: seeded.run_id };
+		};
+		// Produce both commits through the real runtime, then simulate interruption
+		// before the batch runner persists the second child result.
+		const first = await settleAndCommit("proof-child-1", repo.baseHead);
+		const taskId = "proof-child-2";
+		const second = await settleAndCommit(taskId, first.commit);
+		const lookup = (expectedHead: string | undefined = first.commit) =>
+			lookupBatchCommit({ root: repo.root, taskId, batchId, expectedHead, branch: "imm/test-initiative" });
+		expect(await lookup()).toEqual({ commit: second.commit });
+		const proofPath = join(repo.root, ".imm/audit", taskId, second.runId, "terminal-proof.json");
+		const originalBytes = readFileSync(proofPath);
+		const originalProof = JSON.parse(originalBytes.toString());
+		const capture = () => {
+			const bytes: Record<string, Buffer> = {};
+			const walk = (relative: string) => {
+				for (const entry of readdirSync(join(repo.root, relative), { withFileTypes: true })) {
+					const path = `${relative}/${entry.name}`;
+					if (entry.isDirectory()) walk(path);
+					else bytes[path] = readFileSync(join(repo.root, path));
+				}
+			};
+			walk(".imm");
+			walk(".git/refs");
+			for (const path of [".git/index", ".git/HEAD", ".git/packed-refs"]) {
+				if (existsSync(join(repo.root, path))) bytes[path] = readFileSync(join(repo.root, path));
+			}
+			return { head: git(repo.root, ["rev-parse", "HEAD"]), bytes };
+		};
+		for (const rewrite of [
+			{ terminal_lifecycle: "stopped" },
+			{ terminal_event_id: `${originalProof.terminal_event_id}:rewritten` },
+			{ terminalized_at: new Date(Date.parse(originalProof.terminalized_at) + 1000).toISOString() },
+		]) {
+			writeFileSync(proofPath, `${JSON.stringify({ ...originalProof, ...rewrite }, null, 2)}\n`);
+			const before = capture();
+			await expect(lookup()).rejects.toThrow(/does not match the settled run/);
+			// Omitting expectedHead must not bypass evidence identity either.
+			await expect(lookupBatchCommit({ root: repo.root, taskId, batchId })).rejects.toThrow(/does not match the settled run/);
+			expect(capture()).toEqual(before);
+			writeFileSync(proofPath, originalBytes);
+			expect(await lookup()).toEqual({ commit: second.commit });
+		}
 	});
 
 	it("commits changes within scope envelope + .imm/audit/<task-id>/** with formatted message and trailer", async () => {

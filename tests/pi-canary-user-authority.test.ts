@@ -23,7 +23,7 @@ import {
 } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
-import { readTaskRecord, readAuditTaskPair } from "../plugins/immune-brain/runtime/kernel/storage";
+import { readTaskRecordRaw, readAuditTaskPair } from "../plugins/immune-brain/runtime/kernel/storage";
 
 // Delivery QA has no node_modules; use host seams only when a real Host
 // package is absent. The dialog classes mirror pi-canary-work-extension's seam
@@ -632,7 +632,7 @@ describe("pi canary user authority", () => {
 			expect(parseToolState(result)).toMatchObject({ state: "applied", operation: "authorize-rework", lifecycle: "active" });
 			expect(ui.confirmCalls).toHaveLength(1);
 			expect(ui.confirmCalls[0].title).toContain("authorize-rework");
-			const record = readTaskRecord(root, TASK).record;
+			const record = readTaskRecordRaw(root, TASK).record;
 			expect(record?.findings.find((finding) => finding.kind === "replan_required")?.status).toBe("resolved");
 			expect(readAuditTaskPair(root, TASK)).toBeNull();
 			expect(readBackendClaim(root)?.lifecycle_status).toBe("active");

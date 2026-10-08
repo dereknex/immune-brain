@@ -57,6 +57,19 @@ describe("Loop execution and repair routing", () => {
 		expect(action.context.tool_policy).toBe("workspace tools");
 		expect(action.context.prompt).toContain("enrolled TaskIntent acceptance");
 		expect(action.context.prompt).toContain("scope expansion");
+		const guidance = action.context.prompt.replace(/\s+/g, " ");
+		for (const requirement of [
+			"one compact row per acceptance",
+			"Entry and consumers",
+			"Positive / negative / boundary controls",
+			"Command, outcome and input",
+			"Finding coverage",
+			"every affected caller's await, cancellation and error propagation",
+			"Derive rejection controls from a successful state",
+			"assert the intended rejection reason",
+			"whether each check consumed worktree or delivery bytes",
+			"all known trigger classes and their controls",
+		]) expect(guidance).toContain(requirement);
 		expect(action.context.prompt).not.toContain("skills/");
 	});
 
@@ -170,6 +183,8 @@ describe("Loop execution and repair routing", () => {
 		// Routing and Kernel ownership are stated as obligations: the packaged
 		// contract is shared by both Hosts, so it never names one Host's tools.
 		expect(loop.replace(/\s+/g, " ")).toContain("role-boundary route");
+		expect(loop).toContain("role-prompts/executor.md#delivery-evidence");
+		expect(loop.replace(/\s+/g, " ")).toContain("update affected rows after repair");
 		expect(loop).not.toContain("buildLoopRoleContext");
 		expect(loop).toContain("test-fixer");
 		expect(loop).toContain("pr-fix");

@@ -10,7 +10,9 @@ export * from "./completion";
 export {
 	readWorkspaceStateRaw,
 	readTaskRecordRaw,
-	readTaskRecord,
+	readSettledRunEvidence,
+	readSettledTaskEvidence,
+	enrollmentEventIdFor,
 	readSecureProjectFile,
 	commitTaskRecordLocked,
 	withKernelStoreLock,

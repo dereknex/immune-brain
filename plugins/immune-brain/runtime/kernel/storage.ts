@@ -56,7 +56,7 @@ import {
 	stateDatabasePath,
 } from "./storage_paths";
 import { canonicalRecordHash } from "./reducer";
-import { parseTaskRecord } from "./validation";
+import { KernelInvariantError, parseTaskRecord } from "./validation";
 import { parseTaskRecordV2, parseTaskRecordV3, type TaskRecordV2 } from "./legacy_task_record";
 import {
 	assertRunBinding,
@@ -101,6 +101,7 @@ import type {
 	StoredTaskMutationV3,
 	V3AuthorityObservation,
 } from "./types";
+import { TASK_RECORD_CONTRACT_V4 } from "./types";
 
 export {
 	KernelSchemaError,
@@ -898,10 +899,30 @@ export function readWorkspaceStateRaw(root: string): {
 	};
 }
 
-function recordFromRun(run: KernelRunRow): TaskRecord {
-	const record = parseTaskRecord(JSON.parse(run.record_json) as Record<string, unknown>);
+/**
+ * The record a settled run carries, for a run of any historical contract.
+ *
+ * A migrated store preserves the terminal record bytes it was imported with:
+ * a genuine legacy v3 record is settled evidence the same way a live v4 one
+ * is, so the settled read parses both and validates nothing less. A record
+ * satisfying neither parser is unreadable and fails closed.
+ */
+function settledRecordFromRun(run: KernelRunRow): TaskRecord | TaskRecordV3 {
+	let record: TaskRecord | TaskRecordV3;
+	try {
+		record = parseTaskRecord(JSON.parse(run.record_json) as Record<string, unknown>);
+	} catch {
+		record = parseTaskRecordV3(JSON.parse(run.record_json) as Record<string, unknown>);
+	}
 	if (record.task_id !== run.task_id)
 		throw new KernelStoreSecurityError("task record identity is inconsistent with its run");
+	return record;
+}
+
+function recordFromRun(run: KernelRunRow): TaskRecord {
+	const record = settledRecordFromRun(run);
+	if (record.contract !== TASK_RECORD_CONTRACT_V4)
+		throw new KernelInvariantError([`a live run must hold a v4 record, found ${record.contract}`]);
 	return record;
 }
 
@@ -944,6 +965,93 @@ export function readCommittedRecord(
 			);
 		const record = recordFromRun(run);
 		return { revision: canonicalRecordHash(record), record };
+	});
+	return read ?? null;
+}
+
+/** The one definition of the enrollment Run-id convention: `enroll-<task>-<created_at>`. */
+export function enrollmentEventIdFor(taskId: string, createdAt: string): string {
+	validateTaskId(taskId);
+	return `enroll-${taskId}-${createdAt}`;
+}
+
+/**
+ * The Authority Store's answer to "the settled Run of this Task": this
+ * worktree's run row, its identity-validated record, its proof, whether its
+ * audit pair is exported, and the raw bytes for byte-exact comparison. Run
+ * resolution and proof matching happen behind this read, so a Task with
+ * several Runs never yields another Run's evidence, and an active Task or a
+ * Task with no Run reads as null.
+ */
+export interface SettledRunEvidence {
+	contract: "assurance_kernel/settled_run_evidence/v1";
+	task_id: string;
+	run_id: string;
+	created_at: string;
+	enrollment_event_id: string;
+	lifecycle: "done" | "stopped";
+	/** The settled record, which may be a migrated historical v3. */
+	record: TaskRecord | TaskRecordV3;
+	/** canonicalRecordHash(record): the record's canonical CAS identity. */
+	record_revision: string;
+	/** revisionForContent(record_json): the identity the proof binds. */
+	record_revision_raw: string;
+	/** The store's raw record bytes; equal to the exported audit record. */
+	record_json: string;
+	proof: TaskTombstone;
+	/** The store's raw proof bytes; equal to the exported audit proof. */
+	proof_json: string;
+	audit_exported: boolean;
+}
+
+export function readSettledRunEvidence(root: string, taskId: string): SettledRunEvidence | null {
+	validateTaskId(taskId);
+	const read = withKernelRead(root, (db) => {
+		const run = readRunRowByTask(db, taskId);
+		if (!run || run.state === "active") return null;
+		// A settled run always carries the proof its settlement committed; a
+		// store missing it is corrupt and must never project as a settled task.
+		if (run.terminal_proof_json === null)
+			throw new KernelStoreSecurityError(
+				`task ${taskId} is ${run.state} without a committed terminal proof`,
+			);
+		const record = settledRecordFromRun(run);
+		const record_revision = canonicalRecordHash(record as TaskRecord);
+		// The proof binds the raw committed bytes, not the canonical
+		// re-serialization: a store migrated from the prior runtime keeps
+		// historical record bytes whose serialization need not be canonical.
+		const record_revision_raw = revisionForContent(run.record_json);
+		const proof = parseTaskTombstone(
+			JSON.parse(run.terminal_proof_json) as Record<string, unknown>,
+		);
+		if (proof.task_id !== taskId)
+			throw new KernelStoreSecurityError("settled run proof identity is inconsistent");
+		if (proof.final_record_hash !== record_revision_raw)
+			throw new KernelStoreSecurityError("settled run proof does not match its task record");
+		// Three independent facts of one settlement must agree before the
+		// read answers: the run row's state, the record's own lifecycle, and
+		// the proof's terminal lifecycle. A store that disagrees with itself
+		// is corrupt evidence and must fail closed rather than project a
+		// settled task whose record is still live.
+		if (record.lifecycle !== run.state || proof.terminal_lifecycle !== run.state)
+			throw new KernelStoreSecurityError(
+				`settled run facts disagree: run state ${run.state}, record lifecycle ${record.lifecycle}, proof terminal ${proof.terminal_lifecycle}`,
+			);
+		return {
+			contract: "assurance_kernel/settled_run_evidence/v1" as const,
+			task_id: taskId,
+			run_id: run.run_id,
+			created_at: run.created_at,
+			enrollment_event_id: run.enrollment_event_id,
+			lifecycle: run.state as "done" | "stopped",
+			record,
+			record_revision,
+			record_revision_raw,
+			record_json: run.record_json,
+			proof,
+			proof_json: run.terminal_proof_json,
+			audit_exported: run.audit_exported_at !== null,
+		};
 	});
 	return read ?? null;
 }
@@ -1023,13 +1131,6 @@ export function readAuditTaskPair(
 	return { recordRevision, record, proof };
 }
 
-export function readTaskRecord(
-	root: string,
-	taskId: string,
-): { revision: string; record: TaskRecord | null } {
-	return readTaskRecordRaw(root, taskId);
-}
-
 // ---------------------------------------------------------------------------
 // Audit export: deterministic, idempotent, retryable, never authority.
 // ---------------------------------------------------------------------------
@@ -1071,6 +1172,60 @@ function convergePendingRelocations(root: string, db: DatabaseSync): void {
 		for (const relocation of relocations) convergeArtifactRelocation(root, relocation);
 		setPendingRelocations(db, run.run_id, null);
 	}
+}
+
+/** Settled task evidence: the terminal record and proof of a task's own run. */
+export interface SettledTaskEvidence {
+	/** The run that owns this evidence; `null` for the legacy flat layout. */
+	runId: string | null;
+	record: TaskRecordV2 | TaskRecordV3 | TaskRecord;
+	recordRevision: string;
+	proof: TaskTombstone;
+}
+
+/**
+ * The settled evidence of a task, read run-aware.
+ *
+ * One read decides which of three worlds this worktree is in, because a
+ * decision made from two reads can be stale between them:
+ *
+ * - **absent** (no Kernel store, or no row for the task): a pre-store terminal
+ *   or a repository fixture, whose single flat audit pair is this worktree's
+ *   evidence. This is the only world where the flat layout is read at all.
+ * - **active**: the task's run is in flight, so it has no settled evidence; an
+ *   exported or fetched pair of the same task is another run's and never
+ *   answers while this worktree's own run is live.
+ * - **terminal**: the task's own terminal run, read run-scoped; until its
+ *   export exists the evidence is unreadable (fail closed), never another run's.
+ *
+ * A settlement committed between two reads cannot turn the terminal world into
+ * the absent one, because the world is decided before any pair is resolved.
+ */
+export function readSettledTaskEvidence(root: string, taskId: string): SettledTaskEvidence | null {
+	validateTaskId(taskId);
+	const localRun = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
+	if (!localRun) {
+		const legacy = readAuditTaskPair(root, taskId);
+		if (!legacy) return null;
+		return {
+			runId: null,
+			record: legacy.record as SettledTaskEvidence["record"],
+			recordRevision: legacy.recordRevision,
+			proof: legacy.proof,
+		};
+	}
+	if (localRun.state === "active") return null;
+	const settled = readSettledRunEvidence(root, taskId);
+	if (!settled) return null;
+	return {
+		runId: settled.run_id,
+		record: settled.record,
+		// The pair identity is the raw committed bytes the proof binds; the
+		// canonical revision stays available on the run evidence for callers
+		// that need the TaskRecord's canonical CAS identity.
+		recordRevision: settled.record_revision_raw,
+		proof: settled.proof,
+	};
 }
 
 // ---------------------------------------------------------------------------
@@ -1755,7 +1910,11 @@ export function reconcileKernelAuthority(
 	const legacy = projected ? null : retiredFileStoreDiagnostic(root, null, taskId);
 	if (legacy) return conflictProjection(taskId, legacy);
 	try {
-		const audit = readAuditTaskPair(root, taskId);
+		// Run-aware: when this worktree's store carries the task's run, only that
+		// run's own evidence may classify the task; the resolved/flat fallback
+		// below serves only pre-run-layout evidence of a task with no local run.
+		const localRun = localRunId(root, taskId);
+		const audit = readAuditTaskPair(root, taskId, localRun ?? undefined);
 		if (audit)
 			return {
 				contract: "assurance_kernel/authority_projection/v1",

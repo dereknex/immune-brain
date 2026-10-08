@@ -51,7 +51,9 @@ import {
 	type EnrollmentCapabilityBinding,
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import {
-	readTaskRecord,
+	readTaskRecordRaw,
+	readSettledRunEvidence,
+	readSettledTaskEvidence,
 	readWorkspaceStateRaw,
 	reconcileKernelAuthority,
 	revisionForContent,
@@ -265,10 +267,19 @@ describe("enrollment workspace revision binding", () => {
 			);
 			// This worktree has never run task-a, so it may enroll it.
 			expect(() => enroll(root, "task-a")).not.toThrow();
-			expect(readTaskRecord(root, "task-a").record).toMatchObject({ lifecycle: "active" });
+			expect(readTaskRecordRaw(root, "task-a").record).toMatchObject({ lifecycle: "active" });
 			// The local authority is this worktree's own active run; the foreign
 			// proof stays readable evidence without becoming local authority.
 			expect(reconcileKernelAuthority(root, "task-a")).toMatchObject({ state: "active_owner" });
+			// The settled Run read never answers from live state or from a foreign
+			// run pair that merely reached this worktree.
+			expect(readSettledRunEvidence(root, "task-a")).toBeNull();
+			expect(readSettledRunEvidence(root, "task-a-not-run")).toBeNull();
+			// The run-aware settled-evidence read keeps the same bound once this
+			// worktree's own run is live: the foreign pair stays readable evidence
+			// but is never projected as this task's settled evidence.
+			expect(readSettledTaskEvidence(root, "task-a")).toBeNull();
+			expect(readSettledTaskEvidence(root, "task-a-not-run")).toBeNull();
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
@@ -287,7 +298,7 @@ describe("enrollment workspace revision binding", () => {
 			//    returns the workspace to idle: byte-identical owner, new revision.
 			writeIntent(root, "task-b");
 			enroll(root, "task-b");
-			const recordB = readTaskRecord(root, "task-b").record!;
+			const recordB = readTaskRecordRaw(root, "task-b").record!;
 			const stopAction = capabilityActionFor({
 				op: "stop",
 				task_id: "task-b",
@@ -299,7 +310,7 @@ describe("enrollment workspace revision binding", () => {
 				authority_kind: "user",
 				task_id: "task-b",
 				action_digest: digestOfAction(stopAction),
-				expected_record_hash: readTaskRecord(root, "task-b").revision,
+				expected_record_hash: readTaskRecordRaw(root, "task-b").revision,
 				intent_revision: recordB.intent_snapshot.revision,
 				intent_content_hash: recordB.intent_ref.content_hash,
 				diff_hash: `sha256:${"a".repeat(64)}`,
@@ -338,7 +349,7 @@ describe("enrollment workspace revision binding", () => {
 					registry,
 				),
 			).toThrow(/preparation digest mismatch/);
-			expect(readTaskRecord(root, "task-a").record).toBeNull();
+			expect(readTaskRecordRaw(root, "task-a").record).toBeNull();
 			expect(readWorkspaceStateRaw(root).revision).toBe(before.revision);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
@@ -367,7 +378,7 @@ describe("enrollment transaction", () => {
 		expect(result.record).toHaveProperty("git_base_head");
 		expect(result.record.task_id).toBe(taskId);
 		expect(result.record.intent_snapshot.revision).toBe(1);
-		const read = readTaskRecord(root, taskId);
+		const read = readTaskRecordRaw(root, taskId);
 		expect(read.record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
 		const claim = readBackendClaim(root);
 		expect(claim?.task_id).toBe(taskId);
@@ -532,7 +543,7 @@ describe("enrollment transaction", () => {
 				registry,
 			),
 		).toThrow(/consumed/i);
-		expect(readTaskRecord(root, "task-b").record).toBeNull();
+		expect(readTaskRecordRaw(root, "task-b").record).toBeNull();
 	});
 
 	test("rejects when capability binding mismatches", () => {
@@ -636,7 +647,7 @@ describe("enrollment transaction", () => {
 			capability_binding: binding,
 			now: "2026-08-12T00:00:00.000Z",
 		}, registry)).toThrow(/content hash/i);
-		expect(readTaskRecord(root, taskId).record).toBeNull();
+		expect(readTaskRecordRaw(root, taskId).record).toBeNull();
 		expect(readBackendClaim(root)).toBeNull();
 		expect(registry.isConsumed(capability)).toBe(false);
 	});
@@ -713,7 +724,7 @@ describe("enrollment Spec binding precondition", () => {
 		expect(first.evidence.blockers).toEqual([]);
 		expect(second.evidence).toEqual(first.evidence);
 		expect(registry.isConsumed(capability)).toBe(false);
-		expect(readTaskRecord(root, taskId).record).toBeNull();
+		expect(readTaskRecordRaw(root, taskId).record).toBeNull();
 	});
 });
 
@@ -781,7 +792,7 @@ describe("batch-derived enrollment atomicity", () => {
 		);
 		expect(result.record.task_id).toBe("task-b01");
 		expect(batchRegistry.consumedChildren(capability)).toEqual(["task-b01"]);
-		expect(readTaskRecord(root, "task-b01").record).not.toBeNull();
+		expect(readTaskRecordRaw(root, "task-b01").record).not.toBeNull();
 	});
 
 	test("a blocked batch enrollment consumes no slot and writes no record", () => {
@@ -825,7 +836,7 @@ describe("batch-derived enrollment atomicity", () => {
 			),
 		).toThrow(/belongs to task other-task/);
 		expect(batchRegistry.consumedChildren(capability)).toEqual([]);
-		expect(readTaskRecord(root, "task-b02").record).toBeNull();
+		expect(readTaskRecordRaw(root, "task-b02").record).toBeNull();
 		// The pre-existing owner still holds the workspace claim unchanged.
 		expect(readBackendClaim(root)).toMatchObject({ task_id: "other-task", lifecycle_status: "active" });
 		expect(withKernelRead(root, (db) => readRunRowByTask(db, "task-b02"))).toBeNull();

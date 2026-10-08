@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "settled-run-evidence-read",
-  "owner": "user",
   "goal": "Implement Slice S6 of docs/specs/deepen-authority-seams.spec.md (Initiative deepen-authority-seams): the Authority Store exposes one Run-exact read of a Task's settled Run; modules outside runtime/kernel stop reading Run rows; the forwarding readTaskRecord export is removed. No schema or migration change.",
   "acceptance": [
     {
@@ -11,7 +10,7 @@
     },
     {
       "id": "AC2",
-      "assertion": "Per D6 and the prohibited-coupling rule of docs/specs/deepen-authority-seams.spec.md: no module outside plugins/immune-brain/runtime/kernel imports sqlite_store or reads Run rows; batch reconfirmation, preflight ownership and batch commit use the settled Run read; audit paths in batch_reconfirmation.ts come from storage_paths.ts; the enroll-<task>-<created_at> Run-id convention is defined once. Positive: reconfirmation, own-claim detection and batch commit behave as before. Negative: the boundary test fails when a module outside runtime/kernel imports sqlite_store. Agreed seams: tests/kernel-r2c2-boundary.test.ts, tests/batch-plan-reconfirmation.test.ts, tests/unattended-batch-commit.test.ts, tests/pi-batch-authority.test.ts.",
+      "assertion": "Per D6 and the prohibited-coupling rule of docs/specs/deepen-authority-seams.spec.md: no module outside plugins/immune-brain/runtime/kernel imports sqlite_store or reads Run rows; batch reconfirmation, preflight ownership and batch commit use the settled Run read; audit paths in batch_reconfirmation.ts come from storage_paths.ts; the enroll-<task>-<created_at> Run-id convention is defined once. Positive: reconfirmation, own-claim detection and batch commit behave as before. Negative: the boundary test fails when a module outside runtime/kernel imports sqlite_store. Agreed seams: tests/kernel-r2c2-boundary.test.ts, tests/batch-plan-reconfirmation.test.ts, tests/unattended-batch-commit.test.ts, tests/pi-batch-authority.test.ts. Evidence-binding invariant: before consuming an exported audit pair to create or adopt a batch child commit, its raw record revision and its complete parsed terminal proof must equal the current local settled Run evidence. Apply the same comparison to new commits, first-child recovery and every later child commit/persist recovery. Positive: a second child produced by commitBatchChild is found after a commit/persist interruption. Negative: changing only the exported proof lifecycle, terminal event id or terminalized_at is refused without changing HEAD, index, refs or persistent evidence; restoring the original proof restores success. Verify these controls through lookupBatchCommit in tests/unattended-batch-commit.test.ts, with the first child already committed.",
       "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-r2c2-boundary.test.ts\",\n      \"tests/batch-plan-reconfirmation.test.ts\",\n      \"tests/unattended-batch-commit.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
     },
     {
@@ -88,5 +87,6 @@
     "tests/unattended-batch-plan.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

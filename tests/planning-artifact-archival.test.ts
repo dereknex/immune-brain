@@ -11,7 +11,7 @@ import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugi
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { completionDecision } from "../plugins/immune-brain/runtime/kernel/completion";
 import { findingsDigestV2 } from "../plugins/immune-brain/runtime/kernel/reducer";
-import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
+import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
 import { taskDiffIdentity } from "../plugins/immune-brain/runtime/workspace_scope";
 import { createMutationAuthorityCapabilityForTest } from "./fixtures/mutation-authority-test-seam";
 
@@ -280,7 +280,7 @@ describe("planning artifact archival", () => {
         execFileSync("git", ["add", "-A"], { cwd: root });
         return taskDiffIdentity(root, intent.scope_hint);
       };
-      const token = () => readTaskIntent(root, taskId, readTaskRecord(root, taskId).record!.intent_ref.path).token;
+      const token = () => readTaskIntent(root, taskId, readTaskRecordRaw(root, taskId).record!.intent_ref.path).token;
       const run = (operation: Parameters<typeof app.execute>[0]["operation"], at: string) => {
         const diff = liveDiff();
         return app.execute({
@@ -316,7 +316,7 @@ describe("planning artifact archival", () => {
         authority_kind: "qa",
         task_id: taskId,
         action_digest: digestOfAction(qaAction),
-        expected_record_hash: readTaskRecord(root, taskId).revision,
+        expected_record_hash: readTaskRecordRaw(root, taskId).revision,
         intent_revision: 1,
         intent_content_hash: hash,
         diff_hash: d1,
@@ -325,7 +325,7 @@ describe("planning artifact archival", () => {
         findings_digest: null,
       });
       run({ op: "record_approval", approval, capability: qaCap, actor_id: "qa-1" }, qaAt);
-      const afterQa = readTaskRecord(root, taskId).record!;
+      const afterQa = readTaskRecordRaw(root, taskId).record!;
       const eligible = completionDecision(parseTaskIntentV1(intent), afterQa, d1, hash, liveDiff().changed_paths);
       expect(eligible.complete).toBe(true);
       writeFileSync(specPath, "# stale spec\n");
@@ -333,7 +333,7 @@ describe("planning artifact archival", () => {
       expect(stale.diff_hash).not.toBe(d1);
       expect(completionDecision(parseTaskIntentV1(intent), afterQa, stale.diff_hash, hash, stale.changed_paths).complete).toBe(false);
       expect(() => run({ op: "complete", actor_id: "executor-1" }, "2026-08-12T10:00:01.500Z")).toThrow(/not eligible/);
-      expect(readTaskRecord(root, taskId).record).toMatchObject({ lifecycle: "active", artifact_state: "frozen" });
+      expect(readTaskRecordRaw(root, taskId).record).toMatchObject({ lifecycle: "active", artifact_state: "frozen" });
       const findings = [{
         id: "rw-1",
         kind: "blocking" as const,
@@ -355,7 +355,7 @@ describe("planning artifact archival", () => {
         authority_kind: "review",
         task_id: taskId,
         action_digest: digestOfAction(action),
-        expected_record_hash: readTaskRecord(root, taskId).revision,
+        expected_record_hash: readTaskRecordRaw(root, taskId).revision,
         intent_revision: 1,
         intent_content_hash: hash,
         diff_hash: stale.diff_hash,

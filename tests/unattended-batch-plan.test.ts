@@ -29,7 +29,7 @@ import {
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
-import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
+import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
 import { projectBatchPlan } from "../plugins/immune-brain/runtime/unattended/batch_plan";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 import { withKernelTransaction } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
@@ -491,7 +491,7 @@ describe("unattended batch plan projection", () => {
 						named: true,
 					});
 				// Refused before any state write: no TaskRecord, no backend claim.
-				expect(readTaskRecord(root, task_id).record).toBeNull();
+				expect(readTaskRecordRaw(root, task_id).record).toBeNull();
 				expect(readBackendClaim(root) ?? null).toBeNull();
 			}
 		} finally {

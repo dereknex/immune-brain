@@ -31,7 +31,7 @@ import {
 } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import {
 	commitDrainLocked,
-	readTaskRecord,
+	readTaskRecordRaw,
 	readWorkspaceStateRaw,
 	withKernelStoreLock,
 } from "../plugins/immune-brain/runtime/kernel/storage";
@@ -111,7 +111,7 @@ afterEach(() => {
 });
 
 function drainCapability(overrides: Record<string, unknown> = {}) {
-	const record = readTaskRecord(root, TASK);
+	const record = readTaskRecordRaw(root, TASK);
 	const digest = (a: Record<string, unknown>) => createHash("sha256").update(JSON.stringify(a)).digest("hex");
 	const { expected_record_hash: _r, expected_workspace_hash: _w, diff_hash: _d, ...rest } =
 		beginDrainCapabilityAction(TASK, now) as unknown as Record<string, unknown>;
@@ -136,7 +136,7 @@ describe("drain transaction", () => {
 	}
 
 	test("begin_drain converges active -> draining with the record and workspace preserved", () => {
-		const recordBefore = readTaskRecord(root, TASK);
+		const recordBefore = readTaskRecordRaw(root, TASK);
 		const workspaceBefore = readWorkspaceStateRaw(root);
 		const runBefore = runRow();
 		const cap = drainCapability();
@@ -145,7 +145,7 @@ describe("drain transaction", () => {
 		expect(readBackendClaim(root)?.lifecycle_status).toBe("draining");
 		// The drain changes only the claim: record bytes and workspace identity
 		// are untouched, and no marker file is involved.
-		expect(readTaskRecord(root, TASK)).toEqual(recordBefore);
+		expect(readTaskRecordRaw(root, TASK)).toEqual(recordBefore);
 		expect(readWorkspaceStateRaw(root)).toEqual(workspaceBefore);
 		const runAfter = runRow();
 		expect(runAfter.record_json).toBe(runBefore.record_json);

@@ -20,13 +20,13 @@ import { readBackendClaim } from "../kernel/backend_claim";
 import { computeBatchPlanDigest, type BatchAuthorizationBinding } from "../kernel/batch_authority";
 import { readGitHead } from "../kernel/pi_canary_prepare";
 import { readTaskIntent } from "../kernel/intent";
-import { localRunId, readAuditTaskPair, readTaskRecordRaw, readWorkspaceStateRaw, reconcileKernelAuthority } from "../kernel/storage";
+import { readTaskRecordRaw, readSettledTaskEvidence, readWorkspaceStateRaw, enrollmentEventIdFor, reconcileKernelAuthority } from "../kernel/storage";
+import type { TaskRecord } from "../kernel/types";
 import { pathMatchesScope } from "../workspace_scope";
 import { captureBatchReconfirmation, retainReconfirmation, ownUnpersistedBatchHead, type ReconfirmationSnapshot } from "./batch_reconfirmation";
 import { projectBatchPlan } from "./batch_plan";
 import { batchReason, type BatchReasonKey } from "./batch_reasons";
 import { isTerminalBatchState, readBatchRunState, type BatchRunStateRecord } from "./batch_state";
-import { readRunRowByTask, withKernelRead } from "../kernel/sqlite_store";
 import type {
 	BatchPlanBudget,
 	BatchPlanChild,
@@ -317,10 +317,11 @@ export function isOwnBatchClaim(
 	if (!childInBatch || !(childInBatch.state === "enrolled" || childInBatch.state === "needs_human")) {
 		return false;
 	}
-	let rec: Record<string, any> | null = null;
+	let rec: TaskRecord | null = null;
 	try {
-		const run = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
-		rec = run ? (JSON.parse(run.record_json) as Record<string, any>) : null;
+		// Through the store read: the record is identity-validated against its
+		// run instead of being parsed from a raw row.
+		rec = readTaskRecordRaw(root, taskId).record;
 	} catch {
 		return false;
 	}
@@ -329,7 +330,7 @@ export function isOwnBatchClaim(
 		.concat(Array.isArray(existingBatch.commits) ? existingBatch.commits : [])
 		.concat((existingBatch.adopted_heads ?? []).map((adoption) => adoption.to));
 	if (!lineageHeads.includes(rec.git_base_head)) return false;
-	if (claim.enrollment_event_id !== `enroll-${taskId}-${claim.created_at}`) return false;
+	if (claim.enrollment_event_id !== enrollmentEventIdFor(taskId, claim.created_at)) return false;
 	const createdAt = Date.parse(claim.created_at);
 	if (!Number.isFinite(createdAt) || createdAt > Date.parse(existingBatch.updated_at)) return false;
 	if (claim.task_id !== taskId || claim.lifecycle_status !== "active") return false;
@@ -355,16 +356,13 @@ function authorizedScopeOf(root: string, taskId: string, state: string): string[
 		// fallback below
 	}
 	if (scope.length === 0 && state === "settled") {
-		// A settled child has no live state record; its authority is the immutable
-		// terminal audit pair. Read-only, so a refusal still writes nothing.
+		// A settled child has no live state record; the Authority Store's settled
+		// Run read is its authority. Read-only, so a refusal still writes nothing.
 		try {
-			const localRun = localRunId(root, taskId);
-			const settled = readAuditTaskPair(root, taskId, localRun ?? undefined);
-			const snapshot = (settled?.record as { intent_snapshot?: { scope_hint?: string[] } } | null | undefined)
-				?.intent_snapshot;
+			const settled = readSettledTaskEvidence(root, taskId);
+			const snapshot = settled?.record.intent_snapshot;
 			scope = snapshot?.scope_hint ?? [];
-			recordedIntentPath = recordedIntentPath ?? (settled?.record as { intent_ref?: { path?: string } } | null | undefined)
-				?.intent_ref?.path;
+			recordedIntentPath = recordedIntentPath ?? settled?.record.intent_ref?.path;
 		} catch {
 			// fallback below
 		}

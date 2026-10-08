@@ -21,7 +21,7 @@ import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollm
 import { createEnrollmentAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { preparePiCanary, readGitHead } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
-import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
+import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
 import { setAfterTaskTransactionWriteForTest } from "../plugins/immune-brain/runtime/kernel/storage";
 
 const NOW = "2026-09-05T00:00:00.000Z";
@@ -531,7 +531,7 @@ describe("batch-derived enrollment", () => {
 		expect(result.record.git_base_head).toBe(head);
 		expect(batchRegistry.consumedChildren(capability)).toEqual(["t1"]);
 		expect(batchRegistry.isChildConsumed(capability, "t2")).toBe(false);
-		expect(readTaskRecord(root, "t1").record).not.toBeNull();
+		expect(readTaskRecordRaw(root, "t1").record).not.toBeNull();
 		expect(readBackendClaim(root)?.task_id).toBe("t1");
 	});
 
@@ -574,7 +574,7 @@ describe("batch-derived enrollment", () => {
 			),
 		).toThrow(/batch_head_lineage_broken/);
 		expect(batchRegistry.consumedChildren(capability)).toEqual([]);
-		expect(readTaskRecord(root, "t1").record).toBeNull();
+		expect(readTaskRecordRaw(root, "t1").record).toBeNull();
 		expect(readBackendClaim(root)).toBeNull();
 	});
 
@@ -661,7 +661,7 @@ describe("batch-derived enrollment", () => {
 		).toThrow(/batch_head_lineage_broken/);
 
 		expect(batchRegistry.consumedChildren(capability)).toEqual([]);
-		expect(readTaskRecord(root, "t1").record).toBeNull();
+		expect(readTaskRecordRaw(root, "t1").record).toBeNull();
 		expect(readBackendClaim(root)).toBeNull();
 	});
 
@@ -770,7 +770,7 @@ describe("batch-derived enrollment", () => {
 		expect(calls.consumeChild).toBe(1);
 		expect(calls.releaseChild).toBe(1);
 		expect(batchRegistry.consumedChildren(capability)).toEqual([]);
-		expect(readTaskRecord(root, "t1").record).toBeNull();
+		expect(readTaskRecordRaw(root, "t1").record).toBeNull();
 		expect(readBackendClaim(root)).toBeNull();
 	});
 
@@ -810,6 +810,6 @@ describe("batch-derived enrollment", () => {
 		expect(calls.consumeChild).toBe(1);
 		expect(calls.releaseChild).toBe(0);
 		expect(batchRegistry.consumedChildren(capability)).toEqual(["t1"]);
-		expect(readTaskRecord(root, "t1").record).not.toBeNull();
+		expect(readTaskRecordRaw(root, "t1").record).not.toBeNull();
 	});
 });

@@ -24,6 +24,7 @@ import { dirtyScopePaths, writeEnrollmentBaseline } from "../workspace_scope";
 import { enrollmentRequestDigest } from "./run_identity";
 import {
 	commitEnrollmentLocked,
+	enrollmentEventIdFor,
 	readCommittedEnrollmentResult,
 	readTaskRecordRaw,
 	readWorkspaceStateRaw,
@@ -300,7 +301,7 @@ export function runEnrollmentRehearsal(
 }
 
 function enrollmentEventId(taskId: string, now: string): string {
-	return `enroll-${taskId}-${now}`;
+	return enrollmentEventIdFor(taskId, now);
 }
 
 /**

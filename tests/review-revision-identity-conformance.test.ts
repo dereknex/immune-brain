@@ -10,7 +10,7 @@ import {
 } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { projectAssurance } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 import { taskDeliveryIdentity, taskDiffIdentity } from "../plugins/immune-brain/runtime/workspace_scope";
-import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
+import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import {
 	readRunRowByTask,
@@ -128,7 +128,7 @@ function makeReviewReadyRoot(): string {
 	// The attestation is fresh only when it carries the current diff hash, which
 	// cannot be computed before a record exists to name the base and the scope.
 	write(`sha256:${"0".repeat(64)}`);
-	const placeholder = readTaskRecord(root, TASK);
+	const placeholder = readTaskRecordRaw(root, TASK);
 	if (!placeholder.record) throw new Error("fixture TaskRecord did not parse");
 	write(diffSnapshotOf(root, placeholder.record).diff_hash);
 	return root;
@@ -230,7 +230,7 @@ describe("Review revision identity conformance", () => {
 
 	test("the delivery identity both hosts report is the shared selector's, and a changed git_base_head changes it", async () => {
 		const root = makeReviewReadyRoot();
-		const record = readTaskRecord(root, TASK).record;
+		const record = readTaskRecordRaw(root, TASK).record;
 		if (!record) throw new Error("fixture TaskRecord did not parse");
 		// v4: both host projections and both host record-level selectors agree
 		// with the shared selector.

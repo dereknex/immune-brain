@@ -26,7 +26,7 @@ import {
 	type EnrollmentCapabilityBinding,
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
-import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
+import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
 
 const TASK = "canary-rework-task";
 const INTENT = {
@@ -104,12 +104,12 @@ afterEach(() => {
 });
 
 function token() {
-	const record = readTaskRecord(root, TASK).record;
+	const record = readTaskRecordRaw(root, TASK).record;
 	return readTaskIntent(root, TASK, record?.intent_ref.path).token;
 }
 
 function currentIntentHash() {
-	return readTaskRecord(root, TASK).record!.intent_ref.content_hash;
+	return readTaskRecordRaw(root, TASK).record!.intent_ref.content_hash;
 }
 
 function execute(op: CanaryOperation, at: string) {
@@ -143,7 +143,7 @@ function toReview(at = "2026-08-12T10:00:02.000Z") {
 		authority_kind: "qa",
 		task_id: TASK,
 		action_digest: digestOfAction(action),
-		expected_record_hash: readTaskRecord(root, TASK).revision,
+		expected_record_hash: readTaskRecordRaw(root, TASK).revision,
 		intent_revision: 1,
 		intent_content_hash: currentIntentHash(),
 		diff_hash: DIFF,
@@ -195,7 +195,7 @@ function reviewFinding(overrides: Record<string, unknown>) {
 }
 
 function reworkCapability(kind: "review" | "qa" | "user", overrides: Record<string, unknown> = {}) {
-	const record = readTaskRecord(root, TASK);
+	const record = readTaskRecordRaw(root, TASK);
 	const findings = [...FINDINGS] as never[];
 	const actorId = kind === "user" ? "literal-user" : "reviewer-1";
 	const action = {
@@ -236,7 +236,7 @@ function requestReviewRework(findings: Record<string, unknown>[], at: string) {
 		authority_kind: "review",
 		task_id: TASK,
 		action_digest: digestOfAction(action),
-		expected_record_hash: readTaskRecord(root, TASK).revision,
+		expected_record_hash: readTaskRecordRaw(root, TASK).revision,
 		intent_revision: 1,
 		intent_content_hash: currentIntentHash(),
 		diff_hash: DIFF,
@@ -259,7 +259,7 @@ describe("request_rework authority", () => {
 				"2026-08-12T10:00:03.000Z",
 			),
 		).toThrow(/capability|authority/i);
-		const record = readTaskRecord(root, TASK);
+		const record = readTaskRecordRaw(root, TASK);
 		expect(record.record).toMatchObject({ lifecycle: "active", artifact_state: "frozen" });
 		expect(record.record?.findings).toHaveLength(0);
 	});
@@ -403,7 +403,7 @@ describe("request_rework authority", () => {
 			authority_kind: "user",
 			task_id: TASK,
 			action_digest: digestOfAction(authorizeAction),
-			expected_record_hash: readTaskRecord(root, TASK).revision,
+			expected_record_hash: readTaskRecordRaw(root, TASK).revision,
 			intent_revision: 1,
 			intent_content_hash: currentIntentHash(),
 			diff_hash: DIFF,
@@ -727,7 +727,7 @@ describe("request_rework authority", () => {
 			authority_kind: "qa",
 			task_id: TASK,
 			action_digest: digestOfAction(action),
-			expected_record_hash: readTaskRecord(root, TASK).revision,
+			expected_record_hash: readTaskRecordRaw(root, TASK).revision,
 			intent_revision: 1,
 			intent_content_hash: currentIntentHash(),
 			diff_hash: DIFF,

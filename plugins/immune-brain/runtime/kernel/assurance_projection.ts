@@ -13,8 +13,9 @@
 
 import { readBackendClaim, readTaskTombstone } from "./backend_claim";
 import {
-	readTaskRecord,
+	readTaskRecordRaw,
 	readAuditTaskPair,
+	localRunId,
 	readCommittedRecord,
 	readWorkspaceStateRaw,
 	reconcileKernelAuthority,
@@ -306,7 +307,7 @@ export async function projectAssurance(
 		}
 		let read;
 		try {
-			read = await readTaskRecord(root, taskId);
+			read = await readTaskRecordRaw(root, taskId);
 		} catch (error) {
 			if (!terminalOwner || !(error instanceof Error) || !error.message.startsWith("TaskRecord v2")) throw error;
 			return fail(error instanceof Error ? error.message : String(error));
@@ -335,7 +336,10 @@ export async function projectAssurance(
 					},
 				};
 			}
-			const auditPair = await readAuditTaskPair(root, taskId);
+			// Run-aware: with a local run row the store already answered above;
+			// without one (a fresh clone or pre-run-layout evidence) only the
+			// resolved pair may serve, never another run's directory by drift.
+			const auditPair = await readAuditTaskPair(root, taskId, localRunId(root, taskId) ?? undefined);
 			if (!auditPair) return fail(`task ${taskId} has no terminal audit pair`, claim);
 			const workspace = await readWorkspaceStateRaw(root);
 			if (auditPair.record.contract === "assurance_kernel/task_record/v2")

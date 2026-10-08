@@ -12,7 +12,7 @@ import {
 	type EnrollmentCapabilityBinding,
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
-import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
+import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
 import {
 	captureGitTaskRevisionSnapshot,
 	captureGitTaskSnapshot,
@@ -127,7 +127,7 @@ describe("Enrollment refuses an already dirty scope", () => {
 					new RegExp(`task scope is already dirty before Enrollment: ${path.replace(".", "\\.")}`),
 				);
 				expect(registry.isConsumed(capability)).toBe(false);
-				expect(readTaskRecord(root, TASK).record).toBeNull();
+				expect(readTaskRecordRaw(root, TASK).record).toBeNull();
 				expect(readBackendClaim(root)).toBeNull();
 			} finally {
 				rmSync(root, { recursive: true, force: true });

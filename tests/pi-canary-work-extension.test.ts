@@ -21,7 +21,7 @@ import { createEnrollmentAuthorityRegistry, type EnrollmentCapabilityBinding } f
 import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import { createMutationAuthorityCapabilityForTest } from "./fixtures/mutation-authority-test-seam";
-import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
+import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
 import { PLUGIN_VERSION } from "../plugins/immune-brain/runtime/plugin_version";
 import { createMcpRuntime } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { captureReviewManifest } from "../plugins/immune-brain/.pi-extension/pi-canary-review-bundle";
@@ -215,7 +215,7 @@ function makeStaleClaimRoot(): string {
 	const app = createCanaryApplication(registry);
 	const at = "2026-08-12T10:00:01.000Z";
 	const diffHash = `sha256:${"a".repeat(64)}`;
-	const record = readTaskRecord(root, TASK);
+	const record = readTaskRecordRaw(root, TASK);
 	const actionDigest = createHash("sha256").update(JSON.stringify({
 		type: "stop",
 		event_id: `stop:${TASK}:${at}`,
@@ -286,7 +286,7 @@ function loadSurface(dependencies: Record<string, unknown> = {}) {
 
 function minimalSnapshot(role: "qa" | "review", root: string, current?: { projection?: Record<string, any> }): SnapshotDescriptor {
 	const state = current?.projection ?? {};
-	const record = readTaskRecord(root, TASK).record;
+	const record = readTaskRecordRaw(root, TASK).record;
 	const reviewRevision = role === "review" && record?.contract === "assurance_kernel/task_record/v4"
 		? (() => {
 				const manifest = captureReviewManifest(root, {
@@ -1260,7 +1260,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			const root = makeEnrolledRoot();
 			const runtime = require("../plugins/immune-brain/runtime/kernel/assurance_projection.ts");
 			const project = runtime.projectAssurance;
-			const before = await readTaskRecord(root, TASK);
+			const before = await readTaskRecordRaw(root, TASK);
 			let qaCalls = 0;
 			const probe = spyOn(runtime, "projectAssurance").mockImplementation(async (...args: any[]) => {
 				if (failure === "semantic") return { ...await project(...args), error: "authority conflict" };
@@ -1279,7 +1279,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 				expect(blocked).toMatchObject({ recovery_error: "fresh_kernel_projection_unavailable", next_action: "inspect authority state" });
 				expect(blocked.recovery).toBeUndefined();
 				expect(qaCalls).toBe(0);
-				expect((await readTaskRecord(root, TASK)).revision).toBe(before.revision);
+				expect((await readTaskRecordRaw(root, TASK)).revision).toBe(before.revision);
 			} finally {
 				probe.mockRestore();
 				rmSync(root, { recursive: true, force: true });
@@ -1320,7 +1320,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 				expect(resolution).toMatchObject({ environment_failure: true, recovery: {
 					category: "environment", task_id: TASK, acceptance_ids: ["A1"], finding_ids: [],
 				} });
-				expect((await readTaskRecord(resolutionRoots[index], TASK)).record?.attestations).toHaveLength(0);
+				expect((await readTaskRecordRaw(resolutionRoots[index], TASK)).record?.attestations).toHaveLength(0);
 			}
 		} finally {
 			rmSync(unstagedRoot, { recursive: true, force: true });

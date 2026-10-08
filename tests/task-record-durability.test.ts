@@ -11,6 +11,8 @@ import {
 	KernelStoreSecurityError,
 	backupKernelStore,
 	openKernelStore,
+	insertRunRow,
+	updateRunTerminal,
 	readRunRowByTask,
 	readWorkspaceRow,
 	restoreKernelStore,
@@ -22,8 +24,10 @@ import {
   commitEnrollmentLocked,
   commitTaskRecordLocked,
   commitTerminalLocked,
+  enrollmentEventIdFor,
   MISSING_REVISION,
   readCommittedRecord,
+  readSettledRunEvidence,
   readTaskRecordRaw,
   withKernelStoreLockForTask,
   readWorkspaceStateRaw,
@@ -1372,4 +1376,236 @@ describe("SQLite authority store durability", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+});
+
+describe("settled Run read (S6)", () => {
+  function settleWithoutExport(root: string, taskId: string, runId: string) {
+    const terminal = storeTerminalRecord(taskId);
+    const terminalBytes = `${JSON.stringify(terminal, null, 2)}\n`;
+    const workspace = readWorkspaceStateRaw(root);
+    commitTerminalLocked(root, taskId, {
+      contract: "assurance_kernel/workspace_transaction/v2" as const,
+      task_id: taskId,
+      expected_record_hash: revisionForContent(
+        withKernelRead(root, (db) => readRunRowById(db, runId))!.record_json,
+      ),
+      next_record_content: terminalBytes,
+      expected_workspace_hash: workspace.revision,
+      next_workspace_content: serializeWorkspace({
+        contract: "assurance_kernel/workspace/v1",
+        current_working: null,
+      }),
+    }, {
+      contract: "assurance_kernel/task_tombstone/v2" as const,
+      task_id: taskId,
+      lifecycle_status: "terminal" as const,
+      terminal_lifecycle: "done" as const,
+      terminal_event_id: `complete:${taskId}:2026-08-12T10:00:05.000Z`,
+      final_record_hash: revisionForContent(terminalBytes),
+      terminalized_at: "2026-08-12T10:00:05.000Z",
+    });
+    return { terminal, terminalBytes };
+  }
+  test("the settled read answers this worktree's own run and never live state", () => {
+    const root = storeRoot();
+    try {
+      const taskId = "durability-settled";
+      const seeded = storeEnrollFixture(root, taskId);
+      // An active run reads as absent: Store rows never answer live state.
+      expect(readSettledRunEvidence(root, taskId)).toBeNull();
+      // A task this worktree never ran reads as absent.
+      expect(readSettledRunEvidence(root, "durability-settled-absent")).toBeNull();
+      const { terminalBytes } = settleWithoutExport(root, taskId, seeded.run_id);
+      const evidence = readSettledRunEvidence(root, taskId)!;
+      expect(evidence.task_id).toBe(taskId);
+      expect(evidence.run_id).toBe(seeded.run_id);
+      expect(evidence.lifecycle).toBe("done");
+      expect(evidence.record.lifecycle).toBe("done");
+      // The identity-validated record round-trips through its recorded revision.
+      expect(evidence.record_revision).toBe(revisionForContent(terminalBytes));
+      expect(evidence.record_json).toBe(terminalBytes);
+      expect(canonicalRecordHash(evidence.record)).toBe(evidence.record_revision);
+      expect(evidence.proof.terminal_lifecycle).toBe("done");
+      expect(evidence.proof.final_record_hash).toBe(evidence.record_revision);
+      expect(evidence.audit_exported).toBe(false);
+      expect(evidence.enrollment_event_id).toBe(enrollmentEventIdFor(taskId, evidence.created_at));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("an earlier Run's stale pair never answers as the settled run", () => {
+    const root = storeRoot();
+    try {
+      const taskId = "durability-settled-stale";
+      const seeded = storeEnrollFixture(root, taskId);
+      const { terminalBytes } = settleWithoutExport(root, taskId, seeded.run_id);
+      // Leave the current run's audit export in flight and put an earlier
+      // run's exported pair on disk: a run-blind read resolves that stale pair.
+      const staleRunId = "run-00000000-0000-0000-0000-000000000000";
+      const staleBytes = `${JSON.stringify(
+        { ...storeTerminalRecord(taskId), baseline: `sha256:${"c".repeat(64)}` },
+        null,
+        2,
+      )}\n`;
+      const staleDir = join(root, ".imm/audit", taskId, staleRunId);
+      mkdirSync(staleDir, { recursive: true });
+      writeFileSync(join(staleDir, "task-record.json"), staleBytes);
+      writeFileSync(
+        join(staleDir, "terminal-proof.json"),
+        `${JSON.stringify(
+          {
+            contract: "assurance_kernel/task_tombstone/v2",
+            task_id: taskId,
+            lifecycle_status: "terminal",
+            terminal_lifecycle: "done",
+            terminal_event_id: "complete:durability-settled-stale:2026-08-12T09:00:00.000Z",
+            final_record_hash: revisionForContent(staleBytes),
+            terminalized_at: "2026-08-12T09:00:00.000Z",
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      const auditDir = auditEvidencePaths(root, taskId);
+      expect(auditDir.record).toBe(auditRunRecordPath(taskId, staleRunId));
+      expect(readAuditTaskPair(root, taskId)?.recordRevision).toBe(revisionForContent(staleBytes));
+      // The settled read still answers from the store's own run only.
+      const evidence = readSettledRunEvidence(root, taskId)!;
+      expect(evidence.run_id).toBe(seeded.run_id);
+      expect(evidence.record_revision).toBe(revisionForContent(terminalBytes));
+      expect(evidence.record_revision).not.toBe(revisionForContent(staleBytes));
+      // The export follow-up converges the current run, and the stale pair of
+      // the earlier run stops being the only pair on disk.
+      retryStoreFollowUps(root);
+      const exported = readSettledRunEvidence(root, taskId)!;
+      expect(exported.audit_exported).toBe(true);
+      expect(readAuditTaskPair(root, taskId, seeded.run_id)?.recordRevision).toBe(
+        revisionForContent(terminalBytes),
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a tampered proof fails closed", () => {
+    const root = storeRoot();
+    try {
+      const taskId = "durability-settled-tamper";
+      const seeded = storeEnrollFixture(root, taskId);
+      settleWithoutExport(root, taskId, seeded.run_id);
+      const evidence = readSettledRunEvidence(root, taskId)!;
+      withKernelTransaction(root, (b) => {
+        b.prepare("UPDATE runs SET terminal_proof_json = ? WHERE run_id = ?").run(
+          JSON.stringify(evidence.proof).replace(
+            evidence.proof.final_record_hash,
+            `sha256:${"d".repeat(64)}`,
+          ),
+          seeded.run_id,
+        );
+      });
+      expect(() => readSettledRunEvidence(root, taskId)).toThrow(KernelStoreSecurityError);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("settled run evidence binds the proof to the raw committed bytes", () => {
+	test("a noncanonical terminal record serialization still reads as settled", () => {
+		const root = storeRoot();
+		try {
+			const taskId = "settled-raw-bytes";
+			const active = seededRecord(taskId, "a".repeat(40));
+			// Noncanonical bytes: compact serialization, different key order.
+			const rawBytes = JSON.stringify({ ...active, lifecycle: "done", artifact_state: "frozen" });
+			const record = { ...active, lifecycle: "done", artifact_state: "frozen" };
+			const proof = {
+				contract: "assurance_kernel/task_tombstone/v2",
+				task_id: taskId,
+				lifecycle_status: "terminal",
+				terminal_lifecycle: "done",
+				terminal_event_id: `enroll-${taskId}-1`,
+				final_record_hash: `sha256:${new Bun.CryptoHasher("sha256").update(rawBytes).digest("hex")}`,
+				terminalized_at: "2026-08-12T09:00:00.000Z",
+			};
+			const db = openKernelStore(root, { create: true });
+			db.exec("BEGIN");
+			const inserted = insertRunRow(db, {
+				run_id: `enroll-${taskId}-1`,
+				task_id: taskId,
+				record_json: rawBytes,
+				intent_revision: record.intent_snapshot.revision,
+				intent_content_hash: record.intent_ref.content_hash,
+				enrollment_event_id: `enroll-${taskId}-evt-1`,
+				claim_status: "active",
+				created_at: "2026-08-12T08:00:00.000Z",
+				updated_at: "2026-08-12T08:00:00.000Z",
+			});
+			expect(inserted.task_id).toBe(taskId);
+			updateRunTerminal(
+				db,
+				inserted.run_id,
+				"done",
+				rawBytes,
+				`${JSON.stringify(proof, null, 2)}\n`,
+				proof.terminalized_at,
+			);
+			db.exec("COMMIT");
+			db.close();
+			const evidence = readSettledRunEvidence(root, taskId);
+			expect(evidence).not.toBeNull();
+			expect(evidence!.record_revision_raw).toBe(proof.final_record_hash);
+			expect(evidence!.record_revision).toBe(canonicalRecordHash(record));
+			expect(evidence!.record.task_id).toBe(taskId);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("contradicting settlement facts fail closed instead of answering settled", () => {
+		const root = storeRoot();
+		try {
+			const taskId = "settled-facts-disagree";
+			const active = seededRecord(taskId, "a".repeat(40));
+			// The record is live while the run and the proof claim settlement:
+			// a store arguing with itself must not project a settled task.
+			const rawBytes = JSON.stringify(active);
+			const proof = {
+				contract: "assurance_kernel/task_tombstone/v2",
+				task_id: taskId,
+				lifecycle_status: "terminal",
+				terminal_lifecycle: "done",
+				terminal_event_id: `enroll-${taskId}-1`,
+				final_record_hash: `sha256:${new Bun.CryptoHasher("sha256").update(rawBytes).digest("hex")}`,
+				terminalized_at: "2026-08-12T09:00:00.000Z",
+			};
+			const db = openKernelStore(root, { create: true });
+			db.exec("BEGIN");
+			const inserted = insertRunRow(db, {
+				run_id: `enroll-${taskId}-1`,
+				task_id: taskId,
+				record_json: rawBytes,
+				intent_revision: active.intent_snapshot.revision,
+				intent_content_hash: active.intent_ref.content_hash,
+				enrollment_event_id: `enroll-${taskId}-evt-1`,
+				claim_status: "active",
+				created_at: "2026-08-12T08:00:00.000Z",
+				updated_at: "2026-08-12T08:00:00.000Z",
+			});
+			updateRunTerminal(
+				db,
+				inserted.run_id,
+				"done",
+				rawBytes,
+				`${JSON.stringify(proof, null, 2)}\n`,
+				proof.terminalized_at,
+			);
+			db.exec("COMMIT");
+			db.close();
+			expect(() => readSettledRunEvidence(root, taskId)).toThrow(KernelStoreSecurityError);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
 });

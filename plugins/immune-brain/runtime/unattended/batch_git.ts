@@ -17,7 +17,8 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { localRunId, readAuditTaskPair, readSecureProjectFile } from "../kernel/storage";
+import { readSettledTaskEvidence, readAuditTaskPair, readSecureProjectFile } from "../kernel/storage";
+import { serializeTaskTombstone, type TaskTombstone } from "../kernel/backend_claim";
 import { captureGitTaskRevisionSnapshot, pathMatchesScope } from "../workspace_scope";
 import { expectedBatchHead, findExistingActiveBatch, findSettledBatchRecord } from "./batch_preflight";
 export { classifyBatchLineage, type BatchLineage } from "./batch_preflight";
@@ -444,6 +445,22 @@ function readBatchCommitEvidence(
  * Preserves files on failure without destructive rollback (Finding 1).
  * Records durable commit evidence for tamper-proof crash recovery (Finding 1).
  */
+/** Structural proof equality: every field, in every order. */
+function proofEquals(a: TaskTombstone, b: TaskTombstone): boolean {
+	return serializeTaskTombstone(a) === serializeTaskTombstone(b);
+}
+
+function requireMatchingSettledAudit(
+	auditPair: NonNullable<ReturnType<typeof readAuditTaskPair>>,
+	settled: NonNullable<ReturnType<typeof readSettledTaskEvidence>>,
+): void {
+	// Legacy evidence has no local Run; its audit pair is its authority.
+	if (settled.runId === null) return;
+	if (auditPair.recordRevision !== settled.recordRevision || !proofEquals(auditPair.proof, settled.proof)) {
+		throw new Error("batch commit exported audit pair does not match the settled run");
+	}
+}
+
 export async function commitBatchChild(input: {
 	root: string;
 	taskId: string;
@@ -454,28 +471,38 @@ export async function commitBatchChild(input: {
 }): Promise<{ commit: string }> {
 	const { root, taskId, batchId, expectedHead, branch: expectedBranch } = input;
 
-	// 1. Verify Kernel reports that child done via immutable terminal audit pair (Finding 2)
-	// The committed local run owns this task's evidence: another worktree's run
-	// directory for the same task is not this batch's audit pair. Settlement
-	// clears the active run, so the lookup includes terminal runs.
-	const localRun = localRunId(root, taskId);
-	const auditPair = readAuditTaskPair(root, taskId, localRun ?? undefined);
+	// 1. Verify the Authority Store reports that child done through its settled
+	// Run read (Finding 2). The committed local run owns this task's evidence:
+	// another worktree's run directory for the same task is not this batch's
+	// audit pair. Settlement clears the active run, so the read includes
+	// terminal runs, and the exported pair is what the commit stages.
+	const settled = readSettledTaskEvidence(root, taskId);
+	if (!settled) {
+		throw new Error(`cannot commit child ${taskId}: task is not settled done (no settled run)`);
+	}
+	// The export is what the commit stages: a terminal run must have reached it.
+	const auditPair = readAuditTaskPair(root, taskId, settled.runId ?? undefined);
 	if (!auditPair) {
 		throw new Error(`cannot commit child ${taskId}: task is not settled done (audit pair missing)`);
 	}
-	const lifecycle = "lifecycle" in auditPair.record ? auditPair.record.lifecycle : auditPair.record.phase;
-	if (lifecycle !== "done") {
-		throw new Error(`cannot commit child ${taskId}: task is not settled done (lifecycle is ${lifecycle})`);
+	requireMatchingSettledAudit(auditPair, settled);
+	const settledLifecycle =
+		"lifecycle" in settled.record ? settled.record.lifecycle : (settled.record as { phase: string }).phase;
+	if (settledLifecycle !== "done") {
+		throw new Error(`cannot commit child ${taskId}: task is not settled done (lifecycle is ${settledLifecycle})`);
 	}
-	if (auditPair.proof.terminal_lifecycle !== "done") {
+	if (settled.proof.terminal_lifecycle !== "done") {
 		throw new Error(`cannot commit child ${taskId}: terminal proof lifecycle is not done`);
 	}
-	if (auditPair.record.task_id !== taskId || auditPair.proof.task_id !== taskId) {
+	if (settled.record.task_id !== taskId || settled.proof.task_id !== taskId) {
 		throw new Error(`cannot commit child ${taskId}: audit task id mismatch`);
 	}
 
 	// 2. Read scope_hint and goal from the verified terminal TaskRecord.intent_snapshot (Finding 1)
-	const intentSnapshot = auditPair.record.intent_snapshot;
+	// The store-validated record decides scope and attestation once the run is
+	// known; the export decides them only in the pre-store legacy layout.
+	const authoritative = settled.runId === null ? auditPair.record : settled.record;
+	const intentSnapshot = authoritative.intent_snapshot;
 	const goal = typeof intentSnapshot.goal === "string" ? intentSnapshot.goal : "";
 	const scopeHint = Array.isArray(intentSnapshot.scope_hint)
 		? intentSnapshot.scope_hint.filter((s): s is string => typeof s === "string")
@@ -549,7 +576,7 @@ export async function commitBatchChild(input: {
 		spawnSync("git", ["-C", root, "reset", "--quiet"], { stdio: ["ignore", "ignore", "ignore"] });
 		throw new Error("dirty_outside_scope");
 	}
-	const record = auditPair.record as {
+	const record = authoritative as {
 		contract?: string;
 		git_base_head?: string;
 		attestations?: Array<{ kind: string; diff_hash: string }>;
@@ -738,6 +765,20 @@ export async function lookupBatchCommit(input: {
 		}
 	}
 
+	// Evidence identity is required even when the caller omits lineage checks.
+	const adopted = readSettledTaskEvidence(root, taskId);
+	const auditPair = adopted ? readAuditTaskPair(root, taskId, adopted.runId ?? undefined) : null;
+	if (!adopted || !auditPair) {
+		throw new Error(`batch_head_lineage_broken: adopted commit lacks terminal audit pair for ${taskId}`);
+	}
+	requireMatchingSettledAudit(auditPair, adopted);
+	const authoritative = adopted.runId !== null ? adopted.record : auditPair.record;
+	const lifecycle =
+		"lifecycle" in authoritative ? authoritative.lifecycle : (authoritative as { phase: string }).phase;
+	if (lifecycle !== "done") {
+		throw new Error(`batch_head_lineage_broken: adopted commit task lifecycle is not done: ${lifecycle}`);
+	}
+
 	// Finding 3: Verify terminal audit, expectedHead, single parent, and commit tree delta within authorized scope
 	if (expectedHead !== undefined) {
 		const currentHeadResult = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], {
@@ -766,20 +807,9 @@ export async function lookupBatchCommit(input: {
 			);
 		}
 
-		// Verify terminal audit exists and is settled done
-		const adoptedRun = localRunId(root, taskId);
-		const auditPair = readAuditTaskPair(root, taskId, adoptedRun ?? undefined);
-		if (!auditPair) {
-			throw new Error(`batch_head_lineage_broken: adopted commit lacks terminal audit pair for ${taskId}`);
-		}
-		const lifecycle = "lifecycle" in auditPair.record ? auditPair.record.lifecycle : auditPair.record.phase;
-		if (lifecycle !== "done") {
-			throw new Error(`batch_head_lineage_broken: adopted commit task lifecycle is not done: ${lifecycle}`);
-		}
-
 		// Verify commit tree delta is strictly within authorized scope_hint
-		const scopeHint = Array.isArray(auditPair.record.intent_snapshot.scope_hint)
-			? auditPair.record.intent_snapshot.scope_hint.filter((s): s is string => typeof s === "string")
+		const scopeHint = Array.isArray(authoritative.intent_snapshot.scope_hint)
+			? authoritative.intent_snapshot.scope_hint.filter((s): s is string => typeof s === "string")
 			: [];
 		const deltaResult = spawnSync(
 			"git",

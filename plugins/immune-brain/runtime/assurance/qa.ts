@@ -8,14 +8,14 @@ import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { qaFindingId } from "./qa_findings";
 import { captureGitTaskRevisionSnapshot } from "../workspace_scope";
-import { readTaskRecord } from "../kernel/storage";
+import { readTaskRecordRaw } from "../kernel/storage";
 
 function deliveryTreeForSnapshot(
 	snapshot: SnapshotDescriptor,
 	writeTree: typeof writeDeliveryTree,
 ): string {
 	if (snapshot.review_revision?.review_tree) return snapshot.review_revision.review_tree;
-	const record = readTaskRecord(snapshot.root, snapshot.task_id).record;
+	const record = readTaskRecordRaw(snapshot.root, snapshot.task_id).record;
 	if (!record || record.contract !== "assurance_kernel/task_record/v4" || !record.git_base_head)
 		throw new Error("QA delivery requires a TaskRecord v4 git_base_head");
 	const captured = captureGitTaskRevisionSnapshot(
