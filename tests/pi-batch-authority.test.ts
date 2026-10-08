@@ -1627,3 +1627,76 @@ describe("batch authorization reuse (ADR-0005 Decision 1)", () => {
 		expect(resumed.report.batch_state).toBe("completed");
 	});
 });
+
+describe("lane mode parameters (parallel-batch-lanes)", () => {
+	/** A TUI context whose native gate counts how often it opens. */
+	function countingTuiContext(root: string, opened: { count: number }): unknown {
+		return { cwd: root, mode: "tui", ui: { custom: async () => { opened.count++; return "decline"; } } };
+	}
+
+	it("declares exactly initiative_slug, max_parallel and lane_offers", () => {
+		const tool = registerBatchTool({ readInitiative: async () => createBatchFixture("lane-schema").observation }) as unknown as {
+			parameters: { properties: Record<string, unknown>; required?: string[] };
+		};
+		expect(Object.keys(tool.parameters.properties)).toEqual(["initiative_slug", "max_parallel", "lane_offers"]);
+		expect(tool.parameters.required).toEqual(["initiative_slug"]);
+	});
+
+	it("refuses an invalid max_parallel or a malformed lane offer before any gate opens, with zero writes", async () => {
+		const fixture = createBatchFixture("lane-invalid");
+		const tool = registerBatchTool({ readInitiative: async () => fixture.observation });
+		const invalid: Array<Record<string, unknown>> = [
+			{ max_parallel: 0 },
+			{ max_parallel: -1 },
+			{ max_parallel: 1.5 },
+			{ max_parallel: "1" },
+			{ lane_offers: [{ task_id: "lane-invalid-c1", path: "/tmp/x" }] },
+			{ max_parallel: 1, lane_offers: [{ task_id: "lane-invalid-c1", path: "relative" }] },
+			{ max_parallel: 1, lane_offers: [{ task_id: "../escape", path: "/tmp/x" }] },
+			{ max_parallel: 1, lane_offers: [{ task_id: "lane-invalid-c1", path: "/tmp/x", extra: 1 }] },
+		];
+		for (const extra of invalid) {
+			const opened = { count: 0 };
+			await expect(
+				tool.execute("tc", { initiative_slug: "lane-invalid", ...extra }, undefined, undefined, countingTuiContext(fixture.root, opened) as never),
+			).rejects.toThrow();
+			expect(opened.count).toBe(0);
+			assertZeroWrites(fixture.root, fixture.head, "lane-invalid");
+		}
+	});
+
+	it("refuses max_parallel above 1 with batch_parallel_unsupported before the gate, with zero writes", async () => {
+		const fixture = createBatchFixture("lane-wide");
+		let gates = 0;
+		const result = await executePiUnattendedBatch({
+			root: fixture.root,
+			initiativeSlug: "lane-wide",
+			max_parallel: 2,
+			readInitiative: async () => fixture.observation,
+			confirmBatch: async () => { gates++; return "accept"; },
+		});
+		expect(result.state).toBe("rejected");
+		expect(result.reason).toMatch(/^batch_parallel_unsupported/);
+		expect(gates).toBe(0);
+		assertZeroWrites(fixture.root, fixture.head, "lane-wide");
+	});
+
+	it("shows max_parallel and the parallel groups in the confirmation only in lane mode", async () => {
+		const confirmations: Array<{ summary: string; details: string }> = [];
+		for (const maxParallel of [undefined, 1] as const) {
+			const fixture = createBatchFixture(`lane-confirm-${maxParallel ?? "serial"}`);
+			await executePiUnattendedBatch({
+				root: fixture.root,
+				initiativeSlug: `lane-confirm-${maxParallel ?? "serial"}`,
+				...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
+				readInitiative: async () => fixture.observation,
+				confirmBatch: async (details) => { confirmations.push(details); return "decline"; },
+			});
+		}
+		const [serial, lane] = confirmations;
+		expect(serial!.summary).not.toContain("Lane mode");
+		expect(serial!.details).not.toContain("Parallel groups");
+		expect(lane!.summary).toContain("Lane mode: max_parallel=1");
+		expect(lane!.details).toContain("Parallel groups (");
+	});
+});

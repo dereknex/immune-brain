@@ -57,6 +57,7 @@ import {
 	type BatchRunReport,
 } from "../unattended/batch_runner";
 import { createBatchKernelPort } from "../unattended/batch_kernel_port";
+import { PARALLEL_UNSUPPORTED, type LaneOffer } from "../unattended/batch_lanes";
 import {
 	createBatchAuthorityRegistry,
 } from "../kernel/batch_authority";
@@ -784,10 +785,17 @@ export class ClaudeRuntime {
 	async startUnattendedBatch(
 		initiativeSlug: string,
 		meta: ToolMeta,
-		options: { reuseOnly?: boolean } = {},
+		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[] } = {},
 	): Promise<ClaudeBatchStartResult> {
 		throwIfCancelled(meta.signal);
 		const reuseOnly = options.reuseOnly === true;
+		// Lane mode is refused before any gate or write when it cannot run.
+		if (options.max_parallel !== undefined && options.max_parallel > 1)
+			return {
+				state: "rejected",
+				reason: `${PARALLEL_UNSUPPORTED}: max_parallel above 1 is not supported yet`,
+				recovery_action: "call start_unattended_batch with max_parallel 1, or without max_parallel for the serial path",
+			};
 		const probe = probeHost(this.env, process.platform, this.hostVersion);
 		if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
 		// A reuse-only continuation never opens a gate, so it needs no confirmation port.
@@ -867,6 +875,15 @@ export class ClaudeRuntime {
 								reason: child.reason,
 							})),
 							budget: facts.budget,
+							...(options.max_parallel !== undefined
+								? {
+										lane_mode: {
+											max_parallel: options.max_parallel,
+											parallel_groups: facts.parallel_groups,
+											serialized: facts.scope_conflicts,
+										},
+									}
+								: {}),
 							...(facts.reuse_blockers.length > 0
 								? {
 										re_confirmation_required: facts.reuse_blockers,
@@ -971,6 +988,8 @@ export class ClaudeRuntime {
 			now,
 			kernel: kernelPort,
 			git: this.batchGit,
+			...(options.max_parallel !== undefined ? { max_parallel: options.max_parallel } : {}),
+			...(options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}),
 		});
 
 		// review-3 & review-batch-preflight-recovery-is-diagnostic: map rejected batch state to rejected result with same-Host recovery action

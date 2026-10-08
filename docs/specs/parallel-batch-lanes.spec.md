@@ -11,7 +11,7 @@
 **Diagram decision**: required
 **Diagram reason**: one reconcile tick interleaves observation, integration, admission, and enrollment across three owners; the order decides which failures leave zero writes.
 
-Decision record: [ADR 0013](../adr/0013-optional-parallel-batch-lanes.md) (proposed).
+Decision record: [ADR 0013](../adr/0013-optional-parallel-batch-lanes.md) (accepted).
 
 ## Outcome and approved boundaries
 

@@ -114,10 +114,10 @@ not bypass them. Do not poll or create detached jobs.
 ## Unattended Batch Opt-In
 
 The only unattended batch entry is the privileged Host tool `start_unattended_batch`
-with its `initiative_slug` parameter. That parameter is the opt-in: absent the call,
+with its `initiative_slug` parameter. That parameter is the opt-in (lane mode adds an optional `max_parallel`, see [Parallel Batch Opt-In](#parallel-batch-opt-in)): absent the call,
 `imm-run` behavior is byte-identical to per-task Enrollment, and no batch state,
 branch, or Batch Authorization exists. The Standalone Hosts expose the same tool
-name and the same single parameter; it is never a batch of tasks the Host chose.
+name and the same required parameter; it is never a batch of tasks the Host chose.
 When an Initiative is referenced by its tracker Issue (e.g. `github #<number>`),
 extract `initiative_slug` from the Issue body `<!-- immune-brain:initiative-id=<slug> -->`
 marker or title prefix before invoking the tool.
@@ -159,6 +159,28 @@ Batch execution never pushes a ref, opens or updates a pull request, resolves a
 user decision, or creates, switches, or deletes a Git worktree. Its sole Git
 effect is the batch branch `imm/<initiative-slug>` plus one scope-bounded commit
 per completed child.
+
+### Parallel Batch Opt-In
+
+Lane mode is opt-in through the optional `max_parallel` parameter of
+`start_unattended_batch`; absent it, everything above is the whole contract and the
+run stays serial and byte-identical. `max_parallel` is a positive integer; the
+Standalone Hosts expose the same optional `lane_offers` list, each entry naming a
+`task_id` and an absolute `path` of an already existing Git worktree. The runner
+admits an offered Lane only when it shares the coordinator repository, is not the
+coordinator worktree, is on the branch `imm-lane/<initiative-slug>/<task-id>` at the
+named base, is clean and has no active run; otherwise it refuses the offer with a
+stable reason and writes nothing. The runner still never creates, switches or
+deletes a Git worktree: when a child needs a Lane the report carries a
+`lane-steward` handoff and the Lane is provisioned outside the runner.
+
+In a Lane the child is enrolled, assured and settled exactly as in a serial batch.
+The runner then commits the settled delivery on the Lane branch and fast-forwards
+the batch branch only to a candidate whose changed paths and per-path content equal
+that commit; a mismatch or conflict moves nothing and parks the child.
+`max_parallel` above the supported width is refused with `batch_parallel_unsupported`,
+and a resume with a different value with `batch_parallel_mismatch`. A Lane holds no
+batch state and its Host session never re-enters the batch.
 
 ## Decisions and Recovery
 

@@ -73,7 +73,9 @@ the enrolled TaskIntent.
 
 - A batch-scoped authority record or a second plan ledger. A batch-scoped
   execution record is not an alternative, it is this decision.
-- Parallel child execution, or a generic scheduler framework.
+- Parallel child execution, or a generic scheduler framework. Superseded for
+  an explicit opt-in only: ADR 0013 adds optional Lane execution selected by
+  `max_parallel`; a batch started without it stays strictly serial.
 - Deriving execution authority from GitHub Issue state.
 - Auto-opening a pull request for the batch branch, or auto-resolving parked
   children.
@@ -84,7 +86,7 @@ the enrolled TaskIntent.
   TaskRecord surface as single-task work; per-child Review remains a foreground
   obligation.
 - Deferred with explicit owners, not silently dropped: scheduled or cron-driven
-  batches, headless and CI-hosted runs, batches spanning multiple worktrees, and
+  batches, headless and CI-hosted runs, batches spanning multiple worktrees (ADR 0013 adopts Lanes the runner never creates, as an opt-in), and
   automatic PR creation for a completed batch branch.
 - The bound Spec is archived byte-preserving with the settled task; the contract
   text in `IMMUNE.md`, `CONTEXT.md`, and `dist/imm-run.md` remains the living

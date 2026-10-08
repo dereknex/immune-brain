@@ -51,7 +51,10 @@ claim owner matrix before adding any state.
 
 ## Consequences
 
-- A batch run's progress is bounded by the slowest parked child, and a parked
+- ADR 0013 changes this consequence for the opt-in lane mode: each running child
+  holds its claim in its own Lane, so a parked child no longer blocks independent
+  siblings. A serial batch keeps the consequence below unchanged.
+- A serial batch run's progress is bounded by the slowest parked child, and a parked
   child is always visible as `needs_human` with its reason rather than as an
   apparently finished run.
 - Independent single-task work is unaffected: the claim is only contended

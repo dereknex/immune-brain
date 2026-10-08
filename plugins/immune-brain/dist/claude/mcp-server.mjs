@@ -8192,9 +8192,9 @@ function createVerdictAuthority(options, registry = createMutationAuthorityRegis
 }
 
 // plugins/immune-brain/runtime/claude/kernel_ports.ts
-import { existsSync as existsSync11, readFileSync as readFileSync14, writeFileSync as writeFileSync8 } from "node:fs";
+import { existsSync as existsSync12, readFileSync as readFileSync14, writeFileSync as writeFileSync8 } from "node:fs";
 import { execFileSync as execFileSync8 } from "node:child_process";
-import { join as join16 } from "node:path";
+import { join as join17 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/enrollment_authority.ts
 var ENROLLMENT_CAPABILITY_BRAND = Symbol.for("assurance-kernel.enrollment-capability-brand");
@@ -10711,6 +10711,9 @@ import { spawnSync as spawnSync6 } from "node:child_process";
 import { existsSync as existsSync7, mkdirSync as mkdirSync6, openSync as openSync6, closeSync as closeSync6, writeFileSync as writeFileSync6, renameSync as renameSync3, lstatSync as lstatSync9, constants as constants5, rmSync as rmSync6 } from "node:fs";
 import { randomUUID as randomUUID7 } from "node:crypto";
 import { dirname as dirname7, join as join12 } from "node:path";
+function isLaneBatchRecord(record) {
+  return record.contract === "assurance_kernel/batch_run_state/v2";
+}
 var BATCH_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var CHILD_RUN_STATES = new Set([
   "pending",
@@ -10913,6 +10916,162 @@ function writeBatchRunState(root, record) {
       ...record,
       updated_at: new Date().toISOString()
     });
+    ensureSecureDirectory2(root, join12(".imm", "state", "batches"));
+    writeFileAtomically(root, path, canonicalBytes(stored));
+    return stored;
+  });
+}
+var LANE_CHILD_STATES = new Set([
+  "pending",
+  "lane_admitted",
+  "enrolled",
+  "settled",
+  "lane_committed",
+  "integrated",
+  "released",
+  "needs_human",
+  "skipped_blocked"
+]);
+var LANE_BOUND_STATES = new Set([
+  "lane_admitted",
+  "enrolled",
+  "settled",
+  "lane_committed",
+  "integrated",
+  "released"
+]);
+function validateLaneRecordShape(value, batchId) {
+  if (typeof value !== "object" || value === null)
+    throw new Error(`batch run state ${batchId} is not an object`);
+  const record = value;
+  if (record.contract !== "assurance_kernel/batch_run_state/v2")
+    throw new Error(`batch run state ${batchId} has an unknown contract`);
+  if (record.batch_id !== batchId)
+    throw new Error(`batch run state ${batchId} carries batch_id ${String(record.batch_id)}`);
+  if (typeof record.plan_digest !== "string" || !record.plan_digest)
+    throw new Error(`batch run state ${batchId} has an invalid plan_digest`);
+  if (typeof record.base_head !== "string" || !record.base_head)
+    throw new Error(`batch run state ${batchId} has an invalid base_head`);
+  if (record.branch !== undefined && (typeof record.branch !== "string" || !record.branch))
+    throw new Error(`batch run state ${batchId} has an invalid branch`);
+  if (!isCanonicalTimestamp(record.confirmation_time))
+    throw new Error(`batch run state ${batchId} has an invalid confirmation_time`);
+  if (!isCanonicalTimestamp(record.created_at) || !isCanonicalTimestamp(record.updated_at))
+    throw new Error(`batch run state ${batchId} has invalid state timestamps`);
+  if (!Array.isArray(record.children) || record.children.length === 0)
+    throw new Error(`batch run state ${batchId} has no children`);
+  if (!BATCH_RUN_STATES.has(String(record.batch_state)))
+    throw new Error(`batch run state ${batchId} has an invalid batch_state`);
+  if (typeof record.max_parallel !== "number" || !Number.isSafeInteger(record.max_parallel) || record.max_parallel <= 0)
+    throw new Error(`batch run state ${batchId} has an invalid max_parallel`);
+  const budget = record.budget;
+  if (typeof record.budget !== "object" || record.budget === null || typeof budget.max_children !== "number" || !Number.isInteger(budget.max_children) || budget.max_children <= 0 || typeof budget.qa_failure_limit !== "number" || !Number.isInteger(budget.qa_failure_limit) || budget.qa_failure_limit <= 0)
+    throw new Error(`batch run state ${batchId} has an invalid budget`);
+  if (!Array.isArray(record.commits) || record.commits.some((c) => typeof c !== "string"))
+    throw new Error(`batch run state ${batchId} has an invalid commits list`);
+  if (record.adopted_heads !== undefined && (!Array.isArray(record.adopted_heads) || record.adopted_heads.some((a) => typeof a !== "object" || a === null || typeof a.from !== "string" || !a.from || typeof a.to !== "string" || !a.to)))
+    throw new Error(`batch run state ${batchId} has an invalid adopted_heads list`);
+  const seenTaskIds = new Set;
+  for (const child of record.children) {
+    if (typeof child !== "object" || child === null || typeof child.task_id !== "string" || !child.task_id || typeof child.slice_id !== "string" || !child.slice_id)
+      throw new Error(`batch run state ${batchId} has an invalid child entry`);
+    if (!LANE_CHILD_STATES.has(String(child.state)))
+      throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid state`);
+    if (!Array.isArray(child.blocked_by) || child.blocked_by.some((b) => typeof b !== "string"))
+      throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid blocked_by`);
+    if (child.reason !== null && typeof child.reason !== "string" || child.commit !== null && typeof child.commit !== "string")
+      throw new Error(`batch run state ${batchId} child ${child.task_id} has invalid terminal fields`);
+    if (typeof child.qa_failures !== "number" || !Number.isInteger(child.qa_failures) || child.qa_failures < 0)
+      throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid qa_failures`);
+    const lane = child.lane;
+    if (lane !== null) {
+      if (typeof lane !== "object" || typeof lane.path !== "string" || !lane.path || typeof lane.branch !== "string" || !lane.branch || typeof lane.base_head !== "string" || !lane.base_head || lane.lane_commit !== null && typeof lane.lane_commit !== "string")
+        throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid lane`);
+    }
+    if (LANE_BOUND_STATES.has(child.state) && lane === null)
+      throw new Error(`batch run state ${batchId} child ${child.task_id} is ${child.state} without a lane`);
+    if ((child.state === "pending" || child.state === "skipped_blocked") && lane !== null)
+      throw new Error(`batch run state ${batchId} child ${child.task_id} is ${child.state} but holds a lane`);
+    const integrated = child.state === "integrated" || child.state === "released";
+    if (integrated && child.commit === null)
+      throw new Error(`batch run state ${batchId} child ${child.task_id} is ${child.state} without a commit`);
+    if (!integrated && child.commit !== null)
+      throw new Error(`batch run state ${batchId} child ${child.task_id} has a commit but is not integrated`);
+    if (integrated && lane?.lane_commit === null)
+      throw new Error(`batch run state ${batchId} child ${child.task_id} is ${child.state} without a lane commit`);
+    if (child.state === "lane_committed" && lane?.lane_commit === null)
+      throw new Error(`batch run state ${batchId} child ${child.task_id} is lane_committed without a lane commit`);
+    if ((child.state === "needs_human" || child.state === "skipped_blocked") && child.reason === null)
+      throw new Error(`batch run state ${batchId} child ${child.task_id} needs a terminal reason`);
+    if (seenTaskIds.has(child.task_id))
+      throw new Error(`batch run state ${batchId} has a duplicate child ${child.task_id}`);
+    seenTaskIds.add(child.task_id);
+  }
+  for (const child of record.children) {
+    if (child.commit !== null && !record.commits.includes(child.commit))
+      throw new Error(`batch run state ${batchId} child ${child.task_id} commit is missing from commits`);
+  }
+  const inFlight = (child) => child.state === "lane_admitted" || child.state === "enrolled" || child.state === "settled" || child.state === "lane_committed";
+  if ((record.batch_state === "budget_stopped" || record.batch_state === "failed" || record.batch_state === "rejected") && record.children.some(inFlight))
+    throw new Error(`batch run state ${batchId} is ${String(record.batch_state)} but a child is still mid-flight`);
+  if (record.batch_state === "completed" && record.children.some((child) => child.state !== "integrated" && child.state !== "released"))
+    throw new Error(`batch run state ${batchId} is completed but a child is not integrated`);
+}
+function prepareBatchLaneRunState(input) {
+  validateBatchId(input.batch_id);
+  return {
+    contract: "assurance_kernel/batch_run_state/v2",
+    batch_id: input.batch_id,
+    initiative_slug: input.initiative_slug,
+    plan_digest: input.plan_digest,
+    base_head: input.base_head,
+    branch: input.branch ?? `imm/${input.initiative_slug}`,
+    confirmation_time: input.confirmation_time,
+    budget: input.budget,
+    max_parallel: input.max_parallel,
+    batch_state: "prepared",
+    children: input.children.map((child) => ({
+      task_id: child.task_id,
+      slice_id: child.slice_id,
+      blocked_by: [...child.blocked_by],
+      state: "pending",
+      reason: null,
+      commit: null,
+      lane: null,
+      qa_failures: 0
+    })),
+    commits: [],
+    created_at: input.now,
+    updated_at: input.now
+  };
+}
+function parseBatchLaneRunState(raw, batchId) {
+  validateBatchId(batchId);
+  const parsed = JSON.parse(raw);
+  validateLaneRecordShape(parsed, batchId);
+  return withoutRetiredClock(parsed);
+}
+function parseAnyBatchRunState(raw, batchId) {
+  validateBatchId(batchId);
+  const parsed = JSON.parse(raw);
+  if (typeof parsed === "object" && parsed !== null && parsed.contract === "assurance_kernel/batch_run_state/v2")
+    return parseBatchLaneRunState(raw, batchId);
+  return parseBatchRunState(raw, batchId);
+}
+function readAnyBatchRunState(root, batchId) {
+  const path = statePath(batchId);
+  if (!existsSync7(join12(root, path)))
+    return null;
+  return parseAnyBatchRunState(readSecureProjectFile(root, path), batchId);
+}
+function writeBatchLaneRunState(root, record) {
+  const path = statePath(record.batch_id);
+  validateLaneRecordShape(record, record.batch_id);
+  return withKernelStoreLock(root, () => {
+    const existing = existsSync7(join12(root, path)) ? readSecureProjectFile(root, path) : null;
+    if (existing !== null && existing === canonicalBytes(record))
+      return record;
+    const stored = withoutRetiredClock({ ...record, updated_at: new Date().toISOString() });
     ensureSecureDirectory2(root, join12(".imm", "state", "batches"));
     writeFileAtomically(root, path, canonicalBytes(stored));
     return stored;
@@ -11216,6 +11375,32 @@ function scopesOverlap(left, right) {
     return rightPrefixes.some((other) => prefixOverlaps(prefix, other));
   });
 }
+function positiveLimit(maxParallel) {
+  if (maxParallel === Number.POSITIVE_INFINITY)
+    return maxParallel;
+  if (!Number.isSafeInteger(maxParallel) || maxParallel <= 0)
+    throw new Error("max_parallel must be a positive safe integer");
+  return maxParallel;
+}
+function startableChildren(children, maxParallel) {
+  const limit = positiveLimit(maxParallel);
+  const done = new Set(children.filter((child) => DONE_STATES.has(child.state)).map((child) => child.task_id));
+  const occupied = children.filter((child) => IN_FLIGHT_STATES.has(child.state));
+  const startable = [];
+  for (const child of children) {
+    if (occupied.length >= limit)
+      break;
+    if (child.state !== "pending")
+      continue;
+    if (!child.blocked_by.every((id) => done.has(id)))
+      continue;
+    if (occupied.some((other) => scopesOverlap(child.scope_hint, other.scope_hint)))
+      continue;
+    startable.push(child.task_id);
+    occupied.push(child);
+  }
+  return startable;
+}
 function projectParallelGroups(children) {
   const remaining = [...children];
   const placed = new Set;
@@ -11482,7 +11667,7 @@ function findResumableBatchSlugForTask(root, taskId) {
       continue;
     try {
       const record = JSON.parse(readFileSync13(join13(batchesDir, file), "utf8"));
-      if (record?.contract !== "assurance_kernel/batch_run_state/v1")
+      if (record?.contract !== "assurance_kernel/batch_run_state/v1" && record?.contract !== "assurance_kernel/batch_run_state/v2")
         continue;
       if (record.batch_state !== "running" && record.batch_state !== "needs_human")
         continue;
@@ -11508,7 +11693,7 @@ function findExistingActiveBatch(root, initiativeSlug) {
       return { corrupt: true, path: file };
     }
     const candidate = record;
-    if (candidate?.contract !== "assurance_kernel/batch_run_state/v1")
+    if (candidate?.contract !== "assurance_kernel/batch_run_state/v1" && candidate?.contract !== "assurance_kernel/batch_run_state/v2")
       continue;
     if (candidate.initiative_slug !== initiativeSlug)
       continue;
@@ -11527,7 +11712,7 @@ function findExistingActiveBatch(root, initiativeSlug) {
     if (isTerminalBatchState(candidate.batch_state))
       continue;
     try {
-      const record = readBatchRunState(root, file.slice(0, -5));
+      const record = readAnyBatchRunState(root, file.slice(0, -5));
       if (record)
         return { corrupt: false, record };
     } catch {}
@@ -11550,7 +11735,7 @@ function findSettledBatchRecord(root, initiativeSlug) {
       continue;
     }
     const candidate = record;
-    if (candidate?.contract !== "assurance_kernel/batch_run_state/v1")
+    if (candidate?.contract !== "assurance_kernel/batch_run_state/v1" && candidate?.contract !== "assurance_kernel/batch_run_state/v2")
       continue;
     if (candidate.initiative_slug !== initiativeSlug)
       continue;
@@ -11694,6 +11879,8 @@ async function projectPlanSurface(input) {
   let recoveryChildren = [];
   let planDigest;
   let excluded = [];
+  let parallelGroups = [];
+  let scopeConflicts = [];
   const riskByTask = new Map;
   let budget;
   if (isResuming && existingBatch) {
@@ -11762,6 +11949,8 @@ async function projectPlanSurface(input) {
     if (!plan.enrollable.length)
       return { ok: false, key: "empty_enrollable_set", detail: "" };
     budget = plan.budget;
+    parallelGroups = plan.parallel_groups;
+    scopeConflicts = plan.scope_conflicts;
     const enrollableChildById = new Map(plan.enrollable.map((c) => [c.task_id, c]));
     recoveryChildren = plan.children.filter((c) => c.status === "enrollable").map((c) => {
       const digestChild = enrollableChildById.get(c.task_id);
@@ -11787,7 +11976,9 @@ async function projectPlanSurface(input) {
       plan_digest: planDigest,
       recovery_children: recoveryChildren,
       risk_by_task: Object.fromEntries([...riskByTask.entries()].sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)),
-      excluded
+      excluded,
+      parallel_groups: parallelGroups,
+      scope_conflicts: scopeConflicts
     }
   };
 }
@@ -11867,7 +12058,7 @@ async function projectBatchPreflight(options) {
   if (!planSurface.ok)
     return reject(planSurface.key, planSurface.detail);
   let reconfirmation;
-  if (activeRecord && activeRecord.plan_digest !== planSurface.surface.plan_digest) {
+  if (activeRecord && !isLaneBatchRecord(activeRecord) && activeRecord.plan_digest !== planSurface.surface.plan_digest) {
     try {
       reconfirmation = await captureBatchReconfirmation(root, activeRecord, planSurface.surface.recovery_children);
     } catch {
@@ -11884,7 +12075,9 @@ async function projectBatchPreflight(options) {
     plan_digest: planSurface.surface.plan_digest,
     recovery_children: planSurface.surface.recovery_children,
     risk_by_task: planSurface.surface.risk_by_task,
-    excluded: planSurface.surface.excluded
+    excluded: planSurface.surface.excluded,
+    parallel_groups: planSurface.surface.parallel_groups,
+    scope_conflicts: planSurface.surface.scope_conflicts
   };
   if (reconfirmation)
     Object.defineProperty(projection, "reconfirmation", { value: reconfirmation });
@@ -11931,7 +12124,7 @@ async function authorizeBatch(options) {
   const branchBefore = spawnSync7("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
   if (branchBefore.status !== 0)
     return { outcome: "rejected", rejection: batchRejection("repository_became_unreadable") };
-  const ownsUnpersistedHead = isResuming && existingBatch !== null && existingBatch.plan_digest === planDigest && expectedBatchHead(existingBatch) !== baseHead && ownUnpersistedBatchHead(root, existingBatch, baseHead);
+  const ownsUnpersistedHead = isResuming && existingBatch !== null && !isLaneBatchRecord(existingBatch) && existingBatch.plan_digest === planDigest && expectedBatchHead(existingBatch) !== baseHead && ownUnpersistedBatchHead(root, existingBatch, baseHead);
   const fastForwardsRecordedHead = isResuming && existingBatch !== null && existingBatch.branch === batchBranch && expectedBatchHead(existingBatch) !== baseHead && !ownsUnpersistedHead && classifyBatchLineage({
     root,
     branch: batchBranch,
@@ -11966,7 +12159,9 @@ async function authorizeBatch(options) {
       risk: projection.risk_by_task[child.task_id] ?? "material",
       status: child.status
     })),
-    excluded: projection.excluded
+    excluded: projection.excluded,
+    parallel_groups: projection.parallel_groups,
+    scope_conflicts: projection.scope_conflicts
   };
   let requestId = null;
   if (!reuseAuthorization) {
@@ -12033,9 +12228,9 @@ async function authorizeBatch(options) {
 }
 
 // plugins/immune-brain/runtime/unattended/batch_runner.ts
-import { spawnSync as spawnSync9 } from "node:child_process";
-import { existsSync as existsSync10 } from "node:fs";
-import { join as join15 } from "node:path";
+import { spawnSync as spawnSync11 } from "node:child_process";
+import { existsSync as existsSync11 } from "node:fs";
+import { join as join16 } from "node:path";
 
 // plugins/immune-brain/runtime/unattended/batch_git.ts
 import { spawnSync as spawnSync8 } from "node:child_process";
@@ -12600,6 +12795,725 @@ function createDefaultBatchGitPort() {
   };
 }
 
+// plugins/immune-brain/runtime/unattended/batch_lanes.ts
+import { spawnSync as spawnSync10 } from "node:child_process";
+import { existsSync as existsSync10, realpathSync as realpathSync12 } from "node:fs";
+import { isAbsolute as isAbsolute6, join as join15 } from "node:path";
+
+// plugins/immune-brain/runtime/unattended/batch_integration.ts
+import { spawnSync as spawnSync9 } from "node:child_process";
+
+class BatchIntegrationError extends Error {
+  reason;
+  constructor(reason, message) {
+    super(message);
+    this.reason = reason;
+    this.name = "BatchIntegrationError";
+  }
+}
+var COMMITTER_ENV = {
+  GIT_COMMITTER_NAME: process.env.GIT_COMMITTER_NAME || "Immune-Brain Batch",
+  GIT_COMMITTER_EMAIL: process.env.GIT_COMMITTER_EMAIL || "immune-brain@local"
+};
+function git5(root, args, extra = {}) {
+  const result = spawnSync9("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", ...args], {
+    encoding: "utf8",
+    stdio: ["pipe", "pipe", "pipe"],
+    input: extra.input,
+    env: { ...process.env, ...COMMITTER_ENV, ...extra.env ?? {} }
+  });
+  return { status: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
+}
+function gitOut(root, args, what) {
+  const result = git5(root, args);
+  if (result.status !== 0)
+    throw new Error(`${what}: ${result.stderr.trim() || "git failed"}`);
+  return result.stdout;
+}
+function changeIdentity(root, from, to) {
+  const raw = gitOut(root, ["diff-tree", "-r", "-z", "--raw", "--no-renames", "--no-ext-diff", "--no-commit-id", from, to], `failed to inspect change ${from}..${to}`);
+  const tokens = raw.split("\x00");
+  const identity = new Map;
+  for (let index = 0;index < tokens.length; index += 1) {
+    const meta = tokens[index];
+    if (!meta.startsWith(":"))
+      continue;
+    const [, newMode, , newSha] = meta.slice(1).split(" ");
+    const path = tokens[index + 1];
+    if (path === undefined || !newMode || !newSha)
+      throw new Error(`unreadable change record for ${from}..${to}`);
+    identity.set(path, `${newMode} ${newSha}`);
+    index += 1;
+  }
+  return identity;
+}
+function identitiesEqual(left, right) {
+  if (left.size !== right.size)
+    return false;
+  for (const [path, value] of left)
+    if (right.get(path) !== value)
+      return false;
+  return true;
+}
+function singleParent(root, commit) {
+  const parents = gitOut(root, ["rev-parse", `${commit}^@`], `failed to read parents of ${commit}`).split(/\s+/).filter(Boolean);
+  if (parents.length !== 1)
+    throw new BatchIntegrationError("batch_head_lineage_broken", `batch_head_lineage_broken: lane commit ${commit} has ${parents.length} parents, expected exactly one`);
+  return parents[0];
+}
+function isAncestor(root, ancestor, descendant) {
+  return git5(root, ["merge-base", "--is-ancestor", ancestor, descendant]).status === 0;
+}
+function buildCandidate(input) {
+  const { root, batch_head: head, lane_base: base, lane_commit: laneCommit } = input;
+  if (head === base)
+    return laneCommit;
+  const merged = git5(root, ["merge-tree", "--write-tree", `--merge-base=${base}`, head, laneCommit]);
+  if (merged.status === 1)
+    throw new BatchIntegrationError("batch_integration_conflict", `batch_integration_conflict: lane commit ${laneCommit} does not apply cleanly onto batch head ${head}`);
+  if (merged.status !== 0)
+    throw new Error(`failed to build integration candidate: ${merged.stderr.trim() || "git merge-tree failed"}`);
+  const tree = merged.stdout.split(`
+`)[0]?.trim();
+  if (!tree)
+    throw new Error("failed to build integration candidate: no tree produced");
+  const message = gitOut(root, ["log", "-n", "1", "--format=%B", laneCommit], "failed to read lane commit message");
+  const author = gitOut(root, ["log", "-n", "1", "--format=%an%x00%ae%x00%aI", laneCommit], "failed to read lane commit author").trim().split("\x00");
+  const created = git5(root, ["commit-tree", tree, "-p", head, "-F", "-"], {
+    input: message,
+    env: {
+      GIT_AUTHOR_NAME: author[0] ?? COMMITTER_ENV.GIT_COMMITTER_NAME,
+      GIT_AUTHOR_EMAIL: author[1] ?? COMMITTER_ENV.GIT_COMMITTER_EMAIL,
+      ...author[2] ? { GIT_AUTHOR_DATE: author[2] } : {}
+    }
+  });
+  const candidate = created.stdout.trim();
+  if (created.status !== 0 || !candidate)
+    throw new Error(`failed to build integration candidate: ${created.stderr.trim() || "git commit-tree failed"}`);
+  return candidate;
+}
+function integrateLaneCommit(input) {
+  const { root, branch, batch_head: head, lane_base: base, lane_commit: laneCommit } = input;
+  const currentBranch = git5(root, ["symbolic-ref", "--short", "HEAD"]);
+  if (currentBranch.status !== 0 || currentBranch.stdout.trim() !== branch)
+    throw new BatchIntegrationError("batch_head_lineage_broken", `batch_head_lineage_broken: current branch ${currentBranch.stdout.trim()} does not match expected branch ${branch}`);
+  const currentHead = git5(root, ["rev-parse", "HEAD"]).stdout.trim();
+  if (currentHead !== head)
+    throw new BatchIntegrationError("batch_head_lineage_broken", `batch_head_lineage_broken: current HEAD ${currentHead} does not match expected batch head ${head}`);
+  if (singleParent(root, laneCommit) !== base)
+    throw new BatchIntegrationError("batch_head_lineage_broken", `batch_head_lineage_broken: lane commit ${laneCommit} does not descend from lane base ${base}`);
+  if (!isAncestor(root, base, head))
+    throw new BatchIntegrationError("batch_head_lineage_broken", `batch_head_lineage_broken: lane base ${base} is not an ancestor of batch head ${head}`);
+  const candidate = buildCandidate({ root, batch_head: head, lane_base: base, lane_commit: laneCommit });
+  if (!identitiesEqual(changeIdentity(root, base, laneCommit), changeIdentity(root, head, candidate)))
+    throw new BatchIntegrationError("batch_integration_conflict", `batch_integration_conflict: candidate ${candidate} does not carry the lane commit ${laneCommit} change`);
+  const moved = git5(root, ["merge", "--ff-only", "--quiet", candidate]);
+  if (moved.status !== 0)
+    throw new BatchIntegrationError("batch_integration_conflict", `batch_integration_conflict: batch branch could not fast-forward to ${candidate}: ${moved.stderr.trim() || "git merge failed"}`);
+  const landed = git5(root, ["rev-parse", "HEAD"]).stdout.trim();
+  if (landed !== candidate)
+    throw new Error(`batch branch landed on ${landed}, expected ${candidate}`);
+  return { commit: candidate };
+}
+function findIntegratedCandidate(input) {
+  const { root, task_id: taskId, batch_id: batchId, from_head: from, lane_base: base, lane_commit: laneCommit } = input;
+  const listed = git5(root, [
+    "log",
+    "--fixed-strings",
+    `--grep=imm(${taskId}):`,
+    "--format=%H%x00%(trailers:key=Immune-Brain-Batch,valueonly)%x00%s",
+    `${from}..HEAD`
+  ]);
+  if (listed.status !== 0)
+    throw new Error(`failed to search for integrated ${taskId}: ${listed.stderr.trim()}`);
+  const lane = changeIdentity(root, base, laneCommit);
+  for (const line of listed.stdout.split(`
+`)) {
+    const [commit, trailer, subject] = line.split("\x00");
+    if (!commit || trailer?.trim() !== batchId || !subject?.startsWith(`imm(${taskId}):`))
+      continue;
+    const parent = git5(root, ["rev-parse", `${commit}^`]).stdout.trim();
+    if (parent && identitiesEqual(lane, changeIdentity(root, parent, commit)))
+      return commit;
+  }
+  return null;
+}
+
+// plugins/immune-brain/runtime/unattended/batch_lanes.ts
+var LANE_EXECUTOR_HOSTS = ["claude-code", "pi"];
+var PARALLEL_UNSUPPORTED = "batch_parallel_unsupported";
+var PARALLEL_MISMATCH = "batch_parallel_mismatch";
+var TASK_ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+var MAX_LANE_OFFERS = 64;
+var MAX_PATH_LENGTH = 4096;
+function parseMaxParallel(value) {
+  if (value === undefined || value === null)
+    return;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0)
+    throw new Error("invalid max_parallel: expected a positive integer");
+  return value;
+}
+function parseLaneOffers(value) {
+  if (value === undefined || value === null)
+    return;
+  if (!Array.isArray(value))
+    throw new Error("invalid lane_offers: expected an array");
+  if (value.length > MAX_LANE_OFFERS)
+    throw new Error(`invalid lane_offers: at most ${MAX_LANE_OFFERS} offers`);
+  const seen = new Set;
+  return value.map((entry) => {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry))
+      throw new Error("invalid lane_offers: each offer must be an object");
+    const { task_id: taskId, path, ...rest } = entry;
+    if (Object.keys(rest).length > 0)
+      throw new Error("invalid lane_offers: unknown offer field");
+    if (typeof taskId !== "string" || !TASK_ID_PATTERN2.test(taskId))
+      throw new Error("invalid lane_offers: task_id is not a valid task id");
+    if (typeof path !== "string" || !path || path.length > MAX_PATH_LENGTH || path.includes("\x00") || !isAbsolute6(path))
+      throw new Error("invalid lane_offers: path must be an absolute path");
+    if (seen.has(taskId))
+      throw new Error(`invalid lane_offers: duplicate offer for ${taskId}`);
+    seen.add(taskId);
+    return { task_id: taskId, path };
+  });
+}
+function laneBranchName(initiativeSlug, taskId) {
+  return `imm-lane/${initiativeSlug}/${taskId}`;
+}
+function gitRead(root, args) {
+  const result = spawnSync10("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  return { status: result.status, stdout: (result.stdout ?? "").trim() };
+}
+function commonDir(root) {
+  const result = gitRead(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  if (result.status !== 0 || !result.stdout)
+    return null;
+  try {
+    return realpathSync12(result.stdout);
+  } catch {
+    return null;
+  }
+}
+function resolveRealPath(path) {
+  try {
+    return realpathSync12(path);
+  } catch {
+    return null;
+  }
+}
+function createDefaultLaneGitPort() {
+  return {
+    resolveRoot: (root) => resolveRealPath(root) ?? root,
+    inspectLane(coordinatorRoot, lanePath) {
+      const real = existsSync10(lanePath) ? resolveRealPath(lanePath) : null;
+      const absent = {
+        exists: real !== null,
+        real_path: real,
+        same_repository: false,
+        is_worktree_root: false,
+        branch: null,
+        head: null,
+        clean: false,
+        active_claim_task_id: null
+      };
+      if (!real)
+        return absent;
+      const laneCommon = commonDir(real);
+      const coordinatorCommon = commonDir(coordinatorRoot);
+      if (!laneCommon || !coordinatorCommon || laneCommon !== coordinatorCommon)
+        return absent;
+      const top = gitRead(real, ["rev-parse", "--show-toplevel"]);
+      const topReal = top.status === 0 ? resolveRealPath(top.stdout) : null;
+      const branch = gitRead(real, ["symbolic-ref", "--short", "HEAD"]);
+      const head = gitRead(real, ["rev-parse", "HEAD"]);
+      const status = gitRead(real, ["status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none"]);
+      let activeClaim = null;
+      try {
+        activeClaim = readActiveClaimTaskId(real);
+      } catch {
+        activeClaim = "unreadable";
+      }
+      return {
+        exists: true,
+        real_path: real,
+        same_repository: true,
+        is_worktree_root: topReal === real,
+        branch: branch.status === 0 ? branch.stdout : null,
+        head: head.status === 0 ? head.stdout : null,
+        clean: status.status === 0 && status.stdout === "",
+        active_claim_task_id: activeClaim
+      };
+    },
+    integrate: integrateLaneCommit,
+    findIntegrated: findIntegratedCandidate
+  };
+}
+function decideLaneAdmission(input) {
+  const { facts } = input;
+  if (!facts.exists || !facts.real_path || !facts.same_repository || !facts.is_worktree_root)
+    return "batch_lane_foreign_repository";
+  if (facts.real_path === input.coordinator_real_path)
+    return "batch_lane_is_coordinator";
+  if (facts.branch !== input.expected_branch)
+    return "batch_lane_branch_mismatch";
+  if (facts.head !== input.batch_head)
+    return "batch_lane_base_mismatch";
+  if (!facts.clean)
+    return "batch_lane_dirty";
+  if (facts.active_claim_task_id !== null || input.bound_paths.includes(facts.real_path))
+    return "batch_lane_occupied";
+  return null;
+}
+function laneGitOf(input) {
+  return input.git?.lane ?? createDefaultLaneGitPort();
+}
+function serialGitOf(input) {
+  return input.git ?? defaultSerialGit();
+}
+function defaultSerialGit() {
+  return createDefaultBatchGitPort();
+}
+var IN_FLIGHT = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
+function dependentsOf(record, taskId) {
+  return record.children.filter((child) => child.blocked_by.includes(taskId));
+}
+function skipDependents(record, taskId, reason) {
+  const skip = new Set([taskId]);
+  const queue = [taskId];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    for (const dependent of dependentsOf(record, current)) {
+      if (skip.has(dependent.task_id))
+        continue;
+      skip.add(dependent.task_id);
+      queue.push(dependent.task_id);
+    }
+  }
+  record.children = record.children.map((child) => skip.has(child.task_id) && child.state === "pending" ? { ...child, state: "skipped_blocked", reason } : child);
+}
+function consumedSlots(record) {
+  return record.children.filter((child) => child.state !== "pending" && child.state !== "skipped_blocked").length;
+}
+var TERMINAL_NEXT_ACTIONS = {
+  completed: "The batch integrated every enrollable child; review the commits and the tracker.",
+  budget_stopped: "The child budget stopped new enrollments; re-confirm to continue under a new authorization.",
+  failed: "A lineage failure stopped the batch; inspect the failing child and the branch state.",
+  rejected: "The batch was rejected before any enrollment; correct the stated reason and re-confirm.",
+  needs_human: "A parked child needs a human decision; its Lane is kept. Resolve it by hand, then re-confirm to continue.",
+  running: "The batch is still running; no terminal report is due yet.",
+  prepared: "The batch is prepared but not started."
+};
+function laneReport(record, reason, nextAction, extra = {}) {
+  return {
+    contract: "assurance_kernel/batch_run_report/v1",
+    batch_id: record.batch_id,
+    initiative_slug: record.initiative_slug,
+    batch_state: record.batch_state,
+    max_parallel: record.max_parallel,
+    children: record.children,
+    commits: record.commits,
+    reason,
+    handoffs: extra.handoffs ?? [],
+    ...extra.refusals?.length ? { lane_refusals: extra.refusals } : {},
+    next_action: nextAction || (TERMINAL_NEXT_ACTIONS[record.batch_state] ?? "Inspect the batch run state."),
+    created_at: record.updated_at
+  };
+}
+function finalizeLane(root, record, reason, nextAction, extra = {}) {
+  const report = laneReport(record, reason, nextAction, extra);
+  if (isTerminalBatchState(record.batch_state) || record.batch_state === "needs_human")
+    writeBatchRunReport(root, report);
+  return report;
+}
+function refuse2(input, persisted, code, detail) {
+  const base = persisted && isLaneBatchRecord(persisted) ? persisted : prepareBatchLaneRunState({
+    batch_id: input.batch_id,
+    initiative_slug: input.initiative_slug,
+    children: persisted ? [] : input.children,
+    plan_digest: input.plan_digest,
+    base_head: input.base_head,
+    confirmation_time: input.confirmation_time,
+    budget: input.budget,
+    max_parallel: input.max_parallel ?? 1,
+    now: input.now
+  });
+  return laneReport({ ...base, batch_state: "rejected" }, `${code}: ${detail}`, "Correct the lane-mode parameters and call start_unattended_batch again.");
+}
+function assertPlanMatches(input, record) {
+  const plan = input.registry.children(input.capability);
+  if (record.plan_digest !== computeBatchPlanDigest(plan) || record.children.length !== plan.length || record.children.some((child, index) => {
+    const expected = plan[index];
+    return child.task_id !== expected.task_id || JSON.stringify(child.blocked_by) !== JSON.stringify(expected.blocked_by);
+  }))
+    throw new Error("plan_digest mismatch: persisted children do not match the authorized plan");
+}
+function validateNewAuthorization(input) {
+  try {
+    const authorized = input.kernel.validateBatchAuthorization({
+      registry: input.registry,
+      capability: input.capability,
+      binding: {
+        batch_id: input.batch_id,
+        plan_digest: input.plan_digest,
+        base_head: input.base_head,
+        initiative_slug: input.initiative_slug,
+        budget: input.budget
+      }
+    });
+    if (authorized.issued_at !== input.confirmation_time)
+      return "the parked batch requires a fresh literal-user confirmation";
+    const children = input.children.map((child) => {
+      const { intent_path, intent_revision, intent_content_hash } = child;
+      if (intent_path === null || intent_revision === null || intent_content_hash === null)
+        throw new Error(`batch child ${child.task_id} has no complete intent identity`);
+      return { ...child, intent_path, intent_revision, intent_content_hash };
+    });
+    if (computeBatchPlanDigest(children) !== authorized.plan_digest || input.plan_digest !== authorized.plan_digest || input.base_head !== authorized.base_head)
+      return "batch run input does not match the authorized plan or base_head";
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+function rehydrateConsumption(input, record) {
+  const { issued_at: _issuedAt, ...binding } = input.kernel.validateBatchAuthorization({
+    registry: input.registry,
+    capability: input.capability,
+    binding: {
+      batch_id: record.batch_id,
+      plan_digest: record.plan_digest,
+      base_head: record.base_head,
+      initiative_slug: record.initiative_slug,
+      budget: record.budget
+    }
+  });
+  for (const child of record.children) {
+    if (child.state === "pending" || child.state === "skipped_blocked" || child.state === "lane_admitted")
+      continue;
+    if (!input.registry.isChildConsumed(input.capability, child.task_id))
+      input.registry.consumeChild(input.capability, binding, child.task_id);
+  }
+}
+function failLineage(root, record, message) {
+  const next = {
+    ...record,
+    batch_state: "failed",
+    children: record.children.map((child) => IN_FLIGHT.has(child.state) ? { ...child, state: "needs_human", reason: message } : child)
+  };
+  for (const child of next.children)
+    if (child.state === "needs_human")
+      skipDependents(next, child.task_id, `dependency ${child.task_id} parked`);
+  return finalizeLane(root, writeBatchLaneRunState(root, next), message, "");
+}
+function park(record, taskId, reason) {
+  record.children = record.children.map((child) => child.task_id === taskId ? { ...child, state: "needs_human", reason } : child);
+  skipDependents(record, taskId, `dependency ${taskId} parked`);
+  record.batch_state = "needs_human";
+}
+function isLineageBreak(message) {
+  return message.includes("batch_head_lineage_broken");
+}
+async function runLaneBatch(input, persisted) {
+  if (persisted && !isLaneBatchRecord(persisted))
+    return refuse2(input, persisted, PARALLEL_MISMATCH, "the recorded batch runs serially; max_parallel cannot be added on a resume");
+  if (persisted && input.max_parallel !== undefined && input.max_parallel !== persisted.max_parallel)
+    return refuse2(input, persisted, PARALLEL_MISMATCH, `the recorded batch runs with max_parallel ${persisted.max_parallel}`);
+  const limit = persisted?.max_parallel ?? input.max_parallel ?? 1;
+  if (limit > 1)
+    return refuse2(input, persisted, PARALLEL_UNSUPPORTED, "max_parallel above 1 is not supported yet");
+  if (!input.children.length)
+    return refuse2(input, persisted, "batch_plan_empty", "batch plan is empty");
+  const git = serialGitOf(input);
+  const lanes = laneGitOf(input);
+  let record;
+  if (persisted) {
+    record = persisted;
+    assertPlanMatches(input, record);
+    if (isTerminalBatchState(record.batch_state))
+      return finalizeLane(input.root, record, `terminal state already reached: ${record.batch_state}`, "");
+    if (record.batch_state === "needs_human")
+      return finalizeLane(input.root, record, "a parked child needs a human decision", "A parked child keeps its Lane. Resolve it by hand, then re-confirm to continue.");
+  } else {
+    const invalid = validateNewAuthorization(input);
+    if (invalid)
+      return refuse2(input, null, "batch_authorization_invalid", invalid);
+    const preflight = await git.preflight({
+      root: input.root,
+      initiative_slug: input.initiative_slug,
+      base_head: input.base_head
+    });
+    if (!preflight.ok)
+      return refuse2(input, null, preflight.reason, preflight.message || "Correct the preflight condition and re-confirm.");
+    record = prepareBatchLaneRunState({
+      batch_id: input.batch_id,
+      initiative_slug: input.initiative_slug,
+      children: input.children,
+      plan_digest: input.plan_digest,
+      base_head: input.base_head,
+      confirmation_time: input.confirmation_time,
+      budget: input.budget,
+      max_parallel: limit,
+      now: input.now
+    });
+  }
+  const persist = () => {
+    record = writeBatchLaneRunState(input.root, record);
+  };
+  if (record.batch_state === "prepared") {
+    record.batch_state = "running";
+    persist();
+  }
+  for (const child of record.children) {
+    if (child.state !== "lane_committed" || !child.lane?.lane_commit)
+      continue;
+    const found = lanes.findIntegrated({
+      root: input.root,
+      task_id: child.task_id,
+      batch_id: record.batch_id,
+      from_head: expectedBatchHead(record),
+      lane_base: child.lane.base_head,
+      lane_commit: child.lane.lane_commit
+    });
+    if (!found)
+      continue;
+    record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "integrated", commit: found } : c);
+    record.commits = [...record.commits, found];
+    persist();
+  }
+  const lineage = existsSync10(join15(input.root, ".git")) ? classifyBatchLineage({
+    root: input.root,
+    branch: record.branch ?? "",
+    expectedHead: expectedBatchHead(record),
+    childCommits: record.commits,
+    batchId: record.batch_id
+  }) : { kind: "equal", head: expectedBatchHead(record) };
+  if (lineage.kind === "broken")
+    return failLineage(input.root, record, lineage.message);
+  if (lineage.kind === "fast_forward") {
+    record = writeBatchLaneRunState(input.root, {
+      ...record,
+      adopted_heads: [...record.adopted_heads ?? [], { from: expectedBatchHead(record), to: lineage.head }]
+    });
+  }
+  try {
+    rehydrateConsumption(input, record);
+  } catch (error) {
+    return failLineage(input.root, record, error instanceof Error ? error.message : String(error));
+  }
+  const refusals = [];
+  const enrollInLane = async (taskId) => {
+    const lane = record.children.find((c) => c.task_id === taskId).lane;
+    try {
+      await input.kernel.enrollTask({
+        root: lane.path,
+        task_id: taskId,
+        batch: { registry: input.registry, capability: input.capability, binding: { batch_id: record.batch_id, expected_head: lane.base_head } }
+      });
+      record.children = record.children.map((c) => c.task_id === taskId ? { ...c, state: "enrolled", reason: null } : c);
+      persist();
+      return null;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      park(record, taskId, message);
+      if (isLineageBreak(message))
+        record.batch_state = "failed";
+      persist();
+      return finalizeLane(input.root, record, message, "", { refusals });
+    }
+  };
+  for (const child of [...record.children]) {
+    if (child.state !== "lane_admitted" && child.state !== "enrolled" || !child.lane)
+      continue;
+    let fresh;
+    try {
+      fresh = await input.kernel.projectTask(child.lane.path, child.task_id);
+    } catch {
+      fresh = { error: "unreadable" };
+    }
+    if (fresh.error !== null) {
+      park(record, child.task_id, "batch_lane_lost");
+      persist();
+      return finalizeLane(input.root, record, "batch_lane_lost", "");
+    }
+    const holdsClaim = fresh.claim !== null && fresh.claim.task_id === child.task_id;
+    if (child.state === "lane_admitted") {
+      if (holdsClaim) {
+        record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "enrolled", reason: "adopted existing lane claim after interruption" } : c);
+        persist();
+      } else {
+        const failed = await enrollInLane(child.task_id);
+        if (failed)
+          return failed;
+      }
+      continue;
+    }
+    if (fresh.projection.lifecycle === "done" && fresh.projection.completion_ready) {
+      record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "settled", reason: null } : c);
+      persist();
+      continue;
+    }
+    if (!holdsClaim) {
+      park(record, child.task_id, "batch_lane_lost");
+      persist();
+      return finalizeLane(input.root, record, "batch_lane_lost", "");
+    }
+    if (!input.kernel.ownsTaskClaim(child.task_id)) {
+      park(record, child.task_id, "claim held by another batch");
+      persist();
+      return finalizeLane(input.root, record, "claim held by another batch", "");
+    }
+    if (fresh.projection.next_obligation === "run_qa" || fresh.projection.artifact_state !== "frozen")
+      continue;
+    const terminal = await input.kernel.advanceTask(child.lane.path, child.task_id);
+    if (terminal.state === "completed") {
+      record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "settled", reason: null, qa_failures: 0 } : c);
+      persist();
+    } else if (terminal.state === "review_ready") {
+      record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, reason: `review reservation ${terminal.operation_id} open` } : c);
+      persist();
+      return laneReport(record, `child ${child.task_id} holds an open Review reservation`, "Submit the reserved foreground Review verdict, then call start_unattended_batch again to continue.", { refusals });
+    } else if (terminal.state === "rework" && terminal.operation === "qa") {
+      const failures = child.qa_failures + 1;
+      if (failures >= record.budget.qa_failure_limit) {
+        const reason = "QA failure limit reached";
+        record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason, qa_failures: failures } : c);
+        skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
+        record.batch_state = "needs_human";
+        persist();
+        return finalizeLane(input.root, record, reason, "Repair and settle the own child through Kernel, then re-confirm the batch.");
+      }
+      record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, qa_failures: failures } : c);
+      persist();
+    } else if (terminal.state === "rework" || terminal.environment_failure || terminal.state === "review_preparation_failed" || terminal.recovery?.category === "repair") {
+      continue;
+    } else {
+      const reason = terminal.state === "stopped" ? "Kernel reported the child stopped" : terminal.reason;
+      park(record, child.task_id, reason);
+      persist();
+      return finalizeLane(input.root, record, reason, "");
+    }
+  }
+  for (const child of [...record.children]) {
+    if (child.state !== "settled" || !child.lane)
+      continue;
+    const planChild = input.children.find((c) => c.task_id === child.task_id);
+    let laneCommit;
+    try {
+      const existing = await git.lookupBatchCommit(child.lane.path, child.task_id, record.batch_id, child.lane.base_head, child.lane.branch);
+      laneCommit = existing?.commit ?? (await git.commitChild(child.lane.path, child.task_id, record.batch_id, child.lane.base_head, child.lane.branch, planChild?.intent_path ?? undefined)).commit;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      park(record, child.task_id, message);
+      if (isLineageBreak(message))
+        record.batch_state = "failed";
+      persist();
+      return finalizeLane(input.root, record, message, "");
+    }
+    record.children = record.children.map((c) => c.task_id === child.task_id && c.lane ? { ...c, state: "lane_committed", lane: { ...c.lane, lane_commit: laneCommit } } : c);
+    persist();
+  }
+  for (const child of [...record.children]) {
+    if (child.state !== "lane_committed" || !child.lane?.lane_commit)
+      continue;
+    try {
+      const { commit } = lanes.integrate({
+        root: input.root,
+        branch: record.branch ?? "",
+        batch_head: expectedBatchHead(record),
+        lane_base: child.lane.base_head,
+        lane_commit: child.lane.lane_commit
+      });
+      record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "integrated", commit, reason: null } : c);
+      record.commits = [...record.commits, commit];
+      persist();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const reason = error instanceof BatchIntegrationError ? error.reason : "batch_integration_conflict";
+      park(record, child.task_id, isLineageBreak(message) ? message : `${reason}: ${message}`);
+      if (isLineageBreak(message))
+        record.batch_state = "failed";
+      persist();
+      return finalizeLane(input.root, record, message, "");
+    }
+  }
+  const coordinatorReal = lanes.resolveRoot(input.root);
+  for (const offer of input.lane_offers ?? []) {
+    const startable = new Set(startableChildren(record.children.map((c) => ({ task_id: c.task_id, state: c.state, blocked_by: c.blocked_by, scope_hint: [] })), limit));
+    const child = record.children.find((c) => c.task_id === offer.task_id);
+    if (!child || child.state !== "pending" || !startable.has(child.task_id)) {
+      refusals.push({ ...offer, reason: "batch_lane_unknown_child" });
+      continue;
+    }
+    const head = expectedBatchHead(record);
+    const facts = lanes.inspectLane(input.root, offer.path);
+    const reason = decideLaneAdmission({
+      facts,
+      coordinator_real_path: coordinatorReal,
+      expected_branch: laneBranchName(record.initiative_slug, child.task_id),
+      batch_head: head,
+      bound_paths: record.children.flatMap((c) => c.lane ? [c.lane.path] : [])
+    });
+    if (reason) {
+      refusals.push({ ...offer, reason });
+      continue;
+    }
+    if (consumedSlots(record) >= record.budget.max_children) {
+      record.batch_state = record.children.some((c) => c.state === "needs_human" || c.state === "skipped_blocked") ? "needs_human" : "budget_stopped";
+      persist();
+      return finalizeLane(input.root, record, `max_children budget exhausted (${record.budget.max_children})`, "");
+    }
+    const lane = { path: facts.real_path, branch: laneBranchName(record.initiative_slug, child.task_id), base_head: head, lane_commit: null };
+    record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "lane_admitted", lane } : c);
+    persist();
+    const failed = await enrollInLane(child.task_id);
+    if (failed)
+      return failed;
+  }
+  if (record.children.every((c) => c.state === "integrated" || c.state === "released")) {
+    record.batch_state = "completed";
+    persist();
+    return finalizeLane(input.root, record, "all enrollable children integrated", "", { refusals });
+  }
+  const handoffs = [];
+  for (const child of record.children) {
+    if (child.state !== "enrolled" || !child.lane)
+      continue;
+    const fresh = await input.kernel.projectTask(child.lane.path, child.task_id);
+    if (fresh.error !== null)
+      continue;
+    handoffs.push({
+      role: "executor",
+      task_id: child.task_id,
+      run_id: fresh.projection.run_id ?? null,
+      record_revision: fresh.projection.record_revision,
+      next_obligation: fresh.projection.next_obligation,
+      lane_branch: child.lane.branch
+    });
+  }
+  const inFlight = record.children.filter((c) => IN_FLIGHT.has(c.state));
+  const startable = startableChildren(record.children.map((c) => ({ task_id: c.task_id, state: c.state, blocked_by: c.blocked_by, scope_hint: [] })), limit);
+  const overBudget = consumedSlots(record) >= record.budget.max_children;
+  if (!inFlight.length && (!startable.length || overBudget)) {
+    const parked = record.children.some((c) => c.state === "needs_human" || c.state === "skipped_blocked");
+    record.batch_state = parked ? "needs_human" : overBudget ? "budget_stopped" : "needs_human";
+    persist();
+    return finalizeLane(input.root, record, parked ? "a parked child needs a human decision" : overBudget ? `max_children budget exhausted (${record.budget.max_children})` : "no child can start", "", { refusals });
+  }
+  if (!overBudget) {
+    for (const taskId of startable) {
+      handoffs.push({
+        role: "lane-steward",
+        action: "provision",
+        task_id: taskId,
+        lane_branch: laneBranchName(record.initiative_slug, taskId),
+        base_head: expectedBatchHead(record),
+        executor_hosts: LANE_EXECUTOR_HOSTS
+      });
+    }
+  }
+  return laneReport(record, null, handoffs.some((h) => h.role === "lane-steward") ? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers." : "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.", { handoffs, refusals });
+}
+
 // plugins/immune-brain/runtime/unattended/batch_runner.ts
 function batchQaFailureFacts(record) {
   const failed = record.history.filter((event) => event.type === "request_rework" && event.authority?.authority_kind === "qa");
@@ -12612,15 +13526,15 @@ function batchQaFailureFacts(record) {
 function batchGitPortOf(input) {
   return input.git ?? createDefaultBatchGitPort();
 }
-function dependentsOf(record, taskId) {
+function dependentsOf2(record, taskId) {
   return record.children.filter((child) => child.blocked_by.includes(taskId));
 }
-function skipDependents(record, taskId, reason) {
+function skipDependents2(record, taskId, reason) {
   const skip = new Set([taskId]);
   const queue = [taskId];
   while (queue.length > 0) {
     const current = queue.shift();
-    for (const dependent of dependentsOf(record, current)) {
+    for (const dependent of dependentsOf2(record, current)) {
       if (skip.has(dependent.task_id))
         continue;
       skip.add(dependent.task_id);
@@ -12643,7 +13557,7 @@ function requireFreshProjection(result, taskId) {
 function nextEnrollableChild(record) {
   return record.children.find((child) => child.state === "pending" && record.children.every((other) => !child.blocked_by.includes(other.task_id) || other.state === "committed")) ?? null;
 }
-var TERMINAL_NEXT_ACTIONS = {
+var TERMINAL_NEXT_ACTIONS2 = {
   completed: "The batch settled every enrollable child; review the commits and the tracker.",
   budget_stopped: "The child budget stopped new enrollments; re-confirm to continue under a new authorization.",
   failed: "A commit or lineage failure stopped the batch; inspect the failing child and the branch state.",
@@ -12661,7 +13575,7 @@ function reportFor(record, reason, nextAction) {
     children: record.children,
     commits: record.commits,
     reason,
-    next_action: nextAction || (TERMINAL_NEXT_ACTIONS[record.batch_state] ?? "Inspect the batch run state."),
+    next_action: nextAction || (TERMINAL_NEXT_ACTIONS2[record.batch_state] ?? "Inspect the batch run state."),
     created_at: record.updated_at
   };
 }
@@ -12695,13 +13609,13 @@ function failPersistedLineage(root, existing, message) {
   const record = { ...existing, batch_state: "failed", children };
   for (const child of record.children) {
     if (child.state === "needs_human") {
-      skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
+      skipDependents2(record, child.task_id, `dependency ${child.task_id} parked`);
     }
   }
   return writeBatchRunState(root, record);
 }
 function reconcileLineage(root, record) {
-  if (!existsSync10(join15(root, ".git")))
+  if (!existsSync11(join16(root, ".git")))
     return { record, failure: null };
   const expected = expectedBatchHead(record);
   const lineage = classifyBatchLineage({
@@ -12724,8 +13638,8 @@ function reconcileLineage(root, record) {
   };
 }
 async function validatePersistedRun(input, record) {
-  if (!record.commits.length && record.children[0]?.state === "settled" && existsSync10(join15(input.root, ".git"))) {
-    const head = spawnSync9("git", ["-C", input.root, "rev-parse", "HEAD"], { encoding: "utf8" });
+  if (!record.commits.length && record.children[0]?.state === "settled" && existsSync11(join16(input.root, ".git"))) {
+    const head = spawnSync11("git", ["-C", input.root, "rev-parse", "HEAD"], { encoding: "utf8" });
     const live = head.stdout.trim();
     const expected = expectedBatchHead(record);
     const adoptable = () => classifyBatchLineage({
@@ -12754,8 +13668,8 @@ async function validatePersistedRun(input, record) {
     const git = batchGitPortOf(input);
     const evidence = await git.lookupBatchCommit(input.root, child.task_id, record.batch_id, undefined, record.branch);
     if (!evidence || evidence.commit !== child.commit) {
-      if (evidence === null && typeof child.commit === "string" && child.commit.length > 0 && existsSync10(join15(input.root, ".git"))) {
-        const reach = spawnSync9("git", ["-C", input.root, "merge-base", "--is-ancestor", child.commit, "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+      if (evidence === null && typeof child.commit === "string" && child.commit.length > 0 && existsSync11(join16(input.root, ".git"))) {
+        const reach = spawnSync11("git", ["-C", input.root, "merge-base", "--is-ancestor", child.commit, "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
         if (reach.status !== 0) {
           throw new Error(`batch_head_lineage_broken: recorded commit ${child.commit} for ${child.task_id} is no longer reachable from HEAD`);
         }
@@ -12851,6 +13765,9 @@ function rejectionReport(input, reason) {
   }, reason, "settle the reported kernel store condition and retry in the current Host");
 }
 async function startBatchLocked(input) {
+  const recorded = readAnyBatchRunState(input.root, input.batch_id);
+  if (input.max_parallel !== undefined || recorded !== null && isLaneBatchRecord(recorded))
+    return await runLaneBatch(input, recorded);
   if (!input.children.length) {
     const rejected = prepareBatchRunState({ ...input, children: [], now: input.now });
     return reportFor({ ...rejected, batch_state: "rejected" }, "batch plan is empty", "Provide a non-empty enrollable child plan.");
@@ -12900,7 +13817,7 @@ async function startBatchLocked(input) {
       const reparked = { ...existing, children: remapped };
       for (const parked of remapped) {
         if (parked.state === "needs_human")
-          skipDependents(reparked, parked.task_id, `dependency ${parked.task_id} parked`);
+          skipDependents2(reparked, parked.task_id, `dependency ${parked.task_id} parked`);
       }
       existing = writeBatchRunState(input.root, {
         ...reparked,
@@ -12983,7 +13900,7 @@ async function startBatchLocked(input) {
       adoptedClaim = true;
     } else if (claimState === "foreign") {
       record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: "claim held by another batch" } : c);
-      skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
+      skipDependents2(record, child.task_id, `dependency ${child.task_id} parked`);
       record.batch_state = "needs_human";
       persist();
       return finalize(input.root, record, "claim held by another batch", "needs-human-attention");
@@ -13029,13 +13946,13 @@ async function startBatchLocked(input) {
         const message = error instanceof Error ? error.message : String(error);
         if (isLineageBreakError(message)) {
           record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: message } : c);
-          skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
+          skipDependents2(record, child.task_id, `dependency ${child.task_id} parked`);
           record.batch_state = "failed";
           persist();
           break;
         }
         record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: message } : c);
-        skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
+        skipDependents2(record, child.task_id, `dependency ${child.task_id} parked`);
         record.batch_state = "needs_human";
         persist();
         break;
@@ -13093,7 +14010,7 @@ async function resumeBatch(input, projection) {
       const fresh = requireFreshProjection(await input.kernel.projectTask(input.root, driven.task_id), driven.task_id);
       const holdsClaim = fresh.claim !== null && fresh.claim.task_id === driven.task_id && input.kernel.ownsTaskClaim(driven.task_id);
       if (holdsClaim === false && fresh.claim !== null && fresh.claim.task_id === driven.task_id && !input.kernel.ownsTaskClaim(driven.task_id)) {
-        skipDependents(existing, driven.task_id, `dependency ${driven.task_id} parked`);
+        skipDependents2(existing, driven.task_id, `dependency ${driven.task_id} parked`);
         existing = writeBatchRunState(input.root, {
           ...existing,
           batch_state: "needs_human",
@@ -13105,7 +14022,7 @@ async function resumeBatch(input, projection) {
         const failures = Math.max(existing.consecutive_qa_failures, fresh.qa_failure_count ?? 0);
         if (failures >= existing.budget.qa_failure_limit && fresh.last_qa_failure_at && Date.parse(fresh.last_qa_failure_at) > Date.parse(existing.confirmation_time)) {
           const reason = "QA failure limit reached; repair and settle the own child through Kernel before resuming the batch";
-          skipDependents(existing, driven.task_id, `dependency ${driven.task_id} parked`);
+          skipDependents2(existing, driven.task_id, `dependency ${driven.task_id} parked`);
           existing = writeBatchRunState(input.root, {
             ...existing,
             batch_state: "needs_human",
@@ -13176,7 +14093,7 @@ async function driveInterruptedChild(input, child) {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: `commit lookup failed: ${message}` } : c);
-        skipDependents(record, child.task_id, `dependency ${child.task_id} failed to commit`);
+        skipDependents2(record, child.task_id, `dependency ${child.task_id} failed to commit`);
         const isLineageError = message.includes("batch_head_lineage_broken") || message.includes("lineage");
         record.batch_state = isLineageError ? "failed" : "needs_human";
         persist();
@@ -13189,12 +14106,12 @@ async function driveInterruptedChild(input, child) {
       const planChild = input.children.find((c) => c.task_id === child.task_id);
       const intentPath = planChild?.intent_path ?? undefined;
       const doCommit = async () => batchGitPortOf(input).commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath);
-      if (existing && !record.commits.length && existsSync10(join15(input.root, ".git")) && !ownUnpersistedBatchHead(input.root, record, existing.commit))
+      if (existing && !record.commits.length && existsSync11(join16(input.root, ".git")) && !ownUnpersistedBatchHead(input.root, record, existing.commit))
         throw new Error("first unpersisted batch commit provenance is invalid");
       const adopted = existing ?? await doCommit().catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
         record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: message } : c);
-        skipDependents(record, child.task_id, `dependency ${child.task_id} failed to commit`);
+        skipDependents2(record, child.task_id, `dependency ${child.task_id} failed to commit`);
         record.batch_state = "failed";
         persist();
         throw new BatchCommitAbortError(message);
@@ -13224,7 +14141,7 @@ async function driveInterruptedChild(input, child) {
         const reason = "QA failure limit reached";
         record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason } : c);
         record.batch_state = "needs_human";
-        skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
+        skipDependents2(record, child.task_id, `dependency ${child.task_id} parked`);
         persist();
         const fresh = requireFreshProjection(await input.kernel.projectTask(input.root, child.task_id), child.task_id);
         return finalize(input.root, record, reason, "Repair and settle the own child through Kernel, then re-confirm the batch.", { recovery: deriveAssuranceRecovery(child.task_id, fresh, terminal, fresh.recovery_findings) ?? undefined, diagnostics: terminal.diagnostics });
@@ -13239,7 +14156,7 @@ async function driveInterruptedChild(input, child) {
       const reason = terminal.state === "stopped" ? "Kernel reported the child stopped" : terminal.reason;
       record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason } : c);
       record.batch_state = "needs_human";
-      skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
+      skipDependents2(record, child.task_id, `dependency ${child.task_id} parked`);
       persist();
       return finalize(input.root, record, reason, "");
     }
@@ -13578,7 +14495,7 @@ class ClaudeRuntime {
     if (!slug)
       return result;
     try {
-      if (existsSync11(join16(this.cwd, ".imm", "audit", taskId)))
+      if (existsSync12(join17(this.cwd, ".imm", "audit", taskId)))
         execFileSync8("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch };
@@ -13675,7 +14592,7 @@ class ClaudeRuntime {
       throw new Error("approve_breaking_intent_revision requires next_intent");
     const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
     const nextIntentRef = nextIntent ? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash } : undefined;
-    const sidecar = nextIntent ? join16(this.cwd, priorIntent.intent_ref.path) : undefined;
+    const sidecar = nextIntent ? join17(this.cwd, priorIntent.intent_ref.path) : undefined;
     const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
     const restoreStagedIntent2 = () => {
       if (!stagedSnapshot)
@@ -13784,7 +14701,7 @@ class ClaudeRuntime {
     const { app } = await this.authority();
     const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: await parseTaskIntentV1(input.operation.next_intent) } : input.operation;
     const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
-    const sidecar = join16(ctx.cwd, priorIntent.intent_ref.path);
+    const sidecar = join17(ctx.cwd, priorIntent.intent_ref.path);
     const priorBytes = operation.op === "revise_intent" ? readFileSync14(sidecar) : null;
     const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
     try {
@@ -13819,6 +14736,12 @@ class ClaudeRuntime {
   async startUnattendedBatch(initiativeSlug, meta, options = {}) {
     throwIfCancelled(meta.signal);
     const reuseOnly = options.reuseOnly === true;
+    if (options.max_parallel !== undefined && options.max_parallel > 1)
+      return {
+        state: "rejected",
+        reason: `${PARALLEL_UNSUPPORTED}: max_parallel above 1 is not supported yet`,
+        recovery_action: "call start_unattended_batch with max_parallel 1, or without max_parallel for the serial path"
+      };
     const probe = probeHost(this.env, process.platform, this.hostVersion);
     if (!probe.ok)
       throw new NativeAuthorityError("unsupported_host", probe.reason);
@@ -13885,6 +14808,13 @@ class ClaudeRuntime {
                 reason: child.reason
               })),
               budget: facts.budget,
+              ...options.max_parallel !== undefined ? {
+                lane_mode: {
+                  max_parallel: options.max_parallel,
+                  parallel_groups: facts.parallel_groups,
+                  serialized: facts.scope_conflicts
+                }
+              } : {},
               ...facts.reuse_blockers.length > 0 ? {
                 re_confirmation_required: facts.reuse_blockers,
                 recovery: "confirm to issue a fresh authorization bound to the current plan and HEAD"
@@ -13984,7 +14914,9 @@ class ClaudeRuntime {
       budget,
       now,
       kernel: kernelPort,
-      git: this.batchGit
+      git: this.batchGit,
+      ...options.max_parallel !== undefined ? { max_parallel: options.max_parallel } : {},
+      ...options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}
     });
     if (report.batch_state === "rejected")
       return batchReason("batch_run_rejected", report.reason ?? "");
@@ -14019,7 +14951,19 @@ function listMcpTools() {
     inputSchema: {
       type: "object",
       properties: {
-        ...tool.name === "start_unattended_batch" ? { initiative_slug: { type: "string" } } : {
+        ...tool.name === "start_unattended_batch" ? {
+          initiative_slug: { type: "string" },
+          max_parallel: { type: "integer", minimum: 1 },
+          lane_offers: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: { task_id: { type: "string" }, path: { type: "string" } },
+              required: ["task_id", "path"],
+              additionalProperties: false
+            }
+          }
+        } : {
           task_id: { type: "string" },
           ...tool.name === "approve_breaking_intent_revision" || tool.name === "revise_intent" ? { next_intent: { type: "object" } } : {},
           ...tool.name === "stop" ? { reason: { type: "string" } } : {},
@@ -14090,7 +15034,14 @@ function createMcpRuntime(options = {}) {
           interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
           signal: meta.signal
         };
-        return runtime.startUnattendedBatch(initiativeSlug, toolMeta);
+        const maxParallel = parseMaxParallel(args.max_parallel);
+        const laneOffers = parseLaneOffers(args.lane_offers);
+        if (maxParallel === undefined && laneOffers !== undefined)
+          throw new Error("lane_offers requires max_parallel");
+        return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
+          ...maxParallel !== undefined ? { max_parallel: maxParallel } : {},
+          ...laneOffers !== undefined ? { lane_offers: laneOffers } : {}
+        });
       }
       const taskId = String(args.task_id ?? "");
       if (!taskId)
@@ -14317,7 +15268,14 @@ ${b.children.map((c) => `  - ${c.task_id} (${c.slice_id}) [risk: ${c.risk ?? "un
       b?.excluded && b.excluded.length > 0 ? `Excluded children (${b.excluded.length}):
 ${b.excluded.map((e) => `  - ${e.task_id} (${e.slice_id}): ${e.reason}`).join(`
 `)}` : null,
-      b?.budget ? `Budget: max_children=${b.budget.max_children}, qa_failure_limit=${b.budget.qa_failure_limit}` : null
+      b?.budget ? `Budget: max_children=${b.budget.max_children}, qa_failure_limit=${b.budget.qa_failure_limit}` : null,
+      b?.lane_mode ? `Lane mode: max_parallel=${b.lane_mode.max_parallel}` : null,
+      b?.lane_mode ? `Parallel groups (${b.lane_mode.parallel_groups.length}):
+${b.lane_mode.parallel_groups.map((group) => `  - ${group.join(", ")}`).join(`
+`)}` : null,
+      b?.lane_mode && b.lane_mode.serialized.length > 0 ? `Serialized by overlapping scope (${b.lane_mode.serialized.length}):
+${b.lane_mode.serialized.map((c) => `  - ${c.task_id} after ${c.overlaps_with.join(", ")}`).join(`
+`)}` : null
     ].filter(Boolean);
     return {
       mode: "form",

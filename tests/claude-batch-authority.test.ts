@@ -744,7 +744,7 @@ describe("acc-claude-batch-gate", () => {
 		expect(batchTool).toBeDefined();
 		expect(batchTool?.annotations).toEqual({ destructiveHint: true });
 		expect(batchTool?.inputSchema.required).toEqual(["initiative_slug"]);
-		expect(Object.keys(batchTool?.inputSchema.properties ?? {})).toEqual(["initiative_slug"]);
+		expect(Object.keys(batchTool?.inputSchema.properties ?? {})).toEqual(["initiative_slug", "max_parallel", "lane_offers"]);
 	});
 
 	it("rejects on non-interactive Claude Code session with unsupported_host error code", async () => {
@@ -1681,6 +1681,127 @@ describe("acc-claude-batch-fail-closed", () => {
 			expect(readTaskRecordRaw(root, taskId).record).toBeNull();
 		} finally {
 			rmSync(root, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("lane mode parameters (parallel-batch-lanes)", () => {
+	function laneRuntime(fixture: ReturnType<typeof createBatchFixture>, gates: { count: number; details: Array<Record<string, unknown>> }) {
+		const client = createMcpRuntimeOnce({
+			cwd: fixture.root, env: ENV, interactive: true,
+			readInitiative: async () => fixture.observation,
+			requestConfirmation: async (request) => {
+				gates.count++;
+				gates.details.push(request.batchDetails as unknown as Record<string, unknown>);
+				return { decision: "decline", requestId: `lane-${gates.count}` };
+			},
+		});
+		client.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
+		return client;
+	}
+
+	it("refuses an invalid max_parallel or a malformed lane offer before any gate opens, with zero writes", async () => {
+		const fixture = createBatchFixture("lane-invalid");
+		const gates = { count: 0, details: [] as Array<Record<string, unknown>> };
+		const client = laneRuntime(fixture, gates);
+		try {
+			const invalid: Array<Record<string, unknown>> = [
+				{ max_parallel: 0 },
+				{ max_parallel: -1 },
+				{ max_parallel: 1.5 },
+				{ max_parallel: "1" },
+				{ lane_offers: [{ task_id: "lane-invalid-c1", path: "/tmp/x" }] },
+				{ max_parallel: 1, lane_offers: [{ task_id: "lane-invalid-c1", path: "relative" }] },
+				{ max_parallel: 1, lane_offers: [{ task_id: "../escape", path: "/tmp/x" }] },
+				{ max_parallel: 1, lane_offers: [{ task_id: "lane-invalid-c1", path: "/tmp/x", extra: 1 }] },
+			];
+			for (const extra of invalid) {
+				await expect(client.callTool("start_unattended_batch", { initiative_slug: "lane-invalid", ...extra })).rejects.toThrow();
+				expect(gates.count).toBe(0);
+				expect(existsSync(join(fixture.root, ".imm", "state", "batches"))).toBe(false);
+			}
+		} finally {
+			rmSync(fixture.root, { recursive: true, force: true });
+		}
+	});
+
+	it("refuses max_parallel above 1 with batch_parallel_unsupported before the gate, with zero writes", async () => {
+		const fixture = createBatchFixture("lane-wide");
+		const gates = { count: 0, details: [] as Array<Record<string, unknown>> };
+		const client = laneRuntime(fixture, gates);
+		try {
+			const result: any = await client.callTool("start_unattended_batch", { initiative_slug: "lane-wide", max_parallel: 2 });
+			expect(result.state).toBe("rejected");
+			expect(result.reason).toMatch(/^batch_parallel_unsupported/);
+			expect(gates.count).toBe(0);
+			expect(existsSync(join(fixture.root, ".imm", "state", "batches"))).toBe(false);
+		} finally {
+			rmSync(fixture.root, { recursive: true, force: true });
+		}
+	});
+
+	it("shows max_parallel and the parallel groups in the confirmation only in lane mode", async () => {
+		const serial = createBatchFixture("lane-confirm-serial");
+		const lane = createBatchFixture("lane-confirm-lane");
+		const serialGates = { count: 0, details: [] as Array<Record<string, unknown>> };
+		const laneGates = { count: 0, details: [] as Array<Record<string, unknown>> };
+		try {
+			await laneRuntime(serial, serialGates).callTool("start_unattended_batch", { initiative_slug: "lane-confirm-serial" });
+			await laneRuntime(lane, laneGates).callTool("start_unattended_batch", { initiative_slug: "lane-confirm-lane", max_parallel: 1 });
+			expect(serialGates.details[0]).not.toHaveProperty("lane_mode");
+			expect(laneGates.details[0]?.lane_mode).toMatchObject({ max_parallel: 1 });
+			expect(Array.isArray((laneGates.details[0]?.lane_mode as { parallel_groups: unknown }).parallel_groups)).toBe(true);
+		} finally {
+			rmSync(serial.root, { recursive: true, force: true });
+			rmSync(lane.root, { recursive: true, force: true });
+		}
+	});
+
+	it("gives Claude Code and Pi the same lane-mode report for the same fixture", async () => {
+		const slug = "lane-parity";
+		const claudeFixture = createBatchFixture(slug);
+		const piFixture = createBatchFixture(slug);
+		try {
+			const client = createMcpRuntimeOnce({
+				cwd: claudeFixture.root, env: ENV, interactive: true,
+				readInitiative: async () => claudeFixture.observation,
+				requestConfirmation: async () => ({ decision: "accept", requestId: "parity" }),
+			});
+			client.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
+			const claude: any = await client.callTool("start_unattended_batch", { initiative_slug: slug, max_parallel: 1 });
+			const pi: any = await executePiUnattendedBatch({
+				root: piFixture.root, initiativeSlug: slug, max_parallel: 1,
+				readInitiative: async () => piFixture.observation,
+				confirmBatch: async () => "accept",
+			});
+			expect(claude.state).toBe("started");
+			expect(pi.state).toBe("started");
+			const normalize = (value: unknown, fixture: { head: string }) =>
+				JSON.parse(
+					JSON.stringify(value)
+						.split(fixture.head).join("<head>")
+						.replace(/batch-[A-Za-z0-9._-]+?-[0-9a-f-]{36}/g, "<batch>")
+						.replace(/\d{4}-\d\d-\d\dT[\d:.]+Z/g, "<time>"),
+				);
+			expect(claude.report.max_parallel).toBe(1);
+			expect(claude.report.handoffs?.[0]).toMatchObject({ role: "lane-steward", action: "provision" });
+			expect(claude.report).not.toHaveProperty("handoff");
+			expect(normalize(claude.report, claudeFixture)).toEqual(normalize(pi.report, piFixture));
+		} finally {
+			rmSync(claudeFixture.root, { recursive: true, force: true });
+			rmSync(piFixture.root, { recursive: true, force: true });
+		}
+	});
+
+	it("reads no workspace-tool environment variable in either Host adapter or the lane runtime", () => {
+		for (const file of [
+			"plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+			"plugins/immune-brain/runtime/claude/mcp_server.ts",
+			"plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+			"plugins/immune-brain/runtime/unattended/batch_integration.ts",
+		]) {
+			const source = readFileSync(join(import.meta.dir, "..", file), "utf8");
+			expect({ file, herdr: /HERDR/i.test(source) }).toEqual({ file, herdr: false });
 		}
 	});
 });

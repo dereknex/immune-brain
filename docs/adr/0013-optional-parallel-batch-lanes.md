@@ -1,12 +1,12 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Optional Parallel Batch Lanes
 
-Proposed. It becomes `accepted` when Slice S2 of
-`docs/specs/parallel-batch-lanes.spec.md` settles; until then ADR 0005 and
-ADR 0007 describe the shipped behavior unchanged.
+Accepted when Slice S2 of `docs/specs/parallel-batch-lanes.spec.md` settled.
+It is opt-in: a batch started without `max_parallel` is the serial run ADR 0005
+describes. Where this ADR changes ADR 0005 or ADR 0007 it is stated there.
 
 ## Context
 

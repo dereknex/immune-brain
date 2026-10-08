@@ -25,6 +25,7 @@ or all references as an entry prerequisite.
 
 - common: [Shared Guards](../../dist/BASELINE.md#shared-guards), [Workflow Activation](../../dist/BASELINE.md#workflow-activation), [Host Confirmation Boundary](../../dist/BASELINE.md#host-confirmation-boundary), [Kernel Canary Routing and Authority](../../dist/imm-run.md#kernel-canary-routing-and-authority)
 - unattended batch run, or any question about whether `imm-run` starts one: [Unattended Batch Opt-In](../../dist/imm-run.md#unattended-batch-opt-in)
+- parallel batch (`max_parallel`, `lane_offers`, Lane admission or integration): [Parallel Batch Opt-In](../../dist/imm-run.md#parallel-batch-opt-in)
 - steady execution: [Verification and Local Recovery](../../dist/BASELINE.md#verification-and-local-recovery), [Execution Loop](../../dist/imm-run.md#execution-loop), [Observable Output](../../dist/imm-run.md#observable-output)
 - rework, scope expansion, breaking revision, user decision, stop, interruption or unknown state before any action: [Decisions and Recovery](../../dist/imm-run.md#decisions-and-recovery), [Failure Output](../../dist/imm-run.md#failure-output); re-read `status`, then the pending obligation. Rework submits the verdict before editing, and an uncertain interruption resumes from exact task/run authority facts rather than a summary.
 - review or post-settlement learning: [Review and Learning](../../dist/imm-run.md#review-and-learning)
