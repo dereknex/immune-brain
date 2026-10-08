@@ -1,5 +1,0 @@
----
-"immune-brain": minor
----
-
-Retire the Pi extension's `runtime-stub` layer: the Pi enroll, work and unattended-batch Tools import the host-neutral runtime statically, so the same Kernel code now has one import shape across both Hosts. The stub's adapter-owned logic moved unchanged into the Pi adapters — `readTaskIntentForRecord` (record-aware sidecar resolution), `markGithubTaskTerminal`, the shared session progression accessors and `projectAssuranceForTask` now live in `imm-canary-work.ts`, and `readSettledTaskRecord` moves to `imm-unattended-batch.ts` (currently caller-free; the settled-run Slice makes it Run-aware). The mirrored `LITERAL_USER_ACTOR_ID` constant and hand-copied structural types are gone in favor of the real runtime exports. `tests/pi-canary-package-boundary.test.ts` now proves the boundary through the import graph (no dynamic runtime import under `.pi-extension`, every static runtime import resolves, and the Pi Enrollment adapter reaches Kernel prepare only through `runtime/assurance/enrollment`) with a negative control, instead of pinning stub source text.
