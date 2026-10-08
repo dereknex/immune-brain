@@ -1,0 +1,163 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "parallel-batch-lanes-s3-integration-guard",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "parallel-batch-lanes-s3-integration-guard",
+    "goal": "Implement Slice S3 of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes): integration reruns the deterministic QA descriptors of the child and of every sibling integrated since the lane base on the candidate commit before the batch branch moves, and every integration failure leaves the batch branch unmoved, parks the child, skips its dependents and keeps the Lane.",
+    "acceptance": [
+      {
+        "id": "PBL-S3-A1",
+        "assertion": "Per Temporal sequence step 2 and the Failure and Interruption paragraphs of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes) (source: user decision D7): the candidate commit is accepted only after those descriptors pass on it; the rerun is an orchestration guard that records no Kernel attestation and no finding. Positive: a passing rerun fast-forwards the batch branch and the child becomes integrated. Negative: a sibling change that makes the child's descriptor fail on the candidate leaves the batch branch head unchanged, sets the child needs_human with batch_integration_check_failed, sets its dependents skipped_blocked and keeps the Lane and its branch; a plumbing conflict or identity mismatch does the same with batch_integration_conflict; a child whose scope is disjoint from the failed one still integrates. Bound: an interruption between building the candidate and the fast-forward resumes to exactly one commit for that child with no duplicate; no ref and no working tree is written before acceptance. Closes assumption A4. Agreed seams: tests/unattended-batch-integration.test.ts (new), tests/unattended-batch-lanes.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-integration.test.ts\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/parallel-batch-lanes-s3-integration-guard.md",
+      "docs/plans/parallel-batch-lanes-s3-integration-guard.intent.json",
+      "docs/specs/parallel-batch-lanes.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/assurance/qa.ts",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+      "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/types.ts",
+      "tests/unattended-batch-integration.test.ts",
+      "tests/unattended-batch-lanes.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/parallel-batch-lanes-s3-integration-guard.intent.json",
+    "content_hash": "sha256:039e1226313cfcea43057076be5a75d2979217f369bd19f52f07eb85e82734f1"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:8e4d15bde4e593e628563d7294f63945fdad8834dcaec4be3f9ee91761e85d05",
+  "git_base_head": "6b4fedc6bf53a9e8d89e125ff267b06ac2eac6cc",
+  "attestations": [
+    {
+      "id": "approval-qa-b067f232",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:039e1226313cfcea43057076be5a75d2979217f369bd19f52f07eb85e82734f1",
+      "diff_hash": "sha256:fe84f5359f29769464c4bc1cd80d6169baff9d8012b69d934fd1337b1300969d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:ed8192b4022c43dd0ff7b61b76c5e9e805d4786b2abb6bdc4ea117704f3ba338",
+      "acceptance_results": [
+        {
+          "acceptance_id": "PBL-S3-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:ed8192b4022c43dd0ff7b61b76c5e9e805d4786b2abb6bdc4ea117704f3ba338"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-5d28443e",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:039e1226313cfcea43057076be5a75d2979217f369bd19f52f07eb85e82734f1",
+      "diff_hash": "sha256:fe84f5359f29769464c4bc1cd80d6169baff9d8012b69d934fd1337b1300969d",
+      "actor_id": "parent-mediated-review",
+      "summary": "S3 guard reruns the child and since-base sibling descriptors on the candidate tree before the fast-forward; every failure leaves the branch unmoved, parks the child, skips its dependents and keeps the Lane; the trailer-parsing fix and tests cover the PBL-S3-A1 positive, negative and bound at the agreed seams.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "6b4fedc6bf53a9e8d89e125ff267b06ac2eac6cc",
+        "review_commit": "a4d5068bdd95237ede7bad8021fba9f5ab072367",
+        "review_tree": "a82abdf4a06f94ac37177529390347b655594f45",
+        "manifest_digest": "sha256:f5ff20c5dd4c02de235f6447fcef70be921fcc3e5baad533d72590db58bb1bdf"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-03994682f4c7-1-review-1",
+          "acceptance_id": "PBL-S3-A1",
+          "summary": "verifyCandidateDescriptors rethrows VerificationAbortedError, but runLaneBatch's catch maps any non-BatchIntegrationError to batch_integration_conflict and parks the child. This is currently unreachable because runLaneBatch passes no signal to lanes.integrate; if a signal is wired later, an abort would wrongly park the child.",
+          "anchor": "sha256:0ed88804505bb889c1e6e37b065074f289513ab5d204be09bf6f63ce9f7e634d",
+          "evidence": {
+            "trigger": "A future caller supplies an AbortSignal to integrateGuardedLaneCommit and it aborts during the descriptor rerun.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/unattended/batch_lanes.ts:runLaneBatch",
+              "plugins/immune-brain/runtime/unattended/batch_integration.ts:integrateGuardedLaneCommit",
+              "plugins/immune-brain/runtime/unattended/batch_integration.ts:verifyCandidateDescriptors"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "PBL-S3-A1"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:parallel-batch-lanes-s3-integration-guard:2026-10-08T18:30:46.210Z",
+      "at": "2026-10-08T18:30:46.210Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:d996fd38175f238a100b88354451be72729d651132f6779d122bd016648496ec",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-2058ef0fe329acbc",
+        "issued_at": "2026-10-08T23:10:43.715Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:parallel-batch-lanes-s3-integration-guard:2026-10-08T23:24:06.212Z",
+      "at": "2026-10-08T23:24:06.212Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/parallel-batch-lanes-s3-integration-guard.intent.json"
+    },
+    {
+      "id": "record_approval:parallel-batch-lanes-s3-integration-guard:2026-10-08T23:24:19.072Z",
+      "at": "2026-10-08T23:24:19.072Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-b067f232\naction_v2_sha256:fec98f6cf927f1b7ed1d318341a41d7dbf11a554025af021e5a040b4e58fe3e2",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-08T23:24:19.072Z"
+      }
+    },
+    {
+      "id": "record_approval:parallel-batch-lanes-s3-integration-guard:2026-10-08T23:25:36.157Z",
+      "at": "2026-10-08T23:25:36.157Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-5d28443e\naction_v2_sha256:eb65bdbff0b8ed4937ba51abe2d67df294c1cc644193a19a882c5868e1a678f0",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-08T23:25:36.157Z"
+      }
+    },
+    {
+      "id": "complete:parallel-batch-lanes-s3-integration-guard:2026-10-08T23:25:37.129Z",
+      "at": "2026-10-08T23:25:37.129Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:f1d0bf76a8a275d07cb73b3c832c87c3d19f032e260b3ecf7b2800b7217ea273"
+    }
+  ]
+}

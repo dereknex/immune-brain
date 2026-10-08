@@ -13,7 +13,8 @@ import type { StartBatchInput } from "./batch_runner";
 import {
 	BatchIntegrationError,
 	findIntegratedCandidate,
-	integrateLaneCommit,
+	integrateGuardedLaneCommit,
+	type IntegrationCheckChild,
 } from "./batch_integration";
 import { classifyBatchLineage, expectedBatchHead, readActiveClaimTaskId } from "./batch_preflight";
 import { startableChildren } from "./batch_schedule";
@@ -120,7 +121,9 @@ export interface BatchLaneGitPort {
 		batch_head: string;
 		lane_base: string;
 		lane_commit: string;
-	}): { commit: string };
+		child: IntegrationCheckChild;
+		siblings: Array<IntegrationCheckChild & { commit: string | null }>;
+	}): Promise<{ commit: string }> | { commit: string };
 	findIntegrated(input: {
 		root: string;
 		task_id: string;
@@ -196,7 +199,7 @@ export function createDefaultLaneGitPort(): BatchLaneGitPort {
 				active_claim_task_id: activeClaim,
 			};
 		},
-		integrate: integrateLaneCommit,
+		integrate: integrateGuardedLaneCommit,
 		findIntegrated: findIntegratedCandidate,
 	};
 }
@@ -671,15 +674,21 @@ export async function runLaneBatch(
 		);
 		persist();
 	}
+	let integrationFailure: string | null = null;
 	for (const child of [...record.children]) {
 		if (child.state !== "lane_committed" || !child.lane?.lane_commit) continue;
+		const intentPathOf = (taskId: string) => input.children.find((c) => c.task_id === taskId)?.intent_path ?? null;
 		try {
-			const { commit } = lanes.integrate({
+			const { commit } = await lanes.integrate({
 				root: input.root,
 				branch: record.branch ?? "",
 				batch_head: expectedBatchHead(record),
 				lane_base: child.lane.base_head,
 				lane_commit: child.lane.lane_commit,
+				child: { task_id: child.task_id, intent_path: intentPathOf(child.task_id) },
+				siblings: record.children
+					.filter((c) => c.state === "integrated" && c.task_id !== child.task_id)
+					.map((c) => ({ task_id: c.task_id, intent_path: intentPathOf(c.task_id), commit: c.commit })),
 			});
 			record.children = record.children.map((c) => (c.task_id === child.task_id ? { ...c, state: "integrated", commit, reason: null } : c));
 			record.commits = [...record.commits, commit];
@@ -687,12 +696,19 @@ export async function runLaneBatch(
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			const reason = error instanceof BatchIntegrationError ? error.reason : "batch_integration_conflict";
-			park(record, child.task_id, isLineageBreak(message) ? message : `${reason}: ${message}`);
-			if (isLineageBreak(message)) record.batch_state = "failed";
+			park(record, child.task_id, isLineageBreak(message) || message.startsWith(`${reason}:`) ? message : `${reason}: ${message}`);
 			persist();
-			return finalizeLane(input.root, record, message, "");
+			if (isLineageBreak(message)) {
+				// A broken lineage cannot be trusted for any later integration.
+				record.batch_state = "failed";
+				persist();
+				return finalizeLane(input.root, record, message, "");
+			}
+			// The batch branch is unmoved; a disjoint sibling may still integrate.
+			integrationFailure ??= message;
 		}
 	}
+	if (integrationFailure !== null) return finalizeLane(input.root, record, integrationFailure, "");
 
 	// 3. Admit offered Lanes, then enroll each admitted child into its Lane.
 	const coordinatorReal = lanes.resolveRoot(input.root);

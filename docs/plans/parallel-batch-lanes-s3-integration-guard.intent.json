@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "parallel-batch-lanes-s3-integration-guard",
-  "owner": "user",
   "goal": "Implement Slice S3 of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes): integration reruns the deterministic QA descriptors of the child and of every sibling integrated since the lane base on the candidate commit before the batch branch moves, and every integration failure leaves the batch branch unmoved, parks the child, skips its dependents and keeps the Lane.",
   "acceptance": [
     {
@@ -19,6 +18,7 @@
     "plugins/immune-brain/runtime/unattended/batch_git.ts",
     "plugins/immune-brain/runtime/unattended/batch_integration.ts",
     "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
     "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
     "plugins/immune-brain/runtime/unattended/batch_runner.ts",
     "plugins/immune-brain/runtime/unattended/batch_state.ts",
@@ -28,5 +28,6 @@
     "tests/unattended-contracts.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

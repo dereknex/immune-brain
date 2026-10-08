@@ -59,6 +59,25 @@ function child(taskId: string, sliceId: string, blockedBy: string[] = []): Batch
 	};
 }
 
+/** A valid intent sidecar whose single descriptor runs `script` with bun in the delivery tree. */
+function intentJson(taskId: string, script = "process.exit(0)"): string {
+	const verification = JSON.stringify({
+		contract: "assurance_kernel/verification_descriptor/v2",
+		command: { executable: "bun", argv: ["-e", script], cwd: ".", timeout_ms: 60000, max_output_bytes: 4096 },
+		environment: { prepare: null, writable_paths: [] },
+	});
+	return `${JSON.stringify({
+		contract: "assurance_kernel/task_intent/v1",
+		task_id: taskId,
+		goal: `Deliver ${taskId}`,
+		acceptance: [{ id: "A1", assertion: `${taskId} holds`, verification }],
+		scope_hint: ["a.txt", "b.txt"],
+		risk: "material",
+		revision: 1,
+		owner: "user",
+	})}\n`;
+}
+
 interface Fixture {
 	dir: string;
 	repo: string;
@@ -68,13 +87,16 @@ interface Fixture {
 }
 
 /** A real repository on the batch branch with a base commit; lanes are real worktrees. */
-function fixture(): Fixture {
+function fixture(scripts: Record<string, string> = {}): Fixture {
 	const dir = realpathSync(mkdtempSync(join(tmpdir(), "imm-lanes-")));
 	const repo = join(dir, "repo");
 	mkdirSync(repo);
 	git(repo, "init", "-q", "-b", "main");
 	writeFileSync(join(repo, ".gitignore"), ".imm/\n");
 	writeFileSync(join(repo, "base.txt"), "base\n");
+	mkdirSync(join(repo, "docs/plans"), { recursive: true });
+	for (const taskId of ["task-a", "task-b"])
+		writeFileSync(join(repo, `docs/plans/${taskId}.intent.json`), intentJson(taskId, scripts[taskId]));
 	git(repo, "add", "-A");
 	git(repo, "commit", "-q", "-m", "base");
 	git(repo, "checkout", "-q", "-b", BATCH_BRANCH);
@@ -727,6 +749,39 @@ describe("max_parallel 1 end to end through a real second worktree", () => {
 			await startBatch(serial);
 			const report = lanes(await runLaneBatch({ ...serial, max_parallel: 1 }, readAnyBatchRunState(fx.repo, BATCH_ID)));
 			expect(report.reason).toMatch(/^batch_parallel_mismatch/);
+		} finally {
+			fx.cleanup();
+		}
+	});
+});
+
+describe("integration guard failure through the lane driver", () => {
+	it("parks the child, skips its dependents, keeps the Lane and leaves the batch branch unmoved", async () => {
+		// task-a's descriptor requires a file the delivery never has, so the rerun on the candidate fails.
+		const fx = fixture({ "task-a": 'process.exit(require("node:fs").existsSync("never.txt") ? 0 : 1)' });
+		try {
+			const kernel = laneKernel();
+			const children = [child("task-a", "S1"), child("task-b", "S2", ["task-a"])];
+			const args = request(fx, children, kernel);
+			await startBatch(args);
+			const laneA = fx.lane("task-a");
+			await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] });
+			writeFileSync(join(laneA, "a.txt"), "a\n");
+			kernel.frozen.add("task-a");
+
+			const report = lanes(await startBatch(args));
+			expect(report.batch_state).toBe("needs_human");
+			expect(report.children.map((c) => c.state)).toEqual(["needs_human", "skipped_blocked"]);
+			expect(report.children[0]!.reason).toStartWith("batch_integration_check_failed:");
+			expect(report.children[0]!.reason).not.toContain("batch_integration_check_failed: batch_integration_check_failed");
+			expect(report.commits).toEqual([]);
+			// The batch branch did not move and the Lane and its branch are kept with the committed delivery.
+			expect(git(fx.repo, "rev-parse", "HEAD")).toBe(fx.base);
+			expect(git(fx.repo, "rev-parse", BATCH_BRANCH)).toBe(fx.base);
+			expect(existsSync(join(fx.repo, "a.txt"))).toBe(false);
+			expect(report.children[0]!.lane).toMatchObject({ path: laneA, branch: laneBranchName(SLUG, "task-a") });
+			expect(git(fx.repo, "rev-parse", laneBranchName(SLUG, "task-a"))).toBe(report.children[0]!.lane!.lane_commit!);
+			expect(existsSync(laneA)).toBe(true);
 		} finally {
 			fx.cleanup();
 		}

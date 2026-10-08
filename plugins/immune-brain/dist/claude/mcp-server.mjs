@@ -12802,7 +12802,6 @@ import { isAbsolute as isAbsolute6, join as join15 } from "node:path";
 
 // plugins/immune-brain/runtime/unattended/batch_integration.ts
 import { spawnSync as spawnSync9 } from "node:child_process";
-
 class BatchIntegrationError extends Error {
   reason;
   constructor(reason, message) {
@@ -12892,7 +12891,7 @@ function buildCandidate(input) {
     throw new Error(`failed to build integration candidate: ${created.stderr.trim() || "git commit-tree failed"}`);
   return candidate;
 }
-function integrateLaneCommit(input) {
+function prepareLaneCandidate(input) {
   const { root, branch, batch_head: head, lane_base: base, lane_commit: laneCommit } = input;
   const currentBranch = git5(root, ["symbolic-ref", "--short", "HEAD"]);
   if (currentBranch.status !== 0 || currentBranch.stdout.trim() !== branch)
@@ -12907,6 +12906,9 @@ function integrateLaneCommit(input) {
   const candidate = buildCandidate({ root, batch_head: head, lane_base: base, lane_commit: laneCommit });
   if (!identitiesEqual(changeIdentity(root, base, laneCommit), changeIdentity(root, head, candidate)))
     throw new BatchIntegrationError("batch_integration_conflict", `batch_integration_conflict: candidate ${candidate} does not carry the lane commit ${laneCommit} change`);
+  return candidate;
+}
+function fastForwardToCandidate(root, candidate) {
   const moved = git5(root, ["merge", "--ff-only", "--quiet", candidate]);
   if (moved.status !== 0)
     throw new BatchIntegrationError("batch_integration_conflict", `batch_integration_conflict: batch branch could not fast-forward to ${candidate}: ${moved.stderr.trim() || "git merge failed"}`);
@@ -12915,22 +12917,104 @@ function integrateLaneCommit(input) {
     throw new Error(`batch branch landed on ${landed}, expected ${candidate}`);
   return { commit: candidate };
 }
+function commitsBetween(root, from, to) {
+  return new Set(gitOut(root, ["rev-list", `${from}..${to}`], `failed to list commits ${from}..${to}`).split(/\s+/).filter(Boolean));
+}
+function readCandidateAcceptance(root, candidate, check) {
+  if (!check.intent_path)
+    throw new BatchIntegrationError("batch_integration_check_failed", `batch_integration_check_failed: ${check.task_id} has no intent to rerun`);
+  const shown = git5(root, ["show", `${candidate}:${check.intent_path}`]);
+  if (shown.status !== 0)
+    throw new BatchIntegrationError("batch_integration_check_failed", `batch_integration_check_failed: intent ${check.intent_path} of ${check.task_id} is absent from candidate ${candidate}`);
+  try {
+    const intent = parseTaskIntentV1(JSON.parse(shown.stdout));
+    return intent.acceptance.map((item) => ({ id: `${check.task_id}:${item.id}`, assertion: item.assertion, verification: item.verification }));
+  } catch (error) {
+    throw new BatchIntegrationError("batch_integration_check_failed", `batch_integration_check_failed: intent of ${check.task_id} is unreadable in candidate ${candidate}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+async function verifyCandidateDescriptors(input) {
+  const { root, candidate } = input;
+  const since = commitsBetween(root, input.lane_base, input.batch_head);
+  const checks = [input.child, ...input.siblings.filter((sibling) => sibling.commit !== null && since.has(sibling.commit))];
+  const acceptance = checks.flatMap((check) => readCandidateAcceptance(root, candidate, check));
+  const descriptors = new Map;
+  try {
+    for (const item of acceptance)
+      descriptors.set(item.id, parseVerificationDescriptor(item.verification));
+  } catch (error) {
+    throw new BatchIntegrationError("batch_integration_check_failed", `batch_integration_check_failed: a verification descriptor is invalid: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (acceptance.length === 0)
+    throw new BatchIntegrationError("batch_integration_check_failed", "batch_integration_check_failed: no descriptor to rerun");
+  const tree = gitOut(root, ["rev-parse", `${candidate}^{tree}`], `failed to read the tree of ${candidate}`).trim();
+  const snapshot = {
+    contract: "assurance_kernel/assurance_snapshot/v2",
+    task_id: input.child.task_id,
+    run_id: null,
+    role: "qa",
+    record_revision: "",
+    workspace_revision: "",
+    intent_revision: 0,
+    intent_content_hash: "",
+    diff_hash: "",
+    lifecycle: "active",
+    artifact_state: "frozen",
+    risk: "material",
+    fresh_acceptance_ids: [],
+    missing_acceptance_ids: [],
+    stale_attestation_ids: [],
+    acceptance,
+    dirty_files: [],
+    review_bundle_digest: null,
+    review_revision: {
+      contract: "assurance_kernel/review_revision_identity/v1",
+      base_head: input.lane_base,
+      review_commit: candidate,
+      review_tree: tree,
+      manifest_digest: ""
+    },
+    root
+  };
+  let verdict;
+  try {
+    verdict = await runDeterministicQa(snapshot, descriptors, { signal: input.signal });
+  } catch (error) {
+    if (error instanceof VerificationAbortedError)
+      throw error;
+    throw new BatchIntegrationError("batch_integration_check_failed", `batch_integration_check_failed: the descriptor rerun could not complete: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (verdict.decision !== "pass")
+    throw new BatchIntegrationError("batch_integration_check_failed", `batch_integration_check_failed: ${(verdict.findings ?? []).map((finding) => finding.acceptance_id).join(", ") || "a descriptor"} failed on candidate ${candidate}`);
+}
+async function integrateGuardedLaneCommit(input) {
+  const candidate = prepareLaneCandidate(input);
+  await verifyCandidateDescriptors({
+    root: input.root,
+    candidate,
+    lane_base: input.lane_base,
+    batch_head: input.batch_head,
+    child: input.child,
+    siblings: input.siblings,
+    signal: input.signal
+  });
+  return fastForwardToCandidate(input.root, candidate);
+}
 function findIntegratedCandidate(input) {
   const { root, task_id: taskId, batch_id: batchId, from_head: from, lane_base: base, lane_commit: laneCommit } = input;
   const listed = git5(root, [
     "log",
     "--fixed-strings",
     `--grep=imm(${taskId}):`,
-    "--format=%H%x00%(trailers:key=Immune-Brain-Batch,valueonly)%x00%s",
+    "--format=%x01%H%x00%(trailers:key=Immune-Brain-Batch,valueonly)%x00%s",
     `${from}..HEAD`
   ]);
   if (listed.status !== 0)
     throw new Error(`failed to search for integrated ${taskId}: ${listed.stderr.trim()}`);
   const lane = changeIdentity(root, base, laneCommit);
-  for (const line of listed.stdout.split(`
-`)) {
-    const [commit, trailer, subject] = line.split("\x00");
-    if (!commit || trailer?.trim() !== batchId || !subject?.startsWith(`imm(${taskId}):`))
+  for (const record of listed.stdout.split("\x01")) {
+    const [commit, trailer, subject] = record.split("\x00");
+    if (!commit || trailer?.trim() !== batchId || !subject?.trim().startsWith(`imm(${taskId}):`))
       continue;
     const parent = git5(root, ["rev-parse", `${commit}^`]).stdout.trim();
     if (parent && identitiesEqual(lane, changeIdentity(root, parent, commit)))
@@ -13044,7 +13128,7 @@ function createDefaultLaneGitPort() {
         active_claim_task_id: activeClaim
       };
     },
-    integrate: integrateLaneCommit,
+    integrate: integrateGuardedLaneCommit,
     findIntegrated: findIntegratedCandidate
   };
 }
@@ -13412,16 +13496,20 @@ async function runLaneBatch(input, persisted) {
     record.children = record.children.map((c) => c.task_id === child.task_id && c.lane ? { ...c, state: "lane_committed", lane: { ...c.lane, lane_commit: laneCommit } } : c);
     persist();
   }
+  let integrationFailure = null;
   for (const child of [...record.children]) {
     if (child.state !== "lane_committed" || !child.lane?.lane_commit)
       continue;
+    const intentPathOf = (taskId) => input.children.find((c) => c.task_id === taskId)?.intent_path ?? null;
     try {
-      const { commit } = lanes.integrate({
+      const { commit } = await lanes.integrate({
         root: input.root,
         branch: record.branch ?? "",
         batch_head: expectedBatchHead(record),
         lane_base: child.lane.base_head,
-        lane_commit: child.lane.lane_commit
+        lane_commit: child.lane.lane_commit,
+        child: { task_id: child.task_id, intent_path: intentPathOf(child.task_id) },
+        siblings: record.children.filter((c) => c.state === "integrated" && c.task_id !== child.task_id).map((c) => ({ task_id: c.task_id, intent_path: intentPathOf(c.task_id), commit: c.commit }))
       });
       record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "integrated", commit, reason: null } : c);
       record.commits = [...record.commits, commit];
@@ -13429,13 +13517,18 @@ async function runLaneBatch(input, persisted) {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const reason = error instanceof BatchIntegrationError ? error.reason : "batch_integration_conflict";
-      park(record, child.task_id, isLineageBreak(message) ? message : `${reason}: ${message}`);
-      if (isLineageBreak(message))
-        record.batch_state = "failed";
+      park(record, child.task_id, isLineageBreak(message) || message.startsWith(`${reason}:`) ? message : `${reason}: ${message}`);
       persist();
-      return finalizeLane(input.root, record, message, "");
+      if (isLineageBreak(message)) {
+        record.batch_state = "failed";
+        persist();
+        return finalizeLane(input.root, record, message, "");
+      }
+      integrationFailure ??= message;
     }
   }
+  if (integrationFailure !== null)
+    return finalizeLane(input.root, record, integrationFailure, "");
   const coordinatorReal = lanes.resolveRoot(input.root);
   for (const offer of input.lane_offers ?? []) {
     const startable = new Set(startableChildren(record.children.map((c) => ({ task_id: c.task_id, state: c.state, blocked_by: c.blocked_by, scope_hint: [] })), limit));
