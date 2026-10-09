@@ -5,7 +5,7 @@ import { join, relative, resolve, sep } from "node:path";
 import { readSecureProjectBytes } from "../plugins/immune-brain/runtime/kernel/storage";
 import { parseTaskRecord } from "../plugins/immune-brain/runtime/kernel/validation";
 import { parseTaskTombstone } from "../plugins/immune-brain/runtime/kernel/backend_claim";
-import { parseBatchRunState, type BatchChildRun, type BatchRunReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
+import { parseBatchLaneRunState, parseBatchRunState, type BatchLaneRunReport, type BatchRunReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { pathMatchesScope } from "../plugins/immune-brain/runtime/workspace_scope";
 
 const CODES = ["state_report_mismatch", "commit_order_mismatch", "lineage_mismatch", "missing_commit_evidence", "wrong_run_evidence", "stopped_lifecycle", "scope_mismatch", "malformed_report", "unstable_evidence", "invalid_input", "read_failed"] as const;
@@ -38,17 +38,19 @@ const inside = (root: string, path: string) => {
 const bytes = (root: string, path: string) => readSecureProjectBytes(root, inside(root, path));
 const scopePath = (path: string) => !/[\\]|\s\/|\/\s|^\s|\s$/.test(path) && !path.split("/").some((part) => !part || part === "." || part === "..");
 const allowed = (path: string, task: string, scope: string[]) => path === `.imm/audit/${task}` || path.startsWith(`.imm/audit/${task}/`) || scope.some((item) => item.includes("*") || item.includes("?") ? pathMatchesScope(path, item) : path === item || path.startsWith(`${item}/`));
-const ids = (children: BatchChildRun[]) => children.map(({ task_id, slice_id, blocked_by, state, commit }) => ({ task_id, slice_id, blocked_by, state, commit }));
+const ids = (children: Array<{ task_id: string; slice_id: string; blocked_by: string[]; state: string; commit: string | null }>) => children.map(({ task_id, slice_id, blocked_by, state, commit }) => ({ task_id, slice_id, blocked_by, state, commit }));
 const oid = (value: unknown): string => { if (typeof value !== "string" || !OID.test(value)) fail("invalid_input"); return value; };
 
-function reportOf(root: string, batch: string): { report: BatchRunReport; raw: Buffer } {
+function reportOf(root: string, batch: string, lane: boolean): { report: BatchRunReport & Partial<BatchLaneRunReport>; raw: Buffer } {
 	const path = inside(root, `.imm/state/batches/${batch}.report.json`);
 	let raw: Buffer; let parsed: unknown;
 	try { raw = bytes(root, path); parsed = JSON.parse(decode(raw)); }
 	catch (error) { if (error instanceof ObservationError) throw error; fail("malformed_report"); }
 	const report = parsed as Partial<BatchRunReport>;
 	if (report?.contract !== "assurance_kernel/batch_run_report/v1" || report.batch_id !== batch || typeof report.initiative_slug !== "string" || report.initiative_slug.length === 0 || !Array.isArray(report.children) || !Array.isArray(report.commits)) fail("malformed_report");
-	return { report: report as BatchRunReport, raw: raw! };
+	// A lane report carries handoffs[] and max_parallel and never the serial handoff.
+	if (lane && (!Array.isArray((report as Partial<BatchLaneRunReport>).handoffs) || "handoff" in report || typeof (report as Partial<BatchLaneRunReport>).max_parallel !== "number")) fail("malformed_report");
+	return { report: report as BatchRunReport & Partial<BatchLaneRunReport>, raw: raw! };
 }
 function evidenceOf(raw: Buffer, batch: string, task: string) {
 	let parsed: Record<string, unknown>;
@@ -61,11 +63,18 @@ export function verify(root: string, batch: string, afterCapture?: (path: string
 	const capture = (path: string) => { const raw = bytes(root, path); afterCapture?.(path); return raw; };
 	const statePath = inside(root, `.imm/state/batches/${batch}.json`);
 	const stateRaw = capture(statePath);
-	const state = parseBatchRunState(decode(stateRaw), batch);
-	const { report, raw: reportRaw } = reportOf(root, batch);
+	const stateText = decode(stateRaw);
+	// A v2 record is only ever parsed as v2; the v1 parser and its results are untouched.
+	const lane = ((): boolean => { try { return (JSON.parse(stateText) as { contract?: unknown } | null)?.contract === "assurance_kernel/batch_run_state/v2"; } catch { return false; } })();
+	// A v2 record that breaks its own invariants (for example completed with an unintegrated child) contradicts itself: state_report_mismatch, never read_failed.
+	const state = lane ? ((): ReturnType<typeof parseBatchLaneRunState> => { try { return parseBatchLaneRunState(stateText, batch); } catch { return fail("state_report_mismatch"); } })() : parseBatchRunState(stateText, batch);
+	const { report, raw: reportRaw } = reportOf(root, batch, lane);
 	afterCapture?.(`.imm/state/batches/${batch}.report.json`);
 	if (typeof state.initiative_slug !== "string" || state.initiative_slug.length === 0 || state.batch_state !== "completed" || report.batch_state !== "completed" || state.initiative_slug !== report.initiative_slug || JSON.stringify(ids(state.children)) !== JSON.stringify(ids(report.children)) || JSON.stringify(state.commits) !== JSON.stringify(report.commits)) fail("state_report_mismatch");
-	if (state.children.some((child) => child.state !== "committed" || !child.commit) || new Set(state.commits).size !== state.commits.length || state.children.map((child) => child.commit).join() !== state.commits.join()) fail("commit_order_mismatch");
+	if ("max_parallel" in state && state.max_parallel !== report.max_parallel) fail("state_report_mismatch");
+	// Lane children integrate in settle order, so their plan order need not equal the commit order.
+	const done = lane ? ["integrated", "released"] : ["committed"];
+	if (state.children.some((child) => !done.includes(child.state) || !child.commit) || new Set(state.commits).size !== state.commits.length || (lane ? [...state.children.map((child) => child.commit)].sort().join() !== [...state.commits].sort().join() : state.children.map((child) => child.commit).join() !== state.commits.join())) fail("commit_order_mismatch");
 	const branch = git(root, ["symbolic-ref", "--short", "HEAD"]).trim();
 	const head = oid(git(root, ["rev-parse", "--verify", "-q", "HEAD"]).trim());
 	// An adopted commit is the user's own work on the batch branch: the chain may
@@ -85,15 +94,19 @@ export function verify(root: string, batch: string, afterCapture?: (path: string
 	let parent = oid(state.base_head);
 	const consumed: Array<{ path: string; raw: Buffer }> = [{ path: statePath, raw: stateRaw }, { path: inside(root, `.imm/state/batches/${batch}.report.json`), raw: reportRaw }];
 	const children = [];
-	for (const [index, child] of state.children.entries()) {
+	const ordered = lane ? [...state.children].sort((a, b) => state.commits.indexOf(a.commit!) - state.commits.indexOf(b.commit!)) : state.children;
+	for (const [index, child] of ordered.entries()) {
 		const commit = oid(child.commit);
 		parent = follow(parent);
 		if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(child.task_id)) fail("invalid_input");
-		const evidencePath = inside(root, `.imm/state/batches/commits/${batch}-${child.task_id}.json`);
-		const evidenceRaw = capture(evidencePath);
-		consumed.push({ path: evidencePath, raw: evidenceRaw });
-		const evidence = evidenceOf(evidenceRaw, batch, child.task_id);
-		if (evidence.commit !== commit || evidence.parent !== parent) fail("missing_commit_evidence");
+		// Lane commit evidence lives in the Lane's own store; the batch-branch lineage below is the authority.
+		if (!lane) {
+			const evidencePath = inside(root, `.imm/state/batches/commits/${batch}-${child.task_id}.json`);
+			const evidenceRaw = capture(evidencePath);
+			consumed.push({ path: evidencePath, raw: evidenceRaw });
+			const evidence = evidenceOf(evidenceRaw, batch, child.task_id);
+			if (evidence.commit !== commit || evidence.parent !== parent) fail("missing_commit_evidence");
+		}
 		const metadata = git(root, ["log", "-n", "1", "--format=%H%x00%(trailers:key=Immune-Brain-Batch,valueonly)%x00%an%x00%s", commit, "--"]).trimEnd().split("\0");
 		if (metadata[0] !== commit || metadata[1]?.trim() !== batch || metadata[2] !== (process.env.GIT_AUTHOR_NAME || "Immune-Brain Batch") || !metadata[3]?.startsWith(`imm(${child.task_id}):`)) fail("missing_commit_evidence");
 		const parents = git(root, ["rev-list", "--parents", "-n", "1", commit]).trim().split(/\s+/).slice(1);

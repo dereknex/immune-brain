@@ -88,4 +88,6 @@ Run it from the repository root. It only reads.
 | 1 | Evidence is readable but contradictory; `code` names the mismatch (for example `lineage_mismatch`, `scope_mismatch`, `stopped_lifecycle`). |
 | 2 | Invalid input or unreadable evidence. A batch that is still running reports `malformed_report` here, because the report file is written only at a terminal batch state. |
 
+For a lane-mode batch (`max_parallel`, state `batch_run_state/v2`) the verifier reads the lane report (`handoffs[]` in place of `handoff`) and checks the commits in integration order against the batch branch's Git objects; per-child commit evidence lives in each Lane's own store, so it is not required. A v2 record that contradicts itself reports `state_report_mismatch`, never `read_failed`.
+
 Anything other than exit 0 means the batch is not complete. A child settled or committed outside the runner leaves the batch `running` or `failed` even when the work itself is merged.

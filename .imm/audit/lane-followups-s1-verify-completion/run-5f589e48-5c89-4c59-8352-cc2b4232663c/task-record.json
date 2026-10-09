@@ -1,0 +1,164 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "lane-followups-s1-verify-completion",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "lane-followups-s1-verify-completion",
+    "goal": "Implement Slice S1 of Initiative lane-mode-followups: scripts/verify-batch-completion.ts verifies a completed lane-mode (batch_run_state v2) batch from the recorded state, report and batch-branch Git objects instead of failing read_failed.",
+    "acceptance": [
+      {
+        "id": "LF-S1-A1",
+        "assertion": "Per Interfaces and the consumer list of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes) (source: repository evidence, Review of parallel-batch-lanes-s2-lane-integration finding review-3 and review-4 of PBL-S2-A2): the completion verifier reads a v2 batch record and its lane report (handoffs[] in place of handoff) and returns complete:true for a lane-mode batch whose every child is integrated or released, its commits are one per child on the batch branch in order, each commit carries the Immune-Brain-Batch trailer, the imm(<task_id>) subject and a single-parent lineage from the recorded base head, each child's .imm/audit/<task_id>/<run>/ pair is in that commit and agrees with its terminal proof, and the changed paths stay in the child's scope. Positive: a real lane-mode fixture (second Git worktree, integrated children) verifies complete:true with one entry per child. Negative: a v2 batch not completed, a child neither integrated nor released, a commit order or parent mismatch, a missing or foreign audit pair, an out-of-scope path and a malformed lane report each fail with the existing stable code for that condition and never read_failed; a v2 record is never parsed as v1. Bound: every existing v1 verification result and exit status is byte-identical to before this Slice. Agreed seams: tests/batch-completion-verifier.test.ts, tests/pi-batch-acceptance-integration.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-completion-verifier.test.ts\",\n      \"tests/pi-batch-acceptance-integration.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/lane-followups-s1-verify-completion.md",
+      "docs/agents/pi-batch-acceptance.md",
+      "docs/plans/lane-followups-s1-verify-completion.intent.json",
+      "docs/specs/parallel-batch-lanes.spec.md",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "scripts/verify-batch-completion.ts",
+      "tests/batch-completion-verifier.test.ts",
+      "tests/pi-batch-acceptance-integration.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/lane-followups-s1-verify-completion.intent.json",
+    "content_hash": "sha256:18dc548690663fb984ebe1a4fb55491cd9a4156935e9ab8a8d33bf2ce35864cc"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:18dc548690663fb984ebe1a4fb55491cd9a4156935e9ab8a8d33bf2ce35864cc",
+  "git_base_head": "e6c737751888b39cec3e16424a1936fdeb142c5d",
+  "attestations": [
+    {
+      "id": "approval-qa-225629b0",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:18dc548690663fb984ebe1a4fb55491cd9a4156935e9ab8a8d33bf2ce35864cc",
+      "diff_hash": "sha256:6e7fe54f3eaba3d953c2337d189134c31769b4eae316f969d4931af74d29bd7d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:c5ab566f2f3bf621af2b243f2b0727f7ff6f1fae44c835e68d0ce6757d42295d",
+      "acceptance_results": [
+        {
+          "acceptance_id": "LF-S1-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:c5ab566f2f3bf621af2b243f2b0727f7ff6f1fae44c835e68d0ce6757d42295d"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-be9e4ab5",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:18dc548690663fb984ebe1a4fb55491cd9a4156935e9ab8a8d33bf2ce35864cc",
+      "diff_hash": "sha256:6e7fe54f3eaba3d953c2337d189134c31769b4eae316f969d4931af74d29bd7d",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (review commit 7aa5380 has single parent e6c7377 and tree 945b29d). The verifier parses a v2 record only as v2 and reads the lane report (handoffs[]). It checks integrated/released children and batch-branch commits in integration order, and it keeps the trailer, subject, single-parent lineage, audit-pair and scope checks. It fails with the existing stable codes rather than read_failed. The v1 path is unchanged, and the lane tests use real second worktrees with positive and negative cases.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "e6c737751888b39cec3e16424a1936fdeb142c5d",
+        "review_commit": "7aa5380175914e1ef1ca0fac6271d2c49c00cc1a",
+        "review_tree": "945b29dbd72141a36af3a9d991f5b832d7e4d9ae",
+        "manifest_digest": "sha256:7a9c5961f04e23b02bd64ca301d7a9ab548cdf799fa2ac5c28494d2c442729f6"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-LF-S1-A1-ca23a43a-e935bb",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "LF-S1-A1",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=3274B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:lane-followups-s1-verify-completion:2026-10-09T02:03:43.955Z",
+      "at": "2026-10-09T02:03:43.955Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/lane-followups-s1-verify-completion.intent.json"
+    },
+    {
+      "id": "request_rework:lane-followups-s1-verify-completion:2026-10-09T02:04:48.294Z",
+      "at": "2026-10-09T02:04:48.294Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:919717316390bbf3a7cf42ee6d6156d9b3e2de144159d80f0d78734c7f6e6f2d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-09T02:04:48.294Z"
+      }
+    },
+    {
+      "id": "resolve_finding:lane-followups-s1-verify-completion:2026-10-09T02:09:14.158Z",
+      "at": "2026-10-09T02:09:14.158Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-LF-S1-A1-ca23a43a-e935bb\naction_v2_sha256:1047bd57d13e2c834f60215cf9bdf6f042c9282cd5c3cb2903ed823a71dcf734"
+    },
+    {
+      "id": "freeze_artifacts:lane-followups-s1-verify-completion:2026-10-09T02:09:39.371Z",
+      "at": "2026-10-09T02:09:39.371Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/lane-followups-s1-verify-completion.intent.json"
+    },
+    {
+      "id": "record_approval:lane-followups-s1-verify-completion:2026-10-09T02:10:42.857Z",
+      "at": "2026-10-09T02:10:42.857Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-225629b0\naction_v2_sha256:eb48894328980e719217d7c5be54b9b2a9ee3e542debeeb6456951f88476fd60",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-09T02:10:42.857Z"
+      }
+    },
+    {
+      "id": "record_approval:lane-followups-s1-verify-completion:2026-10-09T02:11:45.736Z",
+      "at": "2026-10-09T02:11:45.736Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-be9e4ab5\naction_v2_sha256:1e0e06ef214e6ac274f4a7c10506e0d1002fd10efa4cc5598cdb9e7e3f555d7b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-09T02:11:45.736Z"
+      }
+    },
+    {
+      "id": "complete:lane-followups-s1-verify-completion:2026-10-09T02:11:46.630Z",
+      "at": "2026-10-09T02:11:46.630Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:3b1ebff8d326a8bc3c2006f6e379696a71d0f641832e97742892460ff000980e"
+    }
+  ]
+}
