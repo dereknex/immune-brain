@@ -136,6 +136,16 @@ never answers: launching with the user's own settings is not consent to widen
 them. The `executor` handoff gains `lane_path`, an observation of where the
 admitted Lane is, so the launch does not depend on what the Parent remembers.
 
+A repository may record standing lane-mode choices as four directives in its
+root agent instruction file: `Lane max parallel`, `Lane Executor Host`,
+`Lane Executor model` and `Lane Executor effort`. The Parent resolves them, a
+literal user instruction first, and turns them into the `max_parallel` argument
+and the Executor Host's launch arguments. `max_parallel` stays the tool's only
+opt-in and the runner reads no directive, so a batch remains reproducible from
+its recorded state. Model and effort are named because an Executor Host started
+from the user's defaults can differ from the Parent in both, which made a
+Lane's result depend on settings the plan never showed.
+
 Rejected for this revision: persisting session identity or heartbeats in the
 batch record (it would add the execution lifecycle ADR 0005 keeps out of the
 runtime, and a recorded session can be stale where a Kernel claim cannot), and

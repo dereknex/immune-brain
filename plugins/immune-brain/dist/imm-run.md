@@ -201,6 +201,36 @@ disjoint sibling keeps moving. A lost Lane parks as `batch_lane_lost`, and
 `max_parallel` is refused with `batch_parallel_mismatch`. A Lane holds no batch
 state and its Host session never re-enters the batch.
 
+#### Lane Preferences
+
+A repository can keep standing lane-mode choices next to its other Immune-Brain
+preferences. Before the first `start_unattended_batch` call for an Initiative,
+the Parent resolves each of the four directives below in this order, reading the
+source directly rather than assuming the Host injected it into context:
+
+1. a literal user instruction for the current request;
+2. the directive in the repository root agent instruction file, whichever this
+   repository tracks: `AGENTS.md` or `CLAUDE.md`;
+3. the same directive in the Host's user-level agent instruction file; or
+4. the behavior without a directive, given in the table.
+
+| Directive | Value | Effect | Without it |
+| --- | --- | --- | --- |
+| `Lane max parallel: <n>` | positive integer | The Parent passes it as `max_parallel` when it starts a batch, which selects lane mode. The native confirmation still shows it. | No `max_parallel`: the batch is serial unless the user asks otherwise |
+| `Lane Executor Host: <host>` | `claude-code` or `pi` | Every Lane's Executor Host is that Host. When the `lane-steward` did not report it available in a Lane, that Lane has no Executor Host; the Parent does not fall back to the other one. | The Parent's own Host type, else the other allowlisted Host |
+| `Lane Executor model: <model>` | a model identifier of the configured Executor Host | Passed to the Executor Host as `--model <model>` | The Executor Host's own default |
+| `Lane Executor effort: <level>` | a level the configured Executor Host accepts | Passed as `--effort <level>` to `claude-code` and as `--thinking <level>` to `pi` | The Executor Host's own default |
+
+A model identifier and an effort level mean something only to one Host, so
+`Lane Executor model` and `Lane Executor effort` apply only together with
+`Lane Executor Host` from the same or a higher source; without it they are
+reported and not applied. A repository directive overrides the user-level one.
+Report an invalid value and ask instead of guessing or clamping. After resolving
+them, display one non-blocking line with each selected value and its source. On
+a resume the recorded `max_parallel` stands and the directive is not passed
+again. The directives configure how the Parent starts sessions; the runner reads
+none of them, and they grant no permission or trust option.
+
 #### Lane Executor Supervision
 
 The Parent launches and supervises every Lane's Executor Host; no other role
@@ -222,13 +252,15 @@ A supervised session is defined by what it guarantees, not by a Host's name:
 
 The Parent Host and the Executor Host are chosen independently. The Executor
 Host is any allowlisted Host (`claude-code` or `pi`) that the `lane-steward`
-reported available in that Lane; prefer the Parent's own Host type, and use the
-other when only it is available. The child's QA and Review then run under that
+reported available in that Lane. A `Lane Executor Host` directive under
+[Lane Preferences](#lane-preferences) decides it; without one, prefer the
+Parent's own Host type, and use the other when only it is available. The child's QA and Review then run under that
 Executor Host's own Assurance adapter in the Lane. The Executor Host loads the
 same Immune-Brain plugin or package the Parent runs: a Parent started from a
 local plugin directory passes that same directory to the Executor Host. The
 Parent adds no permission or trust option of its own; the Executor Host runs
-under the user's own settings. How the Parent obtains a supervised session
+under the user's own settings, with the model and effort of its own defaults
+unless Lane Preferences name them. How the Parent obtains a supervised session
 depends on where the Parent runs; the first matching row applies, and the user
 is not asked to choose:
 
@@ -266,7 +298,8 @@ a live tab:
    session, the tab ID closes it.
 3. Start the Host in that tab's root pane:
    `herdr agent start <name> --kind <kind> --pane <pane_id> -- <host arguments>`.
-   Host arguments are only those that load the Parent's plugin.
+   Host arguments are only those that load the Parent's plugin and those that
+   [Lane Preferences](#lane-preferences) resolved for model and effort.
 4. Submit the entry and nothing else, and confirm the turn began:
    `herdr agent prompt <pane_id> "<imm-run entry> <task_id>" --wait --until working --until blocked --timeout 30000`.
    The entry is the Executor Host's own `imm-run` invocation as that Host names

@@ -351,4 +351,27 @@ describe("internal role-prompt bridge", () => {
 		// The steward still knows no workspace tool.
 		expect(/herdr/i.test(read("plugins/immune-brain/runtime/prompts/lane-steward.md"))).toBe(false);
 	});
+	it("resolves Lane Preferences in the Parent and passes model and effort as launch arguments", () => {
+		const loop = read("plugins/immune-brain/dist/imm-run.md").replace(/\s+/g, " ");
+		for (const fragment of [
+			"#### Lane Preferences",
+			"1. a literal user instruction for the current request;",
+			"| `Lane max parallel: <n>` | positive integer |",
+			"| `Lane Executor Host: <host>` | `claude-code` or `pi` |",
+			"the Parent does not fall back to the other one",
+			"| `Lane Executor model: <model>` |",
+			"Passed as `--effort <level>` to `claude-code` and as `--thinking <level>` to `pi`",
+			"apply only together with `Lane Executor Host`",
+			"Report an invalid value and ask instead of guessing or clamping",
+			"On a resume the recorded `max_parallel` stands",
+			"the runner reads none of them, and they grant no permission or trust option",
+			"those that [Lane Preferences](#lane-preferences) resolved for model and effort",
+		]) {
+			expect(loop).toContain(fragment);
+		}
+		expect(read("plugins/immune-brain/skills/imm-run/SKILL.md")).toContain("../../dist/imm-run.md#lane-preferences");
+		// The directives stay a Parent concern: no runtime source names them.
+		for (const file of ["plugins/immune-brain/runtime/unattended/batch_lanes.ts", "plugins/immune-brain/runtime/role_prompt_bridge.ts"])
+			expect({ file, named: /Lane (max parallel|Executor (Host|model|effort)):/.test(read(file)) }).toEqual({ file, named: false });
+	});
 });
