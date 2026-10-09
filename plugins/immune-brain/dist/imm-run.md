@@ -170,7 +170,9 @@ Standalone Hosts expose the same optional `lane_offers` list, each entry naming 
 admits an offered Lane only when it shares the coordinator repository, is not the
 coordinator worktree, is on the branch `imm-lane/<initiative-slug>/<task-id>` at the
 named base, is clean and has no active run; otherwise it refuses the offer with a
-stable reason and writes nothing. The runner still never creates, switches or
+stable reason and writes nothing. A call that passes `lane_offers` without
+`max_parallel` resumes the recorded lane batch with its recorded `max_parallel`;
+without a recorded active lane batch it is refused before any gate opens. The runner still never creates, switches or
 deletes a Git worktree: when a child needs a Lane the report carries a
 `lane-steward` handoff and the Lane is provisioned outside the runner.
 

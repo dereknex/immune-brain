@@ -21,7 +21,7 @@ import type { BatchRunnerGitPort } from "../runtime/unattended/batch_git";
 import type { InitiativeObservationReader } from "../runtime/unattended/types";
 import { advancePiTask } from "./imm-canary-work";
 import { batchReason } from "../runtime/unattended/batch_reasons";
-import { parseLaneOffers, parseMaxParallel, type LaneOffer } from "../runtime/unattended/batch_lanes";
+import { parseLaneOffers, parseMaxParallel, resolveLaneParallel, type LaneOffer } from "../runtime/unattended/batch_lanes";
 import {
 	authorizeBatch,
 	projectBatchPreflight,
@@ -143,6 +143,10 @@ export async function executePiUnattendedBatch(
 	const interactive = options.interactive ?? true;
 
 	if (!reuseOnly && !interactive) return { state: "rejected", ...nonInteractiveRefusal() };
+
+	// A lane_offers-only call resumes the recorded lane batch; refused before any gate otherwise.
+	const resolvedParallel = resolveLaneParallel(root, initiativeSlug, options.max_parallel, options.lane_offers);
+	if (resolvedParallel !== undefined) options = { ...options, max_parallel: resolvedParallel };
 
 	// 1. Host-independent batch preflight: claim ownership, branch availability,
 	// working-tree cleanliness against the authorized scope, recovery children,
@@ -328,8 +332,8 @@ export default function (
 		],
 		parameters: Type.Object({
 			initiative_slug: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }),
-			// Integer-ness is enforced by parseMaxParallel before any gate opens.
-			max_parallel: Type.Optional(Type.Number({ minimum: 1 })),
+			// Integer minimum 1 as Claude Code declares it; multipleOf keeps the schema constructors to Number.
+			max_parallel: Type.Optional(Type.Number({ minimum: 1, multipleOf: 1 })),
 			lane_offers: Type.Optional(Type.Array(
 				Type.Object({ task_id: Type.String(), path: Type.String() }, { additionalProperties: false }),
 			)),
@@ -357,8 +361,6 @@ export default function (
 
 			const maxParallel = parseMaxParallel(params.max_parallel);
 			const laneOffers = parseLaneOffers(params.lane_offers);
-			if (maxParallel === undefined && laneOffers !== undefined)
-				throw new Error("lane_offers requires max_parallel");
 
 			const result = await executePiUnattendedBatch({
 				root: ctx.cwd,

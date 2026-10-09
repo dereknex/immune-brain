@@ -1,0 +1,169 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "lane-followups-s3-host-parity",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "lane-followups-s3-host-parity",
+    "goal": "Implement Slice S3 of Initiative lane-mode-followups: both Hosts accept a resume that passes lane_offers without max_parallel, the Pi max_parallel schema matches Claude Code's integer minimum 1, and the Pi loop surface registers lane-steward.",
+    "acceptance": [
+      {
+        "id": "LF-S3-A1",
+        "assertion": "Per Interfaces of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes) (source: repository evidence, Review of parallel-batch-lanes-s2-lane-integration findings review-1 and review-4): (a) a start_unattended_batch call with lane_offers and no max_parallel on a persisted v2 batch resumes it with the recorded max_parallel on both Hosts, and the same call on a batch with no v2 record is refused before any gate opens with a stable reason; (b) the Pi tool schema refuses a non-integer or sub-1 max_parallel at the schema, equal to the Claude Code input schema, with the typebox stub used by the packaged-tree tests extended if the chosen schema form needs it; (c) the Pi loop surface accepts lane-steward as a target and refuses an unknown target as before. Positive: Claude Code and Pi return equal reports for the same lane resume fixture. Negative: max_parallel 1.5, 0 and a lane_offers-only fresh start are refused before any gate; a resume with a different max_parallel is still refused with batch_parallel_mismatch. Bound: the declared tool parameters stay exactly initiative_slug, max_parallel and lane_offers and the generated Claude bundle matches a fresh generate. Agreed seams: tests/claude-batch-authority.test.ts, tests/pi-batch-authority.test.ts, tests/packaged-contract-tool-surface.test.ts, tests/imm-canary-work-contract.test.ts, tests/claude-host-package.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/packaged-contract-tool-surface.test.ts\",\n      \"tests/imm-canary-work-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/lane-followups-s3-host-parity.md",
+      "docs/plans/lane-followups-s3-host-parity.intent.json",
+      "docs/specs/parallel-batch-lanes.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "tests/batch-plan-reconfirmation.test.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/imm-canary-work-contract.test.ts",
+      "tests/packaged-contract-tool-surface.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/unattended-batch-lanes.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/lane-followups-s3-host-parity.intent.json",
+    "content_hash": "sha256:3ff080e236f6569a7d7b81b1da1ce1c5b85cd55b7e6e436860741c7e4f00d2ca"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:3ff080e236f6569a7d7b81b1da1ce1c5b85cd55b7e6e436860741c7e4f00d2ca",
+  "git_base_head": "2a74a1f31c70f711b122ff46255c624cc4a5ff3d",
+  "attestations": [
+    {
+      "id": "approval-qa-8527f548",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:3ff080e236f6569a7d7b81b1da1ce1c5b85cd55b7e6e436860741c7e4f00d2ca",
+      "diff_hash": "sha256:1e3d8f39494bcb10cf89e80c8247bf4517e3e58c294926d5ee110e9753d62882",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:8b8d5b718f66ce7984e6a8367dc1c74ed220378316ffc1bd70c60b45ad7d5959",
+      "acceptance_results": [
+        {
+          "acceptance_id": "LF-S3-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:8b8d5b718f66ce7984e6a8367dc1c74ed220378316ffc1bd70c60b45ad7d5959"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-f31cf2e2",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:3ff080e236f6569a7d7b81b1da1ce1c5b85cd55b7e6e436860741c7e4f00d2ca",
+      "diff_hash": "sha256:1e3d8f39494bcb10cf89e80c8247bf4517e3e58c294926d5ee110e9753d62882",
+      "actor_id": "parent-mediated-review",
+      "summary": "Both Hosts now resolve lane_offers-only calls through the shared resolveLaneParallel before any gate, the Pi max_parallel schema is integer-minimum-1, and the Pi loop surface registers lane-supply, which routes to lane-steward. The negative and parity tests sit at the agreed seams.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "2a74a1f31c70f711b122ff46255c624cc4a5ff3d",
+        "review_commit": "42731087729cc2169e517b68e4a5874535292412",
+        "review_tree": "f803c8cb86479d9d31ac2a9dac6eff91631736e7",
+        "manifest_digest": "sha256:82b3efa1f78c15e3a9ff5705b0cf78b6a8b78b44cb2db1e6f5f0f78380f3f756"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-460ddabb34b1-1-review-1",
+          "acceptance_id": "LF-S3-A1",
+          "summary": "The acceptance text says the Pi loop surface accepts 'lane-steward' as a target. The Loop contract names the target 'lane-supply', which routes to the lane-steward role, and the change registers 'lane-supply'. That is the correct reading. A new test asserts the Pi LOOP_TARGETS list equals LoopRouteTarget, so the two cannot drift. The acceptance wording is imprecise but the implementation matches the contract.",
+          "anchor": "sha256:b68a735acb1bbf30183cd6895a583a3dfd09973c9fa60437f3ff3b78cd2eed92",
+          "evidence": {
+            "trigger": "A Pi loop call with target 'lane-supply' at Loop ownership reaches resolveLoopRoute and returns next 'lane-steward'. A Pi call with an unknown target is still refused by literalUnion(LOOP_TARGETS).",
+            "caller_chain": [
+              "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+              "plugins/immune-brain/runtime/loop_contract.ts",
+              "tests/imm-canary-work-contract.test.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "LF-S3-A1"
+            }
+          }
+        },
+        {
+          "id": "review-460ddabb34b1-2-review-2",
+          "acceptance_id": "LF-S3-A1",
+          "summary": "The agreed seams tests/packaged-contract-tool-surface.test.ts and tests/claude-host-package.test.ts are unchanged. The 'declared tool parameters stay exactly initiative_slug, max_parallel and lane_offers' and 'generated bundle matches a fresh generate' bounds therefore rest on those existing tests plus the Kernel QA pass. They are not strengthened by this diff. The Claude bundle diff does mirror the source change.",
+          "anchor": "sha256:7ba4ccc8fd6858a9a9f74ee53c682515f61baff8f1d90cb77e3e980292382350",
+          "evidence": {
+            "trigger": "The change adds resolveLaneParallel to the bundled mcp-server.mjs and edits the Pi schema form. Neither of the two named package-level test files is touched.",
+            "caller_chain": [
+              "plugins/immune-brain/dist/claude/mcp-server.mjs",
+              "tests/packaged-contract-tool-surface.test.ts",
+              "tests/claude-host-package.test.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "LF-S3-A1"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:lane-followups-s3-host-parity:2026-10-09T02:55:52.379Z",
+      "at": "2026-10-09T02:55:52.379Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/lane-followups-s3-host-parity.intent.json"
+    },
+    {
+      "id": "record_approval:lane-followups-s3-host-parity:2026-10-09T02:59:13.467Z",
+      "at": "2026-10-09T02:59:13.467Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-8527f548\naction_v2_sha256:f2b15b3298fb28103d50c78156f23750b67436bf98f7c3d1406f90a51d4da3c1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-09T02:59:13.467Z"
+      }
+    },
+    {
+      "id": "record_approval:lane-followups-s3-host-parity:2026-10-09T03:00:27.323Z",
+      "at": "2026-10-09T03:00:27.323Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-f31cf2e2\naction_v2_sha256:4d52ab4689437f869233f592ed5de1b97cd3c4644685fa3822c6be9d310c02a0",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-09T03:00:27.323Z"
+      }
+    },
+    {
+      "id": "complete:lane-followups-s3-host-parity:2026-10-09T03:00:28.655Z",
+      "at": "2026-10-09T03:00:28.655Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:67a0835823f6e820f2e64bf7966a76aa8ad85a1c8d29eb8aebca61ea32c80bcb"
+    }
+  ]
+}

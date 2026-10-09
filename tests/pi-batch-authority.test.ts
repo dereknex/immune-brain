@@ -13,7 +13,7 @@ try { await import("typebox"); } catch {
 		Boolean: () => ({ type: "boolean" }),
 		Literal: (value: unknown) => ({ const: value }),
 		Null: () => ({ type: "null" }),
-		Number: () => ({ type: "number" }),
+		Number: (options: object = {}) => ({ type: "number", ...options }),
 		Object: (properties: Record<string, any>, options: object = {}) => ({
 			type: "object", properties,
 			required: Object.entries(properties).filter(([, value]) => !value[optional]).map(([key]) => key),
@@ -1640,6 +1640,26 @@ describe("lane mode parameters (parallel-batch-lanes)", () => {
 		};
 		expect(Object.keys(tool.parameters.properties)).toEqual(["initiative_slug", "max_parallel", "lane_offers"]);
 		expect(tool.parameters.required).toEqual(["initiative_slug"]);
+	});
+
+	it("declares max_parallel as an integer of at least 1, as Claude Code does", () => {
+		const tool = registerBatchTool({ readInitiative: async () => createBatchFixture("lane-int-schema").observation }) as unknown as {
+			parameters: { properties: Record<string, Record<string, unknown>> };
+		};
+		const schema = tool.parameters.properties.max_parallel!;
+		expect(schema.minimum).toBe(1);
+		expect(schema.type === "integer" || schema.multipleOf === 1).toBe(true);
+	});
+
+	it("refuses lane_offers without max_parallel on a fresh start before any gate opens", async () => {
+		const fixture = createBatchFixture("lane-offers-only");
+		const tool = registerBatchTool({ readInitiative: async () => fixture.observation });
+		const opened = { count: 0 };
+		await expect(
+			tool.execute("tc", { initiative_slug: "lane-offers-only", lane_offers: [] }, undefined, undefined, countingTuiContext(fixture.root, opened) as never),
+		).rejects.toThrow(/lane_offers requires max_parallel/);
+		expect(opened.count).toBe(0);
+		assertZeroWrites(fixture.root, fixture.head, "lane-offers-only");
 	});
 
 	it("refuses an invalid max_parallel or a malformed lane offer before any gate opens, with zero writes", async () => {

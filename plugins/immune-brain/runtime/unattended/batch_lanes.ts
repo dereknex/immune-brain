@@ -17,7 +17,7 @@ import {
 	integrateGuardedLaneCommit,
 	type IntegrationCheckChild,
 } from "./batch_integration";
-import { classifyBatchLineage, expectedBatchHead, readActiveClaimTaskId } from "./batch_preflight";
+import { classifyBatchLineage, expectedBatchHead, findExistingActiveBatch, readActiveClaimTaskId } from "./batch_preflight";
 import { startableChildren } from "./batch_schedule";
 import {
 	type AnyBatchRunStateRecord,
@@ -57,6 +57,24 @@ const MAX_LANE_OFFERS = 64;
 const MAX_PATH_LENGTH = 4096;
 
 /** A positive safe integer, or undefined when the parameter is absent. */
+/**
+ * `lane_offers` without `max_parallel` is a resume of a recorded lane batch: the
+ * recorded `max_parallel` applies. Without a recorded active lane batch there is
+ * nothing to resume, so the call is refused before any gate opens.
+ */
+export function resolveLaneParallel(
+	root: string,
+	initiativeSlug: string,
+	maxParallel: number | undefined,
+	laneOffers: unknown,
+): number | undefined {
+	if (maxParallel !== undefined || laneOffers === undefined) return maxParallel;
+	const lookup = findExistingActiveBatch(root, initiativeSlug);
+	if (lookup === null || lookup.corrupt || !isLaneBatchRecord(lookup.record))
+		throw new Error("lane_offers requires max_parallel unless a recorded lane batch is being resumed");
+	return lookup.record.max_parallel;
+}
+
 export function parseMaxParallel(value: unknown): number | undefined {
 	if (value === undefined || value === null) return undefined;
 	if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0)

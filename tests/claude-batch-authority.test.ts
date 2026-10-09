@@ -27,7 +27,7 @@ try { await import("typebox"); } catch {
 		Boolean: () => ({ type: "boolean" }),
 		Literal: (value: unknown) => ({ const: value }),
 		Null: () => ({ type: "null" }),
-		Number: () => ({ type: "number" }),
+		Number: (options: object = {}) => ({ type: "number", ...options }),
 		Object: (properties: Record<string, any>, options: object = {}) => ({
 			type: "object", properties,
 			required: Object.entries(properties).filter(([, value]) => !value[optional]).map(([key]) => key),
@@ -1801,6 +1801,89 @@ describe("lane mode parameters (parallel-batch-lanes)", () => {
 		]) {
 			const source = readFileSync(join(import.meta.dir, "..", file), "utf8");
 			expect({ file, herdr: /HERDR/i.test(source) }).toEqual({ file, herdr: false });
+		}
+	});
+});
+
+describe("lane resume without max_parallel (lane-followups)", () => {
+	const normalize = (value: unknown, fixture: { head: string }) =>
+		JSON.parse(
+			JSON.stringify(value)
+				.split(fixture.head).join("<head>")
+				.replace(/batch-[A-Za-z0-9._-]+?-[0-9a-f-]{36}/g, "<batch>")
+				.replace(/\d{4}-\d\d-\d\dT[\d:.]+Z/g, "<time>"),
+		);
+
+	function claudeClient(fixture: ReturnType<typeof createBatchFixture>, gates: { count: number }) {
+		const client = createMcpRuntimeOnce({
+			cwd: fixture.root, env: ENV, interactive: true,
+			readInitiative: async () => fixture.observation,
+			requestConfirmation: async () => { gates.count++; return { decision: "accept", requestId: `resume-${gates.count}` }; },
+		});
+		client.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
+		return client;
+	}
+
+	it("resumes the recorded lane batch with lane_offers alone and gives both Hosts equal reports", async () => {
+		const slug = "lane-resume-parity";
+		const claudeFixture = createBatchFixture(slug);
+		const piFixture = createBatchFixture(slug);
+		const gates = { count: 0 };
+		try {
+			const client = claudeClient(claudeFixture, gates);
+			await client.callTool("start_unattended_batch", { initiative_slug: slug, max_parallel: 2 });
+			await executePiUnattendedBatch({
+				root: piFixture.root, initiativeSlug: slug, max_parallel: 2,
+				readInitiative: async () => piFixture.observation,
+				confirmBatch: async () => "accept",
+			});
+			const claude: any = await client.callTool("start_unattended_batch", { initiative_slug: slug, lane_offers: [] });
+			const pi: any = await executePiUnattendedBatch({
+				root: piFixture.root, initiativeSlug: slug, lane_offers: [],
+				readInitiative: async () => piFixture.observation,
+				confirmBatch: async () => "accept",
+			});
+			expect(claude.state).toBe("started");
+			expect(pi.state).toBe("started");
+			expect(claude.report.max_parallel).toBe(2);
+			expect(pi.report.max_parallel).toBe(2);
+			expect(normalize(claude.report, claudeFixture)).toEqual(normalize(pi.report, piFixture));
+		} finally {
+			rmSync(claudeFixture.root, { recursive: true, force: true });
+			rmSync(piFixture.root, { recursive: true, force: true });
+		}
+	});
+
+	it("still refuses a resume that names a different max_parallel with batch_parallel_mismatch", async () => {
+		const slug = "lane-resume-mismatch";
+		const fixture = createBatchFixture(slug);
+		const gates = { count: 0 };
+		try {
+			const client = claudeClient(fixture, gates);
+			await client.callTool("start_unattended_batch", { initiative_slug: slug, max_parallel: 2 });
+			const result: any = await client.callTool("start_unattended_batch", { initiative_slug: slug, max_parallel: 1, lane_offers: [] });
+			expect(JSON.stringify(result)).toContain("batch_parallel_mismatch");
+		} finally {
+			rmSync(fixture.root, { recursive: true, force: true });
+		}
+	});
+
+	it("refuses lane_offers on a fresh start and on a serial batch before any gate opens", async () => {
+		const gates = { count: 0 };
+		const fresh = createBatchFixture("lane-resume-fresh");
+		const serial = createBatchFixture("lane-resume-serial");
+		try {
+			await expect(claudeClient(fresh, gates).callTool("start_unattended_batch", { initiative_slug: "lane-resume-fresh", lane_offers: [] })).rejects.toThrow();
+			expect(gates.count).toBe(0);
+			expect(existsSync(join(fresh.root, ".imm", "state", "batches"))).toBe(false);
+			const client = claudeClient(serial, gates);
+			await client.callTool("start_unattended_batch", { initiative_slug: "lane-resume-serial" });
+			const opened = gates.count;
+			await expect(client.callTool("start_unattended_batch", { initiative_slug: "lane-resume-serial", lane_offers: [] })).rejects.toThrow();
+			expect(gates.count).toBe(opened);
+		} finally {
+			rmSync(fresh.root, { recursive: true, force: true });
+			rmSync(serial.root, { recursive: true, force: true });
 		}
 	});
 });

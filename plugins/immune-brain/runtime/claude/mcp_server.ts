@@ -13,7 +13,7 @@ import {
 } from "./interaction";
 import { ClaudeReviewHost, FileHookEventLog, parseHookStdin } from "./review_host";
 import { ClaudeRuntime, type ToolMeta } from "./kernel_ports";
-import { parseLaneOffers, parseMaxParallel } from "../unattended/batch_lanes";
+import { parseLaneOffers, parseMaxParallel, resolveLaneParallel } from "../unattended/batch_lanes";
 import type { AssuranceCoordinatorPorts } from "../assurance/coordinator";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
@@ -148,10 +148,9 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 					interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
 					signal: meta.signal,
 				};
-				const maxParallel = parseMaxParallel(args.max_parallel);
 				const laneOffers = parseLaneOffers(args.lane_offers);
-				if (maxParallel === undefined && laneOffers !== undefined)
-					throw new Error("lane_offers requires max_parallel");
+				// A lane_offers-only call resumes the recorded lane batch; refused before any gate otherwise.
+				const maxParallel = resolveLaneParallel(options.cwd ?? process.cwd(), initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers);
 				return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
 					...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
 					...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),

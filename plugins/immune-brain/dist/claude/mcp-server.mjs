@@ -13034,6 +13034,14 @@ var PARALLEL_MISMATCH = "batch_parallel_mismatch";
 var TASK_ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var MAX_LANE_OFFERS = 64;
 var MAX_PATH_LENGTH = 4096;
+function resolveLaneParallel(root, initiativeSlug, maxParallel, laneOffers) {
+  if (maxParallel !== undefined || laneOffers === undefined)
+    return maxParallel;
+  const lookup = findExistingActiveBatch(root, initiativeSlug);
+  if (lookup === null || lookup.corrupt || !isLaneBatchRecord(lookup.record))
+    throw new Error("lane_offers requires max_parallel unless a recorded lane batch is being resumed");
+  return lookup.record.max_parallel;
+}
 function parseMaxParallel(value) {
   if (value === undefined || value === null)
     return;
@@ -15179,10 +15187,8 @@ function createMcpRuntime(options = {}) {
           interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
           signal: meta.signal
         };
-        const maxParallel = parseMaxParallel(args.max_parallel);
         const laneOffers = parseLaneOffers(args.lane_offers);
-        if (maxParallel === undefined && laneOffers !== undefined)
-          throw new Error("lane_offers requires max_parallel");
+        const maxParallel = resolveLaneParallel(options.cwd ?? process.cwd(), initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers);
         return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
           ...maxParallel !== undefined ? { max_parallel: maxParallel } : {},
           ...laneOffers !== undefined ? { lane_offers: laneOffers } : {}

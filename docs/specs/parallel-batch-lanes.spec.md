@@ -82,7 +82,7 @@ Sources: `[U]` user decision in this conversation; `[R]` repository evidence nam
 
 - `initiative_slug` — unchanged, required.
 - `max_parallel` — optional positive integer. Absent selects the serial path. On a resume it must equal the recorded value or be absent.
-- `lane_offers` — optional array of `{ task_id, path }`, meaningful only in lane mode. A path is untrusted input.
+- `lane_offers` — optional array of `{ task_id, path }`, meaningful only in lane mode. A path is untrusted input. A call with `lane_offers` and no `max_parallel` resumes the recorded lane batch with its recorded `max_parallel`; with no recorded active lane batch it is refused before any gate opens.
 
 **Confirmation facts** (additive in lane mode): `max_parallel`, parallel groups, and the children that will serialize because their scopes overlap. `[U]` D1
 
