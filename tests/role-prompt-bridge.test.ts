@@ -300,4 +300,28 @@ describe("internal role-prompt bridge", () => {
 		}
 		expect(existsSync(resolve(ROOT, "plugins/immune-brain/skills/imm-pr-fix/SKILL.md"))).toBe(true);
 	});
+	it("keeps Executor Host launch with the Parent, not the lane-steward", () => {
+		const prompt = read("plugins/immune-brain/runtime/prompts/lane-steward.md").replace(/\s+/g, " ");
+		expect(prompt).toContain("Start no Host session, in the Lane or anywhere else");
+		expect(prompt).toContain("report every one the prepared Lane can run, not only the Host you are running in");
+		expect(prompt).not.toContain("Start exactly one Executor Host");
+
+		const loop = read("plugins/immune-brain/dist/imm-run.md").replace(/\s+/g, " ");
+		for (const fragment of [
+			"The Parent launches and supervises every Lane's Executor Host; no other role starts one",
+			"A subagent that runs inside the Parent's process shares the Parent's root and is never a Lane Executor",
+			"The Parent Host and the Executor Host are chosen independently",
+			"the Parent does not substitute a detached job, an in-process subagent or serial in-place work",
+			"never from the session's output or exit status",
+			"Handles are not authority",
+			// The standing rules the supervision section narrows are still stated.
+			"Do not poll or create detached jobs",
+			"its Host session never re-enters the batch",
+		]) {
+			expect(loop).toContain(fragment);
+		}
+		// Each supported Parent Host has its own row, plus the no-capability row.
+		for (const row of ["| Claude Code |", "| Pi |", "| Any Host without one |"]) expect(loop).toContain(row);
+		expect(read("plugins/immune-brain/skills/imm-run/SKILL.md")).toContain("../../dist/imm-run.md#lane-executor-supervision");
+	});
 });
