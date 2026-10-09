@@ -339,7 +339,9 @@ describe("internal role-prompt bridge", () => {
 			"The Parent sends that tab no keys and no prompt",
 			"a relaunch submits the entry again in the same tab instead of creating another",
 			"The Parent adds no permission or trust option of its own",
-			"The Parent closes only tabs it created, with `herdr tab close <tab_id>`",
+			"it closes no tab, including the tabs it created",
+			"The Parent stops no session",
+			"the Parent removes no Lane and dispatches no one to remove it",
 			"It splits no pane and creates no workspace",
 			"Outside Herdr the Parent never invokes `herdr`",
 			// The tab path changes how a session is obtained, not what counts as progress.

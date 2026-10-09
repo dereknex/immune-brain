@@ -90,9 +90,11 @@ Three facts shape the decision:
    and its dependents `skipped_blocked`. The descriptor rerun is an
    orchestration guard; it is not a Kernel attestation and creates no finding.
 8. **Release follows integration.** After a child is integrated and its Lane is
-   clean, the report carries a release handoff for the `lane-steward`. The
-   runtime records the Lane as released when it observes the path gone. Parked,
-   failed, and unintegrated Lanes are never offered for release.
+   clean, the report carries a release handoff. Agents only create: the Parent
+   and the `lane-steward` remove no Lane and close no Executor Host session, and
+   the Parent reports the Lane to the user, who removes it. The runtime records
+   the Lane as released when it observes the path gone. Parked, failed, and
+   unintegrated Lanes are never offered for release.
 9. **Executor Hosts are allowlisted by Immune-Brain.** Only Hosts with an
    Assurance adapter (Claude Code, Pi) may execute a Lane. Which of them is
    available is an environment fact the steward reports and the Parent acts on.

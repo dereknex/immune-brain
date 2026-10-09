@@ -321,9 +321,9 @@ Parent calls `start_unattended_batch`, and a relaunch submits the entry again in
 the same tab instead of creating another. A failed or timed-out `herdr` command
 proves nothing about delivery; inspect the session's state before repeating it.
 
-The Parent closes only tabs it created, with `herdr tab close <tab_id>`, and
-only where the rules below let it stop a session. It splits no pane and creates
-no workspace. Outside Herdr the Parent never invokes `herdr`.
+The Parent only creates: it closes no tab, including the tabs it created, and
+every tab stays open for the user to read and close. It splits no pane and
+creates no workspace. Outside Herdr the Parent never invokes `herdr`.
 
 Supervision is event-driven. Each session end is the cue to call
 `start_unattended_batch` again with the same Initiative, and that report is the
@@ -333,10 +333,11 @@ report still carries an `executor` handoff for a child whose session has ended,
 the Parent starts it once more; after a second end without Kernel progress, or
 when the report shows the child waiting on a user decision or an open Review
 reservation, it stops relaunching and reports that child to the user while its
-siblings continue. The Parent stops a session only when the user asks, when the
-report shows its child parked or settled, or before handing that Lane to a
-`release`; stopping a session changes no Kernel or batch state, so the next
-report states what remains. Handles are not authority: after an interruption
+siblings continue. The Parent stops no session: when the report shows a child
+parked or settled while its session is still working, the Parent tells the user
+which tab and `task_id` to close. A session that stays open changes no Kernel
+or batch state, so the next report states what remains. Handles are not
+authority: after an interruption
 the Parent calls `start_unattended_batch` first and launches only for the
 handoffs it returns.
 
@@ -347,9 +348,12 @@ failed, dirty or unintegrated Lane, or one whose audit pair is not on the batch
 branch, is never offered for release. The runner removes no worktree and deletes
 no branch: it records the child `released` only when a later tick observes the
 Lane path gone, and a Lane that is still present stays `integrated` while the
-batch still completes. The `lane-steward` internal role handles both handoffs; it
-follows the project's own instructions to prepare a Lane, starts no Host session,
-and reports "cannot supply" rather than improvising.
+batch still completes. The `lane-steward` internal role handles a `provision`
+handoff; it follows the project's own instructions to prepare a Lane, starts no
+Host session, and reports "cannot supply" rather than improvising. A `release`
+handoff is the user's to carry out: the Parent removes no Lane and dispatches no
+one to remove it. It reports each such Lane once, with its `task_id`, Lane path
+and tab, as ready for the user to close and remove.
 
 ## Decisions and Recovery
 

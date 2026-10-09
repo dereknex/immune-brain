@@ -175,7 +175,7 @@ The table below deliberately separates the three discoverable Managed Skills fro
 | Internal `code-review` / `ui-review` | Read-only review evidence | Findings and stable gate decisions |
 | Internal `pr-fix` / `test-fixer` | Explicitly delegated repair files only | Bounded child evidence |
 | Internal `compounder` | `docs/solutions/`, ADRs, and memory after closure | Reusable Learning |
-| Internal `lane-steward` | A separate working tree for one lane-mode child; no Kernel, batch state, Plan, Spec or Intent writes | Lane supplied or released, or "cannot supply" |
+| Internal `lane-steward` | A separate working tree for one lane-mode child; no Kernel, batch state, Plan, Spec or Intent writes | Lane supplied, or kept for the user to remove, or "cannot supply" |
 
 ---
 
