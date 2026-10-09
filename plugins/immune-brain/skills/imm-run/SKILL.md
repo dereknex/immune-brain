@@ -27,7 +27,7 @@ or all references as an entry prerequisite.
 - unattended batch run, or any question about whether `imm-run` starts one: [Unattended Batch Opt-In](../../dist/imm-run.md#unattended-batch-opt-in)
 - parallel batch (`max_parallel`, `lane_offers`, Lane admission or integration): [Parallel Batch Opt-In](../../dist/imm-run.md#parallel-batch-opt-in)
 - a lane-mode report carries an `executor` handoff, or a Lane's Executor Host session has ended: [Lane Executor Supervision](../../dist/imm-run.md#lane-executor-supervision)
-- that Parent runs inside a Herdr pane (`HERDR_ENV=1`): [Herdr Lane Panes](../../dist/imm-run.md#herdr-lane-panes)
+- that Parent runs inside Herdr (`HERDR_ENV=1`): [Herdr Lane Tabs](../../dist/imm-run.md#herdr-lane-tabs)
 - steady execution: [Verification and Local Recovery](../../dist/BASELINE.md#verification-and-local-recovery), [Execution Loop](../../dist/imm-run.md#execution-loop), [Observable Output](../../dist/imm-run.md#observable-output)
 - rework, scope expansion, breaking revision, user decision, stop, interruption or unknown state before any action: [Decisions and Recovery](../../dist/imm-run.md#decisions-and-recovery), [Failure Output](../../dist/imm-run.md#failure-output); re-read `status`, then the pending obligation. Rework submits the verdict before editing, and an uncertain interruption resumes from exact task/run authority facts rather than a summary.
 - review or post-settlement learning: [Review and Learning](../../dist/imm-run.md#review-and-learning)

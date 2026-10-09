@@ -122,14 +122,15 @@ handoff to the user, which is the behavior before this revision; it never
 substitutes a detached job or serial in-place work. `dist/imm-run.md` carries
 the per-Host mapping.
 
-When the Parent itself runs inside a Herdr pane it obtains the session there
-without asking: one pane per Lane holding an interactive Executor Host, started
-and awaited through the `herdr` CLI. This narrows the earlier boundary that no
+When the Parent itself runs inside Herdr it obtains the session there
+without asking: one tab per Lane holding an interactive Executor Host, started
+and awaited through the `herdr` CLI. A tab, not a split pane, so that every
+Lane keeps a full-size terminal however many run at once. This narrows the earlier boundary that no
 Immune-Brain surface names a workspace tool. The runtime, both Host adapters and
 the steward prompt still do not; only the Parent's Loop contract does, because
 the Parent is the one actor that owns the session. Two consequences follow. An
 interactive session settles instead of exiting, so "session end" means it
-stopped working, and the pane is reused for a relaunch. And it can stop at a
+stopped working, and the tab is reused for a relaunch. And it can stop at a
 dialog (workspace trust, sign-in, permission), which the Parent reports and
 never answers: launching with the user's own settings is not consent to widen
 them. The `executor` handoff gains `lane_path`, an observation of where the

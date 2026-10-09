@@ -234,7 +234,7 @@ is not asked to choose:
 
 | Parent Host | Supervised session | Stop |
 | --- | --- | --- |
-| Either Host, inside a Herdr pane (`HERDR_ENV=1`) | One Herdr pane per Lane holding an interactive Executor Host, under [Herdr Lane Panes](#herdr-lane-panes) | Close the pane the Parent created |
+| Either Host, inside Herdr (`HERDR_ENV=1`) | One Herdr tab per Lane holding an interactive Executor Host, under [Herdr Lane Tabs](#herdr-lane-tabs) | Close the tab the Parent created |
 | Claude Code | The Host's background command execution, running the Executor Host's non-interactive entry in the Lane; its completion notice re-invokes the Parent. The `Agent` tool does not qualify. | The Host's own stop for that background task |
 | Pi | A background process facility from the Pi user's own configuration that notifies the Parent on exit. Pi ships none that Immune-Brain may assume. | That facility's own stop |
 | Any Host without one | None. The Parent launches nothing. | — |
@@ -247,42 +247,50 @@ there, and calls `start_unattended_batch` again when the user says a Lane has
 finished. Supervision is per Lane: Lanes that can be supervised are, and the
 rest are reported.
 
-##### Herdr Lane Panes
+##### Herdr Lane Tabs
 
 Inside Herdr the Parent drives the `herdr` CLI itself; the runtime and the
-`lane-steward` never do. For each `executor` handoff without a live pane:
+`lane-steward` never do. Each Lane gets a tab of its own, so its Executor Host
+has a full-size terminal the user can read. For each `executor` handoff without
+a live tab:
 
 1. Take the Lane from the handoff's `lane_path`. Pick the Executor Host as above;
    `claude-code` is Herdr kind `claude` and `pi` is kind `pi`.
-2. Create the pane without taking focus, rooted in the Lane:
-   `herdr pane split --current --direction <right|down> --cwd <lane_path> --no-focus`.
-   Read `pane_id` from the JSON result and keep `task_id → pane_id`; the pane ID
-   is the session handle.
-3. Start the Host in that pane:
+2. Create the tab without taking focus, in the Parent's own workspace and rooted
+   in the Lane:
+   `herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd <lane_path> --label <name> --no-focus`.
+   Without `--workspace` the tab lands in whichever workspace has focus. `<name>`
+   is a label of at most 32 characters such as the Slice ID; a `task_id` is
+   usually too long. Read `tab.tab_id` and `root_pane.pane_id` from the JSON
+   result and keep `task_id → tab_id, pane_id`: the pane ID addresses the
+   session, the tab ID closes it.
+3. Start the Host in that tab's root pane:
    `herdr agent start <name> --kind <kind> --pane <pane_id> -- <host arguments>`.
-   `<name>` is a display label of at most 32 characters such as the Slice ID; a
-   `task_id` is usually too long. Host arguments are only those that load the
-   Parent's plugin.
-4. Submit the entry and nothing else:
-   `herdr agent prompt <pane_id> "<imm-run entry> <task_id>"`. The entry is the
-   Executor Host's own `imm-run` invocation.
+   Host arguments are only those that load the Parent's plugin.
+4. Submit the entry and nothing else, and confirm the turn began:
+   `herdr agent prompt <pane_id> "<imm-run entry> <task_id>" --wait --until working --until blocked --timeout 30000`.
+   The entry is the Executor Host's own `imm-run` invocation as that Host names
+   it: a Claude Code Host that loaded the plugin from a directory names it
+   `/immune-brain:imm-run`.
 5. Supervise with `herdr agent wait <pane_id>` as a Host background command, so
-   its return re-invokes the Parent. Do not loop on `herdr agent get` or read the
-   pane to judge progress.
+   its return re-invokes the Parent. Start it only after step 4 reported
+   `working`: a wait attached to a still-`idle` session returns at once. Do not
+   loop on `herdr agent get` or read the pane to judge progress.
 
-`agent_not_ready` from step 3, or a `blocked` state at any time, means the pane
+`agent_not_ready` from step 3, or a `blocked` state at any time, means the tab
 shows a dialog only the user may answer: workspace trust, sign-in, a permission
-request or a question. The Parent sends that pane no keys and no prompt. It
-tells the user which pane and `task_id` is waiting, leaves the pane open, and
-continues the other Lanes; once the user has answered, step 3's pane is resumed
+request or a question. The Parent sends that tab no keys and no prompt. It
+tells the user which tab and `task_id` is waiting, leaves the tab open, and
+continues the other Lanes; once the user has answered, step 3's tab is resumed
 from step 4 if the entry was never submitted, otherwise from step 5. `idle` or
-`done` is a session end for the rules below, although the pane stays open: the
+`done` is a session end for the rules below, although the tab stays open: the
 Parent calls `start_unattended_batch`, and a relaunch submits the entry again in
-the same pane instead of creating another. A failed or timed-out `herdr` command
-proves nothing about delivery; inspect the pane's state before repeating it.
+the same tab instead of creating another. A failed or timed-out `herdr` command
+proves nothing about delivery; inspect the session's state before repeating it.
 
-The Parent closes only panes it created, and only where the rules below let it
-stop a session. Outside Herdr the Parent never invokes `herdr`.
+The Parent closes only tabs it created, with `herdr tab close <tab_id>`, and
+only where the rules below let it stop a session. It splits no pane and creates
+no workspace. Outside Herdr the Parent never invokes `herdr`.
 
 Supervision is event-driven. Each session end is the cue to call
 `start_unattended_batch` again with the same Initiative, and that report is the
