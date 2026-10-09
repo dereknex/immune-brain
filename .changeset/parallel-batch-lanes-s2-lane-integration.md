@@ -1,5 +1,0 @@
----
-"immune-brain": minor
----
-
-Add opt-in lane mode to the unattended batch (`parallel-batch-lanes` S2). `start_unattended_batch` on both Hosts accepts an optional `max_parallel` and `lane_offers` beside `initiative_slug`. With `max_parallel` 1 the runner writes `batch_run_state` v2, admits an offered, already-existing Git worktree only when it shares the repository, is not the coordinator, is on `imm-lane/<slug>/<task-id>` at the named base, is clean and unoccupied, enrolls the child into it, commits the settled delivery on the lane branch, and fast-forwards the batch branch only to a candidate whose changed paths and per-path content equal the lane commit. `max_parallel` above 1 is refused (`batch_parallel_unsupported`), a resume with a different value is refused (`batch_parallel_mismatch`), and the runner still never creates, switches or deletes a worktree. Without `max_parallel` the serial batch is unchanged (v1 state, same report). ADR 0013 is accepted and the living contracts describe the opt-in.
