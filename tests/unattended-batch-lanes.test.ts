@@ -1094,6 +1094,116 @@ describe("lane release", () => {
 	});
 });
 
+/**
+ * The Parent Host's side of Lane Executor Supervision, played by the test: at
+ * most one Executor session per Lane, launched from executor handoffs, and one
+ * tick per session exit. A session is a scripted callback, not a real Host.
+ */
+function supervisor() {
+	const live = new Set<string>();
+	const launches = new Map<string, number>();
+	return {
+		live,
+		launches,
+		/** Launch a session for every executor handoff whose Lane has none. */
+		launch(report: BatchLaneRunReport): string[] {
+			const started: string[] = [];
+			for (const handoff of report.handoffs) {
+				if (handoff.role !== "executor" || live.has(handoff.task_id)) continue;
+				live.add(handoff.task_id);
+				launches.set(handoff.task_id, (launches.get(handoff.task_id) ?? 0) + 1);
+				started.push(handoff.task_id);
+			}
+			return started;
+		},
+		/** The session ends; `work` is whatever it did in its Lane before exiting. */
+		exit(taskId: string, work: () => void = () => {}): void {
+			expect(live.has(taskId)).toBe(true);
+			work();
+			live.delete(taskId);
+		},
+	};
+}
+
+describe("Lane Executor supervision walkthrough", () => {
+	it("runs S1 and S2 together, relaunches a session that exited without progress, starts S3 only after S1 integrated, and releases", async () => {
+		const fx = fixture({}, { "task-a": ["a.txt"], "task-b": ["b.txt"], "task-c": ["c.txt"] });
+		try {
+			const kernel = laneKernel();
+			const children = [child("task-a", "S1"), child("task-b", "S2"), child("task-c", "S3", ["task-a"])];
+			const args = request(fx, children, kernel, { git: laneGitWithAudit(), max_parallel: 2 });
+			const parent = supervisor();
+			const deliver = (lane: string, taskId: string, file: string) => () => {
+				writeFileSync(join(lane, file), `${taskId}\n`);
+				kernel.frozen.add(taskId);
+			};
+
+			// Tick 1: only the two unblocked Slices get a Lane; nothing is launched yet.
+			const first = lanes(await startBatch(args));
+			expect(first.handoffs.map((h) => [h.role, h.task_id])).toEqual([
+				["lane-steward", "task-a"],
+				["lane-steward", "task-b"],
+			]);
+			expect(parent.launch(first)).toEqual([]);
+
+			// Tick 2: both Lanes admitted; the Parent launches both sessions from one report.
+			const laneA = fx.lane("task-a");
+			const laneB = fx.lane("task-b");
+			const second = lanes(
+				await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }, { task_id: "task-b", path: laneB }] }),
+			);
+			expect(second.children.map((c) => c.state)).toEqual(["enrolled", "enrolled", "pending"]);
+			expect(parent.launch(second)).toEqual(["task-a", "task-b"]);
+
+			// S1's session exits having done nothing. The tick shows no progress and
+			// offers the same executor handoff, so the Parent relaunches S1 only.
+			parent.exit("task-a");
+			const stalled = lanes(await startBatch(args));
+			expect(stalled.children.map((c) => c.state)).toEqual(["enrolled", "enrolled", "pending"]);
+			expect(stalled.commits).toEqual([]);
+			expect(parent.launch(stalled)).toEqual(["task-a"]);
+			expect(parent.launches.get("task-a")).toBe(2);
+			expect(parent.launches.get("task-b")).toBe(1);
+
+			// The relaunched S1 session delivers and exits: S1 integrates while S2 is
+			// still in flight, S3 becomes provisionable, and S1's Lane is releasable.
+			parent.exit("task-a", deliver(laneA, "task-a", "a.txt"));
+			const third = lanes(await startBatch(args));
+			expect(third.children.map((c) => c.state)).toEqual(["integrated", "enrolled", "pending"]);
+			expect(third.handoffs.map((h) => [h.role, h.task_id])).toContainEqual(["lane-steward", "task-c"]);
+			expect(releases(third).map((h) => h.task_id)).toEqual(["task-a"]);
+			expect(parent.launch(third)).toEqual([]); // S2 already has its session
+
+			// The steward releases S1's Lane and provisions S3's from the new batch head.
+			git(fx.repo, "worktree", "remove", laneA);
+			const laneC = fx.lane("task-c");
+			expect(existsSync(join(laneC, "a.txt"))).toBe(true);
+			const fourth = lanes(await startBatch({ ...args, lane_offers: [{ task_id: "task-c", path: laneC }] }));
+			expect(fourth.children.map((c) => c.state)).toEqual(["released", "enrolled", "enrolled"]);
+			expect(parent.launch(fourth)).toEqual(["task-c"]);
+			expect([...parent.live].sort()).toEqual(["task-b", "task-c"]);
+
+			// Both remaining sessions exit before the next tick; one tick settles both.
+			parent.exit("task-b", deliver(laneB, "task-b", "b.txt"));
+			parent.exit("task-c", deliver(laneC, "task-c", "c.txt"));
+			const done = lanes(await startBatch(args));
+			expect(done.batch_state).toBe("completed");
+			expect(done.children.map((c) => c.state)).toEqual(["released", "integrated", "integrated"]);
+			expect(done.commits).toHaveLength(3);
+			expect(releases(done).map((h) => h.task_id)).toEqual(["task-b", "task-c"]);
+			expect(parent.launch(done)).toEqual([]);
+			expect(parent.live.size).toBe(0);
+			expect(git(fx.repo, "log", "--format=%s", `${fx.base}..HEAD`).split("\n").sort()).toEqual([
+				"imm(task-a): deliver",
+				"imm(task-b): deliver",
+				"imm(task-c): deliver",
+			]);
+		} finally {
+			fx.cleanup();
+		}
+	});
+});
+
 describe("lane reader and guidance accuracy", () => {
 	it("states that a parked lane batch has stopped and needs a new Batch Authorization, and behaves as before on a fresh confirmation", async () => {
 		const fx = fixture({ "task-a": 'process.exit(require("node:fs").existsSync("never.txt") ? 0 : 1)' });
