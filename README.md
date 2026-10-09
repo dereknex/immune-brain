@@ -414,6 +414,8 @@ When an Initiative has several ready children, you can run them as one serial ba
 - **Per-child authority survives:** every child is still enrolled, frozen, QA'd, reviewed, and settled by the Kernel on its own `TaskRecord`. The batch is the scope of one authorization, never a new authority layer.
 - **Closeout is automatic:** when a child reaches `done` in the foreground, the same call commits it and enrolls the next child, or marks the batch `completed`, with no new gate. A parked or stopped child is never committed for you, and a failed continuation is reported beside the result with `start_unattended_batch` as the retry. A fast-forward commit you add to the batch branch is adopted; any other HEAD movement still stops the run.
 - **Bounds:** only published, non-`critical` children run, serially on a dedicated batch branch. The run parks when a child needs a human decision or a budget, authorization, or commit failure stops it; the budget is a child count and a QA failure limit, and nothing expires with time, and dependents of a blocked child are skipped rather than reordered. The runner never pushes, opens PRs, resolves user decisions, or creates, switches, or deletes Git worktrees.
+- **Parallel lanes are opt-in:** pass `max_parallel` (or set `Lane max parallel`, see [Configuration](#configuration)) and independent children run side by side, each in its own Lane — a Git worktree on its own `imm-lane/...` branch — and are integrated onto the batch branch one commit per child. Without it the batch stays serial. A Parent running inside Herdr opens one tab per Lane for that Lane's Executor Host, and never answers a trust, sign-in, or permission dialog in it.
+- **Agents only create:** the Parent and the `lane-steward` role create Lanes and tabs but never close a tab, stop a session, or remove a Lane. Once a child is integrated, the Parent tells you which tab and Lane are ready, and you close and remove them yourself.
 
 ---
 
@@ -425,6 +427,10 @@ Immune-Brain has **no separate config file**. Preferences live in your host's ag
 ## Immune-Brain Preferences
 
 - Initiative carrier default: github   # or: local
+- Lane max parallel: 4                 # optional; enables lane mode
+- Lane Executor Host: claude-code      # optional; or: pi
+- Lane Executor model: <model id>      # optional; needs Lane Executor Host
+- Lane Executor effort: high           # optional; needs Lane Executor Host
 ```
 
 | Preference | Options | Default | Notes |
@@ -432,6 +438,10 @@ Immune-Brain has **no separate config file**. Preferences live in your host's ag
 | Reply language | any natural language | repo `AGENTS.md` | Machine contracts / paths stay literal |
 | Initiative carrier | `local` / `github` | none — Planner asks | Only matters when a proposal splits across multiple TaskIntents |
 | Advisory subagents | allowed / solo | allowed | Respects Pi host policy + explicit user instruction |
+| Lane max parallel | integer ≥ 1 | none — batches stay serial | Passed as `max_parallel` when a batch starts; a resumed batch keeps its recorded value |
+| Lane Executor Host | `claude-code` / `pi` | none — prefers the Parent's own Host type | Every Lane uses this Host, with no fallback to the other one |
+| Lane Executor model | a model ID of that Host | none — the Executor Host's own default | Applies only when `Lane Executor Host` is set |
+| Lane Executor effort | an effort level of that Host | none — the Executor Host's own default | Applies only when `Lane Executor Host` is set; `--effort` on Claude Code, `--thinking` on Pi |
 
 Precedence: **current message > repo agent instruction file > user-level agent instruction file > ask**. Skills read these files directly, so a preference works even when the host does not auto-load that file.
 

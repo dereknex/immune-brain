@@ -416,6 +416,8 @@ flowchart TD
 - **一次确认、一个 digest：** 原生 gate（Pi TUI 弹窗或 Claude MCP elicitation）展示有序 child 列表与共享 plan digest，这一次 literal-user 确认就是全部 Batch Authorization。
 - **每个 child 的 authority 不变：** 每个 child 仍由 Kernel 单独 Enrollment、冻结、QA、Review 并以自己的 `TaskRecord` 结算。批次只是一次授权的覆盖范围，不是新的授权层级。
 - **边界：** 只跑已发布且非 `critical` 的 child，在专属 batch 分支上串行执行；一旦某个 child 需要人决策，或遇到预算/截止时间/授权/提交失败就暂停，被阻塞 child 的依赖项标记为跳过而不是调序。runner 不 push、不开 PR、不代替用户结算 decision、也不创建/切换/删除 Git worktree。
+- **并行 Lane 需显式开启：** 传入 `max_parallel`（或配置 `Lane max parallel`，见[配置](#配置)）后，互不依赖的 child 并行执行，每个 child 占一个 Lane——位于独立 `imm-lane/...` 分支上的 Git worktree——再逐个以一 child 一 commit 集成到 batch 分支。不开启时批次保持串行。Parent 运行在 Herdr 内时，会为每个 Lane 的 Executor Host 开一个 tab，且不会替你回答其中的信任、登录或权限对话框。
+- **agent 只创建不回收：** Parent 与 `lane-steward` 角色会创建 Lane 和 tab，但不关闭 tab、不停止会话、不删除 Lane。child 集成后，Parent 告诉你哪些 tab 和 Lane 可以回收，由你自己关闭并删除。
 
 ---
 
@@ -427,6 +429,10 @@ Immune-Brain **没有独立配置文件**，偏好设置写在仓库根目录下
 ## Immune-Brain Preferences
 
 - Initiative carrier default: github   # 或 local
+- Lane max parallel: 4                 # 可选；开启 lane mode
+- Lane Executor Host: claude-code      # 可选；或 pi
+- Lane Executor model: <model id>      # 可选；需同时配置 Lane Executor Host
+- Lane Executor effort: high           # 可选；需同时配置 Lane Executor Host
 ```
 
 | 偏好 | 选项 | 默认 | 说明 |
@@ -434,6 +440,10 @@ Immune-Brain **没有独立配置文件**，偏好设置写在仓库根目录下
 | 回复语言 | 任意自然语言 | 仓库 `AGENTS.md` | 机器契约/路径/标识符保持原文 |
 | Initiative 载体 | `local` / `github` | 无默认，Planner 询问 | 仅当提案拆分为多个 TaskIntent 时生效 |
 | Advisory subagent | 允许 / 单人 | 允许 | 受 Pi host 策略与用户显式指令约束 |
+| Lane max parallel | ≥ 1 的整数 | 无默认，批次保持串行 | 启动批次时作为 `max_parallel` 传入；续跑沿用批次记录的值 |
+| Lane Executor Host | `claude-code` / `pi` | 无默认，优先用 Parent 同类 Host | 所有 Lane 都用该 Host，不回退到另一个 |
+| Lane Executor model | 该 Host 的 model ID | 无默认，用 Executor Host 自己的默认 | 仅在配置了 `Lane Executor Host` 时生效 |
+| Lane Executor effort | 该 Host 的强度档位 | 无默认，用 Executor Host 自己的默认 | 仅在配置了 `Lane Executor Host` 时生效；Claude Code 传 `--effort`，Pi 传 `--thinking` |
 
 优先级：**当前消息 > 仓库 agent 指令文件 > 用户级 agent 指令文件 > 询问**。Skill 会直接读取这些文件，因此即使 Host 不自动加载该文件，偏好依然生效。
 
