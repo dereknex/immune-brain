@@ -44,5 +44,5 @@ test("assurance source contains no detached UI or result-polling path", () => {
 		expect(source).not.toContain(forbidden);
 	}
 	expect(source).toContain("await progression.advance");
-	expect(source).toContain("await progression.submitReview");
+	expect(source).toContain("await progression.submitMediated");
 });

@@ -350,6 +350,15 @@ export type AssuranceSubmitReviewResult = AssuranceRecoveryFields & (
 	| { state: "settlement_unknown"; operation: "qa" | "review"; operation_id: string; reason: string }
 	| { state: "blocked"; reason: string; code?: "verdict_invalid"; recovery_action?: string });
 
+/**
+ * ADR 0017: optional metadata a host adapter supplies alongside the verdict
+ * input. The coordinator threads it opaquely; it never resolves verdict sources.
+ */
+export interface ReviewSubmissionOptions {
+	/** sha256 over the reviewer's own result bytes, bound into the review attestation. */
+	reviewer_verdict_sha256?: string;
+}
+
 export type ActiveAssuranceState =
 	| { state: "running"; operation: "qa"; operation_id: string; deadline_seconds: number }
 	| { state: "review_ready"; operation: "review"; operation_id: string }
@@ -1192,11 +1201,11 @@ export class AssuranceCoordinator {
 		}
 	}
 
-	async submitReview(taskId: string, ctx: HostContext, verdictInput: unknown): Promise<AssuranceSubmitReviewResult> {
-		return this.withRecovery(taskId, ctx, await this.submitReviewOnce(taskId, ctx, verdictInput));
+	async submitReview(taskId: string, ctx: HostContext, verdictInput: unknown, options?: ReviewSubmissionOptions): Promise<AssuranceSubmitReviewResult> {
+		return this.withRecovery(taskId, ctx, await this.submitReviewOnce(taskId, ctx, verdictInput, options));
 	}
 
-	private async submitReviewOnce(taskId: string, ctx: HostContext, verdictInput: unknown): Promise<AssuranceSubmitReviewResult> {
+	private async submitReviewOnce(taskId: string, ctx: HostContext, verdictInput: unknown, options?: ReviewSubmissionOptions): Promise<AssuranceSubmitReviewResult> {
 		const unknown = this.unknownOperations.get(taskId);
 		if (unknown) return { state: "settlement_unknown", operation: unknown.operation, operation_id: unknown.operationId, reason: unknown.reason };
 		const rejected = this.rejectedReviewOperations.get(taskId);
@@ -1242,6 +1251,7 @@ export class AssuranceCoordinator {
 				verdict,
 				invocation,
 				actorId: "parent-mediated-review",
+				...(options?.reviewer_verdict_sha256 ? { reviewer_verdict_sha256: options.reviewer_verdict_sha256 } : {}),
 			});
 		} catch (error) {
 			const reason = boundedAssuranceError(error);

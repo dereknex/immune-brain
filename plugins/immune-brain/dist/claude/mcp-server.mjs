@@ -2145,6 +2145,7 @@ function parseApprovalV2(value, index, violations, allowReviewRevision = false) 
     "actor_id",
     "summary",
     "advisory_findings",
+    "reviewer_verdict_sha256",
     ...allowReviewRevision ? ["review_revision"] : []
   ], `record.approvals[${index}]`, violations);
   const intentContentHash = stringAt(item.intent_content_hash, `record.approvals[${index}].intent_content_hash`, violations);
@@ -2165,7 +2166,8 @@ function parseApprovalV2(value, index, violations, allowReviewRevision = false) 
     ...allowReviewRevision && item.review_revision !== undefined ? { review_revision: parseReviewRevisionIdentity(item.review_revision, `record.approvals[${index}].review_revision`, violations) } : {},
     ...item.advisory_findings !== undefined ? {
       advisory_findings: arrayAt(item.advisory_findings, `record.approvals[${index}].advisory_findings`, violations).map((entry, advisoryIndex) => parseAdvisoryFinding(entry, `record.approvals[${index}].advisory_findings[${advisoryIndex}]`, violations))
-    } : {}
+    } : {},
+    ...item.reviewer_verdict_sha256 !== undefined ? { reviewer_verdict_sha256: stringAt(item.reviewer_verdict_sha256, `record.approvals[${index}].reviewer_verdict_sha256`, violations) } : {}
   };
 }
 function parseAdvisoryFinding(value, path, violations) {
@@ -2212,6 +2214,7 @@ function parseAttestationV3(value, index, acceptanceIds, violations, allowReview
     "summary",
     "acceptance_results",
     "advisory_findings",
+    "reviewer_verdict_sha256",
     ...allowReviewRevision ? ["review_revision"] : []
   ], path, violations);
   const kind = enumAt(item.kind, APPROVAL_KINDS, `${path}.kind`, violations);
@@ -2249,6 +2252,11 @@ function parseAttestationV3(value, index, acceptanceIds, violations, allowReview
   const advisoryFindings = item.advisory_findings === undefined ? undefined : arrayAt(item.advisory_findings, `${path}.advisory_findings`, violations).map((entry, advisoryIndex) => parseAdvisoryFinding(entry, `${path}.advisory_findings[${advisoryIndex}]`, violations));
   if (advisoryFindings !== undefined && kind !== "review")
     violations.push(`${path}.advisory_findings is only valid on review attestations`);
+  const reviewerVerdictSha256 = item.reviewer_verdict_sha256 === undefined ? undefined : stringAt(item.reviewer_verdict_sha256, `${path}.reviewer_verdict_sha256`, violations);
+  if (reviewerVerdictSha256 !== undefined && kind !== "review")
+    violations.push(`${path}.reviewer_verdict_sha256 is only valid on review attestations`);
+  if (reviewerVerdictSha256 !== undefined && !SHA256_HEX.test(reviewerVerdictSha256))
+    violations.push(`${path}.reviewer_verdict_sha256 must be sha256:<64 hex>`);
   return {
     id: stringAt(item.id, `${path}.id`, violations),
     kind,
@@ -2260,7 +2268,8 @@ function parseAttestationV3(value, index, acceptanceIds, violations, allowReview
     summary: stringAt(item.summary, `${path}.summary`, violations),
     acceptance_results: acceptanceResults,
     ...reviewRevision ? { review_revision: reviewRevision } : {},
-    ...advisoryFindings !== undefined ? { advisory_findings: advisoryFindings } : {}
+    ...advisoryFindings !== undefined ? { advisory_findings: advisoryFindings } : {},
+    ...reviewerVerdictSha256 !== undefined ? { reviewer_verdict_sha256: reviewerVerdictSha256 } : {}
   };
 }
 function parseTaskRecordAtVersion(raw, version) {
@@ -3045,21 +3054,30 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths) {
       const reviewRevision = approval.review_revision;
       if (reviewRevision && approval.kind !== "review")
         throw new KernelInvariantError(["review_revision is only valid on review approvals"]);
+      if (approval.reviewer_verdict_sha256 && approval.kind !== "review")
+        throw new KernelInvariantError(["reviewer_verdict_sha256 is only valid on review approvals"]);
       if (approval.kind === "review") {
         if (!reviewRevision)
           throw new KernelInvariantError(["v4 review approval requires review_revision"]);
         if (reviewRevision.base_head !== record.git_base_head)
           throw new KernelInvariantError(["review_revision.base_head must equal the Enrollment git_base_head"]);
       }
-      const { review_revision: storedReviewRevision, ...approvalWithoutRevision } = approval;
+      const {
+        review_revision: storedReviewRevision,
+        advisory_findings: storedAdvisoryFindings,
+        reviewer_verdict_sha256: storedReviewerDigest,
+        ...approvalWithoutExtras
+      } = approval;
       record.attestations.push({
-        ...approvalWithoutRevision,
+        ...approvalWithoutExtras,
         acceptance_results: approval.kind === "qa" ? record.intent_snapshot.acceptance.map((item) => ({
           acceptance_id: item.id,
           status: "passed",
           summary: `host-attested QA: ${approval.summary}`
         })) : [],
-        ...storedReviewRevision ? { review_revision: storedReviewRevision } : {}
+        ...storedReviewRevision ? { review_revision: storedReviewRevision } : {},
+        ...storedAdvisoryFindings ? { advisory_findings: storedAdvisoryFindings } : {},
+        ...storedReviewerDigest ? { reviewer_verdict_sha256: storedReviewerDigest } : {}
       });
       appendHistory(record, action, from, approval.id, authorityAudit);
       break;
@@ -7799,10 +7817,10 @@ class AssuranceCoordinator {
       signal?.removeEventListener("abort", relayExternalAbort);
     }
   }
-  async submitReview(taskId, ctx, verdictInput) {
-    return this.withRecovery(taskId, ctx, await this.submitReviewOnce(taskId, ctx, verdictInput));
+  async submitReview(taskId, ctx, verdictInput, options) {
+    return this.withRecovery(taskId, ctx, await this.submitReviewOnce(taskId, ctx, verdictInput, options));
   }
-  async submitReviewOnce(taskId, ctx, verdictInput) {
+  async submitReviewOnce(taskId, ctx, verdictInput, options) {
     const unknown = this.unknownOperations.get(taskId);
     if (unknown)
       return { state: "settlement_unknown", operation: unknown.operation, operation_id: unknown.operationId, reason: unknown.reason };
@@ -7851,7 +7869,8 @@ class AssuranceCoordinator {
         snapshot: reservation.snapshot,
         verdict,
         invocation,
-        actorId: "parent-mediated-review"
+        actorId: "parent-mediated-review",
+        ...options?.reviewer_verdict_sha256 ? { reviewer_verdict_sha256: options.reviewer_verdict_sha256 } : {}
       });
     } catch (error) {
       const reason = boundedAssuranceError(error);
@@ -8144,7 +8163,8 @@ function createVerdictAuthority(options, registry = createMutationAuthorityRegis
         actor_id: actorId,
         summary: verdict.approval.summary,
         ...snapshot.role === "review" && snapshot.review_revision ? { review_revision: snapshot.review_revision } : {},
-        ...snapshot.role === "review" && advisories.length ? { advisory_findings: advisories } : {}
+        ...snapshot.role === "review" && advisories.length ? { advisory_findings: advisories } : {},
+        ...snapshot.role === "review" && input.reviewer_verdict_sha256 ? { reviewer_verdict_sha256: input.reviewer_verdict_sha256 } : {}
       } : undefined;
       const op = verdict.decision === "rework" ? "request_rework" : "record_approval";
       const payload = approval ? { approval } : { findings };
@@ -14640,18 +14660,8 @@ async function retireStaleBatch(options) {
   return { outcome: "retired", batch_id: stored.batch_id, record: stored, report };
 }
 
-// plugins/immune-brain/runtime/claude/kernel_ports.ts
-function diffSnapshotOf(root, record) {
-  return taskDeliveryIdentity(root, record);
-}
-function diffHashOf(root, record) {
-  return diffSnapshotOf(root, record).diff_hash;
-}
-function readTaskIntentForRecord(root, taskId) {
-  recoverKernelStoreFollowUps(root, taskId);
-  const currentPath = readTaskRecordRaw(root, taskId).record?.intent_ref?.path;
-  return readTaskIntent(root, taskId, currentPath);
-}
+// plugins/immune-brain/runtime/assurance/review_mediation.ts
+import { createHash as createHash21 } from "node:crypto";
 function extractVerdictJson(input) {
   if (typeof input === "string") {
     const cleaned = input.split(`
@@ -14679,36 +14689,59 @@ function verdictFingerprint(raw) {
     findings: raw.findings ?? null
   });
 }
+function digestOfReviewerBytes(bytes) {
+  return `sha256:${createHash21("sha256").update(bytes).digest("hex")}`;
+}
 var RELEASED_REVIEW_RECOVERY = "Call advance_assurance to obtain a new Review reservation, then dispatch one fresh reviewer with the returned envelope unchanged";
 var RETAINED_REVIEW_RECOVERY = "Wait for the dispatched reviewer to finish, then call submit_review again with its verdict; do not dispatch or continue another reviewer";
-var MISMATCH_REVIEW_RECOVERY = "Resubmit the reviewer's verdict exactly as the reviewer returned it";
+var MISMATCH_REVIEW_RECOVERY = "Resubmit without a verdict to apply the observed reviewer receipt, or resubmit the reviewer's verdict exactly as the reviewer returned it";
 function withReviewRecovery(result, recovery_action) {
   if (result.state !== "blocked" || result.code === "verdict_invalid")
     return result;
   return { ...result, recovery_action };
 }
-async function submitClaudeReview(host, coordinator, ctx, taskId, verdictInput) {
-  if (verdictInput === undefined)
-    throw new Error("verdict is required");
-  const observed = host.inspectReviewForTask(taskId);
+async function submitMediatedReview(coordinator, ctx, taskId, verdictInput, inspect) {
+  const observed = inspect();
   if (!observed.ok) {
     if (observed.release)
       return withReviewRecovery(coordinator.abandonReview(taskId, observed.reason), RELEASED_REVIEW_RECOVERY);
     return { state: "blocked", reason: observed.reason, recovery_action: RETAINED_REVIEW_RECOVERY };
   }
+  const receiptBytes = observed.receipt.result;
+  if (verdictInput === undefined) {
+    if (!coordinator.isReviewVerdictValid(taskId, receiptBytes)) {
+      return withReviewRecovery(coordinator.abandonReview(taskId, "reviewer receipt is not a valid verdict"), RELEASED_REVIEW_RECOVERY);
+    }
+    return coordinator.submitReview(taskId, ctx, receiptBytes, { reviewer_verdict_sha256: digestOfReviewerBytes(receiptBytes) });
+  }
   const parentValid = coordinator.isReviewVerdictValid(taskId, verdictInput);
   if (!parentValid)
     return coordinator.submitReview(taskId, ctx, verdictInput);
-  const receiptValid = coordinator.isReviewVerdictValid(taskId, observed.receipt.result);
-  if (!receiptValid) {
+  if (!coordinator.isReviewVerdictValid(taskId, receiptBytes)) {
     return withReviewRecovery(coordinator.abandonReview(taskId, "reviewer receipt is not a valid verdict"), RELEASED_REVIEW_RECOVERY);
   }
   const parentJson = extractVerdictJson(verdictInput);
-  const receiptJson = extractVerdictJson(observed.receipt.result);
-  if (verdictFingerprint(parentJson) !== verdictFingerprint(receiptJson)) {
+  const receiptJson = extractVerdictJson(receiptBytes);
+  if (!parentJson || !receiptJson || verdictFingerprint(parentJson) !== verdictFingerprint(receiptJson)) {
     return { state: "blocked", reason: "parent verdict does not match reviewer receipt", recovery_action: MISMATCH_REVIEW_RECOVERY };
   }
-  return coordinator.submitReview(taskId, ctx, verdictInput);
+  return coordinator.submitReview(taskId, ctx, verdictInput, { reviewer_verdict_sha256: digestOfReviewerBytes(receiptBytes) });
+}
+
+// plugins/immune-brain/runtime/claude/kernel_ports.ts
+function diffSnapshotOf(root, record) {
+  return taskDeliveryIdentity(root, record);
+}
+function diffHashOf(root, record) {
+  return diffSnapshotOf(root, record).diff_hash;
+}
+function readTaskIntentForRecord(root, taskId) {
+  recoverKernelStoreFollowUps(root, taskId);
+  const currentPath = readTaskRecordRaw(root, taskId).record?.intent_ref?.path;
+  return readTaskIntent(root, taskId, currentPath);
+}
+async function submitClaudeReview(host, coordinator, ctx, taskId, verdictInput) {
+  return submitMediatedReview(coordinator, ctx, taskId, verdictInput, () => host.inspectReviewForTask(taskId));
 }
 function settledKernelResult(result) {
   const state = result.state;
@@ -15424,7 +15457,7 @@ var TOOLS = [
   { name: "status", description: "Read the Kernel Assurance Projection for an exact task.", privileged: false },
   { name: "enroll", description: "Enroll a Git-tracked TaskIntent after native confirmation.", privileged: true },
   { name: "advance_assurance", description: "Advance frozen Assurance through deterministic QA and Review reservation.", privileged: false },
-  { name: "submit_review", description: "Submit the Parent-mediated Review verdict bound to the correlated receipt.", privileged: false },
+  { name: "submit_review", description: "Submit the Review verdict; omit the verdict to apply the correlated reviewer receipt, or relay the reviewer's structured verdict for fingerprint comparison.", privileged: false },
   { name: "request_authorization", description: "Apply exact literal-user authorization.", privileged: true },
   { name: "revise_intent", description: "Apply a compatible TaskIntent revision.", privileged: false },
   { name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
@@ -15465,7 +15498,7 @@ function listMcpTools() {
           ...tool.name === "refute_finding" ? { finding_id: { type: "string" }, attestation_id: { type: "string" } } : {}
         }
       },
-      required: tool.name === "start_unattended_batch" || tool.name === "retire_stale_batch" ? ["initiative_slug"] : tool.name === "submit_review" ? ["task_id", "verdict"] : tool.name === "resolve_finding" ? ["task_id", "finding_id"] : tool.name === "refute_finding" ? ["task_id", "finding_id", "attestation_id"] : tool.name === "revise_intent" ? ["task_id", "next_intent"] : ["task_id"]
+      required: tool.name === "start_unattended_batch" || tool.name === "retire_stale_batch" ? ["initiative_slug"] : tool.name === "resolve_finding" ? ["task_id", "finding_id"] : tool.name === "refute_finding" ? ["task_id", "finding_id", "attestation_id"] : tool.name === "revise_intent" ? ["task_id", "next_intent"] : ["task_id"]
     },
     annotations: tool.privileged ? privilegedAnnotations() : { readOnlyHint: tool.name === "status" }
   }));
@@ -15585,9 +15618,7 @@ function createMcpRuntime(options = {}) {
       if (name === "advance_assurance")
         return runtime.advance(taskId, toolMeta.signal, toolMeta);
       if (name === "submit_review") {
-        if (!Object.hasOwn(args, "verdict"))
-          throw new Error("verdict is required");
-        return runtime.submitReview(taskId, args.verdict, toolMeta);
+        return runtime.submitReview(taskId, Object.hasOwn(args, "verdict") ? args.verdict : undefined, toolMeta);
       }
       if (name === "revise_intent") {
         if (!Object.hasOwn(args, "next_intent"))

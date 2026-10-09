@@ -358,7 +358,7 @@ describe("claude host authority", () => {
 			expect(tools.find((tool) => tool.name === name)?.annotations).toEqual({ destructiveHint: true });
 		}
 		const submitReview = tools.find((tool) => tool.name === "submit_review");
-		expect(submitReview?.inputSchema.required).toEqual(["task_id", "verdict"]);
+		expect(submitReview?.inputSchema.required).toEqual(["task_id"]);
 		expect(submitReview?.inputSchema.properties).toHaveProperty("verdict");
 	});
 
@@ -743,20 +743,39 @@ describe("claude host authority", () => {
 		expect(ready.state).toBe("review_ready");
 		const verdict = passVerdict(snapshot("review"));
 		completeReview(host, ready.operation_id, JSON.stringify(verdict));
-		await expect(mcp.callTool("submit_review", { task_id: TASK })).rejects.toThrow("verdict is required");
+		// A relayed malformed verdict keeps the reservation for a retry.
 		expect(await mcp.callTool("submit_review", { task_id: TASK, verdict: { ...verdict, extra: true } })).toMatchObject({
 			state: "blocked",
 			code: "verdict_invalid",
 		});
 		expect(h.counts().applyCount).toBe(1);
 		expect(await mcp.callTool("advance_assurance", { task_id: TASK })).toMatchObject({ code: "verdict_invalid" });
-		// Settlement projects the terminal tracker state alongside the outcome.
-		expect(await mcp.callTool("submit_review", { task_id: TASK, verdict })).toMatchObject({
+		// ADR 0017: the retry may omit the verdict to apply the observed receipt.
+		expect(await mcp.callTool("submit_review", { task_id: TASK })).toMatchObject({
 			state: "completed",
 			tracker: { contract: "immune_brain/github_issue_tracker_result/v1", operation: "mark-terminal" },
 		});
 		expect(h.counts().applyCount).toBe(2);
 		expect(await mcp.callTool("submit_review", { task_id: TASK, verdict })).toMatchObject({ state: "blocked" });
+	});
+
+	test("an omitted Claude verdict without an observed receipt fails closed", async () => {
+		const host = new ClaudeReviewHost();
+		const h = makeCoordinator({ host });
+		const mcp = createMcpRuntime({ cwd: ROOT, env: ENV, ports: h.ports, authorityOverrides: h.ports, host });
+		await handleJsonRpc({
+			jsonrpc: "2.0",
+			id: 1,
+			method: "initialize",
+			params: { protocolVersion: "2025-06-18", clientInfo: { name: "claude-code", version: "2.1.236" }, capabilities: { elicitation: {} } },
+		}, mcp);
+		const ready = await mcp.callTool("advance_assurance", { task_id: TASK }) as { state: string; operation_id: string };
+		expect(ready.state).toBe("review_ready");
+		const blocked = await mcp.callTool("submit_review", { task_id: TASK }) as { state: string; reason: string; recovery_action?: string };
+		expect(blocked.state).toBe("blocked");
+		expect(blocked.reason).toBe("reserved foreground Agent was not observed");
+		expect(blocked.recovery_action).toContain("do not dispatch or continue another reviewer");
+		expect(h.counts().applyCount).toBe(1);
 	});
 
 
@@ -1544,7 +1563,7 @@ describe("claude host resolve_finding", () => {
 				"retire_stale_batch",
 			]);
 			const submitReview = listMcpTools().find((tool) => tool.name === "submit_review");
-			expect(submitReview?.inputSchema.required).toEqual(["task_id", "verdict"]);
+			expect(submitReview?.inputSchema.required).toEqual(["task_id"]);
 			for (const name of ["enroll", "request_authorization", "approve_breaking_intent_revision", "stop", "start_unattended_batch", "retire_stale_batch"]) {
 				expect(listMcpTools().find((tool) => tool.name === name)?.annotations).toEqual({ destructiveHint: true });
 			}
@@ -1616,7 +1635,7 @@ describe("claude host resolve_finding", () => {
 	test("every blocked Claude review submission names one same-host recovery action", async () => {
 		const released = "Call advance_assurance to obtain a new Review reservation, then dispatch one fresh reviewer with the returned envelope unchanged";
 		const retained = "Wait for the dispatched reviewer to finish, then call submit_review again with its verdict; do not dispatch or continue another reviewer";
-		const mismatch = "Resubmit the reviewer's verdict exactly as the reviewer returned it";
+		const mismatch = "Resubmit without a verdict to apply the observed reviewer receipt, or resubmit the reviewer's verdict exactly as the reviewer returned it";
 		const forbidden = [/another Host/i, /worktree/i, /repair_authority_state/, /\bcommit\b/i, /unmanaged/i];
 		const verdict = () => passVerdict(snapshot("review"));
 

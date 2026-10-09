@@ -233,5 +233,5 @@ export const STATIC_REVIEW_RULES = [
  * to a per-dispatch prompt, because they describe the dispatch itself.
  */
 export const REVIEWER_DISPATCH_RULES = [
-	"A dispatched reviewer is never continued or re-prompted, including through SendMessage. The reserved prompt is dispatched verbatim. A blocked `submit_review` is recovered only through its returned `recovery_action`.",
+	"A dispatched reviewer is never continued or re-prompted, including through SendMessage. The reserved prompt is dispatched verbatim. The host binds this reviewer's final result bytes to the reservation, so a Parent may submit them without transcribing them. A blocked `submit_review` is recovered only through its returned `recovery_action`.",
 ] as const;

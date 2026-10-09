@@ -281,7 +281,13 @@ function loadSurface(dependencies: Record<string, unknown> = {}) {
 		if (previous) Object.defineProperty(globalThis, key, previous);
 		else Reflect.deleteProperty(globalThis, key);
 	}
-	return { tools, commands, events, emitted };
+	return {
+		tools, commands, events, emitted,
+		// Drive the extension's own pi.on handlers (tool_call/tool_result seams).
+		emit(name: string, payload: Record<string, unknown>) {
+			for (const handler of events[name] ?? []) handler(payload);
+		},
+	};
 }
 
 function minimalSnapshot(role: "qa" | "review", root: string, current?: { projection?: Record<string, any> }): SnapshotDescriptor {
@@ -1128,7 +1134,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			(item: Record<string, any>) => item.properties?.op?.const === "submit_review",
 		);
 		expect(Object.keys(submitReview.properties)).toEqual(["op", "verdict"]);
-		expect(submitReview.required).toContain("verdict");
+		expect(submitReview.required).toEqual(["op"]);
 		const requestAuthorization = schema.properties.action.anyOf.find(
 			(item: Record<string, any>) => item.properties?.op?.const === "request_authorization",
 		);
@@ -1332,12 +1338,17 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 	const root = makeEnrolledRoot();
 	try {
 		const updates: unknown[] = [];
-		const { tools } = loadSurface({
-			buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) => ({
-				snapshot: minimalSnapshot(role, rootPath, current),
-				descriptors: new Map(),
-				reviewBundle: role === "review" ? ({ dirty_files: {}, outcomes: {}, bundle_digest: "sha256:bundle" } as never) : null,
-			}),
+		let latestReviewSnapshot!: SnapshotDescriptor;
+		const { tools, emit: emitEvent } = loadSurface({
+			buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) => {
+				const built = {
+					snapshot: minimalSnapshot(role, rootPath, current),
+					descriptors: new Map(),
+					reviewBundle: role === "review" ? ({ dirty_files: {}, outcomes: {}, bundle_digest: "sha256:bundle" } as never) : null,
+				};
+				if (role === "review") latestReviewSnapshot = built.snapshot;
+				return built;
+			},
 		runQa: async (snapshot: SnapshotDescriptor, _descriptors: Map<string, unknown>, options: { onProgress?: (value: unknown) => void }) => {
 				options.onProgress?.({ index: 1, total: 1, acceptance_id: "A1", phase: "passed", elapsed_ms: 1 });
 				return { contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: TASK, snapshot_digest: snapshotDigest(snapshot), decision: "pass", approval: { kind: "qa", authority_role: "qa", summary: "passed" } };
@@ -1363,6 +1374,11 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			acceptance_phase: "passed",
 			elapsed_ms: 1,
 		});
+		// ADR 0017: submission mediates against the observed reviewer receipt, so
+		// simulate the reserved dispatch and its result through the event seam.
+		const receipt = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK, snapshot_digest: snapshotDigest(latestReviewSnapshot), decision: "pass", approval: { kind: "review", authority_role: "reviewer", summary: "passed", inspected_paths: [...latestReviewSnapshot.dirty_files] } };
+		emitEvent("tool_call", { toolName: "Agent", input: parsed.agent_params, toolCallId: "call-1" });
+		emitEvent("tool_result", { toolName: "Agent", toolCallId: "call-1", content: [{ type: "text", text: JSON.stringify(receipt) }] });
 		const invalid = await capturedToolFailure(tool.execute("submit-invalid", { task_id: TASK, action: { op: "submit_review", verdict: { decision: "pass" } } }, undefined, undefined, makeCtx(root, makeUI())));
 		expect(invalid).toMatchObject({ code: "verdict_invalid", next_action: "fix the verdict payload and resubmit submit_review; the Review reservation remains active; do not re-dispatch the reviewer" });
 		const repeatedAdvance = await capturedToolFailure(tool.execute("advance-again", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, makeCtx(root, makeUI())));
@@ -1446,7 +1462,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		const root = makeEnrolledRoot();
 		try {
 			let latestReviewSnapshot!: SnapshotDescriptor;
-			const { tools } = loadSurface({
+			const { tools, emit: emitEvent } = loadSurface({
 				buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) => {
 					const built = { snapshot: minimalSnapshot(role, rootPath, current), descriptors: new Map(), reviewBundle: role === "review" ? ({ dirty_files: {}, outcomes: {}, bundle_digest: "sha256:bundle" } as never) : null };
 					if (role === "review") latestReviewSnapshot = built.snapshot;
@@ -1456,11 +1472,15 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 				writeReviewEvidence: () => ({ path: join(root, "review.json"), remove: () => {} }),
 			});
 			const tool = tools[0];
-			await tool.execute("advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, makeCtx(root, makeUI()));
+			const advanceResult = JSON.parse((await tool.execute("advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, makeCtx(root, makeUI()))).content[0].text);
 			// A review pass claims the reviewed change set, so the fixture lists
 			// the snapshot's own dirty_files (BR-DEC-3).
 			const verdict = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK, snapshot_digest: snapshotDigest(latestReviewSnapshot), decision: "pass", approval: { kind: "review", authority_role: "reviewer", summary: "passed", inspected_paths: [...latestReviewSnapshot.dirty_files] } };
 			const context = makeCtx(root, makeUI());
+			// ADR 0017: the relayed verdict must fingerprint-match the observed
+			// receipt, so record the dispatch and result through the event seam.
+			emitEvent("tool_call", { toolName: "Agent", input: advanceResult.agent_params, toolCallId: "call-1" });
+			emitEvent("tool_result", { toolName: "Agent", toolCallId: "call-1", content: [{ type: "text", text: JSON.stringify(verdict) }] });
 			// Missing-path control through the real extension surface: dropping a
 			// claimed path is a correctable invalid verdict that applies nothing.
 			const partial = { ...verdict, approval: { ...verdict.approval, inspected_paths: [] } };

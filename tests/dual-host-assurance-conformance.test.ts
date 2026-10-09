@@ -712,6 +712,53 @@ describe("dual-host assurance conformance", () => {
 		expect(await submitObservedReview(second)).toEqual({ state: "completed" });
 	});
 
+	test("an omitted verdict settles through the observed receipt on both hosts", async () => {
+		const kernel = sharedKernel("material");
+		const claude = kernel.claude();
+		const ready = await claude.coordinator.advance(TASK, ctx);
+		expect(ready.state).toBe("review_ready");
+		completeClaudeReview(claude.host, (ready as { operation_id: string }).operation_id, "material");
+		expect(await submitClaudeReview(claude.host, claude.coordinator, ctx, TASK, undefined)).toEqual({ state: "completed" });
+		expect(kernel.executionCounts).toEqual({ qa: 1, completion: 1 });
+
+		const piKernel = sharedKernel("material");
+		const pi = piKernel.pi();
+		const piReady = await pi.advance(TASK, ctx as never) as { state: string; agent_params: { prompt: string } };
+		expect(piReady.state).toBe("review_ready");
+		pi.piReviewHost.observeReviewDispatch({ prompt: piReady.agent_params.prompt, subagent_type: "Review" }, "pi-call-1");
+		pi.piReviewHost.observeReviewResult("pi-call-1", JSON.stringify(passVerdict(snapshot("review"))));
+		expect(await pi.submitMediated(TASK, ctx as never, undefined)).toEqual({ state: "completed" });
+		expect(piKernel.executionCounts).toEqual({ qa: 1, completion: 1 });
+	});
+
+	test("a Pi submission without an observed dispatch fails closed and releases the reservation", async () => {
+		const kernel = sharedKernel("material");
+		const pi = kernel.pi();
+		const ready = await pi.advance(TASK, ctx as never) as { state: string; operation_id: string };
+		expect(ready.state).toBe("review_ready");
+		const blocked = await pi.submitMediated(TASK, ctx as never, undefined) as { state: string; reason: string };
+		expect(blocked.state).toBe("blocked");
+		expect(blocked.reason).toBe("the reserved foreground Agent was not observed in this session");
+		const retried = await pi.advance(TASK, ctx as never) as { state: string; operation_id: string };
+		expect(retried.state).toBe("review_ready");
+		expect(retried.operation_id).not.toBe(ready.operation_id);
+	});
+
+	test("a Pi relayed verdict must match the observed receipt", async () => {
+		const kernel = sharedKernel("material");
+		const pi = kernel.pi();
+		const ready = await pi.advance(TASK, ctx as never) as { state: string; agent_params: { prompt: string } };
+		expect(ready.state).toBe("review_ready");
+		pi.piReviewHost.observeReviewDispatch({ prompt: ready.agent_params.prompt, subagent_type: "Review" }, "pi-call-1");
+		pi.piReviewHost.observeReviewResult("pi-call-1", JSON.stringify(passVerdict(snapshot("review"))));
+		const relaid = passVerdict(snapshot("review"));
+		const mismatched = await pi.submitMediated(TASK, ctx as never, { ...relaid, approval: { ...relaid.approval!, summary: "quietly rewritten" } }) as { state: string; reason: string };
+		expect(mismatched).toMatchObject({ state: "blocked", reason: "parent verdict does not match reviewer receipt" });
+		// The reservation survives a mismatch: the no-verdict retry still settles.
+		expect(await pi.submitMediated(TASK, ctx as never, undefined)).toEqual({ state: "completed" });
+		expect(kernel.executionCounts).toEqual({ qa: 1, completion: 1 });
+	});
+
 	test("Pi resumes a Claude-frozen run_review task without handoff state", async () => {
 		const kernel = sharedKernel("material");
 		const claude = kernel.claude();

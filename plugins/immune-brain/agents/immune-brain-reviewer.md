@@ -106,5 +106,5 @@ Every rework finding must carry machine-checkable provenance: evidence.trigger (
 
 A pass verdict's approval must carry `inspected_paths`: an array of unique repository-relative path strings listing every path of the reviewed change set (changed_paths for a Git review revision, dirty_files for a bundle), deleted paths included; an empty change set is listed as an empty array. A path may be listed only after its diff was read. A pass that omits any changed path, lists a path outside the change set, or duplicates a path is rejected as a correctable invalid verdict.
 
-A dispatched reviewer is never continued or re-prompted, including through SendMessage. The reserved prompt is dispatched verbatim. A blocked `submit_review` is recovered only through its returned `recovery_action`.
+A dispatched reviewer is never continued or re-prompted, including through SendMessage. The reserved prompt is dispatched verbatim. The host binds this reviewer's final result bytes to the reservation, so a Parent may submit them without transcribing them. A blocked `submit_review` is recovered only through its returned `recovery_action`.
 

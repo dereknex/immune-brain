@@ -109,42 +109,11 @@ function readTaskIntentForRecord(root: string, taskId: string) {
 	return readTaskIntent(root, taskId, currentPath);
 }
 
-function extractVerdictJson(input: unknown): Record<string, unknown> | null {
-	if (typeof input === "string") {
-		const cleaned = input.split("\n").map((line) => line.trim()).filter((line) => line.startsWith("{") && line.endsWith("}")).join("");
-		if (!cleaned) return null;
-		try { return JSON.parse(cleaned) as Record<string, unknown>; } catch { return null; }
-	}
-	if (typeof input === "object" && input !== null && !Array.isArray(input)) return input as Record<string, unknown>;
-	return null;
-}
-
-function verdictFingerprint(raw: Record<string, unknown>): string {
-	return JSON.stringify({
-		contract: raw.contract ?? null,
-		role: raw.role ?? null,
-		task_id: raw.task_id ?? null,
-		snapshot_digest: raw.snapshot_digest ?? null,
-		decision: raw.decision ?? null,
-		approval: raw.approval ?? null,
-		findings: raw.findings ?? null,
-	});
-}
-
-const RELEASED_REVIEW_RECOVERY =
-	"Call advance_assurance to obtain a new Review reservation, then dispatch one fresh reviewer with the returned envelope unchanged";
-const RETAINED_REVIEW_RECOVERY =
-	"Wait for the dispatched reviewer to finish, then call submit_review again with its verdict; do not dispatch or continue another reviewer";
-const MISMATCH_REVIEW_RECOVERY =
-	"Resubmit the reviewer's verdict exactly as the reviewer returned it";
-
-function withReviewRecovery(
-	result: AssuranceSubmitReviewResult,
-	recovery_action: string,
-): AssuranceSubmitReviewResult {
-	if (result.state !== "blocked" || result.code === "verdict_invalid") return result;
-	return { ...result, recovery_action };
-}
+import {
+	extractVerdictJson,
+	submitMediatedReview,
+} from "../assurance/review_mediation";
+export { extractVerdictJson };
 
 export async function submitClaudeReview(
 	host: ClaudeReviewHost,
@@ -153,24 +122,8 @@ export async function submitClaudeReview(
 	taskId: string,
 	verdictInput: unknown,
 ): Promise<AssuranceSubmitReviewResult> {
-	if (verdictInput === undefined) throw new Error("verdict is required");
-	const observed = host.inspectReviewForTask(taskId);
-	if (!observed.ok) {
-		if (observed.release) return withReviewRecovery(coordinator.abandonReview(taskId, observed.reason), RELEASED_REVIEW_RECOVERY);
-		return { state: "blocked", reason: observed.reason, recovery_action: RETAINED_REVIEW_RECOVERY };
-	}
-	const parentValid = coordinator.isReviewVerdictValid(taskId, verdictInput);
-	if (!parentValid) return coordinator.submitReview(taskId, ctx, verdictInput);
-	const receiptValid = coordinator.isReviewVerdictValid(taskId, observed.receipt.result);
-	if (!receiptValid) {
-		return withReviewRecovery(coordinator.abandonReview(taskId, "reviewer receipt is not a valid verdict"), RELEASED_REVIEW_RECOVERY);
-	}
-	const parentJson = extractVerdictJson(verdictInput)!;
-	const receiptJson = extractVerdictJson(observed.receipt.result)!;
-	if (verdictFingerprint(parentJson) !== verdictFingerprint(receiptJson)) {
-		return { state: "blocked", reason: "parent verdict does not match reviewer receipt", recovery_action: MISMATCH_REVIEW_RECOVERY };
-	}
-	return coordinator.submitReview(taskId, ctx, verdictInput);
+	// ADR 0017: an omitted verdict applies the hook-observed reviewer receipt.
+	return submitMediatedReview(coordinator, ctx, taskId, verdictInput, () => host.inspectReviewForTask(taskId));
 }
 
 /**

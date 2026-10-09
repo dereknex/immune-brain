@@ -431,15 +431,24 @@ export function reduceTask(
 			const reviewRevision = approval.review_revision;
 			if (reviewRevision && approval.kind !== "review")
 				throw new KernelInvariantError(["review_revision is only valid on review approvals"]);
+			if (approval.reviewer_verdict_sha256 && approval.kind !== "review")
+				throw new KernelInvariantError(["reviewer_verdict_sha256 is only valid on review approvals"]);
 			if (approval.kind === "review") {
 				if (!reviewRevision)
 					throw new KernelInvariantError(["v4 review approval requires review_revision"]);
 				if (reviewRevision.base_head !== record.git_base_head)
 					throw new KernelInvariantError(["review_revision.base_head must equal the Enrollment git_base_head"]);
 			}
-			const { review_revision: storedReviewRevision, ...approvalWithoutRevision } = approval;
+				// Re-emit the optional review-only fields in the strict parser's emission
+			// order so a written attestation stays byte-identical to its parse roundtrip.
+			const {
+				review_revision: storedReviewRevision,
+				advisory_findings: storedAdvisoryFindings,
+				reviewer_verdict_sha256: storedReviewerDigest,
+				...approvalWithoutExtras
+			} = approval;
 			record.attestations.push({
-				...approvalWithoutRevision,
+				...approvalWithoutExtras,
 				acceptance_results: approval.kind === "qa"
 					? record.intent_snapshot.acceptance.map((item) => ({
 						acceptance_id: item.id,
@@ -448,6 +457,8 @@ export function reduceTask(
 					}))
 					: [],
 				...(storedReviewRevision ? { review_revision: storedReviewRevision } : {}),
+				...(storedAdvisoryFindings ? { advisory_findings: storedAdvisoryFindings } : {}),
+				...(storedReviewerDigest ? { reviewer_verdict_sha256: storedReviewerDigest } : {}),
 			});
 			appendHistory(record, action, from, approval.id, authorityAudit);
 			break;

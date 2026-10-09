@@ -272,6 +272,8 @@ export interface VerdictApplicationInput {
  verdict: AssuranceVerdict;
  invocation: InvocationToken;
  actorId: string;
+ /** ADR 0017: sha256 over the reviewer's own result bytes, bound only on review attestations. */
+ reviewer_verdict_sha256?: string;
  hooks?: { beforeCommit?: () => Promise<void>; onCommit?: () => void; afterCommit?: () => Promise<void> };
 }
 export interface VerdictAuthority {
@@ -310,6 +312,7 @@ export function createVerdictAuthority(options: {
     diff_hash: snapshot.diff_hash, actor_id: actorId, summary: verdict.approval!.summary,
     ...(snapshot.role === "review" && snapshot.review_revision ? { review_revision: snapshot.review_revision } : {}),
     ...(snapshot.role === "review" && advisories.length ? { advisory_findings: advisories } : {}),
+    ...(snapshot.role === "review" && input.reviewer_verdict_sha256 ? { reviewer_verdict_sha256: input.reviewer_verdict_sha256 } : {}),
    } : undefined;
    const op = verdict.decision === "rework" ? "request_rework" : "record_approval";
    const payload = approval ? { approval } : { findings };
