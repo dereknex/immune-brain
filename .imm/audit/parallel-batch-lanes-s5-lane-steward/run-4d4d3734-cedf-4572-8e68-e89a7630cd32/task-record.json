@@ -1,0 +1,187 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "parallel-batch-lanes-s5-lane-steward",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "parallel-batch-lanes-s5-lane-steward",
+    "goal": "Implement Slice S5 of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes): the lane-steward role is routable with its packaged mirror, an integrated clean Lane receives a release handoff, and the batch records the Lane released once its path is gone.",
+    "acceptance": [
+      {
+        "id": "PBL-S5-A1",
+        "assertion": "Per Roles and contracts of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes) (sources: user decisions D3, D4, D9, D10): lane-steward is an Internal Role with a prompt under runtime/prompts and a byte-identical packaged mirror, routed by the loop contract; the prompt states the goal and deliverable (supply a Lane on the named branch at the named base, prepare it by the project's own instructions, start one allowlisted Executor Host there with an explicit imm-run entry, return the path, release a clean integrated Lane) and reports that it cannot supply a Lane rather than improvising; the Executor Host allowlist is the constant claude-code and pi. Positive: the role resolves and its mirror matches. Negative: the prompt, the runtime and the imm-run contract contain no workspace-tool name, command, path or agent kind and assume no language or package manager; a provision handoff offers only allowlisted hosts. Bound: no new public skill is added. Agreed seams: tests/role-prompt-bridge.test.ts, tests/role-prompt-bundled-layout.test.ts, tests/loop-execution-routing.test.ts, tests/dist-docs-sync-contract.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/role-prompt-bridge.test.ts\",\n      \"tests/role-prompt-bundled-layout.test.ts\",\n      \"tests/loop-execution-routing.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "PBL-S5-A2",
+        "assertion": "Per Interfaces (release handoff) and State transitions of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes) (source: user decision D8; ADR 0013 consequence on surviving terminal evidence): after a child is integrated, its Lane is clean and its .imm/audit/<task_id>/ pair is reachable from the batch branch, the report carries a release handoff for lane-steward, and a later tick that observes the Lane path gone records the child released. Positive: release is emitted and removal is observed as released. Negative: no release handoff for a parked, failed, dirty or unintegrated Lane, and none when the audit pair is not reachable from the batch branch; the runtime itself removes no worktree and deletes no branch. Bound: a Lane that is still present stays integrated and the batch still completes. Agreed seam: tests/unattended-batch-lanes.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/parallel-batch-lanes-s5-lane-steward.md",
+      "CONTEXT.md",
+      "docs/plans/parallel-batch-lanes-s5-lane-steward.intent.json",
+      "docs/reference/workflow-and-subagents.md",
+      "docs/specs/parallel-batch-lanes.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/dist/role-prompts/lane-steward.md",
+      "plugins/immune-brain/runtime/claude/interaction.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/claude/role_agents.ts",
+      "plugins/immune-brain/runtime/loop_contract.ts",
+      "plugins/immune-brain/runtime/prompts/lane-steward.md",
+      "plugins/immune-brain/runtime/role_prompt_bridge.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/types.ts",
+      "scripts/dist-sync-manifest.ts",
+      "scripts/sync-dist-docs.ts",
+      "tests/dist-docs-sync-contract.test.ts",
+      "tests/imm-core-barrel-retirement.test.ts",
+      "tests/loop-execution-routing.test.ts",
+      "tests/packaged-contract-tool-surface.test.ts",
+      "tests/role-prompt-bridge.test.ts",
+      "tests/role-prompt-bundled-layout.test.ts",
+      "tests/unattended-batch-lanes.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/parallel-batch-lanes-s5-lane-steward.intent.json",
+    "content_hash": "sha256:47b4e76d9342cd5eda536e5d7cd8e142d4bd4a766d4617e2ed0706eeb2076283"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:7ff3219dd0c321809190d1b99e3840f0819c32a4a008023d8b014602730cde3d",
+  "git_base_head": "c27767d9147ef1da388ca41f1d5304efdfc46e74",
+  "attestations": [
+    {
+      "id": "approval-qa-075d46a8",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:47b4e76d9342cd5eda536e5d7cd8e142d4bd4a766d4617e2ed0706eeb2076283",
+      "diff_hash": "sha256:a2840ad8e231d6700aae0b62e3999fa8246c2550719c3c879808ba925132e872",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:5c38418b7e3da9c9aae2bd0083ffb57154a2080ce193badb6c258105014c4ebd",
+      "acceptance_results": [
+        {
+          "acceptance_id": "PBL-S5-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:5c38418b7e3da9c9aae2bd0083ffb57154a2080ce193badb6c258105014c4ebd"
+        },
+        {
+          "acceptance_id": "PBL-S5-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:5c38418b7e3da9c9aae2bd0083ffb57154a2080ce193badb6c258105014c4ebd"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-8d878ff7",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:47b4e76d9342cd5eda536e5d7cd8e142d4bd4a766d4617e2ed0706eeb2076283",
+      "diff_hash": "sha256:a2840ad8e231d6700aae0b62e3999fa8246c2550719c3c879808ba925132e872",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (single parent c27767d, tree ffa8a9a). lane-steward role, byte-identical mirror, allowlist-gated provision handoff and audit-gated, clean-Lane-only release handoff with observed-gone released recording satisfy PBL-S5-A1 and PBL-S5-A2 at the agreed seams; the runtime removes no worktree or branch.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "c27767d9147ef1da388ca41f1d5304efdfc46e74",
+        "review_commit": "77a1a77c2172703b1807ff24491741f4816344f8",
+        "review_tree": "ffa8a9abd6107587b79bccbaa2a2318829d86fed",
+        "manifest_digest": "sha256:04905cad9560e2bbad53d120783cd1b7f59a0b62ef182d0d44c7796ee41314c0"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-16ece4019c54-1-review-1",
+          "acceptance_id": "PBL-S5-A2",
+          "summary": "The in-flight lane report's next-step text keys on any lane-steward handoff. A release handoff now also selects 'Provide a Lane for each provision handoff', even when only executor and release handoffs exist, so the guidance is misleading. Handoff content and state are correct. Non-blocking: narrow the check to action === 'provision'.",
+          "anchor": "sha256:421ac279bbc0b62ed29e7624662799d9dc4402ad4bfdbca6af72eadedc31be66",
+          "evidence": {
+            "trigger": "Lane mode with one child enrolled (executor handoff) and another integrated, clean and audit-reachable (release handoff), with no startable child, so no provision handoff is emitted",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/unattended/batch_lanes.ts:runLaneBatch",
+              "plugins/immune-brain/runtime/unattended/batch_lanes.ts:releaseHandoffs"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "PBL-S5-A2"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:parallel-batch-lanes-s5-lane-steward:2026-10-09T00:44:23.064Z",
+      "at": "2026-10-09T00:44:23.064Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:194300287999e6ed4b96128335053c3a7c2322ce21d3f74715799f43bdb5abd5",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-91f660e81fca7a6d",
+        "issued_at": "2026-10-09T00:55:39.921Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:parallel-batch-lanes-s5-lane-steward:2026-10-09T01:13:56.706Z",
+      "at": "2026-10-09T01:13:56.706Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/parallel-batch-lanes-s5-lane-steward.intent.json"
+    },
+    {
+      "id": "record_approval:parallel-batch-lanes-s5-lane-steward:2026-10-09T01:14:14.801Z",
+      "at": "2026-10-09T01:14:14.801Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-075d46a8\naction_v2_sha256:322e8e0d9aa1c7611f9f244b44e1ea8bcf5c92e4bad1bdb9c59e2a95bd0e8612",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-09T01:14:14.801Z"
+      }
+    },
+    {
+      "id": "record_approval:parallel-batch-lanes-s5-lane-steward:2026-10-09T01:21:59.771Z",
+      "at": "2026-10-09T01:21:59.771Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-8d878ff7\naction_v2_sha256:5674ca3de0aa8b6a7456c382d9ac6273bd8bbcc60d813d39c87e711d2a84394c",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-09T01:21:59.771Z"
+      }
+    },
+    {
+      "id": "complete:parallel-batch-lanes-s5-lane-steward:2026-10-09T01:22:01.353Z",
+      "at": "2026-10-09T01:22:01.353Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:15f8abaf8e53d76a22e6bd825786d639da8d63dc95ea17d21cf29b1b81592b6d"
+    }
+  ]
+}

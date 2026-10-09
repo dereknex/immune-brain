@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "parallel-batch-lanes-s4-concurrency",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:parallel-batch-lanes-s4-concurrency:2026-10-09T00:41:55.297Z",
+  "final_record_hash": "sha256:c804bd09b527550b40edb53423b86110ce546df0028b2c05abfb6674ad48c2b9",
+  "terminalized_at": "2026-10-09T00:41:55.297Z"
+}
