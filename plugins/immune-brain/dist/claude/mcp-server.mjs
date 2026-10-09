@@ -8198,7 +8198,7 @@ function createVerdictAuthority(options, registry = createMutationAuthorityRegis
 }
 
 // plugins/immune-brain/runtime/claude/kernel_ports.ts
-import { existsSync as existsSync12, readFileSync as readFileSync14, writeFileSync as writeFileSync8 } from "node:fs";
+import { existsSync as existsSync12, readFileSync as readFileSync15, writeFileSync as writeFileSync8 } from "node:fs";
 import { execFileSync as execFileSync8 } from "node:child_process";
 import { join as join17 } from "node:path";
 
@@ -10705,7 +10705,7 @@ async function runGithubTrackerOperation(root, input, gh = createGhTransport()) 
 }
 
 // plugins/immune-brain/runtime/unattended/batch_preflight.ts
-import { existsSync as existsSync8, readdirSync as readdirSync6, readFileSync as readFileSync13 } from "node:fs";
+import { existsSync as existsSync8, readdirSync as readdirSync6, readFileSync as readFileSync14 } from "node:fs";
 import { randomUUID as randomUUID8 } from "node:crypto";
 import { join as join13 } from "node:path";
 import { spawnSync as spawnSync7 } from "node:child_process";
@@ -11339,6 +11339,84 @@ async function captureBatchReconfirmation(root, record, children) {
 // plugins/immune-brain/runtime/unattended/batch_plan.ts
 import { createHash as createHash19 } from "node:crypto";
 
+// plugins/immune-brain/runtime/local_initiative.ts
+import { lstatSync as lstatSync10, readFileSync as readFileSync13 } from "node:fs";
+import { resolve as resolve12 } from "node:path";
+var ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+var SLICE_HEADING = /^##\s+([^\s:]+)\s*:/;
+var BLOCKED_BY = /^blocked by\s*:(.*)$/i;
+var TASKS = /^tasks\s*:\s*$/i;
+var BULLET = /^[-*]\s+(.*)$/;
+function localInitiativePath(initiativeSlug) {
+  return `docs/initiatives/${initiativeSlug}.md`;
+}
+function hasLocalInitiative(root, initiativeSlug) {
+  const stat = lstatSync10(resolve12(root, localInitiativePath(initiativeSlug)), { throwIfNoEntry: false });
+  if (!stat)
+    return false;
+  if (!stat.isFile())
+    throw new Error(`${localInitiativePath(initiativeSlug)} must be a regular file`);
+  return true;
+}
+function unquote(value) {
+  return value.trim().replace(/^`(.*)`$/, "$1");
+}
+function observeLocalInitiative(root, initiativeSlug) {
+  if (!ID_PATTERN2.test(initiativeSlug))
+    throw new Error("initiative_slug is invalid");
+  const path = localInitiativePath(initiativeSlug);
+  if (!hasLocalInitiative(root, initiativeSlug))
+    throw new Error(`Local Initiative ${path} does not exist`);
+  const slices = [];
+  let inTasks = false;
+  let fence = false;
+  for (const raw of readFileSync13(resolve12(root, path), "utf8").split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line.startsWith("```")) {
+      fence = !fence;
+      continue;
+    }
+    if (fence)
+      continue;
+    const heading = SLICE_HEADING.exec(line);
+    if (heading) {
+      slices.push({ slice_id: heading[1], tasks: [], blocked_by: [] });
+      inTasks = false;
+      continue;
+    }
+    const slice = slices.at(-1);
+    if (!slice)
+      continue;
+    if (TASKS.test(line)) {
+      inTasks = true;
+      continue;
+    }
+    const blocked = BLOCKED_BY.exec(line);
+    if (blocked) {
+      slice.blocked_by.push(...blocked[1].split(",").map(unquote).filter(Boolean));
+      inTasks = false;
+      continue;
+    }
+    const bullet = BULLET.exec(line);
+    if (inTasks && bullet)
+      slice.tasks.push(unquote(bullet[1]));
+    else if (line)
+      inTasks = false;
+  }
+  if (!slices.length)
+    throw new Error(`Local Initiative ${path} declares no Slice`);
+  return {
+    contract: "immune_brain/local_initiative_observation/v1",
+    initiative_id: initiativeSlug,
+    path,
+    tasks: slices.map((slice) => {
+      if (slice.tasks.length !== 1)
+        throw new Error(`Local Initiative Slice ${slice.slice_id} must name exactly one Task to run as a batch child`);
+      return { task_id: slice.tasks[0], slice_id: slice.slice_id, blocked_by: slice.blocked_by };
+    })
+  };
+}
+
 // plugins/immune-brain/runtime/unattended/batch_schedule.ts
 var IN_FLIGHT_STATES = new Set([
   "lane_admitted",
@@ -11439,7 +11517,7 @@ function projectParallelGroups(children) {
 }
 
 // plugins/immune-brain/runtime/unattended/batch_plan.ts
-var ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+var ID_PATTERN3 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var DEFAULT_QA_FAILURE_LIMIT = 2;
 function specBindingReason(inspection) {
   if (inspection.missing.length > 0)
@@ -11463,12 +11541,14 @@ function timestamp(value, name) {
     throw new Error(`${name} must be an ISO timestamp`);
   return { milliseconds, iso: new Date(milliseconds).toISOString() };
 }
+var observeInitiative = async (root, initiativeSlug) => hasLocalInitiative(root, initiativeSlug) ? observeLocalInitiative(root, initiativeSlug) : observeGithubInitiative(root, initiativeSlug);
 function normalizeObservation(value, initiativeSlug) {
-  if (!value || value.contract !== "immune_brain/github_initiative_observation/v1")
+  const local = value?.contract === "immune_brain/local_initiative_observation/v1";
+  if (!value || !local && value.contract !== "immune_brain/github_initiative_observation/v1")
     throw new Error("tracker returned an invalid Initiative observation contract");
   if (value.initiative_id !== initiativeSlug)
     throw new Error("tracker returned an observation for another Initiative");
-  if (!Number.isSafeInteger(value.issue_number) || value.issue_number <= 0)
+  if (!local && (!Number.isSafeInteger(value.issue_number) || value.issue_number <= 0))
     throw new Error("tracker returned an invalid Initiative Issue number");
   if (!Array.isArray(value.tasks))
     throw new Error("tracker returned an invalid Initiative Task list");
@@ -11477,13 +11557,14 @@ function normalizeObservation(value, initiativeSlug) {
   const tasks = value.tasks.map((task, index) => {
     if (!task || typeof task !== "object")
       throw new Error(`tracker Task ${index} is invalid`);
-    if (!ID_PATTERN2.test(task.task_id))
+    if (!ID_PATTERN3.test(task.task_id))
       throw new Error(`tracker Task ${index} has an invalid task_id`);
-    if (!ID_PATTERN2.test(task.slice_id))
+    if (!ID_PATTERN3.test(task.slice_id))
       throw new Error(`tracker Task ${index} has an invalid slice_id`);
-    if (!Number.isSafeInteger(task.issue_number) || task.issue_number <= 0)
+    const issueNumber = task.issue_number;
+    if (!local && (!Number.isSafeInteger(issueNumber) || issueNumber <= 0))
       throw new Error(`tracker Task ${task.task_id} has an invalid Issue number`);
-    if (!Array.isArray(task.blocked_by) || task.blocked_by.some((id) => typeof id !== "string" || !ID_PATTERN2.test(id)))
+    if (!Array.isArray(task.blocked_by) || task.blocked_by.some((id) => typeof id !== "string" || !ID_PATTERN3.test(id)))
       throw new Error(`tracker Task ${task.task_id} has invalid blocked_by dependencies`);
     if (taskIds.has(task.task_id))
       throw new Error(`tracker returned duplicate Task ${task.task_id}`);
@@ -11539,8 +11620,8 @@ function budget(input, enrollableCount) {
   const qaFailureLimit = input.budget?.qa_failure_limit === undefined ? DEFAULT_QA_FAILURE_LIMIT : positiveSafeInteger(input.budget.qa_failure_limit, "budget.qa_failure_limit");
   return { max_children: maxChildren, qa_failure_limit: qaFailureLimit };
 }
-async function projectBatchPlan(root, initiativeSlug, input, readInitiative = observeGithubInitiative) {
-  if (!ID_PATTERN2.test(initiativeSlug))
+async function projectBatchPlan(root, initiativeSlug, input, readInitiative = observeInitiative) {
+  if (!ID_PATTERN3.test(initiativeSlug))
     throw new Error("initiative_slug is invalid");
   if (!input || typeof input !== "object")
     throw new Error("batch plan input is required");
@@ -11672,7 +11753,7 @@ function findResumableBatchSlugForTask(root, taskId) {
     if (!file.endsWith(".json"))
       continue;
     try {
-      const record = JSON.parse(readFileSync13(join13(batchesDir, file), "utf8"));
+      const record = JSON.parse(readFileSync14(join13(batchesDir, file), "utf8"));
       if (record?.contract !== "assurance_kernel/batch_run_state/v1" && record?.contract !== "assurance_kernel/batch_run_state/v2")
         continue;
       if (record.batch_state !== "running" && record.batch_state !== "needs_human")
@@ -11694,7 +11775,7 @@ function findExistingActiveBatch(root, initiativeSlug) {
       continue;
     let record;
     try {
-      record = JSON.parse(readFileSync13(join13(batchesDir, file), "utf8"));
+      record = JSON.parse(readFileSync14(join13(batchesDir, file), "utf8"));
     } catch {
       return { corrupt: true, path: file };
     }
@@ -11736,7 +11817,7 @@ function findSettledBatchRecord(root, initiativeSlug) {
       continue;
     let record;
     try {
-      record = JSON.parse(readFileSync13(join13(batchesDir, file), "utf8"));
+      record = JSON.parse(readFileSync14(join13(batchesDir, file), "utf8"));
     } catch {
       continue;
     }
@@ -12245,7 +12326,7 @@ import {
   constants as constants6,
   closeSync as closeSync7,
   existsSync as existsSync9,
-  lstatSync as lstatSync10,
+  lstatSync as lstatSync11,
   mkdirSync as mkdirSync7,
   openSync as openSync7,
   realpathSync as realpathSync11,
@@ -12473,7 +12554,7 @@ function ensureSecureDirectory3(root, relativePath) {
   for (const segment of segments) {
     current = join14(current, segment);
     if (existsSync9(current)) {
-      const stats = lstatSync10(current);
+      const stats = lstatSync11(current);
       if (stats.isSymbolicLink() || !stats.isDirectory()) {
         throw new Error(`${segment} exists but is not a real directory`);
       }
@@ -12487,12 +12568,12 @@ function writeFileAtomically2(root, relativePath, bytes) {
   const target = join14(root, relativePath);
   const targetDir = dirname8(target);
   ensureSecureDirectory3(root, dirname8(relativePath));
-  const stats = lstatSync10(targetDir);
+  const stats = lstatSync11(targetDir);
   if (stats.isSymbolicLink() || !stats.isDirectory()) {
     throw new Error(`${dirname8(relativePath)} is not a real directory`);
   }
   if (existsSync9(target)) {
-    const targetStats = lstatSync10(target);
+    const targetStats = lstatSync11(target);
     if (targetStats.isSymbolicLink()) {
       throw new Error(`${relativePath} is a symlink`);
     }
@@ -14861,7 +14942,7 @@ class ClaudeRuntime {
     const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: await parseTaskIntentV1(input.operation.next_intent) } : input.operation;
     const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
     const sidecar = join17(ctx.cwd, priorIntent.intent_ref.path);
-    const priorBytes = operation.op === "revise_intent" ? readFileSync14(sidecar) : null;
+    const priorBytes = operation.op === "revise_intent" ? readFileSync15(sidecar) : null;
     const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
     try {
       if (priorBytes) {
@@ -14908,7 +14989,7 @@ class ClaudeRuntime {
       root: this.cwd,
       initiative_slug: initiativeSlug,
       now,
-      readInitiative: this.readInitiative ?? observeGithubInitiative
+      readInitiative: this.readInitiative ?? observeInitiative
     });
     if (!preflight.ok) {
       return {
@@ -14928,7 +15009,7 @@ class ClaudeRuntime {
       initiative_slug: initiativeSlug,
       now,
       projection: preflight.projection,
-      readInitiative: this.readInitiative ?? observeGithubInitiative,
+      readInitiative: this.readInitiative ?? observeInitiative,
       nonce: enrollmentNonce(),
       gate: async (facts) => {
         if (reuseOnly)

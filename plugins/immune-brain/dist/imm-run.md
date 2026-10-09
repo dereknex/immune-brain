@@ -124,6 +124,15 @@ When an Initiative is referenced by its tracker Issue (e.g. `github #<number>`),
 extract `initiative_slug` from the Issue body `<!-- immune-brain:initiative-id=<slug> -->`
 marker or title prefix before invoking the tool.
 
+The Initiative's carrier decides where the children are read from. When
+`docs/initiatives/<initiative_slug>.md` exists, the Host reads that Local carrier
+and performs no GitHub operation for the plan; otherwise it reads the GitHub
+Parent Issue's native Sub-issues. A Local carrier yields one child per Slice:
+each `## <slice-id>: <result>` section names exactly one Task under `Tasks:` and
+may add one `Blocked by: <task-id>, <task-id>` line. A Slice that names no Task or
+several, or a dependency outside the Initiative, refuses the plan before any
+confirmation.
+
 Invoking it authorizes only a user-confirmed batch of already-planned child
 TaskIntents. The Host projects the batch plan from the Initiative's published
 children, excludes every `critical` child, renders the ordered child list, budget,

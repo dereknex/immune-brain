@@ -67,7 +67,7 @@ import {
 import type {
 	InitiativeObservationReader,
 } from "../unattended/types";
-import { observeGithubInitiative } from "../github_issue_tracker";
+import { observeInitiative } from "../unattended/batch_plan";
 import {
 	confirmationRef,
 	enrollmentNonce,
@@ -808,7 +808,7 @@ export class ClaudeRuntime {
 			root: this.cwd,
 			initiative_slug: initiativeSlug,
 			now,
-			readInitiative: this.readInitiative ?? observeGithubInitiative,
+			readInitiative: this.readInitiative ?? observeInitiative,
 		});
 		if (!preflight.ok) {
 			return {
@@ -831,7 +831,7 @@ export class ClaudeRuntime {
 			initiative_slug: initiativeSlug,
 			now,
 			projection: preflight.projection,
-			readInitiative: this.readInitiative ?? observeGithubInitiative,
+			readInitiative: this.readInitiative ?? observeInitiative,
 			nonce: enrollmentNonce(),
 			gate: async (facts) => {
 				// A continuation after a foreground child never opens a gate: when the

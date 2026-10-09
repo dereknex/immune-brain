@@ -1,4 +1,5 @@
 import type { GithubInitiativeObservation } from "../github_issue_tracker";
+import type { LocalInitiativeObservation } from "../local_initiative";
 
 export interface BatchPlanBudget {
 	max_children: number;
@@ -65,7 +66,7 @@ export interface BatchPlan {
 	contract: "assurance_kernel/batch_plan/v1";
 	initiative_slug: string;
 	confirmation_time: string;
-	tracker_observation: GithubInitiativeObservation;
+	tracker_observation: InitiativeObservation;
 	children: BatchPlanChild[];
 	enrollable: BatchPlanDigestChild[];
 	plan_digest: string;
@@ -80,7 +81,10 @@ export interface ProjectBatchPlanInput {
 	budget?: BatchPlanBudgetInput;
 }
 
+/** What either Initiative carrier yields: the Tasks, their Slices, and their dependencies. */
+export type InitiativeObservation = GithubInitiativeObservation | LocalInitiativeObservation;
+
 export type InitiativeObservationReader = (
 	root: string,
 	initiativeSlug: string,
-) => Promise<GithubInitiativeObservation>;
+) => Promise<InitiativeObservation>;

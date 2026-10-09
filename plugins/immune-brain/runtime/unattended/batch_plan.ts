@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { stableStringify } from "../canonical_json";
-import { observeGithubInitiative, type GithubInitiativeObservation } from "../github_issue_tracker";
+import { observeGithubInitiative } from "../github_issue_tracker";
+import { hasLocalInitiative, observeLocalInitiative } from "../local_initiative";
 import { readTaskTombstone } from "../kernel/backend_claim";
 import {
 	observeTaskIntent,
@@ -15,6 +16,7 @@ import type {
 	BatchPlanChild,
 	BatchPlanChildReason,
 	BatchPlanDigestChild,
+	InitiativeObservation,
 	InitiativeObservationReader,
 	ProjectBatchPlanInput,
 } from "./types";
@@ -58,12 +60,22 @@ function timestamp(value: unknown, name: string): { milliseconds: number; iso: s
 	return { milliseconds, iso: new Date(milliseconds).toISOString() };
 }
 
-function normalizeObservation(value: GithubInitiativeObservation, initiativeSlug: string): GithubInitiativeObservation {
-	if (!value || value.contract !== "immune_brain/github_initiative_observation/v1")
+/**
+ * The Initiative's carrier decides the reader: a Local carrier file owns its
+ * slug and is read with no GitHub operation; every other slug is a GitHub one.
+ */
+export const observeInitiative: InitiativeObservationReader = async (root, initiativeSlug) =>
+	hasLocalInitiative(root, initiativeSlug)
+		? observeLocalInitiative(root, initiativeSlug)
+		: observeGithubInitiative(root, initiativeSlug);
+
+function normalizeObservation(value: InitiativeObservation, initiativeSlug: string): InitiativeObservation {
+	const local = value?.contract === "immune_brain/local_initiative_observation/v1";
+	if (!value || (!local && value.contract !== "immune_brain/github_initiative_observation/v1"))
 		throw new Error("tracker returned an invalid Initiative observation contract");
 	if (value.initiative_id !== initiativeSlug)
 		throw new Error("tracker returned an observation for another Initiative");
-	if (!Number.isSafeInteger(value.issue_number) || value.issue_number <= 0)
+	if (!local && (!Number.isSafeInteger(value.issue_number) || value.issue_number <= 0))
 		throw new Error("tracker returned an invalid Initiative Issue number");
 	if (!Array.isArray(value.tasks)) throw new Error("tracker returned an invalid Initiative Task list");
 	const taskIds = new Set<string>();
@@ -72,7 +84,8 @@ function normalizeObservation(value: GithubInitiativeObservation, initiativeSlug
 		if (!task || typeof task !== "object") throw new Error(`tracker Task ${index} is invalid`);
 		if (!ID_PATTERN.test(task.task_id)) throw new Error(`tracker Task ${index} has an invalid task_id`);
 		if (!ID_PATTERN.test(task.slice_id)) throw new Error(`tracker Task ${index} has an invalid slice_id`);
-		if (!Number.isSafeInteger(task.issue_number) || task.issue_number <= 0)
+		const issueNumber = (task as { issue_number?: number }).issue_number;
+		if (!local && (!Number.isSafeInteger(issueNumber) || issueNumber! <= 0))
 			throw new Error(`tracker Task ${task.task_id} has an invalid Issue number`);
 		if (!Array.isArray(task.blocked_by) || task.blocked_by.some((id) => typeof id !== "string" || !ID_PATTERN.test(id)))
 			throw new Error(`tracker Task ${task.task_id} has invalid blocked_by dependencies`);
@@ -89,13 +102,15 @@ function normalizeObservation(value: GithubInitiativeObservation, initiativeSlug
 		const unknown = task.blocked_by.find((id) => !taskIds.has(id));
 		if (unknown) throw new Error(`tracker Task ${task.task_id} depends on unknown Task ${unknown}`);
 	}
-	return { ...value, tasks: tasks.sort((left, right) => compareIds(left.task_id, right.task_id)) };
+	return { ...value, tasks: tasks.sort((left, right) => compareIds(left.task_id, right.task_id)) } as InitiativeObservation;
 }
 
-function dependencyOrder(observation: GithubInitiativeObservation): GithubInitiativeObservation["tasks"] {
-	const remaining = new Map(observation.tasks.map((task) => [task.task_id, task]));
+type ObservedTask = { task_id: string; slice_id: string; blocked_by: string[] };
+
+function dependencyOrder(observation: InitiativeObservation): ObservedTask[] {
+	const remaining = new Map<string, ObservedTask>(observation.tasks.map((task) => [task.task_id, task]));
 	const done = new Set<string>();
-	const order: GithubInitiativeObservation["tasks"] = [];
+	const order: ObservedTask[] = [];
 	while (remaining.size) {
 		const ready = [...remaining.values()]
 			.filter((task) => task.blocked_by.every((id) => done.has(id)))
@@ -110,7 +125,7 @@ function dependencyOrder(observation: GithubInitiativeObservation): GithubInitia
 	return order;
 }
 
-function dependencyClosures(order: GithubInitiativeObservation["tasks"]): Map<string, string[]> {
+function dependencyClosures(order: ObservedTask[]): Map<string, string[]> {
 	const closures = new Map<string, string[]>();
 	for (const task of order) {
 		const closure = new Set<string>();
@@ -139,7 +154,7 @@ export async function projectBatchPlan(
 	root: string,
 	initiativeSlug: string,
 	input: ProjectBatchPlanInput,
-	readInitiative: InitiativeObservationReader = observeGithubInitiative,
+	readInitiative: InitiativeObservationReader = observeInitiative,
 ): Promise<BatchPlan> {
 	if (!ID_PATTERN.test(initiativeSlug)) throw new Error("initiative_slug is invalid");
 	if (!input || typeof input !== "object") throw new Error("batch plan input is required");
