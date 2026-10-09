@@ -59,8 +59,9 @@ Three facts shape the decision:
    nothing.
 4. **Lane supply is an Internal Role, not runtime code.** The `lane-steward`
    role provisions a Lane, prepares its environment by the project's own
-   conventions (no language or package manager is assumed), starts an
-   allowlisted Executor Host in it, and releases it when asked. It learns how
+   conventions (no language or package manager is assumed), and releases it
+   when asked. It starts no Host session (revised 2026-10-09, see Revision). It
+   learns how
    from the workspace tool present in its environment. Immune-Brain's runtime,
    contracts, and prompts name no such tool, command, path, or agent kind, and
    the runtime inspects no such tool's environment variables. When no Lane can
@@ -74,8 +75,9 @@ Three facts shape the decision:
    call observes every Lane through its Kernel projection, integrates settled
    children, admits offered Lanes and enrolls their children with the batch
    capability held in the coordinator process (ADR 0008 unchanged), and returns
-   `handoffs[]`. The runtime still invokes no model and polls nothing; a Lane
-   finishing is the Parent's cue to call again.
+   `handoffs[]`. The runtime still invokes no model and polls nothing; the exit
+   of an Executor Host session the Parent launched is the Parent's cue to call
+   again (revised 2026-10-09, see Revision).
 7. **Integration is serial and identity-checked.** The coordinator verifies the
    lane delivery against the lane's QA digest in the Lane itself, commits it on
    the lane branch, and builds one candidate commit for the batch branch without
@@ -93,7 +95,37 @@ Three facts shape the decision:
    failed, and unintegrated Lanes are never offered for release.
 9. **Executor Hosts are allowlisted by Immune-Brain.** Only Hosts with an
    Assurance adapter (Claude Code, Pi) may execute a Lane. Which of them is
-   available is an environment fact the steward resolves.
+   available is an environment fact the steward reports and the Parent acts on.
+
+## Revision 2026-10-09: the Parent launches and supervises Executor Hosts
+
+As first accepted, the `lane-steward` started the Executor Host and returned.
+That session had no owner: the Parent held no handle, could not stop it, and
+learned that it had ended only by calling the batch again on its own initiative.
+
+The Parent now launches each Lane's Executor Host as a Host-native background
+session it can stop and is notified about, one per Lane, and re-enters the batch
+on every session exit. The steward supplies and releases Lanes and starts
+nothing. This is a Host Loop contract (`dist/imm-run.md`, the `lane-steward`
+prompt); the runtime, the batch record and the handoff shapes are unchanged, and
+a session handle is never authority: Kernel projections in the returned report
+remain the only progress signal.
+
+The contract is stated as capabilities, because the Parent may be either
+supported Host and the two differ: a supervised session is a separate Host
+process rooted in the Lane (so its Kernel root is the Lane's store; an
+in-process subagent shares the Parent's root and does not qualify), started
+non-interactively, whose exit notifies the Parent and which the Parent can stop.
+Parent Host and Executor Host are chosen independently from the allowlist. A
+Parent Host that cannot offer such a session launches nothing and reports the
+handoff to the user, which is the behavior before this revision; it never
+substitutes a detached job or serial in-place work. `dist/imm-run.md` carries
+the per-Host mapping.
+
+Rejected for this revision: persisting session identity or heartbeats in the
+batch record (it would add the execution lifecycle ADR 0005 keeps out of the
+runtime, and a recorded session can be stale where a Kernel claim cannot), and
+having the runtime spawn Hosts (§3 and ADR 0005 §6 stand).
 
 ## Rejected Alternatives
 

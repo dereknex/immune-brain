@@ -29,10 +29,10 @@ All Slices are `material`. Order is strictly serial: every Slice edits `runtime/
 
 ### Out of scope
 
-- Runtime-owned worktree creation, switching, deletion, environment preparation, or Host launch.
+- Runtime-owned worktree creation, switching, deletion, environment preparation, or Host launch. Host launch belongs to the Parent, not the runtime.
 - Any workspace-tool name, command, path, or agent kind in runtime code, contracts, or prompts; reading such a tool's environment variables.
 - Several active runs in one Authority Store; changes to `runtime/kernel/storage.ts` claim ownership.
-- A second batch tool, a new public skill, runtime model invocation, polling, or detached jobs.
+- A second batch tool, a new public skill, runtime model invocation, polling, or detached jobs. A Parent-supervised Executor Host session is not a detached job.
 - Pushing, pull requests, automatic resolution of parked children, `critical` children in a batch.
 - Scheduled, headless, or CI-hosted batches (still deferred by ADR 0005).
 
@@ -153,8 +153,9 @@ A lane batch that settles `needs_human` has stopped and keeps its Lane; its repo
 
 ### Roles and contracts
 
-- `lane-steward` prompt states goal and deliverable only: supply a Lane on the named branch at the named base, prepare it by the project's own instructions, start one allowlisted Executor Host there with an explicit `imm-run` entry, return the path; on release, remove a clean integrated Lane. It defers all mechanics to the workspace tool's own guidance in the environment and reports "cannot supply" rather than improvising. `[U]` D3, D4, D9
+- `lane-steward` prompt states goal and deliverable only: supply a Lane on the named branch at the named base, prepare it by the project's own instructions, start no Host session, return the path; on release, remove a clean integrated Lane. It defers all mechanics to the workspace tool's own guidance in the environment and reports "cannot supply" rather than improvising. `[U]` D3, D4, D9
 - `dist/imm-run.md` gains a parallel-batch section route; no new skill. `[U]` D10
+- The Parent launches each Lane's Executor Host as a Host-native background session it can stop and is notified about, keeps one session per Lane, re-enters the batch on each session exit, and reads progress only from the returned report. The session is defined by capability (separate Host process rooted in the Lane, non-interactive `imm-run` entry, exit notification, stoppable), Parent Host and Executor Host are chosen independently from the allowlist, and a Parent Host without that capability launches nothing and reports the handoff to the user. The runtime still launches nothing and polls nothing. `[U]` ADR 0013 §4, §6 (revised 2026-10-09)
 - Executor Host allowlist (`claude-code`, `pi`) is a constant beside the role definition. `[U]` D9
 
 ### Compatibility and rollback

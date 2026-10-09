@@ -52,7 +52,9 @@ that role's tools. On Pi the agent configuration belongs to the Pi user and the
 read-only boundary remains prompt text; the Pi dispatch rules are unchanged.
 
 Before a child dispatch, read the [Subagent Dispatch Protocol](docs/reference/subagent-dispatch-protocol.md#authorization-authority).
-Never load an internal role as a public Skill or spawn another loop process.
+Never load an internal role as a public Skill or spawn another loop process;
+the only exception is a Lane's Executor Host under
+[Lane Executor Supervision](#lane-executor-supervision).
 The standalone `imm-pr-fix`, `imm-doc-prune`, and `imm-doc-slim` are host-native
 maintenance entries, never dispatched as the Loop role. Internal `test-fixer`
 and `pr-fix` repairs remain bounded by the enrolled TaskIntent.
@@ -190,6 +192,61 @@ disjoint sibling keeps moving. A lost Lane parks as `batch_lane_lost`, and
 `max_parallel` is refused with `batch_parallel_mismatch`. A Lane holds no batch
 state and its Host session never re-enters the batch.
 
+#### Lane Executor Supervision
+
+The Parent launches and supervises every Lane's Executor Host; no other role
+starts one. This is the one case in which the Parent starts another Loop
+process, and it starts it only in an admitted Lane. For each `executor` handoff
+whose Lane has no live session of its own, the Parent starts exactly one
+**supervised session** and keeps its handle. Handoffs of one report start
+together; a Lane never has two sessions.
+
+A supervised session is defined by what it guarantees, not by a Host's name:
+
+- It is a separate Host process whose working directory is the Lane, so its
+  Kernel root is the Lane's own Authority Store. A subagent that runs inside the
+  Parent's process shares the Parent's root and is never a Lane Executor.
+- It starts non-interactively with an explicit `imm-run` entry for that
+  `task_id`, and nothing else.
+- Its exit returns control to the Parent without the Parent polling or sleeping.
+- The Parent can stop it.
+
+The Parent Host and the Executor Host are chosen independently. The Executor
+Host is any allowlisted Host (`claude-code` or `pi`) that the `lane-steward`
+reported available in that Lane; prefer the Parent's own Host type, and use the
+other when only it is available. The child's QA and Review then run under that
+Executor Host's own Assurance adapter in the Lane. How the Parent obtains a
+supervised session depends on the Parent Host:
+
+| Parent Host | Supervised session | Stop |
+| --- | --- | --- |
+| Claude Code | The Host's background command execution, running the Executor Host's non-interactive entry in the Lane; its completion notice re-invokes the Parent. The `Agent` tool does not qualify. | The Host's own stop for that background task |
+| Pi | A background process facility from the Pi user's own configuration that notifies the Parent on exit. Pi ships none that Immune-Brain may assume. | That facility's own stop |
+| Any Host without one | None. The Parent launches nothing. | — |
+
+When the Parent Host offers no supervised session, or no allowlisted Executor
+Host is available in the Lane, the Parent does not substitute a detached job, an
+in-process subagent or serial in-place work. It reports each `executor` handoff
+to the user with the Lane path, `task_id` and the `imm-run` entry to start
+there, and calls `start_unattended_batch` again when the user says a Lane has
+finished. Supervision is per Lane: Lanes that can be supervised are, and the
+rest are reported.
+
+Supervision is event-driven. Each session exit is the cue to call
+`start_unattended_batch` again with the same Initiative, and that report is the
+only progress signal: a child's state and `next_obligation` come from its Lane's
+Kernel projection, never from the session's output or exit status. When the
+report still carries an `executor` handoff for a child whose session has ended,
+the Parent starts it once more; after a second end without Kernel progress, or
+when the report shows the child waiting on a user decision or an open Review
+reservation, it stops relaunching and reports that child to the user while its
+siblings continue. The Parent stops a session only when the user asks, when the
+report shows its child parked or settled, or before handing that Lane to a
+`release`; stopping a session changes no Kernel or batch state, so the next
+report states what remains. Handles are not authority: after an interruption
+the Parent calls `start_unattended_batch` first and launches only for the
+handoffs it returns.
+
 After a child is integrated, its Lane is clean and its `.imm/audit/<task-id>/`
 pair is reachable from the batch branch, the report carries a
 `{ role: "lane-steward", action: "release" }` handoff for that Lane. A parked,
@@ -198,9 +255,8 @@ branch, is never offered for release. The runner removes no worktree and deletes
 no branch: it records the child `released` only when a later tick observes the
 Lane path gone, and a Lane that is still present stays `integrated` while the
 batch still completes. The `lane-steward` internal role handles both handoffs; it
-launches only an allowlisted Executor Host (`claude-code` or `pi`), follows the
-project's own instructions to prepare a Lane, and reports "cannot supply" rather
-than improvising.
+follows the project's own instructions to prepare a Lane, starts no Host session,
+and reports "cannot supply" rather than improvising.
 
 ## Decisions and Recovery
 

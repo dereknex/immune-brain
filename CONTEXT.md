@@ -139,7 +139,7 @@ An already-existing Git worktree on the coordinator repository's common director
 _Avoid_: workspace, clone, feature branch
 
 **Lane Steward**:
-The internal role that supplies a Lane when a lane-mode batch reports a provision handoff and removes a clean, integrated Lane when it reports a release handoff. It holds no Kernel authority, launches only an allowlisted Executor Host, and reports "cannot supply" instead of improvising; the runner itself records a Lane released only when it observes the path gone.
+The internal role that supplies a Lane when a lane-mode batch reports a provision handoff and removes a clean, integrated Lane when it reports a release handoff. It holds no Kernel authority, starts no Host session (the Parent launches and supervises each Lane's allowlisted Executor Host), and reports "cannot supply" instead of improvising; the runner itself records a Lane released only when it observes the path gone.
 _Avoid_: workspace manager, provisioner
 
 **HEAD Lineage**:
