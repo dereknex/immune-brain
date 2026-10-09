@@ -1,5 +1,0 @@
----
-"immune-brain": minor
----
-
-A Parent that runs inside Herdr now holds each Lane's Executor Host in its own Herdr tab, without asking: it creates a tab in its own workspace rooted in the Lane, starts the allowlisted Host there, submits the `imm-run` entry, and waits on the agent's state as a background command. A tab stopped at a workspace-trust, sign-in or permission dialog is reported to the user and never answered by the Parent; the Parent closes no tab, and the user closes them. Outside Herdr the earlier behavior is unchanged. The lane-mode `executor` handoff now also carries `lane_path`. The runtime and the `lane-steward` role still name no workspace tool (ADR 0013, revised 2026-10-09).
