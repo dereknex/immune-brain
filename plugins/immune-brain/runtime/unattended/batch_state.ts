@@ -14,7 +14,14 @@ export type BatchRunState =
 	| "completed"
 	| "budget_stopped"
 	| "failed"
-	| "rejected";
+	| "rejected"
+	/**
+	 * Retired by an explicit literal-user disposition after the batch plan moved
+	 * past it. Terminal, and not a failure of the batch's own: the record, its
+	 * children, its commits and its branch stay as evidence, and the retired
+	 * authorization is never reused for the revised plan.
+	 */
+	| "superseded";
 
 export type BatchChildRunState =
 	| "pending"
@@ -147,7 +154,7 @@ const CHILD_RUN_STATES: ReadonlySet<string> = new Set([
 	"skipped_blocked",
 ]);
 
-const BATCH_RUN_STATES: ReadonlySet<string> = new Set([
+export const BATCH_RUN_STATES: ReadonlySet<string> = new Set([
 	"prepared",
 	"running",
 	"needs_human",
@@ -155,6 +162,7 @@ const BATCH_RUN_STATES: ReadonlySet<string> = new Set([
 	"budget_stopped",
 	"failed",
 	"rejected",
+	"superseded",
 ]);
 
 const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -288,7 +296,8 @@ function validateRecordShape(value: unknown, batchId: string): asserts value is 
 	if (
 		(record.batch_state === "budget_stopped" ||
 			record.batch_state === "failed" ||
-			record.batch_state === "rejected") &&
+			record.batch_state === "rejected" ||
+			record.batch_state === "superseded") &&
 		record.children.some((child) => child.state === "enrolled" || child.state === "settled")
 	)
 		throw new Error(`batch run state ${batchId} is ${String(record.batch_state)} but a child is still mid-flight`);
@@ -391,6 +400,25 @@ function writeFileAtomically(root: string, relative: string, bytes: string): voi
 export function replaceBatchRunState(root: string, expected: Buffer, next: BatchRunStateRecord, validate: () => void): BatchRunStateRecord {
 	const path = statePath(next.batch_id);
 	validateRecordShape(next, next.batch_id);
+	return withKernelStoreLock(root, () => {
+		if (!readSecureProjectBytes(root, path).equals(expected)) throw new Error("batch state CAS mismatch");
+		validate();
+		const stored = withoutRetiredClock({ ...next, updated_at: new Date().toISOString() });
+		writeFileAtomically(root, path, canonicalBytes(stored));
+		return stored;
+	});
+}
+
+/** Replace a record of either version only after a locked expected-byte check. */
+export function replaceAnyBatchRunState(
+	root: string,
+	expected: Buffer,
+	next: AnyBatchRunStateRecord,
+	validate: () => void,
+): AnyBatchRunStateRecord {
+	const path = statePath(next.batch_id);
+	if (isLaneBatchRecord(next)) validateLaneRecordShape(next, next.batch_id);
+	else validateRecordShape(next, next.batch_id);
 	return withKernelStoreLock(root, () => {
 		if (!readSecureProjectBytes(root, path).equals(expected)) throw new Error("batch state CAS mismatch");
 		validate();
@@ -561,7 +589,8 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 		child.state === "settled" ||
 		child.state === "lane_committed";
 	if (
-		(record.batch_state === "budget_stopped" || record.batch_state === "failed" || record.batch_state === "rejected") &&
+		(record.batch_state === "budget_stopped" || record.batch_state === "failed" || record.batch_state === "rejected" ||
+			record.batch_state === "superseded") &&
 		record.children.some(inFlight)
 	)
 		throw new Error(`batch run state ${batchId} is ${String(record.batch_state)} but a child is still mid-flight`);
@@ -759,5 +788,11 @@ function canonicalReportBytes(report: PersistableReport): string {
 
 /** All terminal batch states; needs_human is a park, not terminal. */
 export function isTerminalBatchState(state: BatchRunState): boolean {
-	return state === "completed" || state === "budget_stopped" || state === "failed" || state === "rejected";
+	return (
+		state === "completed" ||
+		state === "budget_stopped" ||
+		state === "failed" ||
+		state === "rejected" ||
+		state === "superseded"
+	);
 }

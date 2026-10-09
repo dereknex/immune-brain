@@ -26,7 +26,7 @@ import { pathMatchesScope } from "../workspace_scope";
 import { captureBatchReconfirmation, retainReconfirmation, ownUnpersistedBatchHead, type ReconfirmationSnapshot } from "./batch_reconfirmation";
 import { projectBatchPlan } from "./batch_plan";
 import { batchReason, type BatchReasonKey } from "./batch_reasons";
-import { isLaneBatchRecord, isTerminalBatchState, readAnyBatchRunState, type AnyBatchRunStateRecord, type BatchRunStateRecord } from "./batch_state";
+import { BATCH_RUN_STATES, isLaneBatchRecord, isTerminalBatchState, readAnyBatchRunState, type AnyBatchRunStateRecord, type BatchRunStateRecord } from "./batch_state";
 import type {
 	BatchPlanBudget,
 	BatchPlanChild,
@@ -126,7 +126,7 @@ export function findResumableBatchSlugForTask(root: string, taskId: string): str
 
 /**
  * The batch record for this initiative, or a corruption marker. A terminal
- * record (completed, budget_stopped, failed, rejected) is not active: returning
+ * record (completed, budget_stopped, failed, rejected, superseded) is not active: returning
  * it would let a settled batch block or be resumed by a later run.
  */
 export type BatchRecordLookup =
@@ -150,15 +150,9 @@ export function findExistingActiveBatch(root: string, initiativeSlug: string): B
 		const candidate = record as AnyBatchRunStateRecord;
 		if (candidate?.contract !== "assurance_kernel/batch_run_state/v1" && candidate?.contract !== "assurance_kernel/batch_run_state/v2") continue;
 		if (candidate.initiative_slug !== initiativeSlug) continue;
-		const validStates = new Set([
-			"prepared",
-			"running",
-			"needs_human",
-			"completed",
-			"budget_stopped",
-			"failed",
-			"rejected",
-		]);
+		// Every state the state owner accepts, so a retired record reads as settled
+		// instead of failing this lookup closed as an unknown state.
+		const validStates = new Set<string>(BATCH_RUN_STATES);
 		if (
 			typeof candidate.batch_id !== "string" ||
 			typeof candidate.base_head !== "string" ||
@@ -660,7 +654,7 @@ export async function projectBatchPreflight(
 	if (activeRecord && !isLaneBatchRecord(activeRecord) && activeRecord.plan_digest !== planSurface.surface.plan_digest) {
 		try { reconfirmation = await captureBatchReconfirmation(root, activeRecord, planSurface.surface.recovery_children); }
 		catch { return reject("plan_projection_failed", activeRecord.commits.length
-			? `batch plan changed after ${activeRecord.commits.length} recorded child commit(s). The old authorization cannot execute the revised plan. Preserve the batch record, report, commit evidence and audit; inspect each remaining child's Kernel run before an explicit imm-run handoff. Do not re-enroll settled children or manufacture batch trailers. The old batch remains parked for disposition; this rejection does not terminate it.`
+			? `batch plan changed after ${activeRecord.commits.length} recorded child commit(s). The old authorization cannot execute the revised plan. Preserve the batch record, report, commit evidence and audit; inspect each remaining child's Kernel run before an explicit imm-run handoff. Do not re-enroll settled children or manufacture batch trailers. To close the parked record explicitly, dispose it with the retire_stale_batch Tool for this Initiative; a child that is still mid-flight must settle first. This rejection neither terminates the old batch nor authorizes the revised plan.`
 			: "batch plan reconfirmation is not eligible"); }
 	}
 

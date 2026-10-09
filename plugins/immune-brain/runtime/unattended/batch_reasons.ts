@@ -34,7 +34,9 @@ export type BatchReasonKey =
 	| "repository_became_unreadable"
 	| "head_moved"
 	| "cancelled_before_execution"
-	| "batch_run_rejected";
+	| "batch_run_rejected"
+	| "stale_batch_absent"
+	| "stale_batch_in_flight";
 
 export interface BatchReasonSpec {
 	readonly state: "rejected" | "cancelled" | "blocked";
@@ -169,6 +171,16 @@ export const BATCH_REASONS: Readonly<Record<BatchReasonKey, BatchReasonSpec>> = 
 		// The runner owns the specific reason; the fallback is this entry's own text.
 		reason: (detail: string) => detail || "batch run rejected",
 		recovery_action: "delete or rename the conflicting branch, or commit working changes and retry in the current Host",
+	},
+	stale_batch_absent: {
+		state: "rejected",
+		reason: (detail: string) => `no retirable batch record to dispose: ${detail}`,
+		recovery_action: "start a batch for this Initiative, or inspect the batch records under .imm/state/batches in the current Host",
+	},
+	stale_batch_in_flight: {
+		state: "blocked",
+		reason: (detail: string) => `a batch child is still mid-flight, so the record cannot be disposed: ${detail}`,
+		recovery_action: "settle or stop the in-flight child through its own task, then dispose the batch in the current Host",
 	},
 });
 

@@ -48,7 +48,8 @@ var PRIVILEGED_OPERATIONS = [
   "request_authorization",
   "approve_breaking_intent_revision",
   "stop",
-  "start_unattended_batch"
+  "start_unattended_batch",
+  "retire_stale_batch"
 ];
 var RECOVERY_ACTIONS = {
   interaction_not_opened: "retry through a fresh native gate in the current Host",
@@ -9489,6 +9490,16 @@ var BATCH_REASONS = Object.freeze({
     state: "rejected",
     reason: (detail) => detail || "batch run rejected",
     recovery_action: "delete or rename the conflicting branch, or commit working changes and retry in the current Host"
+  },
+  stale_batch_absent: {
+    state: "rejected",
+    reason: (detail) => `no retirable batch record to dispose: ${detail}`,
+    recovery_action: "start a batch for this Initiative, or inspect the batch records under .imm/state/batches in the current Host"
+  },
+  stale_batch_in_flight: {
+    state: "blocked",
+    reason: (detail) => `a batch child is still mid-flight, so the record cannot be disposed: ${detail}`,
+    recovery_action: "settle or stop the in-flight child through its own task, then dispose the batch in the current Host"
   }
 });
 function batchReason(key, detail = "") {
@@ -10736,7 +10747,8 @@ var BATCH_RUN_STATES = new Set([
   "completed",
   "budget_stopped",
   "failed",
-  "rejected"
+  "rejected",
+  "superseded"
 ]);
 var ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 function isCanonicalTimestamp(value) {
@@ -10817,7 +10829,7 @@ function validateRecordShape(value, batchId) {
     if (child.state === "committed" && child.commit !== null && !record.commits.includes(child.commit))
       throw new Error(`batch run state ${batchId} child ${child.task_id} commit is missing from commits`);
   }
-  if ((record.batch_state === "budget_stopped" || record.batch_state === "failed" || record.batch_state === "rejected") && record.children.some((child) => child.state === "enrolled" || child.state === "settled"))
+  if ((record.batch_state === "budget_stopped" || record.batch_state === "failed" || record.batch_state === "rejected" || record.batch_state === "superseded") && record.children.some((child) => child.state === "enrolled" || child.state === "settled"))
     throw new Error(`batch run state ${batchId} is ${String(record.batch_state)} but a child is still mid-flight`);
   if (record.batch_state === "completed" && record.children.some((child) => child.state !== "committed"))
     throw new Error(`batch run state ${batchId} is completed but a child is not committed`);
@@ -10902,6 +10914,21 @@ function writeFileAtomically(root, relative, bytes) {
 function replaceBatchRunState(root, expected, next, validate) {
   const path = statePath(next.batch_id);
   validateRecordShape(next, next.batch_id);
+  return withKernelStoreLock(root, () => {
+    if (!readSecureProjectBytes(root, path).equals(expected))
+      throw new Error("batch state CAS mismatch");
+    validate();
+    const stored = withoutRetiredClock({ ...next, updated_at: new Date().toISOString() });
+    writeFileAtomically(root, path, canonicalBytes(stored));
+    return stored;
+  });
+}
+function replaceAnyBatchRunState(root, expected, next, validate) {
+  const path = statePath(next.batch_id);
+  if (isLaneBatchRecord(next))
+    validateLaneRecordShape(next, next.batch_id);
+  else
+    validateRecordShape(next, next.batch_id);
   return withKernelStoreLock(root, () => {
     if (!readSecureProjectBytes(root, path).equals(expected))
       throw new Error("batch state CAS mismatch");
@@ -11018,7 +11045,7 @@ function validateLaneRecordShape(value, batchId) {
       throw new Error(`batch run state ${batchId} child ${child.task_id} commit is missing from commits`);
   }
   const inFlight = (child) => child.state === "lane_admitted" || child.state === "enrolled" || child.state === "settled" || child.state === "lane_committed";
-  if ((record.batch_state === "budget_stopped" || record.batch_state === "failed" || record.batch_state === "rejected") && record.children.some(inFlight))
+  if ((record.batch_state === "budget_stopped" || record.batch_state === "failed" || record.batch_state === "rejected" || record.batch_state === "superseded") && record.children.some(inFlight))
     throw new Error(`batch run state ${batchId} is ${String(record.batch_state)} but a child is still mid-flight`);
   if (record.batch_state === "completed" && record.children.some((child) => child.state !== "integrated" && child.state !== "released"))
     throw new Error(`batch run state ${batchId} is completed but a child is not integrated`);
@@ -11111,7 +11138,7 @@ function canonicalReportBytes(report) {
 `;
 }
 function isTerminalBatchState(state) {
-  return state === "completed" || state === "budget_stopped" || state === "failed" || state === "rejected";
+  return state === "completed" || state === "budget_stopped" || state === "failed" || state === "rejected" || state === "superseded";
 }
 
 // plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts
@@ -11784,15 +11811,7 @@ function findExistingActiveBatch(root, initiativeSlug) {
       continue;
     if (candidate.initiative_slug !== initiativeSlug)
       continue;
-    const validStates = new Set([
-      "prepared",
-      "running",
-      "needs_human",
-      "completed",
-      "budget_stopped",
-      "failed",
-      "rejected"
-    ]);
+    const validStates = new Set(BATCH_RUN_STATES);
     if (typeof candidate.batch_id !== "string" || typeof candidate.base_head !== "string" || !Array.isArray(candidate.children) || !validStates.has(candidate.batch_state)) {
       return { corrupt: true, path: file };
     }
@@ -12149,7 +12168,7 @@ async function projectBatchPreflight(options) {
     try {
       reconfirmation = await captureBatchReconfirmation(root, activeRecord, planSurface.surface.recovery_children);
     } catch {
-      return reject("plan_projection_failed", activeRecord.commits.length ? `batch plan changed after ${activeRecord.commits.length} recorded child commit(s). The old authorization cannot execute the revised plan. Preserve the batch record, report, commit evidence and audit; inspect each remaining child's Kernel run before an explicit imm-run handoff. Do not re-enroll settled children or manufacture batch trailers. The old batch remains parked for disposition; this rejection does not terminate it.` : "batch plan reconfirmation is not eligible");
+      return reject("plan_projection_failed", activeRecord.commits.length ? `batch plan changed after ${activeRecord.commits.length} recorded child commit(s). The old authorization cannot execute the revised plan. Preserve the batch record, report, commit evidence and audit; inspect each remaining child's Kernel run before an explicit imm-run handoff. Do not re-enroll settled children or manufacture batch trailers. To close the parked record explicitly, dispose it with the retire_stale_batch Tool for this Initiative; a child that is still mid-flight must settle first. This rejection neither terminates the old batch nor authorizes the revised plan.` : "batch plan reconfirmation is not eligible");
     }
   }
   const projection = {
@@ -13324,6 +13343,7 @@ var TERMINAL_NEXT_ACTIONS = {
   budget_stopped: "The child budget stopped new enrollments; re-confirm to continue under a new authorization.",
   failed: "A lineage failure stopped the batch; inspect the failing child and the branch state.",
   rejected: "The batch was rejected before any enrollment; correct the stated reason and re-confirm.",
+  superseded: "The plan moved past this record and an explicit disposition retired it; it grants no handoff and no child delivery.",
   needs_human: LANE_NEEDS_HUMAN_NEXT_ACTION,
   running: "The batch is still running; no terminal report is due yet.",
   prepared: "The batch is prepared but not started."
@@ -13847,6 +13867,7 @@ var TERMINAL_NEXT_ACTIONS2 = {
   budget_stopped: "The child budget stopped new enrollments; re-confirm to continue under a new authorization.",
   failed: "A commit or lineage failure stopped the batch; inspect the failing child and the branch state.",
   rejected: "The batch was rejected before any enrollment; correct the stated reason and re-confirm.",
+  superseded: "The plan moved past this record and an explicit disposition retired it; it grants no handoff and no child delivery.",
   needs_human: "A parked child needs a human decision; resolve it, then re-confirm to continue.",
   running: "The batch is still running; no terminal report is due yet.",
   prepared: "The batch is prepared but not started."
@@ -14504,6 +14525,119 @@ function createBatchKernelPort(input) {
       return overriddenOwnsTaskClaim(taskId);
     }
   };
+}
+
+// plugins/immune-brain/runtime/unattended/batch_disposition.ts
+var SERIAL_IN_FLIGHT = new Set(["enrolled", "settled"]);
+var LANE_IN_FLIGHT = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
+var RETIRE_REASON = "Retired by an explicit literal-user disposition: the batch plan moved past this record, so its authorization could neither reconfirm nor continue. " + "Recorded child commits, child states and the batch branch are preserved as evidence. " + "Children this batch never executed carry no commit, no batch trailer and no approval; nothing infers their delivery from this record.";
+var RETIRE_NEXT_ACTION = "The Initiative has no active batch. Run each remaining child with imm-run under its own authorization, or start a new batch for this Initiative after checking out its batch branch.";
+function childEvidenceOf(record) {
+  if (record.contract === "assurance_kernel/batch_run_state/v2")
+    return record.children.map((child) => ({
+      task_id: child.task_id,
+      slice_id: child.slice_id,
+      state: child.state,
+      commit: child.commit,
+      lane_branch: child.lane?.branch ?? null
+    }));
+  return record.children.map((child) => ({
+    task_id: child.task_id,
+    slice_id: child.slice_id,
+    state: child.state,
+    commit: child.commit,
+    lane_branch: null
+  }));
+}
+function inFlightChildOf(record) {
+  const inFlight = record.contract === "assurance_kernel/batch_run_state/v2" ? LANE_IN_FLIGHT : SERIAL_IN_FLIGHT;
+  return record.children.find((child) => inFlight.has(child.state)) ?? null;
+}
+function readStaleBatchLookup(root, initiativeSlug) {
+  const found = findExistingActiveBatch(root, initiativeSlug);
+  if (found === null) {
+    const settled = findSettledBatchRecord(root, initiativeSlug);
+    if (settled)
+      return { kind: "terminal", batch_id: settled.batch_id };
+    return { kind: "none" };
+  }
+  if (found.corrupt)
+    return { kind: "corrupt", path: found.path };
+  const record = found.record;
+  if (isTerminalBatchState(record.batch_state))
+    return { kind: "terminal", batch_id: record.batch_id };
+  const inFlight = inFlightChildOf(record);
+  if (inFlight)
+    return { kind: "in_flight", batch_id: record.batch_id, task_id: inFlight.task_id };
+  return {
+    kind: "retirable",
+    record,
+    facts: {
+      batch_id: record.batch_id,
+      initiative_slug: record.initiative_slug,
+      batch_state: record.batch_state,
+      plan_digest: record.plan_digest,
+      branch: record.branch ?? `imm/${record.initiative_slug}`,
+      base_head: record.base_head,
+      confirmation_time: record.confirmation_time,
+      recorded_commits: [...record.commits],
+      children: childEvidenceOf(record)
+    }
+  };
+}
+async function retireStaleBatch(options) {
+  const { root, initiative_slug: initiativeSlug, now } = options;
+  const lookup = readStaleBatchLookup(root, initiativeSlug);
+  if (lookup.kind === "none")
+    return { outcome: "rejected", rejection: batchReason("stale_batch_absent", `Initiative ${initiativeSlug} has no active batch`) };
+  if (lookup.kind === "corrupt")
+    return { outcome: "rejected", rejection: batchReason("batch_state_unreadable", lookup.path) };
+  if (lookup.kind === "terminal")
+    return {
+      outcome: "rejected",
+      rejection: batchReason("stale_batch_absent", `batch ${lookup.batch_id} already reached a terminal state`)
+    };
+  if (lookup.kind === "in_flight")
+    return {
+      outcome: "rejected",
+      rejection: batchReason("stale_batch_in_flight", `batch ${lookup.batch_id}, child ${lookup.task_id}`)
+    };
+  const { record, facts } = lookup;
+  const expected = readSecureProjectBytes(root, batchStatePath(record.batch_id));
+  const decision = await options.gate(facts);
+  if (decision.kind === "host_rejection")
+    return { outcome: "host_rejection", value: decision.value };
+  if (!readSecureProjectBytes(root, batchStatePath(record.batch_id)).equals(expected))
+    return { outcome: "rejected", rejection: batchReason("plan_changed", record.batch_id) };
+  const retired = { ...record, batch_state: "superseded" };
+  const stored = replaceAnyBatchRunState(root, expected, retired, () => {
+    if (!readSecureProjectBytes(root, batchStatePath(record.batch_id)).equals(expected))
+      throw new Error("batch state changed before the disposition was applied");
+  });
+  const report = stored.contract === "assurance_kernel/batch_run_state/v2" ? writeBatchRunReport(root, {
+    contract: "assurance_kernel/batch_run_report/v1",
+    batch_id: stored.batch_id,
+    initiative_slug: stored.initiative_slug,
+    batch_state: stored.batch_state,
+    max_parallel: stored.max_parallel,
+    children: stored.children,
+    commits: stored.commits,
+    reason: RETIRE_REASON,
+    handoffs: [],
+    next_action: RETIRE_NEXT_ACTION,
+    created_at: now
+  }) : writeBatchRunReport(root, {
+    contract: "assurance_kernel/batch_run_report/v1",
+    batch_id: stored.batch_id,
+    initiative_slug: stored.initiative_slug,
+    batch_state: stored.batch_state,
+    children: stored.children,
+    commits: stored.commits,
+    reason: RETIRE_REASON,
+    next_action: RETIRE_NEXT_ACTION,
+    created_at: now
+  });
+  return { outcome: "retired", batch_id: stored.batch_id, record: stored, report };
 }
 
 // plugins/immune-brain/runtime/claude/kernel_ports.ts
@@ -15207,6 +15341,81 @@ class ClaudeRuntime {
       report
     };
   }
+  async retireStaleBatch(initiativeSlug, meta) {
+    throwIfCancelled(meta.signal);
+    const probe = probeHost(this.env, process.platform, this.hostVersion);
+    if (!probe.ok)
+      throw new NativeAuthorityError("unsupported_host", probe.reason);
+    if (!this.requestConfirmation)
+      throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
+    const outcome = await retireStaleBatch({
+      root: this.cwd,
+      initiative_slug: initiativeSlug,
+      now: new Date().toISOString(),
+      gate: async (facts) => {
+        let confirmationResult;
+        try {
+          confirmationResult = await this.requestConfirmation({
+            operation: "retire_stale_batch",
+            initiativeSlug,
+            toolCallId: meta.toolCallId,
+            batchDisposition: {
+              batch_id: facts.batch_id,
+              batch_state: facts.batch_state,
+              batch_branch: facts.branch,
+              plan_digest: facts.plan_digest,
+              recorded_commits: facts.recorded_commits.length,
+              children: facts.children.map((child) => ({
+                task_id: child.task_id,
+                slice_id: child.slice_id,
+                state: child.state,
+                commit: child.commit,
+                lane_branch: child.lane_branch
+              }))
+            },
+            signal: meta.signal
+          });
+        } catch (err) {
+          if (meta.signal?.aborted)
+            return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
+          if (err instanceof NativeAuthorityError) {
+            if (err.reasonCode === "unsupported_host")
+              throw err;
+            if (err.reasonCode === "user_cancelled") {
+              return {
+                kind: "host_rejection",
+                value: { state: "cancelled", reason: err.message, recovery_action: err.recoveryAction }
+              };
+            }
+            return {
+              kind: "host_rejection",
+              value: { state: "rejected", reason: err.message, recovery_action: err.recoveryAction }
+            };
+          }
+          return {
+            kind: "host_rejection",
+            value: batchReason("confirmation_failed", err instanceof Error ? err.message : String(err))
+          };
+        }
+        if (confirmationResult.decision === "cancel" && meta.signal?.aborted)
+          return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
+        if (meta.signal?.aborted)
+          return { kind: "host_rejection", value: batchReason("cancelled_before_execution") };
+        if (confirmationResult.decision === "decline")
+          return { kind: "host_rejection", value: batchReason("confirmation_declined") };
+        if (confirmationResult.decision === "cancel")
+          return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
+        if (confirmationResult.decision !== "accept")
+          return { kind: "host_rejection", value: batchReason("confirmation_no_decision") };
+        return { kind: "confirmed", request_id: confirmationResult.requestId };
+      }
+    });
+    if (outcome.outcome === "host_rejection")
+      return outcome.value;
+    if (outcome.outcome === "rejected")
+      return outcome.rejection;
+    return { state: "retired", batch_id: outcome.batch_id, report: outcome.report };
+  }
 }
 
 // plugins/immune-brain/runtime/claude/mcp_server.ts
@@ -15221,6 +15430,7 @@ var TOOLS = [
   { name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
   { name: "stop", description: "Stop the active task with literal-user authority.", privileged: true },
   { name: "start_unattended_batch", description: "Start an unattended serial batch run for an Initiative after native confirmation.", privileged: true },
+  { name: "retire_stale_batch", description: "Retire an Initiative's parked or drifted batch record to the terminal superseded state after native confirmation.", privileged: true },
   { name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false },
   { name: "resolve_finding", description: "Resolve one open blocking or advisory finding whose cause is fixed and verified.", privileged: false },
   { name: "refute_finding", description: "Refute one open finding by binding the fresh passing QA attestation that contradicts it.", privileged: false }
@@ -15232,18 +15442,20 @@ function listMcpTools() {
     inputSchema: {
       type: "object",
       properties: {
-        ...tool.name === "start_unattended_batch" ? {
+        ...tool.name === "start_unattended_batch" || tool.name === "retire_stale_batch" ? {
           initiative_slug: { type: "string" },
-          max_parallel: { type: "integer", minimum: 1 },
-          lane_offers: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: { task_id: { type: "string" }, path: { type: "string" } },
-              required: ["task_id", "path"],
-              additionalProperties: false
+          ...tool.name === "start_unattended_batch" ? {
+            max_parallel: { type: "integer", minimum: 1 },
+            lane_offers: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: { task_id: { type: "string" }, path: { type: "string" } },
+                required: ["task_id", "path"],
+                additionalProperties: false
+              }
             }
-          }
+          } : {}
         } : {
           task_id: { type: "string" },
           ...tool.name === "approve_breaking_intent_revision" || tool.name === "revise_intent" ? { next_intent: { type: "object" } } : {},
@@ -15253,7 +15465,7 @@ function listMcpTools() {
           ...tool.name === "refute_finding" ? { finding_id: { type: "string" }, attestation_id: { type: "string" } } : {}
         }
       },
-      required: tool.name === "start_unattended_batch" ? ["initiative_slug"] : tool.name === "submit_review" ? ["task_id", "verdict"] : tool.name === "resolve_finding" ? ["task_id", "finding_id"] : tool.name === "refute_finding" ? ["task_id", "finding_id", "attestation_id"] : tool.name === "revise_intent" ? ["task_id", "next_intent"] : ["task_id"]
+      required: tool.name === "start_unattended_batch" || tool.name === "retire_stale_batch" ? ["initiative_slug"] : tool.name === "submit_review" ? ["task_id", "verdict"] : tool.name === "resolve_finding" ? ["task_id", "finding_id"] : tool.name === "refute_finding" ? ["task_id", "finding_id", "attestation_id"] : tool.name === "revise_intent" ? ["task_id", "next_intent"] : ["task_id"]
     },
     annotations: tool.privileged ? privilegedAnnotations() : { readOnlyHint: tool.name === "status" }
   }));
@@ -15321,6 +15533,30 @@ function createMcpRuntime(options = {}) {
           ...maxParallel !== undefined ? { max_parallel: maxParallel } : {},
           ...laneOffers !== undefined ? { lane_offers: laneOffers } : {}
         });
+      }
+      if (name === "retire_stale_batch") {
+        const initiativeSlug = String(args.initiative_slug ?? "");
+        if (!initiativeSlug)
+          throw new Error("initiative_slug is required");
+        if ("native_decision" in args)
+          throw new Error("native_decision cannot be supplied in tool arguments");
+        if (!negotiatedVersion)
+          throw new NativeAuthorityError("unsupported_host", "Claude Code version is unavailable");
+        if (!negotiatedInteractive) {
+          throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
+        }
+        const probe = probeHost(options.env ?? process.env, process.platform, negotiatedVersion);
+        if (!probe.ok)
+          throw new NativeAuthorityError("unsupported_host", probe.reason);
+        const toolMeta = {
+          sessionId: meta.sessionId ?? connectionId,
+          toolCallId: meta.toolCallId ?? `call-${name}`,
+          taskId: initiativeSlug,
+          initiativeSlug,
+          interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
+          signal: meta.signal
+        };
+        return runtime.retireStaleBatch(initiativeSlug, toolMeta);
       }
       const taskId = String(args.task_id ?? "");
       if (!taskId)
@@ -15534,6 +15770,32 @@ async function writeReply(output, reply) {
   });
 }
 function elicitationParams(input) {
+  if (input.operation === "retire_stale_batch") {
+    const d = input.batchDisposition;
+    const details = [
+      `Operation: retire_stale_batch`,
+      `Initiative: ${input.initiativeSlug}`,
+      d ? `Batch: ${d.batch_id}` : null,
+      d ? `Batch state: ${d.batch_state}` : null,
+      d ? `Batch branch: ${d.batch_branch}` : null,
+      d ? `Plan digest: ${d.plan_digest}` : null,
+      d ? `Recorded child commits: ${d.recorded_commits}` : null,
+      d ? `Children (${d.children.length}):
+${d.children.map((child) => `  - ${child.task_id} (${child.slice_id}) [state: ${child.state}]${child.commit ? ` [commit: ${child.commit}]` : " [no commit]"}${child.lane_branch ? ` [lane: ${child.lane_branch}]` : ""}`).join(`
+`)}` : null,
+      "Retiring writes this record to the terminal superseded state. Child states, recorded commits and the batch branch are preserved as evidence; nothing is deleted and no batch trailer or approval is manufactured.",
+      "A child without a commit was never executed by this batch: it carries no delivery evidence, and the retired authorization is never reused for a revised plan.",
+      "After retiring, run each remaining child with imm-run under its own authorization, or start a new batch for this Initiative."
+    ].filter(Boolean);
+    return {
+      mode: "form",
+      message: `Retire this stale batch record for ${input.initiativeSlug}?
+
+${details.join(`
+`)}`,
+      requestedSchema: { type: "object", properties: {} }
+    };
+  }
   if (input.operation === "start_unattended_batch") {
     const b = input.batchDetails;
     const details = [

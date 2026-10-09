@@ -58,6 +58,8 @@ import {
 } from "../unattended/batch_runner";
 import { createBatchKernelPort } from "../unattended/batch_kernel_port";
 import type { LaneOffer } from "../unattended/batch_lanes";
+import { retireStaleBatch } from "../unattended/batch_disposition";
+import type { BatchLaneRunReport } from "../unattended/batch_state";
 import {
 	createBatchAuthorityRegistry,
 } from "../kernel/batch_authority";
@@ -285,6 +287,7 @@ export interface ClaudeRuntimeOptions {
  */
 type ClaudeBatchStartResult =
 	| { state: "started"; batch_id: string; report: BatchRunReport }
+	| { state: "retired"; batch_id: string; report: BatchRunReport | BatchLaneRunReport }
 	| { state: "rejected"; reason: string; recovery_action: string }
 	| { state: "cancelled"; reason: string; recovery_action: string }
 	| { state: "blocked"; reason: string; recovery_action: string };
@@ -993,6 +996,85 @@ export class ClaudeRuntime {
 			batch_id: batchId,
 			report,
 		};
+	}
+
+	/**
+	 * The batch disposition. One explicit literal-user decision retires a record
+	 * the plan moved past: the terminal superseded state and its report preserve
+	 * every child state, recorded commit and the batch branch, and no child is
+	 * re-enrolled, handed off, or credited with delivery it never had.
+	 */
+	async retireStaleBatch(initiativeSlug: string, meta: ToolMeta): Promise<ClaudeBatchStartResult> {
+		throwIfCancelled(meta.signal);
+		const probe = probeHost(this.env, process.platform, this.hostVersion);
+		if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
+		// The disposition always opens a gate, so it needs a confirmation port.
+		if (!this.requestConfirmation)
+			throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
+		const outcome = await retireStaleBatch<ClaudeBatchStartResult>({
+			root: this.cwd,
+			initiative_slug: initiativeSlug,
+			now: new Date().toISOString(),
+			gate: async (facts) => {
+				let confirmationResult: { decision: NativeDecision; requestId: string };
+				try {
+					confirmationResult = await this.requestConfirmation!({
+						operation: "retire_stale_batch",
+						initiativeSlug,
+						toolCallId: meta.toolCallId,
+						batchDisposition: {
+							batch_id: facts.batch_id,
+							batch_state: facts.batch_state,
+							batch_branch: facts.branch,
+							plan_digest: facts.plan_digest,
+							recorded_commits: facts.recorded_commits.length,
+							children: facts.children.map((child) => ({
+								task_id: child.task_id,
+								slice_id: child.slice_id,
+								state: child.state,
+								commit: child.commit,
+								lane_branch: child.lane_branch,
+							})),
+						},
+						signal: meta.signal,
+					});
+				} catch (err) {
+					if (meta.signal?.aborted)
+						return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
+					if (err instanceof NativeAuthorityError) {
+						if (err.reasonCode === "unsupported_host") throw err;
+						if (err.reasonCode === "user_cancelled") {
+							return {
+								kind: "host_rejection",
+								value: { state: "cancelled", reason: err.message, recovery_action: err.recoveryAction },
+							};
+						}
+						return {
+							kind: "host_rejection",
+							value: { state: "rejected", reason: err.message, recovery_action: err.recoveryAction },
+						};
+					}
+					return {
+						kind: "host_rejection",
+						value: batchReason("confirmation_failed", err instanceof Error ? err.message : String(err)),
+						};
+				}
+				if (confirmationResult.decision === "cancel" && meta.signal?.aborted)
+					return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
+				if (meta.signal?.aborted)
+					return { kind: "host_rejection", value: batchReason("cancelled_before_execution") };
+				if (confirmationResult.decision === "decline")
+					return { kind: "host_rejection", value: batchReason("confirmation_declined") };
+				if (confirmationResult.decision === "cancel")
+					return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
+				if (confirmationResult.decision !== "accept")
+					return { kind: "host_rejection", value: batchReason("confirmation_no_decision") };
+				return { kind: "confirmed", request_id: confirmationResult.requestId };
+			},
+		});
+		if (outcome.outcome === "host_rejection") return outcome.value;
+		if (outcome.outcome === "rejected") return outcome.rejection;
+		return { state: "retired", batch_id: outcome.batch_id, report: outcome.report };
 	}
 }
 

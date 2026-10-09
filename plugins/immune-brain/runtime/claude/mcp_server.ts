@@ -28,6 +28,7 @@ export const TOOLS = [
 	{ name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
 	{ name: "stop", description: "Stop the active task with literal-user authority.", privileged: true },
 	{ name: "start_unattended_batch", description: "Start an unattended serial batch run for an Initiative after native confirmation.", privileged: true },
+	{ name: "retire_stale_batch", description: "Retire an Initiative's parked or drifted batch record to the terminal superseded state after native confirmation.", privileged: true },
 	{ name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false },
 	{ name: "resolve_finding", description: "Resolve one open blocking or advisory finding whose cause is fixed and verified.", privileged: false },
 	{ name: "refute_finding", description: "Refute one open finding by binding the fresh passing QA attestation that contradicts it.", privileged: false },
@@ -40,20 +41,24 @@ export function listMcpTools() {
 		inputSchema: {
 			type: "object",
 			properties: {
-				...(tool.name === "start_unattended_batch"
+				...(tool.name === "start_unattended_batch" || tool.name === "retire_stale_batch"
 					? {
 						initiative_slug: { type: "string" },
-						max_parallel: { type: "integer", minimum: 1 },
-						lane_offers: {
-							type: "array",
-							items: {
-								type: "object",
-								properties: { task_id: { type: "string" }, path: { type: "string" } },
-								required: ["task_id", "path"],
-								additionalProperties: false,
-							},
-						},
-					}
+						...(tool.name === "start_unattended_batch"
+							? {
+									max_parallel: { type: "integer", minimum: 1 },
+									lane_offers: {
+										type: "array",
+										items: {
+											type: "object",
+											properties: { task_id: { type: "string" }, path: { type: "string" } },
+											required: ["task_id", "path"],
+											additionalProperties: false,
+										},
+									},
+								}
+							: {}),
+						}
 					: {
 						task_id: { type: "string" },
 						...(tool.name === "approve_breaking_intent_revision" || tool.name === "revise_intent" ? { next_intent: { type: "object" } } : {}),
@@ -63,7 +68,7 @@ export function listMcpTools() {
 						...(tool.name === "refute_finding" ? { finding_id: { type: "string" }, attestation_id: { type: "string" } } : {}),
 					}),
 			},
-			required: tool.name === "start_unattended_batch"
+			required: tool.name === "start_unattended_batch" || tool.name === "retire_stale_batch"
 				? ["initiative_slug"]
 				: tool.name === "submit_review"
 					? ["task_id", "verdict"]
@@ -155,6 +160,26 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 					...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
 					...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),
 				});
+			}
+			if (name === "retire_stale_batch") {
+				const initiativeSlug = String(args.initiative_slug ?? "");
+				if (!initiativeSlug) throw new Error("initiative_slug is required");
+				if ("native_decision" in args) throw new Error("native_decision cannot be supplied in tool arguments");
+				if (!negotiatedVersion) throw new NativeAuthorityError("unsupported_host", "Claude Code version is unavailable");
+				if (!negotiatedInteractive) {
+					throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
+				}
+				const probe = probeHost(options.env ?? process.env, process.platform, negotiatedVersion);
+				if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
+				const toolMeta: ToolMeta = {
+					sessionId: meta.sessionId ?? connectionId,
+					toolCallId: meta.toolCallId ?? `call-${name}`,
+					taskId: initiativeSlug,
+					initiativeSlug,
+					interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
+					signal: meta.signal,
+				};
+				return runtime.retireStaleBatch(initiativeSlug, toolMeta);
 			}
 			const taskId = String(args.task_id ?? "");
 			if (!taskId) throw new Error("task_id is required");
@@ -381,6 +406,34 @@ async function writeReply(output: Writable, reply: JsonRpc): Promise<void> {
 }
 
 export function elicitationParams(input: NativeConfirmationInput) {
+	if (input.operation === "retire_stale_batch") {
+		const d = input.batchDisposition;
+		const details = [
+			`Operation: retire_stale_batch`,
+			`Initiative: ${input.initiativeSlug}`,
+			d ? `Batch: ${d.batch_id}` : null,
+			d ? `Batch state: ${d.batch_state}` : null,
+			d ? `Batch branch: ${d.batch_branch}` : null,
+			d ? `Plan digest: ${d.plan_digest}` : null,
+			d ? `Recorded child commits: ${d.recorded_commits}` : null,
+			d
+				? `Children (${d.children.length}):\n${d.children
+						.map(
+							(child) =>
+								`  - ${child.task_id} (${child.slice_id}) [state: ${child.state}]${child.commit ? ` [commit: ${child.commit}]` : " [no commit]"}${child.lane_branch ? ` [lane: ${child.lane_branch}]` : ""}`,
+						)
+						.join("\n")}`
+				: null,
+			"Retiring writes this record to the terminal superseded state. Child states, recorded commits and the batch branch are preserved as evidence; nothing is deleted and no batch trailer or approval is manufactured.",
+			"A child without a commit was never executed by this batch: it carries no delivery evidence, and the retired authorization is never reused for a revised plan.",
+			"After retiring, run each remaining child with imm-run under its own authorization, or start a new batch for this Initiative.",
+		].filter(Boolean);
+		return {
+			mode: "form",
+			message: `Retire this stale batch record for ${input.initiativeSlug}?\n\n${details.join("\n")}`,
+			requestedSchema: { type: "object", properties: {} },
+		};
+	}
 	if (input.operation === "start_unattended_batch") {
 		const b = input.batchDetails;
 		const details = [

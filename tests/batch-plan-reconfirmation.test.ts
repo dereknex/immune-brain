@@ -290,9 +290,11 @@ describe("bounded batch plan reconfirmation", () => {
 		const result = await projectBatchPreflight({ root: f.root, initiative_slug: f.slug });
 		expect(result.ok).toBe(false);
 		if (result.ok) throw new Error("expected refusal");
-		expect(result.reason).toContain("recorded child commit");
-		expect(result.reason).toContain("does not terminate");
+		expect(result.reason).toContain("recorded child commit(s)");
+		expect(result.reason).toContain("neither terminates the old batch");
 		expect(result.reason).toContain("Do not re-enroll settled children");
+		// The refusal now names the supported exit instead of leaving the record parked forever.
+		expect(result.reason).toContain("retire_stale_batch");
 		expect(snapshot(f.root)).toEqual(before);
 		expect(f.gates()).toBe(1);
 	}, 20000);

@@ -592,10 +592,12 @@ describe("unattended batch contract text", () => {
 			recovery_action: "retry through a fresh native gate in the current Host",
 		});
 
-		// The opt-in never runs on its own: nothing in the shipped extension starts
-		// a batch outside the registered Tool.
+		// The opt-in never runs on its own: the shipped extension registers only the
+		// batch Tools, and the disposition Tool never starts a batch — it retires one
+		// parked record behind its own literal-user gate.
 		const piToolRegistrations = piExtension.match(/registerTool\(/g) ?? [];
-		expect(piToolRegistrations.length).toBe(1);
+		expect(piToolRegistrations.length).toBe(2);
+		expect(piExtension).toContain('name: "retire_stale_batch"');
 	});
 
 	it("declares no batch authority tier beyond the Enrolled TaskIntent", () => {

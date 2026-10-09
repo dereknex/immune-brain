@@ -6,6 +6,7 @@ export const PRIVILEGED_OPERATIONS = [
 	"approve_breaking_intent_revision",
 	"stop",
 	"start_unattended_batch",
+	"retire_stale_batch",
 ] as const;
 
 export type PrivilegedOperation = (typeof PRIVILEGED_OPERATIONS)[number];
@@ -88,6 +89,15 @@ export interface NativeConfirmationInput {
 			parallel_groups: string[][];
 			serialized: Array<{ task_id: string; overlaps_with: string[] }>;
 		};
+	};
+	/** Present only for a batch disposition: the record the user is asked to retire. */
+	batchDisposition?: {
+		batch_id: string;
+		batch_state: string;
+		batch_branch: string;
+		plan_digest: string;
+		recorded_commits: number;
+		children: Array<{ task_id: string; slice_id: string; state: string; commit: string | null; lane_branch: string | null }>;
 	};
 	signal?: AbortSignal;
 }

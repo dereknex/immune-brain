@@ -875,7 +875,7 @@ describe("batch run state persistence", () => {
 	});
 
 	it("terminal batch states are terminal, needs_human is not", () => {
-		for (const state of ["completed", "budget_stopped", "failed", "rejected"] as const)
+		for (const state of ["completed", "budget_stopped", "failed", "rejected", "superseded"] as const)
 			expect(isTerminalBatchState(state)).toBe(true);
 		expect(isTerminalBatchState("needs_human")).toBe(false);
 		expect(isTerminalBatchState("running")).toBe(false);
@@ -2320,6 +2320,8 @@ describe("shared batch preflight projection", () => {
 			head_moved: ["Git HEAD moved after native confirmation", "review the current workspace and retry through a fresh native gate in the current Host"],
 			cancelled_before_execution: ["user cancelled before batch execution", "wait for a fresh literal-user request"],
 			batch_run_rejected: ["<detail>", "delete or rename the conflicting branch, or commit working changes and retry in the current Host"],
+			stale_batch_absent: ["no retirable batch record to dispose: <detail>", "start a batch for this Initiative, or inspect the batch records under .imm/state/batches in the current Host"],
+			stale_batch_in_flight: ["a batch child is still mid-flight, so the record cannot be disposed: <detail>", "settle or stop the in-flight child through its own task, then dispose the batch in the current Host"],
 		};
 		expect(Object.keys(BATCH_REASONS).sort()).toEqual(Object.keys(expected).sort());
 		for (const [key, [reason, recoveryAction]] of Object.entries(expected)) {

@@ -26,6 +26,9 @@ import {
 	authorizeBatch,
 	projectBatchPreflight,
 } from "../runtime/unattended/batch_preflight";
+import { retireStaleBatch, type StaleBatchFacts } from "../runtime/unattended/batch_disposition";
+import type { BatchLaneRunReport } from "../runtime/unattended/batch_state";
+
 import {
 	presentTaskRail,
 	renderStructuredCall,
@@ -305,6 +308,69 @@ export async function executePiUnattendedBatch(
 	};
 }
 
+export type PiRetireStaleBatchResult =
+	| { state: "retired"; batch_id: string; report: BatchRunReport | BatchLaneRunReport }
+	| { state: "rejected" | "cancelled" | "blocked"; reason: string; recovery_action: string };
+
+/**
+ * The gate text for one batch disposition. Every fact rendered is the record's
+ * own evidence: what it delivered, what it never executed, and what retiring
+ * does and does not claim. Nothing here is a readiness certificate.
+ */
+function retireConfirmationDetails(facts: StaleBatchFacts): {
+	title: string;
+	summary: string;
+	details: string;
+} {
+	return {
+		title: `Retire Stale Batch: ${facts.initiative_slug}`,
+		summary: `Batch: ${facts.batch_id}\nState: ${facts.batch_state}\nBatch branch: ${facts.branch}\nPlan digest: ${facts.plan_digest}\nRecorded child commits: ${facts.recorded_commits.length}\nConfirmed at: ${facts.confirmation_time}`,
+		details: `Children (${facts.children.length}):\n${facts.children
+			.map(
+				(child) =>
+					`  - ${child.task_id} (${child.slice_id}) [state: ${child.state}]${child.commit ? ` [commit: ${child.commit}]` : " [no commit]"}${child.lane_branch ? ` [lane: ${child.lane_branch}]` : ""}`,
+			)
+			.join("\n")}\n\nRetiring writes this record to the terminal superseded state. Child states, recorded commits and the batch branch are preserved as evidence; nothing is deleted and no batch trailer or approval is manufactured.\n\nA child without a commit was never executed by this batch: it carries no delivery evidence, and the retired authorization is never reused for a revised plan.\n\nAfter retiring, run each remaining child with imm-run under its own authorization, or start a new batch for this Initiative.`,
+	};
+}
+
+export async function executePiRetireStaleBatch(options: {
+	root: string;
+	initiativeSlug: string;
+	signal?: AbortSignal;
+	confirmBatch: (details: { title: string; summary: string; details: string; signal?: AbortSignal }) => Promise<"accept" | "decline" | "cancel">;
+}): Promise<PiRetireStaleBatchResult> {
+	const { root, initiativeSlug, signal } = options;
+	const outcome = await retireStaleBatch({
+		root,
+		initiative_slug: initiativeSlug,
+		now: new Date().toISOString(),
+		gate: async (facts) => {
+			const details = retireConfirmationDetails(facts);
+			let decision: "accept" | "decline" | "cancel";
+			try {
+				decision = await options.confirmBatch({ ...details, signal });
+			} catch (err) {
+				if (signal?.aborted) return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
+				return {
+					kind: "host_rejection",
+					value: batchReason("confirmation_failed", err instanceof Error ? err.message : String(err)),
+				};
+			}
+			if (decision === "cancel" || signal?.aborted)
+				return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
+			if (decision === "decline")
+				return { kind: "host_rejection", value: batchReason("confirmation_declined") };
+			if (decision !== "accept")
+				return { kind: "host_rejection", value: batchReason("confirmation_no_decision") };
+			return { kind: "confirmed", request_id: randomUUID() };
+		},
+	});
+	if (outcome.outcome === "host_rejection") return outcome.value;
+	if (outcome.outcome === "rejected") return outcome.rejection;
+	return { state: "retired", batch_id: outcome.batch_id, report: outcome.report };
+}
+
 /**
  * Injectable seams for the batch Tool. Production passes nothing and gets the
  * real Initiative reader, Kernel port and Git port; tests drive the registered
@@ -431,6 +497,105 @@ export default function (
 		renderCall(args, theme) {
 			const params = args as { initiative_slug?: string };
 			return renderStructuredCall("start_unattended_batch", "start", params.initiative_slug, theme);
+		},
+		renderResult(result, _options, theme) {
+			return renderStructuredResult(
+				result as Parameters<typeof renderStructuredResult>[0],
+				theme,
+			);
+		},
+	});
+	// The batch disposition: one explicit literal-user decision that closes a
+	// batch the plan moved past, preserving its evidence instead of leaving the
+	// record parked forever or deleting it by hand. Grants no handoff.
+	pi.registerTool({
+		name: "retire_stale_batch",
+		label: "Retire stale batch",
+		description: "Retire an Initiative's parked or drifted batch record to the terminal superseded state after native confirmation.",
+		promptSnippet: "Retire stale batch: invoke once in foreground after the stale batch record is inspected.",
+		promptGuidelines: [
+			"Call only after inspecting the batch record; execute once in the foreground and consume the direct terminal result.",
+			"Do not run this Tool in background, poll for completion, or issue a cancel subcommand.",
+		],
+		parameters: Type.Object({
+			initiative_slug: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }),
+		}, { additionalProperties: false }),
+		execute: async (
+			_toolCallId: string,
+			params: { initiative_slug: string },
+			signal: AbortSignal | undefined,
+			_onUpdate: unknown,
+			ctx: ExtensionContext,
+		) => {
+			const { initiative_slug: initiativeSlug } = params;
+			if (ctx.mode !== "tui") {
+				const refusal = nonInteractiveRefusal();
+				throwToolFailure({
+					tool: "imm_canary_enrollment",
+					task_id: initiativeSlug,
+					operation: "retire_stale_batch",
+					state: "blocked",
+					code: "unsupported_host",
+					message: refusal.reason,
+					next_action: refusal.recovery_action,
+				});
+			}
+
+			const result = await executePiRetireStaleBatch({
+				root: ctx.cwd,
+				initiativeSlug,
+				signal,
+				confirmBatch: async (details) => {
+					presentTaskRail(ctx, {
+						task_id: initiativeSlug,
+						state: "Approval required",
+						result: details.title,
+						next: "Review batch record evidence",
+					});
+					const selected = await requestAuthorityDialog(
+						pi,
+						ctx,
+						{
+							attention_id: randomUUID(),
+						task_id: initiativeSlug,
+							reason: "enrollment",
+							label: details.title,
+						},
+						{
+							title: details.title,
+							summary: details.summary,
+							details: details.details,
+							signal: details.signal,
+							actions: [
+								{ value: "confirm", label: "Retire batch record", description: "Write the terminal superseded state and its report" },
+								{ value: "decline", label: "Keep batch parked", description: "Leave the batch record and its authorization unchanged" },
+								{ value: "cancel", label: "Cancel", description: "Leave repository and authority unchanged" },
+							],
+						},
+					);
+					return mapDialogSelection(selected);
+				},
+			});
+
+			if (result.state !== "retired") {
+				throwToolFailure({
+					tool: "imm_canary_enrollment",
+					task_id: initiativeSlug,
+					operation: "retire_stale_batch",
+					state: result.state === "blocked" ? "blocked" : "failed",
+					code: `batch_${result.state}`,
+					message: result.reason,
+					next_action: result.recovery_action,
+				});
+			}
+			return {
+				content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+				details: result,
+			};
+		},
+		renderCall(args, theme) {
+			const params = args as { initiative_slug?: string };
+			return renderStructuredCall("retire_stale_batch", "retire", params.initiative_slug, theme);
 		},
 		renderResult(result, _options, theme) {
 			return renderStructuredResult(

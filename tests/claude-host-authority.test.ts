@@ -1520,32 +1520,34 @@ describe("claude host resolve_finding", () => {
 	test("the pre-existing tools and the privileged set include start_unattended_batch", () => {
 		// resolve_finding and start_unattended_batch are additive, so no existing client sees a
 		// reordered or re-annotated surface for prior tools.
-		expect(listMcpTools().map((tool) => tool.name)).toEqual([
-			"status",
-			"enroll",
-			"advance_assurance",
-			"submit_review",
-			"request_authorization",
-			"revise_intent",
-			"approve_breaking_intent_revision",
-			"stop",
-			"start_unattended_batch",
-			"repair_authority_state",
-			"resolve_finding",
-			"refute_finding",
-		]);
-		expect([...PRIVILEGED_OPERATIONS]).toEqual([
-			"enroll",
-			"request_authorization",
-			"approve_breaking_intent_revision",
-			"stop",
-			"start_unattended_batch",
-		]);
-		const submitReview = listMcpTools().find((tool) => tool.name === "submit_review");
-		expect(submitReview?.inputSchema.required).toEqual(["task_id", "verdict"]);
-		for (const name of ["enroll", "request_authorization", "approve_breaking_intent_revision", "stop", "start_unattended_batch"]) {
-			expect(listMcpTools().find((tool) => tool.name === name)?.annotations).toEqual({ destructiveHint: true });
-		}
+			expect(listMcpTools().map((tool) => tool.name)).toEqual([
+				"status",
+				"enroll",
+				"advance_assurance",
+				"submit_review",
+				"request_authorization",
+				"revise_intent",
+				"approve_breaking_intent_revision",
+				"stop",
+				"start_unattended_batch",
+				"retire_stale_batch",
+				"repair_authority_state",
+				"resolve_finding",
+				"refute_finding",
+			]);
+			expect([...PRIVILEGED_OPERATIONS]).toEqual([
+				"enroll",
+				"request_authorization",
+				"approve_breaking_intent_revision",
+				"stop",
+				"start_unattended_batch",
+				"retire_stale_batch",
+			]);
+			const submitReview = listMcpTools().find((tool) => tool.name === "submit_review");
+			expect(submitReview?.inputSchema.required).toEqual(["task_id", "verdict"]);
+			for (const name of ["enroll", "request_authorization", "approve_breaking_intent_revision", "stop", "start_unattended_batch", "retire_stale_batch"]) {
+				expect(listMcpTools().find((tool) => tool.name === name)?.annotations).toEqual({ destructiveHint: true });
+			}
 	});
 
 	test("publishes an ordinary refute_finding tool that actually refutes the finding", async () => {

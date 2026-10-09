@@ -354,6 +354,7 @@ const TERMINAL_NEXT_ACTIONS: Record<string, string> = {
 	budget_stopped: "The child budget stopped new enrollments; re-confirm to continue under a new authorization.",
 	failed: "A lineage failure stopped the batch; inspect the failing child and the branch state.",
 	rejected: "The batch was rejected before any enrollment; correct the stated reason and re-confirm.",
+	superseded: "The plan moved past this record and an explicit disposition retired it; it grants no handoff and no child delivery.",
 	needs_human: LANE_NEEDS_HUMAN_NEXT_ACTION,
 	running: "The batch is still running; no terminal report is due yet.",
 	prepared: "The batch is prepared but not started.",
