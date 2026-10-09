@@ -14,7 +14,7 @@ Immune-Brain brings a structured engineering workflow to AI coding assistants (*
 - **Explicit trigger when rigor matters** — When you want engineering discipline, invoke `imm-brainstorm`, `imm-planner`, or `imm-run`.
 - **Plans become trackable tasks** (`TaskIntent` + `TaskRecord`) — Progress lives on disk (Git + `.imm/`), surviving restarts and context wipes.
 - **Quality is enforced by code, not promises** — Automated QA and isolated review subagents must pass before a task can complete.
-- **Ready Initiatives can run as a batch** — One confirmed batch authorization lets `imm-run` work through a published Initiative's children serially, while every child is still enrolled, QA'd, reviewed, and settled on its own.
+- **Ready Initiatives can run as a batch (serial or parallel lanes)** — One confirmed batch authorization lets the batch advance published children without manual handoffs per task; supports default serial progression or opt-in parallel lanes (Git worktree physical isolation, scope-disjoint scheduling, and integration verification guards), while every child is still enrolled, QA'd, reviewed, and settled on its own.
 
 Pi and Claude Code are the supported hosts. Undeclared adapters remain unsupported. Minimum Claude Code is `2.1.236`, the lowest version verified with interactive server-initiated MCP elicitation. Current real-Host evidence is recorded in [Claude native elicitation conformance](docs/verification/claude-native-elicitation-authority-conformance.md); historical reports remain under [docs/verification/archive/](docs/verification/archive/). Either host can use the model provider you configure — Immune-Brain works on top of Kernel authority, not a vendor chat.
 
@@ -118,7 +118,7 @@ Immune-Brain provides two clean modes: **Host-native** for daily coding, and **M
 | Clear goal, want formal plan & specs | `/imm-planner` "Plan the webhook feature" | → `imm-planner` writes `TaskIntent` + Specs with testable acceptance checks |
 | Plan confirmed, ready to build & verify | `/imm-run` | → Executor builds within scope → deterministic QA verifies → isolated Review checks → task settles |
 | Session interrupted or resuming a task | `/imm-run` | → Resumes existing task seamlessly from on-disk state (`.imm/`) |
-| Ready Initiative to run unattended | "Run initiative `<slug>` unattended" | → Host's `start_unattended_batch`: one native confirmation covers ordered plan digest, children run serially |
+| Ready Initiative to run unattended (serial or parallel lanes) | "Run initiative `<slug>` unattended" (optionally with `--max-parallel 4` or `Lane max parallel`) | → Host's `start_unattended_batch`: one native confirmation binds the plan digest. Runs serially by default, or opt-in parallel Git worktree lanes with `max_parallel` |
 | Cross-host workflow (Claude plan + Pi code) | Run `/imm-planner` in Claude Code, switch to Pi and run `/imm-run` | → Staged Spec & TaskIntent are shared on disk; Pi confirms via native TUI and executes loop |
 | PR has review comments or failing CI | `/imm-pr-fix` on that PR | → Standalone repair: minimal scoped fix in place, no managed task created |
 | Project docs out of date | `/imm-doc-prune` | → Read-only audit; deletes only user-approved stale docs from manifest |
@@ -220,7 +220,7 @@ Install `grill-me` into your project or global agent environment using the offic
 # Add grill-me from mattpocock/skills
 npx skills@latest add mattpocock/skills --skill grill-me
 
-# Or install the full suite (includes to-prd, to-issues, wayfinder, tdd, etc.)
+# Or install the full suite
 npx skills@latest add mattpocock/skills
 ```
 
@@ -244,14 +244,6 @@ npx skills@latest add mattpocock/skills
    - **Deterministic QA**: Kernel executes acceptance tests (`bun test`) in a sandboxed child process, verifying authentic exit codes.
    - **Isolated Review**: For `material` or `critical` tasks, a separate review subagent audits immutable Git blobs against Devil's Advocate invariants.
    - **Settlement**: Kernel records tamper-proof attestations in `.imm/audit/<task-id>/` and releases the workspace lease.
-
-### Synergies with Other `mattpocock/skills`
-
-Beyond `grill-me`, the `mattpocock/skills` library composes seamlessly with Immune-Brain's lifecycle:
-
-- **`/to-prd` & `/to-issues` → Multi-Task Initiatives**: Convert high-level concepts into GitHub Issues, which Immune-Brain's `imm-tracker publish-initiative` and `start_unattended_batch` can execute serially or across parallel Lanes.
-- **`/wayfinder` → Milestone Navigation**: Maintain focus across multi-day initiatives, while Immune-Brain's SQLite CAS guarantees zero state loss across sessions.
-- **`/tdd` → Test-First Intent Formulation**: Author failing acceptance tests upfront, directly feeding their command paths into `VerificationDescriptor v2` descriptors before implementation begins.
 
 ---
 
@@ -542,7 +534,7 @@ flowchart TD
    - **Risk-Tiered Gates with Enforcement Floors**: `routine` tasks complete upon QA pass; `material` and `critical` tasks require an isolated Review subagent. Touching kernel or authority paths is forced to at least `material`.
    - **Live Refutation**: Subjective Review findings can be refuted by fresh, passing QA evidence; any new edits invalidate counterevidence and re-block the finding.
    - **Immutable Audit Trail**: Terminal task completion atomically writes signed `TaskRecord`s, Git blob `ReviewBundle`s, and QA Attestations to `.imm/audit/<task-id>/`, fully tracked in Git.
-   - **Unattended Batch**: Serial execution driven by GitHub Issues and bound by `plan_digest`, where each child independently completes its own Enrollment → QA → Review → Commit cycle.
+   - **Unattended Batch & Parallel Lanes**: Progresses via GitHub Issues bound by `plan_digest`. Supports default single-branch serial execution or physical multi-Lane parallel execution; in lane mode, the Coordinator schedules scope-disjoint Git worktrees, and Integration Guard reruns deterministic descriptors on candidate commits before fast-forwarding the batch branch, preventing concurrency contamination.
 
 Key invariants:
 
@@ -557,15 +549,70 @@ Key invariants:
 
 ## Unattended Batch Runs
 
-When an Initiative has several ready children, you can run them as one serial batch instead of task by task.
+When an Initiative contains multiple ready children, developers can run the entire batch unattended via the Host's privileged `start_unattended_batch` tool without manually driving `imm-run` for each child task.
 
-- **Entry is explicit:** the Host's privileged `start_unattended_batch` tool, taking the Initiative slug. Nothing batch-related exists until it is called — without it, `imm-run` behaves exactly like per-task enrollment and creates no batch state, branch, or authorization.
-- **One confirmation, one digest:** the native gate (Pi TUI dialog or Claude MCP elicitation) shows the ordered child list and the shared plan digest; that single literal-user act is the whole Batch Authorization.
-- **Per-child authority survives:** every child is still enrolled, frozen, QA'd, reviewed, and settled by the Kernel on its own `TaskRecord`. The batch is the scope of one authorization, never a new authority layer.
-- **Closeout is automatic:** when a child reaches `done` in the foreground, the same call commits it and enrolls the next child, or marks the batch `completed`, with no new gate. A parked or stopped child is never committed for you, and a failed continuation is reported beside the result with `start_unattended_batch` as the retry. A fast-forward commit you add to the batch branch is adopted; any other HEAD movement still stops the run.
-- **Bounds:** only published, non-`critical` children run, serially on a dedicated batch branch. The run parks when a child needs a human decision or a budget, authorization, or commit failure stops it; the budget is a child count and a QA failure limit, and nothing expires with time, and dependents of a blocked child are skipped rather than reordered. The runner never pushes, opens PRs, resolves user decisions, or creates, switches, or deletes Git worktrees.
-- **Parallel lanes are opt-in:** pass `max_parallel` (or set `Lane max parallel`, see [Configuration](#configuration)) and independent children run side by side, each in its own Lane — a Git worktree on its own `imm-lane/...` branch — and are integrated onto the batch branch one commit per child. Without it the batch stays serial. A Parent running inside Herdr opens one tab per Lane for that Lane's Executor Host, and never answers a trust, sign-in, or permission dialog in it.
-- **Agents only create:** the Parent and the `lane-steward` role create Lanes and tabs but never close a tab, stop a session, or remove a Lane. Once a child is integrated, the Parent tells you which tab and Lane are ready, and you close and remove them yourself.
+Immune-Brain supports two batch execution modes: **Default Serial Mode** and **Parallel Batch Lanes**.
+
+### 1. Batch Execution Modes Overview
+
+| Dimension | Serial Batch (Default) | Parallel Batch Lanes |
+|---|---|---|
+| **Activation** | Call `start_unattended_batch(slug)` directly | Pass `max_parallel` or configure `Lane max parallel: <n>` |
+| **Workspace Topology** | Shared single batch branch (`imm-batch/<slug>`) | Coordinator manages batch branch; each concurrent task owns a Git worktree (`imm-lane/<task-id>`) |
+| **Scheduling** | Strict sequential execution ordered by dependency layers | Scope-disjoint children execute concurrently in parallel Lanes |
+| **Authority Boundaries** | Single local Authority Store advanced sequentially | Each Lane owns its own local Authority Store, running isolated with zero global CAS contention |
+| **Integration** | Direct commit on batch branch after task QA/Review passes | Reconciles via Git plumbing, reruns Integration Guard descriptors, then fast-forwards batch branch |
+| **Ideal For** | Small initiatives, tight file coupling, resource-constrained environments | Medium/large initiatives, decoupled modules, high-compute environments |
+
+### 2. Batch Authority & Invariants
+
+- **Explicit Entry & Single Authorization:** No batch state or branch exists before calling `start_unattended_batch`; without it, `imm-run` behaves identically to single-task enrollment. The native gate (Pi TUI dialog or Claude MCP elicitation) displays the ordered child list and global `plan_digest`; this single user confirmation constitutes complete Batch Authorization.
+- **Child Authority Invariance:** A batch merely bundles authorization scope without weakening engineering rigor. Every child is still individually enrolled, scope-frozen, QA-verified via authentic child processes, reviewed in isolation, and settled with its own `TaskRecord`. A batch is a scope of authorization, not a new authority layer.
+- **Deterministic Boundaries:** Only runs published, non-`critical` children. Any required human decision (`needs_human`), budget/timeout interruption, or integration error halts the batch safely, marking dependent children as `skipped_blocked` rather than reordering. Runners never push, open PRs, or make arbitrary decisions.
+
+### 3. Parallel Batch Lanes Lifecycle & Architecture
+
+In parallel lane mode, the Coordinator (Parent Host), `lane-steward` internal role, and Lane Executor Hosts coordinate to provide physical concurrency isolation:
+
+```mermaid
+sequenceDiagram
+    participant P as Coordinator (Parent Host)
+    participant B as Batch Runtime
+    participant S as lane-steward Role
+    participant L as Lane Executor Host (Pi / Claude)
+    participant K as Lane Kernel (Isolated Store)
+
+    Note over P,B: 1. Scheduling & Scope-Disjoint Analysis
+    P->>B: start_unattended_batch(slug, max_parallel)
+    B-->>P: handoffs: provision Lane A, Lane B
+
+    Note over P,S: 2. Physical Worktree Provisioning (Provision & Admit)
+    P->>S: Provision worktree (branch imm-lane/..., base batch base)
+    S-->>P: Return isolated worktree paths
+    P->>B: Submit lane_offers admission check (cleanliness, branch, base)
+
+    Note over P,L: 3. Supervised Parallel Execution
+    B-->>P: handoffs: launch Executor A, Executor B
+    P->>L: Launch background session for imm-run (configurable Host/model)
+    L->>K: Run loop: Scope freeze -> Deterministic QA -> Review -> Settle
+
+    Note over P,B: 4. Integration Guard & Fast-Forward
+    L-->>P: Lane finish notification
+    P->>B: Coordinator reconcile tick
+    B->>K: Read Lane evidence & commit
+    B->>B: Build candidate commit + rerun Integration Guard descriptors
+    B->>B: Fast-forward batch branch (1 child 1 commit)
+    B-->>P: handoffs: release Lane A / provision Lane C
+```
+
+#### Core Mechanisms:
+
+1. **Scope-Disjoint Scheduling:** The Coordinator dynamically computes dependency layers and path overlap. A child is scheduled only when its prerequisites are integrated and its `scope_hint` is provably disjoint from all in-flight Lanes. Overlapping children wait until conflicting Lanes integrate.
+2. **Supervised Host Sessions:** The Parent Host launches an independent Executor Host process for each Lane (configurable across Hosts, models, and effort tiers, such as Pi or Claude Code). The Parent is reactively notified on session completion, polling nothing. When running inside Herdr, it opens one tab per Lane and never answers trust/login dialogs on behalf of the user.
+3. **Integration Guard:** To eliminate silent semantic conflicts, settled deliveries are not blindly merged. The Coordinator constructs candidate commits via Git plumbing and reruns deterministic descriptors for both the candidate child and all sibling tasks integrated since the lane's base. Fast-forward proceeds only if all tests pass.
+4. **Fault Isolation:** If a Lane encounters a QA failure, review rejection, or integration conflict, the batch branch stays untouched (zero-write). The failing child is parked as `needs_human`, its dependents are marked `skipped_blocked`, while independent sibling Lanes proceed unaffected.
+5. **Agents Only Create:** The Parent and `lane-steward` provision Lanes and terminal tabs but never kill sessions or delete worktrees. Once integrated, the system reports safe-to-release Lanes for the developer to inspect and clean up.
+
 
 ---
 

@@ -14,7 +14,7 @@ Immune-Brain 为 AI 编程工具（**Pi** 与 **Claude Code**）提供结构化�
 - **需要严谨时显式启用** — 遇到复杂功能开发或高保证任务时，显式调用 `imm-brainstorm`、`imm-planner` 或 `imm-run`。
 - **计划变为可追踪的任务**（`TaskIntent` + `TaskRecord`） — 进度落盘持久化（Git + `.imm/`），会话重启或上下文清理后仍可无缝恢复。
 - **质量由代码强制保障** — 自动化 QA 验收与隔离式 Reviewer 审查必须通过，任务才会结算完成。
-- **已就绪的 Initiative 可以整批运行** — 一次确认的 Batch Authorization 让 `imm-run` 串行推进已发布 Initiative 的各个 child，而每个 child 仍然独立 Enrollment、独立 QA/Review、独立结算。
+- **已就绪的 Initiative 可以整批运行（串行或多 Lane 并行）** — 一次确认的 Batch Authorization 即可无人值守推进整批子任务；支持默认单工作区串行推进，或显式开启多 Lane 并行（按 Scope 互斥拓扑调度独立 Git worktree 并发执行，辅以集成守卫与强故障隔离），每个 child 依然保持独立的 Enrollment、QA、Review 与结算。
 
 Pi 与 Claude Code 是支持的宿主。未声明的适配器仍不受支持。Claude Code 最低版本为 `2.1.236`，这是已通过交互式 server-initiated MCP elicitation 验证的最低版本。当前真实 Host 证据见 `docs/verification/claude-native-elicitation-authority-conformance.md`；历史报告归档于 `docs/verification/archive/`。
 
@@ -118,7 +118,7 @@ Immune-Brain 提供两种清晰的工作模式：日常轻量编码走 **Host-na
 | 目标明确，需要正规计划与规格 | `/imm-planner` "规划一下深色模式功能" | → `imm-planner` 产出 `TaskIntent` + Spec，包含可执行验收条件 |
 | 计划已确认，准备执行与验证 | `/imm-run` | → Executor 在范围内实现 → 确定性 QA 验收 → 隔离 Review 审查 → 任务结算 |
 | 会话中断或需恢复未完成任务 | `/imm-run` | → 从磁盘状态（`.imm/`）无缝恢复，以 Kernel projection 为准 |
-| 已发布的 Initiative 可以整批跑了 | "把 initiative `<slug>` 无人值守跑完" | → Host 的 `start_unattended_batch`：一次原生确认绑定有序 plan digest，child 串行执行 |
+| 已发布的 Initiative 批次推进（串行 / 多 Lane 并行） | "无人值守跑完 initiative `<slug>`"（可指定 `--max-parallel 4` 或配置 `Lane max parallel`） | → Host 的 `start_unattended_batch`：一次原生确认绑定 plan digest。无配置时单工作区串行推进；配置并行度时开启多 Lane Git worktree 物理隔离并发执行 |
 | 跨 Host 协作（Claude 规划 + Pi 编码） | 在 Claude Code 中调 `/imm-planner`，切到 Pi 输入 `/imm-run` | → Spec 与 TaskIntent 共享于 Git，Pi 原生弹窗准入并执行 QA/Review 闭环 |
 | PR 被评论 / CI 挂了 | 对该 PR 使用 `/imm-pr-fix` | → 独立修复：在当前 PR 内针对性修复，不创建新 managed 任务 |
 | 文档过时需要清理 | `/imm-doc-prune` | → 只读审计过时文档，仅删除经哈希审批的条目 |
@@ -220,7 +220,7 @@ Immune-Brain 能够在工程进入实施阶段后提供坚不可摧的确定性�
 # 仅添加 mattpocock/skills 中的 grill-me
 npx skills@latest add mattpocock/skills --skill grill-me
 
-# 或安装完整套件（包含 to-prd, to-issues, wayfinder, tdd 等）
+# 或安装完整套件
 npx skills@latest add mattpocock/skills
 ```
 
@@ -244,14 +244,6 @@ npx skills@latest add mattpocock/skills
    - **确定性 QA 引擎**：Kernel 直接前台拉起子进程执行 `bun test`，以真实退出码 0 判定胜负，拒绝口头汇报。
    - **隔离 Reviewer 审查**：针对 `material`/`critical` 任务，调度独立的只读审查子代理基于 Git blob 制品严格审计。
    - **结算归档**：Kernel 原子落盘证据至 `.imm/audit/<task-id>/` 并释放工作区锁。
-
-### 与 `mattpocock/skills` 其它技能的生态协同
-
-除 `grill-me` 外，`mattpocock/skills` 的整套工具集均可与 Immune-Brain 形成互补强化：
-
-- **`/to-prd` 与 `/to-issues` → 衔接 Initiative 批次**：将高阶愿景转化为结构化的 GitHub Issues，随后由 Immune-Brain 的 `imm-tracker publish-initiative` 与 `start_unattended_batch` 在无人值守或并行 Lane 中自动推进。
-- **`/wayfinder` → 复杂多会话里程碑领航**：在跨天、多会话的超大任务中保持上下文主线，而 Immune-Brain 底层的 SQLite CAS 与磁盘落盘保证无论何时恢复均零状态丢失。
-- **`/tdd` → 验收驱动的前置测试定义**：在编写实现之前先写出红灯测试用例，这些测试路径可直接作为 `VerificationDescriptor v2` 的目标命令写入 `TaskIntent`。
 
 ---
 
@@ -545,7 +537,7 @@ flowchart TD
    - **按险定级与确定性兜底**：`routine` 仅需 QA；`material`/`critical` 必须追加独立只读 Reviewer 产出结构化裁决。触碰核心权威路径强制定级为 `material`。
    - **反证机制 (Live Refutation)**：主观 Review finding 可由真实通过的新鲜 QA 证据反证驳回；代码发生改动后反证自动失效并重新阻塞。
    - **不可变审计落盘**：任务结项时，完整的 `TaskRecord`、Git blob 打包的 `ReviewBundle`、QA Attestation 凭证原子沉淀至 `.imm/audit/<task-id>/` 并受 Git 追踪。
-   - **批处理 (Unattended Batch)**：基于 GitHub Issue / `plan_digest` 串行推进，每个子任务独立走完 Enrollment → QA → Review → Commit 闭环。
+   - **批处理与多 Lane 并行 (Unattended Batch & Parallel Lanes)**：基于 GitHub Issue / `plan_digest` 推进。支持默认单分支串行或多 Lane 物理并行模式；并行时协调者基于 `scope_hint` 互斥拓扑调度独立 Git worktree 并发执行，结算时通过集成守卫（Integration Guard）在候选提交上重跑确定性验收命令再 fast-forward 主分支，杜绝并发污染。
 
 核心不变量：
 
@@ -560,14 +552,75 @@ flowchart TD
 
 ## 无人值守批次运行
 
-当一个 Initiative 下已经有多个就绪的 child，可以把它们作为一批串行跑完，而不用逐个任务手动推进。
+当一个 Initiative 下包含多个已就绪的 child 任务时，开发者无需逐个手动触发 `imm-run`，可通过 Host 原生 privileged tool `start_unattended_batch` 进行整批无人值守推进。
 
-- **入口显式：** Host 的 privileged tool `start_unattended_batch`（参数为 Initiative slug）。未调用之前不存在任何 batch state、分支或授权；未调用时 `imm-run` 行为与逐任务 Enrollment 完全一致。
-- **一次确认、一个 digest：** 原生 gate（Pi TUI 弹窗或 Claude MCP elicitation）展示有序 child 列表与共享 plan digest，这一次 literal-user 确认就是全部 Batch Authorization。
-- **每个 child 的 authority 不变：** 每个 child 仍由 Kernel 单独 Enrollment、冻结、QA、Review 并以自己的 `TaskRecord` 结算。批次只是一次授权的覆盖范围，不是新的授权层级。
-- **边界：** 只跑已发布且非 `critical` 的 child，在专属 batch 分支上串行执行；一旦某个 child 需要人决策，或遇到预算/截止时间/授权/提交失败就暂停，被阻塞 child 的依赖项标记为跳过而不是调序。runner 不 push、不开 PR、不代替用户结算 decision、也不创建/切换/删除 Git worktree。
-- **并行 Lane 需显式开启：** 传入 `max_parallel`（或配置 `Lane max parallel`，见[配置](#配置)）后，互不依赖的 child 并行执行，每个 child 占一个 Lane——位于独立 `imm-lane/...` 分支上的 Git worktree——再逐个以一 child 一 commit 集成到 batch 分支。不开启时批次保持串行。Parent 运行在 Herdr 内时，会为每个 Lane 的 Executor Host 开一个 tab，且不会替你回答其中的信任、登录或权限对话框。
-- **agent 只创建不回收：** Parent 与 `lane-steward` 角色会创建 Lane 和 tab，但不关闭 tab、不停止会话、不删除 Lane。child 集成后，Parent 告诉你哪些 tab 和 Lane 可以回收，由你自己关闭并删除。
+系统支持两种批次运行形态：**默认串行模式** 与 **多 Lane 并行模式（Parallel Batch Lanes）**。
+
+### 1. 批次运行模式概览
+
+| 维度 | 串行批次 (Serial Batch，默认) | 多 Lane 并行批次 (Parallel Batch Lanes) |
+|---|---|---|
+| **开启方式** | 调用 `start_unattended_batch(slug)` | 显式传入 `max_parallel` 或在配置中设定 `Lane max parallel: <n>` |
+| **工作区拓扑** | 共享唯一的专属批次分支（`imm-batch/<slug>`） | Coordinator 维护主批次分支；各并发任务独占独立 Git worktree（`imm-lane/<task-id>` 分支） |
+| **调度策略** | 严格按依赖拓扑层级单任务逐个串行推进 | 互不依赖且物理修改范围（`scope_hint`）**完全不重叠（Scope-disjoint）**的任务并发执行 |
+| **Authority 边界** | 协调者按序推进单个任务的本地 Authority Store | 每个 Lane 拥有完全隔离的本地 Authority Store，各自独立加锁，零全局 CAS 竞争 |
+| **集成机制** | 任务验证完成直接在批次分支提交 1 个 commit | Lane 结算后通过 Git plumbing 校验变更等价性，并在候选提交上重跑集成守卫（Integration Guard）再 fast-forward |
+| **适用场景** | 任务数少、前后改动文件强耦合、单核/受限环境 | 大中型 Initiative、多模块解耦子任务、多核或多 Host 算力充裕场景 |
+
+### 2. 批次授权与运行红线
+
+- **入口显式且单一授权：** 未调用 `start_unattended_batch` 之前不存在任何批次状态或分支；未调用时 `imm-run` 行为与逐任务 Enrollment 完全一致。调用时由原生 gate（Pi TUI 弹窗或 Claude MCP elicitation）一次性展示有序任务清单与全局 `plan_digest`，用户的单次确认即为整批执行提供完备授权。
+- **Child Authority 守恒：** 批次仅代表授权范围的聚合，绝非降低工程标准。每个 child 依然由 Kernel 单独执行 Enrollment、物理 Scope 冻结、真实子进程 QA、隔离 Review 与独立的 `TaskRecord` 结算。批次只是一次授权的覆盖范围，不是新的授权层级。
+- **确定性执行边界：** 仅推进已发布且非 `critical` 的 child 任务；遇到人工决策挂起（`needs_human`）、预算/超时中断或提交异常时立即安全暂停批次，被阻断任务的下游依赖标记为跳过（`skipped_blocked`）而非无序推进。批次运行器不擅自 push、不开 PR、不代替用户结算决策。
+
+### 3. 多 Lane 并行流水线与架构（Parallel Batch Lanes）
+
+在多 Lane 并行模式下，系统通过 Coordinator（Parent Host）、`lane-steward`（工作区管家）与 Lane Executor Host（执行宿主）的严密协作，实现物理级并发隔离：
+
+```mermaid
+sequenceDiagram
+    participant P as Coordinator (Parent Host)
+    participant B as Batch Runtime
+    participant S as lane-steward 角色
+    participant L as Lane Executor Host (Pi / Claude)
+    participant K as Lane Kernel (独立 Store)
+
+    Note over P,B: 1. 拓扑分析与并发调度 (Schedule)
+    P->>B: start_unattended_batch(slug, max_parallel)
+    B-->>P: handoffs: 调度准备 (provision Lane A, Lane B)
+
+    Note over P,S: 2. 物理隔离 Worktree 分配 (Provision & Admit)
+    P->>S: 调度创建 worktree (分支 imm-lane/..., 基线 batch base)
+    S-->>P: 返回独立 worktree 路径
+    P->>B: 提交 lane_offers 准入校验 (无重叠/干净度/基线校验)
+
+    Note over P,L: 3. 监督式并行执行 (Supervised Execution)
+    B-->>P: handoffs: 启动 Executor A, Executor B
+    P->>L: 拉起独立后台会话执行 imm-run (支持配置不同 Host/模型)
+    L->>K: 独立运行: Scope 冻结 -> 确定性 QA -> 隔离 Review -> 结算
+
+    Note over P,B: 4. 集成守卫与主分支快进 (Integration Guard & Fast-Forward)
+    L-->>P: 某个 Lane 结束通知
+    P->>B: 协调者推进 (reconcile)
+    B->>K: 读取 Lane 结算凭证与 commit
+    B->>B: 构建候选 commit + 重跑集成守卫 (自身与已集成兄弟描述符)
+    B->>B: Fast-forward 主批次分支 (1 child 1 commit)
+    B-->>P: handoffs: release Lane A / provision 新就绪 Lane C
+```
+
+#### 并行执行的核心机制：
+
+1. **按 Scope 互斥拓扑调度 (Scope-Disjoint Scheduling)**：
+   Coordinator 实时计算任务依赖图与路径重叠度。仅当任务的前置依赖已全部集成，且其 `scope_hint` 与当前所有进行中（in-flight）Lane 的路径集合**在物理上完全无交集**时，才允许并发派发；存在路径重叠的任务自动排队，直到前序冲突 Lane 集成完毕。
+2. **监督式会话生命周期 (Supervised Host Sessions)**：
+   Parent Host 为每个 Lane 拉起独立的 Executor Host 进程（支持跨 Host 与模型档位配置，如 Pi 或 Claude Code）。Parent 监控会话退出事件，会话结束即触发下一轮协调；Parent 不轮询、不猜测终端输出。当 Parent 运行在 Herdr 内时，会为每个 Lane 的 Executor Host 开一个独立 tab，且绝不会替开发者回答其中的信任、登录或权限对话框。
+3. **集成守卫与候选验证 (Integration Guard)**：
+   为防止并发修改产生隐式冲突，Lane 结算后不会盲目合入主分支。Coordinator 在 Git plumbing 层面构建候选提交，并在候选树上**重跑当前任务以及自其分叉以来所有已合入兄弟任务的确定性验收描述符**。只有全部再次跑通，才通过 fast-forward 原子合入主批次分支。
+4. **强故障隔离 (Fault Isolation)**：
+   若某个 Lane 出现测试失败、评审驳回或集成冲突，主批次分支保持零写入（Zero-write），仅该任务被置为 `needs_human`，其后续依赖标记为 `skipped_blocked`；其他无冲突的并行 Lane 继续正常推进。
+5. **安全回收纪律 (Agents Only Create)**：
+   Parent 与 `lane-steward` 角色仅负责创建 Lane（worktree）和终端 tab，绝不擅自关闭 tab、不终止外部会话、不自动删除用户磁盘上的 worktree。任务集成完成后，系统明确告知开发者哪些 Lane 已可安全回收，由开发者自主清理。
+
 
 ---
 
