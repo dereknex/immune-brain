@@ -60,7 +60,7 @@ function child(taskId: string, sliceId: string, blockedBy: string[] = []): Batch
 }
 
 /** A valid intent sidecar whose single descriptor runs `script` with bun in the delivery tree. */
-function intentJson(taskId: string, script = "process.exit(0)"): string {
+function intentJson(taskId: string, script = "process.exit(0)", scope: string[] = ["a.txt", "b.txt"]): string {
 	const verification = JSON.stringify({
 		contract: "assurance_kernel/verification_descriptor/v2",
 		command: { executable: "bun", argv: ["-e", script], cwd: ".", timeout_ms: 60000, max_output_bytes: 4096 },
@@ -71,7 +71,7 @@ function intentJson(taskId: string, script = "process.exit(0)"): string {
 		task_id: taskId,
 		goal: `Deliver ${taskId}`,
 		acceptance: [{ id: "A1", assertion: `${taskId} holds`, verification }],
-		scope_hint: ["a.txt", "b.txt"],
+		scope_hint: scope,
 		risk: "material",
 		revision: 1,
 		owner: "user",
@@ -87,7 +87,7 @@ interface Fixture {
 }
 
 /** A real repository on the batch branch with a base commit; lanes are real worktrees. */
-function fixture(scripts: Record<string, string> = {}): Fixture {
+function fixture(scripts: Record<string, string> = {}, scopes: Record<string, string[]> = {}): Fixture {
 	const dir = realpathSync(mkdtempSync(join(tmpdir(), "imm-lanes-")));
 	const repo = join(dir, "repo");
 	mkdirSync(repo);
@@ -95,8 +95,8 @@ function fixture(scripts: Record<string, string> = {}): Fixture {
 	writeFileSync(join(repo, ".gitignore"), ".imm/\n");
 	writeFileSync(join(repo, "base.txt"), "base\n");
 	mkdirSync(join(repo, "docs/plans"), { recursive: true });
-	for (const taskId of ["task-a", "task-b"])
-		writeFileSync(join(repo, `docs/plans/${taskId}.intent.json`), intentJson(taskId, scripts[taskId]));
+	for (const taskId of ["task-a", "task-b", "task-c"])
+		writeFileSync(join(repo, `docs/plans/${taskId}.intent.json`), intentJson(taskId, scripts[taskId], scopes[taskId]));
 	git(repo, "add", "-A");
 	git(repo, "commit", "-q", "-m", "base");
 	git(repo, "checkout", "-q", "-b", BATCH_BRANCH);
@@ -146,6 +146,7 @@ type LaneKernel = BatchRunnerKernelPort & {
 	frozen: Set<string>;
 	settled: Set<string>;
 	advanced: string[];
+	reworking: Set<string>;
 };
 
 function laneKernel(): LaneKernel {
@@ -154,12 +155,14 @@ function laneKernel(): LaneKernel {
 		frozen: new Set<string>(),
 		settled: new Set<string>(),
 		advanced: [] as string[],
+		reworking: new Set<string>(),
 		async enrollTask({ root, task_id }: { root: string; task_id: string }) {
 			kernel.enrolled.set(task_id, root);
 			return { record_revision: "r" };
 		},
 		async advanceTask(_root: string, taskId: string) {
 			kernel.advanced.push(taskId);
+			if (kernel.reworking.has(taskId)) return { state: "rework" as const, operation: "qa" as const };
 			kernel.settled.add(taskId);
 			return { state: "completed" as const };
 		},
@@ -700,18 +703,6 @@ describe("max_parallel 1 end to end through a real second worktree", () => {
 		}
 	});
 
-	it("refuses max_parallel above 1 before writing anything", async () => {
-		const fx = fixture();
-		try {
-			const report = lanes(await startBatch(request(fx, [child("task-a", "S1")], laneKernel(), { max_parallel: 2 })));
-			expect(report.batch_state).toBe("rejected");
-			expect(report.reason).toMatch(/^batch_parallel_unsupported/);
-			expect(readAnyBatchRunState(fx.repo, BATCH_ID)).toBeNull();
-		} finally {
-			fx.cleanup();
-		}
-	});
-
 	it("refuses a resume with a different max_parallel but accepts an absent one", async () => {
 		const fx = fixture();
 		try {
@@ -782,6 +773,127 @@ describe("integration guard failure through the lane driver", () => {
 			expect(report.children[0]!.lane).toMatchObject({ path: laneA, branch: laneBranchName(SLUG, "task-a") });
 			expect(git(fx.repo, "rev-parse", laneBranchName(SLUG, "task-a"))).toBe(report.children[0]!.lane!.lane_commit!);
 			expect(existsSync(laneA)).toBe(true);
+		} finally {
+			fx.cleanup();
+		}
+	});
+});
+
+describe("max_parallel above 1", () => {
+	const wide = (fx: Fixture, kernel: LaneKernel, ids: string[], overrides: Partial<StartBatchInput> = {}) =>
+		request(fx, ids.map((id, i) => child(id, `S${i + 1}`)), kernel, { max_parallel: 2, ...overrides });
+	const offer = (fx: Fixture, ids: string[]) => ids.map((id) => ({ task_id: id, path: fx.lane(id) }));
+
+	it("keeps two scope-disjoint children in flight together and integrates each as one commit", async () => {
+		const fx = fixture({}, { "task-a": ["a.txt"], "task-b": ["b.txt"] });
+		try {
+			const kernel = laneKernel();
+			const args = wide(fx, kernel, ["task-a", "task-b"]);
+			const first = lanes(await startBatch(args));
+			expect(first.handoffs?.map((h) => [h.role, h.task_id])).toEqual([
+				["lane-steward", "task-a"],
+				["lane-steward", "task-b"],
+			]);
+			const offers = offer(fx, ["task-a", "task-b"]);
+			const second = lanes(await startBatch({ ...args, lane_offers: offers }));
+			expect(second.children.map((c) => c.state)).toEqual(["enrolled", "enrolled"]);
+			expect(second.handoffs?.map((h) => [h.role, h.task_id])).toEqual([
+				["executor", "task-a"],
+				["executor", "task-b"],
+			]);
+			writeFileSync(join(offers[0]!.path, "a.txt"), "a\n");
+			writeFileSync(join(offers[1]!.path, "b.txt"), "b\n");
+			kernel.frozen.add("task-a");
+			kernel.frozen.add("task-b");
+			const done = lanes(await startBatch(args));
+			expect(done.batch_state).toBe("completed");
+			expect(done.children.map((c) => c.state)).toEqual(["integrated", "integrated"]);
+			expect(done.commits).toHaveLength(2);
+			expect(git(fx.repo, "log", "--format=%s", `${fx.base}..HEAD`).split("\n").sort()).toEqual([
+				"imm(task-a): deliver",
+				"imm(task-b): deliver",
+			]);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("makes a child whose scope overlaps an in-flight Lane wait and never exceeds max_parallel", async () => {
+		const fx = fixture({}, { "task-a": ["a.txt"], "task-b": ["b.txt"], "task-c": ["a.txt"] });
+		try {
+			const kernel = laneKernel();
+			const args = wide(fx, kernel, ["task-a", "task-b", "task-c"]);
+			const first = lanes(await startBatch(args));
+			expect(first.handoffs?.map((h) => h.task_id)).toEqual(["task-a", "task-b"]);
+			const offers = offer(fx, ["task-a", "task-b"]);
+			await startBatch({ ...args, lane_offers: offers });
+			writeFileSync(join(offers[0]!.path, "a.txt"), "a\n");
+			kernel.frozen.add("task-a");
+			const next = lanes(await startBatch(args));
+			// task-a integrated; task-c overlapped it and can now be provisioned from the new head.
+			expect(next.children.map((c) => c.state)).toEqual(["integrated", "enrolled", "pending"]);
+			expect(next.handoffs?.map((h) => [h.role, h.task_id])).toEqual([
+				["executor", "task-b"],
+				["lane-steward", "task-c"],
+			]);
+			expect(next.children.filter((c) => ["lane_admitted", "enrolled", "settled", "lane_committed"].includes(c.state))).toHaveLength(1);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("keeps a disjoint sibling moving when another Lane is lost, and records batch_lane_lost", async () => {
+		const fx = fixture({}, { "task-a": ["a.txt"], "task-b": ["b.txt"] });
+		try {
+			const kernel = laneKernel();
+			const args = wide(fx, kernel, ["task-a", "task-b"]);
+			await startBatch(args);
+			const offers = offer(fx, ["task-a", "task-b"]);
+			await startBatch({ ...args, lane_offers: offers });
+			kernel.enrolled.delete("task-a"); // task-a's claim vanished: nothing is inferred from terminal text
+			writeFileSync(join(offers[1]!.path, "b.txt"), "b\n");
+			kernel.frozen.add("task-b");
+			const report = lanes(await startBatch(args));
+			expect(report.children.map((c) => [c.state, c.reason])).toEqual([
+				["needs_human", "batch_lane_lost"],
+				["integrated", null],
+			]);
+			expect(report.batch_state).toBe("needs_human");
+			expect(report.commits).toHaveLength(1);
+			expect(git(fx.repo, "log", "--format=%s", `${fx.base}..HEAD`)).toBe("imm(task-b): deliver");
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("applies qa_failure_limit to each child separately", async () => {
+		const fx = fixture({}, { "task-a": ["a.txt"], "task-b": ["b.txt"] });
+		try {
+			const kernel = laneKernel();
+			const args = wide(fx, kernel, ["task-a", "task-b"], { budget: { max_children: 2, qa_failure_limit: 1 } });
+			await startBatch(args);
+			const offers = offer(fx, ["task-a", "task-b"]);
+			await startBatch({ ...args, lane_offers: offers });
+			kernel.reworking.add("task-a");
+			writeFileSync(join(offers[1]!.path, "b.txt"), "b\n");
+			kernel.frozen.add("task-a");
+			kernel.frozen.add("task-b");
+			const report = lanes(await startBatch(args));
+			expect(report.children.map((c) => c.state)).toEqual(["needs_human", "integrated"]);
+			expect(report.children[0]!.qa_failures).toBe(1);
+			expect(report.children[1]!.qa_failures).toBe(0);
+			expect(report.batch_state).toBe("needs_human");
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("no longer refuses max_parallel above 1", async () => {
+		const fx = fixture();
+		try {
+			const report = lanes(await startBatch(request(fx, [child("task-a", "S1")], laneKernel(), { max_parallel: 2 })));
+			expect(report.batch_state).toBe("running");
+			expect(readAnyBatchRunState(fx.repo, BATCH_ID)).toMatchObject({ max_parallel: 2 });
 		} finally {
 			fx.cleanup();
 		}

@@ -1725,16 +1725,14 @@ describe("lane mode parameters (parallel-batch-lanes)", () => {
 		}
 	});
 
-	it("refuses max_parallel above 1 with batch_parallel_unsupported before the gate, with zero writes", async () => {
+	it("accepts max_parallel above 1 through the same single gate", async () => {
 		const fixture = createBatchFixture("lane-wide");
 		const gates = { count: 0, details: [] as Array<Record<string, unknown>> };
 		const client = laneRuntime(fixture, gates);
 		try {
 			const result: any = await client.callTool("start_unattended_batch", { initiative_slug: "lane-wide", max_parallel: 2 });
-			expect(result.state).toBe("rejected");
-			expect(result.reason).toMatch(/^batch_parallel_unsupported/);
-			expect(gates.count).toBe(0);
-			expect(existsSync(join(fixture.root, ".imm", "state", "batches"))).toBe(false);
+			expect(gates.count).toBe(1);
+			expect(String(result.reason ?? "")).not.toMatch(/batch_parallel_unsupported/);
 		} finally {
 			rmSync(fixture.root, { recursive: true, force: true });
 		}
@@ -1757,8 +1755,8 @@ describe("lane mode parameters (parallel-batch-lanes)", () => {
 		}
 	});
 
-	it("gives Claude Code and Pi the same lane-mode report for the same fixture", async () => {
-		const slug = "lane-parity";
+	for (const maxParallel of [1, 2]) it(`gives Claude Code and Pi the same lane-mode report for the same fixture at max_parallel ${maxParallel}`, async () => {
+		const slug = maxParallel === 1 ? "lane-parity-one" : "lane-parity-many";
 		const claudeFixture = createBatchFixture(slug);
 		const piFixture = createBatchFixture(slug);
 		try {
@@ -1768,9 +1766,9 @@ describe("lane mode parameters (parallel-batch-lanes)", () => {
 				requestConfirmation: async () => ({ decision: "accept", requestId: "parity" }),
 			});
 			client.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-			const claude: any = await client.callTool("start_unattended_batch", { initiative_slug: slug, max_parallel: 1 });
+			const claude: any = await client.callTool("start_unattended_batch", { initiative_slug: slug, max_parallel: maxParallel });
 			const pi: any = await executePiUnattendedBatch({
-				root: piFixture.root, initiativeSlug: slug, max_parallel: 1,
+				root: piFixture.root, initiativeSlug: slug, max_parallel: maxParallel,
 				readInitiative: async () => piFixture.observation,
 				confirmBatch: async () => "accept",
 			});
@@ -1783,9 +1781,10 @@ describe("lane mode parameters (parallel-batch-lanes)", () => {
 						.replace(/batch-[A-Za-z0-9._-]+?-[0-9a-f-]{36}/g, "<batch>")
 						.replace(/\d{4}-\d\d-\d\dT[\d:.]+Z/g, "<time>"),
 				);
-			expect(claude.report.max_parallel).toBe(1);
+			expect(claude.report.max_parallel).toBe(maxParallel);
 			expect(claude.report.handoffs?.[0]).toMatchObject({ role: "lane-steward", action: "provision" });
 			expect(claude.report).not.toHaveProperty("handoff");
+			expect(normalize(claude.report.handoffs, claudeFixture)).toEqual(normalize(pi.report.handoffs, piFixture));
 			expect(normalize(claude.report, claudeFixture)).toEqual(normalize(pi.report, piFixture));
 		} finally {
 			rmSync(claudeFixture.root, { recursive: true, force: true });

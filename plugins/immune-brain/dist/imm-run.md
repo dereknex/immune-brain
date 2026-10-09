@@ -178,9 +178,15 @@ In a Lane the child is enrolled, assured and settled exactly as in a serial batc
 The runner then commits the settled delivery on the Lane branch and fast-forwards
 the batch branch only to a candidate whose changed paths and per-path content equal
 that commit; a mismatch or conflict moves nothing and parks the child.
-`max_parallel` above the supported width is refused with `batch_parallel_unsupported`,
-and a resume with a different value with `batch_parallel_mismatch`. A Lane holds no
-batch state and its Host session never re-enters the batch.
+With `max_parallel` above 1 the reconcile tick keeps up to that many Lanes in
+flight and reports one `provision` or `executor` handoff per child in `handoffs[]`.
+Only children whose scopes are provably disjoint run together; a child whose scope
+overlaps an in-flight Lane waits until that Lane is integrated. Settled children
+integrate serially, and a parked child ends only itself and its dependents while a
+disjoint sibling keeps moving. A lost Lane parks as `batch_lane_lost`, and
+`qa_failure_limit` counts each child separately. A resume with a different
+`max_parallel` is refused with `batch_parallel_mismatch`. A Lane holds no batch
+state and its Host session never re-enters the batch.
 
 ## Decisions and Recovery
 

@@ -9,6 +9,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { computeBatchPlanDigest } from "../kernel/batch_authority";
+import { readTaskIntent } from "../kernel/intent";
 import type { StartBatchInput } from "./batch_runner";
 import {
 	BatchIntegrationError,
@@ -44,7 +45,6 @@ export type LaneAdmissionReason =
 	| "batch_lane_occupied"
 	| "batch_lane_unknown_child";
 
-export const PARALLEL_UNSUPPORTED = "batch_parallel_unsupported";
 export const PARALLEL_MISMATCH = "batch_parallel_mismatch";
 
 export interface LaneOffer {
@@ -265,6 +265,28 @@ function consumedSlots(record: BatchLaneRunStateRecord): number {
 	return record.children.filter((child) => child.state !== "pending" && child.state !== "skipped_blocked").length;
 }
 
+/**
+ * The scope a child's delivery may touch, read from its published TaskIntent at
+ * the coordinator. A child whose scope cannot be read is treated as overlapping
+ * everything, so an unreadable intent serializes instead of running in parallel.
+ */
+function scopeOfChild(root: string, child: { task_id: string; intent_path: string | null }): string[] {
+	try {
+		return [...readTaskIntent(root, child.task_id, child.intent_path ?? undefined).intent.scope_hint];
+	} catch {
+		return ["**"];
+	}
+}
+
+function scheduleView(input: StartBatchInput, record: BatchLaneRunStateRecord) {
+	return record.children.map((child) => ({
+		task_id: child.task_id,
+		state: child.state,
+		blocked_by: child.blocked_by,
+		scope_hint: scopeOfChild(input.root, input.children.find((c) => c.task_id === child.task_id) ?? { task_id: child.task_id, intent_path: null }),
+	}));
+}
+
 const TERMINAL_NEXT_ACTIONS: Record<string, string> = {
 	completed: "The batch integrated every enrollable child; review the commits and the tracker.",
 	budget_stopped: "The child budget stopped new enrollments; re-confirm to continue under a new authorization.",
@@ -418,7 +440,6 @@ function park(record: BatchLaneRunStateRecord, taskId: string, reason: string): 
 		child.task_id === taskId ? { ...child, state: "needs_human", reason } : child,
 	);
 	skipDependents(record, taskId, `dependency ${taskId} parked`);
-	record.batch_state = "needs_human";
 }
 
 function isLineageBreak(message: string): boolean {
@@ -438,8 +459,6 @@ export async function runLaneBatch(
 	if (persisted && input.max_parallel !== undefined && input.max_parallel !== persisted.max_parallel)
 		return refuse(input, persisted, PARALLEL_MISMATCH, `the recorded batch runs with max_parallel ${persisted.max_parallel}`);
 	const limit = persisted?.max_parallel ?? input.max_parallel ?? 1;
-	if (limit > 1)
-		return refuse(input, persisted, PARALLEL_UNSUPPORTED, "max_parallel above 1 is not supported yet");
 	if (!input.children.length) return refuse(input, persisted, "batch_plan_empty", "batch plan is empty");
 
 	const git = serialGitOf(input);
@@ -529,6 +548,16 @@ export async function runLaneBatch(
 	}
 
 	const refusals: NonNullable<BatchLaneRunReport["lane_refusals"]> = [];
+	// A parked child ends only itself and its dependents; the batch keeps moving
+	// for every scope-disjoint sibling and settles needs_human at the end of the
+	// tick, when nothing is in flight and nothing can start.
+	let parkedMessage: string | null = null;
+	const reviewOpen: string[] = [];
+	const parkChild = (taskId: string, reason: string): void => {
+		park(record, taskId, reason);
+		parkedMessage ??= reason;
+		persist();
+	};
 	const enrollInLane = async (taskId: string): Promise<BatchLaneRunReport | null> => {
 		const lane = record.children.find((c) => c.task_id === taskId)!.lane!;
 		try {
@@ -542,8 +571,10 @@ export async function runLaneBatch(
 			return null;
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			park(record, taskId, message);
-			if (isLineageBreak(message)) record.batch_state = "failed";
+			parkChild(taskId, message);
+			if (!isLineageBreak(message)) return null;
+			// A broken lineage cannot be trusted for any other child either.
+			record.batch_state = "failed";
 			persist();
 			return finalizeLane(input.root, record, message, "", { refusals });
 		}
@@ -560,9 +591,8 @@ export async function runLaneBatch(
 			fresh = { error: "unreadable" } as unknown as typeof fresh;
 		}
 		if (fresh.error !== null) {
-			park(record, child.task_id, "batch_lane_lost");
-			persist();
-			return finalizeLane(input.root, record, "batch_lane_lost", "");
+			parkChild(child.task_id, "batch_lane_lost");
+			continue;
 		}
 		const holdsClaim = fresh.claim !== null && fresh.claim.task_id === child.task_id;
 		if (child.state === "lane_admitted") {
@@ -584,14 +614,12 @@ export async function runLaneBatch(
 			continue;
 		}
 		if (!holdsClaim) {
-			park(record, child.task_id, "batch_lane_lost");
-			persist();
-			return finalizeLane(input.root, record, "batch_lane_lost", "");
+			parkChild(child.task_id, "batch_lane_lost");
+			continue;
 		}
 		if (!input.kernel.ownsTaskClaim(child.task_id)) {
-			park(record, child.task_id, "claim held by another batch");
-			persist();
-			return finalizeLane(input.root, record, "claim held by another batch", "");
+			parkChild(child.task_id, "claim held by another batch");
+			continue;
 		}
 		// An unfrozen child, or one with QA pending the Executor's own attempt,
 		// is the Executor's to move; the batch never reruns that attempt.
@@ -603,16 +631,13 @@ export async function runLaneBatch(
 			);
 			persist();
 		} else if (terminal.state === "review_ready") {
+			// The reservation lives in this Lane's own session store; the other Lanes'
+			// children keep moving while it stays open.
 			record.children = record.children.map((c) =>
 				c.task_id === child.task_id ? { ...c, reason: `review reservation ${terminal.operation_id} open` } : c,
 			);
 			persist();
-			return laneReport(
-				record,
-				`child ${child.task_id} holds an open Review reservation`,
-				"Submit the reserved foreground Review verdict, then call start_unattended_batch again to continue.",
-				{ refusals },
-			);
+			reviewOpen.push(child.task_id);
 		} else if (terminal.state === "rework" && terminal.operation === "qa") {
 			const failures = child.qa_failures + 1;
 			if (failures >= record.budget.qa_failure_limit) {
@@ -621,9 +646,9 @@ export async function runLaneBatch(
 					c.task_id === child.task_id ? { ...c, state: "needs_human", reason, qa_failures: failures } : c,
 				);
 				skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
-				record.batch_state = "needs_human";
+				parkedMessage ??= reason;
 				persist();
-				return finalizeLane(input.root, record, reason, "Repair and settle the own child through Kernel, then re-confirm the batch.");
+				continue;
 			}
 			record.children = record.children.map((c) => (c.task_id === child.task_id ? { ...c, qa_failures: failures } : c));
 			persist();
@@ -637,9 +662,7 @@ export async function runLaneBatch(
 			continue;
 		} else {
 			const reason = terminal.state === "stopped" ? "Kernel reported the child stopped" : terminal.reason;
-			park(record, child.task_id, reason);
-			persist();
-			return finalizeLane(input.root, record, reason, "");
+			parkChild(child.task_id, reason);
 		}
 	}
 
@@ -664,8 +687,9 @@ export async function runLaneBatch(
 				).commit;
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			park(record, child.task_id, message);
-			if (isLineageBreak(message)) record.batch_state = "failed";
+			parkChild(child.task_id, message);
+			if (!isLineageBreak(message)) continue;
+			record.batch_state = "failed";
 			persist();
 			return finalizeLane(input.root, record, message, "");
 		}
@@ -674,7 +698,6 @@ export async function runLaneBatch(
 		);
 		persist();
 	}
-	let integrationFailure: string | null = null;
 	for (const child of [...record.children]) {
 		if (child.state !== "lane_committed" || !child.lane?.lane_commit) continue;
 		const intentPathOf = (taskId: string) => input.children.find((c) => c.task_id === taskId)?.intent_path ?? null;
@@ -696,8 +719,7 @@ export async function runLaneBatch(
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			const reason = error instanceof BatchIntegrationError ? error.reason : "batch_integration_conflict";
-			park(record, child.task_id, isLineageBreak(message) || message.startsWith(`${reason}:`) ? message : `${reason}: ${message}`);
-			persist();
+			parkChild(child.task_id, isLineageBreak(message) || message.startsWith(`${reason}:`) ? message : `${reason}: ${message}`);
 			if (isLineageBreak(message)) {
 				// A broken lineage cannot be trusted for any later integration.
 				record.batch_state = "failed";
@@ -705,20 +727,13 @@ export async function runLaneBatch(
 				return finalizeLane(input.root, record, message, "");
 			}
 			// The batch branch is unmoved; a disjoint sibling may still integrate.
-			integrationFailure ??= message;
 		}
 	}
-	if (integrationFailure !== null) return finalizeLane(input.root, record, integrationFailure, "");
 
 	// 3. Admit offered Lanes, then enroll each admitted child into its Lane.
 	const coordinatorReal = lanes.resolveRoot(input.root);
 	for (const offer of input.lane_offers ?? []) {
-		const startable = new Set(
-			startableChildren(
-				record.children.map((c) => ({ task_id: c.task_id, state: c.state, blocked_by: c.blocked_by, scope_hint: [] })),
-				limit,
-			),
-		);
+		const startable = new Set(startableChildren(scheduleView(input, record), limit));
 		const child = record.children.find((c) => c.task_id === offer.task_id);
 		if (!child || child.state !== "pending" || !startable.has(child.task_id)) {
 			refusals.push({ ...offer, reason: "batch_lane_unknown_child" });
@@ -737,13 +752,8 @@ export async function runLaneBatch(
 			refusals.push({ ...offer, reason });
 			continue;
 		}
-		if (consumedSlots(record) >= record.budget.max_children) {
-			record.batch_state = record.children.some((c) => c.state === "needs_human" || c.state === "skipped_blocked")
-				? "needs_human"
-				: "budget_stopped";
-			persist();
-			return finalizeLane(input.root, record, `max_children budget exhausted (${record.budget.max_children})`, "");
-		}
+		// The child budget stops new admissions only; in-flight Lanes finish.
+		if (consumedSlots(record) >= record.budget.max_children) break;
 		const lane = { path: facts.real_path!, branch: laneBranchName(record.initiative_slug, child.task_id), base_head: head, lane_commit: null };
 		record.children = record.children.map((c) => (c.task_id === child.task_id ? { ...c, state: "lane_admitted", lane } : c));
 		persist();
@@ -772,16 +782,19 @@ export async function runLaneBatch(
 		});
 	}
 	const inFlight = record.children.filter((c) => IN_FLIGHT.has(c.state));
-	const startable = startableChildren(
-		record.children.map((c) => ({ task_id: c.task_id, state: c.state, blocked_by: c.blocked_by, scope_hint: [] })),
-		limit,
-	);
+	const startable = startableChildren(scheduleView(input, record), limit);
 	const overBudget = consumedSlots(record) >= record.budget.max_children;
 	if (!inFlight.length && (!startable.length || overBudget)) {
 		const parked = record.children.some((c) => c.state === "needs_human" || c.state === "skipped_blocked");
 		record.batch_state = parked ? "needs_human" : overBudget ? "budget_stopped" : "needs_human";
 		persist();
-		return finalizeLane(input.root, record, parked ? "a parked child needs a human decision" : overBudget ? `max_children budget exhausted (${record.budget.max_children})` : "no child can start", "", { refusals });
+		return finalizeLane(
+			input.root,
+			record,
+			parkedMessage ?? (parked ? "a parked child needs a human decision" : overBudget ? `max_children budget exhausted (${record.budget.max_children})` : "no child can start"),
+			"",
+			{ refusals },
+		);
 	}
 	if (!overBudget) {
 		for (const taskId of startable) {
@@ -794,6 +807,16 @@ export async function runLaneBatch(
 				executor_hosts: LANE_EXECUTOR_HOSTS,
 			});
 		}
+	}
+	if (reviewOpen.length > 0) {
+		return laneReport(
+			record,
+			reviewOpen.length === 1
+				? `child ${reviewOpen[0]} holds an open Review reservation`
+				: `children ${reviewOpen.join(", ")} hold open Review reservations`,
+			"Submit each reserved foreground Review verdict in its own Lane, then call start_unattended_batch again to continue.",
+			{ handoffs, refusals },
+		);
 	}
 	return laneReport(
 		record,

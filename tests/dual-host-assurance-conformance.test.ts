@@ -690,6 +690,28 @@ describe("dual-host assurance conformance", () => {
 		expect(await submitObservedReview(c)).toEqual({ state: "completed" });
 	});
 
+	test("Review reservations made in two concurrent Lanes never bind to each other's run", async () => {
+		// Each Lane has its own Host session and Authority Store; model them as two independent kernels.
+		const first = sharedKernel("material").claude();
+		const second = sharedKernel("material").claude();
+		const firstReady = (await first.coordinator.advance(TASK, ctx)) as { state: string; operation_id: string };
+		const secondReady = (await second.coordinator.advance(TASK, ctx)) as { state: string; operation_id: string };
+		expect(firstReady.state).toBe("review_ready");
+		expect(secondReady.state).toBe("review_ready");
+		expect(firstReady.operation_id).not.toBe(secondReady.operation_id);
+
+		// A verdict produced for the first Lane's reservation is offered to the second Lane's Host.
+		completeClaudeReview(second.host, firstReady.operation_id, "material");
+		const crossed = await submitObservedReview(second);
+		expect(crossed.state).not.toBe("completed");
+
+		// Each Lane still completes through its own reservation.
+		completeClaudeReview(first.host, firstReady.operation_id, "material");
+		expect(await submitObservedReview(first)).toEqual({ state: "completed" });
+		completeClaudeReview(second.host, secondReady.operation_id, "material");
+		expect(await submitObservedReview(second)).toEqual({ state: "completed" });
+	});
+
 	test("Pi resumes a Claude-frozen run_review task without handoff state", async () => {
 		const kernel = sharedKernel("material");
 		const claude = kernel.claude();

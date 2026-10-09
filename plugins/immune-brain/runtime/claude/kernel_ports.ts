@@ -57,7 +57,7 @@ import {
 	type BatchRunReport,
 } from "../unattended/batch_runner";
 import { createBatchKernelPort } from "../unattended/batch_kernel_port";
-import { PARALLEL_UNSUPPORTED, type LaneOffer } from "../unattended/batch_lanes";
+import type { LaneOffer } from "../unattended/batch_lanes";
 import {
 	createBatchAuthorityRegistry,
 } from "../kernel/batch_authority";
@@ -789,13 +789,6 @@ export class ClaudeRuntime {
 	): Promise<ClaudeBatchStartResult> {
 		throwIfCancelled(meta.signal);
 		const reuseOnly = options.reuseOnly === true;
-		// Lane mode is refused before any gate or write when it cannot run.
-		if (options.max_parallel !== undefined && options.max_parallel > 1)
-			return {
-				state: "rejected",
-				reason: `${PARALLEL_UNSUPPORTED}: max_parallel above 1 is not supported yet`,
-				recovery_action: "call start_unattended_batch with max_parallel 1, or without max_parallel for the serial path",
-			};
 		const probe = probeHost(this.env, process.platform, this.hostVersion);
 		if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
 		// A reuse-only continuation never opens a gate, so it needs no confirmation port.

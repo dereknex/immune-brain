@@ -13025,7 +13025,6 @@ function findIntegratedCandidate(input) {
 
 // plugins/immune-brain/runtime/unattended/batch_lanes.ts
 var LANE_EXECUTOR_HOSTS = ["claude-code", "pi"];
-var PARALLEL_UNSUPPORTED = "batch_parallel_unsupported";
 var PARALLEL_MISMATCH = "batch_parallel_mismatch";
 var TASK_ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var MAX_LANE_OFFERS = 64;
@@ -13178,6 +13177,21 @@ function skipDependents(record, taskId, reason) {
 function consumedSlots(record) {
   return record.children.filter((child) => child.state !== "pending" && child.state !== "skipped_blocked").length;
 }
+function scopeOfChild(root, child) {
+  try {
+    return [...readTaskIntent(root, child.task_id, child.intent_path ?? undefined).intent.scope_hint];
+  } catch {
+    return ["**"];
+  }
+}
+function scheduleView(input, record) {
+  return record.children.map((child) => ({
+    task_id: child.task_id,
+    state: child.state,
+    blocked_by: child.blocked_by,
+    scope_hint: scopeOfChild(input.root, input.children.find((c) => c.task_id === child.task_id) ?? { task_id: child.task_id, intent_path: null })
+  }));
+}
 var TERMINAL_NEXT_ACTIONS = {
   completed: "The batch integrated every enrollable child; review the commits and the tracker.",
   budget_stopped: "The child budget stopped new enrollments; re-confirm to continue under a new authorization.",
@@ -13292,7 +13306,6 @@ function failLineage(root, record, message) {
 function park(record, taskId, reason) {
   record.children = record.children.map((child) => child.task_id === taskId ? { ...child, state: "needs_human", reason } : child);
   skipDependents(record, taskId, `dependency ${taskId} parked`);
-  record.batch_state = "needs_human";
 }
 function isLineageBreak(message) {
   return message.includes("batch_head_lineage_broken");
@@ -13303,8 +13316,6 @@ async function runLaneBatch(input, persisted) {
   if (persisted && input.max_parallel !== undefined && input.max_parallel !== persisted.max_parallel)
     return refuse2(input, persisted, PARALLEL_MISMATCH, `the recorded batch runs with max_parallel ${persisted.max_parallel}`);
   const limit = persisted?.max_parallel ?? input.max_parallel ?? 1;
-  if (limit > 1)
-    return refuse2(input, persisted, PARALLEL_UNSUPPORTED, "max_parallel above 1 is not supported yet");
   if (!input.children.length)
     return refuse2(input, persisted, "batch_plan_empty", "batch plan is empty");
   const git = serialGitOf(input);
@@ -13385,6 +13396,13 @@ async function runLaneBatch(input, persisted) {
     return failLineage(input.root, record, error instanceof Error ? error.message : String(error));
   }
   const refusals = [];
+  let parkedMessage = null;
+  const reviewOpen = [];
+  const parkChild = (taskId, reason) => {
+    park(record, taskId, reason);
+    parkedMessage ??= reason;
+    persist();
+  };
   const enrollInLane = async (taskId) => {
     const lane = record.children.find((c) => c.task_id === taskId).lane;
     try {
@@ -13398,9 +13416,10 @@ async function runLaneBatch(input, persisted) {
       return null;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      park(record, taskId, message);
-      if (isLineageBreak(message))
-        record.batch_state = "failed";
+      parkChild(taskId, message);
+      if (!isLineageBreak(message))
+        return null;
+      record.batch_state = "failed";
       persist();
       return finalizeLane(input.root, record, message, "", { refusals });
     }
@@ -13415,9 +13434,8 @@ async function runLaneBatch(input, persisted) {
       fresh = { error: "unreadable" };
     }
     if (fresh.error !== null) {
-      park(record, child.task_id, "batch_lane_lost");
-      persist();
-      return finalizeLane(input.root, record, "batch_lane_lost", "");
+      parkChild(child.task_id, "batch_lane_lost");
+      continue;
     }
     const holdsClaim = fresh.claim !== null && fresh.claim.task_id === child.task_id;
     if (child.state === "lane_admitted") {
@@ -13437,14 +13455,12 @@ async function runLaneBatch(input, persisted) {
       continue;
     }
     if (!holdsClaim) {
-      park(record, child.task_id, "batch_lane_lost");
-      persist();
-      return finalizeLane(input.root, record, "batch_lane_lost", "");
+      parkChild(child.task_id, "batch_lane_lost");
+      continue;
     }
     if (!input.kernel.ownsTaskClaim(child.task_id)) {
-      park(record, child.task_id, "claim held by another batch");
-      persist();
-      return finalizeLane(input.root, record, "claim held by another batch", "");
+      parkChild(child.task_id, "claim held by another batch");
+      continue;
     }
     if (fresh.projection.next_obligation === "run_qa" || fresh.projection.artifact_state !== "frozen")
       continue;
@@ -13455,16 +13471,16 @@ async function runLaneBatch(input, persisted) {
     } else if (terminal.state === "review_ready") {
       record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, reason: `review reservation ${terminal.operation_id} open` } : c);
       persist();
-      return laneReport(record, `child ${child.task_id} holds an open Review reservation`, "Submit the reserved foreground Review verdict, then call start_unattended_batch again to continue.", { refusals });
+      reviewOpen.push(child.task_id);
     } else if (terminal.state === "rework" && terminal.operation === "qa") {
       const failures = child.qa_failures + 1;
       if (failures >= record.budget.qa_failure_limit) {
         const reason = "QA failure limit reached";
         record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason, qa_failures: failures } : c);
         skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
-        record.batch_state = "needs_human";
+        parkedMessage ??= reason;
         persist();
-        return finalizeLane(input.root, record, reason, "Repair and settle the own child through Kernel, then re-confirm the batch.");
+        continue;
       }
       record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, qa_failures: failures } : c);
       persist();
@@ -13472,9 +13488,7 @@ async function runLaneBatch(input, persisted) {
       continue;
     } else {
       const reason = terminal.state === "stopped" ? "Kernel reported the child stopped" : terminal.reason;
-      park(record, child.task_id, reason);
-      persist();
-      return finalizeLane(input.root, record, reason, "");
+      parkChild(child.task_id, reason);
     }
   }
   for (const child of [...record.children]) {
@@ -13487,16 +13501,16 @@ async function runLaneBatch(input, persisted) {
       laneCommit = existing?.commit ?? (await git.commitChild(child.lane.path, child.task_id, record.batch_id, child.lane.base_head, child.lane.branch, planChild?.intent_path ?? undefined)).commit;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      park(record, child.task_id, message);
-      if (isLineageBreak(message))
-        record.batch_state = "failed";
+      parkChild(child.task_id, message);
+      if (!isLineageBreak(message))
+        continue;
+      record.batch_state = "failed";
       persist();
       return finalizeLane(input.root, record, message, "");
     }
     record.children = record.children.map((c) => c.task_id === child.task_id && c.lane ? { ...c, state: "lane_committed", lane: { ...c.lane, lane_commit: laneCommit } } : c);
     persist();
   }
-  let integrationFailure = null;
   for (const child of [...record.children]) {
     if (child.state !== "lane_committed" || !child.lane?.lane_commit)
       continue;
@@ -13517,21 +13531,17 @@ async function runLaneBatch(input, persisted) {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const reason = error instanceof BatchIntegrationError ? error.reason : "batch_integration_conflict";
-      park(record, child.task_id, isLineageBreak(message) || message.startsWith(`${reason}:`) ? message : `${reason}: ${message}`);
-      persist();
+      parkChild(child.task_id, isLineageBreak(message) || message.startsWith(`${reason}:`) ? message : `${reason}: ${message}`);
       if (isLineageBreak(message)) {
         record.batch_state = "failed";
         persist();
         return finalizeLane(input.root, record, message, "");
       }
-      integrationFailure ??= message;
     }
   }
-  if (integrationFailure !== null)
-    return finalizeLane(input.root, record, integrationFailure, "");
   const coordinatorReal = lanes.resolveRoot(input.root);
   for (const offer of input.lane_offers ?? []) {
-    const startable = new Set(startableChildren(record.children.map((c) => ({ task_id: c.task_id, state: c.state, blocked_by: c.blocked_by, scope_hint: [] })), limit));
+    const startable = new Set(startableChildren(scheduleView(input, record), limit));
     const child = record.children.find((c) => c.task_id === offer.task_id);
     if (!child || child.state !== "pending" || !startable.has(child.task_id)) {
       refusals.push({ ...offer, reason: "batch_lane_unknown_child" });
@@ -13550,11 +13560,8 @@ async function runLaneBatch(input, persisted) {
       refusals.push({ ...offer, reason });
       continue;
     }
-    if (consumedSlots(record) >= record.budget.max_children) {
-      record.batch_state = record.children.some((c) => c.state === "needs_human" || c.state === "skipped_blocked") ? "needs_human" : "budget_stopped";
-      persist();
-      return finalizeLane(input.root, record, `max_children budget exhausted (${record.budget.max_children})`, "");
-    }
+    if (consumedSlots(record) >= record.budget.max_children)
+      break;
     const lane = { path: facts.real_path, branch: laneBranchName(record.initiative_slug, child.task_id), base_head: head, lane_commit: null };
     record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "lane_admitted", lane } : c);
     persist();
@@ -13584,13 +13591,13 @@ async function runLaneBatch(input, persisted) {
     });
   }
   const inFlight = record.children.filter((c) => IN_FLIGHT.has(c.state));
-  const startable = startableChildren(record.children.map((c) => ({ task_id: c.task_id, state: c.state, blocked_by: c.blocked_by, scope_hint: [] })), limit);
+  const startable = startableChildren(scheduleView(input, record), limit);
   const overBudget = consumedSlots(record) >= record.budget.max_children;
   if (!inFlight.length && (!startable.length || overBudget)) {
     const parked = record.children.some((c) => c.state === "needs_human" || c.state === "skipped_blocked");
     record.batch_state = parked ? "needs_human" : overBudget ? "budget_stopped" : "needs_human";
     persist();
-    return finalizeLane(input.root, record, parked ? "a parked child needs a human decision" : overBudget ? `max_children budget exhausted (${record.budget.max_children})` : "no child can start", "", { refusals });
+    return finalizeLane(input.root, record, parkedMessage ?? (parked ? "a parked child needs a human decision" : overBudget ? `max_children budget exhausted (${record.budget.max_children})` : "no child can start"), "", { refusals });
   }
   if (!overBudget) {
     for (const taskId of startable) {
@@ -13603,6 +13610,9 @@ async function runLaneBatch(input, persisted) {
         executor_hosts: LANE_EXECUTOR_HOSTS
       });
     }
+  }
+  if (reviewOpen.length > 0) {
+    return laneReport(record, reviewOpen.length === 1 ? `child ${reviewOpen[0]} holds an open Review reservation` : `children ${reviewOpen.join(", ")} hold open Review reservations`, "Submit each reserved foreground Review verdict in its own Lane, then call start_unattended_batch again to continue.", { handoffs, refusals });
   }
   return laneReport(record, null, handoffs.some((h) => h.role === "lane-steward") ? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers." : "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.", { handoffs, refusals });
 }
@@ -14829,12 +14839,6 @@ class ClaudeRuntime {
   async startUnattendedBatch(initiativeSlug, meta, options = {}) {
     throwIfCancelled(meta.signal);
     const reuseOnly = options.reuseOnly === true;
-    if (options.max_parallel !== undefined && options.max_parallel > 1)
-      return {
-        state: "rejected",
-        reason: `${PARALLEL_UNSUPPORTED}: max_parallel above 1 is not supported yet`,
-        recovery_action: "call start_unattended_batch with max_parallel 1, or without max_parallel for the serial path"
-      };
     const probe = probeHost(this.env, process.platform, this.hostVersion);
     if (!probe.ok)
       throw new NativeAuthorityError("unsupported_host", probe.reason);

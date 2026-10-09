@@ -63,7 +63,7 @@ All Slices are `material`. Order is strictly serial: every Slice edits `runtime/
 | A2 | The batch capability can enroll a child against a Lane root with the lane base as `expected_head`, with several children consumed and unfinished. | Supported by reading `batch_authority.ts`; unexecuted. | S2 |
 | A3 | A Host session in a Lane does not attempt batch re-entry, because the Lane holds no batch state file. | Supported by `findResumableBatchSlugForTask`; unexecuted. | S2 |
 | A4 | The deterministic QA engine can run a child's descriptors against a commit that is not checked out. | **Closed in S3.** `runDeterministicQa` runs a child's descriptors against a candidate commit that is not checked out, materializing the delivery workspace from its Git tree; executed by `tests/unattended-batch-integration.test.ts`. | S3 |
-| A5 | Review reservations in separate Lane sessions cannot cross-bind. | Supported by per-session state; unexecuted. | S4 |
+| A5 | Review reservations in separate Lane sessions cannot cross-bind. | **Closed in S4.** Each Lane has its own Host session and store; a verdict produced for one Lane's reservation is not accepted in the other; executed by `tests/dual-host-assurance-conformance.test.ts`. | S4 |
 
 ## Technical Design
 

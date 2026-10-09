@@ -1665,7 +1665,7 @@ describe("lane mode parameters (parallel-batch-lanes)", () => {
 		}
 	});
 
-	it("refuses max_parallel above 1 with batch_parallel_unsupported before the gate, with zero writes", async () => {
+	it("accepts max_parallel above 1 through the same single gate", async () => {
 		const fixture = createBatchFixture("lane-wide");
 		let gates = 0;
 		const result = await executePiUnattendedBatch({
@@ -1675,10 +1675,8 @@ describe("lane mode parameters (parallel-batch-lanes)", () => {
 			readInitiative: async () => fixture.observation,
 			confirmBatch: async () => { gates++; return "accept"; },
 		});
-		expect(result.state).toBe("rejected");
-		expect(result.reason).toMatch(/^batch_parallel_unsupported/);
-		expect(gates).toBe(0);
-		assertZeroWrites(fixture.root, fixture.head, "lane-wide");
+		expect(gates).toBe(1);
+		expect(String((result as { reason?: string }).reason ?? "")).not.toMatch(/batch_parallel_unsupported/);
 	});
 
 	it("shows max_parallel and the parallel groups in the confirmation only in lane mode", async () => {

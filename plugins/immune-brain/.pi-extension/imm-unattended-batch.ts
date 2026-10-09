@@ -21,7 +21,7 @@ import type { BatchRunnerGitPort } from "../runtime/unattended/batch_git";
 import type { InitiativeObservationReader } from "../runtime/unattended/types";
 import { advancePiTask } from "./imm-canary-work";
 import { batchReason } from "../runtime/unattended/batch_reasons";
-import { PARALLEL_UNSUPPORTED, parseLaneOffers, parseMaxParallel, type LaneOffer } from "../runtime/unattended/batch_lanes";
+import { parseLaneOffers, parseMaxParallel, type LaneOffer } from "../runtime/unattended/batch_lanes";
 import {
 	authorizeBatch,
 	projectBatchPreflight,
@@ -143,13 +143,6 @@ export async function executePiUnattendedBatch(
 	const interactive = options.interactive ?? true;
 
 	if (!reuseOnly && !interactive) return { state: "rejected", ...nonInteractiveRefusal() };
-	// Lane mode is refused before any gate or write when it cannot run.
-	if (options.max_parallel !== undefined && options.max_parallel > 1)
-		return {
-			state: "rejected",
-			reason: `${PARALLEL_UNSUPPORTED}: max_parallel above 1 is not supported yet`,
-			recovery_action: "call start_unattended_batch with max_parallel 1, or without max_parallel for the serial path",
-		};
 
 	// 1. Host-independent batch preflight: claim ownership, branch availability,
 	// working-tree cleanliness against the authorized scope, recovery children,
