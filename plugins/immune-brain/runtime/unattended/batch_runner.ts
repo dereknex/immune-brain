@@ -449,6 +449,7 @@ function rejectionReport(input: StartBatchInput, reason: string): BatchRunReport
 	})();
 	if (persisted !== null && isLaneBatchRecord(persisted))
 		return laneRejectionReport(
+			input,
 			persisted,
 			reason,
 			"settle the reported kernel store condition and retry in the current Host",

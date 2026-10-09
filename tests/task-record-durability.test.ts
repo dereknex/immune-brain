@@ -82,18 +82,18 @@ function isIgnored(relativePath: string): boolean {
  * legacy `.imm/tasks/` pair so this repository can settle under the installed
  * old runtime before it migrates.
  */
-function terminalPair(taskId: string): {
+function terminalPair(taskId: string, root = REPO_ROOT): {
   recordPath: string;
   proofPath: string;
 } | null {
-  const taskDir = join(AUDIT_DIR, taskId);
+  const taskDir = join(root, ".imm/audit", taskId);
   const runDirs = (existsSync(taskDir) ? readdirSync(taskDir, { withFileTypes: true }) : [])
     .filter((entry) => entry.isDirectory() && /^run-[A-Za-z0-9-]+$/.test(entry.name))
     .map((entry) => join(taskDir, entry.name))
     .sort();
-  for (const dir of [...runDirs, taskDir, join(REPO_ROOT, ".imm/tasks")]) {
+  for (const dir of [...runDirs, taskDir, join(root, ".imm/tasks")]) {
     const flat = dir === taskDir;
-    const legacy = dir === join(REPO_ROOT, ".imm/tasks");
+    const legacy = dir === join(root, ".imm/tasks");
     const recordPath = join(dir, legacy ? `${taskId}.json` : "task-record.json");
     const proofPath = join(
       dir,
@@ -107,36 +107,8 @@ function terminalPair(taskId: string): {
   return null;
 }
 
-/**
- * A task whose Kernel authority is still live in this worktree: its archived
- * TaskIntent is a transitory freeze artifact, not evidence loss. Only a positive
- * live record counts; an unreadable store is never treated as proof of absence.
- */
-function liveTaskInFlight(taskId: string): boolean {
-  const legacy = join(REPO_ROOT, ".imm/state/tasks", `${taskId}.json`);
-  if (existsSync(legacy)) {
-    try {
-      const raw = JSON.parse(readFileSync(legacy, "utf8")) as { lifecycle?: unknown };
-      if (raw.lifecycle === "active") return true;
-    } catch {
-      // unreadable live record: fall through to the store probe
-    }
-  }
-  const storePath = join(REPO_ROOT, ".imm/state/kernel.sqlite");
-  if (!existsSync(storePath)) return false;
-  const db = new DatabaseSync(storePath, { readOnly: true });
-  try {
-    const row = db.prepare("SELECT state FROM runs WHERE task_id = ?").get(taskId) as
-      | { state?: unknown }
-      | undefined;
-    return row?.state === "active";
-  } finally {
-    db.close();
-  }
-}
-
-function archivalRequiresRecord(taskId: string): { ok: boolean; reason?: string } {
-  const pair = terminalPair(taskId);
+function archivalRequiresRecord(taskId: string, root = REPO_ROOT): { ok: boolean; reason?: string } {
+  const pair = terminalPair(taskId, root);
   if (!pair) {
     return { ok: false, reason: `terminal audit pair missing for archived terminal task ${taskId}` };
   }
@@ -215,6 +187,57 @@ describe("task record durability", () => {
     expect(missingCheck.reason).toContain("missing");
   });
 
+  test("archived evidence is independent of missing, active, terminal, corrupt and locked live stores", () => {
+    const taskId = "archived-isolation";
+    const root = storeRoot();
+    try {
+      const auditDir = join(root, ".imm/audit", taskId);
+      mkdirSync(auditDir, { recursive: true });
+      const recordPath = join(auditDir, "task-record.json");
+      const proofPath = join(auditDir, "terminal-proof.json");
+      const record = `${JSON.stringify(storeTerminalRecord(taskId), null, 2)}\n`;
+      writeFileSync(recordPath, record);
+      writeFileSync(proofPath, JSON.stringify({
+        task_id: taskId,
+        final_record_hash: revisionForContent(record),
+      }));
+      const check = () => {
+        expect(archivalRequiresRecord(taskId, root).ok).toBe(true);
+        expect(archivalRequiresRecord("missing-archived-task", root).ok).toBe(false);
+        writeFileSync(recordPath, `${record} `);
+        expect(archivalRequiresRecord(taskId, root).reason).toContain("record bytes");
+        writeFileSync(recordPath, record);
+      };
+      check(); // no live store
+      const { run_id } = storeEnrollFixture(root, taskId);
+      check(); // same task active: never excuses missing or corrupt evidence
+      withKernelTransaction(root, (db) => {
+        db.prepare("UPDATE runs SET state = 'done' WHERE run_id = ?").run(run_id);
+        writeWorkspaceRow(db, readWorkspaceRow(db).revision, null, "2026-08-12T11:00:00.000Z");
+      });
+      storeEnrollFixture(root, taskId);
+      check(); // terminal and active runs of the same task
+      const holder = new DatabaseSync(join(root, ".imm/state/kernel.sqlite"));
+      try {
+        holder.exec("BEGIN IMMEDIATE");
+        check(); // uncommitted concurrent writer cannot affect archive checks
+        holder.exec("ROLLBACK");
+      } finally {
+        holder.close();
+      }
+      rmSync(join(root, ".imm/state"), { recursive: true });
+      mkdirSync(join(root, ".imm/state"), { recursive: true });
+      const storePath = join(root, ".imm/state/kernel.sqlite");
+      writeFileSync(storePath, "corrupt store");
+      check();
+      rmSync(storePath);
+      mkdirSync(storePath); // unreadable as a SQLite file
+      check();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test("Durability guard enumerates the repository's archived sidecars and fails outside the explicit baseline", () => {
     const rawBaseline = JSON.parse(readFileSync(join(REPO_ROOT, "tests/task-record-durability-baseline.json"), "utf8"));
     const baseline: unknown = rawBaseline.baseline ?? rawBaseline;
@@ -232,12 +255,10 @@ describe("task record durability", () => {
     expect(archived.length).toBeGreaterThan(0);
     expect(archived.length).toBeGreaterThanOrEqual(83);
 
-    // The cutover layout isolates evidence per task-ID directory, so state
-    // writes from concurrent tasks can never collide with terminal evidence.
-    // An archived TaskIntent whose task is still in flight is a freeze artifact
-    // of the active task, not lost terminal evidence.
+    // Freeze keeps active intents in place. Historical archive evidence must
+    // stand on its own, independently of this worktree's live authority store.
     const missing = archived
-      .filter((id) => !archivalRequiresRecord(id).ok && !liveTaskInFlight(id))
+      .filter((id) => !archivalRequiresRecord(id).ok)
       .sort();
     const unexpectedMissing = missing.filter((id) => !baselineList.includes(id)).sort();
     expect(

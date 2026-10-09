@@ -88,6 +88,8 @@ export interface BatchLaneBinding {
 	base_head: string;
 	/** Commit created in the Lane after the Lane Kernel settled the child. */
 	lane_commit: string | null;
+	/** Kernel run observed at enrollment; absent historical bindings cannot resume a parked child. */
+	run_id?: string | null;
 }
 
 export interface BatchLaneChildRun {
@@ -525,7 +527,8 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 				!lane.branch ||
 				typeof lane.base_head !== "string" ||
 				!lane.base_head ||
-				(lane.lane_commit !== null && typeof lane.lane_commit !== "string")
+				(lane.lane_commit !== null && typeof lane.lane_commit !== "string") ||
+				(lane.run_id !== undefined && lane.run_id !== null && (typeof lane.run_id !== "string" || !lane.run_id))
 			)
 				throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid lane`);
 		}

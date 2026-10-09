@@ -279,12 +279,15 @@ function releaseHandoffs(
 	record: BatchLaneRunStateRecord,
 	lanes: BatchLaneGitPort,
 ): BatchLaneHandoff[] {
+	const lineage = classifyBatchLineage({ root: input.root, branch: record.branch ?? "",
+		expectedHead: expectedBatchHead(record), childCommits: record.commits, batchId: record.batch_id });
+	if (lineage.kind === "broken") return [];
 	const handoffs: BatchLaneHandoff[] = [];
 	for (const child of record.children) {
 		if (child.state !== "integrated" || !child.lane) continue;
 		const facts = lanes.inspectLane(input.root, child.lane.path);
-		if (!facts.exists || !facts.same_repository || !facts.clean || facts.branch !== child.lane.branch) continue;
-		if (!lanes.auditReachable({ root: input.root, head: expectedBatchHead(record), task_id: child.task_id })) continue;
+		if (!facts.exists || !facts.same_repository || !facts.is_worktree_root || !facts.clean || facts.branch !== child.lane.branch || facts.active_claim_task_id !== null) continue;
+		if (!lanes.auditReachable({ root: input.root, head: lineage.head, task_id: child.task_id })) continue;
 		handoffs.push({ role: "lane-steward", action: "release", task_id: child.task_id, lane_branch: child.lane.branch });
 	}
 	return handoffs;
@@ -342,7 +345,7 @@ function scheduleView(input: StartBatchInput, record: BatchLaneRunStateRecord) {
 	}));
 }
 
-/** The lane batch has stopped on a parked child. A re-confirmation returns the same stop; only a new Batch Authorization starts a fresh run. */
+/** Recovery preserves the parked run and requires fresh literal-user authorization. */
 const LANE_NEEDS_HUMAN_NEXT_ACTION =
 	"The lane batch has stopped on a parked child and its Lane is kept. Resolve the child by hand; continuing needs a new Batch Authorization.";
 
@@ -379,8 +382,13 @@ function laneReport(
 }
 
 /** A store-condition rejection of a persisted lane batch: its persisted lane children, commits and parallelism, never an empty serial plan. */
-export function laneRejectionReport(record: BatchLaneRunStateRecord, reason: string, nextAction: string): BatchLaneRunReport {
-	return laneReport({ ...record, batch_state: "rejected" }, reason, nextAction);
+export function laneRejectionReport(input: StartBatchInput, record: BatchLaneRunStateRecord, reason: string, nextAction: string): BatchLaneRunReport {
+	// A rejected tick grants no execution or admission authority. Only already
+	// integrated, unoccupied Lanes with surviving audit evidence may be released.
+	const handoffs = releaseHandoffs(input, record, laneGitOf(input));
+	return laneReport({ ...record, batch_state: "rejected" }, reason,
+		handoffs.length ? `${nextAction}. Check each release handoff with the Lane Steward.` : nextAction,
+		{ handoffs });
 }
 
 function finalizeLane(
@@ -535,13 +543,31 @@ export async function runLaneBatch(
 			return finalizeLane(input.root, record, `terminal state already reached: ${record.batch_state}`, "", {
 				handoffs: record.batch_state === "completed" ? releaseHandoffs(input, record, lanes) : [],
 			});
-		if (record.batch_state === "needs_human")
-			return finalizeLane(
-				input.root,
-				record,
-				"a parked child needs a human decision",
-				LANE_NEEDS_HUMAN_NEXT_ACTION,
-			);
+		if (record.batch_state === "needs_human") {
+			const invalid = validateNewAuthorization(input);
+			if (invalid || Date.parse(input.confirmation_time) <= Date.parse(record.confirmation_time))
+				return laneReport(record, invalid ?? "the parked batch requires a fresh literal-user confirmation", LANE_NEEDS_HUMAN_NEXT_ACTION);
+			const resumed: BatchLaneChildRun[] = [];
+			for (const child of record.children) {
+				if (child.state !== "needs_human") { resumed.push(child); continue; }
+				if (!child.lane?.run_id)
+					return laneReport(record, "parked Lane has no recorded run identity; inspect it without re-enrolling", LANE_NEEDS_HUMAN_NEXT_ACTION);
+				const facts = lanes.inspectLane(input.root, child.lane.path);
+				const fresh = await input.kernel.projectTask(child.lane.path, child.task_id);
+				if (!facts.exists || !facts.same_repository || !facts.is_worktree_root || facts.branch !== child.lane.branch ||
+					fresh.error !== null || fresh.projection.run_id !== child.lane.run_id ||
+					fresh.projection.open_user_decision_count > 0 || fresh.projection.replan_required_ids.length > 0)
+					return laneReport(record, "parked Lane identity or decision is unresolved", LANE_NEEDS_HUMAN_NEXT_ACTION);
+				const state = fresh.projection.lifecycle === "done" && fresh.projection.completion_ready ?
+					(child.lane.lane_commit ? "lane_committed" : "settled") :
+					fresh.projection.lifecycle === "active" && fresh.claim?.task_id === child.task_id &&
+					(facts.active_claim_task_id === null || facts.active_claim_task_id === child.task_id) ? "enrolled" : null;
+				if (!state) return laneReport(record, "parked child has no recoverable owned run", LANE_NEEDS_HUMAN_NEXT_ACTION);
+				resumed.push({ ...child, state, reason: null, qa_failures: 0 });
+			}
+			record = { ...record, batch_state: "running", confirmation_time: input.confirmation_time,
+				children: resumed.map(child => child.state === "skipped_blocked" ? { ...child, state: "pending", reason: null } : child) };
+		}
 	} else {
 		const invalid = validateNewAuthorization(input);
 		if (invalid) return refuse(input, null, "batch_authorization_invalid", invalid);
@@ -567,6 +593,8 @@ export async function runLaneBatch(
 	const persist = (): void => {
 		record = writeBatchLaneRunState(input.root, record);
 	};
+	// A resumed park is persisted only after the existing lineage validation below.
+	const resumedPark = persisted?.batch_state === "needs_human" && record.batch_state === "running";
 	if (record.batch_state === "prepared") {
 		record.batch_state = "running";
 		persist();
@@ -622,6 +650,7 @@ export async function runLaneBatch(
 		return failLineage(input.root, record, error instanceof Error ? error.message : String(error));
 	}
 
+	if (resumedPark) persist();
 	const refusals: NonNullable<BatchLaneRunReport["lane_refusals"]> = [];
 	// A parked child ends only itself and its dependents; the batch keeps moving
 	// for every scope-disjoint sibling and settles needs_human at the end of the
@@ -641,7 +670,10 @@ export async function runLaneBatch(
 				task_id: taskId,
 				batch: { registry: input.registry, capability: input.capability, binding: { batch_id: record.batch_id, expected_head: lane.base_head } },
 			});
-			record.children = record.children.map((c) => (c.task_id === taskId ? { ...c, state: "enrolled", reason: null } : c));
+			const fresh = await input.kernel.projectTask(lane.path, taskId);
+			if (fresh.error !== null || !fresh.projection.run_id || fresh.claim?.task_id !== taskId)
+				throw new Error("enrolled Lane has no observable owned run");
+			record.children = record.children.map((c) => (c.task_id === taskId ? { ...c, state: "enrolled", reason: null, lane: { ...lane, run_id: fresh.projection.run_id } } : c));
 			persist();
 			return null;
 		} catch (error) {
@@ -669,12 +701,16 @@ export async function runLaneBatch(
 			parkChild(child.task_id, "batch_lane_lost");
 			continue;
 		}
+		if (child.lane.run_id && fresh.projection.run_id !== child.lane.run_id) {
+			parkChild(child.task_id, "batch_lane_run_mismatch");
+			continue;
+		}
 		const holdsClaim = fresh.claim !== null && fresh.claim.task_id === child.task_id;
 		if (child.state === "lane_admitted") {
 			// A crash between admission and enrollment adopts an existing claim or enrolls now.
 			if (holdsClaim) {
 				record.children = record.children.map((c) =>
-					c.task_id === child.task_id ? { ...c, state: "enrolled", reason: "adopted existing lane claim after interruption" } : c,
+					c.task_id === child.task_id ? { ...c, state: "enrolled", reason: "adopted existing lane claim after interruption", lane: { ...child.lane!, run_id: fresh.projection.run_id } } : c,
 				);
 				persist();
 			} else {

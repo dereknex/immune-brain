@@ -659,7 +659,9 @@ export async function projectBatchPreflight(
 	let reconfirmation: ReconfirmationSnapshot | undefined;
 	if (activeRecord && !isLaneBatchRecord(activeRecord) && activeRecord.plan_digest !== planSurface.surface.plan_digest) {
 		try { reconfirmation = await captureBatchReconfirmation(root, activeRecord, planSurface.surface.recovery_children); }
-		catch { return reject("plan_projection_failed", "batch plan reconfirmation is not eligible"); }
+		catch { return reject("plan_projection_failed", activeRecord.commits.length
+			? `batch plan changed after ${activeRecord.commits.length} recorded child commit(s). The old authorization cannot execute the revised plan. Preserve the batch record, report, commit evidence and audit; inspect each remaining child's Kernel run before an explicit imm-run handoff. Do not re-enroll settled children or manufacture batch trailers. The old batch remains parked for disposition; this rejection does not terminate it.`
+			: "batch plan reconfirmation is not eligible"); }
 	}
 
 	const projection: BatchPreflightProjection = {

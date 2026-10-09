@@ -149,7 +149,7 @@ Interruption: every step is idempotent against durable facts. A crash after lane
 
 Failure: an identity mismatch, a plumbing conflict, or a failed descriptor rerun leaves the batch branch unmoved, sets the child `needs_human` with `batch_integration_conflict` or `batch_integration_check_failed`, sets its dependents `skipped_blocked`, and keeps the Lane. Disjoint siblings continue. `[U]` D7
 
-A lane batch that settles `needs_human` has stopped and keeps its Lane; its report says that continuing needs a new Batch Authorization, and a fresh confirmation of the same batch returns the same stop. A kernel store-condition rejection of a persisted lane batch reports its persisted lane children, and the resume plan treats an `integrated` or `released` child as already settled, never enrollable. `[R]`
+A lane batch that settles `needs_human` has stopped and keeps its Lane. Continuing requires a fresh Batch Authorization for the unchanged plan. Enrollment records the Lane's Kernel `run_id`; recovery requires that same run, the same repository and Lane branch, no unresolved user decision or replan requirement, and either an owned active claim or completed terminal evidence. Recovery preserves integrated siblings and commits and never re-enrolls the parked run; a historical Lane without a recorded run identity remains parked for inspection. Plan drift remains rejected. A kernel store-condition rejection preserves persisted children and commits and may report release handoffs only for integrated, clean, unoccupied Lanes whose audit pair survives on the batch branch; it grants no provision or Executor handoff. The resume plan treats an `integrated` or `released` child as already settled, never enrollable. `[R]`
 
 ### Roles and contracts
 

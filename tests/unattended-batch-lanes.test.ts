@@ -25,6 +25,7 @@ import {
 	parseLaneOffers,
 	parseMaxParallel,
 	runLaneBatch,
+	laneRejectionReport,
 	type LaneFacts,
 	type LaneOffer,
 } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
@@ -228,7 +229,7 @@ function request(
 			nonce: "n",
 		},
 		children,
-		CONFIRMED_AT,
+		overrides.confirmation_time ?? CONFIRMED_AT,
 	);
 	return {
 		root: fx.repo,
@@ -935,6 +936,49 @@ async function integrateTaskA(fx: Fixture, gitPort: BatchRunnerGitPort) {
 }
 
 describe("lane release", () => {
+	it("keeps safe release handoffs on a read-only store rejection without granting provision or execution", async () => {
+		const fx = fixture();
+		try {
+			const { args, kernel, laneA } = await integrateTaskA(fx, laneGitWithAudit());
+			const laneB = fx.lane("task-b");
+			await startBatch({ ...args, lane_offers: [{ task_id: "task-b", path: laneB }] });
+			kernel.frozen.add("task-b");
+			const statePath = join(fx.repo, `.imm/state/batches/${BATCH_ID}.json`);
+			const before = readFileSync(statePath, "utf8");
+			const reject = () => startBatch({ ...args, kernel: { ...kernel,
+				advanceTask: async () => { throw new Error("kernel store is busy"); },
+			} });
+			const report = lanes(await reject());
+			expect(report.batch_state).toBe("rejected");
+			expect(report.handoffs).toEqual([{ role: "lane-steward", action: "release", task_id: "task-a", lane_branch: laneBranchName(SLUG, "task-a") }]);
+			expect(report.next_action).toContain("release handoff");
+			expect(readFileSync(statePath, "utf8")).toBe(before);
+			expect(existsSync(laneA)).toBe(true);
+			writeFileSync(join(laneA, "scratch.txt"), "unsaved\n");
+			expect(lanes(await reject()).handoffs).toEqual([]);
+			rmSync(join(laneA, "scratch.txt"));
+			const foreignIntent = parseTaskIntentV1(JSON.parse(intentJson("foreign-task")));
+			const integratedHead = git(fx.repo, "rev-parse", "HEAD");
+			git(fx.repo, "reset", "--hard", fx.base);
+			const persisted = readAnyBatchRunState(fx.repo, BATCH_ID)!;
+			if (persisted.contract !== "assurance_kernel/batch_run_state/v2") throw new Error("expected Lane record");
+			expect(laneRejectionReport(args, persisted, "kernel store is busy", "retry").handoffs).toEqual([]);
+			expect(readFileSync(statePath, "utf8")).toBe(before);
+			git(fx.repo, "reset", "--hard", integratedHead);
+			seedKernelRunForTest(laneA, { task_id: "foreign-task", record: {
+				contract: "assurance_kernel/task_record/v4", task_id: "foreign-task",
+				intent_snapshot: foreignIntent,
+				intent_ref: { path: "docs/plans/foreign-task.intent.json", content_hash: canonicalIntentHash(foreignIntent) },
+				lifecycle: "active", artifact_state: "active", baseline: `sha256:${"a".repeat(64)}`,
+				git_base_head: git(laneA, "rev-parse", "HEAD"), attestations: [], findings: [], history: [],
+			} });
+			expect(lanes(await reject()).handoffs).toEqual([]);
+			expect(readFileSync(statePath, "utf8")).toBe(before);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
 	it("offers release for an integrated clean Lane, records released once its path is gone, and keeps a present Lane integrated", async () => {
 		const fx = fixture();
 		try {
@@ -1187,7 +1231,7 @@ describe("Lane Executor supervision walkthrough", () => {
 			parent.exit("task-b", deliver(laneB, "task-b", "b.txt"));
 			parent.exit("task-c", deliver(laneC, "task-c", "c.txt"));
 			const done = lanes(await startBatch(args));
-			expect(done.batch_state).toBe("completed");
+			expect(done.batch_state, JSON.stringify(done)).toBe("completed");
 			expect(done.children.map((c) => c.state)).toEqual(["released", "integrated", "integrated"]);
 			expect(done.commits).toHaveLength(3);
 			expect(releases(done).map((h) => h.task_id)).toEqual(["task-b", "task-c"]);
@@ -1201,20 +1245,22 @@ describe("Lane Executor supervision walkthrough", () => {
 		} finally {
 			fx.cleanup();
 		}
-	});
+	}, 20000);
 });
 
 describe("lane reader and guidance accuracy", () => {
-	it("states that a parked lane batch has stopped and needs a new Batch Authorization, and behaves as before on a fresh confirmation", async () => {
-		const fx = fixture({ "task-a": 'process.exit(require("node:fs").existsSync("never.txt") ? 0 : 1)' });
+	it("requires a genuinely fresh Batch Authorization and resumes the same resolved parked run", async () => {
+		const fx = fixture();
 		try {
 			const kernel = laneKernel();
 			const children = [child("task-a", "S1"), child("task-b", "S2", ["task-a"])];
-			const args = request(fx, children, kernel);
+			const budget = { max_children: 2, qa_failure_limit: 1 };
+			const args = request(fx, children, kernel, { budget });
 			await startBatch(args);
 			const laneA = fx.lane("task-a");
 			await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] });
 			writeFileSync(join(laneA, "a.txt"), "a\n");
+			kernel.reworking.add("task-a");
 			kernel.frozen.add("task-a");
 			const parked = lanes(await startBatch(args));
 			expect(parked.batch_state).toBe("needs_human");
@@ -1226,8 +1272,36 @@ describe("lane reader and guidance accuracy", () => {
 			expect(again.batch_state).toBe("needs_human");
 			expect(again.children).toEqual(parked.children);
 			expect(again.commits).toEqual(parked.commits);
-			expect(again.next_action).toBe(parked.next_action);
-			expect(lanes(await startBatch({ ...args, confirmation_time: "2026-07-01T00:00:00.000Z" }))).toEqual(again);
+			kernel.reworking.delete("task-a");
+			kernel.frozen.delete("task-a");
+			const fresh = request(fx, children, kernel, { budget, confirmation_time: "2026-06-01T00:00:00.000Z" });
+			const statePath = join(fx.repo, `.imm/state/batches/${BATCH_ID}.json`);
+			const parkedBytes = readFileSync(statePath, "utf8");
+			const project = kernel.projectTask;
+			for (const overrides of [{ run_id: "foreign-run" }, { open_user_decision_count: 1 }, { replan_required_ids: ["decision"] }, { lifecycle: "stopped" as const }]) {
+				const blocked = lanes(await startBatch({ ...fresh, kernel: { ...kernel,
+					projectTask: async (root, id) => {
+						const result = await project(root, id);
+						return { ...result, projection: { ...result.projection, ...overrides } };
+					},
+				} }));
+				expect(blocked.batch_state).toBe("needs_human");
+				expect(readFileSync(statePath, "utf8")).toBe(parkedBytes);
+			}
+			// Production ownership observes consumed slots on the new capability.
+			fresh.kernel = { ...fresh.kernel, ownsTaskClaim: id => fresh.registry.isChildConsumed(fresh.capability, id) };
+			expect(fresh.kernel.ownsTaskClaim("task-a")).toBe(false);
+			const resumed = lanes(await startBatch(fresh));
+			expect(fresh.kernel.ownsTaskClaim("task-a")).toBe(true);
+			expect(resumed.batch_state, resumed.reason ?? "").toBe("running");
+			expect(resumed.children.map(c => c.state)).toEqual(["enrolled", "pending"]);
+			expect(resumed.children[0]!.lane?.run_id).toBe(parked.children[0]!.lane?.run_id);
+			expect(kernel.enrolled.size).toBe(1);
+			kernel.settled.add("task-a");
+			const settled = lanes(await startBatch(fresh));
+			expect(settled.children[0]!.state).toBe("integrated");
+			expect(settled.commits).toHaveLength(1);
+			expect(lanes(await startBatch(fresh)).commits).toEqual(settled.commits);
 			expect(existsSync(laneA)).toBe(true);
 		} finally {
 			fx.cleanup();

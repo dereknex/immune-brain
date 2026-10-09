@@ -175,7 +175,10 @@ and clarification. It does not apply to Enrolled Intent Revision.
 Before authoring a TaskIntent, trace each expected behavior from its public or
 runtime entry point through existing imports and callers to the highest focused
 behavioral tests. Include generated or packaged mirrors and every owner of the
-same state machine. Record the concrete paths in the Spec's discovery evidence when the work is
+same state machine. For configuration changes, follow deployment copies and
+integration assertions; for runtime changes, include the generated Claude bundle
+when it inlines that runtime and the required release changeset. Resolve these
+paths from the build and test references before Enrollment. Record the concrete paths in the Spec's discovery evidence when the work is
 complex; simple TaskIntent-only work records them in `scope_hint`.
 Do not author while a referenced sibling is unresolved. Use the smallest
 coherent module directory for ordinary implementation scope. Keep Kernel,

@@ -279,6 +279,24 @@ describe("bounded batch plan reconfirmation", () => {
 		expect(f.gates()).toBe(2); expect(readFileSync(join(f.root, f.path))).toEqual(bytes); expect(git(f.root, "rev-parse", "HEAD")).toBe(head);
 	}, 90000);
 
+	it("plan drift after recorded child progress gives a non-authorizing evidence-preserving disposition", async () => {
+		const f = await fixture("pi");
+		git(f.root, "commit", "-qm", "fixture prior progress");
+		const priorCommit = git(f.root, "rev-parse", "HEAD");
+		const record = { ...f.before, commits: [priorCommit], children: f.before.children.map((c, i) =>
+			i === 0 ? { ...c, state: "committed" as const, commit: priorCommit } : c) };
+		put(f.root, f.path, record);
+		const before = snapshot(f.root);
+		const result = await projectBatchPreflight({ root: f.root, initiative_slug: f.slug });
+		expect(result.ok).toBe(false);
+		if (result.ok) throw new Error("expected refusal");
+		expect(result.reason).toContain("recorded child commit");
+		expect(result.reason).toContain("does not terminate");
+		expect(result.reason).toContain("Do not re-enroll settled children");
+		expect(snapshot(f.root)).toEqual(before);
+		expect(f.gates()).toBe(1);
+	}, 20000);
+
 	for (const host of ["pi", "claude"] as const) it(`${host}: default Host decline preserves raw index with stale tracked stat metadata`, async () => {
 		const optionalLocks = process.env.GIT_OPTIONAL_LOCKS;
 		delete process.env.GIT_OPTIONAL_LOCKS;

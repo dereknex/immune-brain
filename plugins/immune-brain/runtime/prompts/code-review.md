@@ -53,6 +53,16 @@ seam, or a seam silently replaced by a different one, is a finding carrying
 named, its absence is not a finding: candidates written before this rule carries
 no defect for lacking one.
 
+Before pass, enumerate the immutable change set and read each complete per-file
+diff, including deletions. Page bounded reads until every hunk is visible; a
+truncated aggregate output or summary is incomplete coverage. Trace changed
+high-risk behavior through its callers and state owner, and inspect a concrete
+negative case against the embedded acceptance. If immutable evidence remains
+unavailable or incomplete, report the concrete acceptance coverage gap in a
+rework finding with required evidence. `inspected_paths` declares coverage; it
+does not itself prove tool reading. Judge quality by evidence, not elapsed time
+or tool-call count.
+
 A required check that is skipped, that matches zero tests, or whose prerequisite
 is absent does not prove the acceptance; do not accept it as evidence. Full
 suite coverage reported at a coarse pass count is not per-invariant evidence.
