@@ -324,4 +324,27 @@ describe("internal role-prompt bridge", () => {
 		for (const row of ["| Claude Code |", "| Pi |", "| Any Host without one |"]) expect(loop).toContain(row);
 		expect(read("plugins/immune-brain/skills/imm-run/SKILL.md")).toContain("../../dist/imm-run.md#lane-executor-supervision");
 	});
+	it("launches Lane Executors in Herdr panes without asking, and never answers their dialogs", () => {
+		const loop = read("plugins/immune-brain/dist/imm-run.md").replace(/\s+/g, " ");
+		for (const fragment of [
+			"| Either Host, inside a Herdr pane (`HERDR_ENV=1`) |",
+			"the first matching row applies, and the user is not asked to choose",
+			"herdr pane split --current --direction <right|down> --cwd <lane_path> --no-focus",
+			"herdr agent start <name> --kind <kind> --pane <pane_id> -- <host arguments>",
+			"herdr agent prompt <pane_id> \"<imm-run entry> <task_id>\"",
+			"Supervise with `herdr agent wait <pane_id>` as a Host background command",
+			"The Parent sends that pane no keys and no prompt",
+			"a relaunch submits the entry again in the same pane instead of creating another",
+			"The Parent adds no permission or trust option of its own",
+			"The Parent closes only panes it created",
+			"Outside Herdr the Parent never invokes `herdr`",
+			// The pane path changes how a session is obtained, not what counts as progress.
+			"never from the session's output or exit status",
+		]) {
+			expect(loop).toContain(fragment);
+		}
+		expect(read("plugins/immune-brain/skills/imm-run/SKILL.md")).toContain("../../dist/imm-run.md#herdr-lane-panes");
+		// The steward still knows no workspace tool.
+		expect(/herdr/i.test(read("plugins/immune-brain/runtime/prompts/lane-steward.md"))).toBe(false);
+	});
 });

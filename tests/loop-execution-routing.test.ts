@@ -258,14 +258,15 @@ describe("lane-steward routing", () => {
 		);
 	});
 
-	it("keeps the role prompt, the runtime and the imm-run contract free of any workspace tool", () => {
+	// `dist/imm-run.md` left this list on 2026-10-09: the Parent may drive Herdr
+	// panes for Lane Executors (ADR 0013). The steward and the runtime still may not.
+	it("keeps the role prompt and the runtime free of any workspace tool", () => {
 		for (const path of [
 			"plugins/immune-brain/runtime/prompts/lane-steward.md",
 			"plugins/immune-brain/dist/role-prompts/lane-steward.md",
 			"plugins/immune-brain/runtime/loop_contract.ts",
 			"plugins/immune-brain/runtime/unattended/batch_lanes.ts",
 			"plugins/immune-brain/runtime/unattended/batch_integration.ts",
-			"plugins/immune-brain/dist/imm-run.md",
 		]) {
 			const source = read(path);
 			expect({ path, herdr: /HERDR/i.test(source) }).toEqual({ path, herdr: false });

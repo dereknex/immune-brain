@@ -13721,7 +13721,8 @@ async function runLaneBatch(input, persisted) {
       run_id: fresh.projection.run_id ?? null,
       record_revision: fresh.projection.record_revision,
       next_obligation: fresh.projection.next_obligation,
-      lane_branch: child.lane.branch
+      lane_branch: child.lane.branch,
+      lane_path: child.lane.path
     });
   }
   handoffs.push(...releaseHandoffs(input, record, lanes));

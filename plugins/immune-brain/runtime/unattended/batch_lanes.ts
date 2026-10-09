@@ -857,6 +857,7 @@ export async function runLaneBatch(
 			record_revision: fresh.projection.record_revision,
 			next_obligation: fresh.projection.next_obligation,
 			lane_branch: child.lane.branch,
+			lane_path: child.lane.path,
 		});
 	}
 	handoffs.push(...releaseHandoffs(input, record, lanes));

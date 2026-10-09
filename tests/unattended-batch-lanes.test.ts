@@ -503,7 +503,7 @@ describe("max_parallel 1 end to end through a real second worktree", () => {
 			const second = lanes(await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] }));
 			expect(second.children.map((c) => c.state)).toEqual(["enrolled", "pending"]);
 			expect(kernel.enrolled.get("task-a")).toBe(laneA);
-			expect(second.handoffs).toMatchObject([{ role: "executor", task_id: "task-a", lane_branch: laneBranchName(SLUG, "task-a") }]);
+			expect(second.handoffs).toMatchObject([{ role: "executor", task_id: "task-a", lane_branch: laneBranchName(SLUG, "task-a"), lane_path: laneA }]);
 			expect(kernel.advanced).toEqual([]);
 
 			// Tick 3: the Executor delivered and froze; the batch advances, commits on the lane and integrates.

@@ -714,6 +714,8 @@ export type BatchLaneHandoff =
 			record_revision: string;
 			next_obligation: import("../kernel/types").AssuranceObligation;
 			lane_branch: string;
+			/** Where the Executor Host must be rooted; an observation, never authority. */
+			lane_path: string;
 	  };
 
 type PersistableReport = Pick<BatchRunReport | BatchLaneRunReport, "contract" | "batch_id" | "batch_state">;
