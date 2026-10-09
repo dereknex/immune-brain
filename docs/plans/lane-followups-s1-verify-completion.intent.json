@@ -1,0 +1,25 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "lane-followups-s1-verify-completion",
+  "owner": "user",
+  "goal": "Implement Slice S1 of Initiative lane-mode-followups: scripts/verify-batch-completion.ts verifies a completed lane-mode (batch_run_state v2) batch from the recorded state, report and batch-branch Git objects instead of failing read_failed.",
+  "acceptance": [
+    {
+      "id": "LF-S1-A1",
+      "assertion": "Per Interfaces and the consumer list of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes) (source: repository evidence, Review of parallel-batch-lanes-s2-lane-integration finding review-3 and review-4 of PBL-S2-A2): the completion verifier reads a v2 batch record and its lane report (handoffs[] in place of handoff) and returns complete:true for a lane-mode batch whose every child is integrated or released, its commits are one per child on the batch branch in order, each commit carries the Immune-Brain-Batch trailer, the imm(<task_id>) subject and a single-parent lineage from the recorded base head, each child's .imm/audit/<task_id>/<run>/ pair is in that commit and agrees with its terminal proof, and the changed paths stay in the child's scope. Positive: a real lane-mode fixture (second Git worktree, integrated children) verifies complete:true with one entry per child. Negative: a v2 batch not completed, a child neither integrated nor released, a commit order or parent mismatch, a missing or foreign audit pair, an out-of-scope path and a malformed lane report each fail with the existing stable code for that condition and never read_failed; a v2 record is never parsed as v1. Bound: every existing v1 verification result and exit status is byte-identical to before this Slice. Agreed seams: tests/batch-completion-verifier.test.ts, tests/pi-batch-acceptance-integration.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-completion-verifier.test.ts\",\n      \"tests/pi-batch-acceptance-integration.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/lane-followups-s1-verify-completion.md",
+    "docs/agents/pi-batch-acceptance.md",
+    "docs/plans/lane-followups-s1-verify-completion.intent.json",
+    "docs/specs/parallel-batch-lanes.spec.md",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "scripts/verify-batch-completion.ts",
+    "tests/batch-completion-verifier.test.ts",
+    "tests/pi-batch-acceptance-integration.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

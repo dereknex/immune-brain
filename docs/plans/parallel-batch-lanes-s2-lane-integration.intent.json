@@ -1,0 +1,73 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "parallel-batch-lanes-s2-lane-integration",
+  "owner": "user",
+  "goal": "Implement Slice S2 of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes): with max_parallel 1, start_unattended_batch runs a batch end to end through one adopted Lane on both Hosts (offer admission, enrollment into the Lane, lane commit, identity-checked integration, fast-forward of the batch branch); max_parallel above 1 is refused; without the parameter the serial run is byte-identical. ADR 0013 becomes accepted and the living contracts describe the opt-in.",
+  "acceptance": [
+    {
+      "id": "PBL-S2-A1",
+      "assertion": "Per Interfaces, State transitions and Temporal sequence steps 1-3 and 5 of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes) (sources: user decisions D1, D2, D3, D6, D7 as revised by assumption A1; repository evidence for commitBatchChild and the batch capability): a lane-mode batch with max_parallel 1 uses batch_run_state v2, admits an offered Lane only when it shares the coordinator Git common directory, is not the coordinator worktree, has HEAD on the named lane branch at the named base, is clean and has no active run, enrolls the child into the Lane with the batch capability, commits the settled delivery on the lane branch, and fast-forwards the batch branch only to a candidate whose changed path set and per-path blob and mode equal the lane commit. Positive: a fixture with a real second Git worktree and a real settled child ends with one commit per child on the batch branch and the batch completed. Negative: each admission reason (batch_lane_foreign_repository, batch_lane_is_coordinator, batch_lane_branch_mismatch, batch_lane_base_mismatch, batch_lane_dirty, batch_lane_occupied, batch_lane_unknown_child) refuses the offer with zero writes and leaves the child pending; a lane commit whose content differs from the candidate fails the identity check and the batch branch does not move; the runtime never runs git worktree add, remove or checkout. Bound: max_parallel 2 is refused with batch_parallel_unsupported; a resume with a different max_parallel is refused with batch_parallel_mismatch; a Lane holds no batch state and its Host session attempts no batch re-entry. Closes assumptions A2 and A3. Agreed seam: tests/unattended-batch-lanes.test.ts (new).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "PBL-S2-A2",
+      "assertion": "Per Compatibility and rollback of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes) (source: user decision D1): a batch started without max_parallel writes a v1 batch state record and returns a report byte-identical to the behavior before this Slice, with no lane field, no handoffs field and the same Git effects; every existing reader of batch state (batch_preflight lookups, batch_reconfirmation, batch_kernel_port, the completion verifier script) keeps its v1 behavior and handles a v2 record without misreading it as v1. Existing assertions in the named suites are not weakened. Agreed seams: tests/unattended-batch-run.test.ts, tests/unattended-batch-commit.test.ts, tests/batch-plan-reconfirmation.test.ts, tests/batch-completion-verifier.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/unattended-batch-commit.test.ts\",\n      \"tests/batch-plan-reconfirmation.test.ts\",\n      \"tests/batch-completion-verifier.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "PBL-S2-A3",
+      "assertion": "Per Interfaces of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes) (sources: user decisions D1, D4): both Hosts declare the same additive tool input (optional max_parallel and lane_offers beside the required initiative_slug), show max_parallel and the parallel groups in the native confirmation only in lane mode, issue one Batch Authorization, and return the same shared report. Positive: Claude Code and Pi produce equal lane-mode reports for the same fixture. Negative: an invalid max_parallel or a malformed lane offer is refused before any gate opens; neither Host adapter reads a workspace-tool environment variable. Bound: the packaged tool surface lists exactly the declared parameters and the generated Claude bundle matches a fresh generate. Agreed seams: tests/claude-batch-authority.test.ts, tests/pi-batch-authority.test.ts, tests/dual-host-assurance-conformance.test.ts, tests/packaged-contract-tool-surface.test.ts, tests/claude-host-package.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/packaged-contract-tool-surface.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "PBL-S2-A4",
+      "assertion": "Per decision D11 in the decision trace of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes) (source: user decision D11): docs/adr/0013-optional-parallel-batch-lanes.md has status accepted; ADR 0005 and ADR 0007 point to it for the superseded serial-only rejection and the changed parked-child consequence; CONTEXT.md defines Lane and revises HEAD Lineage; IMMUNE.md and the imm-run contract state that lane mode is opt-in through max_parallel, that the runner still never creates, switches or deletes a Git worktree, and route to a parallel-batch section. Negative: none of these contracts names a workspace tool, its commands, paths or agent kinds. Bound: the serial batch description stays valid when the parameter is absent. Agreed seams: tests/unattended-contracts.test.ts, tests/dist-docs-sync-contract.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-contracts.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/parallel-batch-lanes-s2-lane-integration.md",
+    "CONTEXT.md",
+    "IMMUNE.md",
+    "docs/adr/0005-unattended-initiative-batch-run.md",
+    "docs/adr/0007-parked-child-claim-release.md",
+    "docs/adr/0013-optional-parallel-batch-lanes.md",
+    "docs/plans/parallel-batch-lanes-s2-lane-integration.intent.json",
+    "docs/specs/parallel-batch-lanes.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/README.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-run.md",
+    "plugins/immune-brain/runtime/claude/interaction.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+    "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "plugins/immune-brain/runtime/unattended/batch_schedule.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/unattended/types.ts",
+    "plugins/immune-brain/skills/imm-run/SKILL.md",
+    "scripts/verify-batch-completion.ts",
+    "tests/batch-completion-verifier.test.ts",
+    "tests/batch-plan-reconfirmation.test.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/kernel-batch-authority.test.ts",
+    "tests/packaged-contract-tool-surface.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/unattended-batch-commit.test.ts",
+    "tests/unattended-batch-lanes.test.ts",
+    "tests/unattended-batch-run.test.ts",
+    "tests/unattended-contracts.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

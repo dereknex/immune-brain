@@ -52,7 +52,9 @@ that role's tools. On Pi the agent configuration belongs to the Pi user and the
 read-only boundary remains prompt text; the Pi dispatch rules are unchanged.
 
 Before a child dispatch, read the [Subagent Dispatch Protocol](docs/reference/subagent-dispatch-protocol.md#authorization-authority).
-Never load an internal role as a public Skill or spawn another loop process.
+Never load an internal role as a public Skill or spawn another loop process;
+the only exception is a Lane's Executor Host under
+[Lane Executor Supervision](#lane-executor-supervision).
 The standalone `imm-pr-fix`, `imm-doc-prune`, and `imm-doc-slim` are host-native
 maintenance entries, never dispatched as the Loop role. Internal `test-fixer`
 and `pr-fix` repairs remain bounded by the enrolled TaskIntent.
@@ -114,13 +116,22 @@ not bypass them. Do not poll or create detached jobs.
 ## Unattended Batch Opt-In
 
 The only unattended batch entry is the privileged Host tool `start_unattended_batch`
-with its `initiative_slug` parameter. That parameter is the opt-in: absent the call,
+with its `initiative_slug` parameter. That parameter is the opt-in (lane mode adds an optional `max_parallel`, see [Parallel Batch Opt-In](#parallel-batch-opt-in)): absent the call,
 `imm-run` behavior is byte-identical to per-task Enrollment, and no batch state,
 branch, or Batch Authorization exists. The Standalone Hosts expose the same tool
-name and the same single parameter; it is never a batch of tasks the Host chose.
+name and the same required parameter; it is never a batch of tasks the Host chose.
 When an Initiative is referenced by its tracker Issue (e.g. `github #<number>`),
 extract `initiative_slug` from the Issue body `<!-- immune-brain:initiative-id=<slug> -->`
 marker or title prefix before invoking the tool.
+
+The Initiative's carrier decides where the children are read from. When
+`docs/initiatives/<initiative_slug>.md` exists, the Host reads that Local carrier
+and performs no GitHub operation for the plan; otherwise it reads the GitHub
+Parent Issue's native Sub-issues. A Local carrier yields one child per Slice:
+each `## <slice-id>: <result>` section names exactly one Task under `Tasks:` and
+may add one `Blocked by: <task-id>, <task-id>` line. A Slice that names no Task or
+several, or a dependency outside the Initiative, refuses the plan before any
+confirmation.
 
 Invoking it authorizes only a user-confirmed batch of already-planned child
 TaskIntents. The Host projects the batch plan from the Initiative's published
@@ -159,6 +170,190 @@ Batch execution never pushes a ref, opens or updates a pull request, resolves a
 user decision, or creates, switches, or deletes a Git worktree. Its sole Git
 effect is the batch branch `imm/<initiative-slug>` plus one scope-bounded commit
 per completed child.
+
+### Parallel Batch Opt-In
+
+Lane mode is opt-in through the optional `max_parallel` parameter of
+`start_unattended_batch`; absent it, everything above is the whole contract and the
+run stays serial and byte-identical. `max_parallel` is a positive integer; the
+Standalone Hosts expose the same optional `lane_offers` list, each entry naming a
+`task_id` and an absolute `path` of an already existing Git worktree. The runner
+admits an offered Lane only when it shares the coordinator repository, is not the
+coordinator worktree, is on the branch `imm-lane/<initiative-slug>/<task-id>` at the
+named base, is clean and has no active run; otherwise it refuses the offer with a
+stable reason and writes nothing. A call that passes `lane_offers` without
+`max_parallel` resumes the recorded lane batch with its recorded `max_parallel`;
+without a recorded active lane batch it is refused before any gate opens. The runner still never creates, switches or
+deletes a Git worktree: when a child needs a Lane the report carries a
+`lane-steward` handoff and the Lane is provisioned outside the runner.
+
+In a Lane the child is enrolled, assured and settled exactly as in a serial batch.
+The runner then commits the settled delivery on the Lane branch and fast-forwards
+the batch branch only to a candidate whose changed paths and per-path content equal
+that commit; a mismatch or conflict moves nothing and parks the child.
+With `max_parallel` above 1 the reconcile tick keeps up to that many Lanes in
+flight and reports one `provision` or `executor` handoff per child in `handoffs[]`.
+Only children whose scopes are provably disjoint run together; a child whose scope
+overlaps an in-flight Lane waits until that Lane is integrated. Settled children
+integrate serially, and a parked child ends only itself and its dependents while a
+disjoint sibling keeps moving. A lost Lane parks as `batch_lane_lost`, and
+`qa_failure_limit` counts each child separately. A resume with a different
+`max_parallel` is refused with `batch_parallel_mismatch`. A Lane holds no batch
+state and its Host session never re-enters the batch.
+
+#### Lane Preferences
+
+A repository can keep standing lane-mode choices next to its other Immune-Brain
+preferences. Before the first `start_unattended_batch` call for an Initiative,
+the Parent resolves each of the four directives below in this order, reading the
+source directly rather than assuming the Host injected it into context:
+
+1. a literal user instruction for the current request;
+2. the directive in the repository root agent instruction file, whichever this
+   repository tracks: `AGENTS.md` or `CLAUDE.md`;
+3. the same directive in the Host's user-level agent instruction file; or
+4. the behavior without a directive, given in the table.
+
+| Directive | Value | Effect | Without it |
+| --- | --- | --- | --- |
+| `Lane max parallel: <n>` | positive integer | The Parent passes it as `max_parallel` when it starts a batch, which selects lane mode. The native confirmation still shows it. | No `max_parallel`: the batch is serial unless the user asks otherwise |
+| `Lane Executor Host: <host>` | `claude-code` or `pi` | Every Lane's Executor Host is that Host. When the `lane-steward` did not report it available in a Lane, that Lane has no Executor Host; the Parent does not fall back to the other one. | The Parent's own Host type, else the other allowlisted Host |
+| `Lane Executor model: <model>` | a model identifier of the configured Executor Host | Passed to the Executor Host as `--model <model>` | The Executor Host's own default |
+| `Lane Executor effort: <level>` | a level the configured Executor Host accepts | Passed as `--effort <level>` to `claude-code` and as `--thinking <level>` to `pi` | The Executor Host's own default |
+
+A model identifier and an effort level mean something only to one Host, so
+`Lane Executor model` and `Lane Executor effort` apply only together with
+`Lane Executor Host` from the same or a higher source; without it they are
+reported and not applied. A repository directive overrides the user-level one.
+Report an invalid value and ask instead of guessing or clamping. After resolving
+them, display one non-blocking line with each selected value and its source. On
+a resume the recorded `max_parallel` stands and the directive is not passed
+again. The directives configure how the Parent starts sessions; the runner reads
+none of them, and they grant no permission or trust option.
+
+#### Lane Executor Supervision
+
+The Parent launches and supervises every Lane's Executor Host; no other role
+starts one. This is the one case in which the Parent starts another Loop
+process, and it starts it only in an admitted Lane. For each `executor` handoff
+whose Lane has no live session of its own, the Parent starts exactly one
+**supervised session** and keeps its handle. Handoffs of one report start
+together; a Lane never has two sessions.
+
+A supervised session is defined by what it guarantees, not by a Host's name:
+
+- It is a separate Host process whose working directory is the Lane, so its
+  Kernel root is the Lane's own Authority Store. A subagent that runs inside the
+  Parent's process shares the Parent's root and is never a Lane Executor.
+- It is given one explicit `imm-run` entry for that `task_id`, and nothing else.
+- When it stops working — it exits, or it settles waiting for input — control
+  returns to the Parent without the Parent polling or sleeping.
+- The Parent can stop it.
+
+The Parent Host and the Executor Host are chosen independently. The Executor
+Host is any allowlisted Host (`claude-code` or `pi`) that the `lane-steward`
+reported available in that Lane. A `Lane Executor Host` directive under
+[Lane Preferences](#lane-preferences) decides it; without one, prefer the
+Parent's own Host type, and use the other when only it is available. The child's QA and Review then run under that
+Executor Host's own Assurance adapter in the Lane. The Executor Host loads the
+same Immune-Brain plugin or package the Parent runs: a Parent started from a
+local plugin directory passes that same directory to the Executor Host. The
+Parent adds no permission or trust option of its own; the Executor Host runs
+under the user's own settings, with the model and effort of its own defaults
+unless Lane Preferences name them. How the Parent obtains a supervised session
+depends on where the Parent runs; the first matching row applies, and the user
+is not asked to choose:
+
+| Parent Host | Supervised session | Stop |
+| --- | --- | --- |
+| Either Host, inside Herdr (`HERDR_ENV=1`) | One Herdr tab per Lane holding an interactive Executor Host, under [Herdr Lane Tabs](#herdr-lane-tabs) | Close the tab the Parent created |
+| Claude Code | The Host's background command execution, running the Executor Host's non-interactive entry in the Lane; its completion notice re-invokes the Parent. The `Agent` tool does not qualify. | The Host's own stop for that background task |
+| Pi | A background process facility from the Pi user's own configuration that notifies the Parent on exit. Pi ships none that Immune-Brain may assume. | That facility's own stop |
+| Any Host without one | None. The Parent launches nothing. | — |
+
+When the Parent Host offers no supervised session, or no allowlisted Executor
+Host is available in the Lane, the Parent does not substitute a detached job, an
+in-process subagent or serial in-place work. It reports each `executor` handoff
+to the user with the Lane path, `task_id` and the `imm-run` entry to start
+there, and calls `start_unattended_batch` again when the user says a Lane has
+finished. Supervision is per Lane: Lanes that can be supervised are, and the
+rest are reported.
+
+##### Herdr Lane Tabs
+
+Inside Herdr the Parent drives the `herdr` CLI itself; the runtime and the
+`lane-steward` never do. Each Lane gets a tab of its own, so its Executor Host
+has a full-size terminal the user can read. For each `executor` handoff without
+a live tab:
+
+1. Take the Lane from the handoff's `lane_path`. Pick the Executor Host as above;
+   `claude-code` is Herdr kind `claude` and `pi` is kind `pi`.
+2. Create the tab without taking focus, in the Parent's own workspace and rooted
+   in the Lane:
+   `herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd <lane_path> --label <name> --no-focus`.
+   Without `--workspace` the tab lands in whichever workspace has focus. `<name>`
+   is a label of at most 32 characters such as the Slice ID; a `task_id` is
+   usually too long. Read `tab.tab_id` and `root_pane.pane_id` from the JSON
+   result and keep `task_id → tab_id, pane_id`: the pane ID addresses the
+   session, the tab ID closes it.
+3. Start the Host in that tab's root pane:
+   `herdr agent start <name> --kind <kind> --pane <pane_id> -- <host arguments>`.
+   Host arguments are only those that load the Parent's plugin and those that
+   [Lane Preferences](#lane-preferences) resolved for model and effort.
+4. Submit the entry and nothing else, and confirm the turn began:
+   `herdr agent prompt <pane_id> "<imm-run entry> <task_id>" --wait --until working --until blocked --timeout 30000`.
+   The entry is the Executor Host's own `imm-run` invocation as that Host names
+   it: a Claude Code Host that loaded the plugin from a directory names it
+   `/immune-brain:imm-run`.
+5. Supervise with `herdr agent wait <pane_id>` as a Host background command, so
+   its return re-invokes the Parent. Start it only after step 4 reported
+   `working`: a wait attached to a still-`idle` session returns at once. Do not
+   loop on `herdr agent get` or read the pane to judge progress.
+
+`agent_not_ready` from step 3, or a `blocked` state at any time, means the tab
+shows a dialog only the user may answer: workspace trust, sign-in, a permission
+request or a question. The Parent sends that tab no keys and no prompt. It
+tells the user which tab and `task_id` is waiting, leaves the tab open, and
+continues the other Lanes; once the user has answered, step 3's tab is resumed
+from step 4 if the entry was never submitted, otherwise from step 5. `idle` or
+`done` is a session end for the rules below, although the tab stays open: the
+Parent calls `start_unattended_batch`, and a relaunch submits the entry again in
+the same tab instead of creating another. A failed or timed-out `herdr` command
+proves nothing about delivery; inspect the session's state before repeating it.
+
+The Parent only creates: it closes no tab, including the tabs it created, and
+every tab stays open for the user to read and close. It splits no pane and
+creates no workspace. Outside Herdr the Parent never invokes `herdr`.
+
+Supervision is event-driven. Each session end is the cue to call
+`start_unattended_batch` again with the same Initiative, and that report is the
+only progress signal: a child's state and `next_obligation` come from its Lane's
+Kernel projection, never from the session's output or exit status. When the
+report still carries an `executor` handoff for a child whose session has ended,
+the Parent starts it once more; after a second end without Kernel progress, or
+when the report shows the child waiting on a user decision or an open Review
+reservation, it stops relaunching and reports that child to the user while its
+siblings continue. The Parent stops no session: when the report shows a child
+parked or settled while its session is still working, the Parent tells the user
+which tab and `task_id` to close. A session that stays open changes no Kernel
+or batch state, so the next report states what remains. Handles are not
+authority: after an interruption
+the Parent calls `start_unattended_batch` first and launches only for the
+handoffs it returns.
+
+After a child is integrated, its Lane is clean and its `.imm/audit/<task-id>/`
+pair is reachable from the batch branch, the report carries a
+`{ role: "lane-steward", action: "release" }` handoff for that Lane. A parked,
+failed, dirty or unintegrated Lane, or one whose audit pair is not on the batch
+branch, is never offered for release. The runner removes no worktree and deletes
+no branch: it records the child `released` only when a later tick observes the
+Lane path gone, and a Lane that is still present stays `integrated` while the
+batch still completes. The `lane-steward` internal role handles a `provision`
+handoff; it follows the project's own instructions to prepare a Lane, starts no
+Host session, and reports "cannot supply" rather than improvising. A `release`
+handoff is the user's to carry out: the Parent removes no Lane and dispatches no
+one to remove it. It reports each such Lane once, with its `task_id`, Lane path
+and tab, as ready for the user to close and remove.
 
 ## Decisions and Recovery
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -32,6 +32,7 @@ describe("Loop execution and repair routing", () => {
 			"arch-explorer.md",
 			"advisory-reviewer.md",
 			"compounder.md",
+			"lane-steward.md",
 		]);
 		for (const role of REPAIR_ROLES) {
 			const source = read(`plugins/immune-brain/runtime/prompts/${role}.md`);
@@ -199,5 +200,87 @@ describe("Loop execution and repair routing", () => {
 		]) {
 			expect(read(path)).toContain("Internal role");
 		}
+	});
+});
+
+describe("lane-steward routing", () => {
+	const provision = {
+		task_id: "pbl-child",
+		action: "provision",
+		lane_branch: "imm-lane/pbl/pbl-child",
+		base_head: "0123456789abcdef0123456789abcdef01234567",
+		executor_hosts: ["claude-code", "pi"],
+	};
+
+	it("routes lane supply to the lane-steward role only under Loop ownership", () => {
+		expect(resolveLoopRoute({ ownership: "loop", target: "lane-supply" })).toEqual({
+			entry: "imm-run",
+			next: "lane-steward",
+		});
+		for (const ownership of ["plan", "kernel", "brainstorm", "planner"] as const) {
+			expect(() => resolveLoopRoute({ ownership, target: "lane-supply" })).toThrow(
+				"Lane supply routing requires Loop ownership",
+			);
+		}
+	});
+
+	it("dispatches a provision and a release handoff to a general-purpose child with no Kernel authority", () => {
+		for (const context of [provision, { task_id: "pbl-child", action: "release", lane_branch: provision.lane_branch }]) {
+			const action = buildLoopAction({ ownership: "loop", target: "lane-supply", context });
+			if (action.next !== "lane-steward") throw new Error("expected a lane-steward action");
+			expect(action.dispatch.packet.role).toBe("lane-steward");
+			expect(action.dispatch.packet.authority).toBe("lane-provision");
+			expect(action.dispatch.call.subagent_type).toBe("general-purpose");
+			expect(action.dispatch.call.isolated).toBe(true);
+			expect(action.dispatch.call.inherit_context).toBe(false);
+			expect(action.dispatch.call.prompt).toContain("Internal role: lane-steward");
+		}
+	});
+
+	it("refuses a provision that offers a Host outside the allowlist, before a prompt is built", () => {
+		for (const executor_hosts of [["claude-code", "other-host"], [], undefined, "pi"]) {
+			expect(() =>
+				buildLoopAction({
+					ownership: "loop",
+					target: "lane-supply",
+					context: { ...provision, executor_hosts },
+				}),
+			).toThrow("lane-steward provision offers only claude-code, pi");
+		}
+	});
+
+	it("refuses a handoff without a Lane branch, a base, or a known action", () => {
+		const base = { ownership: "loop", target: "lane-supply" } as const;
+		expect(() => buildLoopAction({ ...base, context: { ...provision, lane_branch: "" } })).toThrow("lane_branch");
+		expect(() => buildLoopAction({ ...base, context: { ...provision, base_head: undefined } })).toThrow("base_head");
+		expect(() => buildLoopAction({ ...base, context: { ...provision, action: "create" } })).toThrow(
+			"action provision or release",
+		);
+	});
+
+	// `dist/imm-run.md` left this list on 2026-10-09: the Parent may drive Herdr
+	// panes for Lane Executors (ADR 0013). The steward and the runtime still may not.
+	it("keeps the role prompt and the runtime free of any workspace tool", () => {
+		for (const path of [
+			"plugins/immune-brain/runtime/prompts/lane-steward.md",
+			"plugins/immune-brain/dist/role-prompts/lane-steward.md",
+			"plugins/immune-brain/runtime/loop_contract.ts",
+			"plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+			"plugins/immune-brain/runtime/unattended/batch_integration.ts",
+		]) {
+			const source = read(path);
+			expect({ path, herdr: /HERDR/i.test(source) }).toEqual({ path, herdr: false });
+		}
+		const prompt = read("plugins/immune-brain/runtime/prompts/lane-steward.md");
+		for (const assumed of ["npm ", "pnpm", "yarn", "pip ", "cargo", "bundle install"]) {
+			expect({ assumed, found: prompt.includes(assumed) }).toEqual({ assumed, found: false });
+		}
+		expect(prompt).toContain("cannot supply");
+	});
+
+	it("adds no public skill for the role", () => {
+		expect(INTERNAL_ROLE_PROMPTS["lane-steward"].file).toBe("lane-steward.md");
+		expect(existsSync(resolve(ROOT, "plugins/immune-brain/skills/lane-steward"))).toBe(false);
+		expect(existsSync(resolve(ROOT, "plugins/immune-brain/skills/imm-lane-steward"))).toBe(false);
 	});
 });

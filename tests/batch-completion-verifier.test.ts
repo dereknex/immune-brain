@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { commitBatchChild } from "../plugins/immune-brain/runtime/unattended/batch_git";
+import { buildCandidate } from "../plugins/immune-brain/runtime/unattended/batch_integration";
 import { verify } from "../scripts/verify-batch-completion";
 import { readSecureProjectBytes, readSecureProjectFile } from "../plugins/immune-brain/runtime/kernel/storage";
 import { parseBatchRunState, readBatchRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
@@ -240,4 +241,94 @@ describe("batch completion verifier", () => {
 			expect(readdirSync(outside)).toEqual([]); expect(snapshot(fx.root)).toEqual(before);
 		} finally { rmSync(fx.root, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }); }
 	});
+});
+
+/**
+ * A lane-mode batch: each child is settled and committed inside its own real
+ * second Git worktree, then integrated onto the batch branch in settle order
+ * (task-s1 before task-s0), so plan order differs from commit order.
+ */
+async function laneFixture() {
+	const root = mkdtempSync(join(tmpdir(), "batch-verify-lane-")); const batch = "batch-lanefix-22222222-2222-4222-8222-222222222222";
+	git(root, ["init", "-b", "imm/lanefix"]); writeFileSync(join(root, ".gitignore"), ".imm/state/\n.imm/authority/\n"); git(root, ["add", ".gitignore"]); git(root, ["commit", "-m", "base"]);
+	const base = git(root, ["rev-parse", "HEAD"]);
+	const tasks = ["task-s0", "task-s1"]; const runs = ["run-11111111-1111-4111-8111-111111111111", "run-22222222-2222-4222-8222-222222222222"];
+	const lanes = new Map<string, { path: string; branch: string; commit: string }>();
+	for (const [index, task] of tasks.entries()) {
+		const path = join(tmpdir(), `batch-verify-lane-${task}-${Date.now()}-${index}`); const branch = `imm-lane/lanefix/${task}`;
+		git(root, ["worktree", "add", "-b", branch, path, base]);
+		mkdirSync(join(path, "src"), { recursive: true }); writeFileSync(join(path, `src/${task}.ts`), `export const value = ${JSON.stringify(task)};\n`);
+		const pair = record(task, runs[index]!, "done", [`src/${task}.ts`]); const audit = join(path, ".imm/audit", task, pair.run);
+		mkdirSync(audit, { recursive: true }); writeFileSync(join(audit, "task-record.json"), pair.bytes); writeFileSync(join(audit, "terminal-proof.json"), pair.proof);
+		mkdirSync(join(path, ".imm/state"), { recursive: true }); writeFileSync(join(path, ".imm/state/active-run.json"), `${JSON.stringify({ task_id: task, run_id: pair.run })}\n`);
+		const committed = await commitBatchChild({ root: path, taskId: task, batchId: batch, expectedHead: base, branch });
+		lanes.set(task, { path, branch, commit: committed.commit });
+	}
+	const commits: string[] = [];
+	for (const task of ["task-s1", "task-s0"]) {
+		const lane = lanes.get(task)!; const head = git(root, ["rev-parse", "HEAD"]);
+		const candidate = buildCandidate({ root, batch_head: head, lane_base: base, lane_commit: lane.commit });
+		git(root, ["merge", "--ff-only", candidate]); commits.push(candidate);
+	}
+	const commitOf = (task: string) => commits[task === "task-s1" ? 0 : 1]!;
+	const children = tasks.map((task) => ({ ...child(task, "integrated", commitOf(task)), qa_failures: 0, lane: { path: lanes.get(task)!.path, branch: lanes.get(task)!.branch, base_head: base, lane_commit: lanes.get(task)!.commit } }));
+	const state = { contract: "assurance_kernel/batch_run_state/v2", batch_id: batch, initiative_slug: "lanefix", plan_digest: "sha256:p", base_head: base, branch: "imm/lanefix", confirmation_time: NOW, budget: { max_children: 2, qa_failure_limit: 2 }, max_parallel: 2, batch_state: "completed", children, commits, created_at: NOW, updated_at: NOW } as Record<string, any>;
+	const report = { contract: "assurance_kernel/batch_run_report/v1", batch_id: batch, initiative_slug: "lanefix", batch_state: "completed", max_parallel: 2, children: structuredClone(children), commits: [...commits], reason: null, handoffs: [], next_action: "none", created_at: NOW } as Record<string, any>;
+	persist(root, batch, state, report);
+	const dispose = () => { rmSync(root, { recursive: true, force: true }); for (const lane of lanes.values()) rmSync(lane.path, { recursive: true, force: true }); };
+	return { root, batch, state, report, runs, base, commits, before: snapshot(root), dispose };
+}
+
+const amendHead = (v: { root: string; state: Record<string, any>; report: Record<string, any> }, ...args: string[]) => {
+	git(v.root, ["commit", "--amend", ...args]); const head = git(v.root, ["rev-parse", "HEAD"]);
+	v.state.commits[1] = head; v.state.children[0].commit = head; v.report.commits[1] = head; v.report.children[0].commit = head;
+};
+describe("batch completion verifier, lane mode", () => {
+	test("verifies a completed lane batch from real second worktrees, in commit order", async () => {
+		const fx = await laneFixture();
+		try {
+			const ok = check(fx.root, fx.batch, fx.before, 0);
+			expect(ok.complete).toBe(true); expect(ok.batch_state).toBe("completed");
+			expect(ok.children.map((item: { task_id: string }) => item.task_id)).toEqual(["task-s1", "task-s0"]);
+			expect(ok.children.map((item: { commit: string }) => item.commit)).toEqual(fx.commits);
+			expect(ok.children[0].parent).toBe(fx.base); expect(ok.children[1].parent).toBe(fx.commits[0]);
+		} finally { fx.dispose(); }
+	}, 30000);
+	test("accepts released children and refuses each lane contradiction with a stable code", async () => {
+		const released = await laneFixture();
+		try {
+			for (const item of [...released.state.children, ...released.report.children]) item.state = "released";
+			persist(released.root, released.batch, released.state, released.report);
+			expect(check(released.root, released.batch, snapshot(released.root), 0).complete).toBe(true);
+		} finally { released.dispose(); }
+		const cases: Array<[string, number, (v: Awaited<ReturnType<typeof laneFixture>>) => void]> = [
+			["state_report_mismatch", 1, (v) => { v.state.batch_state = "needs_human"; v.state.children[0].state = "needs_human"; v.state.children[0].reason = "parked"; v.state.children[0].commit = null; v.state.children[0].lane.lane_commit = null; v.state.commits = [v.commits[0]]; }],
+			["state_report_mismatch", 1, (v) => { v.state.children[0].state = "needs_human"; v.state.children[0].reason = "parked"; }],
+			["state_report_mismatch", 1, (v) => { v.report.max_parallel = 3; }],
+			["malformed_report", 2, (v) => { delete v.report.handoffs; }],
+			["malformed_report", 2, (v) => { v.report.handoff = { role: "executor" }; }],
+			["commit_order_mismatch", 1, (v) => { v.state.commits = [...v.commits, v.commits[0]]; v.report.commits = [...v.state.commits]; }],
+			["lineage_mismatch", 1, (v) => { v.state.commits = [...v.commits].reverse(); v.report.commits = [...v.state.commits]; }],
+			["lineage_mismatch", 1, (v) => { v.state.base_head = v.commits[0]; }],
+			["wrong_run_evidence", 1, (v) => { const path = join(v.root, ".imm/audit/task-s0", v.runs[0]!, "terminal-proof.json"); const proof = JSON.parse(readFileSync(path, "utf8")); proof.final_record_hash = `sha256:${"c".repeat(64)}`; writeFileSync(path, `${JSON.stringify(proof, null, 2)}\n`); git(v.root, ["add", "-A", "--", ".imm/audit"]); amendHead(v, "--no-edit"); }],
+			["scope_mismatch", 1, (v) => { writeFileSync(join(v.root, "other.ts"), "export const extra = true;\n"); git(v.root, ["add", "other.ts"]); amendHead(v, "--no-edit"); }],
+			["missing_commit_evidence", 1, (v) => amendHead(v, "-m", "imm(task-s0): no trailer")],
+		];
+		for (const [code, status, mutate] of cases) {
+			const next = await laneFixture();
+			try { mutate(next); persist(next.root, next.batch, next.state, next.report); const failure = check(next.root, next.batch, snapshot(next.root), status, code); expect(failure.complete).toBe(false); expect(failure.code).not.toBe("read_failed"); }
+			finally { next.dispose(); }
+		}
+	}, 60000);
+	test("never parses a v2 record as v1 and a v1 record stays v1", async () => {
+		const lane = await laneFixture();
+		try {
+			lane.state.contract = "assurance_kernel/batch_run_state/v1";
+			persist(lane.root, lane.batch, lane.state, lane.report);
+			check(lane.root, lane.batch, snapshot(lane.root), 2, "read_failed");
+		} finally { lane.dispose(); }
+		const serial = await fixture();
+		try { expect(check(serial.root, serial.batch, serial.before, 0).complete).toBe(true); }
+		finally { rmSync(serial.root, { recursive: true, force: true }); }
+	}, 30000);
 });

@@ -1,0 +1,27 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "parallel-batch-lanes-s1-schedule",
+  "owner": "user",
+  "goal": "Implement Slice S1 of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes): the Batch Plan projection reports parallel groups and scope conflicts, and one pure scheduling function returns the startable set for a batch record. No tool parameter, no persisted-state change, no change to serial batch behavior.",
+  "acceptance": [
+    {
+      "id": "PBL-S1-A1",
+      "assertion": "Per the Scheduling rule under State transitions of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes) (sources: user decision D5, delegated disjointness rule): a pure function in runtime/unattended/batch_schedule.ts returns the startable children for given child states, blocked_by edges, scope_hint lists and max_parallel, and the Batch Plan projection additively reports parallel groups and the children that serialize because their scopes overlap. plan_digest and every existing plan field are unchanged for an existing Initiative. Positive: ready children with disjoint scopes start together up to the limit. Negative: identical, prefix-nested and wildcard-pattern scopes are treated as overlapping and serialize; a child with an unmet blocked_by never starts; a pattern with an empty literal prefix overlaps everything. Bound: max_parallel 1 yields exactly the current serial order. Agreed seams: tests/unattended-batch-schedule.test.ts (new), tests/unattended-batch-plan.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-schedule.test.ts\",\n      \"tests/unattended-batch-plan.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/parallel-batch-lanes-s1-schedule.md",
+    "docs/plans/parallel-batch-lanes-s1-schedule.intent.json",
+    "docs/specs/parallel-batch-lanes.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+    "plugins/immune-brain/runtime/unattended/batch_schedule.ts",
+    "plugins/immune-brain/runtime/unattended/types.ts",
+    "tests/unattended-batch-plan.test.ts",
+    "tests/unattended-batch-schedule.test.ts",
+    "tests/unattended-contracts.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

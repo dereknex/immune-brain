@@ -1,0 +1,538 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "parallel-batch-lanes-s2-lane-integration",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "parallel-batch-lanes-s2-lane-integration",
+    "goal": "Implement Slice S2 of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes): with max_parallel 1, start_unattended_batch runs a batch end to end through one adopted Lane on both Hosts (offer admission, enrollment into the Lane, lane commit, identity-checked integration, fast-forward of the batch branch); max_parallel above 1 is refused; without the parameter the serial run is byte-identical. ADR 0013 becomes accepted and the living contracts describe the opt-in.",
+    "acceptance": [
+      {
+        "id": "PBL-S2-A1",
+        "assertion": "Per Interfaces, State transitions and Temporal sequence steps 1-3 and 5 of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes) (sources: user decisions D1, D2, D3, D6, D7 as revised by assumption A1; repository evidence for commitBatchChild and the batch capability): a lane-mode batch with max_parallel 1 uses batch_run_state v2, admits an offered Lane only when it shares the coordinator Git common directory, is not the coordinator worktree, has HEAD on the named lane branch at the named base, is clean and has no active run, enrolls the child into the Lane with the batch capability, commits the settled delivery on the lane branch, and fast-forwards the batch branch only to a candidate whose changed path set and per-path blob and mode equal the lane commit. Positive: a fixture with a real second Git worktree and a real settled child ends with one commit per child on the batch branch and the batch completed. Negative: each admission reason (batch_lane_foreign_repository, batch_lane_is_coordinator, batch_lane_branch_mismatch, batch_lane_base_mismatch, batch_lane_dirty, batch_lane_occupied, batch_lane_unknown_child) refuses the offer with zero writes and leaves the child pending; a lane commit whose content differs from the candidate fails the identity check and the batch branch does not move; the runtime never runs git worktree add, remove or checkout. Bound: max_parallel 2 is refused with batch_parallel_unsupported; a resume with a different max_parallel is refused with batch_parallel_mismatch; a Lane holds no batch state and its Host session attempts no batch re-entry. Closes assumptions A2 and A3. Agreed seam: tests/unattended-batch-lanes.test.ts (new).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "PBL-S2-A2",
+        "assertion": "Per Compatibility and rollback of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes) (source: user decision D1): a batch started without max_parallel writes a v1 batch state record and returns a report byte-identical to the behavior before this Slice, with no lane field, no handoffs field and the same Git effects; every existing reader of batch state (batch_preflight lookups, batch_reconfirmation, batch_kernel_port, the completion verifier script) keeps its v1 behavior and handles a v2 record without misreading it as v1. Existing assertions in the named suites are not weakened. Agreed seams: tests/unattended-batch-run.test.ts, tests/unattended-batch-commit.test.ts, tests/batch-plan-reconfirmation.test.ts, tests/batch-completion-verifier.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/unattended-batch-commit.test.ts\",\n      \"tests/batch-plan-reconfirmation.test.ts\",\n      \"tests/batch-completion-verifier.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "PBL-S2-A3",
+        "assertion": "Per Interfaces of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes) (sources: user decisions D1, D4): both Hosts declare the same additive tool input (optional max_parallel and lane_offers beside the required initiative_slug), show max_parallel and the parallel groups in the native confirmation only in lane mode, issue one Batch Authorization, and return the same shared report. Positive: Claude Code and Pi produce equal lane-mode reports for the same fixture. Negative: an invalid max_parallel or a malformed lane offer is refused before any gate opens; neither Host adapter reads a workspace-tool environment variable. Bound: the packaged tool surface lists exactly the declared parameters and the generated Claude bundle matches a fresh generate. Agreed seams: tests/claude-batch-authority.test.ts, tests/pi-batch-authority.test.ts, tests/dual-host-assurance-conformance.test.ts, tests/packaged-contract-tool-surface.test.ts, tests/claude-host-package.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/packaged-contract-tool-surface.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "PBL-S2-A4",
+        "assertion": "Per decision D11 in the decision trace of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes) (source: user decision D11): docs/adr/0013-optional-parallel-batch-lanes.md has status accepted; ADR 0005 and ADR 0007 point to it for the superseded serial-only rejection and the changed parked-child consequence; CONTEXT.md defines Lane and revises HEAD Lineage; IMMUNE.md and the imm-run contract state that lane mode is opt-in through max_parallel, that the runner still never creates, switches or deletes a Git worktree, and route to a parallel-batch section. Negative: none of these contracts names a workspace tool, its commands, paths or agent kinds. Bound: the serial batch description stays valid when the parameter is absent. Agreed seams: tests/unattended-contracts.test.ts, tests/dist-docs-sync-contract.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-contracts.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/parallel-batch-lanes-s2-lane-integration.md",
+      "CONTEXT.md",
+      "IMMUNE.md",
+      "docs/adr/0005-unattended-initiative-batch-run.md",
+      "docs/adr/0007-parked-child-claim-release.md",
+      "docs/adr/0013-optional-parallel-batch-lanes.md",
+      "docs/plans/parallel-batch-lanes-s2-lane-integration.intent.json",
+      "docs/specs/parallel-batch-lanes.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/README.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/runtime/claude/interaction.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+      "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_schedule.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/types.ts",
+      "plugins/immune-brain/skills/imm-run/SKILL.md",
+      "scripts/verify-batch-completion.ts",
+      "tests/batch-completion-verifier.test.ts",
+      "tests/batch-plan-reconfirmation.test.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/kernel-batch-authority.test.ts",
+      "tests/packaged-contract-tool-surface.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/unattended-batch-commit.test.ts",
+      "tests/unattended-batch-lanes.test.ts",
+      "tests/unattended-batch-run.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/parallel-batch-lanes-s2-lane-integration.intent.json",
+    "content_hash": "sha256:bce1723d09571acc40c490289f2d6638ee30145e576eea93f34a2a01634967ff"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:bce1723d09571acc40c490289f2d6638ee30145e576eea93f34a2a01634967ff",
+  "git_base_head": "ca4ae4ee0dd3e42dbd428a1a254804c37911c378",
+  "attestations": [
+    {
+      "id": "approval-qa-ae92bbf0",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:bce1723d09571acc40c490289f2d6638ee30145e576eea93f34a2a01634967ff",
+      "diff_hash": "sha256:2601157ad1cc188360e170e21dbecd7d0921b990995abfd8d44e844faf57fd67",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:dc95b00b14932db4a7cc6aa3c90dd6ce3d85645d1088cda276b4a7802d9c0969",
+      "acceptance_results": [
+        {
+          "acceptance_id": "PBL-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:dc95b00b14932db4a7cc6aa3c90dd6ce3d85645d1088cda276b4a7802d9c0969"
+        },
+        {
+          "acceptance_id": "PBL-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:dc95b00b14932db4a7cc6aa3c90dd6ce3d85645d1088cda276b4a7802d9c0969"
+        },
+        {
+          "acceptance_id": "PBL-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:dc95b00b14932db4a7cc6aa3c90dd6ce3d85645d1088cda276b4a7802d9c0969"
+        },
+        {
+          "acceptance_id": "PBL-S2-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:dc95b00b14932db4a7cc6aa3c90dd6ce3d85645d1088cda276b4a7802d9c0969"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-40747032",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:bce1723d09571acc40c490289f2d6638ee30145e576eea93f34a2a01634967ff",
+      "diff_hash": "sha256:0da0580864967c948c4d9965cf6568b56292bbc91f186d356d8d663301312952",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:da0683f998d089dafde76006a6fae4d00aa003bcb83a6fdb9646186381edc66d",
+      "acceptance_results": [
+        {
+          "acceptance_id": "PBL-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:da0683f998d089dafde76006a6fae4d00aa003bcb83a6fdb9646186381edc66d"
+        },
+        {
+          "acceptance_id": "PBL-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:da0683f998d089dafde76006a6fae4d00aa003bcb83a6fdb9646186381edc66d"
+        },
+        {
+          "acceptance_id": "PBL-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:da0683f998d089dafde76006a6fae4d00aa003bcb83a6fdb9646186381edc66d"
+        },
+        {
+          "acceptance_id": "PBL-S2-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:da0683f998d089dafde76006a6fae4d00aa003bcb83a6fdb9646186381edc66d"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-ce556196",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:bce1723d09571acc40c490289f2d6638ee30145e576eea93f34a2a01634967ff",
+      "diff_hash": "sha256:0da0580864967c948c4d9965cf6568b56292bbc91f186d356d8d663301312952",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified: review commit c28e2e6 has the single parent ca4ae4e and tree 00b63d6. Lane mode (v2 state, admission, lane commit, identity-checked fast-forward, additive Host inputs, serial path and v1 readers untouched, ADR and contract docs) satisfies PBL-S2-A1 to A4 at the named seams, with non-blocking advisories.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "ca4ae4ee0dd3e42dbd428a1a254804c37911c378",
+        "review_commit": "c28e2e611c23ef4c4afa9e55a5a466a6a692c000",
+        "review_tree": "00b63d667b069bc6a267b9291c93767aa8d5de30",
+        "manifest_digest": "sha256:1c153008c865e206b8eca4364ed955125b43ce4ccd8924a26bab0438eeff8431"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-6de02e9df50f-1-review-1",
+          "acceptance_id": "PBL-S2-A3",
+          "summary": "Both Hosts throw 'lane_offers requires max_parallel', but the runner's own next_action text and the spec's temporal sequence tell the caller to call start_unattended_batch again with lane_offers alone. A caller who follows that text hits an error. Passing max_parallel again works, because the runner accepts an equal or absent value on a resume.",
+          "anchor": "sha256:64d464c83557de4f2f393d7da1d84b3a853fa1c2099076bacd3eaace07f0e180",
+          "evidence": {
+            "trigger": "A resume of a v2 batch is called with lane_offers and no max_parallel, as the provision handoff's next_action instructs.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/claude/mcp_server.ts",
+              "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+              "plugins/immune-brain/runtime/unattended/batch_lanes.ts#runLaneBatch"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "PBL-S2-A3"
+            }
+          }
+        },
+        {
+          "id": "review-6de02e9df50f-2-review-2",
+          "acceptance_id": "PBL-S2-A1",
+          "summary": "A lane-mode batch parked as needs_human can never continue. runLaneBatch returns the same report for any persisted needs_human batch, even after a fresh confirmation, while its next_action says 'Resolve it by hand, then re-confirm to continue'. The serial runner continues after re-confirmation. The spec does not require this in S2, but the message is inaccurate and later Slices need the path.",
+          "anchor": "sha256:d97f29493d4fa2bb07ff15fae1e549f417bfc1f82cdb568e934cd1e38066a02f",
+          "evidence": {
+            "trigger": "A persisted v2 record with batch_state needs_human is resumed after a fresh literal-user confirmation.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/unattended/batch_runner.ts#startBatchLocked",
+              "plugins/immune-brain/runtime/unattended/batch_lanes.ts#runLaneBatch"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "PBL-S2-A1"
+            }
+          }
+        },
+        {
+          "id": "review-6de02e9df50f-3-review-3",
+          "acceptance_id": "PBL-S2-A2",
+          "summary": "Three readers handle a v2 record safely but without lane-aware behavior. (a) batch_runner rejectionReport reads only v1 state, so a store-condition rejection of a lane batch reports an empty serial-shaped plan instead of the persisted lane children. (b) scripts/verify-batch-completion.ts calls parseBatchRunState, which throws on v2, so a completed lane batch is reported complete:false with code read_failed. That fails closed and is not a misread as v1. (c) The preflight resume plan marks integrated or released lane children 'enrollable' (isDone only checks committed or settled), which affects only the confirmation display and not the plan digest. No test in the four named A2 seam suites exercises a v2 record.",
+          "anchor": "sha256:6e149d21f8db07e52ccfe690b6c1f24c0e1508520b2f9df7086385a64bf16529",
+          "evidence": {
+            "trigger": "A v2 batch hits a kernel store busy or locked error, is verified by the completion script after completing, or is resumed after a child is integrated.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/unattended/batch_runner.ts#rejectionReport",
+              "scripts/verify-batch-completion.ts#verify",
+              "plugins/immune-brain/runtime/unattended/batch_preflight.ts#projectPlanSurface"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "PBL-S2-A2"
+            }
+          }
+        },
+        {
+          "id": "review-6de02e9df50f-4-review-4",
+          "acceptance_id": "PBL-S2-A1",
+          "summary": "The positive end-to-end lane test uses a stub Kernel and a stub serial Git port: laneGit().commitChild is a plain git commit and advanceTask is a stub. It uses a real second worktree and real admission and integration plumbing, plus one real-enrollment test. The real commitBatchChild QA-digest verification and settled-run reads are never exercised against a Lane root, so 'a real settled child' is only partly evidenced at the agreed seam.",
+          "anchor": "sha256:295a9f5963c835d34a32e70e27993ba585d41997e7f0758b20a7e6115cc27929",
+          "evidence": {
+            "trigger": "The lane end-to-end test runs through laneKernel() and laneGit() stubs instead of the real Kernel settlement and createDefaultBatchGitPort().commitChild.",
+            "caller_chain": [
+              "tests/unattended-batch-lanes.test.ts",
+              "plugins/immune-brain/runtime/unattended/batch_lanes.ts#runLaneBatch",
+              "plugins/immune-brain/runtime/unattended/batch_git.ts#commitBatchChild"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "PBL-S2-A1"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-PBL-S2-A2-33327dd4-7186c7",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "PBL-S2-A2",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=50377B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "qa-PBL-S2-A3-33327dd4-80119d",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "PBL-S2-A3",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=26527B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "qa-PBL-S2-A3-de7dd606-f3d9e4",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "PBL-S2-A3",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=19813B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "review-a0cc1fb5fdb7-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "PBL-S2-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The named negative 'a lane commit whose content differs from the candidate fails the identity check and the batch branch does not move' has no test at the agreed seam. The identity-mismatch refusal in integrateLaneCommit is never reached by any test.",
+      "anchor": "sha256:37007fdf4270427a976ad654d1d0bc2844f66081c034ddfb14bda2ac25ece8ed",
+      "evidence": {
+        "trigger": "Batch head already carries an identical edit to the lane's change, e.g. a batch-branch commit writes b.txt with the same bytes the lane commit writes. buildCandidate then merge-trees to a candidate with an empty change, so changeIdentity(base, laneCommit) differs from changeIdentity(head, candidate) and integrateLaneCommit must throw batch_integration_conflict ('does not carry the lane commit') with HEAD unmoved. tests/unattended-batch-lanes.test.ts covers only the head==base fast-forward, the replay onto a moved head that preserves identity, a content conflict thrown by merge-tree, lineage errors, and a unit check that identitiesEqual separates two different commits. No test drives the identity-equality guard in integrateLaneCommit to a failure. Because the guard is the load-bearing safety for 'fast-forward only to an identical candidate', its refusal and the unmoved branch are unproven.",
+        "caller_chain": [
+          "tests/unattended-batch-lanes.test.ts",
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts#runLaneBatch",
+          "plugins/immune-brain/runtime/unattended/batch_integration.ts#integrateLaneCommit",
+          "plugins/immune-brain/runtime/unattended/batch_integration.ts#identitiesEqual"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "PBL-S2-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-a0cc1fb5fdb7-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "PBL-S2-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Several A1 negatives are asserted only on hand-built LaneFacts or not at all at the agreed seam. The refusals batch_lane_foreign_repository, batch_lane_base_mismatch, batch_lane_dirty and batch_lane_occupied are never driven through startBatch against a real worktree, and nothing asserts that the runtime never runs git worktree add, remove or checkout.",
+      "anchor": "sha256:551d3d4b32cdd8c48cb04581ff0b8ea6451551638560e5283e1f7b3e728d01ee",
+      "evidence": {
+        "trigger": "The end-to-end refusal test ('refuses offers with a stable reason and writes nothing') exercises only batch_lane_branch_mismatch, batch_lane_unknown_child and batch_lane_is_coordinator. It checks 'zero writes' only through the stub kernel's enrolled map and the child states, not through a before/after snapshot of the Lane and coordinator state. The other four reasons appear only in the pure decideLaneAdmission unit test on fabricated facts. inspectLane against real worktrees is checked for dirty and foreign repository but never feeds a refusal through runLaneBatch. The acceptance also lists 'the runtime never runs git worktree add, remove or checkout' as a negative, and the delivered tests contain no guard for it. The only static source guard added is the HERDR regex check in tests/claude-batch-authority.test.ts. Separately, the 'real settled child' in the positive fixture is a stub (laneKernel with a fake enrollTask and projectTask) rather than a Kernel-settled child, so real Lane enrollment through createBatchKernelPort and enrollTask into a second Authority Store is never exercised.",
+        "caller_chain": [
+          "tests/unattended-batch-lanes.test.ts",
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts#runLaneBatch",
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts#decideLaneAdmission",
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts#createDefaultLaneGitPort"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "PBL-S2-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-a0cc1fb5fdb7-3-review-3",
+      "kind": "advisory",
+      "status": "open",
+      "acceptance_id": "PBL-S2-A2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "scripts/verify-batch-completion.ts is unchanged and parses state with the v1 parser, so a v2 record is not misread but makes the verifier report generic read_failed (exit 2). A completed lane-mode batch therefore cannot be verified, and the failure carries no lane-specific code.",
+      "anchor": "sha256:6d63c6f241883f4628b9ad7623e451a68172641e83489cf335c8d38ce5f909a8",
+      "evidence": {
+        "trigger": "Run the verifier on a completed batch whose .imm/state/batches/<id>.json has contract assurance_kernel/batch_run_state/v2. parseBatchRunState throws 'unknown contract', the catch maps it to code read_failed, and the output is complete:false.",
+        "caller_chain": [
+          "scripts/verify-batch-completion.ts#verify",
+          "plugins/immune-brain/runtime/unattended/batch_state.ts#parseBatchRunState"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "PBL-S2-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-a0cc1fb5fdb7-4-review-4",
+      "kind": "advisory",
+      "status": "open",
+      "acceptance_id": "PBL-S2-A3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The Hosts declare max_parallel differently. Claude Code uses {type: integer, minimum: 1}. Pi uses Type.Number({minimum: 1}) and relies on parseMaxParallel for integer-ness. The Pi schema is looser than the Claude schema for the same additive input. Runtime validation closes the gap, so no behavior differs.",
+      "anchor": "sha256:82f3d9950e4d20598b345dab9994eca453f18a05af53d49921db2db776a1bb1f",
+      "evidence": {
+        "trigger": "A Pi tool call with max_parallel 1.5 passes schema validation and is refused only inside execute, while Claude Code refuses it at the schema.",
+        "caller_chain": [
+          "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+          "plugins/immune-brain/runtime/claude/mcp_server.ts#listMcpTools"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "PBL-S2-A3"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:parallel-batch-lanes-s2-lane-integration:2026-10-08T17:36:46.959Z",
+      "at": "2026-10-08T17:36:46.959Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/parallel-batch-lanes-s2-lane-integration.intent.json"
+    },
+    {
+      "id": "request_rework:parallel-batch-lanes-s2-lane-integration:2026-10-08T17:40:19.418Z",
+      "at": "2026-10-08T17:40:19.418Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:7e2349cbe3a2758f1ad4dbdd1945b954b9e7665073cfb439015e6129986a0765",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-08T17:40:19.418Z"
+      }
+    },
+    {
+      "id": "resolve_finding:parallel-batch-lanes-s2-lane-integration:2026-10-08T17:50:48.622Z",
+      "at": "2026-10-08T17:50:48.622Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-PBL-S2-A2-33327dd4-7186c7\naction_v2_sha256:97a4a572e834e95424ee58dd4bc8df120c9e0d10340f7bba589d13bc4de0455b"
+    },
+    {
+      "id": "resolve_finding:parallel-batch-lanes-s2-lane-integration:2026-10-08T17:50:49.938Z",
+      "at": "2026-10-08T17:50:49.938Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-PBL-S2-A3-33327dd4-80119d\naction_v2_sha256:727f9be3936ba52919c6a542d3a918dd6fb28bfeccd9be19bae8f95370f5b1ff"
+    },
+    {
+      "id": "freeze_artifacts:parallel-batch-lanes-s2-lane-integration:2026-10-08T17:50:56.369Z",
+      "at": "2026-10-08T17:50:56.369Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/parallel-batch-lanes-s2-lane-integration.intent.json"
+    },
+    {
+      "id": "request_rework:parallel-batch-lanes-s2-lane-integration:2026-10-08T17:57:07.725Z",
+      "at": "2026-10-08T17:57:07.725Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:f512279d3bf5f04dfb077a44158dc97ba320d85bbfac052a82fbb89460087c31",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-08T17:57:07.725Z"
+      }
+    },
+    {
+      "id": "resolve_finding:parallel-batch-lanes-s2-lane-integration:2026-10-08T18:02:47.477Z",
+      "at": "2026-10-08T18:02:47.477Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-PBL-S2-A3-de7dd606-f3d9e4\naction_v2_sha256:b05ceaa03959210efcd5d3c284252d792b15cd2678d76c067bffb0017d2e9484"
+    },
+    {
+      "id": "freeze_artifacts:parallel-batch-lanes-s2-lane-integration:2026-10-08T18:02:51.970Z",
+      "at": "2026-10-08T18:02:51.970Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/parallel-batch-lanes-s2-lane-integration.intent.json"
+    },
+    {
+      "id": "record_approval:parallel-batch-lanes-s2-lane-integration:2026-10-08T18:08:54.279Z",
+      "at": "2026-10-08T18:08:54.279Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ae92bbf0\naction_v2_sha256:98693e27c09bd0d555f6dfb8ea176119a9450fa34b55f9fed38159ced8ffa2bc",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-08T18:08:54.280Z"
+      }
+    },
+    {
+      "id": "request_rework:parallel-batch-lanes-s2-lane-integration:2026-10-08T18:13:36.569Z",
+      "at": "2026-10-08T18:13:36.569Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:bd4d35075558641b06569ca47970481a36981d6c97735333cddf77d167adb0f7",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-08T18:13:36.569Z"
+      }
+    },
+    {
+      "id": "resolve_finding:parallel-batch-lanes-s2-lane-integration:2026-10-08T18:16:26.691Z",
+      "at": "2026-10-08T18:16:26.691Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a0cc1fb5fdb7-1-review-1\naction_v2_sha256:a72e3ffb19bfe199dc64d5c8cd5c1807cdc0acc0d4e0dbb5508e2eb0e7790f6f"
+    },
+    {
+      "id": "resolve_finding:parallel-batch-lanes-s2-lane-integration:2026-10-08T18:16:30.093Z",
+      "at": "2026-10-08T18:16:30.093Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a0cc1fb5fdb7-2-review-2\naction_v2_sha256:6c081d7e41b5b692b6f593b80f856dfda3b3c05fc29a57cdcb55d087a1b8c8ad"
+    },
+    {
+      "id": "freeze_artifacts:parallel-batch-lanes-s2-lane-integration:2026-10-08T18:16:35.034Z",
+      "at": "2026-10-08T18:16:35.034Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/parallel-batch-lanes-s2-lane-integration.intent.json"
+    },
+    {
+      "id": "record_approval:parallel-batch-lanes-s2-lane-integration:2026-10-08T18:22:31.318Z",
+      "at": "2026-10-08T18:22:31.318Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-40747032\naction_v2_sha256:c876ab7dffde963606727fc1b457aa259f4013d5a84c1378818f23d6a6269aa9",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-08T18:22:31.318Z"
+      }
+    },
+    {
+      "id": "record_approval:parallel-batch-lanes-s2-lane-integration:2026-10-08T18:27:24.285Z",
+      "at": "2026-10-08T18:27:24.285Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-ce556196\naction_v2_sha256:f8047382bcc54011323faad9f591fd008bd291417ae6174cb5ef32a856766ba1",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-08T18:27:24.285Z"
+      }
+    },
+    {
+      "id": "complete:parallel-batch-lanes-s2-lane-integration:2026-10-08T18:27:26.174Z",
+      "at": "2026-10-08T18:27:26.174Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:51f2c0138e60261d7e3a04b55c2674e99a48d46be7730a8d933d1ba5ec261076"
+    }
+  ]
+}

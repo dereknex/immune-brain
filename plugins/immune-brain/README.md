@@ -36,7 +36,7 @@ host-native and are not classified by natural-language routing.
 - Explicit `imm-brainstorm` frames ambiguity; explicit `imm-planner` plans clear work.
 - `imm-run` consumes validated plans and active task recovery; Planner artifacts remain candidates for later literal-user Enrollment in the current Host's native gate.
 - Fast-Track compresses Managed Path without bypassing TaskIntent scope, Enrollment, QA, Review, authorization, or completion.
-- An opted-in serial batch hands each enrolled child to foreground Parent implementation before QA; the Parent dispatches required Review, then resumes the same valid batch for Kernel settlement reconciliation and one scope-bound commit. See [Unattended Batch Opt-In](dist/imm-run.md#unattended-batch-opt-in).
+- An opted-in serial batch hands each enrolled child to foreground Parent implementation before QA; the Parent dispatches required Review, then resumes the same valid batch for Kernel settlement reconciliation and one scope-bound commit. Optional `max_parallel` selects lane mode instead of the serial default. See [Unattended Batch Opt-In](dist/imm-run.md#unattended-batch-opt-in) and [Parallel Batch Opt-In](dist/imm-run.md#parallel-batch-opt-in).
 
 ```mermaid
 flowchart LR

@@ -139,6 +139,7 @@ const LOOP_TARGETS = [
 	"architecture-exploration",
 	"advisory-review",
 	"compounder",
+	"lane-supply",
 ] as const;
 const LOOP_DIRECT_ROLES = ["qa", "code-review", "ui-review"] as const;
 const KERNEL_OPERATIONS = [

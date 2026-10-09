@@ -27,6 +27,7 @@ const ROLES: InternalRole[] = [
 	"arch-explorer",
 	"advisory-reviewer",
 	"compounder",
+	"lane-steward",
 ];
 
 function read(path: string): string {
@@ -298,5 +299,81 @@ describe("internal role-prompt bridge", () => {
 			}
 		}
 		expect(existsSync(resolve(ROOT, "plugins/immune-brain/skills/imm-pr-fix/SKILL.md"))).toBe(true);
+	});
+	it("keeps Executor Host launch with the Parent, not the lane-steward", () => {
+		const prompt = read("plugins/immune-brain/runtime/prompts/lane-steward.md").replace(/\s+/g, " ");
+		expect(prompt).toContain("Start no Host session, in the Lane or anywhere else");
+		expect(prompt).toContain("report every one the prepared Lane can run, not only the Host you are running in");
+		expect(prompt).not.toContain("Start exactly one Executor Host");
+
+		const loop = read("plugins/immune-brain/dist/imm-run.md").replace(/\s+/g, " ");
+		for (const fragment of [
+			"The Parent launches and supervises every Lane's Executor Host; no other role starts one",
+			"A subagent that runs inside the Parent's process shares the Parent's root and is never a Lane Executor",
+			"The Parent Host and the Executor Host are chosen independently",
+			"the Parent does not substitute a detached job, an in-process subagent or serial in-place work",
+			"never from the session's output or exit status",
+			"Handles are not authority",
+			// The standing rules the supervision section narrows are still stated.
+			"Do not poll or create detached jobs",
+			"its Host session never re-enters the batch",
+		]) {
+			expect(loop).toContain(fragment);
+		}
+		// Each supported Parent Host has its own row, plus the no-capability row.
+		for (const row of ["| Claude Code |", "| Pi |", "| Any Host without one |"]) expect(loop).toContain(row);
+		expect(read("plugins/immune-brain/skills/imm-run/SKILL.md")).toContain("../../dist/imm-run.md#lane-executor-supervision");
+	});
+	it("launches Lane Executors in Herdr tabs without asking, and never answers their dialogs", () => {
+		const loop = read("plugins/immune-brain/dist/imm-run.md").replace(/\s+/g, " ");
+		for (const fragment of [
+			"| Either Host, inside Herdr (`HERDR_ENV=1`) |",
+			"the first matching row applies, and the user is not asked to choose",
+			'herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd <lane_path> --label <name> --no-focus',
+			"Without `--workspace` the tab lands in whichever workspace has focus",
+			"herdr agent start <name> --kind <kind> --pane <pane_id> -- <host arguments>",
+			'herdr agent prompt <pane_id> "<imm-run entry> <task_id>" --wait --until working --until blocked --timeout 30000',
+			"names it `/immune-brain:imm-run`",
+			"Supervise with `herdr agent wait <pane_id>` as a Host background command",
+			"Start it only after step 4 reported `working`",
+			"The Parent sends that tab no keys and no prompt",
+			"a relaunch submits the entry again in the same tab instead of creating another",
+			"The Parent adds no permission or trust option of its own",
+			"it closes no tab, including the tabs it created",
+			"The Parent stops no session",
+			"the Parent removes no Lane and dispatches no one to remove it",
+			"It splits no pane and creates no workspace",
+			"Outside Herdr the Parent never invokes `herdr`",
+			// The tab path changes how a session is obtained, not what counts as progress.
+			"never from the session's output or exit status",
+		]) {
+			expect(loop).toContain(fragment);
+		}
+		expect(read("plugins/immune-brain/skills/imm-run/SKILL.md")).toContain("../../dist/imm-run.md#herdr-lane-tabs");
+		// The steward still knows no workspace tool.
+		expect(/herdr/i.test(read("plugins/immune-brain/runtime/prompts/lane-steward.md"))).toBe(false);
+	});
+	it("resolves Lane Preferences in the Parent and passes model and effort as launch arguments", () => {
+		const loop = read("plugins/immune-brain/dist/imm-run.md").replace(/\s+/g, " ");
+		for (const fragment of [
+			"#### Lane Preferences",
+			"1. a literal user instruction for the current request;",
+			"| `Lane max parallel: <n>` | positive integer |",
+			"| `Lane Executor Host: <host>` | `claude-code` or `pi` |",
+			"the Parent does not fall back to the other one",
+			"| `Lane Executor model: <model>` |",
+			"Passed as `--effort <level>` to `claude-code` and as `--thinking <level>` to `pi`",
+			"apply only together with `Lane Executor Host`",
+			"Report an invalid value and ask instead of guessing or clamping",
+			"On a resume the recorded `max_parallel` stands",
+			"the runner reads none of them, and they grant no permission or trust option",
+			"those that [Lane Preferences](#lane-preferences) resolved for model and effort",
+		]) {
+			expect(loop).toContain(fragment);
+		}
+		expect(read("plugins/immune-brain/skills/imm-run/SKILL.md")).toContain("../../dist/imm-run.md#lane-preferences");
+		// The directives stay a Parent concern: no runtime source names them.
+		for (const file of ["plugins/immune-brain/runtime/unattended/batch_lanes.ts", "plugins/immune-brain/runtime/role_prompt_bridge.ts"])
+			expect({ file, named: /Lane (max parallel|Executor (Host|model|effort)):/.test(read(file)) }).toEqual({ file, named: false });
 	});
 });

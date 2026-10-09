@@ -57,6 +57,7 @@ import {
 	type BatchRunReport,
 } from "../unattended/batch_runner";
 import { createBatchKernelPort } from "../unattended/batch_kernel_port";
+import type { LaneOffer } from "../unattended/batch_lanes";
 import {
 	createBatchAuthorityRegistry,
 } from "../kernel/batch_authority";
@@ -66,7 +67,7 @@ import {
 import type {
 	InitiativeObservationReader,
 } from "../unattended/types";
-import { observeGithubInitiative } from "../github_issue_tracker";
+import { observeInitiative } from "../unattended/batch_plan";
 import {
 	confirmationRef,
 	enrollmentNonce,
@@ -784,7 +785,7 @@ export class ClaudeRuntime {
 	async startUnattendedBatch(
 		initiativeSlug: string,
 		meta: ToolMeta,
-		options: { reuseOnly?: boolean } = {},
+		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[] } = {},
 	): Promise<ClaudeBatchStartResult> {
 		throwIfCancelled(meta.signal);
 		const reuseOnly = options.reuseOnly === true;
@@ -807,7 +808,7 @@ export class ClaudeRuntime {
 			root: this.cwd,
 			initiative_slug: initiativeSlug,
 			now,
-			readInitiative: this.readInitiative ?? observeGithubInitiative,
+			readInitiative: this.readInitiative ?? observeInitiative,
 		});
 		if (!preflight.ok) {
 			return {
@@ -830,7 +831,7 @@ export class ClaudeRuntime {
 			initiative_slug: initiativeSlug,
 			now,
 			projection: preflight.projection,
-			readInitiative: this.readInitiative ?? observeGithubInitiative,
+			readInitiative: this.readInitiative ?? observeInitiative,
 			nonce: enrollmentNonce(),
 			gate: async (facts) => {
 				// A continuation after a foreground child never opens a gate: when the
@@ -867,6 +868,15 @@ export class ClaudeRuntime {
 								reason: child.reason,
 							})),
 							budget: facts.budget,
+							...(options.max_parallel !== undefined
+								? {
+										lane_mode: {
+											max_parallel: options.max_parallel,
+											parallel_groups: facts.parallel_groups,
+											serialized: facts.scope_conflicts,
+										},
+									}
+								: {}),
 							...(facts.reuse_blockers.length > 0
 								? {
 										re_confirmation_required: facts.reuse_blockers,
@@ -971,6 +981,8 @@ export class ClaudeRuntime {
 			now,
 			kernel: kernelPort,
 			git: this.batchGit,
+			...(options.max_parallel !== undefined ? { max_parallel: options.max_parallel } : {}),
+			...(options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}),
 		});
 
 		// review-3 & review-batch-preflight-recovery-is-diagnostic: map rejected batch state to rejected result with same-Host recovery action

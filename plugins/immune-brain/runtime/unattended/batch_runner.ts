@@ -28,11 +28,14 @@ import {
 	type BatchRunnerGitPort,
 } from "./batch_git";
 import { classifyBatchLineage, expectedBatchHead } from "./batch_preflight";
+import { laneRejectionReport, runLaneBatch, type LaneOffer } from "./batch_lanes";
 import {
 	type BatchRunStateRecord,
 	type BatchChildRun,
 	type BatchRunReport,
+	isLaneBatchRecord,
 	isTerminalBatchState,
+	readAnyBatchRunState,
 	prepareBatchRunState,
 	readBatchRunState,
 	writeBatchRunState,
@@ -101,6 +104,10 @@ export interface StartBatchInput {
 	now: string;
 	kernel: BatchRunnerKernelPort;
 	git?: BatchRunnerGitPort;
+	/** Present only in lane mode: how many children may run at once. */
+	max_parallel?: number;
+	/** Present only in lane mode: Lanes someone else created, offered to the batch. */
+	lane_offers?: LaneOffer[];
 }
 
 /** One git seam: the injected BatchRunnerGitPort, or the default adapter over
@@ -435,11 +442,17 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 function rejectionReport(input: StartBatchInput, reason: string): BatchRunReport {
 	const persisted = (() => {
 		try {
-			return readBatchRunState(input.root, input.batch_id);
+			return readAnyBatchRunState(input.root, input.batch_id);
 		} catch {
 			return null;
 		}
 	})();
+	if (persisted !== null && isLaneBatchRecord(persisted))
+		return laneRejectionReport(
+			persisted,
+			reason,
+			"settle the reported kernel store condition and retry in the current Host",
+		) as unknown as BatchRunReport;
 	return reportFor(
 		{
 			...(persisted ?? prepareBatchRunState({ ...input, children: [], now: input.now })),
@@ -451,6 +464,12 @@ function rejectionReport(input: StartBatchInput, reason: string): BatchRunReport
 }
 
 async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport> {
+	// Lane mode is selected by `max_parallel` or by a recorded v2 batch; a batch
+	// given neither keeps the serial path below unchanged.
+	const recorded = readAnyBatchRunState(input.root, input.batch_id);
+	if (input.max_parallel !== undefined || (recorded !== null && isLaneBatchRecord(recorded)))
+		return (await runLaneBatch(input, recorded)) as unknown as BatchRunReport;
+
 	// Validation failure before the first enrollment: zero writes, rejected.
 	// reportFor only builds the report object; finalize would persist it and
 	// the spec forbids any write on a pre-enrollment rejection.

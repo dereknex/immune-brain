@@ -1,0 +1,123 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "parallel-batch-lanes-s1-schedule",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "parallel-batch-lanes-s1-schedule",
+    "goal": "Implement Slice S1 of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes): the Batch Plan projection reports parallel groups and scope conflicts, and one pure scheduling function returns the startable set for a batch record. No tool parameter, no persisted-state change, no change to serial batch behavior.",
+    "acceptance": [
+      {
+        "id": "PBL-S1-A1",
+        "assertion": "Per the Scheduling rule under State transitions of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes) (sources: user decision D5, delegated disjointness rule): a pure function in runtime/unattended/batch_schedule.ts returns the startable children for given child states, blocked_by edges, scope_hint lists and max_parallel, and the Batch Plan projection additively reports parallel groups and the children that serialize because their scopes overlap. plan_digest and every existing plan field are unchanged for an existing Initiative. Positive: ready children with disjoint scopes start together up to the limit. Negative: identical, prefix-nested and wildcard-pattern scopes are treated as overlapping and serialize; a child with an unmet blocked_by never starts; a pattern with an empty literal prefix overlaps everything. Bound: max_parallel 1 yields exactly the current serial order. Agreed seams: tests/unattended-batch-schedule.test.ts (new), tests/unattended-batch-plan.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-schedule.test.ts\",\n      \"tests/unattended-batch-plan.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/parallel-batch-lanes-s1-schedule.md",
+      "docs/plans/parallel-batch-lanes-s1-schedule.intent.json",
+      "docs/specs/parallel-batch-lanes.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+      "plugins/immune-brain/runtime/unattended/batch_schedule.ts",
+      "plugins/immune-brain/runtime/unattended/types.ts",
+      "tests/unattended-batch-plan.test.ts",
+      "tests/unattended-batch-schedule.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/parallel-batch-lanes-s1-schedule.intent.json",
+    "content_hash": "sha256:7d97a57c5d11acf1d0a8008a3e3c9139dc72932828e37197ead01175e54e082d"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:7d97a57c5d11acf1d0a8008a3e3c9139dc72932828e37197ead01175e54e082d",
+  "git_base_head": "3a5465987263a14a94fb4e82babdfb662a6d6fab",
+  "attestations": [
+    {
+      "id": "approval-qa-0498ca0d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:7d97a57c5d11acf1d0a8008a3e3c9139dc72932828e37197ead01175e54e082d",
+      "diff_hash": "sha256:a670cf30b8c633c39df8c8f75b08c3f8f79e182e941cd0d3bdc13b7b5142de72",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:273826f67a41f02914bd4c5949c0f6f8d11f00ba8e884db69f1ee1741845fe8f",
+      "acceptance_results": [
+        {
+          "acceptance_id": "PBL-S1-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:273826f67a41f02914bd4c5949c0f6f8d11f00ba8e884db69f1ee1741845fe8f"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-20d5295c",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:7d97a57c5d11acf1d0a8008a3e3c9139dc72932828e37197ead01175e54e082d",
+      "diff_hash": "sha256:a670cf30b8c633c39df8c8f75b08c3f8f79e182e941cd0d3bdc13b7b5142de72",
+      "actor_id": "parent-mediated-review",
+      "summary": "batch_schedule.ts matches the Spec Scheduling rule (segment-boundary disjointness, wildcard prefix reduction, empty prefix overlaps all, unmet blocked_by never starts, max_parallel 1 equals the serial choice). The plan projection is additive and plan_digest is unchanged. The agreed seams (tests/unattended-batch-schedule.test.ts and tests/unattended-batch-plan.test.ts) cover the positive, negative and bound cases.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "3a5465987263a14a94fb4e82babdfb662a6d6fab",
+        "review_commit": "14055ffd831dfd6894b92032a369b62b48fd0a58",
+        "review_tree": "6a1f1054d9dc355cebf75b7b6070d9296ca9588c",
+        "manifest_digest": "sha256:5b7f0145765b298b745e2b1eae70db456d26a28b69a3e736914a61c5ef7b6a18"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:parallel-batch-lanes-s1-schedule:2026-10-08T16:46:47.292Z",
+      "at": "2026-10-08T16:46:47.292Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/parallel-batch-lanes-s1-schedule.intent.json"
+    },
+    {
+      "id": "record_approval:parallel-batch-lanes-s1-schedule:2026-10-08T16:46:51.116Z",
+      "at": "2026-10-08T16:46:51.116Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-0498ca0d\naction_v2_sha256:aca967f9889f45ca119b19ecb7e74e60d3ca9098a40c5420739b63f503d6deeb",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-08T16:46:51.116Z"
+      }
+    },
+    {
+      "id": "record_approval:parallel-batch-lanes-s1-schedule:2026-10-08T16:47:53.810Z",
+      "at": "2026-10-08T16:47:53.810Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-20d5295c\naction_v2_sha256:9453282b3e10638c25607589285bfa984d733b87103ff0b1926587071daba532",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-08T16:47:53.810Z"
+      }
+    },
+    {
+      "id": "complete:parallel-batch-lanes-s1-schedule:2026-10-08T16:47:54.782Z",
+      "at": "2026-10-08T16:47:54.782Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:deae6597340958509db09dd73f0c21b94933ae5b7dbb09e22a24a111443c0aaa"
+    }
+  ]
+}

@@ -24,7 +24,6 @@
 // obligation as the Tool it claims.
 
 import { describe, expect, test } from "bun:test";
-import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { TOOLS } from "../plugins/immune-brain/runtime/claude/mcp_server";
@@ -139,11 +138,17 @@ describe("packaged contract tool surface", () => {
 
 	test("the guard rejects the pre-change contracts", () => {
 		// The commit immediately before S1's first contract change owns the actual
-		// pre-change text, read here at test time: a paraphrase of the old sentences
-		// could drift from what the guard actually rejected. That commit predates
-		// the imm-loop -> imm-run rename, so the contract is read at its old path.
+		// pre-change text: a paraphrase of the old sentences could drift from what the
+		// guard actually rejected. That commit predates the imm-loop -> imm-run rename,
+		// so the contract is judged under its old path.
 		const path = "plugins/immune-brain/dist/imm-loop.md";
-		const before = execFileSync("git", ["show", `aecf5dd^:${path}`], { cwd: ROOT, encoding: "utf8" });
+		// Verbatim lines of the file at aecf5dd^, inlined so the guard stays checkable in
+		// a tree without Git history; do not paraphrase them.
+		const before = [
+			"Host's `imm_kernel_canary` `status` first and verify the exact active backend",
+			"At every internal role boundary call the read-only `imm_loop_action` Tool. Use",
+			'  `imm_kernel_canary({ task_id, action: { op: "request_stop" } })` directly.',
+		].join("\n");
 		const violations = contractViolationsIn(path, before);
 		expect(violations.length).toBeGreaterThan(0);
 		expect(violations.join("\n")).toContain("`imm_kernel_canary`");

@@ -26,7 +26,7 @@ import { pathMatchesScope } from "../workspace_scope";
 import { captureBatchReconfirmation, retainReconfirmation, ownUnpersistedBatchHead, type ReconfirmationSnapshot } from "./batch_reconfirmation";
 import { projectBatchPlan } from "./batch_plan";
 import { batchReason, type BatchReasonKey } from "./batch_reasons";
-import { isTerminalBatchState, readBatchRunState, type BatchRunStateRecord } from "./batch_state";
+import { isLaneBatchRecord, isTerminalBatchState, readAnyBatchRunState, type AnyBatchRunStateRecord, type BatchRunStateRecord } from "./batch_state";
 import type {
 	BatchPlanBudget,
 	BatchPlanChild,
@@ -50,7 +50,7 @@ export interface BatchPreflightProjection {
 	initiative_slug: string;
 	batch_branch: string;
 	is_resuming: boolean;
-	existing_batch: BatchRunStateRecord | null;
+	existing_batch: AnyBatchRunStateRecord | null;
 	base_head: string;
 	budget: BatchPlanBudget;
 	plan_digest: string;
@@ -59,6 +59,9 @@ export interface BatchPreflightProjection {
 	risk_by_task: Record<string, string>;
 	/** Children the plan excluded, in plan order. Empty on a resume. */
 	excluded: Array<{ task_id: string; slice_id: string; reason: string }>;
+	/** Start waves and serialized-by-scope children; empty on a resume. */
+	parallel_groups: string[][];
+	scope_conflicts: Array<{ task_id: string; overlaps_with: string[] }>;
 }
 
 export type BatchPreflightOutcome =
@@ -109,8 +112,8 @@ export function findResumableBatchSlugForTask(root: string, taskId: string): str
 	for (const file of readdirSync(batchesDir)) {
 		if (!file.endsWith(".json")) continue;
 		try {
-			const record = JSON.parse(readFileSync(join(batchesDir, file), "utf8")) as BatchRunStateRecord;
-			if (record?.contract !== "assurance_kernel/batch_run_state/v1") continue;
+			const record = JSON.parse(readFileSync(join(batchesDir, file), "utf8")) as AnyBatchRunStateRecord;
+			if (record?.contract !== "assurance_kernel/batch_run_state/v1" && record?.contract !== "assurance_kernel/batch_run_state/v2") continue;
 			if (record.batch_state !== "running" && record.batch_state !== "needs_human") continue;
 			if (record.children.some((child) => child.task_id === taskId && (child.state === "enrolled" || child.state === "settled")))
 				return record.initiative_slug;
@@ -128,7 +131,7 @@ export function findResumableBatchSlugForTask(root: string, taskId: string): str
  */
 export type BatchRecordLookup =
 	| { corrupt: true; path: string }
-	| { corrupt: false; record: BatchRunStateRecord }
+	| { corrupt: false; record: AnyBatchRunStateRecord }
 	| null;
 
 export function findExistingActiveBatch(root: string, initiativeSlug: string): BatchRecordLookup {
@@ -144,8 +147,8 @@ export function findExistingActiveBatch(root: string, initiativeSlug: string): B
 			// initiative as batchless could authorize a parallel run.
 			return { corrupt: true, path: file };
 		}
-		const candidate = record as BatchRunStateRecord;
-		if (candidate?.contract !== "assurance_kernel/batch_run_state/v1") continue;
+		const candidate = record as AnyBatchRunStateRecord;
+		if (candidate?.contract !== "assurance_kernel/batch_run_state/v1" && candidate?.contract !== "assurance_kernel/batch_run_state/v2") continue;
 		if (candidate.initiative_slug !== initiativeSlug) continue;
 		const validStates = new Set([
 			"prepared",
@@ -166,7 +169,7 @@ export function findExistingActiveBatch(root: string, initiativeSlug: string): B
 		}
 		if (isTerminalBatchState(candidate.batch_state)) continue;
 		try {
-			const record = readBatchRunState(root, file.slice(0, -5));
+			const record = readAnyBatchRunState(root, file.slice(0, -5));
 			if (record) return { corrupt: false, record };
 		} catch {
 			// Reuse the state owner's full validation before offering a renewal.
@@ -181,10 +184,10 @@ export function findExistingActiveBatch(root: string, initiativeSlug: string): B
  * not a batch to resume. Its branch and commit lineage may be reused by a new,
  * explicitly confirmed run, while its record and terminal report stay intact.
  */
-export function findSettledBatchRecord(root: string, initiativeSlug: string): BatchRunStateRecord | null {
+export function findSettledBatchRecord(root: string, initiativeSlug: string): AnyBatchRunStateRecord | null {
 	const batchesDir = join(root, ".imm", "state", "batches");
 	if (!existsSync(batchesDir)) return null;
-	let newest: BatchRunStateRecord | null = null;
+	let newest: AnyBatchRunStateRecord | null = null;
 	for (const file of readdirSync(batchesDir).sort()) {
 		if (!file.endsWith(".json")) continue;
 		let record: unknown;
@@ -194,8 +197,8 @@ export function findSettledBatchRecord(root: string, initiativeSlug: string): Ba
 			// The active lookup already fails closed on an unreadable record.
 			continue;
 		}
-		const candidate = record as BatchRunStateRecord;
-		if (candidate?.contract !== "assurance_kernel/batch_run_state/v1") continue;
+		const candidate = record as AnyBatchRunStateRecord;
+		if (candidate?.contract !== "assurance_kernel/batch_run_state/v1" && candidate?.contract !== "assurance_kernel/batch_run_state/v2") continue;
 		if (candidate.initiative_slug !== initiativeSlug) continue;
 		if (!isTerminalBatchState(candidate.batch_state)) continue;
 		if (typeof candidate.batch_id !== "string" || typeof candidate.base_head !== "string") continue;
@@ -294,7 +297,7 @@ export function expectedBatchHead(record: {
  */
 export function isOwnBatchClaim(
 	root: string,
-	existingBatch: BatchRunStateRecord,
+	existingBatch: AnyBatchRunStateRecord,
 	taskId: string,
 	batchBranch: string,
 ): boolean {
@@ -407,6 +410,8 @@ interface PlanSurface {
 	recovery_children: BatchPlanChild[];
 	risk_by_task: Record<string, string>;
 	excluded: Array<{ task_id: string; slice_id: string; reason: string }>;
+	parallel_groups: string[][];
+	scope_conflicts: Array<{ task_id: string; overlaps_with: string[] }>;
 }
 
 type PlanSurfaceOutcome =
@@ -422,7 +427,7 @@ async function projectPlanSurface(input: {
 	root: string;
 	initiative_slug: string;
 	is_resuming: boolean;
-	existing_batch: BatchRunStateRecord | null;
+	existing_batch: AnyBatchRunStateRecord | null;
 	now: string;
 	readInitiative?: InitiativeObservationReader;
 }): Promise<PlanSurfaceOutcome> {
@@ -430,6 +435,8 @@ async function projectPlanSurface(input: {
 	let recoveryChildren: BatchPlanChild[] = [];
 	let planDigest: string;
 	let excluded: Array<{ task_id: string; slice_id: string; reason: string }> = [];
+	let parallelGroups: string[][] = [];
+	let scopeConflicts: Array<{ task_id: string; overlaps_with: string[] }> = [];
 	const riskByTask = new Map<string, string>();
 	// Only an active run supplies children and budget; a terminal record supplies
 	// branch provenance, never the plan or authorization of the next run.
@@ -469,7 +476,8 @@ async function projectPlanSurface(input: {
 				// Keep the risk captured by the authoritative read above; a stale
 				// reconstructed path must never fabricate a risk later.
 				riskByTask.set(c.task_id, read.intent?.risk ?? "material");
-				const isDone = c.state === "committed" || c.state === "settled";
+				// A lane child integrated or released is already on the batch branch.
+				const isDone = ["committed", "settled", "integrated", "released"].includes(c.state);
 				return {
 					task_id: c.task_id,
 					slice_id: c.slice_id,
@@ -508,6 +516,8 @@ async function projectPlanSurface(input: {
 			return { ok: false, key: "empty_enrollable_set", detail: "" };
 
 		budget = plan.budget;
+		parallelGroups = plan.parallel_groups;
+		scopeConflicts = plan.scope_conflicts;
 		const enrollableChildById = new Map(plan.enrollable.map((c) => [c.task_id, c]));
 		recoveryChildren = plan.children
 			.filter((c) => c.status === "enrollable")
@@ -544,6 +554,8 @@ async function projectPlanSurface(input: {
 				[...riskByTask.entries()].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
 			),
 			excluded,
+			parallel_groups: parallelGroups,
+			scope_conflicts: scopeConflicts,
 		},
 	};
 }
@@ -560,8 +572,8 @@ export async function projectBatchPreflight(
 	if (found?.corrupt)
 		return reject("batch_state_unreadable", found.path);
 	// Settled records retain branch provenance; only active records are resumed.
-	const activeRecord: BatchRunStateRecord | null = found ? found.record : null;
-	const existingBatch: BatchRunStateRecord | null = activeRecord ?? findSettledBatchRecord(root, initiativeSlug);
+	const activeRecord: AnyBatchRunStateRecord | null = found ? found.record : null;
+	const existingBatch: AnyBatchRunStateRecord | null = activeRecord ?? findSettledBatchRecord(root, initiativeSlug);
 	const isResuming = activeRecord !== null;
 	const batchBranch = `imm/${initiativeSlug}`;
 
@@ -645,7 +657,7 @@ export async function projectBatchPreflight(
 	if (!planSurface.ok)
 		return reject(planSurface.key, planSurface.detail);
 	let reconfirmation: ReconfirmationSnapshot | undefined;
-	if (activeRecord && activeRecord.plan_digest !== planSurface.surface.plan_digest) {
+	if (activeRecord && !isLaneBatchRecord(activeRecord) && activeRecord.plan_digest !== planSurface.surface.plan_digest) {
 		try { reconfirmation = await captureBatchReconfirmation(root, activeRecord, planSurface.surface.recovery_children); }
 		catch { return reject("plan_projection_failed", "batch plan reconfirmation is not eligible"); }
 	}
@@ -661,6 +673,8 @@ export async function projectBatchPreflight(
 		recovery_children: planSurface.surface.recovery_children,
 		risk_by_task: planSurface.surface.risk_by_task,
 		excluded: planSurface.surface.excluded,
+		parallel_groups: planSurface.surface.parallel_groups,
+		scope_conflicts: planSurface.surface.scope_conflicts,
 	};
 	if (reconfirmation) Object.defineProperty(projection, "reconfirmation", { value: reconfirmation });
 	return { ok: true, projection };
@@ -683,8 +697,8 @@ export interface BatchDriftProjection {
 export async function projectBatchDrift(options: BatchPreflightOptions): Promise<BatchDriftProjection> {
 	const { root, initiative_slug: initiativeSlug, readInitiative } = options;
 	const found = findExistingActiveBatch(root, initiativeSlug);
-	const activeRecord: BatchRunStateRecord | null = found && !found.corrupt ? found.record : null;
-	const existingBatch: BatchRunStateRecord | null = activeRecord ?? findSettledBatchRecord(root, initiativeSlug);
+	const activeRecord: AnyBatchRunStateRecord | null = found && !found.corrupt ? found.record : null;
+	const existingBatch: AnyBatchRunStateRecord | null = activeRecord ?? findSettledBatchRecord(root, initiativeSlug);
 	const isResuming = activeRecord !== null;
 	const batchBranch = `imm/${initiativeSlug}`;
 	const activeClaimTaskId = readActiveClaimTaskId(root);
@@ -727,6 +741,9 @@ export interface BatchConfirmationFacts {
 	reuse_blockers: string[];
 	children: Array<{ task_id: string; slice_id: string; risk: string; status: BatchPlanChildStatus }>;
 	excluded: Array<{ task_id: string; slice_id: string; reason: string }>;
+	/** Start waves and the children that serialize because their scopes overlap. */
+	parallel_groups: string[][];
+	scope_conflicts: Array<{ task_id: string; overlaps_with: string[] }>;
 }
 
 /**
@@ -790,7 +807,7 @@ export async function authorizeBatch<HostRejection>(
 	// ADR-0005 Decision 1: a resume of an intact, still-binding authorization
 	// reuses it instead of opening a second native gate. Anything that no longer
 	// binds falls through to the gate below, which names the reason.
-	const ownsUnpersistedHead = isResuming && existingBatch !== null && existingBatch.plan_digest === planDigest &&
+	const ownsUnpersistedHead = isResuming && existingBatch !== null && !isLaneBatchRecord(existingBatch) && existingBatch.plan_digest === planDigest &&
 		expectedBatchHead(existingBatch) !== baseHead && ownUnpersistedBatchHead(root, existingBatch, baseHead);
 	// A fast-forward on the batch branch is the user's own work: the runner adopts
 	// it, so it neither blocks reuse nor counts as moved provenance.
@@ -830,6 +847,8 @@ export async function authorizeBatch<HostRejection>(
 			status: child.status,
 		})),
 		excluded: projection.excluded,
+		parallel_groups: projection.parallel_groups,
+		scope_conflicts: projection.scope_conflicts,
 	};
 
 	let requestId: string | null = null;
@@ -856,7 +875,7 @@ export async function authorizeBatch<HostRejection>(
 	if (drift.plan_digest !== planDigest)
 		return { outcome: "rejected", rejection: batchRejection("plan_changed", drift.plan_digest) };
 	if (drift.base_head === null) return { outcome: "rejected", rejection: batchRejection("repository_became_unreadable") };
-	if (drift.base_head !== baseHead || (ownsUnpersistedHead && !ownUnpersistedBatchHead(root, existingBatch!, baseHead)))
+	if (drift.base_head !== baseHead || (ownsUnpersistedHead && !ownUnpersistedBatchHead(root, existingBatch as BatchRunStateRecord, baseHead)))
 		return { outcome: "rejected", rejection: batchRejection("head_moved", drift.base_head) };
 
 	// The drift projection's own claim read happened before its plan read; this

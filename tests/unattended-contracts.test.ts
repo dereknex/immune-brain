@@ -629,14 +629,44 @@ describe("unattended batch contract text", () => {
 		// stays per child in the Kernel TaskRecord, which is what makes the ADR true.
 		const recordBody = batchState.slice(
 			batchState.indexOf("export interface BatchRunStateRecord"),
-			batchState.indexOf("const BATCH_ID_PATTERN"),
+			batchState.indexOf("export type BatchLaneChildRunState"),
 		);
-		const declaredFields = (recordBody
-			.split("\n")
-			.filter((line) => !line.trimStart().startsWith("*") && !line.trimStart().startsWith("/**") && !line.trimStart().startsWith("//"))
-			.join("\n")
-			.match(/^\s*([a-z_]+)\??:/gm) ?? []
-		).map((line) => line.trim().replace(/\??:$/, ""));
+		const fieldsOf = (body: string) =>
+			(body
+				.split("\n")
+				.filter((line) => !line.trimStart().startsWith("*") && !line.trimStart().startsWith("/**") && !line.trimStart().startsWith("//"))
+				.join("\n")
+				.match(/^\s*([a-z_]+)\??:/gm) ?? []
+			).map((line) => line.trim().replace(/\??:$/, ""));
+		const declaredFields = fieldsOf(recordBody);
+		// Lane mode adds a second record contract; it is orchestration-only as well.
+		expect(batchState).toContain('contract: "assurance_kernel/batch_run_state/v2"');
+		expect(
+			fieldsOf(
+				batchState.slice(
+					batchState.indexOf("export interface BatchLaneRunStateRecord"),
+					batchState.indexOf("export type AnyBatchRunStateRecord"),
+				),
+			),
+		).toEqual([
+			"contract",
+			"batch_id",
+			"initiative_slug",
+			"plan_digest",
+			"base_head",
+			"branch",
+			"confirmation_time",
+			"budget",
+			"max_children",
+			"qa_failure_limit",
+			"max_parallel",
+			"batch_state",
+			"children",
+			"commits",
+			"adopted_heads",
+			"created_at",
+			"updated_at",
+		]);
 		expect(declaredFields).toEqual([
 			"contract",
 			"batch_id",

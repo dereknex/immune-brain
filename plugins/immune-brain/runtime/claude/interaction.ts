@@ -82,6 +82,12 @@ export interface NativeConfirmationInput {
 		children: Array<{ task_id: string; slice_id: string; risk?: string }>;
 		excluded: Array<{ task_id: string; slice_id: string; reason: string }>;
 		budget: { max_children: number; qa_failure_limit: number };
+		/** Present only when the run uses Lanes. */
+		lane_mode?: {
+			max_parallel: number;
+			parallel_groups: string[][];
+			serialized: Array<{ task_id: string; overlaps_with: string[] }>;
+		};
 	};
 	signal?: AbortSignal;
 }

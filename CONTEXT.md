@@ -134,8 +134,16 @@ _Avoid_: checksum of the Issue body, plan version number
 The single dedicated branch `imm/<initiative-slug>` that a batch run creates from the confirmed `base_head` and advances one scope-bounded commit per completed child. It is never pushed and never opened as a pull request.
 _Avoid_: feature branch, worktree, trunk
 
+**Lane**:
+An already-existing Git worktree on the coordinator repository's common directory, on a branch `imm-lane/<initiative-slug>/<task-id>` cut from the batch head, that a lane-mode batch adopts to run one child in isolation. The runner admits, never creates, switches or deletes a Lane. Lane mode exists only when `max_parallel` is passed.
+_Avoid_: workspace, clone, feature branch
+
+**Lane Steward**:
+The internal role that supplies a Lane when a lane-mode batch reports a provision handoff and, on a release handoff, checks whether the Lane is ready to remove without removing it: agents only create, and the user closes each Lane's session and removes the Lane. It holds no Kernel authority, starts no Host session (the Parent launches and supervises each Lane's allowlisted Executor Host), and reports "cannot supply" instead of improvising; the runner itself records a Lane released only when it observes the path gone.
+_Avoid_: workspace manager, provisioner
+
 **HEAD Lineage**:
-The Kernel-enforced chain where each child enrolls on the commit its predecessor produced on the batch branch. A fast-forward of the batch branch is adopted as the new expected head and never attributed to a child; any other moved HEAD (another branch, a rewrite, a divergence) fails the run closed instead of rebasing or force-continuing.
+The Kernel-enforced chain where each child enrolls on the commit its predecessor produced on the batch branch (serial batch), or on the batch head a Lane was cut from, with each completed child integrated onto the batch branch by a fast-forward to a candidate whose changed paths and per-path content equal the Lane commit (lane mode). A fast-forward of the batch branch is adopted as the new expected head and never attributed to a child; any other moved HEAD (another branch, a rewrite, a divergence) fails the run closed instead of rebasing or force-continuing.
 _Avoid_: commit ordering convention, best-effort ancestry
 
 ### Supporting Concepts

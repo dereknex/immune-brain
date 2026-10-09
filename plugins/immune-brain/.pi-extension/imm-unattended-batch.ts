@@ -21,6 +21,7 @@ import type { BatchRunnerGitPort } from "../runtime/unattended/batch_git";
 import type { InitiativeObservationReader } from "../runtime/unattended/types";
 import { advancePiTask } from "./imm-canary-work";
 import { batchReason } from "../runtime/unattended/batch_reasons";
+import { parseLaneOffers, parseMaxParallel, resolveLaneParallel, type LaneOffer } from "../runtime/unattended/batch_lanes";
 import {
 	authorizeBatch,
 	projectBatchPreflight,
@@ -99,6 +100,10 @@ export interface PiBatchExecutionOptions {
 	 */
 	reuseOnly?: boolean;
 	signal?: AbortSignal;
+	/** Lane mode: how many children may run at once. Absent selects the serial path. */
+	max_parallel?: number;
+	/** Lane mode: Lanes someone else created, offered to the batch. */
+	lane_offers?: LaneOffer[];
 	batchKernel?: Partial<BatchRunnerKernelPort>;
 	batchGit?: BatchRunnerGitPort;
 	readInitiative?: InitiativeObservationReader;
@@ -138,6 +143,10 @@ export async function executePiUnattendedBatch(
 	const interactive = options.interactive ?? true;
 
 	if (!reuseOnly && !interactive) return { state: "rejected", ...nonInteractiveRefusal() };
+
+	// A lane_offers-only call resumes the recorded lane batch; refused before any gate otherwise.
+	const resolvedParallel = resolveLaneParallel(root, initiativeSlug, options.max_parallel, options.lane_offers);
+	if (resolvedParallel !== undefined) options = { ...options, max_parallel: resolvedParallel };
 
 	// 1. Host-independent batch preflight: claim ownership, branch availability,
 	// working-tree cleanliness against the authorized scope, recovery children,
@@ -186,8 +195,8 @@ export async function executePiUnattendedBatch(
 			}
 			const confirmDetails = {
 				title: `Authorize Unattended Batch: ${facts.initiative_slug}`,
-				summary: `Initiative: ${facts.initiative_slug}\nBatch branch: ${facts.batch_branch}\nPlan digest: ${facts.plan_digest}\nBudget: max_children=${facts.budget.max_children}, qa_failure_limit=${facts.budget.qa_failure_limit}`,
-				details: `Ordered children (${facts.children.length}):\n${facts.children.map((child) => `  - ${child.task_id} (${child.slice_id}) [risk: ${child.risk}] [status: ${child.status === "already_settled" ? "completed" : "pending execution"}]`).join("\n")}${facts.excluded.length > 0 ? `\n\nExcluded children:\n${facts.excluded.map((child) => `  - ${child.task_id} (${child.slice_id}): ${child.reason}`).join("\n")}` : ""}${facts.reuse_blockers.length > 0 ? `\n\nRe-confirmation required: ${facts.reuse_blockers.join(", ")}.\nRecovery: confirm to issue a fresh authorization bound to the current plan and HEAD.` : ""}`,
+				summary: `Initiative: ${facts.initiative_slug}\nBatch branch: ${facts.batch_branch}\nPlan digest: ${facts.plan_digest}\nBudget: max_children=${facts.budget.max_children}, qa_failure_limit=${facts.budget.qa_failure_limit}${options.max_parallel !== undefined ? `\nLane mode: max_parallel=${options.max_parallel}` : ""}`,
+				details: `Ordered children (${facts.children.length}):\n${facts.children.map((child) => `  - ${child.task_id} (${child.slice_id}) [risk: ${child.risk}] [status: ${child.status === "already_settled" ? "completed" : "pending execution"}]`).join("\n")}${facts.excluded.length > 0 ? `\n\nExcluded children:\n${facts.excluded.map((child) => `  - ${child.task_id} (${child.slice_id}): ${child.reason}`).join("\n")}` : ""}${options.max_parallel !== undefined ? `\n\nParallel groups (${facts.parallel_groups.length}):\n${facts.parallel_groups.map((group) => `  - ${group.join(", ")}`).join("\n")}${facts.scope_conflicts.length > 0 ? `\n\nSerialized by overlapping scope:\n${facts.scope_conflicts.map((c) => `  - ${c.task_id} after ${c.overlaps_with.join(", ")}`).join("\n")}` : ""}` : ""}${facts.reuse_blockers.length > 0 ? `\n\nRe-confirmation required: ${facts.reuse_blockers.join(", ")}.\nRecovery: confirm to issue a fresh authorization bound to the current plan and HEAD.` : ""}`,
 				planDigest: facts.plan_digest,
 				signal,
 			};
@@ -280,6 +289,8 @@ export async function executePiUnattendedBatch(
 		now,
 		kernel: kernelPort,
 		git: options.batchGit,
+		...(options.max_parallel !== undefined ? { max_parallel: options.max_parallel } : {}),
+		...(options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}),
 	});
 
 	if (report.batch_state === "rejected") {
@@ -321,10 +332,15 @@ export default function (
 		],
 		parameters: Type.Object({
 			initiative_slug: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }),
+			// Integer minimum 1 as Claude Code declares it; multipleOf keeps the schema constructors to Number.
+			max_parallel: Type.Optional(Type.Number({ minimum: 1, multipleOf: 1 })),
+			lane_offers: Type.Optional(Type.Array(
+				Type.Object({ task_id: Type.String(), path: Type.String() }, { additionalProperties: false }),
+			)),
 		}, { additionalProperties: false }),
 		execute: async (
 			_toolCallId: string,
-			params: { initiative_slug: string },
+			params: { initiative_slug: string; max_parallel?: number; lane_offers?: Array<{ task_id: string; path: string }> },
 			signal: AbortSignal | undefined,
 			_onUpdate: unknown,
 			ctx: ExtensionContext,
@@ -343,9 +359,14 @@ export default function (
 				});
 			}
 
+			const maxParallel = parseMaxParallel(params.max_parallel);
+			const laneOffers = parseLaneOffers(params.lane_offers);
+
 			const result = await executePiUnattendedBatch({
 				root: ctx.cwd,
 				initiativeSlug,
+				...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
+				...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),
 				interactive: ctx.mode === "tui",
 				signal,
 				readInitiative: dependencies.readInitiative,

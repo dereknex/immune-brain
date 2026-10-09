@@ -1,0 +1,147 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "parallel-batch-lanes-s4-concurrency",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "parallel-batch-lanes-s4-concurrency",
+    "goal": "Implement Slice S4 of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes): max_parallel above 1 runs several Lanes at once, the report returns handoffs[], a parked Lane no longer blocks scope-disjoint siblings, and QA failures count per child.",
+    "acceptance": [
+      {
+        "id": "PBL-S4-A1",
+        "assertion": "Per Interfaces (Report), State transitions and Temporal sequence steps 1-5 of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes) (sources: user decisions D5, D6; ADR 0013 consequence on per-child QA failure counting): with max_parallel above 1 the reconcile tick keeps up to that many Lanes in flight, emits one provision or executor handoff per child in handoffs[], and integrates settled children serially in settle order. Positive: two scope-disjoint ready children are in flight together and both integrate, each as one commit on the batch branch. Negative: a child whose scope overlaps an in-flight Lane waits until that Lane is integrated; a parked Lane does not stop a disjoint sibling from starting, settling or integrating; a lost or unreadable Lane becomes needs_human with batch_lane_lost and nothing is inferred from terminal text. Bound: the in-flight count never exceeds max_parallel; qa_failure_limit applies to each child separately; batch_parallel_unsupported no longer occurs; a batch without max_parallel is still the serial v1 run. Agreed seam: tests/unattended-batch-lanes.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "PBL-S4-A2",
+        "assertion": "Per Interfaces of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes) (source: user decision D6; repository evidence that each Lane has its own Host session and store): Claude Code and Pi return equal handoffs[] for the same lane-mode fixture, and Review reservations made in two concurrent Lanes never bind to each other's run. Negative: a Review verdict submitted for one Lane's reservation is refused in the other Lane. Bound: the serial handoff field stays absent in lane mode and handoffs stays absent in serial mode. Closes assumption A5. Agreed seams: tests/dual-host-assurance-conformance.test.ts, tests/claude-batch-authority.test.ts, tests/pi-batch-authority.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/parallel-batch-lanes-s4-concurrency.md",
+      "IMMUNE.md",
+      "docs/plans/parallel-batch-lanes-s4-concurrency.intent.json",
+      "docs/specs/parallel-batch-lanes.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/runtime/claude/interaction.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_schedule.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/types.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/packaged-contract-tool-surface.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/unattended-batch-lanes.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/parallel-batch-lanes-s4-concurrency.intent.json",
+    "content_hash": "sha256:29cf0820d9910a7cdf5e3fbcd4456fe3f3f7a20cf8d45465744c6b0cc523f147"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:29cf0820d9910a7cdf5e3fbcd4456fe3f3f7a20cf8d45465744c6b0cc523f147",
+  "git_base_head": "7fb18f6dc22c8907087eda88756397ac2232ac31",
+  "attestations": [
+    {
+      "id": "approval-qa-8d5271f2",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:29cf0820d9910a7cdf5e3fbcd4456fe3f3f7a20cf8d45465744c6b0cc523f147",
+      "diff_hash": "sha256:ea46ab28ac51c7f455acd130ca3edc3d9be4cb67cf3b18e94163ad0f80872cf7",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:8ecfb974d01caec975f816db4ecaeb905108687bf3aa95c09ac3bf8cbf5bcabd",
+      "acceptance_results": [
+        {
+          "acceptance_id": "PBL-S4-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:8ecfb974d01caec975f816db4ecaeb905108687bf3aa95c09ac3bf8cbf5bcabd"
+        },
+        {
+          "acceptance_id": "PBL-S4-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:8ecfb974d01caec975f816db4ecaeb905108687bf3aa95c09ac3bf8cbf5bcabd"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-026b797f",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:29cf0820d9910a7cdf5e3fbcd4456fe3f3f7a20cf8d45465744c6b0cc523f147",
+      "diff_hash": "sha256:ea46ab28ac51c7f455acd130ca3edc3d9be4cb67cf3b18e94163ad0f80872cf7",
+      "actor_id": "parent-mediated-review",
+      "summary": "S4 lets the lane runner keep up to max_parallel scope-disjoint Lanes in flight; a parked or lost Lane ends only itself and its dependents, and the tests cover the positive, negative and bound cases.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "7fb18f6dc22c8907087eda88756397ac2232ac31",
+        "review_commit": "09eab32e85354cac56fb5cf7062606138a15338c",
+        "review_tree": "0ec0826c084fccae17220d12c565d3aed6fcda7e",
+        "manifest_digest": "sha256:1d78cfb12f93b802744e43f27ee630bd25e78e92b791ab8ee092b26e801b59fc"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:parallel-batch-lanes-s4-concurrency:2026-10-09T00:12:29.261Z",
+      "at": "2026-10-09T00:12:29.261Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/parallel-batch-lanes-s4-concurrency.intent.json"
+    },
+    {
+      "id": "record_approval:parallel-batch-lanes-s4-concurrency:2026-10-09T00:40:36.194Z",
+      "at": "2026-10-09T00:40:36.194Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-8d5271f2\naction_v2_sha256:8d066d1944f20f2c6a92587c46e5c5ddcf7305150c6fc05833603027e34e78f4",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-09T00:40:36.194Z"
+      }
+    },
+    {
+      "id": "record_approval:parallel-batch-lanes-s4-concurrency:2026-10-09T00:41:54.093Z",
+      "at": "2026-10-09T00:41:54.093Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-026b797f\naction_v2_sha256:2e3f26863dead86ce51e583dc32e3c217ece31f644d7abfb29aa7cfef460da97",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-09T00:41:54.093Z"
+      }
+    },
+    {
+      "id": "complete:parallel-batch-lanes-s4-concurrency:2026-10-09T00:41:55.297Z",
+      "at": "2026-10-09T00:41:55.297Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:aefa509022fb56b83b7a900ce0cdc3d2049ba1db87aaf5dad1f8c13954d8d5c5"
+    }
+  ]
+}

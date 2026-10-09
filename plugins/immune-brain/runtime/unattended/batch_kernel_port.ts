@@ -9,7 +9,7 @@ import { enrollTask } from "../kernel/enrollment";
 import type { EnrollmentAuthorityRegistry } from "../kernel/enrollment_authority";
 import { readTaskRecordRaw } from "../kernel/storage";
 import { readActiveClaimTaskId, isOwnBatchClaim } from "./batch_preflight";
-import type { BatchRunStateRecord } from "./batch_state";
+import type { AnyBatchRunStateRecord } from "./batch_state";
 import { batchQaFailureFacts, type BatchChildAdvanceResult, type BatchRunnerKernelPort } from "./batch_runner";
 
 /** Inputs the shared port closes over. Only advanceTask is Host-owned. */
@@ -27,7 +27,7 @@ export interface BatchKernelPortInput {
 	/** Resume ownership context straight from the batch preflight projection. */
 	resume: {
 		isResuming: boolean;
-		existingBatch: BatchRunStateRecord | null;
+		existingBatch: AnyBatchRunStateRecord | null;
 		batchBranch: string;
 	};
 	/** Optional test overrides for the remaining members (invariant I5). */

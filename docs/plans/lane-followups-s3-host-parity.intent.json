@@ -1,0 +1,35 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "lane-followups-s3-host-parity",
+  "owner": "user",
+  "goal": "Implement Slice S3 of Initiative lane-mode-followups: both Hosts accept a resume that passes lane_offers without max_parallel, the Pi max_parallel schema matches Claude Code's integer minimum 1, and the Pi loop surface registers lane-steward.",
+  "acceptance": [
+    {
+      "id": "LF-S3-A1",
+      "assertion": "Per Interfaces of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes) (source: repository evidence, Review of parallel-batch-lanes-s2-lane-integration findings review-1 and review-4): (a) a start_unattended_batch call with lane_offers and no max_parallel on a persisted v2 batch resumes it with the recorded max_parallel on both Hosts, and the same call on a batch with no v2 record is refused before any gate opens with a stable reason; (b) the Pi tool schema refuses a non-integer or sub-1 max_parallel at the schema, equal to the Claude Code input schema, with the typebox stub used by the packaged-tree tests extended if the chosen schema form needs it; (c) the Pi loop surface accepts lane-steward as a target and refuses an unknown target as before. Positive: Claude Code and Pi return equal reports for the same lane resume fixture. Negative: max_parallel 1.5, 0 and a lane_offers-only fresh start are refused before any gate; a resume with a different max_parallel is still refused with batch_parallel_mismatch. Bound: the declared tool parameters stay exactly initiative_slug, max_parallel and lane_offers and the generated Claude bundle matches a fresh generate. Agreed seams: tests/claude-batch-authority.test.ts, tests/pi-batch-authority.test.ts, tests/packaged-contract-tool-surface.test.ts, tests/imm-canary-work-contract.test.ts, tests/claude-host-package.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/packaged-contract-tool-surface.test.ts\",\n      \"tests/imm-canary-work-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/lane-followups-s3-host-parity.md",
+    "docs/plans/lane-followups-s3-host-parity.intent.json",
+    "docs/specs/parallel-batch-lanes.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-run.md",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "tests/batch-plan-reconfirmation.test.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/imm-canary-work-contract.test.ts",
+    "tests/packaged-contract-tool-surface.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/unattended-batch-lanes.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

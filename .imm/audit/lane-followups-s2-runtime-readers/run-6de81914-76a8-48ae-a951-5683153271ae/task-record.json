@@ -1,0 +1,148 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "lane-followups-s2-runtime-readers",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "lane-followups-s2-runtime-readers",
+    "goal": "Implement Slice S2 of Initiative lane-mode-followups: lane-mode readers and guidance are accurate. A store-condition rejection of a lane batch reports its persisted lane children, the resume plan no longer shows integrated or released lane children as enrollable, and the lane next_action text matches what the runner does.",
+    "acceptance": [
+      {
+        "id": "LF-S2-A1",
+        "assertion": "Per Interfaces and State transitions of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes) (source: repository evidence, Review of parallel-batch-lanes-s2-lane-integration findings review-2 and review-3 and Review of parallel-batch-lanes-s5-lane-steward finding review-1; user decision on needs_human: correct the wording, keep the behavior): (a) a kernel store-condition rejection of a persisted lane batch returns a lane-shaped report carrying the persisted lane children and handoffs, not an empty serial plan, and a serial batch keeps its current rejection report; (b) the preflight resume plan marks a lane child integrated or released as already_settled, never enrollable, without changing the plan digest; (c) the lane report names the provision guidance only when a handoff has action provision, and a report with only executor and release handoffs does not; (d) the needs_human wording states that the lane batch has stopped, that its Lane is kept, and that continuing needs a new Batch Authorization, in both the state table text and the resume refusal, and the runner behavior for a persisted needs_human batch is unchanged. Positive: each corrected report is asserted on a lane fixture. Negative: no change to a v1 report byte for byte; a needs_human batch still returns the same report after a fresh confirmation. Bound: no new reason code, state or tool parameter. Agreed seams: tests/unattended-batch-lanes.test.ts, tests/unattended-batch-run.test.ts, tests/unattended-batch-plan.test.ts, tests/batch-plan-reconfirmation.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/unattended-batch-plan.test.ts\",\n      \"tests/batch-plan-reconfirmation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/lane-followups-s2-runtime-readers.md",
+      "docs/plans/lane-followups-s2-runtime-readers.intent.json",
+      "docs/specs/parallel-batch-lanes.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "tests/batch-plan-reconfirmation.test.ts",
+      "tests/unattended-batch-lanes.test.ts",
+      "tests/unattended-batch-plan.test.ts",
+      "tests/unattended-batch-run.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/lane-followups-s2-runtime-readers.intent.json",
+    "content_hash": "sha256:b271a6f852a2646e085209f0580c276670bcebcd459456976fff9984ad7e28ab"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:b271a6f852a2646e085209f0580c276670bcebcd459456976fff9984ad7e28ab",
+  "git_base_head": "d4c9705f8a9d1449bfae51acde8a0cd6ef3b0da6",
+  "attestations": [
+    {
+      "id": "approval-qa-904e1992",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:b271a6f852a2646e085209f0580c276670bcebcd459456976fff9984ad7e28ab",
+      "diff_hash": "sha256:249a6319efc2b868cdd7c756a922773f453ce5311b59556d32c384eee4b5c0ca",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:3cd193c814e2cde76f7bac7ccb4336f5abb96574be65e328e0c929f82ca87bd6",
+      "acceptance_results": [
+        {
+          "acceptance_id": "LF-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:3cd193c814e2cde76f7bac7ccb4336f5abb96574be65e328e0c929f82ca87bd6"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-fa243ec3",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:b271a6f852a2646e085209f0580c276670bcebcd459456976fff9984ad7e28ab",
+      "diff_hash": "sha256:249a6319efc2b868cdd7c756a922773f453ce5311b59556d32c384eee4b5c0ca",
+      "actor_id": "parent-mediated-review",
+      "summary": "All four LF-S2-A1 parts (lane rejection report, already_settled for integrated/released, provision-only guidance, needs_human wording with unchanged runner behavior) are implemented without a new reason code, state or parameter, and each is asserted on a lane fixture. The serial rejection path is unchanged.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "d4c9705f8a9d1449bfae51acde8a0cd6ef3b0da6",
+        "review_commit": "6228334708c0e003d8ecaeb85905521dc0a0342b",
+        "review_tree": "fe3deaf0344b4e2a50d3f7cd5f101e3c7371ff60",
+        "manifest_digest": "sha256:f08c074fd6f8013fad53084c94c8344c7712160cb22cc2c47e17d04458653df9"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-73a53a015b93-1-review-1",
+          "acceptance_id": "LF-S2-A1",
+          "summary": "The lane rejection report returns the persisted children, commits and max_parallel, but its handoffs[] is always empty because handoffs are derived per tick and not persisted. This matches the report shape, but the LF-S2-A1 wording 'carrying ... handoffs' is satisfied only as an empty array. The new test asserts Array.isArray only. The agreed seam files unattended-batch-run, unattended-batch-plan and batch-plan-reconfirmation were not modified, so the v1 byte-for-byte negative rests on the existing serial tests staying green.",
+          "anchor": "sha256:cc15daa332421ee77e51d6ea0356bdd1ffd44d4f4b1ca69c6f9c32893119dc34",
+          "evidence": {
+            "trigger": "startBatch fails with a store-condition error (e.g. 'kernel store is busy') while a persisted batch_run_state v2 record exists. rejectionReport then calls laneRejectionReport(record, ...) and the report has handoffs: [].",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/unattended/batch_runner.ts:startBatch",
+              "plugins/immune-brain/runtime/unattended/batch_runner.ts:rejectionReport",
+              "plugins/immune-brain/runtime/unattended/batch_lanes.ts:laneRejectionReport",
+              "plugins/immune-brain/runtime/unattended/batch_lanes.ts:laneReport"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "LF-S2-A1"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:lane-followups-s2-runtime-readers:2026-10-09T02:26:26.118Z",
+      "at": "2026-10-09T02:26:26.118Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/lane-followups-s2-runtime-readers.intent.json"
+    },
+    {
+      "id": "record_approval:lane-followups-s2-runtime-readers:2026-10-09T02:29:26.269Z",
+      "at": "2026-10-09T02:29:26.269Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-904e1992\naction_v2_sha256:263d564fc80212986f5c12f68eb71bf227cad17fc3130e11a0c2d96324d9cd2b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-09T02:29:26.269Z"
+      }
+    },
+    {
+      "id": "record_approval:lane-followups-s2-runtime-readers:2026-10-09T02:30:38.701Z",
+      "at": "2026-10-09T02:30:38.701Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-fa243ec3\naction_v2_sha256:58559b54a07a9364df77b1593bcde7c182c2fa6d085169dcb5430c72fc4e2099",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-09T02:30:38.701Z"
+      }
+    },
+    {
+      "id": "complete:lane-followups-s2-runtime-readers:2026-10-09T02:30:39.766Z",
+      "at": "2026-10-09T02:30:39.766Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:4d0efccba6903dc2d73f233fc36a46dbbc58143b6107223b4d8e9a371ee4b361"
+    }
+  ]
+}

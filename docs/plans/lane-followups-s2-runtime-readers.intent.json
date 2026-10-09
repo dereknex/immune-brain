@@ -1,0 +1,31 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "lane-followups-s2-runtime-readers",
+  "owner": "user",
+  "goal": "Implement Slice S2 of Initiative lane-mode-followups: lane-mode readers and guidance are accurate. A store-condition rejection of a lane batch reports its persisted lane children, the resume plan no longer shows integrated or released lane children as enrollable, and the lane next_action text matches what the runner does.",
+  "acceptance": [
+    {
+      "id": "LF-S2-A1",
+      "assertion": "Per Interfaces and State transitions of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes) (source: repository evidence, Review of parallel-batch-lanes-s2-lane-integration findings review-2 and review-3 and Review of parallel-batch-lanes-s5-lane-steward finding review-1; user decision on needs_human: correct the wording, keep the behavior): (a) a kernel store-condition rejection of a persisted lane batch returns a lane-shaped report carrying the persisted lane children and handoffs, not an empty serial plan, and a serial batch keeps its current rejection report; (b) the preflight resume plan marks a lane child integrated or released as already_settled, never enrollable, without changing the plan digest; (c) the lane report names the provision guidance only when a handoff has action provision, and a report with only executor and release handoffs does not; (d) the needs_human wording states that the lane batch has stopped, that its Lane is kept, and that continuing needs a new Batch Authorization, in both the state table text and the resume refusal, and the runner behavior for a persisted needs_human batch is unchanged. Positive: each corrected report is asserted on a lane fixture. Negative: no change to a v1 report byte for byte; a needs_human batch still returns the same report after a fresh confirmation. Bound: no new reason code, state or tool parameter. Agreed seams: tests/unattended-batch-lanes.test.ts, tests/unattended-batch-run.test.ts, tests/unattended-batch-plan.test.ts, tests/batch-plan-reconfirmation.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/unattended-batch-plan.test.ts\",\n      \"tests/batch-plan-reconfirmation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/lane-followups-s2-runtime-readers.md",
+    "docs/plans/lane-followups-s2-runtime-readers.intent.json",
+    "docs/specs/parallel-batch-lanes.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-run.md",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "tests/batch-plan-reconfirmation.test.ts",
+    "tests/unattended-batch-lanes.test.ts",
+    "tests/unattended-batch-plan.test.ts",
+    "tests/unattended-batch-run.test.ts",
+    "tests/unattended-contracts.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
