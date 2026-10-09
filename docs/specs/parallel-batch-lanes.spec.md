@@ -149,6 +149,8 @@ Interruption: every step is idempotent against durable facts. A crash after lane
 
 Failure: an identity mismatch, a plumbing conflict, or a failed descriptor rerun leaves the batch branch unmoved, sets the child `needs_human` with `batch_integration_conflict` or `batch_integration_check_failed`, sets its dependents `skipped_blocked`, and keeps the Lane. Disjoint siblings continue. `[U]` D7
 
+A lane batch that settles `needs_human` has stopped and keeps its Lane; its report says that continuing needs a new Batch Authorization, and a fresh confirmation of the same batch returns the same stop. A kernel store-condition rejection of a persisted lane batch reports its persisted lane children, and the resume plan treats an `integrated` or `released` child as already settled, never enrollable. `[R]`
+
 ### Roles and contracts
 
 - `lane-steward` prompt states goal and deliverable only: supply a Lane on the named branch at the named base, prepare it by the project's own instructions, start one allowlisted Executor Host there with an explicit `imm-run` entry, return the path; on release, remove a clean integrated Lane. It defers all mechanics to the workspace tool's own guidance in the environment and reports "cannot supply" rather than improvising. `[U]` D3, D4, D9

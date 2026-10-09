@@ -11920,7 +11920,7 @@ async function projectPlanSurface(input) {
           }
         }
         riskByTask.set(c.task_id, read.intent?.risk ?? "material");
-        const isDone = c.state === "committed" || c.state === "settled";
+        const isDone = ["committed", "settled", "integrated", "released"].includes(c.state);
         return {
           task_id: c.task_id,
           slice_id: c.slice_id,
@@ -13220,12 +13220,13 @@ function scheduleView(input, record) {
     scope_hint: scopeOfChild(input.root, input.children.find((c) => c.task_id === child.task_id) ?? { task_id: child.task_id, intent_path: null })
   }));
 }
+var LANE_NEEDS_HUMAN_NEXT_ACTION = "The lane batch has stopped on a parked child and its Lane is kept. Resolve the child by hand; continuing needs a new Batch Authorization.";
 var TERMINAL_NEXT_ACTIONS = {
   completed: "The batch integrated every enrollable child; review the commits and the tracker.",
   budget_stopped: "The child budget stopped new enrollments; re-confirm to continue under a new authorization.",
   failed: "A lineage failure stopped the batch; inspect the failing child and the branch state.",
   rejected: "The batch was rejected before any enrollment; correct the stated reason and re-confirm.",
-  needs_human: "A parked child needs a human decision; its Lane is kept. Resolve it by hand, then re-confirm to continue.",
+  needs_human: LANE_NEEDS_HUMAN_NEXT_ACTION,
   running: "The batch is still running; no terminal report is due yet.",
   prepared: "The batch is prepared but not started."
 };
@@ -13244,6 +13245,9 @@ function laneReport(record, reason, nextAction, extra = {}) {
     next_action: nextAction || (TERMINAL_NEXT_ACTIONS[record.batch_state] ?? "Inspect the batch run state."),
     created_at: record.updated_at
   };
+}
+function laneRejectionReport(record, reason, nextAction) {
+  return laneReport({ ...record, batch_state: "rejected" }, reason, nextAction);
 }
 function finalizeLane(root, record, reason, nextAction, extra = {}) {
   const report = laneReport(record, reason, nextAction, extra);
@@ -13357,7 +13361,7 @@ async function runLaneBatch(input, persisted) {
         handoffs: record.batch_state === "completed" ? releaseHandoffs(input, record, lanes) : []
       });
     if (record.batch_state === "needs_human")
-      return finalizeLane(input.root, record, "a parked child needs a human decision", "A parked child keeps its Lane. Resolve it by hand, then re-confirm to continue.");
+      return finalizeLane(input.root, record, "a parked child needs a human decision", LANE_NEEDS_HUMAN_NEXT_ACTION);
   } else {
     const invalid = validateNewAuthorization(input);
     if (invalid)
@@ -13656,7 +13660,7 @@ async function runLaneBatch(input, persisted) {
   if (reviewOpen.length > 0) {
     return laneReport(record, reviewOpen.length === 1 ? `child ${reviewOpen[0]} holds an open Review reservation` : `children ${reviewOpen.join(", ")} hold open Review reservations`, "Submit each reserved foreground Review verdict in its own Lane, then call start_unattended_batch again to continue.", { handoffs, refusals });
   }
-  return laneReport(record, null, handoffs.some((h) => h.role === "lane-steward") ? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers." : "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.", { handoffs, refusals });
+  return laneReport(record, null, handoffs.some((h) => h.role === "lane-steward" && h.action === "provision") ? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers." : "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.", { handoffs, refusals });
 }
 
 // plugins/immune-brain/runtime/unattended/batch_runner.ts
@@ -13899,11 +13903,13 @@ async function startBatch(input) {
 function rejectionReport(input, reason) {
   const persisted = (() => {
     try {
-      return readBatchRunState(input.root, input.batch_id);
+      return readAnyBatchRunState(input.root, input.batch_id);
     } catch {
       return null;
     }
   })();
+  if (persisted !== null && isLaneBatchRecord(persisted))
+    return laneRejectionReport(persisted, reason, "settle the reported kernel store condition and retry in the current Host");
   return reportFor({
     ...persisted ?? prepareBatchRunState({ ...input, children: [], now: input.now }),
     batch_state: "rejected"

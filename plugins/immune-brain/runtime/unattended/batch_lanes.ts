@@ -324,13 +324,16 @@ function scheduleView(input: StartBatchInput, record: BatchLaneRunStateRecord) {
 	}));
 }
 
+/** The lane batch has stopped on a parked child. A re-confirmation returns the same stop; only a new Batch Authorization starts a fresh run. */
+const LANE_NEEDS_HUMAN_NEXT_ACTION =
+	"The lane batch has stopped on a parked child and its Lane is kept. Resolve the child by hand; continuing needs a new Batch Authorization.";
+
 const TERMINAL_NEXT_ACTIONS: Record<string, string> = {
 	completed: "The batch integrated every enrollable child; review the commits and the tracker.",
 	budget_stopped: "The child budget stopped new enrollments; re-confirm to continue under a new authorization.",
 	failed: "A lineage failure stopped the batch; inspect the failing child and the branch state.",
 	rejected: "The batch was rejected before any enrollment; correct the stated reason and re-confirm.",
-	needs_human:
-		"A parked child needs a human decision; its Lane is kept. Resolve it by hand, then re-confirm to continue.",
+	needs_human: LANE_NEEDS_HUMAN_NEXT_ACTION,
 	running: "The batch is still running; no terminal report is due yet.",
 	prepared: "The batch is prepared but not started.",
 };
@@ -355,6 +358,11 @@ function laneReport(
 		next_action: nextAction || (TERMINAL_NEXT_ACTIONS[record.batch_state] ?? "Inspect the batch run state."),
 		created_at: record.updated_at,
 	};
+}
+
+/** A store-condition rejection of a persisted lane batch: its persisted lane children, commits and parallelism, never an empty serial plan. */
+export function laneRejectionReport(record: BatchLaneRunStateRecord, reason: string, nextAction: string): BatchLaneRunReport {
+	return laneReport({ ...record, batch_state: "rejected" }, reason, nextAction);
 }
 
 function finalizeLane(
@@ -514,7 +522,7 @@ export async function runLaneBatch(
 				input.root,
 				record,
 				"a parked child needs a human decision",
-				"A parked child keeps its Lane. Resolve it by hand, then re-confirm to continue.",
+				LANE_NEEDS_HUMAN_NEXT_ACTION,
 			);
 	} else {
 		const invalid = validateNewAuthorization(input);
@@ -874,7 +882,7 @@ export async function runLaneBatch(
 	return laneReport(
 		record,
 		null,
-		handoffs.some((h) => h.role === "lane-steward")
+		handoffs.some((h) => h.role === "lane-steward" && h.action === "provision")
 			? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers."
 			: "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.",
 		{ handoffs, refusals },

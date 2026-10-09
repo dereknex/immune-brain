@@ -476,7 +476,8 @@ async function projectPlanSurface(input: {
 				// Keep the risk captured by the authoritative read above; a stale
 				// reconstructed path must never fabricate a risk later.
 				riskByTask.set(c.task_id, read.intent?.risk ?? "material");
-				const isDone = c.state === "committed" || c.state === "settled";
+				// A lane child integrated or released is already on the batch branch.
+				const isDone = ["committed", "settled", "integrated", "released"].includes(c.state);
 				return {
 					task_id: c.task_id,
 					slice_id: c.slice_id,

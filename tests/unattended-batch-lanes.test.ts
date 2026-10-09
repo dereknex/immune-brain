@@ -9,7 +9,7 @@ import { createEnrollmentAuthorityRegistry } from "../plugins/immune-brain/runti
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { createBatchKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
-import { readActiveClaimTaskId } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
+import { projectBatchPreflight, readActiveClaimTaskId } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 import type { BatchRunnerGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import {
@@ -1090,6 +1090,128 @@ describe("lane release", () => {
 			expect(source, file).not.toMatch(/["'`]branch["'`]\s*,\s*["'`]-[dDm]/);
 			expect(source, file).not.toMatch(/["'`](worktree|prune|rm)["'`]/);
 			expect(source, file).not.toMatch(/\b(rmSync|unlinkSync|rmdirSync)\b/);
+		}
+	});
+});
+
+describe("lane reader and guidance accuracy", () => {
+	it("states that a parked lane batch has stopped and needs a new Batch Authorization, and behaves as before on a fresh confirmation", async () => {
+		const fx = fixture({ "task-a": 'process.exit(require("node:fs").existsSync("never.txt") ? 0 : 1)' });
+		try {
+			const kernel = laneKernel();
+			const children = [child("task-a", "S1"), child("task-b", "S2", ["task-a"])];
+			const args = request(fx, children, kernel);
+			await startBatch(args);
+			const laneA = fx.lane("task-a");
+			await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] });
+			writeFileSync(join(laneA, "a.txt"), "a\n");
+			kernel.frozen.add("task-a");
+			const parked = lanes(await startBatch(args));
+			expect(parked.batch_state).toBe("needs_human");
+			expect(parked.next_action).toContain("lane batch has stopped");
+			expect(parked.next_action).toContain("Lane is kept");
+			expect(parked.next_action).toContain("new Batch Authorization");
+
+			const again = lanes(await startBatch({ ...args, confirmation_time: "2026-06-01T00:00:00.000Z" }));
+			expect(again.batch_state).toBe("needs_human");
+			expect(again.children).toEqual(parked.children);
+			expect(again.commits).toEqual(parked.commits);
+			expect(again.next_action).toBe(parked.next_action);
+			expect(lanes(await startBatch({ ...args, confirmation_time: "2026-07-01T00:00:00.000Z" }))).toEqual(again);
+			expect(existsSync(laneA)).toBe(true);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("names the provision guidance only when a handoff has action provision", async () => {
+		const fx = fixture({}, { "task-a": ["a.txt"], "task-b": ["b.txt"] });
+		try {
+			const kernel = laneKernel();
+			const children = [child("task-a", "S1"), child("task-b", "S2")];
+			const args = request(fx, children, kernel, { max_parallel: 2, git: laneGitWithAudit() });
+			const first = lanes(await startBatch(args));
+			expect(first.handoffs.map((h) => h.role === "lane-steward" && h.action)).toEqual(["provision", "provision"]);
+			expect(first.next_action).toContain("Provide a Lane");
+
+			const offers = [
+				{ task_id: "task-a", path: fx.lane("task-a") },
+				{ task_id: "task-b", path: fx.lane("task-b") },
+			];
+			await startBatch({ ...args, lane_offers: offers });
+			writeFileSync(join(offers[0]!.path, "a.txt"), "a\n");
+			kernel.frozen.add("task-a");
+			// task-a integrates and is offered for release while task-b is still an executor handoff.
+			const mixed = lanes(await startBatch(args));
+			expect(mixed.children.map((c) => c.state)).toEqual(["integrated", "enrolled"]);
+			expect(mixed.handoffs.map((h) => (h.role === "lane-steward" ? h.action : h.role)).sort()).toEqual(["executor", "release"]);
+			expect(mixed.next_action).not.toContain("Provide a Lane");
+			expect(mixed.next_action).toContain("Run each executor handoff");
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("reports a store-condition rejection of a lane batch with its persisted lane children, not an empty serial plan", async () => {
+		const fx = fixture();
+		try {
+			const kernel = laneKernel();
+			const children = [child("task-a", "S1"), child("task-b", "S2", ["task-a"])];
+			const args = request(fx, children, kernel);
+			await startBatch(args);
+			const laneA = fx.lane("task-a");
+			const enrolled = lanes(await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] }));
+			expect(enrolled.children.map((c) => c.state)).toEqual(["enrolled", "pending"]);
+
+			kernel.frozen.add("task-a");
+			const busy = {
+				...kernel,
+				advanceTask: async () => {
+					throw new Error("kernel store is busy");
+				},
+			} as unknown as BatchRunnerKernelPort;
+			const rejected = lanes(await startBatch({ ...args, kernel: busy }));
+			expect(rejected.batch_state).toBe("rejected");
+			expect(rejected.reason).toContain("kernel store is busy");
+			expect(rejected.max_parallel).toBe(1);
+			expect(Array.isArray(rejected.handoffs)).toBe(true);
+			expect(rejected.children.map((c) => [c.task_id, c.state])).toEqual([
+				["task-a", "enrolled"],
+				["task-b", "pending"],
+			]);
+			expect(rejected.children[0]!.lane).toMatchObject({ path: laneA });
+			expect(rejected as unknown as Record<string, unknown>).not.toHaveProperty("handoff");
+			// Nothing was written for the rejection.
+			expect(readAnyBatchRunState(fx.repo, BATCH_ID)).toMatchObject({ batch_state: "running" });
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("shows an integrated or released lane child as already_settled in the resume plan, never enrollable", async () => {
+		const fx = fixture();
+		try {
+			const { args, laneA, report } = await integrateTaskA(fx, laneGitWithAudit());
+			expect(report.children.map((c) => c.state)).toEqual(["integrated", "pending"]);
+			const status = async () => {
+				const outcome = await projectBatchPreflight({ root: fx.repo, initiative_slug: SLUG, now: FAR_FUTURE });
+				if (!outcome.ok) throw new Error(`preflight rejected: ${JSON.stringify(outcome)}`);
+				return outcome.projection.recovery_children.map((c) => [c.task_id, c.status]);
+			};
+			expect(await status()).toEqual([
+				["task-a", "already_settled"],
+				["task-b", "enrollable"],
+			]);
+			git(fx.repo, "worktree", "remove", laneA);
+			// The next tick observes the Lane gone and records released; that child stays settled too.
+			const released = lanes(await startBatch(args));
+			expect(released.children[0]!.state).toBe("released");
+			expect(await status()).toEqual([
+				["task-a", "already_settled"],
+				["task-b", "enrollable"],
+			]);
+		} finally {
+			fx.cleanup();
 		}
 	});
 });

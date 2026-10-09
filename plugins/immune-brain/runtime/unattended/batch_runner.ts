@@ -28,7 +28,7 @@ import {
 	type BatchRunnerGitPort,
 } from "./batch_git";
 import { classifyBatchLineage, expectedBatchHead } from "./batch_preflight";
-import { runLaneBatch, type LaneOffer } from "./batch_lanes";
+import { laneRejectionReport, runLaneBatch, type LaneOffer } from "./batch_lanes";
 import {
 	type BatchRunStateRecord,
 	type BatchChildRun,
@@ -442,11 +442,17 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 function rejectionReport(input: StartBatchInput, reason: string): BatchRunReport {
 	const persisted = (() => {
 		try {
-			return readBatchRunState(input.root, input.batch_id);
+			return readAnyBatchRunState(input.root, input.batch_id);
 		} catch {
 			return null;
 		}
 	})();
+	if (persisted !== null && isLaneBatchRecord(persisted))
+		return laneRejectionReport(
+			persisted,
+			reason,
+			"settle the reported kernel store condition and retry in the current Host",
+		) as unknown as BatchRunReport;
 	return reportFor(
 		{
 			...(persisted ?? prepareBatchRunState({ ...input, children: [], now: input.now })),
