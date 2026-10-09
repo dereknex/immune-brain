@@ -25,6 +25,8 @@ Pi 与 Claude Code 是支持的宿主。未声明的适配器仍不受支持。C
 - [安装](#安装)
 - [快速开始](#快速开始)
 - [如何使用](#如何使用)
+- [推荐工作流：与 mattpocock/skills 组合使用](#推荐工作流与-mattpocockskills-组合使用)
+- [实战案例](#实战案例)
 - [核心设计哲学：把“判断”变成“查表”](#核心设计哲学把判断变成查表用确定性工程驾驭多模型)
 - [7 个 Skills](#7-个-skills)
 - [生命周期](#生命周期)
@@ -84,7 +86,7 @@ mise run check-dist-sync    # 校验生成文档同步
 Immune-Brain 遵循 **显式 Skill 触发（Skill-explicit）** 模型：日常对话就是轻量自然的 AI 编程，只有显式调用对应 Skill 时才会开启严格工程管理。
 
 **1. 当你需要严谨工程流程时，显式调用 Skill：**
-- 需求模糊想先梳理？输入 `/imm-brainstorm`（或对 Agent 说 "用 imm-brainstorm 梳理需求"）。
+- 需求模糊、重大架构设计或高保证任务想先敲定方案？输入 `/grill-me`（来自 `mattpocock/skills`，强烈推荐）进行苏格拉底式高压追问与决策确认，或输入 `/imm-brainstorm`（内置极简梳理）。
 - 目标明确准备制定方案？输入 `/imm-planner`（或对 Agent 说 "用 imm-planner 规划深色模式功能"）。
 
 *(日常提问如 "这个函数什么意思"、"改个 typo" 保持完全原生，没有任何流程弹窗和开销。)*
@@ -112,7 +114,7 @@ Immune-Brain 提供两种清晰的工作模式：日常轻量编码走 **Host-na
 | 你的情况 | 你做什么 / 说什么 | 会发生什么 |
 |---|---|---|
 | 日常编码、快速改动、普通问答 | 正常自然语言对话（"帮我改下文案"、"解释这段代码"） | **Host-native**：标准 Pi / Claude Code 行为，零流程开销 |
-| 想法模糊，需要梳理边界与风险 | `/imm-brainstorm` "帮我梳理一下通知系统的方案" | → `imm-brainstorm` 提问澄清、分析约束与风险（只读，不改代码） |
+| 想法模糊，需要架构拷问、边界与决策确认 | `/grill-me`（推荐）或 `/imm-brainstorm` | → `/grill-me` 针对设计树逐项穷追猛打敲定决策；`/imm-brainstorm` 进行内置只读需求框架梳理 |
 | 目标明确，需要正规计划与规格 | `/imm-planner` "规划一下深色模式功能" | → `imm-planner` 产出 `TaskIntent` + Spec，包含可执行验收条件 |
 | 计划已确认，准备执行与验证 | `/imm-run` | → Executor 在范围内实现 → 确定性 QA 验收 → 隔离 Review 审查 → 任务结算 |
 | 会话中断或需恢复未完成任务 | `/imm-run` | → 从磁盘状态（`.imm/`）无缝恢复，以 Kernel projection 为准 |
@@ -125,7 +127,7 @@ Immune-Brain 提供两种清晰的工作模式：日常轻量编码走 **Host-na
 
 > **核心原则：Skill 显式调用**
 > - **普通输入保持 Host-native**：自然语言提问绝不自动绑架流程或发起 Enrollment。你完全自主决定何时开启严格工程保障。
-> - **Managed 工作流显式启动**：需要澄清用 `imm-brainstorm`，制定计划用 `imm-planner`，执行与恢复用 `imm-run`。
+> - **Managed 工作流显式启动**：需要澄清决策用 `/grill-me`（或 `imm-brainstorm`），制定计划用 `imm-planner`，执行与恢复用 `imm-run`。
 
 ### 跨 Host 协作：Claude Code 规划 + Pi 编码执行
 
@@ -160,6 +162,154 @@ Immune-Brain 的核心状态与契约完全去会话化（Session-neutral），�
 3. **为什么可以无缝切换？**
    - **状态落盘，解耦会话**：所有任务契约（TaskIntent）、设计规格（Spec）和执行状态（`.imm/state/kernel.sqlite`）均持久化在磁盘上，不绑定任何特定 AI 会话的上下文。
    - **双向断点恢复**：无论在哪个 Host 暂停或关闭会话，随时可以在 Pi 或 Claude Code 中重新输入 `/imm-run` 无缝恢复，Kernel projection 确保进度与证据不丢失。
+
+---
+
+## 推荐工作流：与 mattpocock/skills 组合使用
+
+Immune-Brain 能够在工程进入实施阶段后提供坚不可摧的确定性闭环与质量约束，但在实际软件研发中，绝大多数失败早在编码前就已注定：**大模型在尚未充分遍历设计树、评估技术折中并推演边界条件时，就匆忙上手编码。**
+
+为了彻底杜绝盲目开工与范式漂移，生产环境中最推荐的最佳实践组合是将 Matt Pocock 的 **`mattpocock/skills`** 作为上游，与 **Immune-Brain** 构筑的下游确定性引擎组合使用：
+
+> **双引擎协同哲学**
+> - **上游苏格拉底式充分摩擦（`grill-me`）**：主动放慢思考节奏。AI 化身为苛刻的技术面试官，在落实任何代码与规格之前，对设计树的每一个分支、技术选型与隐性假设进行穷追猛打，逐一敲定决策。
+> - **下游确定性工程闭环（`imm-planner` + `imm-run`）**：将敲定的共识翻译为不可篡改的机器契约（`TaskIntent` + living Spec），通过宿主原生弹窗由人授权，严格冻结文件边界（`scope_hint`），并由沙箱子进程 QA 真实跑通与隔离审查子代理把关交付。
+
+```text
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 1. 上游苏格拉底式决策对齐 (mattpocock/skills /grill-me)                                                │
+│ 职责: 沿设计树每一个分支进行高压追问，梳理技术权衡与隐性假设，达成架构共识                             │
+└───────────────────────────────────────────────────┬────────────────────────────────────────────────────┘
+                                                    │ 敲定的决策分支与架构设计共识
+                                                    ▼
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 2. 正式机器契约与方案规划 (Immune-Brain /imm-planner)                                                  │
+│ 职责: 编写 Living Spec 与 TaskIntent (.intent.json)；锁定 scope_hint 与 VerificationDescriptor v2     │
+└───────────────────────────────────────────────────┬────────────────────────────────────────────────────┘
+                                                    │ Git 追踪的机器契约制品
+                                                    ▼
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 3. 宿主原生人工准入确认 (Native Host Enrollment)                                                       │
+│ 职责: 开发者在原生 TUI / MCP 弹窗中核对范围并授权；Kernel 原子记录 Git 基线并获取 SQLite CAS 锁        │
+└───────────────────────────────────────────────────┬────────────────────────────────────────────────────┘
+                                                    │ 工作区独占租约
+                                                    ▼
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 4. 确定性执行与凭证结算 (Immune-Brain /imm-run)                                                        │
+│ 职责: 冻结 Scope 内 Executor 编码 -> 真实子进程 QA (bun test) -> 隔离 Subagent Review -> CAS 凭证结算 │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 为什么推荐用 `grill-me` 代替 `imm-brainstorm` 进行决策确认
+
+虽然 Immune-Brain 内置了轻量的 `imm-brainstorm` 技能，但面对非平凡业务功能、重大架构调整或安全敏感边界时，**强烈推荐使用 `/grill-me` 作为前置决策工具**：
+
+| 维度 | 内置 `imm-brainstorm` | 上游 `/grill-me` (`mattpocock/skills`) | 组合推荐姿态 |
+|---|---|---|---|
+| **生态与安装** | 内置于 Immune-Brain（开箱即用，零依赖） | 来自 `mattpocock/skills` 生态（`npx skills@latest add mattpocock/skills --skill grill-me`） | 由 `/grill-me` 担任上游思想对齐者，Immune-Brain 掌管下游确定性工程闭环 |
+| **交互模式** | 结构化问题框架梳理；批量发问；只读概览 | 单轮迭代式、高压苏格拉底式追问；沿设计树逐项穷尽推演 | `/grill-me` 主动质疑开发者的盲目假设，拒绝模糊妥协 |
+| **推演纪律** | 优先查阅仓库代码，提炼顶层目标与约束风险 | 优先查阅仓库代码，针对每个决策点主动提供带倾向的推荐方案 | 彻底消除“氛围感盲写”（vibe coding），在上游将设计决策压成确定性共识 |
+| **产出形态** | 只读的 `brainstorm_framing` 总结块 | 遍历并收敛完成的完整设计树决策集合 | 将确认后的决策清单无缝输入给 `/imm-planner` 转化为机器契约 |
+| **适用场景** | 轻量需求梳理、离线无网络环境或简单任务 | 复杂业务系统、核心架构重构、多服务联动与高危门禁功能 | 严肃工程研发与生产级任务的**首选推荐标准** |
+
+### 安装与配置
+
+使用官方 Skills 安装器将 `grill-me` 添加到当前项目或全局环境：
+
+```bash
+# 仅添加 mattpocock/skills 中的 grill-me
+npx skills@latest add mattpocock/skills --skill grill-me
+
+# 或安装完整套件（包含 to-prd, to-issues, wayfinder, tdd 等）
+npx skills@latest add mattpocock/skills
+```
+
+### 典型端到端流水线：`grill-me` → `imm-planner` → `imm-run`
+
+1. **第一步：苏格拉底式设计拷问（`/grill-me`）**
+   - 执行 `/grill-me "实现多租户 Webhook 分发系统，包含重试退避与防重放机制"`。
+   - Agent 会先阅读工程现有代码模式，随后针对设计树展开单点追问（存储选型、幂等方案、退避曲线、错误捕获），并在每个问题后给出明确的推荐选项与权衡说明。
+   - 开发者逐一确认直至全部分支收敛：“*决策树已全部收敛，准备开始制定工程计划。*”
+2. **第二步：机器契约与规格规划（`/imm-planner`）**
+   - 执行 `/imm-planner "基于刚才 grill-me 敲定的决策方案规划 Webhook 分发功能"`。
+   - `imm-planner` 吸收已确认的架构决策并生成：
+     - **Living Spec**（`docs/specs/webhook-dispatcher.spec.md`）：锁定参考坐标、架构权衡与明确的禁止越界边界（Negative Scope）。
+     - **TaskIntent**（`docs/plans/webhook-dispatcher.intent.json`）：锁定文件范围 `scope_hint`、风险等级（`material`）与自动化验收命令 `VerificationDescriptor v2`。
+3. **第三步：原生弹窗准入授权（Enrollment Gate）**
+   - 将生成的 Spec 与 Plan 纳入 Git 暂存（`git add docs/`）。
+   - 执行 `/imm-run`。弹出当前宿主的原生确认界面（Pi TUI 弹窗 / Claude Code MCP 交互弹窗）。
+   - 人工点击确认后，Kernel 原子生成 Git 基线快照（`enrollment-baseline.json`）并加持 SQLite CAS 工作区排他锁。
+4. **第四步：物理冻结执行与客观验证（`/imm-run`）**
+   - **Executor**：严格在 `scope_hint` 文件信封内编写代码，任何物理逃逸直接 fail-closed 阻断。
+   - **确定性 QA 引擎**：Kernel 直接前台拉起子进程执行 `bun test`，以真实退出码 0 判定胜负，拒绝口头汇报。
+   - **隔离 Reviewer 审查**：针对 `material`/`critical` 任务，调度独立的只读审查子代理基于 Git blob 制品严格审计。
+   - **结算归档**：Kernel 原子落盘证据至 `.imm/audit/<task-id>/` 并释放工作区锁。
+
+### 与 `mattpocock/skills` 其它技能的生态协同
+
+除 `grill-me` 外，`mattpocock/skills` 的整套工具集均可与 Immune-Brain 形成互补强化：
+
+- **`/to-prd` 与 `/to-issues` → 衔接 Initiative 批次**：将高阶愿景转化为结构化的 GitHub Issues，随后由 Immune-Brain 的 `imm-tracker publish-initiative` 与 `start_unattended_batch` 在无人值守或并行 Lane 中自动推进。
+- **`/wayfinder` → 复杂多会话里程碑领航**：在跨天、多会话的超大任务中保持上下文主线，而 Immune-Brain 底层的 SQLite CAS 与磁盘落盘保证无论何时恢复均零状态丢失。
+- **`/tdd` → 验收驱动的前置测试定义**：在编写实现之前先写出红灯测试用例，这些测试路径可直接作为 `VerificationDescriptor v2` 的目标命令写入 `TaskIntent`。
+
+---
+
+## 实战案例
+
+### 案例 1：全新功能从零开发 — 多租户 Webhook 分发系统
+
+- **目标**：实现一套生产级多租户 Webhook 分发引擎，具备 HMAC 密钥签名、指数退避重试与防重放攻击能力。
+- **不使用本工作流的常见缺陷**：AI 拿到需求后立即动手写文件，随意引入未经评估的外部三方库，忘记校验时间戳导致重放漏洞，留下内存泄漏的定时器，并且在未做超时中断验证的情况下直接宣称“开发完成”。
+- **实战流程**：
+  1. **上游高压对齐（`/grill-me`）**：
+     - *问题 1（持久化选型）*：SQLite 还是外部队列？*推荐方案*：复用工程现有的 SQLite CAS 表，避免引入额外基础设施依赖。
+     - *问题 2（安全规范）*：如何防御重放攻击？*推荐方案*：强制要求 `X-Webhook-Timestamp` 请求头，允许最大 5 分钟时钟容差，使用 HMAC-SHA256 签名。
+     - *问题 3（韧性保障）*：重试策略与超时机制？*推荐方案*：采用 Full Jitter 指数退避，最多重试 5 次，单次请求通过 `AbortController` 施加 10 秒硬超时。
+     - *成果*：全套架构权衡在 3 分钟人机对话内全部锁定。
+  2. **机器契约规划（`/imm-planner`）**：
+     - Planner 编写 `docs/specs/webhook-dispatcher.spec.md`，明确标记 Negative Scope（`src/auth/` 与 `src/billing/` 严禁改动）。
+     - 生成 `docs/plans/task-webhook-dispatcher.intent.json`，定级为 `material` 风险，配置验收命令真机运行 `bun test tests/webhook-dispatcher.test.ts`。
+  3. **原生弹窗准入确认**：
+     - 开发者在 Git 中检视 diff，并在 Pi TUI / Claude Code 弹窗中授权。
+  4. **执行、QA 验证与审查（`/imm-run`）**：
+     - Executor 在 `scope_hint` 限定范围内编写代码。
+     - Kernel 真机拉起沙箱执行 `bun test tests/webhook-dispatcher.test.ts`，验证退出码为 `0`。
+     - 隔离的 Reviewer 子代理审计 Git blob，核实无任何越界改动并检查异常处理规范。
+     - Kernel 原子落盘凭据至 `.imm/audit/<task-id>/`。
+
+### 案例 2：关键架构重构 — CAS 状态机存储引擎迁移（v1 → v2）
+
+- **目标**：将持久化层从历史遗留的 JSON 文件平滑迁移为基于 SQLite 的原子 CAS 引擎，并保持零停机回滚和历史只读审计能力。
+- **不使用本工作流的常见缺陷**：模型在底层存储重构时极易造成静默数据损坏、擅自删除历史兼容路径，并通过篡改断言在假测试中制造“通过”。
+- **实战流程**：
+  1. **上游高压对齐（`/grill-me`）**：
+     - *拷问焦点*：“迁移期间若有正在运行的 v1 任务该如何处理？推荐方案：实施严格的排空检查（`drain_required`），拒绝双写，存在活跃任务时立即中断拒绝迁移。”
+     - *拷问焦点*：“回滚时如何保证 WAL 不损坏？推荐方案：采用单文件事务、操作系统级排他文件锁与不可变 Git 快照。”
+  2. **代码强制兜底规划（`/imm-planner`）**：
+     - 由于改动触碰了 `runtime/kernel/storage.ts`，Kernel 规则强制将风险等级锁定至 `critical` 底线。
+     - Planner 精准锚定代码坐标（`storage.ts:120`），并配置包含真实历史迁移固件的验收测试。
+  3. **原生准入确认**：开发者在宿主原生弹窗中看到被强制锁定的 `critical` 风险与基线快照，点击授权。
+  4. **确定性 QA 与对抗性审查（`/imm-run`）**：
+     - 真机执行全量回归套件与真实历史固件迁移测试。
+     - 独立的 Devil's Advocate Reviewer 子代理针对不可变 Git blob 展开对抗性审计，重点核验向后兼容逻辑。
+     - 原子结项并写入不可篡改的审计记录。
+
+### 案例 3：跨 Host 协同开发 — Claude Code（深度追问与方案规划）+ Pi（极速前台执行与真机验收）
+
+- **目标**：最大化利用桌面端旗舰模型的深度推理进行架构推演，同时在极速本地/远程终端中执行代码，大幅节省 Token 成本并提升交付速度。
+- **实战流程**：
+  1. **在 Claude Code（桌面端）中**：
+     - 运行 `/grill-me`（来自 `mattpocock/skills`），利用 Claude 旗舰推理能力充分拷问架构方案。
+     - 运行 `/imm-planner`，生成精准定位到代码行号的 Living Spec 与 `TaskIntent` 机器契约。
+     - 将制品提交或暂存到 Git（`git add docs/ && git commit -m "docs: webhook spec and plan"`）。
+  2. **切换到 Pi（本地或远程终端）中**：
+     - 在同一工作区中打开 Pi。
+     - 输入 `/imm-run`。Pi 自动识别到暂存的 `TaskIntent`，弹出原生 TUI 弹窗提示准入。
+     - Pi 的 Executor 角色调度高吞吐、高性价比模型（Fast / Mid Tier）在锁定的文件边界内写代码。
+     - 本地进程直接执行 `bun test` 产出真实退出码凭证。
+     - 审查通过后 Kernel 结算结项。
+  3. **成果**：跨 Host 状态零损失无缝衔接，同时节约 60%~70% 的旗舰推理 Token 支出。
 
 ---
 
@@ -494,6 +644,10 @@ docs/specs/                           # Living specs（原地更新）
 **任务结算后的审计凭证（Audit Trail）保存在哪里？** 保存在仓库的 `.imm/audit/<task-id>/` 目录下，并作为 Git-tracked 资产提交。其中包含最终的 `TaskRecord`、绑定的代码 `diff_hash`、真实执行的 QA 退出码/输出 Attestation、以及 Reviewer 签署的验证凭据，保证交付全流程可追溯、可审计。
 
 **偏好配置为什么写在 AGENTS.md / CLAUDE.md 而不是独立配置文件？** 遵循“零外部负担、宿主原生”原则。将偏好（如 Initiative 载体、交互语言）声明在项目根目录受版本控制的指令文件中，既能在不同 Host 之间透明生效，又避免了本地全局配置文件容易漂移、团队成员无法共享的痛点。
+
+**为什么在复杂任务中推荐用 `grill-me` 替代 `imm-brainstorm` 进行决策确认？** `imm-brainstorm` 是轻量内置的免安装工具，用于快速对齐顶层问题框架。而来自 `mattpocock/skills` 的 `grill-me` 则具备极具侵略性的苏格拉底式发问机制，能够沿着设计树分支主动提供带偏好的推荐方案并穷追猛打，促使开发者做出明确抉择。对于非平凡功能开发、重大架构重构或安全门禁边界，在上游先用 `grill-me` 彻底敲定决策树再输入给 `imm-planner`，能产出颗粒度极高、无后顾之忧的 Living Spec，从根源上杜绝下游返工。
+
+**我是否必须安装 `mattpocock/skills` 才能使用 Immune-Brain？** 不是。Immune-Brain 本身是完全独立自闭环的，内置的 `imm-brainstorm` 可以零配置直接使用。与 `mattpocock/skills` 的组合属于强烈推荐的工程进阶工作流，旨在为严谨团队提供更极致的决策防线。
 
 **支持哪些 AI 编程工具？** Pi 与 Claude Code 是支持的宿主（Claude Code 最低版本为 `2.1.236`）。两者共享同一套确定性 Kernel 核心、质量保障机制与工具链。
 

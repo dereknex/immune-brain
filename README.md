@@ -25,6 +25,8 @@ Pi and Claude Code are the supported hosts. Undeclared adapters remain unsupport
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [How to Use](#how-to-use)
+- [Recommended Workflows: Composing with mattpocock/skills](#recommended-workflows-composing-with-mattpocockskills)
+- [Real-World Case Studies](#real-world-case-studies)
 - [Core Philosophy: Turn "Judgment" into "Table Lookup"](#core-philosophy-turn-judgment-into-table-lookup-harnessing-multi-model-tiers-with-determinism)
 - [The 7 Skills](#the-7-skills)
 - [Lifecycle](#lifecycle)
@@ -84,7 +86,7 @@ mise run check-dist-sync           # verify generated docs are in sync
 Immune-Brain follows a **Skill-explicit** model: ordinary conversation is just standard, lightweight AI coding. The managed workflow activates **only when you explicitly invoke a skill**.
 
 **1. Call a skill when you need structured engineering**:
-- Fuzzy idea that needs scoping? Run `/imm-brainstorm` (or ask the agent to use `imm-brainstorm`).
+- Fuzzy idea, ambiguous design, or high-stakes feature? Run `/grill-me` (from `mattpocock/skills`, recommended) for relentless Socratic design interrogation (or use built-in `/imm-brainstorm` for lightweight framing).
 - Ready to design and build? Run `/imm-planner` (or ask the agent to use `imm-planner`).
 
 *(Ordinary questions like "What does this function do?" or "Fix this typo" stay host-native — zero workflow ceremony.)*
@@ -112,7 +114,7 @@ Immune-Brain provides two clean modes: **Host-native** for daily coding, and **M
 | Your situation | What to say / do | What happens |
 |---|---|---|
 | Daily coding, quick fix, general Q&A | Normal conversation ("Fix typo in README", "Explain this function") | **Host-native**: Standard Pi / Claude Code behavior. Zero workflow overhead. |
-| Fuzzy idea, needs scoping & risk analysis | `/imm-brainstorm` "Help me think through webhook support" | → `imm-brainstorm` frames requirements, constraints, and risks (read-only, no code edits) |
+| Fuzzy idea, needs architectural stress-testing & scoping | `/grill-me` (recommended) or `/imm-brainstorm` | → `/grill-me` interviews you through the design tree to lock decisions; `/imm-brainstorm` provides built-in read-only problem framing |
 | Clear goal, want formal plan & specs | `/imm-planner` "Plan the webhook feature" | → `imm-planner` writes `TaskIntent` + Specs with testable acceptance checks |
 | Plan confirmed, ready to build & verify | `/imm-run` | → Executor builds within scope → deterministic QA verifies → isolated Review checks → task settles |
 | Session interrupted or resuming a task | `/imm-run` | → Resumes existing task seamlessly from on-disk state (`.imm/`) |
@@ -125,7 +127,7 @@ Immune-Brain provides two clean modes: **Host-native** for daily coding, and **M
 
 > **Core Principle: Skill-Explicit Entry**
 > - **Ordinary input stays host-native**: Natural language queries never automatically start planning or task enrollment. You choose when to turn on engineering rigor.
-> - **Managed work starts with explicit skills**: Use `imm-brainstorm` to clarify, `imm-planner` to plan, and `imm-run` to execute and resume.
+> - **Managed work starts with explicit skills**: Use `/grill-me` (or `imm-brainstorm`) to clarify decisions, `imm-planner` to plan, and `imm-run` to execute and resume.
 
 ### Cross-Host Workflow: Plan in Claude Code, Build in Pi
 
@@ -160,6 +162,154 @@ This enables a best-of-both-worlds workflow: **leverage Claude Code's deep reaso
 3. **Why Cross-Host Switching Works Seamlessly**
    - **Session-neutral state**: All contracts and authority records live in the repository and local SQLite CAS, completely independent of any individual AI chat session.
    - **Bidirectional resumption**: Interrupted tasks can be resumed at any point in either Pi or Claude Code with `/imm-run`.
+
+---
+
+## Recommended Workflows: Composing with mattpocock/skills
+
+While Immune-Brain provides deterministic execution and quality enforcement once work begins, engineering failures frequently originate upstream: **models jump into code before the design tree is fully explored, trade-offs are evaluated, and edge cases are surfaced.**
+
+To prevent premature implementation and scope churn, the recommended best-practice workflow combines **`mattpocock/skills`** (by Matt Pocock) upstream with **Immune-Brain** downstream:
+
+> **The Dual-Engine Thesis**
+> - **Upstream Socratic Friction (`grill-me`)**: Deliberately slows down thinking. The AI acts as a relentless interviewer, forcing explicit decisions on every branch of the design tree before any code or spec is committed.
+> - **Downstream Deterministic Rigor (`imm-planner` + `imm-run`)**: Translates those decisions into tamper-proof machine contracts (`TaskIntent` + living Spec), enforces native human enrollment, freezes editable file boundaries, and verifies code via sandboxed child processes and isolated reviewer subagents.
+
+```text
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 1. Upstream Socratic Alignment (mattpocock/skills /grill-me)                                           │
+│ Role: Relentlessly interview developer down every branch of the design tree; resolve trade-offs        │
+└───────────────────────────────────────────────────┬────────────────────────────────────────────────────┘
+                                                    │ Settled decisions & architectural consensus
+                                                    ▼
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 2. Formal Machine Contracts (Immune-Brain /imm-planner)                                                │
+│ Role: Author living Spec & TaskIntent (.intent.json); lock scope_hint and VerificationDescriptor v2   │
+└───────────────────────────────────────────────────┬────────────────────────────────────────────────────┘
+                                                    │ Git-tracked contract artifacts
+                                                    ▼
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 3. Literal Human Authority Gate (Native Host Enrollment)                                               │
+│ Role: Developer confirms scope in native TUI / MCP dialog; Kernel captures baseline & acquires CAS lock │
+└───────────────────────────────────────────────────┬────────────────────────────────────────────────────┘
+                                                    │ Exclusive workspace lease
+                                                    ▼
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 4. Deterministic Assurance & Settlement (Immune-Brain /imm-run)                                        │
+│ Role: Scope-frozen Executor -> Sandboxed QA (bun test) -> Isolated Subagent Review -> CAS Settlement   │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Why Use `grill-me` Instead of `imm-brainstorm` for Decision Confirmation
+
+Immune-Brain includes a built-in `imm-brainstorm` skill, but for non-trivial features, architectural pivots, and security-sensitive boundaries, **`/grill-me` is the recommended choice**:
+
+| Dimension | Built-in `imm-brainstorm` | Upstream `/grill-me` (`mattpocock/skills`) | Recommended Synergy |
+|---|---|---|---|
+| **Ecosystem & Setup** | Built into Immune-Brain (zero install) | Ecosystem skill from `mattpocock/skills` (`npx skills@latest add mattpocock/skills --skill grill-me`) | Use `/grill-me` as the upstream decision partner; let Immune-Brain handle execution |
+| **Interview Style** | Structured problem framing; batched questions; read-only summary | Relentless, iterative 1-by-1 Socratic grilling; explores every decision branch | `/grill-me` actively challenges developer assumptions and refuses to let ambiguities slide |
+| **Exploration Discipline** | Explores codebase first, surfaces high-level goals & risks | Explores codebase first, proposes opinionated recommended answers for each branch | Eliminates "vibe coding" and locks down architectural consensus before any planning |
+| **Output** | `brainstorm_framing` summary block | Fully resolved decision tree | Directly feed the settled decisions into `/imm-planner` |
+| **Best Fit** | Lightweight scoping, offline setups, or simple tasks | Complex features, architectural refactors, and multi-service designs | **Recommended standard** for production engineering |
+
+### Setup & Installation
+
+Install `grill-me` into your project or global agent environment using the official Skills installer:
+
+```bash
+# Add grill-me from mattpocock/skills
+npx skills@latest add mattpocock/skills --skill grill-me
+
+# Or install the full suite (includes to-prd, to-issues, wayfinder, tdd, etc.)
+npx skills@latest add mattpocock/skills
+```
+
+### End-to-End Workflow: `grill-me` → `imm-planner` → `imm-run`
+
+1. **Step 1: Grill the Design (`/grill-me`)**
+   - Run `/grill-me "Add Webhook Dispatcher with retry and replay protection"`.
+   - The agent reads existing codebase patterns first, then interviews you across the decision tree (storage choices, idempotency strategy, backoff policies, failure modes), presenting a recommended answer for each step.
+   - Continue until all branches are resolved: *"Decision tree complete. Ready to plan."*
+2. **Step 2: Formalize the Plan (`/imm-planner`)**
+   - Run `/imm-planner "Plan the webhook dispatcher using the decisions settled in grill-me"`.
+   - `imm-planner` consumes the resolved choices and generates:
+     - **Living Spec** (`docs/specs/webhook-dispatcher.spec.md`): Pinned code coordinates, trade-offs, and negative boundaries.
+     - **TaskIntent** (`docs/plans/webhook-dispatcher.intent.json`): Strict `scope_hint`, risk tier (`material`), and machine-executable `VerificationDescriptor v2` checks.
+3. **Step 3: Confirm Enrollment (Native Host Gate)**
+   - Stage artifacts in Git (`git add docs/`).
+   - Run `/imm-run`. The native confirmation dialog opens (Pi TUI modal / Claude Code MCP elicitation).
+   - Once confirmed, Kernel atomically captures repository baseline state (`enrollment-baseline.json`) and acquires an exclusive SQLite CAS lock.
+4. **Step 4: Execute & Verify (`/imm-run`)**
+   - **Executor**: Edits code strictly within `scope_hint`. Physical scope escapes fail closed.
+   - **Deterministic QA**: Kernel executes acceptance tests (`bun test`) in a sandboxed child process, verifying authentic exit codes.
+   - **Isolated Review**: For `material` or `critical` tasks, a separate review subagent audits immutable Git blobs against Devil's Advocate invariants.
+   - **Settlement**: Kernel records tamper-proof attestations in `.imm/audit/<task-id>/` and releases the workspace lease.
+
+### Synergies with Other `mattpocock/skills`
+
+Beyond `grill-me`, the `mattpocock/skills` library composes seamlessly with Immune-Brain's lifecycle:
+
+- **`/to-prd` & `/to-issues` → Multi-Task Initiatives**: Convert high-level concepts into GitHub Issues, which Immune-Brain's `imm-tracker publish-initiative` and `start_unattended_batch` can execute serially or across parallel Lanes.
+- **`/wayfinder` → Milestone Navigation**: Maintain focus across multi-day initiatives, while Immune-Brain's SQLite CAS guarantees zero state loss across sessions.
+- **`/tdd` → Test-First Intent Formulation**: Author failing acceptance tests upfront, directly feeding their command paths into `VerificationDescriptor v2` descriptors before implementation begins.
+
+---
+
+## Real-World Case Studies
+
+### Case Study 1: Greenfield Feature Development — Multi-Tenant Webhook Dispatcher
+
+- **Goal**: Implement a production-grade webhook dispatch system with HMAC signature verification, exponential backoff with jitter, and replay attack prevention.
+- **Problem without this pipeline**: An AI agent typically starts writing files immediately, pulls in arbitrary dependencies, forgets timestamp replay bounds, leaks in-memory timers, and claims "implementation complete" without verifying HTTP timeout handling.
+- **Workflow**:
+  1. **Socratic Grilling (`/grill-me`)**:
+     - *Question 1 (Persistence)*: SQLite vs external queue? *Recommendation*: Store pending dispatches in the existing SQLite CAS table to avoid external infrastructure overhead.
+     - *Question 2 (Security)*: How to prevent replay attacks? *Recommendation*: Require an `X-Webhook-Timestamp` header with a 5-minute clock-skew tolerance window and HMAC-SHA256 signature.
+     - *Question 3 (Resilience)*: What is the backoff curve and timeout? *Recommendation*: Exponential backoff with full jitter up to 5 attempts, with a hard 10s timeout via `AbortController`.
+     - *Result*: All trade-offs explicitly confirmed in 3 minutes of dialogue.
+  2. **Machine Contract Formulation (`/imm-planner`)**:
+     - Planner writes `docs/specs/webhook-dispatcher.spec.md` with explicit Negative Scope (files in `src/auth/` and `src/billing/` are forbidden).
+     - Generates `docs/plans/task-webhook-dispatcher.intent.json` with risk `material` and `VerificationDescriptor v2` running `bun test tests/webhook-dispatcher.test.ts`.
+  3. **Native Gate Enrollment**:
+     - Developer inspects Git diff and confirms via Pi TUI dialog / Claude Code MCP elicitation.
+  4. **Execution, QA & Review (`/imm-run`)**:
+     - Executor writes implementation strictly within `scope_hint`.
+     - Deterministic QA executes `bun test tests/webhook-dispatcher.test.ts`. Kernel verifies exit code `0`.
+     - Isolated Reviewer subagent inspects the Git blob `ReviewBundle`, confirming no out-of-scope edits and verifying error invariants.
+     - Kernel settles terminal proof into `.imm/audit/<task-id>/`.
+
+### Case Study 2: Critical Architectural Refactoring — CAS Storage Migration (v1 → v2)
+
+- **Goal**: Migrate the persistence layer from legacy JSON files to an atomic SQLite CAS engine while maintaining zero-downtime rollback and legacy read-only audit inspection.
+- **Problem without this pipeline**: Agents performing low-level database refactoring frequently introduce silent schema corruption, delete legacy fallback paths, and pass tests by weakening assertions.
+- **Workflow**:
+  1. **Socratic Grilling (`/grill-me`)**:
+     - *Interrogation*: "What happens to active v1 tasks during migration? Recommendation: Enforce a strict drain check (`drain_required`); refuse dual-write and abort if an active v1 task is in progress."
+     - *Interrogation*: "How is WAL corruption prevented during rollback? Recommendation: Use single-file transactions with OS-level file locking and immutable Git snapshots."
+  2. **Planning with Enforcement Floors (`/imm-planner`)**:
+     - Because `runtime/kernel/storage.ts` is in `scope_hint`, Kernel automatically clamps the risk tier floor to `critical`.
+     - Planner pins code coordinates (`storage.ts:120`) and binds verification commands including legacy migration fixtures.
+  3. **Native Enrollment**: Developer verifies the `critical` risk tier and baseline snapshot in the native host dialog.
+  4. **Deterministic QA & Review (`/imm-run`)**:
+     - Real process verification runs the full regression test suite with authentic legacy fixtures.
+     - Isolated Subagent Devil's Advocate audit executes an adversarial review over immutable Git blobs, checking backward compatibility.
+     - Atomic settlement writes tamper-proof audit records.
+
+### Case Study 3: Cross-Host Collaborative Teamwork — Claude Code (Grill + Plan) + Pi (Run + QA)
+
+- **Goal**: Maximize reasoning intelligence for architectural design while minimizing token expenditure and maximizing speed for mechanical code execution.
+- **Workflow**:
+  1. **Phase 1 in Claude Code (Desktop)**:
+     - Run `/grill-me` (from `mattpocock/skills`) to stress-test architecture with Claude's flagship reasoning model.
+     - Run `/imm-planner` to author line-pinned Living Specs and `TaskIntent` contracts.
+     - Stage artifacts (`git add docs/ && git commit -m "docs: webhook spec and plan"`).
+  2. **Phase 2 in Pi (Terminal / Remote Server)**:
+     - Open Pi in the same repository workspace.
+     - Enter `/imm-run`. Pi detects the Git-staged `TaskIntent` and opens its native TUI modal for enrollment.
+     - Pi's Executor writes code using a cost-effective, high-throughput model (Fast/Mid Tier).
+     - Deterministic QA runs locally via `bun test`.
+     - Review passes and Kernel closes the task.
+  3. **Result**: Zero context loss across hosts, full session-neutral state continuity, and ~60-70% savings on flagship reasoning tokens.
 
 ---
 
@@ -492,6 +642,10 @@ docs/specs/                           # Living specs (updated in place)
 **Where is the terminal Audit Trail stored and how is it verified?** Settled records are saved to `.imm/audit/<task-id>/` and tracked in Git. Each directory contains the immutable `TaskRecord`, the bound `diff_hash`, raw QA process exit-code attestations, and the Reviewer's signed verdict bundle.
 
 **Why are preferences kept in AGENTS.md / CLAUDE.md instead of an external config.toml?** Immune-Brain embraces host-native simplicity with zero external configuration files. Declaring preferences (such as Initiative carriers and communication instructions) in tracked agent instruction files ensures that configuration is version-controlled, visible across all collaborators, and free from environment drift.
+
+**Why do you recommend `grill-me` instead of `imm-brainstorm` for complex tasks?** `imm-brainstorm` is a lightweight, built-in tool designed for quick problem framing without external dependencies. However, `grill-me` (from `mattpocock/skills`) provides an active, relentless Socratic interview that explores every branch of your design tree with opinionated recommendations. For non-trivial features, architectural refactors, or security boundaries, grilling the design with `grill-me` before passing the settled decisions to `imm-planner` produces significantly tighter specifications and prevents downstream rework.
+
+**Do I need to install `mattpocock/skills` to use Immune-Brain?** No. Immune-Brain is completely self-contained and functions out of the box with built-in `imm-brainstorm`. Composing with `mattpocock/skills` is an optional, highly recommended power workflow for teams seeking maximal engineering discipline.
 
 **Which AI coding assistants are supported?** Pi and Claude Code are the supported hosts (Claude Code version >= `2.1.236`). Both hosts run on the exact same Kernel authority, assurance guarantees, and multi-skill pipeline.
 
