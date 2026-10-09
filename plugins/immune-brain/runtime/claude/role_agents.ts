@@ -73,9 +73,10 @@ export const CLAUDE_HOST_PROVIDED_ROLE_AGENTS = {
  *
  * `code-review` ships its own definition with a wider allowlist (it must run
  * read-only Git commands), so it is not part of this table. The remaining roles
- * write: `executor`, `test-fixer` and `pr-fix` mutate the workspace, and
- * `compounder` writes learning storage. A write-capable role stays bounded by
- * its dispatch envelope and the Parent, not by an agent definition.
+ * write: `executor`, `test-fixer` and `pr-fix` mutate the workspace,
+ * `compounder` writes learning storage, and `lane-steward` supplies and
+ * releases a separate working tree. A write-capable role stays bounded by its
+ * dispatch envelope and the Parent, not by an agent definition.
  */
 export const CLAUDE_NATIVE_AGENT_ROLES = new Set<InternalRole>([
 	...CLAUDE_READONLY_ROLES,

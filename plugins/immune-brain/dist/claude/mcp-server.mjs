@@ -6816,8 +6816,14 @@ var INTERNAL_ROLE_PROMPTS = {
     file: "compounder.md",
     authority: "compounder",
     tool_policy: "learning tools"
+  },
+  "lane-steward": {
+    file: "lane-steward.md",
+    authority: "lane-provision",
+    tool_policy: "workspace tools"
   }
 };
+var LANE_EXECUTOR_HOSTS = ["claude-code", "pi"];
 function roleSpec(role) {
   const spec = INTERNAL_ROLE_PROMPTS[role];
   if (!spec)
@@ -13024,7 +13030,6 @@ function findIntegratedCandidate(input) {
 }
 
 // plugins/immune-brain/runtime/unattended/batch_lanes.ts
-var LANE_EXECUTOR_HOSTS = ["claude-code", "pi"];
 var PARALLEL_MISMATCH = "batch_parallel_mismatch";
 var TASK_ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var MAX_LANE_OFFERS = 64;
@@ -13128,7 +13133,16 @@ function createDefaultLaneGitPort() {
       };
     },
     integrate: integrateGuardedLaneCommit,
-    findIntegrated: findIntegratedCandidate
+    findIntegrated: findIntegratedCandidate,
+    auditReachable({ root, head, task_id }) {
+      const listing = gitRead(root, ["ls-tree", "-r", "--name-only", head, "--", `.imm/audit/${task_id}`]);
+      if (listing.status !== 0)
+        return false;
+      const files = listing.stdout.split(`
+`);
+      const runDirs = new Set(files.map((file) => file.slice(0, file.lastIndexOf("/"))));
+      return [...runDirs].some((dir) => files.includes(`${dir}/task-record.json`) && files.includes(`${dir}/terminal-proof.json`));
+    }
   };
 }
 function decideLaneAdmission(input) {
@@ -13152,6 +13166,20 @@ function laneGitOf(input) {
 }
 function serialGitOf(input) {
   return input.git ?? defaultSerialGit();
+}
+function releaseHandoffs(input, record, lanes) {
+  const handoffs = [];
+  for (const child of record.children) {
+    if (child.state !== "integrated" || !child.lane)
+      continue;
+    const facts = lanes.inspectLane(input.root, child.lane.path);
+    if (!facts.exists || !facts.same_repository || !facts.clean || facts.branch !== child.lane.branch)
+      continue;
+    if (!lanes.auditReachable({ root: input.root, head: expectedBatchHead(record), task_id: child.task_id }))
+      continue;
+    handoffs.push({ role: "lane-steward", action: "release", task_id: child.task_id, lane_branch: child.lane.branch });
+  }
+  return handoffs;
 }
 function defaultSerialGit() {
   return createDefaultBatchGitPort();
@@ -13325,7 +13353,9 @@ async function runLaneBatch(input, persisted) {
     record = persisted;
     assertPlanMatches(input, record);
     if (isTerminalBatchState(record.batch_state))
-      return finalizeLane(input.root, record, `terminal state already reached: ${record.batch_state}`, "");
+      return finalizeLane(input.root, record, `terminal state already reached: ${record.batch_state}`, "", {
+        handoffs: record.batch_state === "completed" ? releaseHandoffs(input, record, lanes) : []
+      });
     if (record.batch_state === "needs_human")
       return finalizeLane(input.root, record, "a parked child needs a human decision", "A parked child keeps its Lane. Resolve it by hand, then re-confirm to continue.");
   } else {
@@ -13373,6 +13403,14 @@ async function runLaneBatch(input, persisted) {
       continue;
     record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "integrated", commit: found } : c);
     record.commits = [...record.commits, found];
+    persist();
+  }
+  for (const child of record.children) {
+    if (child.state !== "integrated" || !child.lane)
+      continue;
+    if (lanes.inspectLane(input.root, child.lane.path).exists)
+      continue;
+    record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "released" } : c);
     persist();
   }
   const lineage = existsSync10(join15(input.root, ".git")) ? classifyBatchLineage({
@@ -13554,7 +13592,7 @@ async function runLaneBatch(input, persisted) {
       coordinator_real_path: coordinatorReal,
       expected_branch: laneBranchName(record.initiative_slug, child.task_id),
       batch_head: head,
-      bound_paths: record.children.flatMap((c) => c.lane ? [c.lane.path] : [])
+      bound_paths: record.children.flatMap((c) => c.lane && c.state !== "released" ? [c.lane.path] : [])
     });
     if (reason) {
       refusals.push({ ...offer, reason });
@@ -13572,7 +13610,10 @@ async function runLaneBatch(input, persisted) {
   if (record.children.every((c) => c.state === "integrated" || c.state === "released")) {
     record.batch_state = "completed";
     persist();
-    return finalizeLane(input.root, record, "all enrollable children integrated", "", { refusals });
+    return finalizeLane(input.root, record, "all enrollable children integrated", "", {
+      handoffs: releaseHandoffs(input, record, lanes),
+      refusals
+    });
   }
   const handoffs = [];
   for (const child of record.children) {
@@ -13590,6 +13631,7 @@ async function runLaneBatch(input, persisted) {
       lane_branch: child.lane.branch
     });
   }
+  handoffs.push(...releaseHandoffs(input, record, lanes));
   const inFlight = record.children.filter((c) => IN_FLIGHT.has(c.state));
   const startable = startableChildren(scheduleView(input, record), limit);
   const overBudget = consumedSlots(record) >= record.budget.max_children;

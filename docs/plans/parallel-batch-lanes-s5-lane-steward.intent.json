@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "parallel-batch-lanes-s5-lane-steward",
-  "owner": "user",
   "goal": "Implement Slice S5 of docs/specs/parallel-batch-lanes.spec.md (Initiative parallel-batch-lanes): the lane-steward role is routable with its packaged mirror, an integrated clean Lane receives a release handoff, and the batch records the Lane released once its path is gone.",
   "acceptance": [
     {
@@ -19,6 +18,7 @@
     ".changeset/parallel-batch-lanes-s5-lane-steward.md",
     "CONTEXT.md",
     "docs/plans/parallel-batch-lanes-s5-lane-steward.intent.json",
+    "docs/reference/workflow-and-subagents.md",
     "docs/specs/parallel-batch-lanes.spec.md",
     "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
     "plugins/immune-brain/dist/claude/mcp-server.mjs",
@@ -48,5 +48,6 @@
     "tests/unattended-contracts.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

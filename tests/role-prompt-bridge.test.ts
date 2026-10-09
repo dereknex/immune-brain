@@ -27,6 +27,7 @@ const ROLES: InternalRole[] = [
 	"arch-explorer",
 	"advisory-reviewer",
 	"compounder",
+	"lane-steward",
 ];
 
 function read(path: string): string {

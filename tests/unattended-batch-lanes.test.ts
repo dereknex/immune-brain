@@ -899,3 +899,197 @@ describe("max_parallel above 1", () => {
 		}
 	});
 });
+
+/** The serial port, but each delivery also carries the child's tracked audit pair. */
+function laneGitWithAudit(): BatchRunnerGitPort {
+	const base = laneGit();
+	return {
+		...base,
+		async commitChild(...args: Parameters<BatchRunnerGitPort["commitChild"]>) {
+			const [root, taskId] = args;
+			const dir = join(root, ".imm/audit", taskId, "run-1");
+			mkdirSync(dir, { recursive: true });
+			writeFileSync(join(dir, "task-record.json"), "{}\n");
+			writeFileSync(join(dir, "terminal-proof.json"), "{}\n");
+			git(root, "add", "-f", ".imm/audit");
+			return base.commitChild(...args);
+		},
+	};
+}
+
+const releases = (report: BatchLaneRunReport) =>
+	report.handoffs.filter((h) => h.role === "lane-steward" && h.action === "release");
+
+/** Run task-a through its Lane to `integrated`; task-b stays pending behind it. */
+async function integrateTaskA(fx: Fixture, gitPort: BatchRunnerGitPort) {
+	const kernel = laneKernel();
+	const children = [child("task-a", "S1"), child("task-b", "S2", ["task-a"])];
+	const args = request(fx, children, kernel, { git: gitPort });
+	await startBatch(args);
+	const laneA = fx.lane("task-a");
+	await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] });
+	writeFileSync(join(laneA, "a.txt"), "a\n");
+	kernel.frozen.add("task-a");
+	const report = lanes(await startBatch(args));
+	return { args, kernel, laneA, report };
+}
+
+describe("lane release", () => {
+	it("offers release for an integrated clean Lane, records released once its path is gone, and keeps a present Lane integrated", async () => {
+		const fx = fixture();
+		try {
+			const kernel = laneKernel();
+			const children = [child("task-a", "S1"), child("task-b", "S2", ["task-a"])];
+			const args = request(fx, children, kernel, { git: laneGitWithAudit() });
+			await startBatch(args);
+			const laneA = fx.lane("task-a");
+			const enrolled = lanes(await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] }));
+			expect(releases(enrolled)).toEqual([]); // an unintegrated Lane is never offered for release
+
+			writeFileSync(join(laneA, "a.txt"), "a\n");
+			kernel.frozen.add("task-a");
+			const third = lanes(await startBatch(args));
+			expect(third.children.map((c) => c.state)).toEqual(["integrated", "pending"]);
+			expect(releases(third)).toEqual([
+				{ role: "lane-steward", action: "release", task_id: "task-a", lane_branch: laneBranchName(SLUG, "task-a") },
+			]);
+			// The runtime asked; it removed neither the worktree nor the branch.
+			expect(existsSync(laneA)).toBe(true);
+			expect(git(fx.repo, "rev-parse", "--verify", laneBranchName(SLUG, "task-a"))).toBeTruthy();
+
+			// The steward (played by the test) removes the Lane; a later tick observes the path gone.
+			git(fx.repo, "worktree", "remove", laneA);
+			const laneB = fx.lane("task-b");
+			const fourth = lanes(await startBatch({ ...args, lane_offers: [{ task_id: "task-b", path: laneB }] }));
+			expect(fourth.children.map((c) => c.state)).toEqual(["released", "enrolled"]);
+			expect(fourth.children[0]!.commit).toBe(third.commits[0]!);
+			expect(fourth.children[0]!.lane).toMatchObject({ branch: laneBranchName(SLUG, "task-a") });
+			expect(fourth.commits).toEqual(third.commits);
+			expect(releases(fourth)).toEqual([]);
+
+			// A Lane that is still present stays integrated and the batch still completes.
+			writeFileSync(join(laneB, "b.txt"), "b\n");
+			kernel.frozen.add("task-b");
+			const done = lanes(await startBatch(args));
+			expect(done.batch_state).toBe("completed");
+			expect(done.children.map((c) => c.state)).toEqual(["released", "integrated"]);
+			expect(releases(done)).toMatchObject([{ task_id: "task-b" }]);
+			expect(existsSync(laneB)).toBe(true);
+			expect(readAnyBatchRunState(fx.repo, BATCH_ID)).toMatchObject({ batch_state: "completed" });
+
+			// A repeated call on the terminal batch still names the Lane left to release, and writes nothing.
+			const again = lanes(await startBatch(args));
+			expect(again.batch_state).toBe("completed");
+			expect(releases(again)).toMatchObject([{ task_id: "task-b" }]);
+			expect(again.children.map((c) => c.state)).toEqual(["released", "integrated"]);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("offers no release when the audit pair is not on the batch branch", async () => {
+		const fx = fixture();
+		try {
+			const { report, laneA } = await integrateTaskA(fx, laneGit());
+			expect(report.children.map((c) => c.state)).toEqual(["integrated", "pending"]);
+			expect(existsSync(laneA)).toBe(true);
+			expect(releases(report)).toEqual([]);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("offers no release while the Lane is dirty or switched off its branch, and offers it again once restored", async () => {
+		const fx = fixture();
+		try {
+			const { args, laneA, report } = await integrateTaskA(fx, laneGitWithAudit());
+			expect(releases(report)).toHaveLength(1);
+
+			writeFileSync(join(laneA, "scratch.txt"), "unsaved\n");
+			const dirty = lanes(await startBatch(args));
+			expect(dirty.children[0]!.state).toBe("integrated");
+			expect(releases(dirty)).toEqual([]);
+			rmSync(join(laneA, "scratch.txt"));
+
+			git(laneA, "checkout", "-q", "-b", "scratch-branch");
+			const switched = lanes(await startBatch(args));
+			expect(switched.children[0]!.state).toBe("integrated");
+			expect(releases(switched)).toEqual([]);
+			git(laneA, "checkout", "-q", laneBranchName(SLUG, "task-a"));
+
+			const restored = lanes(await startBatch(args));
+			expect(releases(restored)).toHaveLength(1);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	// The audit pair is reported reachable for every task, so only the child's own state can withhold release.
+	const auditAlwaysReachable = (): BatchRunnerGitPort =>
+		({
+			...laneGitWithAudit(),
+			lane: { ...createDefaultLaneGitPort(), auditReachable: () => true },
+		}) as BatchRunnerGitPort;
+
+	it("offers no release for a parked child even when its audit pair looks reachable", async () => {
+		const fx = fixture({ "task-a": 'process.exit(require("node:fs").existsSync("never.txt") ? 0 : 1)' });
+		try {
+			const { report, laneA } = await integrateTaskA(fx, auditAlwaysReachable());
+			expect(report.children.map((c) => c.state)).toEqual(["needs_human", "skipped_blocked"]);
+			expect(existsSync(laneA)).toBe(true);
+			expect(releases(report)).toEqual([]);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("offers no release for an enrolled Lane even when its audit pair looks reachable", async () => {
+		const fx = fixture();
+		try {
+			const kernel = laneKernel();
+			const children = [child("task-a", "S1"), child("task-b", "S2", ["task-a"])];
+			const args = request(fx, children, kernel, { git: auditAlwaysReachable() });
+			await startBatch(args);
+			const laneA = fx.lane("task-a");
+			const enrolled = lanes(await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] }));
+			expect(enrolled.children.map((c) => c.state)).toEqual(["enrolled", "pending"]);
+			expect(releases(enrolled)).toEqual([]);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("finds the audit pair only as a complete pair for the named task on the given head", async () => {
+		const fx = fixture();
+		try {
+			const port = createDefaultLaneGitPort();
+			const dir = join(fx.repo, ".imm/audit/task-a/run-1");
+			mkdirSync(dir, { recursive: true });
+			writeFileSync(join(dir, "task-record.json"), "{}\n");
+			git(fx.repo, "add", "-f", ".imm/audit");
+			git(fx.repo, "commit", "-q", "-m", "half a pair");
+			const half = git(fx.repo, "rev-parse", "HEAD");
+			expect(port.auditReachable({ root: fx.repo, head: half, task_id: "task-a" })).toBe(false);
+
+			writeFileSync(join(dir, "terminal-proof.json"), "{}\n");
+			git(fx.repo, "add", "-f", ".imm/audit");
+			git(fx.repo, "commit", "-q", "-m", "whole pair");
+			const whole = git(fx.repo, "rev-parse", "HEAD");
+			expect(port.auditReachable({ root: fx.repo, head: whole, task_id: "task-a" })).toBe(true);
+			expect(port.auditReachable({ root: fx.repo, head: whole, task_id: "task-b" })).toBe(false);
+			expect(port.auditReachable({ root: fx.repo, head: fx.base, task_id: "task-a" })).toBe(false);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("never deletes a branch or a worktree from the lane modules", () => {
+		const root = join(import.meta.dir, "../plugins/immune-brain/runtime/unattended");
+		for (const file of ["batch_lanes.ts", "batch_integration.ts"]) {
+			const source = readFileSync(join(root, file), "utf8");
+			expect(source, file).not.toMatch(/["'`]branch["'`]\s*,\s*["'`]-[dDm]/);
+			expect(source, file).not.toMatch(/["'`](worktree|prune|rm)["'`]/);
+			expect(source, file).not.toMatch(/\b(rmSync|unlinkSync|rmdirSync)\b/);
+		}
+	});
+});

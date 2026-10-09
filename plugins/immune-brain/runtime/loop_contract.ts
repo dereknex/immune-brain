@@ -9,6 +9,7 @@
  */
 import {
 	buildRoleDelegationPacket,
+	LANE_EXECUTOR_HOSTS,
 	type RoleDelegationContext,
 	type RoleDelegationPacket,
 	type InternalRole,
@@ -30,7 +31,8 @@ export type LoopRouteTarget =
 	| "pr-repair"
 	| "architecture-exploration"
 	| "advisory-review"
-	| "compounder";
+	| "compounder"
+	| "lane-supply";
 export type LoopRouteNext =
 	| "executor"
 	| "test-fixer"
@@ -38,6 +40,7 @@ export type LoopRouteNext =
 	| "arch-explorer"
 	| "advisory-reviewer"
 	| "compounder"
+	| "lane-steward"
 	| "imm_kernel_canary"
 	| "imm-planner";
 
@@ -74,6 +77,12 @@ export function resolveLoopRoute(input: {
 		}
 		return { entry: "imm-run", next: "compounder" };
 	}
+	if (input.target === "lane-supply") {
+		if (input.ownership !== "loop") {
+			throw new Error("Lane supply routing requires Loop ownership");
+		}
+		return { entry: "imm-run", next: "lane-steward" };
+	}
 	if (input.ownership === "kernel") {
 		return { entry: "imm-run", next: "imm_kernel_canary" };
 	}
@@ -99,7 +108,13 @@ export type LoopAction =
 	| { entry: "imm-run"; next: "executor"; context: LoopRoleContext }
 	| {
 			entry: "imm-run";
-			next: "test-fixer" | "pr-fix" | "arch-explorer" | "advisory-reviewer" | "compounder";
+			next:
+				| "test-fixer"
+				| "pr-fix"
+				| "arch-explorer"
+				| "advisory-reviewer"
+				| "compounder"
+				| "lane-steward";
 			dispatch: LoopRoleDispatch;
 	  }
 	| {
@@ -138,6 +153,36 @@ function hasReusableLearningEvidence(context: RoleDelegationContext): boolean {
 			nonEmptyString(evidence.evidence_ref) !== null
 		);
 	});
+}
+
+/**
+ * A lane-steward dispatch carries exactly one batch handoff. A provision names
+ * the branch, the base and the Executor Hosts to choose from, limited to the
+ * allowlist, so a handoff offering any other Host is refused before a role
+ * prompt is built. A release names the Lane branch.
+ */
+function assertLaneStewardHandoff(context: RoleDelegationContext): void {
+	if (!nonEmptyString(context.lane_branch)) {
+		throw new Error("lane-steward dispatch requires a lane_branch");
+	}
+	if (context.action === "release") return;
+	if (context.action !== "provision") {
+		throw new Error("lane-steward dispatch requires action provision or release");
+	}
+	if (!nonEmptyString(context.base_head)) {
+		throw new Error("lane-steward provision requires a base_head");
+	}
+	const hosts = context.executor_hosts;
+	const allowed: readonly string[] = LANE_EXECUTOR_HOSTS;
+	if (
+		!Array.isArray(hosts) ||
+		hosts.length === 0 ||
+		!hosts.every((host) => typeof host === "string" && allowed.includes(host))
+	) {
+		throw new Error(
+			`lane-steward provision offers only ${LANE_EXECUTOR_HOSTS.join(", ")}`,
+		);
+	}
 }
 
 export function buildLoopAction(input: {
@@ -192,6 +237,14 @@ export function buildLoopAction(input: {
 			entry: "imm-run",
 			next: "arch-explorer",
 			dispatch: buildLoopRoleDispatch({ role: "arch-explorer", context: input.context }),
+		};
+	}
+	if (route.next === "lane-steward") {
+		assertLaneStewardHandoff(input.context);
+		return {
+			entry: "imm-run",
+			next: "lane-steward",
+			dispatch: buildLoopRoleDispatch({ role: "lane-steward", context: input.context }),
 		};
 	}
 	if (route.next === "advisory-reviewer") {

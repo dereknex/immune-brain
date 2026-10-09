@@ -32,9 +32,9 @@ import {
 	writeBatchRunReport,
 } from "./batch_state";
 import { createDefaultBatchGitPort, type BatchRunnerGitPort } from "./batch_git";
+import { LANE_EXECUTOR_HOSTS } from "../role_prompt_bridge";
 
-/** Hosts that may run a Lane's Executor; the steward may launch only these. */
-export const LANE_EXECUTOR_HOSTS = ["claude-code", "pi"] as const;
+export { LANE_EXECUTOR_HOSTS };
 
 export type LaneAdmissionReason =
 	| "batch_lane_foreign_repository"
@@ -132,6 +132,12 @@ export interface BatchLaneGitPort {
 		lane_base: string;
 		lane_commit: string;
 	}): string | null;
+	/**
+	 * The child's `.imm/audit/<task_id>/` terminal evidence pair is reachable
+	 * from `head`. A Lane store is lost on release, so release is offered only
+	 * when the tracked pair already survives on the batch branch.
+	 */
+	auditReachable(input: { root: string; head: string; task_id: string }): boolean;
 }
 
 function gitRead(root: string, args: string[]): { status: number | null; stdout: string } {
@@ -201,6 +207,15 @@ export function createDefaultLaneGitPort(): BatchLaneGitPort {
 		},
 		integrate: integrateGuardedLaneCommit,
 		findIntegrated: findIntegratedCandidate,
+		auditReachable({ root, head, task_id }) {
+			const listing = gitRead(root, ["ls-tree", "-r", "--name-only", head, "--", `.imm/audit/${task_id}`]);
+			if (listing.status !== 0) return false;
+			const files = listing.stdout.split("\n");
+			const runDirs = new Set(files.map((file) => file.slice(0, file.lastIndexOf("/"))));
+			return [...runDirs].some(
+				(dir) => files.includes(`${dir}/task-record.json`) && files.includes(`${dir}/terminal-proof.json`),
+			);
+		},
 	};
 }
 
@@ -233,6 +248,28 @@ function laneGitOf(input: StartBatchInput): BatchLaneGitPort {
 
 function serialGitOf(input: StartBatchInput): Pick<BatchRunnerGitPort, "preflight" | "commitChild" | "lookupBatchCommit"> {
 	return input.git ?? defaultSerialGit();
+}
+
+/**
+ * Release handoffs for integrated Lanes that are safe to remove: the Lane is
+ * still present on its own branch, clean, and its audit pair already sits on
+ * the batch branch. A parked, failed, dirty or unintegrated Lane never appears.
+ * Read-only: the runtime asks the steward to remove a Lane and never does it.
+ */
+function releaseHandoffs(
+	input: StartBatchInput,
+	record: BatchLaneRunStateRecord,
+	lanes: BatchLaneGitPort,
+): BatchLaneHandoff[] {
+	const handoffs: BatchLaneHandoff[] = [];
+	for (const child of record.children) {
+		if (child.state !== "integrated" || !child.lane) continue;
+		const facts = lanes.inspectLane(input.root, child.lane.path);
+		if (!facts.exists || !facts.same_repository || !facts.clean || facts.branch !== child.lane.branch) continue;
+		if (!lanes.auditReachable({ root: input.root, head: expectedBatchHead(record), task_id: child.task_id })) continue;
+		handoffs.push({ role: "lane-steward", action: "release", task_id: child.task_id, lane_branch: child.lane.branch });
+	}
+	return handoffs;
 }
 
 function defaultSerialGit(): BatchRunnerGitPort {
@@ -469,7 +506,9 @@ export async function runLaneBatch(
 		record = persisted;
 		assertPlanMatches(input, record);
 		if (isTerminalBatchState(record.batch_state))
-			return finalizeLane(input.root, record, `terminal state already reached: ${record.batch_state}`, "");
+			return finalizeLane(input.root, record, `terminal state already reached: ${record.batch_state}`, "", {
+				handoffs: record.batch_state === "completed" ? releaseHandoffs(input, record, lanes) : [],
+			});
 		if (record.batch_state === "needs_human")
 			return finalizeLane(
 				input.root,
@@ -521,6 +560,16 @@ export async function runLaneBatch(
 		if (!found) continue;
 		record.children = record.children.map((c) => (c.task_id === child.task_id ? { ...c, state: "integrated", commit: found } : c));
 		record.commits = [...record.commits, found];
+		persist();
+	}
+
+	// Record a release once the Lane path is observed gone. The commit and the
+	// Lane binding stay; an integrated child whose Lane is still present is left
+	// integrated, and a terminal record is never rewritten.
+	for (const child of record.children) {
+		if (child.state !== "integrated" || !child.lane) continue;
+		if (lanes.inspectLane(input.root, child.lane.path).exists) continue;
+		record.children = record.children.map((c) => (c.task_id === child.task_id ? { ...c, state: "released" } : c));
 		persist();
 	}
 
@@ -746,7 +795,7 @@ export async function runLaneBatch(
 			coordinator_real_path: coordinatorReal,
 			expected_branch: laneBranchName(record.initiative_slug, child.task_id),
 			batch_head: head,
-			bound_paths: record.children.flatMap((c) => (c.lane ? [c.lane.path] : [])),
+			bound_paths: record.children.flatMap((c) => (c.lane && c.state !== "released" ? [c.lane.path] : [])),
 		});
 		if (reason) {
 			refusals.push({ ...offer, reason });
@@ -765,7 +814,10 @@ export async function runLaneBatch(
 	if (record.children.every((c) => c.state === "integrated" || c.state === "released")) {
 		record.batch_state = "completed";
 		persist();
-		return finalizeLane(input.root, record, "all enrollable children integrated", "", { refusals });
+		return finalizeLane(input.root, record, "all enrollable children integrated", "", {
+			handoffs: releaseHandoffs(input, record, lanes),
+			refusals,
+		});
 	}
 	const handoffs: BatchLaneHandoff[] = [];
 	for (const child of record.children) {
@@ -781,6 +833,7 @@ export async function runLaneBatch(
 			lane_branch: child.lane.branch,
 		});
 	}
+	handoffs.push(...releaseHandoffs(input, record, lanes));
 	const inFlight = record.children.filter((c) => IN_FLIGHT.has(c.state));
 	const startable = startableChildren(scheduleView(input, record), limit);
 	const overBudget = consumedSlots(record) >= record.budget.max_children;

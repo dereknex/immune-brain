@@ -188,6 +188,18 @@ disjoint sibling keeps moving. A lost Lane parks as `batch_lane_lost`, and
 `max_parallel` is refused with `batch_parallel_mismatch`. A Lane holds no batch
 state and its Host session never re-enters the batch.
 
+After a child is integrated, its Lane is clean and its `.imm/audit/<task-id>/`
+pair is reachable from the batch branch, the report carries a
+`{ role: "lane-steward", action: "release" }` handoff for that Lane. A parked,
+failed, dirty or unintegrated Lane, or one whose audit pair is not on the batch
+branch, is never offered for release. The runner removes no worktree and deletes
+no branch: it records the child `released` only when a later tick observes the
+Lane path gone, and a Lane that is still present stays `integrated` while the
+batch still completes. The `lane-steward` internal role handles both handoffs; it
+launches only an allowlisted Executor Host (`claude-code` or `pi`), follows the
+project's own instructions to prepare a Lane, and reports "cannot supply" rather
+than improvising.
+
 ## Decisions and Recovery
 
 - Resume from authority facts, not prose. After an uncertain interruption, bind

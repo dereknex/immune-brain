@@ -706,6 +706,7 @@ export type BatchLaneHandoff =
 			base_head: string;
 			executor_hosts: readonly string[];
 	  }
+	| { role: "lane-steward"; action: "release"; task_id: string; lane_branch: string }
 	| {
 			role: "executor";
 			task_id: string;
