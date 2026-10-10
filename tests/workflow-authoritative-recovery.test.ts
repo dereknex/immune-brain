@@ -146,10 +146,15 @@ describe("S3 authoritative recovery consumer", () => {
 		expect(contract).toContain(
 			"If a summary claimed more than the projection proves",
 		);
-		// Exit summary shape is unchanged.
+		// Exit summary shape is unchanged, plus one informational line.
 		for (const line of ["Task:", "Completed work:", "QA:", "Review:", "Stop reason:", "Next action:"]) {
 			expect(LOOP).toContain(line);
 		}
+		expect(contract).toContain("pending manual walkthrough");
+		expect(contract).toContain(
+			"the line is informational and changes no stop reason, obligation, or completion fact",
+		);
+		expect(contract).toContain("absent when that Slice owns no manual scenario");
 	});
 
 	test("the Loop loader routes recovery to the authority rules", () => {

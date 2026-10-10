@@ -200,6 +200,32 @@ describe("S1 relevant traversal and conserved handoff", () => {
 		);
 	});
 
+	test("Planner carries user scenarios, maps them one way, and exempts internal work", () => {
+		const contract = flat(PLANNER);
+		for (const fragment of [
+			"A Spec for work with a user-observable change has a `User scenarios` section",
+			"keeps its upstream `BR-SCN-<n>` ID",
+			"confirmed in clarification and recorded as Spec-local `SCN-<n>` sourced to that confirmation",
+			"`automated` with at least one acceptance ID",
+			"`manual` with the reason it cannot be automated",
+			"the mapping is one-way",
+			"a scenario belongs to exactly one Slice",
+			"the one that first makes it observable",
+			"`BR-SCN-*` items fall under the existing handoff completeness check",
+			"each Slice's scenario IDs or its exemption",
+		]) {
+			expect(contract).toContain(fragment);
+		}
+		// Negative controls.
+		expect(contract).toContain("a scenario with no source is a defect");
+		expect(contract).toContain("`no user-visible change` requires a recorded reason");
+		// Bound: the existing no-confirmation sentence and its assertion stay.
+		expect(contract).toContain("add a mandatory user confirmation");
+		expect(flat(COMPACT_PLANNER)).toContain(
+			"a Spec carries user scenarios mapped one way to acceptance, or records `no user-visible change` with a reason",
+		);
+	});
+
 	test("the generalized integration-to-CLI counterexample fails the completeness check", () => {
 		const result = checkHandoffCompleteness(
 			{

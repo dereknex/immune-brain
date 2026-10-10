@@ -211,4 +211,23 @@ describe("Brainstorm decision probing contracts", () => {
 			expect(scenario.userInput).toContain("Do not create or edit any files");
 		}
 	});
+
+	it("hands off a confirmed user scenario as a BR-SCN manifest class", () => {
+		const brainstorm = flat(BRAINSTORM);
+		for (const fragment of [
+			"`BR-SCN-*` for a confirmed user scenario",
+			"exactly `Actor`, `Given`, `When`, `Then`",
+			"written in English",
+			"a result the actor observes directly",
+			"never an internal state or a test file name",
+		]) {
+			expect(brainstorm).toContain(fragment);
+		}
+		expect(brainstorm).toContain(
+			"framing without a user-observable change gets no invented scenario",
+		);
+		expect(flat(COMPACT_BRAINSTORM)).toContain(
+			"a confirmed user scenario is a `BR-SCN-*` item with Actor, Given, When, Then",
+		);
+	});
 });

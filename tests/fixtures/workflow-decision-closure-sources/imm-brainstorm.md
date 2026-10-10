@@ -95,8 +95,8 @@ reflected without change. If the summary introduces or changes a
 decision, ask for explicit confirmation of only that decision delta
 and block Planner handoff until it is answered. Agent judgment alone never
 confirms a proposed direction or scope. Persist only final decisions: map them
-to `BR-REQ-*`, `BR-DEC-*`, `BR-OUT-*`, `BR-DEFER-*`, resolved `BR-Q-*`,
-and `BR-SCN-*` manifest entries; do not copy the question transcript into repository artifacts.
+to `BR-REQ-*`, `BR-DEC-*`, `BR-OUT-*`, `BR-DEFER-*`, and resolved `BR-Q-*`
+manifest entries; do not copy the question transcript into repository artifacts.
 
 ## Explicit exhaustive interrogation
 
@@ -119,7 +119,7 @@ empty, or report remaining blocked/open nodes if the user stops early.
 - **Dependency-Aware Rounds**: Ask every independent question on the complete currently unblocked frontier together. Ask fewer questions only because dependencies keep downstream branches blocked, never because of an arbitrary question budget.
 - **Read-only by default**: Inspect context and summarize the problem. do not implement inside this skill.
 - **Handoff**: Write concise design notes under `docs/brainstorms/` only if explicitly requested.
-- **Handoff Manifest**: When framing is stable, user-confirmed, and routes to planner, include a compact `Brainstorm manifest` with stable IDs for every planner-relevant item: `BR-REQ-*` for confirmed requirements, `BR-DEC-*` for confirmed decisions, `BR-OUT-*` for non-goals, `BR-DEFER-*` for explicitly deferred items, `BR-Q-*` for open questions, and `BR-SCN-*` for a confirmed user scenario. A `BR-SCN-*` item has exactly `Actor`, `Given`, `When`, `Then`, written in English. `Then` states a result the actor observes directly — command output, a file, an Issue or UI state — and never an internal state or a test file name. Record a scenario only for framing that changes user-observable behavior: framing without a user-observable change gets no invented scenario. The manifest is the closed-world handoff; the planner must account for every ID instead of relying on prose memory.
+- **Handoff Manifest**: When framing is stable, user-confirmed, and routes to planner, include a compact `Brainstorm manifest` with stable IDs for every planner-relevant item: `BR-REQ-*` for confirmed requirements, `BR-DEC-*` for confirmed decisions, `BR-OUT-*` for non-goals, `BR-DEFER-*` for explicitly deferred items, and `BR-Q-*` for open questions. The manifest is the closed-world handoff; the planner must account for every ID instead of relying on prose memory.
 - **Default Next Route**: Route to `imm-planner` when the material frontier is empty, no required fact blocks the handoff, and every material user decision is settled by a direct requirement, explicit answer, or adopted recommendation. An unchanged final summary is a correction window, not another gate. If Brainstorm introduces a new decision, ask for that delta and do not name `imm-planner` as the current next skill.
 - **Subagents**: Only when optional research is needed, read Research Dispatch and its shared dispatch reference. Default to inline evidence gathering; do not load dispatch instructions merely because Brainstorm was invoked.
 - **Rejected Decision Evidence**: Use on-demand rejected-decision evidence instead of a global preflight. When a live branch resembles a rejected decision, resolve its recorded reason and optional `reconsider_if` conditions through code/docs inspection before asking the user. Treat each `reconsider_if` list item as an independently sufficient trigger (OR semantics): if available evidence satisfies none, keep the rejection as a current constraint or non-goal without re-litigation; if evidence satisfies one, reopen the decision and cite the condition plus changed evidence; if a condition cannot be resolved, ask only for that concrete missing fact. When `reconsider_if` is absent, preserve the backwards-compatible "what has changed?" fallback after inspection. When `rejection_reason` is absent, inspect an explicit rejection-reason section in the body; if no reason exists, report the metadata gap without inventing a reason or reconsideration condition.
@@ -150,7 +150,7 @@ Agreement becomes framing evidence. Disagreement becomes decision criteria or an
 
 **Dispatch behavior:** Use Pi native `Explore` subagents (`subagent_type: "Explore"`). Each prompt must state a bounded read-only scope and returns a structured summary (affected files, conventions found, risks). The parent brainstorm agent merges summaries before producing the output artifact. Research subagents do not write files, specs, plans, or `.imm/` state.
 
-**Manifest mapping:** Repo-local runtimes use `imm_core.brainstorm_research` to keep research probes host-bound and manifest-oriented. Every child summary that affects planning must map to a Brainstorm manifest ID: `BR-REQ-*`, `BR-DEC-*`, `BR-OUT-*`, `BR-DEFER-*`, `BR-Q-*`, or `BR-SCN-*`. Any unmapped or unresolved research question becomes a `BR-Q-*`; open `BR-Q-*` items block planner handoff.
+**Manifest mapping:** Repo-local runtimes use `imm_core.brainstorm_research` to keep research probes host-bound and manifest-oriented. Every child summary that affects planning must map to a Brainstorm manifest ID: `BR-REQ-*`, `BR-DEC-*`, `BR-OUT-*`, `BR-DEFER-*`, or `BR-Q-*`. Any unmapped or unresolved research question becomes a `BR-Q-*`; open `BR-Q-*` items block planner handoff.
 
 **Failure handling:** If research dispatch is unavailable or fails, continue with solo inline investigation. Record the fallback reason per the shared protocol.
 

@@ -16,7 +16,9 @@ grants execution authority — only the native Enrollment gate can. Every Spec d
 user-owned one with no source is removed or returned for clarification. Before
 handoff it maps every upstream item and required phase exactly once and reports
 each Slice result plus the remaining gap; a plan that conserves a smaller
-deliverable than the confirmed outcome fails that check instead of passing.
+deliverable than the confirmed outcome fails that check instead of passing, and a
+Spec carries user scenarios mapped one way to acceptance, or records `no
+user-visible change` with a reason.
 
 Section routes - load a section's instructions only when its branch applies.
 Read each linked heading body up to the next heading; nested sections and

@@ -32,4 +32,4 @@ worktree, or unmanaged implementation.
 Every sourced branch closes as resolved, explicitly excluded, explicitly
 deferred, or dependent-blocked with its blocking node named, including for a
 clear zero-question request; a confirmed outcome is never conserved as a
-smaller deliverable.
+smaller deliverable, and a confirmed user scenario is a `BR-SCN-*` item with Actor, Given, When, Then, written in English, whose Then is a result the actor observes directly; framing without a user-observable change gets no invented scenario.

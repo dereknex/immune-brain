@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "user-scenarios-s1-planner-contract",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:user-scenarios-s1-planner-contract:2026-10-10T03:51:51.332Z",
+  "final_record_hash": "sha256:2cd4af4e9e2ddeafeee98995e6954ea31ad6cc33f84f78973a365a5a9408edf8",
+  "terminalized_at": "2026-10-10T03:51:51.332Z"
+}
