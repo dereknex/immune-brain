@@ -395,7 +395,7 @@ export default function (
 			const text = Array.isArray(result.content)
 				? result.content.filter((part) => typeof part?.text === "string").map((part) => part.text as string).join("\n")
 				: "";
-			if (text) progression.piReviewHost.observeReviewResult(result.toolCallId, text);
+			progression.piReviewHost.observeReviewResult(result.toolCallId, text);
 		}
 		if (result.toolName === "imm_canary_enrollment" && ctx) {
 			const taskId = typeof result.details?.task_id === "string" ? result.details.task_id : undefined;
@@ -1520,6 +1520,7 @@ async function enrichAssuranceResult(
 function nextActionForAssuranceResult(result: Record<string, unknown>, taskState: AssuranceTaskState): string {
 	const derived = result.recovery as { next_action: string } | undefined;
 	if (derived) return derived.next_action;
+	if (typeof result.recovery_action === "string") return result.recovery_action;
 	const recovery = recoveryActionForAssuranceFailure(
 		"error" in taskState ? taskState.error : result.reason,
 	);

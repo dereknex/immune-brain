@@ -11,7 +11,10 @@ import type { AssuranceCoordinator, AssuranceSubmitReviewResult, HostContext } f
 
 export function extractVerdictJson(input: unknown): Record<string, unknown> | null {
 	if (typeof input === "string") {
-		const cleaned = input.split("\n").map((line) => line.trim()).filter((line) => line.startsWith("{") && line.endsWith("}")).join("");
+		// Agent transport prefixes a status line to the strict JSON verdict.
+		const first = input.indexOf("{");
+		const last = input.lastIndexOf("}");
+		const cleaned = first >= 0 && last >= first ? input.slice(first, last + 1) : "";
 		if (!cleaned) return null;
 		try { return JSON.parse(cleaned) as Record<string, unknown>; } catch { return null; }
 	}
@@ -63,18 +66,32 @@ export async function submitMediatedReview(
 	verdictInput: unknown,
 	inspect: () => ReviewObservation,
 ): Promise<AssuranceSubmitReviewResult> {
+	// Preserve uncertain authority settlement before inspecting a released receipt.
+	if (coordinator.active(taskId)?.state === "settlement_unknown") {
+		return coordinator.submitReview(taskId, ctx, verdictInput);
+	}
 	const observed = inspect();
 	if (!observed.ok) {
 		if (observed.release) return withReviewRecovery(coordinator.abandonReview(taskId, observed.reason), RELEASED_REVIEW_RECOVERY);
 		return { state: "blocked", reason: observed.reason, recovery_action: RETAINED_REVIEW_RECOVERY };
 	}
 	const receiptBytes = observed.receipt.result;
+	const options = {
+		receiptRecoveryAction: RETAINED_REVIEW_RECOVERY,
+		reviewer_verdict_sha256: digestOfReviewerBytes(receiptBytes),
+		validateReceipt: () => {
+			const current = inspect();
+			if (!current.ok) return current.reason;
+			return current.receipt.actorId === observed.receipt.actorId && current.receipt.result === receiptBytes
+				? null : "reviewer receipt changed during submission";
+		},
+	};
 	if (verdictInput === undefined) {
 		// ADR 0017: the host-observed reviewer bytes are the submission.
 		if (!coordinator.isReviewVerdictValid(taskId, receiptBytes)) {
 			return withReviewRecovery(coordinator.abandonReview(taskId, "reviewer receipt is not a valid verdict"), RELEASED_REVIEW_RECOVERY);
 		}
-		return coordinator.submitReview(taskId, ctx, receiptBytes, { reviewer_verdict_sha256: digestOfReviewerBytes(receiptBytes) });
+		return coordinator.submitReview(taskId, ctx, receiptBytes, options);
 	}
 	const parentValid = coordinator.isReviewVerdictValid(taskId, verdictInput);
 	if (!parentValid) return coordinator.submitReview(taskId, ctx, verdictInput);
@@ -86,5 +103,5 @@ export async function submitMediatedReview(
 	if (!parentJson || !receiptJson || verdictFingerprint(parentJson) !== verdictFingerprint(receiptJson)) {
 		return { state: "blocked", reason: "parent verdict does not match reviewer receipt", recovery_action: MISMATCH_REVIEW_RECOVERY };
 	}
-	return coordinator.submitReview(taskId, ctx, verdictInput, { reviewer_verdict_sha256: digestOfReviewerBytes(receiptBytes) });
+	return coordinator.submitReview(taskId, ctx, verdictInput, options);
 }

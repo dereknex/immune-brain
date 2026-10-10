@@ -21,6 +21,7 @@ import {
 	reconcileKernelAuthority,
 } from "./storage";
 import { projectTask, resolveProjectedRisk } from "./completion";
+import { inspectSpecBinding } from "./spec_binding";
 import { taskDeliveryIdentity } from "../workspace_scope";
 import type { AssuranceObligation, TaskIntentV1, TaskRecord, TaskRecordV3 } from "./types";
 import type { TaskRecordV2 } from "./legacy_task_record";
@@ -236,7 +237,9 @@ function projectFromRecord(
 		independence_violations: decision.independence_violations,
 		open_user_decision_count: openUserDecisionCount,
 		completion_ready: decision.complete,
-		authorization: deriveAssuranceAuthorization({
+		authorization: !inspectSpecBinding(intent).ok
+			? { state: "none", blocked: "invalid Spec binding requires a valid breaking intent revision" }
+			: deriveAssuranceAuthorization({
 			next_obligation: decision.next_obligation,
 			open_user_decision_count: openUserDecisionCount,
 		}),

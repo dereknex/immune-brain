@@ -23,6 +23,7 @@ import {
 	parseTaskRecord,
 } from "./validation";
 import { classifyIntentRevision, canonicalIntentHash } from "./intent";
+import { assertValidSpecBinding } from "./spec_binding";
 
 const RISK_RANK: Record<TaskIntentV1["risk"], number> = {
 	routine: 0,
@@ -465,6 +466,7 @@ export function reduceTask(
 		}
 		case "revise_intent":
 		case "approve_breaking_intent_revision": {
+			assertValidSpecBinding(action.next_intent);
 			if (record.lifecycle !== "active")
 				throw new KernelInvariantError([
 					`cannot revise intent while lifecycle is ${record.lifecycle}`,

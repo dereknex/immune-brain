@@ -118,9 +118,11 @@ Agent defaults to the current Pi session model. Only an explicit Parent requirem
 selects another Pi-configured model through host-native `Agent.model`. Kernel
 Review returns a complete foreground `Agent` envelope with empty `name`, `model`,
 `thinking`, `resume`, and `schedule` fields so Pi Host resolves the Review agent
-configuration. The Parent may use any compatible foreground Agent adapter and
-submits the resulting structured verdict directly; lifecycle event matching is
-not part of the local authority contract.
+configuration. A compatible foreground Agent adapter must expose the reserved
+dispatch and its paired result to the host's receipt observer. The Parent submits
+without a verdict to apply those observed bytes; a provided verdict must match
+the correlated receipt. Dispatch/result correlation is part of the local authority
+contract.
 
 ## Pi Agent Invocation
 

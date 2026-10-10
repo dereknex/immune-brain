@@ -422,7 +422,7 @@ function passVerdict(s: SnapshotDescriptor): AssuranceVerdict {
 	};
 }
 
-function completeClaudeReview(host: ClaudeReviewHost, operationId: string, risk: Risk) {
+function completeClaudeReview(host: ClaudeReviewHost, operationId: string, risk: Risk, verdict = passVerdict(snapshot("review", risk))) {
 	const agentId = `claude-agent-${operationId}`;
 	host.observe({ type: "SubagentStart", sessionId: "claude", agent: REVIEWER_AGENT, agentId, taskId: TASK, operationId });
 	host.observe({
@@ -430,7 +430,7 @@ function completeClaudeReview(host: ClaudeReviewHost, operationId: string, risk:
 		sessionId: "claude",
 		agentId,
 		toolName: AGENT_TOOL,
-		result: JSON.stringify(passVerdict(snapshot("review", risk))),
+		result: JSON.stringify(verdict),
 		taskId: TASK,
 		operationId,
 	});
@@ -466,6 +466,7 @@ function sharedKernel(
 	let locked = false;
 	let holder: object | null = null;
 	const applyCounts = { value: 0 };
+	const appliedVerdicts: AssuranceVerdict[] = [];
 	const executionCounts = { qa: 0, completion: 0 };
 	const portsFor = (host: AssuranceCoordinatorPorts["host"]): AssuranceCoordinatorPorts => {
 	const token = {};
@@ -500,10 +501,11 @@ function sharedKernel(
 			if (locked) throw new Error("concurrent continuation rejected");
 			locked = true;
 			applyCounts.value += 1;
+			appliedVerdicts.push(input.verdict);
 			await input.hooks?.beforeCommit?.();
 			input.hooks?.onCommit?.();
 			if (input.snapshot.role === "qa") nextObligation = risk === "routine" ? "complete" : "run_review";
-			else nextObligation = "complete";
+			else nextObligation = input.verdict.decision === "rework" ? "resolve_findings" : "complete";
 			if (input.snapshot.role === "qa" && hooks.failQaCommit) {
 				locked = false;
 				throw new Error("host reply lost after authority commit");
@@ -528,6 +530,7 @@ function sharedKernel(
 	return {
 		applyCounts,
 		executionCounts,
+		appliedVerdicts,
 		releaseClaim() { holder = null; },
 		claude() {
 			const host = new ClaudeReviewHost();
@@ -726,12 +729,40 @@ describe("dual-host assurance conformance", () => {
 		const piReady = await pi.advance(TASK, ctx as never) as { state: string; agent_params: { prompt: string } };
 		expect(piReady.state).toBe("review_ready");
 		pi.piReviewHost.observeReviewDispatch({ prompt: piReady.agent_params.prompt, subagent_type: "Review" }, "pi-call-1");
-		pi.piReviewHost.observeReviewResult("pi-call-1", JSON.stringify(passVerdict(snapshot("review"))));
+		pi.piReviewHost.observeReviewResult("pi-call-1", "Agent completed.\n\n" + JSON.stringify(passVerdict(snapshot("review")), null, 2));
 		expect(await pi.submitMediated(TASK, ctx as never, undefined)).toEqual({ state: "completed" });
 		expect(piKernel.executionCounts).toEqual({ qa: 1, completion: 1 });
 	});
 
-	test("a Pi submission without an observed dispatch fails closed and releases the reservation", async () => {
+	test("omitted correlated rework settles on both hosts without completion", async () => {
+		const verdict: AssuranceVerdict = {
+			contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
+			snapshot_digest: snapshotDigest(snapshot("review")), decision: "rework",
+			findings: [{ id: "receipt-rework", kind: "blocking", acceptance_id: "A1", summary: "repair required",
+				evidence: { trigger: "changed path violates acceptance", caller_chain: ["entry", "owner"], violated: { kind: "acceptance", ref: "A1" } } }],
+		};
+		for (const host of ["claude", "pi"] as const) {
+			const kernel = sharedKernel("material");
+			if (host === "claude") {
+				const h = kernel.claude();
+				const ready = await h.coordinator.advance(TASK, ctx);
+				completeClaudeReview(h.host, (ready as { operation_id: string }).operation_id, "material", verdict);
+				expect(await submitClaudeReview(h.host, h.coordinator, ctx, TASK, undefined)).toMatchObject({ state: "rework" });
+				expect(h.coordinator.active(TASK)).toBeNull();
+			} else {
+				const h = kernel.pi();
+				const ready = await h.advance(TASK, ctx as never) as { agent_params: { prompt: string } };
+				h.piReviewHost.observeReviewDispatch({ prompt: ready.agent_params.prompt, subagent_type: "Review" }, "rework");
+				h.piReviewHost.observeReviewResult("rework", JSON.stringify(verdict));
+				expect(await h.submitMediated(TASK, ctx as never, undefined)).toMatchObject({ state: "rework" });
+				expect(h.active(TASK)).toBeNull();
+			}
+			expect(kernel.appliedVerdicts.at(-1)).toMatchObject({ decision: "rework", findings: [{ kind: "blocking", acceptance_id: "A1", evidence: verdict.findings![0].evidence }] });
+			expect(kernel.executionCounts).toEqual({ qa: 1, completion: 0 });
+		}
+	});
+
+	test("a Pi submission without an observed dispatch fails closed and retains the reservation", async () => {
 		const kernel = sharedKernel("material");
 		const pi = kernel.pi();
 		const ready = await pi.advance(TASK, ctx as never) as { state: string; operation_id: string };
@@ -741,7 +772,9 @@ describe("dual-host assurance conformance", () => {
 		expect(blocked.reason).toBe("the reserved foreground Agent was not observed in this session");
 		const retried = await pi.advance(TASK, ctx as never) as { state: string; operation_id: string };
 		expect(retried.state).toBe("review_ready");
-		expect(retried.operation_id).not.toBe(ready.operation_id);
+		expect(retried.operation_id).toBe(ready.operation_id);
+		expect((await pi.submitMediated(TASK, ctx as never, passVerdict(snapshot("review")))).state).toBe("blocked");
+		expect(kernel.executionCounts).toEqual({ qa: 1, completion: 0 });
 	});
 
 	test("a Pi relayed verdict must match the observed receipt", async () => {

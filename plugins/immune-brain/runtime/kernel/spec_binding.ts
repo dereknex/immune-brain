@@ -57,6 +57,12 @@ export function readBoundActiveSpec(
 	}
 }
 
+/** Validate a candidate before it can replace enrolled authority. */
+export function assertValidSpecBinding(intent: TaskIntentV1): void {
+	const binding = inspectSpecBinding(intent);
+	if (!binding.ok) throw new KernelInvariantError([binding.message]);
+}
+
 export interface BoundSpec {
 	active: string;
 	archive: string;

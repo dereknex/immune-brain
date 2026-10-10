@@ -357,6 +357,9 @@ export type AssuranceSubmitReviewResult = AssuranceRecoveryFields & (
 export interface ReviewSubmissionOptions {
 	/** sha256 over the reviewer's own result bytes, bound into the review attestation. */
 	reviewer_verdict_sha256?: string;
+	/** Synchronous host check immediately before the reservation is consumed. */
+	validateReceipt?: () => string | null;
+	receiptRecoveryAction?: string;
 }
 
 export type ActiveAssuranceState =
@@ -568,7 +571,10 @@ function parseVerdictEvidence(value: unknown, index: number): FindingEvidence {
 export function parseAssuranceVerdict(input: unknown, snapshot: SnapshotDescriptor): AssuranceVerdict {
 	let raw: Record<string, unknown>;
 	if (typeof input === "string") {
-		const cleaned = input.split("\n").map((line) => line.trim()).filter((line) => line.startsWith("{") && line.endsWith("}")).join("");
+		// Agent transport prefixes a status line to the strict JSON verdict.
+		const first = input.indexOf("{");
+		const last = input.lastIndexOf("}");
+		const cleaned = first >= 0 && last >= first ? input.slice(first, last + 1) : "";
 		if (!cleaned) throw new Error("reviewer returned no strict JSON verdict");
 		try { raw = JSON.parse(cleaned) as Record<string, unknown>; } catch { throw new Error("reviewer verdict is not valid JSON"); }
 	} else if (typeof input === "object" && input !== null && !Array.isArray(input)) {
@@ -1242,6 +1248,8 @@ export class AssuranceCoordinator {
 			reservation.verdictCorrectionRequired = true;
 			return { state: "blocked", code: "verdict_invalid", reason: boundedAssuranceError(error) };
 		}
+		const receiptError = options?.validateReceipt?.();
+		if (receiptError) return { state: "blocked", reason: receiptError, ...(options?.receiptRecoveryAction ? { recovery_action: options.receiptRecoveryAction } : {}) };
 		const invocation = this.openInvocation(taskId);
 		this.releaseReviewReservation(taskId, reservation);
 		try {

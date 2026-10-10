@@ -15,8 +15,8 @@
     },
     {
       "id": "RBV-A3",
-      "assertion": "Per ADR 0017: TaskApprovalV2 gains optional reviewer_verdict_sha256 (sha256:<64 hex>), bound from the observed receipt bytes at submission, legal only on review attestations; the strict parser emits it only when present so legacy records keep byte-roundtrip and canonical hash stability, the reducer rejects it on non-review approvals, and verdict_authority threads it from the host adapter without the coordinator resolving verdict sources. Positive: a review attestation written with the digest parses back byte-identical and fails on a non-sha256 value. Negative: a qa attestation carrying the field is rejected; records without it are unchanged.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\"test\", \"tests/kernel-record-v4.test.ts\", \"tests/task-record-durability.test.ts\"],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": { \"prepare\": null, \"writable_paths\": [] }\n}\n"
+      "assertion": "Per ADR 0017: TaskApprovalV2 gains optional reviewer_verdict_sha256 (sha256:<64 hex>), bound from the observed receipt bytes at submission, legal only on review attestations; the strict parser emits it only when present so legacy records keep byte-roundtrip and canonical hash stability, the reducer rejects it on non-review approvals, and verdict_authority threads it from the host adapter without the coordinator resolving verdict sources. Positive: a review attestation written with the digest parses back byte-identical and fails on a non-sha256 value. Negative: a qa attestation carrying the field is rejected; records without it are unchanged. Recovery safety, from the reproduced invalid Spec-binding incident: intent revision rejects ambiguous or incomplete Spec bindings before authority writes; an existing invalid active binding exposes only revision recovery and is corrected through the existing native breaking gate while retaining run identity, git_base_head, and append-only authority history. Cancellation retains exact prior authority and sidecar bytes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-record-v4.test.ts\",\n      \"tests/task-record-durability.test.ts\",\n      \"tests/breaking-intent-revision-gate.test.ts\",\n      \"tests/kernel-canary-application.test.ts\",\n      \"tests/kernel-assurance-projection.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
     },
     {
       "id": "RBV-A4",
@@ -28,9 +28,6 @@
     ".changeset/receipt-bound-review-verdict.md",
     "docs/plans/receipt-bound-review-verdict.intent.json",
     "docs/reference/subagent-dispatch-protocol.md",
-    "docs/specs/foreground-interactive-workflow-roadmap.spec.md",
-    "docs/specs/pi-observable-assurance-orchestration-roadmap.spec.md",
-    "docs/specs/review-settlement-hardening.spec.md",
     "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
     "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
     "plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
@@ -43,10 +40,15 @@
     "plugins/immune-brain/runtime/assurance/verdict_authority.ts",
     "plugins/immune-brain/runtime/claude/kernel_ports.ts",
     "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+    "plugins/immune-brain/runtime/kernel/canary_application.ts",
+    "plugins/immune-brain/runtime/kernel/completion.ts",
     "plugins/immune-brain/runtime/kernel/reducer.ts",
+    "plugins/immune-brain/runtime/kernel/spec_binding.ts",
     "plugins/immune-brain/runtime/kernel/types.ts",
     "plugins/immune-brain/runtime/kernel/validation.ts",
     "plugins/immune-brain/runtime/role_prompt_bridge.ts",
+    "tests/breaking-intent-revision-gate.test.ts",
     "tests/claude-host-authority.test.ts",
     "tests/claude-host-package.test.ts",
     "tests/dist-docs-sync-contract.test.ts",
@@ -61,6 +63,6 @@
     "tests/task-record-durability.test.ts"
   ],
   "risk": "material",
-  "revision": 2,
+  "revision": 4,
   "owner": "user"
 }

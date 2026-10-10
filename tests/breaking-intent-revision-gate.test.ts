@@ -5,7 +5,11 @@
 // the task under its existing enrollment (no successor intent, no second
 // enrollment).
 
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, mock, test } from "bun:test";
+import { mockHostSdkForDeliveryTree } from "./helpers/pi-canary-assurance-harness";
+
+await mockHostSdkForDeliveryTree();
+afterAll(() => mock.restore());
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -213,6 +217,101 @@ const breakingIntent = () => ({
 });
 
 describe("breaking intent revision gate", () => {
+	test("ambiguous next Spec binding cannot change enrolled authority", async () => {
+		const root = makeEnrolledRoot();
+		try {
+			const before = storedRecordBytes(root);
+			const claim = storedClaimBytes(root);
+			const { tool } = loadSurface();
+			const failure = await captureToolFailure(tool.execute("invalid-binding", {
+				task_id: TASK,
+				action: { op: "approve_breaking_intent_revision", next_intent: {
+					...breakingIntent(), scope_hint: [...INTENT.scope_hint, "docs/specs/second.spec.md"],
+				} },
+			}, undefined, undefined, makeCtx(root, makeUI())));
+			expect(failure.message).toContain("at most one scope-bound Spec");
+			expect(storedRecordBytes(root)).toBe(before);
+			expect(storedClaimBytes(root)).toBe(claim);
+			expect(JSON.parse(readFileSync(join(root, `docs/plans/${TASK}.intent.json`), "utf8")).revision).toBe(1);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
+	test("cancelled invalid-binding recovery preserves record, claim and sidecar", async () => {
+		const root = makeEnrolledRoot();
+		try {
+			const invalid = parseTaskIntentV1({ ...INTENT, scope_hint: [...INTENT.scope_hint, "docs/specs/second.spec.md"] });
+			mutateStoredRecord(root, (record) => {
+				record.intent_snapshot = invalid;
+				record.intent_ref.content_hash = canonicalIntentHash(invalid);
+			});
+			const path = join(root, `docs/plans/${TASK}.intent.json`);
+			const bytes = `${JSON.stringify(invalid, null, 2)}\n`;
+			writeFileSync(path, bytes);
+			execFileSync("git", ["add", "--", `docs/plans/${TASK}.intent.json`], { cwd: root });
+			const record = storedRecordBytes(root);
+			const claim = storedClaimBytes(root);
+			const { tool } = loadSurface();
+			const ui = makeUI();
+			const result = await tool.execute("cancel-recovery", { task_id: TASK, action: { op: "approve_breaking_intent_revision", next_intent: breakingIntent() } }, undefined, undefined, makeCtx(root, ui, "tui", false));
+			expect(result.details.state).toBe("cancelled");
+			expect(ui.dialogCalls).toHaveLength(1);
+			expect(storedRecordBytes(root)).toBe(record);
+			expect(storedClaimBytes(root)).toBe(claim);
+			expect(readFileSync(path, "utf8")).toBe(bytes);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
+	test("archive-only invalid binding cannot freeze authority", async () => {
+		const root = makeEnrolledRoot();
+		try {
+			const invalid = parseTaskIntentV1({ ...INTENT, scope_hint: INTENT.scope_hint.filter((path) => path !== `docs/specs/${TASK}.spec.md`) });
+			mutateStoredRecord(root, (record) => { record.intent_snapshot = invalid; record.intent_ref.content_hash = canonicalIntentHash(invalid); });
+			writeFileSync(join(root, `docs/plans/${TASK}.intent.json`), `${JSON.stringify(invalid, null, 2)}\n`);
+			execFileSync("git", ["add", "--", `docs/plans/${TASK}.intent.json`], { cwd: root });
+			const before = storedRecordBytes(root);
+			const claim = storedClaimBytes(root);
+			const sidecar = readFileSync(join(root, `docs/plans/${TASK}.intent.json`), "utf8");
+			const { tool } = loadSurface();
+			const failure = await captureToolFailure(tool.execute("freeze-incomplete", { task_id: TASK, action: { op: "freeze_artifacts" } }, undefined, undefined, makeCtx(root, makeUI())));
+			expect(failure.message).toContain("complex Spec binding is incomplete");
+			expect(storedRecordBytes(root)).toBe(before);
+			expect(storedClaimBytes(root)).toBe(claim);
+			expect(readFileSync(join(root, `docs/plans/${TASK}.intent.json`), "utf8")).toBe(sidecar);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
+	test("legacy invalid binding recovers through one native gate on the same run", async () => {
+		const root = makeEnrolledRoot();
+		try {
+			const invalid = parseTaskIntentV1({ ...INTENT, scope_hint: [...INTENT.scope_hint, "docs/specs/second.spec.md"] });
+			const hash = canonicalIntentHash(invalid);
+			mutateStoredRecord(root, (record) => {
+				record.intent_snapshot = invalid;
+				record.intent_ref.content_hash = hash;
+			});
+			writeFileSync(join(root, `docs/plans/${TASK}.intent.json`), `${JSON.stringify(invalid, null, 2)}\n`);
+			execFileSync("git", ["add", "--", `docs/plans/${TASK}.intent.json`], { cwd: root });
+			const beforeRun = withKernelRead(root, (db) => readRunRowByTask(db, TASK))!;
+			const beforeHistory = storedRecord(root).history;
+			const { tool } = loadSurface();
+			const ui = makeUI();
+			const status = await tool.execute("invalid-status", { task_id: TASK, action: { op: "status" } }, undefined, undefined, makeCtx(root, ui));
+			expect(status.details.task_state.next_obligation).toBe("revise_intent");
+			expect(status.details.task_state.authorization.state).toBe("none");
+			const beforeAuthorization = storedRecordBytes(root);
+			await captureToolFailure(tool.execute("invalid-authorization", { task_id: TASK, action: { op: "request_authorization" } }, undefined, undefined, makeCtx(root, ui)));
+			expect(ui.dialogCalls).toHaveLength(0);
+			expect(storedRecordBytes(root)).toBe(beforeAuthorization);
+			await captureToolFailure(tool.execute("invalid-freeze", { task_id: TASK, action: { op: "freeze_artifacts" } }, undefined, undefined, makeCtx(root, ui)));
+			await tool.execute("recover-binding", { task_id: TASK, action: { op: "approve_breaking_intent_revision", next_intent: breakingIntent() } }, undefined, undefined, makeCtx(root, ui));
+			const afterRun = withKernelRead(root, (db) => readRunRowByTask(db, TASK))!;
+			expect(afterRun.run_id).toBe(beforeRun.run_id);
+			expect(storedRecord(root).git_base_head).toBe(JSON.parse(beforeRun.record_json).git_base_head);
+			expect(storedRecord(root).history.slice(0, beforeHistory.length)).toEqual(beforeHistory);
+			expect(storedRecord(root).intent_snapshot.revision).toBe(2);
+			expect(ui.dialogCalls).toHaveLength(1);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
 	test("acc-operation-exposed: schema accepts the operation and dispatches through the confirmation route", async () => {
 		const root = makeEnrolledRoot();
 		try {

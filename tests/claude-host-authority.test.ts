@@ -780,6 +780,31 @@ describe("claude host authority", () => {
 
 
 
+	test("invalid Spec binding blocks ordinary authorization before native confirmation", async () => {
+		const taskId = "invalid-binding-authorization";
+		const fixture = authorityFixtureRoot(taskId);
+		let confirmations = 0;
+		const runtime = new ClaudeRuntime({
+			cwd: fixture.root, env: ENV, interactive: true, permissionMode: "manual",
+			requestConfirmation: async () => { confirmations++; return { decision: "accept", requestId: "binding-confirmation" }; },
+		});
+		const meta = (toolCallId: string): ToolMeta => ({ taskId, sessionId: "s", toolCallId, requiresUserInteraction: true, interactive: true, permissionMode: "manual" });
+		await runtime.enroll(taskId, meta("enroll"));
+		confirmations = 0;
+		const run = withKernelRead(fixture.root, (db) => readRunRowByTask(db, taskId))!;
+		const record = JSON.parse(run.record_json);
+		const invalid = parseTaskIntentV1({ ...record.intent_snapshot, scope_hint: [...record.intent_snapshot.scope_hint, "docs/specs/one.spec.md", "docs/specs/two.spec.md"] });
+		record.intent_snapshot = invalid;
+		record.intent_ref.content_hash = canonicalIntentHash(invalid);
+		const bytes = `${JSON.stringify(record, null, 2)}\n`;
+		withKernelTransaction(fixture.root, (db) => updateRunRecord(db, run.run_id, run.revision, bytes, new Date().toISOString()));
+		writeFileSync(join(fixture.root, `docs/plans/${taskId}.intent.json`), `${JSON.stringify(invalid, null, 2)}\n`);
+		execFileSync("git", ["add", "--", `docs/plans/${taskId}.intent.json`], { cwd: fixture.root });
+		expect(() => runtime.authorize(taskId, "request_authorization", meta("authorize"))).toThrow();
+		expect(confirmations).toBe(0);
+		expect(withKernelRead(fixture.root, (db) => readRunRowByTask(db, taskId))!.record_json).toBe(bytes);
+	});
+
 	test("request_authorization resolves the single bound user decision", async () => {
 		const taskId = "user-decision";
 		const fixture = authorityFixtureRoot(taskId);

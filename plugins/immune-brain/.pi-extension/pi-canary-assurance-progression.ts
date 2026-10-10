@@ -112,6 +112,7 @@ class PiReviewHost implements AssuranceHostPort {
 		for (const record of this.receipts.values()) {
 			if (record.toolCallId !== toolCallId) continue;
 			if (record.result === undefined) record.result = bytes;
+			else if (record.result !== bytes) record.error = "the reserved reviewer returned conflicting result bytes";
 			return;
 		}
 	}
@@ -119,9 +120,9 @@ class PiReviewHost implements AssuranceHostPort {
 	inspectReview(taskId: string): ReviewObservation {
 		for (const record of this.receipts.values()) {
 			if (record.taskId !== taskId) continue;
-			if (record.error) return { ok: false, release: true, reason: record.error };
+			if (record.error) return { ok: false, release: false, reason: record.error };
 			if (record.toolCallId === undefined)
-				return { ok: false, release: true, reason: "the reserved foreground Agent was not observed in this session" };
+				return { ok: false, release: false, reason: "the reserved foreground Agent was not observed in this session" };
 			if (record.result === undefined)
 				return { ok: false, release: false, reason: "the reserved foreground reviewer has not returned its result yet; wait for it, then call submit_review again" };
 			return { ok: true, receipt: { actorId: "pi-review-agent", result: record.result } };

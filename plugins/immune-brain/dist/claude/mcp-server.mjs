@@ -2653,6 +2653,11 @@ function readBoundActiveSpec(root, intent, required = false) {
     throw error;
   }
 }
+function assertValidSpecBinding(intent) {
+  const binding = inspectSpecBinding(intent);
+  if (!binding.ok)
+    throw new KernelInvariantError([binding.message]);
+}
 function inspectSpecBinding(intent) {
   const active = intent.scope_hint.filter((path) => ACTIVE_SPEC_RE.test(path));
   const archived = intent.scope_hint.filter((path) => ARCHIVED_SPEC_RE.test(path));
@@ -2706,6 +2711,8 @@ function asTaskDiffSnapshot(value) {
   return { diff_hash: value.diff_hash, changed_paths: value.changed_paths };
 }
 function resolveProjectedRisk(intent, changedPaths = []) {
+  if (!inspectSpecBinding(intent).ok)
+    return classifyTaskRisk(changedPaths, intent.risk);
   const excluded = ownSidecarPaths(intent);
   return classifyTaskRisk(changedPaths.filter((path) => !excluded.has(path)), intent.risk);
 }
@@ -2764,6 +2771,27 @@ function completionDecision(intent, record, currentDiffHash, currentIntentConten
   };
 }
 function projectTask(intent, record, currentDiffHash, currentIntentContentHash, changedPaths = []) {
+  if (record.lifecycle === "active" && !inspectSpecBinding(intent).ok) {
+    assertKernelInvariantsV3(intent, record);
+    return {
+      contract: "assurance_kernel/projection/v3",
+      task_id: record.task_id,
+      intent_revision: intent.revision,
+      lifecycle: record.lifecycle,
+      artifact_state: record.artifact_state,
+      blocked: true,
+      next_obligation: "revise_intent",
+      complete: false,
+      fresh_acceptance_ids: [],
+      missing_acceptance_ids: intent.acceptance.map((item) => item.id),
+      stale_attestation_ids: record.attestations.map((item) => item.id),
+      missing_approval_kinds: REQUIRED_ATTESTATIONS[resolveProjectedRisk(intent, changedPaths)],
+      blocking_finding_ids: record.findings.filter((item) => item.kind === "blocking" && item.status !== "resolved").map((item) => item.id),
+      unresolved_user_decision_ids: record.findings.filter((item) => item.kind === "unresolved_user_decision" && item.status === "open").map((item) => item.id),
+      replan_required_ids: record.findings.filter((item) => item.kind === "replan_required" && item.status === "open").map((item) => item.id),
+      independence_violations: []
+    };
+  }
   const decision = completionDecision(intent, record, currentDiffHash, currentIntentContentHash, changedPaths);
   const blocked = decision.blocking_finding_ids.length > 0 || decision.unresolved_user_decision_ids.length > 0 || decision.replan_required_ids.length > 0 || decision.independence_violations.length > 0;
   let nextObligation = "none";
@@ -3084,6 +3112,7 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths) {
     }
     case "revise_intent":
     case "approve_breaking_intent_revision": {
+      assertValidSpecBinding(action.next_intent);
       if (record.lifecycle !== "active")
         throw new KernelInvariantError([
           `cannot revise intent while lifecycle is ${record.lifecycle}`
@@ -5241,7 +5270,7 @@ function projectFromRecord(record, recordRevision, workspaceRevision, snapshot) 
     independence_violations: decision.independence_violations,
     open_user_decision_count: openUserDecisionCount,
     completion_ready: decision.complete,
-    authorization: deriveAssuranceAuthorization({
+    authorization: !inspectSpecBinding(intent).ok ? { state: "none", blocked: "invalid Spec binding requires a valid breaking intent revision" } : deriveAssuranceAuthorization({
       next_obligation: decision.next_obligation,
       open_user_decision_count: openUserDecisionCount
     })
@@ -5574,6 +5603,7 @@ function createCanaryApplication(registry) {
       const current = readTaskRecordRaw(input.root, input.task_id);
       if (!current.record)
         throw new KernelInvariantError([`task ${input.task_id} has no TaskRecord v3`]);
+      assertValidSpecBinding(current.record.intent_snapshot);
       const workspace = readWorkspaceStateRaw(input.root);
       if (current.record.artifact_state === "frozen")
         return { revision: current.revision, record: current.record, workspace };
@@ -5655,7 +5685,11 @@ function createCanaryApplication(registry) {
     const diffHash = asTaskDiffSnapshot((input.diffProvider ?? taskDeliveryIdentity)(input.root, snapshot.record)).diff_hash;
     if (operation.op === "stop" && !("capability" in operation))
       throw new KernelInvariantError(["stop requires user authority capability"]);
-    const hasBoundSpec = boundSpecPath(snapshot.intent_snapshot) !== undefined;
+    if (operation.op === "approve_breaking_intent_revision")
+      assertValidSpecBinding(operation.next_intent);
+    else
+      assertValidSpecBinding(snapshot.intent_snapshot);
+    const hasBoundSpec = operation.op === "approve_breaking_intent_revision" ? boundSpecPath(operation.next_intent) !== undefined : boundSpecPath(snapshot.intent_snapshot) !== undefined;
     if (operation.op === "complete" && hasBoundSpec && snapshot.record.artifact_state !== "frozen")
       throw new KernelInvariantError(["complete requires frozen planning artifacts"]);
     const artifactTransition = snapshot.record.artifact_state === "frozen" && (operation.op === "request_rework" || operation.op === "authorize_rework" || operation.op === "approve_breaking_intent_revision") ? transitionFor(input.root, snapshot.record, "restore") : operation.op === "stop" && snapshot.record.artifact_state !== "frozen" ? transitionFor(input.root, snapshot.record, "freeze", true) : undefined;
@@ -7188,8 +7222,9 @@ function parseVerdictEvidence(value, index) {
 function parseAssuranceVerdict(input, snapshot) {
   let raw;
   if (typeof input === "string") {
-    const cleaned = input.split(`
-`).map((line) => line.trim()).filter((line) => line.startsWith("{") && line.endsWith("}")).join("");
+    const first = input.indexOf("{");
+    const last = input.lastIndexOf("}");
+    const cleaned = first >= 0 && last >= first ? input.slice(first, last + 1) : "";
     if (!cleaned)
       throw new Error("reviewer returned no strict JSON verdict");
     try {
@@ -7861,6 +7896,9 @@ class AssuranceCoordinator {
       reservation.verdictCorrectionRequired = true;
       return { state: "blocked", code: "verdict_invalid", reason: boundedAssuranceError(error) };
     }
+    const receiptError = options?.validateReceipt?.();
+    if (receiptError)
+      return { state: "blocked", reason: receiptError, ...options?.receiptRecoveryAction ? { recovery_action: options.receiptRecoveryAction } : {} };
     const invocation = this.openInvocation(taskId);
     this.releaseReviewReservation(taskId, reservation);
     try {
@@ -14664,8 +14702,9 @@ async function retireStaleBatch(options) {
 import { createHash as createHash21 } from "node:crypto";
 function extractVerdictJson(input) {
   if (typeof input === "string") {
-    const cleaned = input.split(`
-`).map((line) => line.trim()).filter((line) => line.startsWith("{") && line.endsWith("}")).join("");
+    const first = input.indexOf("{");
+    const last = input.lastIndexOf("}");
+    const cleaned = first >= 0 && last >= first ? input.slice(first, last + 1) : "";
     if (!cleaned)
       return null;
     try {
@@ -14701,6 +14740,9 @@ function withReviewRecovery(result, recovery_action) {
   return { ...result, recovery_action };
 }
 async function submitMediatedReview(coordinator, ctx, taskId, verdictInput, inspect) {
+  if (coordinator.active(taskId)?.state === "settlement_unknown") {
+    return coordinator.submitReview(taskId, ctx, verdictInput);
+  }
   const observed = inspect();
   if (!observed.ok) {
     if (observed.release)
@@ -14708,11 +14750,21 @@ async function submitMediatedReview(coordinator, ctx, taskId, verdictInput, insp
     return { state: "blocked", reason: observed.reason, recovery_action: RETAINED_REVIEW_RECOVERY };
   }
   const receiptBytes = observed.receipt.result;
+  const options = {
+    receiptRecoveryAction: RETAINED_REVIEW_RECOVERY,
+    reviewer_verdict_sha256: digestOfReviewerBytes(receiptBytes),
+    validateReceipt: () => {
+      const current = inspect();
+      if (!current.ok)
+        return current.reason;
+      return current.receipt.actorId === observed.receipt.actorId && current.receipt.result === receiptBytes ? null : "reviewer receipt changed during submission";
+    }
+  };
   if (verdictInput === undefined) {
     if (!coordinator.isReviewVerdictValid(taskId, receiptBytes)) {
       return withReviewRecovery(coordinator.abandonReview(taskId, "reviewer receipt is not a valid verdict"), RELEASED_REVIEW_RECOVERY);
     }
-    return coordinator.submitReview(taskId, ctx, receiptBytes, { reviewer_verdict_sha256: digestOfReviewerBytes(receiptBytes) });
+    return coordinator.submitReview(taskId, ctx, receiptBytes, options);
   }
   const parentValid = coordinator.isReviewVerdictValid(taskId, verdictInput);
   if (!parentValid)
@@ -14725,7 +14777,7 @@ async function submitMediatedReview(coordinator, ctx, taskId, verdictInput, insp
   if (!parentJson || !receiptJson || verdictFingerprint(parentJson) !== verdictFingerprint(receiptJson)) {
     return { state: "blocked", reason: "parent verdict does not match reviewer receipt", recovery_action: MISMATCH_REVIEW_RECOVERY };
   }
-  return coordinator.submitReview(taskId, ctx, verdictInput, { reviewer_verdict_sha256: digestOfReviewerBytes(receiptBytes) });
+  return coordinator.submitReview(taskId, ctx, verdictInput, options);
 }
 
 // plugins/immune-brain/runtime/claude/kernel_ports.ts
