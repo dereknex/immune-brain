@@ -1,0 +1,38 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "user-scenarios-s2-tracker-projection",
+  "owner": "user",
+  "goal": "Implement Slice S2 of Initiative user-acceptance-scenarios: imm-tracker publish-initiative accepts optional per-Task scenarios, renders a 'User scenarios' section on the Child and a derived listing on the Parent, and rejects the whole batch before any remote write when a scenario is malformed or names an acceptance ID its TaskIntent lacks. A publication without scenarios renders byte-identical bodies; terminal projection, TaskIntent schema, and Kernel authority are unchanged.",
+  "acceptance": [
+    {
+      "id": "US-S2-A1",
+      "assertion": "Per T4 and invariants I3 and I4 of docs/specs/user-acceptance-scenarios.spec.md (source: #186 D4, D7, D9, D10): given Tasks that supply scenarios, the Child body has '## User scenarios' after '## Acceptance criteria' with one item per own scenario showing its ID, mode, mapped acceptance IDs, and Actor, Given, When, Then, a manual scenario as an unchecked task-list item with its reason and an automated one as a plain bullet; and the Parent body has '## User scenarios' after '## Testing strategy' with one plain bullet per scenario of every Task showing its ID, owning Slice ID, mode, When, and Then (positive). A Child that supplies no scenario renders no such heading even when a sibling does (negative). When no Task supplies scenarios the Parent and every Child body are byte-identical to the bodies rendered without this feature; mark-terminal with phase done on a Child whose manual scenario box was ticked closes it as completed and preserves the tick; and an amendment leaves every historical Child's bytes untouched while a bound pending Child's scenarios update with its brief (bound).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/github-issue-projection-contract.test.ts\",\n      \"tests/github-initiative-recovery.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "US-S2-A2",
+      "assertion": "Per T5 of docs/specs/user-acceptance-scenarios.spec.md (source: #186 D8, D11): a batch whose scenarios are a valid mix of automated and manual entries publishes (positive). The tracker returns its existing structured failure, naming the Task and the offending scenario or acceptance ID, and performs zero mutating remote calls when a scenario lacks a required field, has an id matching neither BR-SCN-<n> nor SCN-<n>, repeats an id within the Initiative, is automated with no acceptance ID, names an acceptance ID absent from its Task's canonical TaskIntent, or is manual without manual_reason (negative). A manual scenario that names no acceptance ID is accepted, and scenario text obeys the existing public-projection text rules and bounds (bound).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/github-issue-projection-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "US-S2-A3",
+      "assertion": "Per T5 of docs/specs/user-acceptance-scenarios.spec.md (source: #186 D10, D11): the packaged Planner contract's Initiative Carrier Preference section and docs/agents/issue-tracker.md describe the optional per-Task scenarios input, its automated and manual modes, and that omitting it renders no section (positive); the text states scenarios are public projection that never widens TaskIntent scope or authority (negative); and the existing carrier-gate contract assertions are unchanged (bound).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/carrier-enrollment-gate-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/user-scenarios-s2-tracker-projection.md",
+    "docs/agents/issue-tracker.md",
+    "docs/plans/user-scenarios-s2-tracker-projection.intent.json",
+    "docs/specs/user-acceptance-scenarios.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/runtime/github_issue_tracker.ts",
+    "tests/carrier-enrollment-gate-contract.test.ts",
+    "tests/github-initiative-recovery.test.ts",
+    "tests/github-issue-projection-contract.test.ts",
+    "tests/plugin-package-runtime.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

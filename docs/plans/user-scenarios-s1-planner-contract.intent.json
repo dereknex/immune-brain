@@ -1,0 +1,45 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "user-scenarios-s1-planner-contract",
+  "owner": "user",
+  "goal": "Implement Slice S1 of Initiative user-acceptance-scenarios: the Brainstorm contract hands off confirmed user scenarios as BR-SCN-* manifest items, the Planner contract and planning quality gate require a Spec to carry and map them or to record 'no user-visible change' with a reason, and the imm-run exit summary names manual scenarios pending walkthrough. Contract text, mirrors, and contract tests only; no runtime, TaskIntent schema, or Kernel change, and no added gate or confirmation.",
+  "acceptance": [
+    {
+      "id": "US-S1-A1",
+      "assertion": "Per T1 of docs/specs/user-acceptance-scenarios.spec.md (source: #186 D1, D4, D14, D16): the packaged Brainstorm contract and its compact skill entry define a BR-SCN-<n> manifest class for a confirmed user scenario with exactly the fields Actor, Given, When, Then, written in English, whose Then is a result the actor observes directly and never an internal state or a test file name (positive); the contract states that framing without a user-observable change gets no invented scenario (negative); and the historical workflow-decision-closure evidence still verifies because the measured Brainstorm contract bytes are preserved as a fixture and resolved the same way as the preserved Planner source, with the measured digest in tests/fixtures/workflow-decision-closure-evidence.json unchanged (bound).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/brainstorm-decision-probing-contract.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\",\n      \"tests/workflow-behavior-evidence.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "US-S1-A2",
+      "assertion": "Per T2 and T3 and invariants I1 and I2 of docs/specs/user-acceptance-scenarios.spec.md (source: #186 D3, D5, D8, D9, D11, D12, D16): the packaged Planner contract, its compact skill entry, and the planning quality gate state that a Spec for work with a user-observable change has a 'User scenarios' section; that each scenario keeps its upstream BR-SCN-<n> ID or, on direct entry, is confirmed in clarification and recorded as Spec-local SCN-<n>; that each scenario is tagged automated with at least one acceptance ID or manual with the reason it cannot be automated; that the mapping is one-way; that in an Initiative a scenario belongs to exactly one Slice, the one that first makes it observable; that BR-SCN-* items fall under the existing handoff completeness check; and that the Initiative review table shows each Slice's scenario IDs or its exemption (positive). The text states that a scenario with no source is a defect and that 'no user-visible change' requires a recorded reason (negative). The existing sentence forbidding a mandatory user confirmation and its existing assertion are unchanged, no sentence makes a scenario a precondition of Enrollment, QA, Review pass, settlement, or Issue closure, and the packaged quality-gate mirror is byte-identical to its source (bound).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/technical-design-conformance-contract.test.ts\",\n      \"tests/workflow-decision-closure.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "US-S1-A3",
+      "assertion": "Per T6 of docs/specs/user-acceptance-scenarios.spec.md (source: #186 D7): the packaged imm-run contract's Observable Output adds one exit-summary line naming the manual scenario IDs owned by the settled Task's Slice in its bound Spec as pending manual walkthrough (positive); the contract states the line is informational and changes no stop reason, obligation, or completion fact (negative); and the line is absent when that Slice owns no manual scenario while the existing summary fields are unchanged (bound).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-authoritative-recovery.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/user-scenarios-s1-planner-contract.md",
+    "docs/plans/user-scenarios-s1-planner-contract.intent.json",
+    "docs/reference/planning-quality-gate.md",
+    "docs/specs/user-acceptance-scenarios.spec.md",
+    "plugins/immune-brain/dist/docs/reference/planning-quality-gate.md",
+    "plugins/immune-brain/dist/imm-brainstorm.md",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/dist/imm-run.md",
+    "plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
+    "plugins/immune-brain/skills/imm-planner/SKILL.md",
+    "tests/brainstorm-decision-probing-contract.test.ts",
+    "tests/dist-docs-sync-contract.test.ts",
+    "tests/fixtures/workflow-decision-closure-sources/imm-brainstorm.md",
+    "tests/skill-dist-consistency.test.ts",
+    "tests/technical-design-conformance-contract.test.ts",
+    "tests/workflow-authoritative-recovery.test.ts",
+    "tests/workflow-behavior-evidence.test.ts",
+    "tests/workflow-decision-closure.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
