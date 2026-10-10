@@ -143,6 +143,8 @@ export interface BatchLaneRunStateRecord {
 	 * re-entry, each with the backup that undoes it. Absent until one happens.
 	 */
 	restores?: import("./batch_leak_restore").LaneLeakRestore[];
+	/** Commands run on the batch branch once every child is integrated; fixed when the batch starts. */
+	final_verification?: string[];
 	created_at: string;
 	updated_at: string;
 }
@@ -544,6 +546,13 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 			))
 	)
 		throw new Error(`batch run state ${batchId} has an invalid restores list`);
+	if (
+		record.final_verification !== undefined &&
+		(!Array.isArray(record.final_verification) ||
+			record.final_verification.length === 0 ||
+			record.final_verification.some((c: unknown) => typeof c !== "string" || !c))
+	)
+		throw new Error(`batch run state ${batchId} has an invalid final_verification list`);
 	const seenTaskIds = new Set<string>();
 	for (const child of record.children) {
 		if (
@@ -637,6 +646,7 @@ export function prepareBatchLaneRunState(input: {
 	budget: { max_children: number; qa_failure_limit: number };
 	max_parallel: number;
 	now: string;
+	final_verification?: string[];
 }): BatchLaneRunStateRecord {
 	validateBatchId(input.batch_id);
 	return {
@@ -661,6 +671,7 @@ export function prepareBatchLaneRunState(input: {
 			qa_failures: 0,
 		})),
 		commits: [],
+		...(input.final_verification?.length ? { final_verification: [...input.final_verification] } : {}),
 		created_at: input.now,
 		updated_at: input.now,
 	};
@@ -755,6 +766,8 @@ export interface BatchLaneRunReport {
 	 * tracker observation beside the batch result, retried by the next tick.
 	 */
 	tracker_observations?: Array<{ task_id: string; status: string; message: string }>;
+	/** The completion run of the recorded final verification commands; `passed: false` marks the batch not passed. */
+	final_verification?: import("./batch_final_verification").FinalVerificationReport;
 	/** Restored Lane leaks with their backup location (see BatchLaneRunStateRecord.restores). */
 	restores?: import("./batch_leak_restore").LaneLeakRestore[];
 	next_action: string;

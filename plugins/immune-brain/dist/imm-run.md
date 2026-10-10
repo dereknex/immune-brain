@@ -10,7 +10,12 @@ This skill adheres to the **[BASELINE.md](BASELINE.md)**.
 ## Kernel Canary Routing and Authority
 
 Only explicit `imm-run` entry starts or resumes this loop. Ordinary host input
-stays host-native; it never resumes a Managed owner implicitly. Read the current
+stays host-native; it never resumes a Managed owner implicitly. While a
+non-terminal TaskRecord holds the workspace, both Hosts add a read-only notice
+to ordinary input (Pi `before_agent_start`, Claude Code `UserPromptSubmit`)
+naming the task, its next obligation and its scope: before committing or
+modifying files inside that scope, read `status` and tell the user the task is
+active and what it waits for. The notice resumes nothing. Read the current
 Host's `status` projection first and verify the exact active backend claim,
 TaskIntent, and TaskRecord. Invalid or contradictory projections fail closed. A
 candidate TaskIntent is not Enrollment authority.
@@ -251,6 +256,7 @@ source directly rather than assuming the Host injected it into context:
 | `Lane Executor Host: <host>` | `claude-code` or `pi` | Every Lane's Executor Host is that Host. When the `lane-steward` did not report it available in a Lane, that Lane has no Executor Host; the Parent does not fall back to the other one. | The Parent's own Host type, else the other allowlisted Host |
 | `Lane Executor model: <model>` | a model identifier of the configured Executor Host | Passed to the Executor Host as `--model <model>` | The Executor Host's own default |
 | `Lane Executor effort: <level>` | a level the configured Executor Host accepts | Passed as `--effort <level>` to `claude-code` and as `--thinking <level>` to `pi` | The Executor Host's own default |
+| `Batch final verification: <command>; <command>` | plain commands without shell syntax, at most 8 | Passed as `final_verification` when a new lane batch starts and shown in its native confirmation; the runner runs them on the batch branch once every child is integrated and writes each command's exit status and timing into the completion report as `final_verification`. A failing command reports the batch as not passed; integrated commits are never rolled back | The commands the repository instruction file names for its full test suite and type check, else none and the completion report says nothing was run |
 
 A model identifier and an effort level mean something only to one Host, so
 `Lane Executor model` and `Lane Executor effort` apply only together with
@@ -261,6 +267,11 @@ them, display one non-blocking line with each selected value and its source. On
 a resume the recorded `max_parallel` stands and the directive is not passed
 again. The directives configure how the Parent starts sessions; the runner reads
 none of them, and they grant no permission or trust option.
+
+A repository that names its full test and type-check commands in prose (for
+example "uses `bun test`; type checking is `bun run typecheck`") supplies them as
+the final verification without a directive; the Parent never invents a command
+the repository does not name.
 
 #### Lane Executor Supervision
 

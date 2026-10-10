@@ -745,7 +745,7 @@ export class ClaudeRuntime {
 	async startUnattendedBatch(
 		initiativeSlug: string,
 		meta: ToolMeta,
-		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[] } = {},
+		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[] } = {},
 	): Promise<ClaudeBatchStartResult> {
 		throwIfCancelled(meta.signal);
 		const reuseOnly = options.reuseOnly === true;
@@ -840,6 +840,7 @@ export class ClaudeRuntime {
 											max_parallel: options.max_parallel,
 											parallel_groups: facts.parallel_groups,
 											serialized: facts.scope_conflicts,
+											...(options.final_verification ? { final_verification: options.final_verification } : {}),
 										},
 									}
 								: {}),
@@ -948,7 +949,11 @@ export class ClaudeRuntime {
 			kernel: kernelPort,
 			git: this.batchGit,
 			...(options.max_parallel !== undefined
-				? { max_parallel: options.max_parallel, tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug) }
+				? {
+						max_parallel: options.max_parallel,
+						tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug),
+						...(options.final_verification ? { final_verification: options.final_verification } : {}),
+					}
 				: {}),
 			...(options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}),
 		});

@@ -666,6 +666,10 @@ describe("unattended batch contract text", () => {
 			"children",
 			"commits",
 			"adopted_heads",
+			// Orchestration evidence only: restored Lane leaks and the recorded
+			// final verification commands (retro #200, #201).
+			"restores",
+			"final_verification",
 			"created_at",
 			"updated_at",
 		]);

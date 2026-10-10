@@ -131,6 +131,7 @@ import {
 } from "../runtime/github_issue_tracker";
 import { reviewReworkFindings } from "../runtime/assurance/coordinator";
 import { laneWriteRefusal } from "../runtime/unattended/lane_workspace";
+import { activeTaskNotice } from "../runtime/assurance/active_task_notice";
 
 const LOOP_OWNERS = ["plan", "kernel", "brainstorm", "planner", "loop"] as const;
 const LOOP_TARGETS = [
@@ -371,6 +372,12 @@ export default function (
 		await reconcileRefsQuietly(ctx.cwd);
 		if (ctx.mode !== "tui") return;
 		await refreshTaskRail(ctx);
+	});
+	pi.on("before_agent_start", async (event: { prompt?: string; systemPrompt?: string }, ctx?: ExtensionContext) => {
+		// Advisory only: an active Managed task is announced, never resumed.
+		const notice = await activeTaskNotice(ctx?.cwd ?? process.cwd());
+		if (!notice || typeof event.systemPrompt !== "string") return undefined;
+		return { systemPrompt: `${event.systemPrompt}\n\n${notice}` };
 	});
 	pi.on("tool_call", (event: { toolName?: string; input?: unknown; toolCallId?: string }, ctx?: ExtensionContext) => {
 		if (ctx) railContext = ctx;

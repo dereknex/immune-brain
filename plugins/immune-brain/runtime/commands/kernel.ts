@@ -8,6 +8,7 @@ import {
 } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
+import { projectScopeOverlap } from "../unattended/batch_schedule";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import {
@@ -858,6 +859,57 @@ function runIntentAuthor(args: string[], root: string): KernelExecution {
  * TaskRecord, claim, Ledger, Git index, or session write. Returns a stable
  * bounded projection.
  */
+/**
+ * Read-only: compare the `scope_hint` of two or more TaskIntents of one
+ * Initiative and report every overlapping entry pair plus the start waves the
+ * Batch Plan would use. Optional `--blocked-by a=b,c` edges order the waves the
+ * way the Initiative's dependencies do. Writes nothing.
+ */
+function runIntentOverlap(args: string[], root: string): KernelExecution {
+	const usage = "Run imm-kernel intent overlap <path> <path>... [--blocked-by <task-id>=<task-id>,...] --json.";
+	const reject = (message: string): KernelExecution => ({
+		result: errorResult("invalid_command", message, 2),
+		journal: journalFor("intent", null, "rejected", "invalid_command", null, usage),
+	});
+	const paths: string[] = [];
+	const blockedBy = new Map<string, string[]>();
+	for (let index = 0; index < args.length; index += 1) {
+		const arg = args[index]!;
+		if (arg === "--json") continue;
+		if (arg === "--blocked-by") {
+			const edge = args[++index] ?? "";
+			const match = /^([A-Za-z0-9][A-Za-z0-9._-]*)=([A-Za-z0-9._,-]+)$/.exec(edge);
+			if (!match) return reject(`invalid --blocked-by edge: ${edge}`);
+			blockedBy.set(match[1]!, match[2]!.split(",").filter(Boolean));
+			continue;
+		}
+		if (arg.startsWith("-")) return reject(`unsupported intent overlap option: ${arg}`);
+		paths.push(arg);
+	}
+	if (paths.length < 2) return reject("imm-kernel intent overlap requires at least two paths");
+	const children: Array<{ task_id: string; blocked_by: string[]; scope_hint: string[] }> = [];
+	for (const path of paths) {
+		let intent: { task_id?: unknown; scope_hint?: unknown };
+		try {
+			intent = JSON.parse(readFileSync(resolve(root, path), "utf8"));
+		} catch (error) {
+			return { result: errorResult("source_invalid", `cannot read ${path}: ${error instanceof Error ? error.message : String(error)}`, 1), journal: journalFor("intent", null, "rejected", "source_read_failed", null, usage) };
+		}
+		if (typeof intent.task_id !== "string" || !Array.isArray(intent.scope_hint) || intent.scope_hint.some((entry) => typeof entry !== "string"))
+			return { result: errorResult("source_invalid", `${path} has no task_id and string scope_hint`, 1), journal: journalFor("intent", null, "rejected", "source_invalid", null, usage) };
+		children.push({ task_id: intent.task_id, blocked_by: [], scope_hint: intent.scope_hint as string[] });
+	}
+	const known = new Set(children.map((child) => child.task_id));
+	for (const child of children) child.blocked_by = (blockedBy.get(child.task_id) ?? []).filter((id) => known.has(id));
+	let report: ReturnType<typeof projectScopeOverlap>;
+	try {
+		report = projectScopeOverlap(children);
+	} catch (error) {
+		return reject(error instanceof Error ? error.message : String(error));
+	}
+	return { result: jsonResult(report, 0), journal: journalFor("intent", null, "ok", "command_ok", null, null) };
+}
+
 function runIntentValidate(args: string[], root: string): KernelExecution {
 	const nonFlags = args.filter((arg) => !arg.startsWith("-"));
 	if (nonFlags.length !== 1)
@@ -1173,10 +1225,11 @@ function executeKernelCommand(args: string[], root: string): KernelExecution {
 		const sub = args[1] ?? "";
 		if (sub === "author") return runIntentAuthor(args.slice(2), root);
 		if (sub === "validate") return runIntentValidate(args.slice(2), root);
+		if (sub === "overlap") return runIntentOverlap(args.slice(2), root);
 		return {
 			result: errorResult(
 				"invalid_command",
-				"usage: imm-kernel intent author <path> --stdin --json | validate <path> --json",
+				"usage: imm-kernel intent author <path> --stdin --json | validate <path> --json | overlap <path> <path>... [--blocked-by <task-id>=<task-id>,...] --json",
 				2,
 			),
 			journal: journalFor(

@@ -744,7 +744,7 @@ describe("acc-claude-batch-gate", () => {
 		expect(batchTool).toBeDefined();
 		expect(batchTool?.annotations).toEqual({ destructiveHint: true });
 		expect(batchTool?.inputSchema.required).toEqual(["initiative_slug"]);
-		expect(Object.keys(batchTool?.inputSchema.properties ?? {})).toEqual(["initiative_slug", "max_parallel", "lane_offers"]);
+		expect(Object.keys(batchTool?.inputSchema.properties ?? {})).toEqual(["initiative_slug", "max_parallel", "lane_offers", "final_verification"]);
 	});
 
 	it("rejects on non-interactive Claude Code session with unsupported_host error code", async () => {

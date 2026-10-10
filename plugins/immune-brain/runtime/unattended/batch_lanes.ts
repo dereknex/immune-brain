@@ -18,6 +18,7 @@ import {
 	runtimeContractDifferences,
 } from "../kernel/runtime_contracts";
 import { readFileSync } from "node:fs";
+import { runFinalVerification, type FinalVerificationReport } from "./batch_final_verification";
 import { runGithubTrackerOperation } from "../github_issue_tracker";
 import { hasLocalInitiative } from "../local_initiative";
 import type { BatchTrackerPort, StartBatchInput } from "./batch_runner";
@@ -481,7 +482,7 @@ function laneReport(
 	record: BatchLaneRunStateRecord,
 	reason: string | null,
 	nextAction: string,
-	extra: { handoffs?: BatchLaneHandoff[]; refusals?: BatchLaneRunReport["lane_refusals"]; tracker?: TrackerObservations } = {},
+	extra: { handoffs?: BatchLaneHandoff[]; refusals?: BatchLaneRunReport["lane_refusals"]; tracker?: TrackerObservations; final?: FinalVerificationReport } = {},
 ): BatchLaneRunReport {
 	return {
 		contract: "assurance_kernel/batch_run_report/v1",
@@ -496,6 +497,7 @@ function laneReport(
 		...(extra.refusals?.length ? { lane_refusals: extra.refusals } : {}),
 		...(extra.tracker?.length ? { tracker_observations: extra.tracker } : {}),
 		...(record.restores?.length ? { restores: record.restores } : {}),
+		...(extra.final ? { final_verification: extra.final } : {}),
 		next_action: nextAction || (TERMINAL_NEXT_ACTIONS[record.batch_state] ?? "Inspect the batch run state."),
 		created_at: record.updated_at,
 	};
@@ -719,6 +721,7 @@ export async function runLaneBatch(
 			budget: input.budget,
 			max_parallel: limit,
 			now: input.now,
+			...(input.final_verification?.length ? { final_verification: input.final_verification } : {}),
 		});
 	}
 
@@ -1009,13 +1012,22 @@ export async function runLaneBatch(
 
 	// 4. Schedule and report. Handoffs are observations, never readiness.
 	if (record.children.every((c) => c.state === "integrated" || c.state === "released")) {
+		// Full verification of the integrated batch branch, before the immutable
+		// completion report is written. A failure is reported, never rolled back.
+		const final = record.final_verification?.length ? runFinalVerification(input.root, record.final_verification) : undefined;
 		record.batch_state = "completed";
 		persist();
-		return finalizeLane(input.root, record, "all enrollable children integrated", "", {
-			handoffs: releaseHandoffs(input, record, lanes),
-			refusals,
-			tracker,
-		});
+		return finalizeLane(
+			input.root,
+			record,
+			final && !final.passed
+				? `all enrollable children integrated; final verification did not pass: ${final.results.filter((r) => !r.passed).map((r) => r.command).join(", ")}`
+				: "all enrollable children integrated",
+			final && !final.passed
+				? "Every child is integrated but the batch did not pass its final verification; inspect the failing commands on the batch branch. Integrated commits were not rolled back."
+				: "",
+			{ handoffs: releaseHandoffs(input, record, lanes), refusals, tracker, ...(final ? { final } : {}) },
+		);
 	}
 	const handoffs: BatchLaneHandoff[] = [];
 	for (const child of record.children) {

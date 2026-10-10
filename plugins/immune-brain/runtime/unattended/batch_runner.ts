@@ -121,6 +121,12 @@ export interface StartBatchInput {
 	 * repository is the Immune-Brain package; otherwise nothing is compared.
 	 */
 	executor_runtime?: string;
+	/**
+	 * Lane mode only: the project's full verification commands, recorded when a
+	 * new batch starts and run on the batch branch once every child is
+	 * integrated. Ignored on a resume; the recorded list stands.
+	 */
+	final_verification?: string[];
 }
 
 /** The one tracker effect a lane batch may cause: closing an integrated child's Issue. */

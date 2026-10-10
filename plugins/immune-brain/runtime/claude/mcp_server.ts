@@ -12,9 +12,10 @@ import {
 	type NativeConfirmationPort,
 } from "./interaction";
 import { ClaudeReviewHost, FileHookEventLog, parseHookStdin } from "./review_host";
-import { laneGuardHookOutput } from "./lane_guard";
+import { activeTaskHookOutput, laneGuardHookOutput } from "./lane_guard";
 import { ClaudeRuntime, type ToolMeta } from "./kernel_ports";
 import { parseLaneOffers, parseMaxParallel, resolveLaneParallel } from "../unattended/batch_lanes";
+import { parseFinalVerification } from "../unattended/batch_final_verification";
 import type { AssuranceCoordinatorPorts } from "../assurance/coordinator";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
@@ -57,6 +58,7 @@ export function listMcpTools() {
 											additionalProperties: false,
 										},
 									},
+									final_verification: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 8 },
 								}
 							: {}),
 						}
@@ -155,9 +157,11 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				const laneOffers = parseLaneOffers(args.lane_offers);
 				// A lane_offers-only call resumes the recorded lane batch; refused before any gate otherwise.
 				const maxParallel = resolveLaneParallel(options.cwd ?? process.cwd(), initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers);
+				const finalVerification = parseFinalVerification(args.final_verification);
 				return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
 					...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
 					...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),
+					...(finalVerification !== undefined ? { final_verification: finalVerification } : {}),
 				});
 			}
 			if (name === "retire_stale_batch") {
@@ -693,6 +697,11 @@ async function runHook(): Promise<void> {
 	if (payload?.hook_event_name === "PreToolUse") {
 		const decision = laneGuardHookOutput(payload);
 		if (decision) process.stdout.write(`${decision}\n`);
+		return;
+	}
+	if (payload?.hook_event_name === "UserPromptSubmit") {
+		const notice = await activeTaskHookOutput(payload);
+		if (notice) process.stdout.write(`${notice}\n`);
 		return;
 	}
 	const event = parseHookStdin(raw);

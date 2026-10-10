@@ -83,6 +83,46 @@ export function scopesOverlap(left: readonly string[], right: readonly string[])
 	});
 }
 
+/**
+ * The entry pairs that make two scope lists overlap, in list order: the
+ * machine evidence behind `scopesOverlap`, so a plan can name the shared paths
+ * instead of asserting disjointness by hand. An empty list on either side
+ * overlaps everything and is reported as the pair `["", entry]`.
+ */
+export function overlappingScopeEntries(left: readonly string[], right: readonly string[]): Array<[string, string]> {
+	if (!left.length || !right.length) return [[left[0] ?? "", right[0] ?? ""]];
+	const pairs: Array<[string, string]> = [];
+	for (const entry of left) {
+		const prefix = scopePrefix(entry);
+		for (const other of right) if (prefixOverlaps(prefix, scopePrefix(other))) pairs.push([entry, other]);
+	}
+	return pairs;
+}
+
+export interface ScopeOverlapReport {
+	contract: "assurance_kernel/intent_scope_overlap/v1";
+	overlaps: Array<{ task_ids: [string, string]; entries: Array<[string, string]> }>;
+	parallel_groups: BatchPlanParallelGroups;
+	scope_conflicts: BatchPlanScopeConflict[];
+}
+
+/**
+ * Compare the `scope_hint` of every pair of Intents of one Initiative. The
+ * groups use the same projection the Batch Plan uses, so the Planner's review
+ * table and the batch confirmation agree on what runs together.
+ */
+export function projectScopeOverlap(children: readonly PlanScheduleChild[]): ScopeOverlapReport {
+	const overlaps: ScopeOverlapReport["overlaps"] = [];
+	for (let i = 0; i < children.length; i += 1)
+		for (let j = i + 1; j < children.length; j += 1) {
+			const entries = scopesOverlap(children[i]!.scope_hint, children[j]!.scope_hint)
+				? overlappingScopeEntries(children[i]!.scope_hint, children[j]!.scope_hint)
+				: [];
+			if (entries.length) overlaps.push({ task_ids: [children[i]!.task_id, children[j]!.task_id], entries });
+		}
+	return { contract: "assurance_kernel/intent_scope_overlap/v1", overlaps, ...projectParallelGroups(children) };
+}
+
 function positiveLimit(maxParallel: number): number {
 	if (maxParallel === Number.POSITIVE_INFINITY) return maxParallel;
 	if (!Number.isSafeInteger(maxParallel) || maxParallel <= 0)
