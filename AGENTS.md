@@ -40,3 +40,7 @@
 ## Immune-Brain Preferences
 
 - Initiative carrier default: github
+- Lane max parallel: 4                 
+- Lane Executor Host: pi
+- Lane Executor model: group/auto-medium
+- Lane Executor effort: max
