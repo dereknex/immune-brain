@@ -1,0 +1,623 @@
+---
+name: imm-planner
+description: Use when the user explicitly requests Immune-Brain Spec and TaskIntent planning.
+---
+
+# Immune-Brain: Planner
+
+This skill adheres to the **[BASELINE.md](BASELINE.md)**.
+
+## Managed Request Routing
+
+`imm-planner` is entered explicitly by the user for a clear repository mutation.
+Ordinary host input does not invoke this Skill through natural-language routing.
+An active Assurance projection remains authoritative and is resumed only through
+an explicit `imm-run` entry; explicit Planner entry owns planning and the later
+native Enrollment gate.
+
+Plan-only output remains non-authoritative. Planner creates or validates a
+candidate Spec/TaskIntent. Planner may request the native Enrollment gate;
+only that gate grants execution authority. Explicit Plan-only requests stop after returning the
+planning artifacts. A later literal-user request to start Enrollment is a
+non-authoritative execution trigger: invoke the native Enrollment gate directly,
+without asking for chat pre-confirmation. For a clear mutation request that
+already includes execution, invoke that gate as soon as the candidate is
+validated and Git-tracked. Literal-user confirmation in the current Host's
+native gate remains the authority boundary. A gate failure preserves candidate
+artifacts and reports its reason plus exactly one same-Host recovery action; it
+must never recommend another Host, worktree, Direct Path, unmanaged
+implementation, or automatic retry. Fast-Track may compress the same phases but
+cannot bypass that boundary, QA, Review, authorization, or completion.
+
+## Clarification supplement
+
+Planner consumes an upstream Brainstorm manifest as closed-world framing and
+must not repeat, reopen, or rewrite confirmed decisions. Consult relevant ADRs
+and rejected Learnings only when an architectural decision, known historical
+constraint, or conflict with the existing design makes them relevant. Reuse
+upstream evidence; absent relevant history is not a planning blocker. It resolves repository facts, performs reference closure, and owns
+ordinary technical choices:
+component boundaries, internal interfaces, failure behavior, compatibility,
+migration, recovery and rollback, Verification, execution slices, dependencies,
+scope, and delivery risk. Persist that design in the candidate Spec and
+TaskIntent rather than copying the question transcript.
+
+Planner may ask only when concrete new evidence exposes an omission, repository
+conflict, or invalidated assumption. Ask the focused decision delta, cite the
+upstream `BR-*` item and new evidence when available, and preserve all unaffected
+decisions. Resolve a local delta here. If the answer reopens multiple product
+branches or changes the overall goal or Scope, stop and return to
+`imm-brainstorm`.
+
+Before handoff, run one handoff completeness check over the closed-world
+manifest: map every upstream item and every required phase exactly once, report
+each Slice's closable result plus the remaining gap, and confirm the complete
+confirmed outcome and its phases are actually delivered. Upstream items close as
+covered, decisioned, deferred, or out with a reason; a required phase is the
+confirmed outcome itself, so it must be delivered rather than closed out with a
+reason. A reason excuses an upstream item, never a still-required phase: dropping
+one is exactly the silent narrowing this check exists to catch, and the genuine
+reduction is a user decision that returns to `imm-brainstorm` and changes what
+was required. The check fails, and the candidate is not handoff-ready, when a
+required phase or upstream item has no mapping, or when the plan conserves a
+smaller deliverable than the confirmed outcome. An outcome-narrowing
+substitution is such a failure: a confirmed full integration presented as one
+pairwise CLI, or a `prototype first` dependency presented as `prototype only`.
+Both are conservation failures, not scope decisions, and the checker rejects
+them instead of accepting the reduced deliverable. Coverage is independent of
+question count, so a clear request and an already-confirmed decision still pass
+the same check without acquiring an extra confirmation.
+
+Direct Planner entry remains valid for a clear request and does not require a
+Brainstorm pass. Resolve facts and derive technical design; if an unresolved
+user-owned product decision appears, return to `imm-brainstorm` rather than
+silently choosing it or starting a second exhaustive interview. A zero-question
+fast path is valid when no clarification supplement is required. Present an
+unchanged result summary as a non-blocking correction window and do not ask the
+user to reconfirm existing decisions. If the summary itself introduces or
+changes a user decision, confirm only that decision delta before finalizing.
+
+## Kernel TaskIntent Routing
+
+The following Kernel contract applies after this route selects Planner. Eligible
+read-only work remains host-native; file count and local verifier count do not
+create Managed authority. Do not create a planning artifact merely to record
+that a non-mutating request was classified outside Managed.
+
+Before producing a new managed planning artifact, resolve the canonical wrappers
+from the declared Skill location: `../../bin/imm-plan` and
+`../../bin/imm-kernel`. Invoke `imm-plan --routing-status --json` through that
+resolved wrapper and use the resolved `imm-kernel` wrapper for every Kernel
+command below. Do not assume either bare command is available on shell `PATH`.
+Then route deterministically:
+
+- an active Kernel claim remains with `imm-run` for foreground Kernel Tool
+  coordination, except a Loop-requested revision follows Enrolled Intent Revision
+  below to prepare a non-authoritative proposal for that same owner;
+- an active or otherwise nonterminal v3 Plan remains on its existing v3 route;
+- no routing policy on an otherwise unowned workspace triggers automatic policy
+  activation below before producing any planning artifact;
+- a valid `kernel_task_intent` retirement policy produces one TaskIntent draft
+  through the current Host's explicit `imm-planner`;
+- an invalid, unreadable, untracked, or tracked-deleted policy rejects new
+  planning authority with `routing_policy_invalid`;
+- no Planner path grants execution authority or falls back to v3 after retirement.
+
+Current owner, phase, completion, and authority facts are authoritative only
+when read from the Assurance projection and TaskRecord. `CONTEXT.md` is
+non-authoritative vocabulary and architecture navigation, not a workflow-status
+source. If its prose conflicts with those authority facts, report stale
+documentation, preserve projection-based routing, and do not automatically
+synchronize either representation.
+
+Historical prose Plans are read-only artifacts. Their validation never proves
+Managed authority and is not a prerequisite for new TaskIntent planning. New
+execution requires a Git-tracked TaskIntent whose
+`imm-kernel intent validate <path> --json` projection is
+`valid: true` and `enrollment_ready: true`, followed by current-Host native
+Enrollment.
+
+Host identity is implicit and never a planning input. The production boundary
+that turns a Git-tracked TaskIntent draft into managed execution authority is
+the current Host's native Enrollment gate. Invoke that Host integration
+directly when the route is ready; do not ask for chat pre-confirmation. The
+single literal-user decision is bound to the TaskIntent revision, content hash,
+and preparation digest. Enrollment validates the intent, Git ownership, scope,
+workspace claim, and final authority preconditions without executing acceptance
+descriptors. A routine task proceeds from that single confirmation through
+enrollment, execution and QA without a second human stop.
+
+**Automatic policy activation**
+
+Explicit `imm-planner` entry includes local routing setup, including for plan-only
+requests. When the routing projection reports `policy_status: legacy_v3` and
+`ownership: absent`, and neither Kernel nor nonterminal v3 ownership exists,
+perform these steps without a separate enablement question:
+
+1. Create `docs/plans/` if needed. Require real directories without symlink
+   components; create `docs/plans/managed-task-routing-policy.json` exclusively
+   (fail if it already exists), using exactly the JSON below with two-space
+   indentation, the shown field order, and one trailing newline.
+2. Run `git add -- docs/plans/managed-task-routing-policy.json` only for the file
+   created in this activation. Preserve all other worktree and index changes;
+   do not commit, force-add an ignored file, or alter Git configuration.
+3. Re-run `imm-plan --routing-status --json` through the resolved wrapper.
+   Continue canonical TaskIntent authoring only when `policy_status: active`,
+   `route: kernel_task_intent`, and `ownership: tracked_clean` all hold. Report
+   automatic activation briefly and continue planning in the same turn.
+
+```json
+{
+  "contract": "immune_brain/managed_task_routing_policy/v1",
+  "revision": 1,
+  "new_task_route": "kernel_task_intent",
+  "v3_new_plan_sync": "retired",
+  "legacy_v3_mode": "drain_read_only",
+  "terminal_import": "disabled"
+}
+```
+
+An already active policy needs no write or staging. An existing invalid,
+untracked, unreadable, tracked-deleted, or divergent policy is not an activation
+candidate: preserve it and report `routing_policy_invalid`. If creation,
+staging, or verification fails, report the concrete blocker and retain any
+created file; stop before authoring, without overwriting existing bytes or
+falling back to v3. A repository/user prohibition on policy setup or staging
+blocks only this dependent planning step. Activation grants no execution
+authority; the native Enrollment gate remains required. Read-only routing
+queries and the canonical author command retain their existing runtime behavior.
+
+## Candidate Authoring
+
+Read this section before creating new candidate artifacts, after request routing
+and clarification. It does not apply to Enrolled Intent Revision.
+
+Before authoring a TaskIntent, trace each expected behavior from its public or
+runtime entry point through existing imports and callers to the highest focused
+behavioral tests. Include generated or packaged mirrors and every owner of the
+same state machine. Record the concrete paths in the Spec's discovery evidence when the work is
+complex; simple TaskIntent-only work records them in `scope_hint`.
+Do not author while a referenced sibling is unresolved. Use the smallest
+coherent module directory for ordinary implementation scope. Keep Kernel,
+authority, migration, secret, and security-sensitive scope exact to the files
+proved necessary by the trace. Scope is closed by reference evidence, not by an
+exhaustive filename guess.
+
+The Planner never writes the `docs/plans/<task-id>.intent.json` artifact
+directly and never overwrites an existing TaskIntent. Under an active
+`kernel_task_intent` policy it supplies one complete candidate to the canonical
+`imm-kernel intent author <path> --stdin --json` command, which owns strict
+parsing, verification-descriptor canonicalization, path binding, and exclusive
+file creation; then it validates the created artifact with
+`imm-kernel intent validate <path> --json`. Revisions of an enrolled intent
+continue through Kernel `revise_intent` authority and are not a Planner
+overwrite path.
+
+After authoring, inspect ownership and stage only the exact Planner-produced
+Spec and TaskIntent paths before validation and handoff. Do not hand routine
+Planner-owned staging to the user. This grants no commit, push, broad staging,
+or authority over pre-existing user changes; a mixed-change ownership conflict
+stops only the affected handoff.
+
+Before authoring a TaskIntent that adds a field or verdict branch to a state
+machine, enumerate every consumer of that value and of the version gates around
+it: the producing side, each branch or switch that reads it, and any migration or
+replay path that carries historical copies. Name all of them in `scope_hint`. An
+authoring pass that traces only the producer is the defect this enumeration
+exists to prevent.
+
+### Initiative Carrier Preference
+
+For a large proposal split across multiple TaskIntents, exactly one planning
+carrier is chosen per Initiative: a Local Markdown file at
+`docs/initiatives/<slug>.md` or one GitHub Parent Issue. This preference applies
+only to Initiatives; ordinary TaskIntents remain tracked by Kernel TaskRecords.
+Resolve the carrier in this order, reading each source directly rather than
+assuming the current Host injected it into context:
+
+1. a literal user instruction for the current request;
+2. `Initiative carrier default: local` or `Initiative carrier default: github`
+   in the repository root agent instruction file, whichever this repository
+   tracks: `AGENTS.md` or `CLAUDE.md`;
+3. the same directive in the Host's user-level agent instruction file; or
+4. ask the user.
+
+A repository directive overrides the user-level directive. There is no silent
+carrier default: when no valid directive is found, ask and report which sources
+were checked. Report an invalid value and ask instead of guessing. Never resolve
+to `local` or `github` because a source was absent or unreadable. After resolving
+it, display one non-blocking line with the selected carrier and its source. A configured `github` default is
+standing opt-in for GitHub projection, but the literal user must still confirm
+the named Initiative, its immutable slug, and the complete Parent/Child
+decomposition before the first remote mutation. A prior bulk approval cannot
+confirm a name, slug, Child, or dependency that had not yet been shown.
+
+Once decomposition is complete, present one review table containing the Parent
+result and every Child's stable Slice ID, result, scope boundary, risk, blockers,
+and proposed execution order. Ask one focused question: whether the coverage,
+granularity, and dependencies are correct. Recommend the complete current
+frontier so the user can approve it in one response. Before that approval,
+perform zero GitHub mutations. A partial or progressively disclosed issue set is
+not eligible for publication.
+
+After approval, author, stage, and validate every TaskIntent in the decomposition
+with `valid: true` and `enrollment_ready: true`. Resolve `../bin/imm-tracker` from this packaged contract; do not assume a bare command is on `PATH`. Submit the entire approved set once through
+`imm-tracker publish-initiative --stdin --json`. Its input contains the confirmed
+Initiative slug and goal, Parent projection, and every Child's `slice_id`,
+canonical TaskIntent path, bounded public `acceptance` summaries, and public
+projection. The Parent projection requires
+`short_name`, `title`, `problem`, `result`, and `design`, and may include
+`source_issue`, `decisions`,
+`testing_strategy`, and `out_of_scope`. `short_name` (1-32 characters) is the
+stable short Initiative name used in every Issue title; `title` (1-60
+characters) is the short Initiative display title; `source_issue` is the
+originating feature Issue number, rendered as a Provenance link. `design`
+records Initiative-level
+invariants, Slice boundaries and ordering, shared interfaces or state flow, and
+material compatibility decisions. Every Parent Slice must correspond to one
+published Child; future checklist-only Slices are not allowed in the batch.
+
+Each Child must provide public `acceptance` entries with `id` and a 1-500
+character `summary`. Their IDs must match every canonical TaskIntent acceptance
+ID exactly once. Canonical assertion prose is authority evidence and must never
+be copied into public GitHub projection. Each Child projection requires
+`title` (1-60 characters), the short Slice display title, and may contain
+`result`, `current_behavior`,
+`desired_behavior`, `key_interfaces`, `verification`, `blocked_by` Task IDs,
+`out_of_scope`, and `agent_handoff`. The tracker composes Issue titles from
+these display names only — the Parent as `[<short_name>] <title>` and each
+Child as `[<short_name>] S<n> <title>` with `n` the declared Slice position —
+and fails the whole batch closed before any remote write when a display name
+is missing or the composed title exceeds 80 characters; it never falls back to
+goal prose and never truncates a title. The tracker rereads every canonical
+TaskIntent for identity, risk, and acceptance IDs; projection fields and public
+summaries never widen TaskIntent scope or authority. It validates the complete dependency graph before
+remote writes, creates the Parent once, creates all Children, attaches every
+Child as a native Sub-issue, creates native `blocked_by` relations, and takes
+every Issue number from its own create response. The write flow is direct: one
+start-of-run read of the repository identity, the Issue listing, and the label
+listing, then one create per absent Issue in dependency order, one attach per
+Child, and one relation write per edge. No repository listing, attachment,
+dependency or ownership confirmation follows a write; one Issue-scoped read
+follows each create to resolve the database id the relation endpoints need,
+because `gh issue create` returns only the Issue URL. No cumulative deadline
+exists either; each call keeps its own per-call timeout and
+the caller's cancellation. Deduplication is start-only: a rerun of the same
+approved batch adopts whatever the start listing already carries and writes only
+the missing relations, so it never creates a duplicate Issue and never repeats a
+completed write. Concurrent edits made during a run are not detected in that
+run; they surface as drift at the start of the next run. Every Child carries
+`ready-for-agent`, blocked Children
+additionally carry `blocked`, and the Parent carries neither; the tracker never
+creates labels, so a repository missing a required label fails the batch closed
+before any remote write. The Child Agent Brief includes a direct Parent Issue link.
+Internal role prompts, tool policies, review gates, model reservations, and
+prompt digests never belong in this external handoff. If
+`docs/initiatives/<slug>.md` exists, publication fails with a carrier conflict;
+Local mode performs zero GitHub operations.
+
+The batch result includes an execution recommendation: the first unblocked Task,
+a stable dependency order, and parallel groups. For a plan-only request, report
+that recommendation and stop. For a request that includes execution, invoke the
+native Enrollment gate for the recommended first TaskIntent after successful
+publication; do not ask for another chat confirmation. GitHub selection never
+bypasses Enrollment.
+
+Tracker output is observation, never authority. Before the Planner returns, its
+GitHub carrier outcome must be exactly one of: `tracker_associated` after the
+complete batch returns `created`, `updated`, or `already_current`;
+`awaiting_user_initiative_confirmation` with the single pending name, slug, and
+complete-decomposition decision; or `tracker_projection_failed` with the returned
+failure and exact retry action. A candidate Initiative or partial Issue set
+recorded only in the Spec or final summary is neither user confirmation nor a
+completed carrier outcome. Report `retryable_failure`, `permanent_failure`, or
+`ambiguous_remote_state` and the exact batch retry action. A failure after the
+request may have landed is reported as uncertain with its confirmed steps, its
+pending steps, and one recovery action: rerun the same approved batch, whose
+start listing adopts whatever landed. This does not invalidate
+already-authored planning files, but it blocks `tracker_associated` and every
+Enrollment or execution handoff for that Initiative until the same complete
+batch succeeds. Do not infer opt-in from tracker output or Issue state, import Issue state, create a TaskIntent from an Issue, or store Issue identity in
+TaskIntent or TaskRecord. Existing Issue markers grant permission only for
+idempotent retry of that same approved Initiative; they never grant execution
+authority.
+
+The Planner never closes the Parent. The terminal projection of a Child does: when
+`mark-terminal` closes a Child as completed and every Slice Child of that Initiative
+is closed as completed, the tracker closes the Parent as completed; an open, stopped
+or parked Child keeps it open.
+
+For amending an already-published Initiative, the same
+`imm-tracker publish-initiative --stdin --json` operation accepts an optional
+`amendment` input after the literal user approves the changed pending frontier.
+Provide the complete approved pending Tasks plus the complete read-only
+historical Child list, each binding the observed `issue_number`, title, body,
+and state at approval. The amendment uses the same direct write flow: one start
+listing (plus Issue-scoped Sub-issue and `blocked_by` reads) verifies every bound
+Issue against its baseline, then the Parent is edited at most once, each approved
+pending brief is edited at most once, newly added pending Children are created as
+in ordinary publication, and each pending Child's `blocked_by` set is converged
+to the approved set. Historical Children are never written and keep their
+byte-exact content, native Sub-issue links and dependency relations. No read
+follows a write and no closing recheck runs, so baseline drift that appears after
+the start listing is not detected in that run; it surfaces at the start of the
+next run. Omitted membership, baseline drift present at start, and a stopped
+historical prerequisite fail closed before any write with an exact retry action;
+the strict no-amendment default is unchanged.
+
+### Verification Descriptor Discipline
+
+Every acceptance verification descriptor must be a focused, deterministic,
+project-owned check that exercises only its acceptance assertion. Use
+`assurance_kernel/verification_descriptor/v2` and reuse an existing project
+script or host tool through its literal `command`; do not infer a language,
+package manager, or runner. Add `environment.prepare` only when the check needs
+explicit setup, and declare only the generated directories it needs in
+`environment.writable_paths`. Never hide package installation inside an
+acceptance command. For every descriptor, identify whether its executable is
+provided by the QA host or by tracked delivery content, where every dependency
+comes from in the disposable delivery, what explicit setup is required, and
+which declared writable paths that setup or check creates. A dependency found
+only in the Planner's live worktree, including an absolute local `node_modules`
+path, is not delivery provenance. Prefer the highest existing observable behavioral test seam
+and the fewest sufficient seams; never use the full test suite, a build, network
+access, or redundant heavyweight checks as acceptance. Cite relevant test prior
+art and explain how the selected seam catches the intended regression. This is
+a planning heuristic: it must not weaken acceptance-specific focused
+verification descriptors or add a mandatory user confirmation. Use the smallest
+`timeout_ms` and `max_output_bytes` that cover deterministic post-implementation
+QA. A v1 descriptor is historical-only and requires explicit Intent revision
+before execution. Report `valid` and `enrollment_ready` only as structural and
+Enrollment readiness; only a completed deterministic QA result proves that a
+descriptor executed and passed.
+
+**Acceptance-to-invariant mapping.** Trace each acceptance assertion to an
+observable invariant at a real seam, then name the positive, negative, and bound
+controls that exercise it. Name the controls explicitly instead of relying on
+the happy path: a happy path alone never proves a guard. The six generalized
+motivating classes to check for are: normalization precedes retrieval (an input
+is normalized before it is used to retrieve); validation precedes merge (a
+rejected input never enters the merged state); the deadline covers the whole
+lifecycle including cleanup; ranking tolerates missing embeddings (an absent
+signal is ranked, not silently skipped); the budget covers the complete
+serialized request; and each success, failure, and timeout outcome carries its
+own duration evidence. These are workflow-quality input patterns, not requests
+to edit the original applications that motivated the audit.
+
+**Environment and prerequisite discipline.** A descriptor that needs a
+prerequisite states its provenance and how it is obtained. Preparation must not
+hide a download, credential use, production write, or system change: authorize
+it explicitly, or redesign the check to avoid it. Require cleanup on failure and
+interruption, and restoration of any explicitly authorized setting. An absent
+dependency, a missing simulator, or a preparation failure is a failed check, not
+a pass. Zero matched checks and skipped required checks are failures: a required
+check that selects no test, or that is skipped, must fail the acceptance rather
+than silently succeed. Separate automated behavioral or geometry evidence from
+human judgment of motion quality; a descriptor can assert only the automated
+half. Textual presence in a contract string is not proof that a provider obeyed
+it, and structural Enrollment readiness is not proof that a descriptor executed.
+
+## Core Responsibilities
+
+- **Decomposition**: Convert requirements into one or more TaskIntents. Add a Spec under `docs/specs/` only for complex work. Treat Technical Design as one TaskIntent decomposition dimension alongside outcome, Verification, dependency, risk, rollback, compatibility, and authority.
+- **Outcome Conservation**: The plan conserves the complete confirmed outcome and its required phases. A required phase is delivered, not closed out with a reason; a genuine reduction changes what the user confirmed and returns to `imm-brainstorm`. A generalized substitution such as full integration becoming a pairwise CLI, or `prototype first` becoming `prototype only`, is a completeness-check failure rather than a valid plan. Each Slice reports its closable result and the remaining gap so an omitted phase is visible instead of implied.
+- **Outcome Focus**: Each TaskIntent owns one independently verifiable outcome. Implementation batches are Executor work, not separately authorized read/edit/run Steps.
+- **Planning granularity**: Keep a coherent outcome together when acceptance, risk, rollback, and authority can settle together. Use the TaskIntent decomposition rules below for independent outcomes. File count, tokens, compactions, elapsed time, and review rounds are evidence for judgment, not universal gates.
+- **Historical artifacts**: v3 prose Plan mutation is retired. `imm-plan` is a read-only validator for archived Plans; create no new Roadmap, Phase, successor Plan, or State Ledger.
+- **Risk-Triggered Exploration**: Before authoring a TaskIntent, resolve only unknowns that could change scope, design, or verification using targeted read-only probes. Internal `arch-explorer` and explicit-lens `advisory-reviewer` roles return evidence without writing the Spec, TaskIntent, or workflow state. Stop probing when outcome, scope, and verification are concrete. Do not use retired Plan termination flags to classify discovery failures.
+- **Simplicity**: Apply the BASELINE Workflow Activation gate first. Non-mutating host-native work creates no Planner artifact. Explicit Immune-Brain Skill entry starts this Planner phase; ordinary host input does not invoke it through natural-language routing. Create one coherent outcome instead of expanding ceremony.
+- **Design-Depth Classification**: Classify change design risk with the smallest sufficient tier: **Low risk** (copy, configuration, trivial rename, or contained local fix) may omit a separate Technical Design; **Medium risk** (non-trivial single-module behavior or internal contract) records affected components, decisions, invariants, failure behavior, and verification implications; **High risk** (cross-module/API/data-flow/state-machine, security, migration, concurrency, architecture ownership, cross-runtime/package-contract, or persisted-state work) records boundaries, interfaces or flow, alternatives, invariants, rollback/compatibility, and verification implications. Medium and High risk require Technical Design in the Spec. Do not classify a change as Low risk when it has a contract, ownership, security, persistence, compatibility, or multi-component concern. Every new or revised Spec records `**Design risk**: Low|Medium|High` with an adjacent rationale.
+- **Design-view selection**: For Medium and High risk, select every materially relevant technical-design view from architecture layers, service/component interfaces, data flow, state transitions, and temporal sequence. Record a short `Design views` statement naming the selected views and why any omitted view cannot affect the design. Do not write empty architecture, interface, data-flow, state, or sequence sections. Low risk remains concise and may omit Technical Design. When a selected view is recorded, also record its required decision content: architecture layers need layer responsibilities, dependency direction, ownership, and prohibited coupling; service/component interfaces need inputs, outputs, errors, compatibility/versioning, and caller/callee ownership; data flow needs source, transformations, validation, destination, and failure handling; state transitions need states, legal transitions, trigger, invariant, terminal ownership, and recovery; temporal sequence needs ordered interactions, authority at each point, interruption behavior, and idempotency.
+- **Technical Design Authority**: The Spec is the single Technical Design baseline. TaskIntent acceptance and scope reference the applicable design decisions or invariants without copying Technical Design prose. If discovery invalidates the baseline, stop execution and return to Planner to update the Spec and decide whether `replan` is required. TaskIntent and Initiative text do not duplicate Technical Design prose or become a prose Plan substitute.
+- **TaskIntent decomposition**: Use the selected design boundaries as one retain/split criterion for TaskIntent slices. Keep work in one TaskIntent when the selected views describe one coherent executable slice with shared acceptance, risk treatment, rollback, and authority. Split a successor TaskIntent when a service boundary, state-machine owner, migration/compatibility boundary, independently promotable layer, or sequence dependency needs independent verification, rollback, authorization, or settlement. Do not split merely because the design names several layers, files, or services. Treat trust-boundary changes as the same kind of decomposition evidence: a TaskIntent should normally change one primary trust-boundary invariant, while merely traversing several boundaries or updating both sides of one end-to-end authority chain does not require a split. Split separate trust invariants when they can be independently verified, rolled back, authorized, migrated, or settled. Keep multiple trust-boundary changes together only when they form one atomic security outcome and splitting would create an unsafe or unusable intermediate state; record that reason in the Spec. This is Planner judgment, not a TaskIntent schema field or an Enrollment counting rule. This does not revive prose Plan, Roadmap, or Phase authority. For a multi-TaskIntent Initiative only, each Slice also states what is observable and verifiable when that Slice alone has landed, and no acceptance may require another unfinished Slice's work to pass; the Initiative review table's existing `result` column carries that statement. A Slice with no such result is a horizontal layer slice and is re-cut. Exception: a wide mechanical refactor whose blast radius prevents any green vertical slice may be batched, with the rationale recorded and the batches blocking one final integrate-and-verify Slice.
+- **Mermaid Use**: Mermaid is required only when a medium/high-risk design contains structure, sequence, data flow, or state transition relationships that a diagram materially clarifies. Mermaid is not a universal gate; a diagram supplements adjacent prose and never becomes a second design authority. Medium/High risk Specs record `**Diagram decision**: required|not_required` and a non-empty `**Diagram reason**:`. A `required` decision must have a Mermaid block; `not_required` explains why prose is sufficient. Low-risk Specs omit the empty ceremony and record neither field.
+- **Verification**: Every acceptance assertion has a concrete focused descriptor that can fail on the intended regression, and every named invariant has positive, negative, and bound controls at an observable seam. Hypothetical evidence is not execution-ready; a check that matches zero tests, is skipped, or lacks its prerequisite is a failure rather than a pass.
+- **Executable Scope**: `scope_hint` is the mutation envelope, not discovery context. Close references across callers, tests, generated mirrors, and state-machine owners before authoring. Simple tasks are TaskIntent-only. A complex task binds at most one active Spec by content identity; do not add archive paths for freeze, and do not relocate artifacts. Collect all known scope gaps in one revision request; ask again only when new evidence changes the boundary.
+- **Devil's Advocate Preplan Audit**: Medium/High risk work records a `Devil's Advocate Audit` in its Spec covering rollback resilience, verification vanity, and spec dilution detection. Explain recovery from partial implementation, why verification detects the regression, and how accepted requirements remain covered. Simple TaskIntent-only work records outcome, boundary, and concrete verification on the Intent. Low-risk work omits the empty template.
+- **Execution posture**: Record `test-first` or `characterization-first` on the Spec when the work is complex, otherwise on the TaskIntent, when explicitly requested or justified by fragile untested behavior. The Executor owns the local choreography; do not create prototype or RED/GREEN/REFACTOR authority Steps. Throwaway probes must have a cleanup condition and a durable decision output.
+
+## Settlement-Design Contract
+
+Settlement-class work — a TaskIntent, Spec, or Plan whose scope touches terminal
+settlement, cancellation, timeout, race, dispatch failure, or authority-lifecycle
+semantics — must carry an explicit settlement enumeration before it is
+execution-ready:
+
+- **Trigger sources**: enumerate every event that can start, interrupt, or
+  settle a job (completion, stop, cancel, timeout, dispatch failure, provider
+  failure, session shutdown).
+- **State inventory**: enumerate every job state the change introduces or
+  mutates (pending, reserved, dispatched, settling, terminal) and the
+  transitions between them.
+- **Terminal ownership**: name the single authority that may settle each
+  transition (host-created branded receipt, validated native terminal status,
+  literal-user confirmation) and state explicitly which local signals
+  (promise resolution or rejection, elapsed time, child acknowledgement) are
+  non-authoritative.
+- **Same-state-machine coverage**: scope_hint must list every code path that
+  owns a transition of the same state machine — not only paths the diff
+  touches — so one review round can audit the whole machine instead of
+  discovering sibling paths serially.
+
+An intent classified as settlement-class without this enumeration is not
+execution-ready; return it for enrichment rather than enrolling it.
+
+## Retirement Completion Contract
+
+For retirement-class work, deletion of source and contract text is a completion condition. A retirement that routes the command to a retirement wall, pins the absence with test assertions, and leaves the source in the tree is not complete. A retirement is not complete until the source and its contract text are deleted.
+
+An absence test is transitional scaffolding proving an in-progress deletion rather than a substitute for one. An absence test is transitional evidence of an in-progress deletion and may not stand in place of one. It proves a deletion in progress, not a completed result. Distinguish an absence assertion that guards something already gone, which is durable and correct, from one that stands in for a deletion still owed, which is a promise recorded as if it were a result.
+
+## Optional page_design mode
+
+When `mode: page_design` is selected, Planner emits a `page_design` artifact
+instead of a Plan. Treat it as a pre-implementation design contract:
+
+- Read the target root `DESIGN.md` first; when absent, keep visual fields
+style-neutral rather than inventing a palette or aesthetic.
+- State page job, type, primary intent, content hierarchy, reduction decisions,
+and one core message per section.
+- Separate information regions from operation regions. Keep at most two
+high-frequency `visible_actions`; place low-frequency or destructive actions in
+`hidden_actions` with `collapsed: true` and semantic icon anchors.
+- Define form width limits, typography/spacing rhythm, responsive behavior,
+state coverage, and verification cues for desktop and mobile. Use `Standard` or
+`Rich` only when the source and page complexity justify it.
+- Do not edit UI files, tests, Specs, Plans, or workflow state in this mode.
+The mode produces an
+implementation-ready contract and routes it to normal planning or execution.
+
+## Enrolled Intent Revision
+
+Use this route instead of new-task planning when the current Loop requests a
+scope or acceptance revision. Planner prepares the complete proposed revision
+from the requested delta and concrete evidence without replacing the active
+owner. Keep unaffected decisions; include all known scope, Spec, and acceptance
+changes in the proposal. Preserve the prior on-disk sidecars until Kernel applies
+the revision; do not overwrite the enrolled TaskIntent, invoke the new-intent
+author command, or request a second Enrollment.
+
+Return the proposal to the current Loop owner for Kernel `revise_intent` or,
+when breaking, `approve_breaking_intent_revision` with the complete next intent.
+The native gate is the single user decision for a breaking revision; candidate
+preparation does not apply the revision or authorize expanded execution.
+
+## Planning Rules
+
+- **Entry Contract**: Use when Spec/TaskIntent planning is needed. An already enrolled owner remains on its current Kernel authority and resumes only through explicit `imm-run`; a validated candidate still needs native Enrollment.
+- **Output Language Gate**: Before writing or revising any Spec or Plan, read the project output language policy from `AGENTS.md`, `IMMUNE.md`, or Immune-Brain plugin config. Default Spec and Plan prose to English unless the current user request, project instructions, or host/user preference contains an explicit document-language instruction. A reply-language instruction does not change document language. Keep schema fields, CLI commands, file paths, code identifiers, enum values, JSON keys, and canonical terms such as `Step`, `Plan`, `Spec`, `Verification`, `Discovery cache`, and `Devil's Advocate Audit` literal.
+- **Clarification Supplement**: If an upstream `imm-brainstorm` manifest exists, verify that every `BR-Q-*` item is resolved and every confirmed framing decision is represented; must not repeat, reopen, or rewrite confirmed decisions. Ask only a focused omission, repository-conflict, or invalidated-assumption delta tied to concrete evidence. Resolve a local delta here; return to `imm-brainstorm` when it reopens multiple product branches or changes the overall goal or Scope. Finalization requires no unresolved supplement and no unconfirmed decision introduced by Planner.
+- **Planning Bootstrap**: When no upstream `imm-brainstorm` manifest exists, preserve Direct Planner entry by resolving repository facts and deriving ordinary technical choices. An already-clear request takes the zero-question fast path to a non-blocking correction summary. Discovery of an unresolved user-owned goal, user, scope, behavior, compatibility preference, risk acceptance, or success criterion returns to `imm-brainstorm`; Planner does not convert product uncertainty into a silent assumption or duplicate Brainstorm's interview.
+- **Small-scope budget discipline**: Read the named files first for small or
+  fixture-sized planning tasks. Read relevant orientation documents and follow
+  caller, test, or generated-reference links when a concrete missing fact requires
+  them; root documents are not a fixed preflight checklist. Before broad searching,
+  consult `CONTEXT.md`'s Architecture Map. Avoid repository-wide listings and
+  unrelated directories when targeted evidence resolves the task. Required
+  authority, security, and shared-contract reference closure still applies.
+- **Decision History Discovery**: Apply Clarification supplement's conditional
+  history lookup; reuse upstream evidence rather than repeating discovery.
+- **Testing Seam Selection**: Prefer the highest existing observable behavioral
+  test seam and the fewest sufficient seams. Cite relevant test prior art and
+  explain how the selected seam catches the intended regression. This is a
+  planning heuristic: it must not weaken acceptance-specific focused
+  verification descriptors or add a mandatory user confirmation.
+  **Agreed seam recording.** Record, for each acceptance, the agreed seam: the
+  existing or new test file and the observable boundary it exercises. Complex
+  work records it in the Spec's verification and acceptance mapping; simple work
+  names it in the acceptance assertion. Because the seam is part of the
+  candidate, present it in the native Enrollment gate, and the Initiative review
+  table when one exists, without any added confirmation. Tests the Executor adds
+  exercise the agreed seams, and replacing a seam is an acceptance change and
+  follows Enrolled Intent Revision.
+- **Review Mapping**: In-scope rework stays with the enrolled TaskIntent and explicit `imm-run` entry. Cross-scope findings become a Planner decision delta with concrete missing paths and verification evidence; do not create a successor prose Plan.
+- **Decision Provenance**: Every Spec decision and every acceptance names exactly one source: an upstream `BR-*` ID, repository evidence with a concrete path, or a delegated technical choice as defined by Clarification supplement. The rule applies with or without an upstream Brainstorm manifest, and the source does not have to be a `BR-DEC` item: Direct Planner entry and delegated technical choices stay legitimate sources. A user-owned decision — goal, user, scope, observable behavior, compatibility preference, risk acceptance, or success criterion — that names no source is a defect the Planner removes or returns for clarification under the existing Clarification supplement routes. Simple TaskIntent-only work satisfies the rule when each acceptance traces to the request text and adds no table.
+- **Brainstorm Manifest Mapping**: Record every upstream `BR-*` item in a Spec `Brainstorm Trace` when the work is complex, otherwise on the TaskIntent, mapped to acceptance, a captured decision, or an explicit reason for deferral or exclusion. Resolve every `BR-Q-*` item before handoff. Do not silently narrow confirmed framing.
+- **Handoff Completeness Check**: Before reporting a candidate as handoff-ready, confirm every upstream item and required phase is mapped exactly once, that required phases are delivered rather than excused by a reason, and that no confirmed outcome was conserved as a smaller deliverable. Reject a narrowed deliverable as a completeness failure; ask again only for a new material delta, never to reconfirm an unchanged clear request or an already-confirmed decision.
+- **Session Lifecycle Ownership**: The user chooses the current or a new session. Tokens, compactions, tool counts, elapsed time, and review rounds never trigger automatic session creation or termination. Recovery uses TaskRecord and the fresh Kernel projection.
+- **Subagents**: Only when optional research is needed, read Research Dispatch and its shared dispatch reference. Default to inline evidence gathering. Plan conditional reviewers such as `security-reviewer` only if their trigger surfaces are explicit; do not manufacture them.
+- **Enrolled Intent**: Follow Enrolled Intent Revision for a Loop-requested scope or acceptance change; candidate preparation never changes the current owner or grants execution authority.
+- **CONTEXT.md Vocabulary**: Consult the relevant `CONTEXT.md` terms when domain meaning is unclear or changes; known file-local tasks do not require a full root-document read. `CONTEXT.md` is vocabulary and architecture navigation, not execution state.
+- **Discovery Protocol**: Read `CONTEXT.md` `## Architecture Map` before broad searching; consult relevant `docs/solutions/` evidence under Clarification supplement's history trigger. Record concrete file pointers and reasons in the Spec when one exists, otherwise on the TaskIntent. Do not read or write a legacy Step discovery cache.
+
+**Bounded discovery.** State the question, the named paths, the expected evidence,
+and the stop condition before an investigation expands. Read known paths directly,
+expand only along proved callers and state owners, and stop once the question is
+closed instead of continuing into nearby unrelated paths. Keep project-specific
+log or history searches inside the named project paths. Reads or investigation
+output that is truncated continue in bounded pages only while still needed, and an
+operation that may have partially succeeded is inspected before it is retried for
+only its unfinished part. Telemetry and tool-call counts are observational: they
+never justify dropping evidence the question requires, and they are not comparable
+to another session's numbers unless the inputs and environment match.
+- **Planning Quality Gate**: For elevated-risk complex work, verify contract surfaces, compatibility, interruption recovery, rollback, verification strength, and Brainstorm traceability in the Spec. Simple TaskIntent-only work verifies those properties on the Intent. Do not invoke retired Plan mutation or State Ledger synchronization.
+- **Parallel Probes**: Optional read-only probes must have bounded non-overlapping scopes, expected evidence, and no file or authority writes. They are advisory discovery, not persisted Step annotations. Probe failure falls back to inline investigation with a recorded reason.
+
+## Research Dispatch
+
+Follow [`docs/reference/subagent-dispatch-protocol.md`](docs/reference/subagent-dispatch-protocol.md) for the full dispatch lifecycle. This section defines planner-specific optional research dispatch.
+
+A discovery path that leaves the repository — an external model/provider call or sending project data off-host — first checks the project's existing research channel and data scope. Architecture exploration and local reads stay on the existing channel; a new channel or data scope is a material delta with its own authorization, and documentation, mock, or local read-only evidence never substitutes for real-channel evidence.
+
+Use the invoking Host's read-only role-boundary route for bounded
+`arch-explorer` and explicit-lens `advisory-reviewer` routing. Invoke the returned foreground Agent envelope
+exactly. The Parent owns Spec/TaskIntent synthesis, Brainstorm traceability,
+acceptance, and scope; children return evidence only. On Pi the `arch-explorer` envelope
+uses `subagent_type: "Explore"`; invoke the returned envelope rather than
+constructing another Agent call. On the Claude Host a read-only role is dispatched
+through the `Agent` tool by its plugin agent type —
+`immune-brain:immune-brain-advisory-reviewer` — and architecture exploration uses
+the Host's own `Explore` agent; the agent definition, not prompt text, bounds
+that role's tools. On Pi the agent configuration belongs to the Pi user and the
+read-only boundary remains prompt text. Do not invoke retired Planner runtime helpers
+or write child-owned planning artifacts.
+
+An optional planner ensemble is advisory-only; the Parent owns the final Spec and TaskIntent.
+Agreement becomes evidence, not authority. Disagreement becomes decision criteria,
+not a new confirmation gate. Do not treat strong-model blockers as authority
+without concrete evidence for the requested outcome.
+
+Stop discovery once concrete interfaces, paths, constraints, and verification
+are known. Additional reviewers are not required to improve wording. If an
+optional advisory dispatch fails, continue inline and record the reason.
+
+## Boundary
+
+- **Allowed**: Write a TaskIntent. Add a Spec only for complex work. Activate an absent routing policy under Kernel TaskIntent Routing. Initiative planning carriers and necessary domain vocabulary.
+- **Blocked**: Implementation edits, direct Kernel-store writes, enrolled intent overwrites, and QA/Review decisions.
+- **Workflow guard**: Execution continues through native Enrollment and explicit `imm-run`. Planner owns design and decomposition, not execution authority.
+
+## Output artifact
+
+Canonical candidate `docs/plans/<task-id>.intent.json`. Simple future work does
+not require a Spec. A complex task adds one Spec under `docs/specs/` bound by
+immutable content identity, not by archive relocation. The Spec records outcome, discovery evidence,
+decisions, assumptions, Technical Design when required, output language,
+the Medium/High risk Devil's Advocate Audit, and acceptance/test mapping. Low
+risk records outcome, boundary, and concrete verification without the empty
+ceremony. Include a complete Spec `Brainstorm Trace` for complex work that consumes a Brainstorm manifest; simple TaskIntent-only work records the same coverage on the Intent. TaskIntent is authored
+and validated through `imm-kernel`; do not write a prose iteration Plan or sync
+a State Ledger. Keep historical Plan validation strictly read-only.
+
+## Output style
+
+- **Terse Default**: Default user-facing shape: `Conclusion -> Plan summary -> Next Action`. Summarize the plan simply; do not dump the full step schema or normalized JSON unless requested.
+
+## Rationalizations
+
+| Excuse | Rebuttal |
+| -------- | ---------- |
+| Skip TaskIntent validation | Author, stage, and validate the canonical candidate before native Enrollment. |
+| Split one outcome into read/edit/run micro-steps | One TaskIntent owns one closable outcome; Executor owns implementation batches. |
+| Append repair outside scope | Return the complete known scope delta for Kernel revision; do not widen execution. |
+| Drop a brainstorm-confirmed item as "out of scope" without saying so | Closed-world handoff: every `BR-*` ID must be covered, decisioned, deferred, scoped out with reason, or resolved as an assumption. |
+| Conserve a narrower deliverable than the confirmed outcome | **Conservation failure**: a full integration is not a pairwise CLI and `prototype first` is not `prototype only`; the handoff completeness check rejects the reduced deliverable instead of accepting a reason for it. |
+| Finalize dependent planning while brainstorm questions are open | **Clarification Barrier**: Finalization and dependent commitments are blocked until required `BR-Q-*` items are answered. Independent investigation and explicitly unapproved alternative drafts may continue; silence is not consent. |
+| Skip adversarial self-review on Medium/High risk because the plan is small | **Devil's Advocate** audit still checks rollback resilience, verification vanity, and spec dilution before the plan is treated as execution-ready. |
+
+## Red Flags
+
+- Acceptance verification names only hypothetical evidence with no runnable descriptor.
+- An acceptance descriptor names no negative or bound control for its invariant, or its required prerequisite (dependency, simulator, preparation) is absent and still counted as a pass.
+- A required check matches zero tests or is skipped and the run is reported as passing.
+- New work depends on a prose Plan validator, Step activation, or State Ledger.
+- A Brainstorm manifest lacks complete `BR-*` coverage on the Spec (complex) or TaskIntent (simple).
+- A user-owned Spec decision or acceptance names no source, or names one nobody made.
+- The handoff completeness check passed while a required phase or upstream item is unmapped, or while the plan delivers only part of the confirmed outcome.
+- A Medium/High risk Spec lacks a `Devil's Advocate Audit` covering rollback resilience, verification vanity, and spec dilution detection.
+- New Spec prose ignores the document-language policy.
+- Candidate artifacts escape the approved planning scope.
+
+## Verification
+
+- Validate every candidate through `imm-kernel intent validate <path> --json` after authoring and staging. Require `valid: true` and `enrollment_ready: true` before Enrollment. When `git_base_initialization_required: true`, report that the existing native Enrollment confirmation includes an empty root commit; leave initialization to the Host. An invalid `git_base` blocks Enrollment and requires Git repair.
+- For complex work, verify Spec design metadata, document language, reference closure, concrete descriptor paths, and complete Brainstorm traceability before handoff. Simple TaskIntent-only work verifies those properties on the Intent.
+- Enrollment validates descriptor structure only. Deterministic QA owns descriptor execution after implementation; planning does not run the acceptance suite.
+- Managed execution handoff is Git-tracked TaskIntent author/validate plus current-Host native Enrollment. Do not sync a v3 State Ledger or invoke a missing dispatcher.
+
+## Next Action
+
+- Gate: Reference closure and clarification are complete; every upstream `BR-*` item is represented; no unresolved user decision remains; Planner-introduced decision deltas are confirmed; the candidate is Git-tracked and validates with `valid: true` and `enrollment_ready: true`; each acceptance has concrete focused verification. Plan-only requests stop here.
+- If gates pass: for Kernel-managed work, invoke the current Host's native Enrollment Tool directly without chat pre-confirmation. Its single literal-user gate binds the TaskIntent revision, content hash, and preparation digest, validates Enrollment preconditions without executing acceptance descriptors, and enrolls the task to continue through `imm-run`.
+- If the native gate fails: preserve candidate artifacts and report the stable reason plus exactly one same-Host recovery action. Do not suggest another Host, worktree, Direct Path, unmanaged implementation, or automatic retry.
+- If gates are not met: state which validation failures, unresolved verification paths, or material decision deltas remain; do not name a next skill.

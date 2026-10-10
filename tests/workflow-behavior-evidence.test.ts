@@ -1,7 +1,8 @@
 import { describe, expect, it, afterEach } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
 import {
 	benchmarkPrompt,
 	checkWorkflowBehaviorEvidence,
@@ -17,6 +18,14 @@ type CohortFixture = Parameters<typeof benchmarkPrompt>[1];
 const repoRoot = resolve(import.meta.dir, "..");
 const cohortPath = "tests/fixtures/workflow-decision-closure-benchmark.json";
 const evidencePath = "tests/fixtures/workflow-decision-closure-evidence.json";
+const historicalPlannerPath = "tests/fixtures/workflow-decision-closure-sources/imm-planner.md";
+const plannerPath = "plugins/immune-brain/dist/imm-planner.md";
+
+// The cohort predates later Planner changes. Re-hash preserved source bytes,
+// never replace the measured digest with a digest of today's contract.
+function measuredSource(path: string): string {
+	return resolve(repoRoot, path === plannerPath ? historicalPlannerPath : path);
+}
 
 const readJson = (path: string): Document =>
 	JSON.parse(readFileSync(resolve(repoRoot, path), "utf8")) as Document;
@@ -54,10 +63,21 @@ function bindingsFor(
 	}
 	const computed: Record<string, string> = {};
 	for (const path of paths) {
-		const hex = sha256File(resolve(repoRoot, path));
+		const hex = sha256File(measuredSource(path));
 		if (hex) computed[path] = hex;
 	}
 	return computed;
+}
+
+function historicalSourceRoot(): string {
+	const directory = mkdtempSync(join(tmpdir(), "imm-historical-evidence-"));
+	temporaryDirectories.push(directory);
+	for (const path of [...Object.keys(bindingsFor(evidence)), evidencePath]) {
+		const target = resolve(directory, path);
+		mkdirSync(dirname(target), { recursive: true });
+		writeFileSync(target, readFileSync(measuredSource(path)));
+	}
+	return directory;
 }
 
 function inputFor(
@@ -133,14 +153,22 @@ describe("workflow behavior evidence: offline verifier is model-free", () => {
 		expect(outcome.issues).toEqual([]);
 	});
 
-	it("accepts the checked-in live cohort evidence and its recomputed bindings", () => {
+	it("accepts historical cohort evidence against independently re-hashed measured sources", () => {
+		const directory = historicalSourceRoot();
 		const outcome = verifyWorkflowBehaviorEvidenceFiles(
-			repoRoot,
+			directory,
 			evidencePath,
 			cohortPath,
 		);
 		expect(outcome.issues).toEqual([]);
 		expect(outcome).toEqual({ ok: true, issues: [], reason_codes: [] });
+	});
+
+	it("rejects tampering with preserved historical source bytes", () => {
+		const directory = historicalSourceRoot();
+		writeFileSync(resolve(directory, plannerPath), "tampered historical Planner\n");
+		expect(verifyWorkflowBehaviorEvidenceFiles(directory, evidencePath, cohortPath).reason_codes)
+			.toEqual(["fingerprint_drift", "required_binding_missing"]);
 	});
 
 	it("re-hashes every bound source from disk instead of trusting declared hashes", () => {
@@ -1059,16 +1087,20 @@ describe("workflow behavior evidence: legacy benchmark modes", () => {
 		).toBe(1);
 	});
 
-	it("exits zero from the offline CLI on the checked-in evidence", async () => {
-		expect(
-			await quietly(() =>
-				benchmarkMain([
-					"--fixture",
-					cohortPath,
-					"--verify-evidence",
-					evidencePath,
-				]),
-			),
-		).toBe(0);
+	it("current-source CLI rejects stale historical evidence", async () => {
+		expect(await quietly(() => benchmarkMain([
+			"--fixture", cohortPath, "--verify-evidence", evidencePath,
+		]))).toBe(1);
+		expect(verifyWorkflowBehaviorEvidenceFiles(repoRoot, evidencePath, cohortPath).reason_codes)
+			.toEqual(["fingerprint_drift", "required_binding_missing"]);
+	});
+
+	it("offline CLI accepts the preserved historical source tree", () => {
+		const result = spawnSync(process.execPath, [resolve(repoRoot, "scripts/benchmark_eval.ts"),
+			"--fixture", cohortPath, "--verify-evidence", evidencePath], {
+			cwd: historicalSourceRoot(), encoding: "utf8",
+		});
+		expect(result.status).toBe(0);
+		expect(JSON.parse(result.stdout).ok).toBe(true);
 	});
 });
