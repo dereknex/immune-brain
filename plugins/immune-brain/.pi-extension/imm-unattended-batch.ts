@@ -23,7 +23,7 @@ import type { InitiativeObservationReader } from "../runtime/unattended/types";
 import { advancePiTask } from "./imm-canary-work";
 import { batchReason } from "../runtime/unattended/batch_reasons";
 import { parseFinalVerification } from "../runtime/unattended/batch_final_verification";
-import { createBatchTrackerPort, laneRuntimeContractRefusal, parseLaneOffers, parseMaxParallel, resolveLaneParallel, type LaneOffer } from "../runtime/unattended/batch_lanes";
+import { createBatchTrackerPort, laneRuntimeContractRefusal, parseLaneInstruction, type LaneInstructionRequest, parseLaneOffers, parseMaxParallel, resolveLaneParallel, type LaneOffer } from "../runtime/unattended/batch_lanes";
 import {
 	authorizeBatch,
 	projectBatchPreflight,
@@ -111,6 +111,8 @@ export interface PiBatchExecutionOptions {
 	lane_offers?: LaneOffer[];
 	/** Lane mode: the project's full verification commands, run once every child is integrated. */
 	final_verification?: string[];
+	/** Lane mode: one instruction for an idle Lane session, recorded before it is sent. */
+	lane_instruction?: LaneInstructionRequest;
 	batchKernel?: Partial<BatchRunnerKernelPort>;
 	batchGit?: BatchRunnerGitPort;
 	/** Lane mode: closes an integrated child's Issue; defaults to the GitHub projection. */
@@ -154,7 +156,7 @@ export async function executePiUnattendedBatch(
 	if (!reuseOnly && !interactive) return { state: "rejected", ...nonInteractiveRefusal() };
 
 	// A lane_offers-only call resumes the recorded lane batch; refused before any gate otherwise.
-	const resolvedParallel = resolveLaneParallel(root, initiativeSlug, options.max_parallel, options.lane_offers);
+	const resolvedParallel = resolveLaneParallel(root, initiativeSlug, options.max_parallel, options.lane_offers, options.lane_instruction);
 	if (resolvedParallel !== undefined) options = { ...options, max_parallel: resolvedParallel };
 
 	// 1. Host-independent batch preflight: claim ownership, branch availability,
@@ -309,6 +311,7 @@ export async function executePiUnattendedBatch(
 					max_parallel: options.max_parallel,
 					tracker: options.batchTracker ?? createBatchTrackerPort(root, initiativeSlug),
 					...(options.final_verification ? { final_verification: options.final_verification } : {}),
+					...(options.lane_instruction ? { lane_instruction: options.lane_instruction } : {}),
 				}
 			: {}),
 		...(options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}),
@@ -422,10 +425,16 @@ export default function (
 				Type.Object({ task_id: Type.String(), path: Type.String() }, { additionalProperties: false }),
 			)),
 			final_verification: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 8 })),
+			lane_instruction: Type.Optional(Type.Object({
+				task_id: Type.String(),
+				kind: Type.Optional(Type.Union([Type.Literal("instruction"), Type.Literal("correction")])),
+				text: Type.String(),
+				session_state: Type.Union([Type.Literal("idle"), Type.Literal("working"), Type.Literal("blocked"), Type.Literal("done")]),
+			}, { additionalProperties: false })),
 		}, { additionalProperties: false }),
 		execute: async (
 			_toolCallId: string,
-			params: { initiative_slug: string; max_parallel?: number; lane_offers?: Array<{ task_id: string; path: string }>; final_verification?: string[] },
+			params: { initiative_slug: string; max_parallel?: number; lane_offers?: Array<{ task_id: string; path: string }>; final_verification?: string[]; lane_instruction?: unknown },
 			signal: AbortSignal | undefined,
 			_onUpdate: unknown,
 			ctx: ExtensionContext,
@@ -447,6 +456,7 @@ export default function (
 			const maxParallel = parseMaxParallel(params.max_parallel);
 			const laneOffers = parseLaneOffers(params.lane_offers);
 			const finalVerification = parseFinalVerification(params.final_verification);
+			const laneInstruction = parseLaneInstruction(params.lane_instruction);
 
 			const result = await executePiUnattendedBatch({
 				root: ctx.cwd,
@@ -454,6 +464,7 @@ export default function (
 				...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
 				...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),
 				...(finalVerification !== undefined ? { final_verification: finalVerification } : {}),
+				...(laneInstruction !== undefined ? { lane_instruction: laneInstruction } : {}),
 				interactive: ctx.mode === "tui",
 				signal,
 				readInitiative: dependencies.readInitiative,

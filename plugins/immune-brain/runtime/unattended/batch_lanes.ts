@@ -6,6 +6,7 @@
 // deletes a Git worktree and never names a workspace tool.
 // Defined by docs/specs/parallel-batch-lanes.spec.md and ADR 0013.
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { computeBatchPlanDigest } from "../kernel/batch_authority";
@@ -78,11 +79,12 @@ export function resolveLaneParallel(
 	initiativeSlug: string,
 	maxParallel: number | undefined,
 	laneOffers: unknown,
+	laneInstruction?: unknown,
 ): number | undefined {
-	if (maxParallel !== undefined || laneOffers === undefined) return maxParallel;
+	if (maxParallel !== undefined || (laneOffers === undefined && laneInstruction === undefined)) return maxParallel;
 	const lookup = findExistingActiveBatch(root, initiativeSlug);
 	if (lookup === null || lookup.corrupt || !isLaneBatchRecord(lookup.record))
-		throw new Error("lane_offers requires max_parallel unless a recorded lane batch is being resumed");
+		throw new Error(`${laneOffers !== undefined ? "lane_offers" : "lane_instruction"} requires max_parallel unless a recorded lane batch is being resumed`);
 	return lookup.record.max_parallel;
 }
 
@@ -128,6 +130,48 @@ export function parseLaneOffers(value: unknown): LaneOffer[] | undefined {
 export function createBatchTrackerPort(root: string, initiativeSlug: string): BatchTrackerPort | undefined {
 	if (hasLocalInitiative(root, initiativeSlug)) return undefined;
 	return { markTerminal: (trackerRoot, input) => runGithubTrackerOperation(trackerRoot, { op: "mark-terminal", ...input }) };
+}
+
+export interface LaneInstructionRequest {
+	task_id: string;
+	kind: "instruction" | "correction";
+	text: string;
+	/** The Lane session's state as the Parent just observed it from its supervised session. */
+	session_state: "idle" | "working" | "blocked" | "done";
+}
+
+const MAX_INSTRUCTION_LENGTH = 4000;
+
+/** Untrusted tool input, shape-checked here and decided against the record below. */
+export function parseLaneInstruction(value: unknown): LaneInstructionRequest | undefined {
+	if (value === undefined || value === null) return undefined;
+	if (typeof value !== "object" || Array.isArray(value)) throw new Error("invalid lane_instruction: expected an object");
+	const { task_id: taskId, kind = "instruction", text, session_state: sessionState, ...rest } = value as Record<string, unknown>;
+	if (Object.keys(rest).length > 0) throw new Error("invalid lane_instruction: unknown field");
+	if (typeof taskId !== "string" || !TASK_ID_PATTERN.test(taskId)) throw new Error("invalid lane_instruction: task_id is not a valid task id");
+	if (kind !== "instruction" && kind !== "correction") throw new Error("invalid lane_instruction: kind must be instruction or correction");
+	if (typeof text !== "string" || !text.trim() || text.length > MAX_INSTRUCTION_LENGTH)
+		throw new Error(`invalid lane_instruction: text must be 1 to ${MAX_INSTRUCTION_LENGTH} characters`);
+	if (sessionState !== "idle" && sessionState !== "working" && sessionState !== "blocked" && sessionState !== "done")
+		throw new Error("invalid lane_instruction: session_state must be idle, working, blocked or done");
+	return { task_id: taskId, kind, text, session_state: sessionState };
+}
+
+/**
+ * Whether the coordinator may send this text to the Lane session now. Text goes
+ * only to an idle session of a child that is still running in its Lane. A
+ * blocked session shows a dialog only the user may answer (trust, sign-in,
+ * permission, a question, a native confirmation), so it never receives input;
+ * a working session is not interrupted. Null means allowed.
+ */
+export function decideLaneInstruction(record: BatchLaneRunStateRecord, request: LaneInstructionRequest): string | null {
+	const child = record.children.find((c) => c.task_id === request.task_id);
+	if (!child || !child.lane) return `${request.task_id} has no Lane in this batch`;
+	if (child.state !== "enrolled") return `${request.task_id} is ${child.state}, not running in its Lane`;
+	if (request.session_state === "blocked")
+		return `${request.task_id}'s session is blocked on a dialog only the user may answer; send nothing and tell the user`;
+	if (request.session_state !== "idle") return `${request.task_id}'s session is ${request.session_state}; text goes only to an idle session`;
+	return null;
 }
 
 export const LANE_CONTRACT_MISMATCH = "batch_lane_contract_mismatch";
@@ -482,7 +526,7 @@ function laneReport(
 	record: BatchLaneRunStateRecord,
 	reason: string | null,
 	nextAction: string,
-	extra: { handoffs?: BatchLaneHandoff[]; refusals?: BatchLaneRunReport["lane_refusals"]; tracker?: TrackerObservations; final?: FinalVerificationReport } = {},
+	extra: { handoffs?: BatchLaneHandoff[]; refusals?: BatchLaneRunReport["lane_refusals"]; tracker?: TrackerObservations; final?: FinalVerificationReport; instruction?: BatchLaneRunReport["lane_instruction"] } = {},
 ): BatchLaneRunReport {
 	return {
 		contract: "assurance_kernel/batch_run_report/v1",
@@ -498,6 +542,8 @@ function laneReport(
 		...(extra.tracker?.length ? { tracker_observations: extra.tracker } : {}),
 		...(record.restores?.length ? { restores: record.restores } : {}),
 		...(extra.final ? { final_verification: extra.final } : {}),
+		...(record.interventions?.length ? { interventions: record.interventions } : {}),
+		...(extra.instruction ? { lane_instruction: extra.instruction } : {}),
 		next_action: nextAction || (TERMINAL_NEXT_ACTIONS[record.batch_state] ?? "Inspect the batch run state."),
 		created_at: record.updated_at,
 	};
@@ -786,6 +832,25 @@ export async function runLaneBatch(
 	}
 
 	if (resumedPark) persist();
+	// A coordinator instruction is recorded before the Parent sends it, and only
+	// when it may be sent; the report tells the Parent which.
+	let instruction: BatchLaneRunReport["lane_instruction"];
+	if (input.lane_instruction) {
+		const request = input.lane_instruction;
+		const refusal = decideLaneInstruction(record, request);
+		if (refusal) instruction = { task_id: request.task_id, kind: request.kind, accepted: false, reason: `batch_lane_instruction_refused: ${refusal}` };
+		else {
+			record.interventions = [...(record.interventions ?? []), {
+				at: input.now,
+				task_id: request.task_id,
+				kind: request.kind,
+				text: request.text,
+				text_digest: `sha256:${createHash("sha256").update(request.text).digest("hex")}`,
+			}];
+			persist();
+			instruction = { task_id: request.task_id, kind: request.kind, accepted: true, reason: null };
+		}
+	}
 	const refusals: NonNullable<BatchLaneRunReport["lane_refusals"]> = [];
 	// A parked child ends only itself and its dependents; the batch keeps moving
 	// for every scope-disjoint sibling and settles needs_human at the end of the
@@ -1026,7 +1091,7 @@ export async function runLaneBatch(
 			final && !final.passed
 				? "Every child is integrated but the batch did not pass its final verification; inspect the failing commands on the batch branch. Integrated commits were not rolled back."
 				: "",
-			{ handoffs: releaseHandoffs(input, record, lanes), refusals, tracker, ...(final ? { final } : {}) },
+			{ handoffs: releaseHandoffs(input, record, lanes), refusals, tracker, instruction, ...(final ? { final } : {}) },
 		);
 	}
 	const handoffs: BatchLaneHandoff[] = [];
@@ -1057,7 +1122,7 @@ export async function runLaneBatch(
 			record,
 			parkedMessage ?? (parked ? "a parked child needs a human decision" : overBudget ? `max_children budget exhausted (${record.budget.max_children})` : "no child can start"),
 			"",
-			{ refusals, tracker },
+			{ refusals, tracker, instruction },
 		);
 	}
 	if (!overBudget) {
@@ -1079,7 +1144,7 @@ export async function runLaneBatch(
 				? `child ${reviewOpen[0]} holds an open Review reservation`
 				: `children ${reviewOpen.join(", ")} hold open Review reservations`,
 			"Submit each reserved foreground Review verdict in its own Lane, then call start_unattended_batch again to continue.",
-			{ handoffs, refusals, tracker },
+			{ handoffs, refusals, tracker, instruction },
 		);
 	}
 	return laneReport(
@@ -1088,6 +1153,6 @@ export async function runLaneBatch(
 		handoffs.some((h) => h.role === "lane-steward" && h.action === "provision")
 			? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers."
 			: "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.",
-		{ handoffs, refusals, tracker },
+		{ handoffs, refusals, tracker, instruction },
 	);
 }

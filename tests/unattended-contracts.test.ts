@@ -667,8 +667,9 @@ describe("unattended batch contract text", () => {
 			"commits",
 			"adopted_heads",
 			// Orchestration evidence only: restored Lane leaks and the recorded
-			// final verification commands (retro #200, #201).
+			// final verification commands, and coordinator instructions (retro #195, #200, #201).
 			"restores",
+			"interventions",
 			"final_verification",
 			"created_at",
 			"updated_at",

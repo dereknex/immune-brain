@@ -342,7 +342,8 @@ a live tab:
    `herdr agent start <name> --kind <kind> --pane <pane_id> -- <host arguments>`.
    Host arguments are only those that load the Parent's plugin and those that
    [Lane Preferences](#lane-preferences) resolved for model and effort.
-4. Submit the entry and nothing else, and confirm the turn began:
+4. Submit the entry and nothing else (later text follows only the instruction
+   rule below), and confirm the turn began:
    `herdr agent prompt <pane_id> "<imm-run entry> <task_id>" --wait --until working --until blocked --timeout 30000`.
    The entry is the Executor Host's own `imm-run` invocation as that Host names
    it: a Claude Code Host that loaded the plugin from a directory names it
@@ -354,13 +355,35 @@ a live tab:
 
 `agent_not_ready` from step 3, or a `blocked` state at any time, means the tab
 shows a dialog only the user may answer: workspace trust, sign-in, a permission
-request or a question. The Parent sends that tab no keys and no prompt. It
-tells the user which tab and `task_id` is waiting, leaves the tab open, and
-continues the other Lanes; once the user has answered, step 3's tab is resumed
+request, a question, or a native confirmation such as an Intent revision gate.
+The Parent sends that tab no keys and no prompt, and never answers such a dialog
+for the user. As soon as the wait returns `blocked` it tells the user which tab
+and `task_id` is waiting and what the dialog asks, without waiting to be asked,
+leaves the tab open, and continues the other Lanes; once the user has answered, step 3's tab is resumed
 from step 4 if the entry was never submitted, otherwise from step 5. `idle` or
 `done` is a session end for the rules below, although the tab stays open: the
 Parent calls `start_unattended_batch`, and a relaunch submits the entry again in
-the same tab instead of creating another. A failed or timed-out `herdr` command
+the same tab instead of creating another. When that report shows the child
+neither settled nor waiting on a user decision, the Parent tells the user which
+tab and `task_id` went idle and what the Kernel projection still requires.
+
+The Parent may send one text instruction to a Lane session, and only while it is
+`idle` and its child is still running in the Lane: a correction to the
+Executor's approach, never an answer to a dialog. It first calls
+`start_unattended_batch` with `lane_instruction` (`task_id`, `text`, `kind`
+`instruction` or `correction`, and the `session_state` it just observed with
+`herdr agent get`). The runner records the text in the batch record and report
+as `interventions` and answers `lane_instruction.accepted`; only when accepted
+does the Parent submit it with `herdr agent prompt <pane_id> "<text>" --wait
+--until working --until blocked --timeout 30000` and re-arm step 5. A `blocked`
+or `working` session is refused and receives nothing. Every instruction the
+coordinator sent is therefore in the report, so Executor-initiated behavior and
+coordinator intervention can be told apart afterwards. This never applies to a
+Review agent: a dispatched reviewer is still never continued or re-prompted.
+
+Every live Lane session keeps exactly one `herdr agent wait` armed, so `blocked`
+and idle-without-settlement wake the Parent on their own; a Parent that has
+nothing else to do still ends its turn with those waits armed. A failed or timed-out `herdr` command
 proves nothing about delivery; inspect the session's state before repeating it.
 
 The Parent only creates: it closes no tab, including the tabs it created, and

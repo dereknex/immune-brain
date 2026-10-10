@@ -127,6 +127,12 @@ export interface StartBatchInput {
 	 * integrated. Ignored on a resume; the recorded list stands.
 	 */
 	final_verification?: string[];
+	/**
+	 * Lane mode only: one text instruction the Parent wants to send a Lane
+	 * session. The tick records it and answers whether it may be sent; it is
+	 * never sent to a blocked or working session.
+	 */
+	lane_instruction?: import("./batch_lanes").LaneInstructionRequest;
 }
 
 /** The one tracker effect a lane batch may cause: closing an integrated child's Issue. */

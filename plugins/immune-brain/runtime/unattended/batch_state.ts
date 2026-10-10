@@ -116,6 +116,15 @@ export interface BatchLaneChildRun {
 	tracker_closed?: boolean;
 }
 
+export interface LaneIntervention {
+	at: string;
+	task_id: string;
+	/** `instruction` is an ordinary correction; `correction` is a design-level correction after an exhausted budget. */
+	kind: "instruction" | "correction";
+	text: string;
+	text_digest: string;
+}
+
 /**
  * Lane-mode batch state. A serial batch never writes this contract; a v1
  * record is never upgraded. Every v1-gated reader skips it by contract.
@@ -143,6 +152,12 @@ export interface BatchLaneRunStateRecord {
 	 * re-entry, each with the backup that undoes it. Absent until one happens.
 	 */
 	restores?: import("./batch_leak_restore").LaneLeakRestore[];
+	/**
+	 * Every text instruction the coordinator sent a Lane session, recorded before
+	 * it was sent, so coordinator intervention is told apart from the Executor's
+	 * own behavior afterwards.
+	 */
+	interventions?: LaneIntervention[];
 	/** Commands run on the batch branch once every child is integrated; fixed when the batch starts. */
 	final_verification?: string[];
 	created_at: string;
@@ -553,6 +568,19 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 			record.final_verification.some((c: unknown) => typeof c !== "string" || !c))
 	)
 		throw new Error(`batch run state ${batchId} has an invalid final_verification list`);
+	if (
+		record.interventions !== undefined &&
+		(!Array.isArray(record.interventions) ||
+			record.interventions.some(
+				(i: unknown) =>
+					typeof i !== "object" || i === null ||
+					typeof (i as LaneIntervention).task_id !== "string" ||
+					((i as LaneIntervention).kind !== "instruction" && (i as LaneIntervention).kind !== "correction") ||
+					typeof (i as LaneIntervention).text !== "string" ||
+					typeof (i as LaneIntervention).text_digest !== "string",
+			))
+	)
+		throw new Error(`batch run state ${batchId} has an invalid interventions list`);
 	const seenTaskIds = new Set<string>();
 	for (const child of record.children) {
 		if (
@@ -768,6 +796,10 @@ export interface BatchLaneRunReport {
 	tracker_observations?: Array<{ task_id: string; status: string; message: string }>;
 	/** The completion run of the recorded final verification commands; `passed: false` marks the batch not passed. */
 	final_verification?: import("./batch_final_verification").FinalVerificationReport;
+	/** Coordinator instructions sent to Lane sessions (see BatchLaneRunStateRecord.interventions). */
+	interventions?: LaneIntervention[];
+	/** This tick's decision on the Parent's `lane_instruction`: send the text only when accepted. */
+	lane_instruction?: { task_id: string; kind: LaneIntervention["kind"]; accepted: boolean; reason: string | null };
 	/** Restored Lane leaks with their backup location (see BatchLaneRunStateRecord.restores). */
 	restores?: import("./batch_leak_restore").LaneLeakRestore[];
 	next_action: string;

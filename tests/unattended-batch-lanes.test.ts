@@ -1735,3 +1735,60 @@ describe("final verification in the completion report (#201)", () => {
 		});
 	}
 });
+
+describe("coordinator instruction to a Lane session (#195)", () => {
+	it("records an instruction to an idle Lane session before it is sent, and the Lane then continues to integration", async () => {
+		const { parseLaneInstruction } = await import("../plugins/immune-brain/runtime/unattended/batch_lanes");
+		const fx = fixture();
+		try {
+			const kernel = laneKernel();
+			const args = request(fx, [child("task-a", "S1")], kernel);
+			await startBatch(args);
+			const laneA = fx.lane("task-a");
+			await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] });
+			const text = "Read scenarios from the single marker source; stop parsing the visible Markdown.";
+			const sent = lanes(await startBatch({ ...args, lane_instruction: parseLaneInstruction({ task_id: "task-a", text, session_state: "idle" }) }));
+			expect(sent.lane_instruction).toEqual({ task_id: "task-a", kind: "instruction", accepted: true, reason: null });
+			expect(sent.interventions).toHaveLength(1);
+			expect(sent.interventions![0]).toMatchObject({ task_id: "task-a", kind: "instruction", text });
+			expect(sent.interventions![0]!.text_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+			// The child is still the Executor's: the handoff is unchanged.
+			expect(sent.handoffs.map((h) => [h.role, h.task_id])).toEqual([["executor", "task-a"]]);
+			// After the correction the session delivers and the child integrates; the record keeps the intervention.
+			writeFileSync(join(laneA, "a.txt"), "a\n");
+			kernel.frozen.add("task-a");
+			const done = lanes(await startBatch(args));
+			expect(done.batch_state).toBe("completed");
+			expect(done.interventions).toHaveLength(1);
+			const persisted = JSON.parse(readFileSync(join(fx.repo, `.imm/state/batches/${BATCH_ID}.report.json`), "utf8"));
+			expect(persisted.interventions[0].text).toBe(text);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("refuses and records nothing while the Lane session is blocked, working, or the child is not running in its Lane", async () => {
+		const { parseLaneInstruction } = await import("../plugins/immune-brain/runtime/unattended/batch_lanes");
+		const fx = fixture();
+		try {
+			const kernel = laneKernel();
+			const args = request(fx, [child("task-a", "S1"), child("task-b", "S2", ["task-a"])], kernel);
+			await startBatch(args);
+			const laneA = fx.lane("task-a");
+			await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] });
+			const ask = async (task_id: string, session_state: string) =>
+				lanes(await startBatch({ ...args, lane_instruction: parseLaneInstruction({ task_id, text: "fix it", session_state }) })).lane_instruction!;
+			const blocked = await ask("task-a", "blocked");
+			expect(blocked.accepted).toBe(false);
+			expect(blocked.reason).toContain("blocked on a dialog only the user may answer");
+			expect((await ask("task-a", "working")).accepted).toBe(false);
+			expect((await ask("task-b", "idle")).reason).toContain("task-b has no Lane");
+			expect((readAnyBatchRunState(fx.repo, BATCH_ID) as { interventions?: unknown }).interventions).toBeUndefined();
+			expect(() => parseLaneInstruction({ task_id: "task-a", text: "", session_state: "idle" })).toThrow();
+			expect(() => parseLaneInstruction({ task_id: "task-a", text: "x", session_state: "asleep" })).toThrow();
+			expect(() => parseLaneInstruction({ task_id: "task-a", text: "x", session_state: "idle", keys: "y" })).toThrow(/unknown/);
+		} finally {
+			fx.cleanup();
+		}
+	});
+});

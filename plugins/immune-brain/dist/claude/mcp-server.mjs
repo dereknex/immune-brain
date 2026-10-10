@@ -6180,6 +6180,8 @@ function validateLaneRecordShape(value, batchId) {
     throw new Error(`batch run state ${batchId} has an invalid restores list`);
   if (record.final_verification !== undefined && (!Array.isArray(record.final_verification) || record.final_verification.length === 0 || record.final_verification.some((c) => typeof c !== "string" || !c)))
     throw new Error(`batch run state ${batchId} has an invalid final_verification list`);
+  if (record.interventions !== undefined && (!Array.isArray(record.interventions) || record.interventions.some((i) => typeof i !== "object" || i === null || typeof i.task_id !== "string" || i.kind !== "instruction" && i.kind !== "correction" || typeof i.text !== "string" || typeof i.text_digest !== "string")))
+    throw new Error(`batch run state ${batchId} has an invalid interventions list`);
   const seenTaskIds = new Set;
   for (const child of record.children) {
     if (typeof child !== "object" || child === null || typeof child.task_id !== "string" || !child.task_id || typeof child.slice_id !== "string" || !child.slice_id)
@@ -13281,6 +13283,7 @@ function createDefaultBatchGitPort() {
 
 // plugins/immune-brain/runtime/unattended/batch_lanes.ts
 import { spawnSync as spawnSync13 } from "node:child_process";
+import { createHash as createHash21 } from "node:crypto";
 import { existsSync as existsSync12, realpathSync as realpathSync13 } from "node:fs";
 import { isAbsolute as isAbsolute7, join as join18 } from "node:path";
 
@@ -13600,12 +13603,12 @@ var PARALLEL_MISMATCH = "batch_parallel_mismatch";
 var TASK_ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var MAX_LANE_OFFERS = 64;
 var MAX_PATH_LENGTH = 4096;
-function resolveLaneParallel(root, initiativeSlug, maxParallel, laneOffers) {
-  if (maxParallel !== undefined || laneOffers === undefined)
+function resolveLaneParallel(root, initiativeSlug, maxParallel, laneOffers, laneInstruction) {
+  if (maxParallel !== undefined || laneOffers === undefined && laneInstruction === undefined)
     return maxParallel;
   const lookup = findExistingActiveBatch(root, initiativeSlug);
   if (lookup === null || lookup.corrupt || !isLaneBatchRecord(lookup.record))
-    throw new Error("lane_offers requires max_parallel unless a recorded lane batch is being resumed");
+    throw new Error(`${laneOffers !== undefined ? "lane_offers" : "lane_instruction"} requires max_parallel unless a recorded lane batch is being resumed`);
   return lookup.record.max_parallel;
 }
 function parseMaxParallel(value) {
@@ -13643,6 +13646,37 @@ function createBatchTrackerPort(root, initiativeSlug) {
   if (hasLocalInitiative(root, initiativeSlug))
     return;
   return { markTerminal: (trackerRoot, input) => runGithubTrackerOperation(trackerRoot, { op: "mark-terminal", ...input }) };
+}
+var MAX_INSTRUCTION_LENGTH = 4000;
+function parseLaneInstruction(value) {
+  if (value === undefined || value === null)
+    return;
+  if (typeof value !== "object" || Array.isArray(value))
+    throw new Error("invalid lane_instruction: expected an object");
+  const { task_id: taskId, kind = "instruction", text, session_state: sessionState, ...rest } = value;
+  if (Object.keys(rest).length > 0)
+    throw new Error("invalid lane_instruction: unknown field");
+  if (typeof taskId !== "string" || !TASK_ID_PATTERN2.test(taskId))
+    throw new Error("invalid lane_instruction: task_id is not a valid task id");
+  if (kind !== "instruction" && kind !== "correction")
+    throw new Error("invalid lane_instruction: kind must be instruction or correction");
+  if (typeof text !== "string" || !text.trim() || text.length > MAX_INSTRUCTION_LENGTH)
+    throw new Error(`invalid lane_instruction: text must be 1 to ${MAX_INSTRUCTION_LENGTH} characters`);
+  if (sessionState !== "idle" && sessionState !== "working" && sessionState !== "blocked" && sessionState !== "done")
+    throw new Error("invalid lane_instruction: session_state must be idle, working, blocked or done");
+  return { task_id: taskId, kind, text, session_state: sessionState };
+}
+function decideLaneInstruction(record, request) {
+  const child = record.children.find((c) => c.task_id === request.task_id);
+  if (!child || !child.lane)
+    return `${request.task_id} has no Lane in this batch`;
+  if (child.state !== "enrolled")
+    return `${request.task_id} is ${child.state}, not running in its Lane`;
+  if (request.session_state === "blocked")
+    return `${request.task_id}'s session is blocked on a dialog only the user may answer; send nothing and tell the user`;
+  if (request.session_state !== "idle")
+    return `${request.task_id}'s session is ${request.session_state}; text goes only to an idle session`;
+  return null;
 }
 var LANE_CONTRACT_MISMATCH = "batch_lane_contract_mismatch";
 var RUNTIME_CONTRACT_MISMATCH = "batch_runtime_contract_mismatch";
@@ -13898,6 +13932,8 @@ function laneReport(record, reason, nextAction, extra = {}) {
     ...extra.tracker?.length ? { tracker_observations: extra.tracker } : {},
     ...record.restores?.length ? { restores: record.restores } : {},
     ...extra.final ? { final_verification: extra.final } : {},
+    ...record.interventions?.length ? { interventions: record.interventions } : {},
+    ...extra.instruction ? { lane_instruction: extra.instruction } : {},
     next_action: nextAction || (TERMINAL_NEXT_ACTIONS[record.batch_state] ?? "Inspect the batch run state."),
     created_at: record.updated_at
   };
@@ -14134,6 +14170,24 @@ async function runLaneBatch(input, persisted) {
   }
   if (resumedPark)
     persist();
+  let instruction;
+  if (input.lane_instruction) {
+    const request = input.lane_instruction;
+    const refusal = decideLaneInstruction(record, request);
+    if (refusal)
+      instruction = { task_id: request.task_id, kind: request.kind, accepted: false, reason: `batch_lane_instruction_refused: ${refusal}` };
+    else {
+      record.interventions = [...record.interventions ?? [], {
+        at: input.now,
+        task_id: request.task_id,
+        kind: request.kind,
+        text: request.text,
+        text_digest: `sha256:${createHash21("sha256").update(request.text).digest("hex")}`
+      }];
+      persist();
+      instruction = { task_id: request.task_id, kind: request.kind, accepted: true, reason: null };
+    }
+  }
   const refusals = [];
   let parkedMessage = null;
   const reviewOpen = [];
@@ -14320,7 +14374,7 @@ async function runLaneBatch(input, persisted) {
     const final = record.final_verification?.length ? runFinalVerification(input.root, record.final_verification) : undefined;
     record.batch_state = "completed";
     persist();
-    return finalizeLane(input.root, record, final && !final.passed ? `all enrollable children integrated; final verification did not pass: ${final.results.filter((r) => !r.passed).map((r) => r.command).join(", ")}` : "all enrollable children integrated", final && !final.passed ? "Every child is integrated but the batch did not pass its final verification; inspect the failing commands on the batch branch. Integrated commits were not rolled back." : "", { handoffs: releaseHandoffs(input, record, lanes), refusals, tracker, ...final ? { final } : {} });
+    return finalizeLane(input.root, record, final && !final.passed ? `all enrollable children integrated; final verification did not pass: ${final.results.filter((r) => !r.passed).map((r) => r.command).join(", ")}` : "all enrollable children integrated", final && !final.passed ? "Every child is integrated but the batch did not pass its final verification; inspect the failing commands on the batch branch. Integrated commits were not rolled back." : "", { handoffs: releaseHandoffs(input, record, lanes), refusals, tracker, instruction, ...final ? { final } : {} });
   }
   const handoffs = [];
   for (const child of record.children) {
@@ -14347,7 +14401,7 @@ async function runLaneBatch(input, persisted) {
     const parked = record.children.some((c) => c.state === "needs_human" || c.state === "skipped_blocked");
     record.batch_state = parked ? "needs_human" : overBudget ? "budget_stopped" : "needs_human";
     persist();
-    return finalizeLane(input.root, record, parkedMessage ?? (parked ? "a parked child needs a human decision" : overBudget ? `max_children budget exhausted (${record.budget.max_children})` : "no child can start"), "", { refusals, tracker });
+    return finalizeLane(input.root, record, parkedMessage ?? (parked ? "a parked child needs a human decision" : overBudget ? `max_children budget exhausted (${record.budget.max_children})` : "no child can start"), "", { refusals, tracker, instruction });
   }
   if (!overBudget) {
     for (const taskId of startable) {
@@ -14362,9 +14416,9 @@ async function runLaneBatch(input, persisted) {
     }
   }
   if (reviewOpen.length > 0) {
-    return laneReport(record, reviewOpen.length === 1 ? `child ${reviewOpen[0]} holds an open Review reservation` : `children ${reviewOpen.join(", ")} hold open Review reservations`, "Submit each reserved foreground Review verdict in its own Lane, then call start_unattended_batch again to continue.", { handoffs, refusals, tracker });
+    return laneReport(record, reviewOpen.length === 1 ? `child ${reviewOpen[0]} holds an open Review reservation` : `children ${reviewOpen.join(", ")} hold open Review reservations`, "Submit each reserved foreground Review verdict in its own Lane, then call start_unattended_batch again to continue.", { handoffs, refusals, tracker, instruction });
   }
-  return laneReport(record, null, handoffs.some((h) => h.role === "lane-steward" && h.action === "provision") ? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers." : "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.", { handoffs, refusals, tracker });
+  return laneReport(record, null, handoffs.some((h) => h.role === "lane-steward" && h.action === "provision") ? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers." : "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.", { handoffs, refusals, tracker, instruction });
 }
 
 // plugins/immune-brain/runtime/unattended/batch_runner.ts
@@ -15189,7 +15243,7 @@ async function retireStaleBatch(options) {
 }
 
 // plugins/immune-brain/runtime/assurance/review_mediation.ts
-import { createHash as createHash21 } from "node:crypto";
+import { createHash as createHash22 } from "node:crypto";
 function extractVerdictJson(input) {
   if (typeof input === "string") {
     const first = input.indexOf("{");
@@ -15219,7 +15273,7 @@ function verdictFingerprint(raw) {
   });
 }
 function digestOfReviewerBytes(bytes) {
-  return `sha256:${createHash21("sha256").update(bytes).digest("hex")}`;
+  return `sha256:${createHash22("sha256").update(bytes).digest("hex")}`;
 }
 var RELEASED_REVIEW_RECOVERY = "Call advance_assurance to obtain a new Review reservation, then dispatch one fresh reviewer with the returned envelope unchanged";
 var RETAINED_REVIEW_RECOVERY = "Wait for the dispatched reviewer to finish, then call submit_review again with its verdict; do not dispatch or continue another reviewer";
@@ -15916,7 +15970,8 @@ class ClaudeRuntime {
       ...options.max_parallel !== undefined ? {
         max_parallel: options.max_parallel,
         tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug),
-        ...options.final_verification ? { final_verification: options.final_verification } : {}
+        ...options.final_verification ? { final_verification: options.final_verification } : {},
+        ...options.lane_instruction ? { lane_instruction: options.lane_instruction } : {}
       } : {},
       ...options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}
     });
@@ -16042,7 +16097,18 @@ function listMcpTools() {
                 additionalProperties: false
               }
             },
-            final_verification: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 8 }
+            final_verification: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 8 },
+            lane_instruction: {
+              type: "object",
+              properties: {
+                task_id: { type: "string" },
+                kind: { type: "string", enum: ["instruction", "correction"] },
+                text: { type: "string" },
+                session_state: { type: "string", enum: ["idle", "working", "blocked", "done"] }
+              },
+              required: ["task_id", "text", "session_state"],
+              additionalProperties: false
+            }
           } : {}
         } : {
           task_id: { type: "string" },
@@ -16116,12 +16182,14 @@ function createMcpRuntime(options = {}) {
           signal: meta.signal
         };
         const laneOffers = parseLaneOffers(args.lane_offers);
-        const maxParallel = resolveLaneParallel(options.cwd ?? process.cwd(), initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers);
+        const laneInstruction = parseLaneInstruction(args.lane_instruction);
+        const maxParallel = resolveLaneParallel(options.cwd ?? process.cwd(), initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction);
         const finalVerification = parseFinalVerification(args.final_verification);
         return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
           ...maxParallel !== undefined ? { max_parallel: maxParallel } : {},
           ...laneOffers !== undefined ? { lane_offers: laneOffers } : {},
-          ...finalVerification !== undefined ? { final_verification: finalVerification } : {}
+          ...finalVerification !== undefined ? { final_verification: finalVerification } : {},
+          ...laneInstruction !== undefined ? { lane_instruction: laneInstruction } : {}
         });
       }
       if (name === "retire_stale_batch") {

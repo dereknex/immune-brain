@@ -58,7 +58,7 @@ import {
 	type BatchTrackerPort,
 } from "../unattended/batch_runner";
 import { createBatchKernelPort } from "../unattended/batch_kernel_port";
-import { createBatchTrackerPort, laneRuntimeContractRefusal, type LaneOffer } from "../unattended/batch_lanes";
+import { createBatchTrackerPort, laneRuntimeContractRefusal, type LaneInstructionRequest, type LaneOffer } from "../unattended/batch_lanes";
 import { retireStaleBatch } from "../unattended/batch_disposition";
 import type { BatchLaneRunReport } from "../unattended/batch_state";
 import {
@@ -745,7 +745,7 @@ export class ClaudeRuntime {
 	async startUnattendedBatch(
 		initiativeSlug: string,
 		meta: ToolMeta,
-		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[] } = {},
+		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest } = {},
 	): Promise<ClaudeBatchStartResult> {
 		throwIfCancelled(meta.signal);
 		const reuseOnly = options.reuseOnly === true;
@@ -953,6 +953,7 @@ export class ClaudeRuntime {
 						max_parallel: options.max_parallel,
 						tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug),
 						...(options.final_verification ? { final_verification: options.final_verification } : {}),
+						...(options.lane_instruction ? { lane_instruction: options.lane_instruction } : {}),
 					}
 				: {}),
 			...(options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}),
