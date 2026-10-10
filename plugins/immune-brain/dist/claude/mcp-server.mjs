@@ -9088,7 +9088,7 @@ function isolatedGitEnv(extra = {}) {
   };
 }
 function git3(cwd, args, extra = {}) {
-  return execFileSync6("git", args, {
+  return execFileSync6("git", ["-c", "maintenance.auto=false", ...args], {
     cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],

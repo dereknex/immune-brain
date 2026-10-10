@@ -342,6 +342,23 @@ describe("delivery workspace materialization", () => {
 			expect(() => materializeDeliveryWorkspace(root, tree(root))).toThrow(DeliveryWorkspaceError);
 		} finally { if (previous === undefined) delete process.env.GIT_DIR; else process.env.GIT_DIR = previous; remove(root); remove(other); }
 	});
+	test("never starts Git auto-maintenance that could rewrite the sealed .git after materialization", () => {
+		// Newer Git detaches `maintenance run --auto` after fetch and the detached
+		// child keeps writing (at least objects/maintenance.lock) after the seal.
+		const root = gitRepo(), traces = temp(), previous = process.env.GIT_TRACE2_EVENT, trace = join(traces, "trace2.json");
+		try {
+			process.env.GIT_TRACE2_EVENT = trace;
+			const delivery = materializeDeliveryWorkspace(root, tree(root));
+			delivery.cleanup();
+			const argvs = readFileSync(trace, "utf8").split("\n").filter(Boolean).map(line => JSON.parse(line))
+				.filter(event => event.event === "child_start" || event.event === "start").map(event => (event.argv as string[]).join(" "));
+			expect(argvs.some(argv => argv.includes("fetch"))).toBe(true);
+			expect(argvs.filter(argv => argv.includes("maintenance run") || /\bgc --auto\b/.test(argv))).toEqual([]);
+		} finally {
+			if (previous === undefined) delete process.env.GIT_TRACE2_EVENT; else process.env.GIT_TRACE2_EVENT = previous;
+			remove(root); remove(traces);
+		}
+	});
 	test("refuses intermediate symlink escapes", () => {
 		const root = gitRepo(), outside = temp();
 		try {

@@ -54,8 +54,11 @@ function isolatedGitEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
 	};
 }
 
+// `maintenance.auto=false`: fetch otherwise starts `maintenance run --auto`,
+// which newer Git detaches; the detached child still owns
+// objects/maintenance.lock after fetch returns and mutates the sealed .git.
 function git(cwd: string, args: string[], extra: Record<string, string> = {}): string {
-	return execFileSync("git", args, {
+	return execFileSync("git", ["-c", "maintenance.auto=false", ...args], {
 		cwd,
 		encoding: "utf8",
 		stdio: ["ignore", "pipe", "pipe"],
