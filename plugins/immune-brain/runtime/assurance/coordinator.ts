@@ -89,9 +89,9 @@ export function deriveGithubTerminalProjectionInput(
  * than evidence or a blocker, and a failure never repeats the settling Kernel
  * mutation.
  *
- * A settlement inside a batch Lane writes nothing to the tracker: the Lane's
- * delivery is not on the batch branch yet, so the coordinator closes the Child
- * only after it integrates that child's commit.
+ * A completed settlement inside a batch Lane writes nothing to the tracker: the
+ * Lane's delivery is not on the batch branch yet, so the coordinator closes the
+ * Child only after it integrates that child's commit.
  */
 export async function projectTerminalTrackerState(input: {
 	root: string;
@@ -102,9 +102,11 @@ export async function projectTerminalTrackerState(input: {
 	isLaneWorkspace?: (root: string, taskId: string) => boolean;
 }): Promise<GithubTrackerProjectionResult | undefined> {
 	if (input.projection.error) return undefined;
-	if ((input.isLaneWorkspace ?? isLaneWorkspaceForTask)(input.root, input.task_id)) return undefined;
 	const terminal = deriveGithubTerminalProjectionInput(input.task_id, input.projection, input.tombstone);
 	if (!terminal) return undefined;
+	// Only a completed delivery waits for integration; an explicit stop inside a
+	// Lane is never integrated and still projects `not planned` here.
+	if (terminal.phase === "done" && (input.isLaneWorkspace ?? isLaneWorkspaceForTask)(input.root, input.task_id)) return undefined;
 	try {
 		return await input.markTerminal(input.root, terminal);
 	} catch {

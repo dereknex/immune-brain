@@ -600,6 +600,35 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 			))
 	)
 		throw new Error(`batch run state ${batchId} has an invalid interventions list`);
+	// ADR 0018 fields carry authority effects, so a malformed one fails closed.
+	const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+	const isHash = (v: unknown) => typeof v === "string" && /^sha256:[0-9a-f]{64}$/.test(v);
+	const isRevision = (v: unknown) => typeof v === "number" && Number.isSafeInteger(v) && v > 0;
+	if (record.revision_delegation !== undefined &&
+		(!isObject(record.revision_delegation) || Object.keys(record.revision_delegation).join() !== "confirmation_time" ||
+			!isCanonicalTimestamp(record.revision_delegation.confirmation_time)))
+		throw new Error(`batch run state ${batchId} has an invalid revision_delegation`);
+	if (record.delegated_revisions !== undefined &&
+		(!Array.isArray(record.delegated_revisions) || record.delegated_revisions.some((r: unknown) =>
+			!isObject(r) || typeof r.task_id !== "string" || !isRevision(r.from_revision) || !isRevision(r.to_revision) ||
+			(r.to_revision as number) <= (r.from_revision as number) || !isHash(r.intent_content_hash) ||
+			typeof r.confirmation_ref !== "string" || !r.confirmation_ref.startsWith(`delegated-batch:${batchId}@`) ||
+			!isCanonicalTimestamp(r.at))))
+		throw new Error(`batch run state ${batchId} has an invalid delegated_revisions list`);
+	if (record.delegated_revisions?.length && !record.revision_delegation)
+		throw new Error(`batch run state ${batchId} records delegated revisions without a delegation grant`);
+	if (record.intent_identities !== undefined &&
+		(!isObject(record.intent_identities) || Object.values(record.intent_identities).some((i: unknown) =>
+			!isObject(i) || typeof i.intent_path !== "string" || !i.intent_path || !isRevision(i.intent_revision) || typeof i.intent_content_hash !== "string" || !i.intent_content_hash)))
+		throw new Error(`batch run state ${batchId} has an invalid intent_identities map`);
+	if (record.reseals !== undefined &&
+		(!Array.isArray(record.reseals) || record.reseals.some((r: unknown) =>
+			!isObject(r) || typeof r.task_id !== "string" || typeof r.from_digest !== "string" || typeof r.to_digest !== "string" ||
+			!isRevision(r.intent_revision) || !isHash(r.intent_content_hash) ||
+			!(record.delegated_revisions as Array<{ task_id: string; intent_content_hash: string }> | undefined)?.some((d) => d.task_id === r.task_id && d.intent_content_hash === r.intent_content_hash))))
+		throw new Error(`batch run state ${batchId} has an invalid reseals list`);
+	if (record.reseals?.length && record.reseals[record.reseals.length - 1].to_digest !== record.plan_digest)
+		throw new Error(`batch run state ${batchId} plan_digest does not match its last reseal`);
 	const seenTaskIds = new Set<string>();
 	for (const child of record.children) {
 		if (

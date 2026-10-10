@@ -26,8 +26,8 @@ import { pathMatchesScope } from "../workspace_scope";
 import { captureBatchReconfirmation, retainReconfirmation, ownUnpersistedBatchHead, type ReconfirmationSnapshot } from "./batch_reconfirmation";
 import { projectBatchPlan } from "./batch_plan";
 import { batchReason, type BatchReasonKey } from "./batch_reasons";
-import { BATCH_RUN_STATES, isLaneBatchRecord, isTerminalBatchState, readAnyBatchRunState, writeBatchLaneRunState, type AnyBatchRunStateRecord, type BatchRunStateRecord } from "./batch_state";
-import { restoreProvableLaneLeaks } from "./batch_leak_restore";
+import { BATCH_RUN_STATES, isLaneBatchRecord, isTerminalBatchState, readAnyBatchRunState, type AnyBatchRunStateRecord, type BatchRunStateRecord } from "./batch_state";
+import { planLaneLeakRestore } from "./batch_leak_restore";
 import type {
 	BatchPlanBudget,
 	BatchPlanChild,
@@ -375,7 +375,7 @@ function authorizedScopeOf(root: string, taskId: string, state: string): string[
 	return scope;
 }
 
-function porcelainEntries(root: string): Array<{ code: string; path: string }> | null {
+export function porcelainEntries(root: string): Array<{ code: string; path: string }> | null {
 	// review-batch-resume-porcelain-leading-space: parse the NUL-delimited v1
 	// format. Trimming the whole output first shifted the fixed status columns of
 	// an unstaged modification (" M path") and silently mis-scoped the path.
@@ -599,18 +599,14 @@ export async function projectBatchPreflight(
 	if (statusEntries === null)
 		return reject("git_status_unreadable");
 	// A lane batch keeps its delivery in Lanes, so a dirty coordinator is a leak.
-	// It is restored only when every dirty path is provably a Lane's bytes; any
-	// change of unknown origin leaves every file alone and is refused below.
+	// This read-only check only attributes it: when every dirty path is provably
+	// a Lane's write, the runner restores them after the gate; any change of
+	// unknown origin is refused below and nothing is touched.
 	let unprovableLeak = "";
 	if (statusEntries.length > 0 && activeRecord && isLaneBatchRecord(activeRecord)) {
-		const outcome = restoreProvableLaneLeaks(root, activeRecord, statusEntries, options.now ?? new Date().toISOString());
-		if (outcome.kind === "restored") {
-			writeBatchLaneRunState(root, { ...activeRecord, restores: [...(activeRecord.restores ?? []), outcome.restore] });
-			statusEntries = porcelainEntries(root);
-			if (statusEntries === null) return reject("git_status_unreadable");
-		} else if (outcome.kind === "unprovable") {
-			unprovableLeak = `${outcome.path}: ${outcome.detail}`;
-		}
+		const plan = planLaneLeakRestore(root, activeRecord, statusEntries);
+		if (plan.kind === "provable") statusEntries = [];
+		else if (plan.kind === "unprovable") unprovableLeak = `${plan.path}: ${plan.detail}`;
 	}
 	if (statusEntries.length > 0) {
 		if (!isResuming)

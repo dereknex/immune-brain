@@ -31,7 +31,8 @@ import {
 	integrateGuardedLaneCommit,
 	type IntegrationCheckChild,
 } from "./batch_integration";
-import { classifyBatchLineage, expectedBatchHead, findExistingActiveBatch, readActiveClaimTaskId } from "./batch_preflight";
+import { classifyBatchLineage, expectedBatchHead, findExistingActiveBatch, porcelainEntries, readActiveClaimTaskId } from "./batch_preflight";
+import { restoreProvableLaneLeaks } from "./batch_leak_restore";
 import { startableChildren } from "./batch_schedule";
 import {
 	type AnyBatchRunStateRecord,
@@ -496,27 +497,32 @@ const TERMINAL_NEXT_ACTIONS: Record<string, string> = {
  * Any other difference is left alone, so it still fails closed as `plan_changed`.
  * Commits and their evidence are never touched.
  */
-function resealDelegatedRevision(input: StartBatchInput, record: BatchLaneRunStateRecord, taskId: string): void {
+function resealDelegatedRevision(input: StartBatchInput, record: BatchLaneRunStateRecord, taskId: string): boolean {
 	const identities = record.intent_identities;
 	const recorded = identities?.[taskId];
-	if (!identities || !recorded) return;
+	if (!identities || !recorded) return false;
 	let integrated: { revision: number; content_hash: string };
 	try {
 		const read = readTaskIntent(input.root, taskId, recorded.intent_path);
 		integrated = { revision: read.intent.revision, content_hash: read.content_hash };
 	} catch {
-		return;
+		return false;
 	}
-	if (integrated.revision === recorded.intent_revision && integrated.content_hash === recorded.intent_content_hash) return;
+	if (integrated.revision === recorded.intent_revision && integrated.content_hash === recorded.intent_content_hash) return false;
 	const delegated = [...(record.delegated_revisions ?? [])].reverse().find((r) => r.task_id === taskId);
-	if (!delegated || delegated.to_revision !== integrated.revision || delegated.intent_content_hash !== integrated.content_hash) return;
+	if (!delegated || delegated.to_revision !== integrated.revision || delegated.intent_content_hash !== integrated.content_hash) return false;
 	const next = { ...identities, [taskId]: { ...recorded, intent_revision: integrated.revision, intent_content_hash: integrated.content_hash } };
-	const children = record.children.map((child) => {
-		const identity = next[child.task_id];
-		if (!identity) throw new Error(`batch record has no intent identity for ${child.task_id}`);
-		return { task_id: child.task_id, intent_path: identity.intent_path, intent_revision: identity.intent_revision, intent_content_hash: identity.intent_content_hash, blocked_by: child.blocked_by };
-	});
-	const toDigest = computeBatchPlanDigest(children);
+	// Every child needs a recorded identity, or no digest can be recomputed.
+	if (record.children.some((child) => !next[child.task_id])) return false;
+	let toDigest: string;
+	try {
+		toDigest = computeBatchPlanDigest(record.children.map((child) => {
+			const identity = next[child.task_id]!;
+			return { task_id: child.task_id, intent_path: identity.intent_path, intent_revision: identity.intent_revision, intent_content_hash: identity.intent_content_hash, blocked_by: child.blocked_by };
+		}));
+	} catch {
+		return false;
+	}
 	record.reseals = [...(record.reseals ?? []), {
 		at: input.now,
 		task_id: taskId,
@@ -527,6 +533,7 @@ function resealDelegatedRevision(input: StartBatchInput, record: BatchLaneRunSta
 	}];
 	record.intent_identities = next;
 	record.plan_digest = toDigest;
+	return true;
 }
 
 type TrackerObservations = NonNullable<BatchLaneRunReport["tracker_observations"]>;
@@ -831,11 +838,25 @@ export async function runLaneBatch(
 	if (persisted && input.revision_delegation !== undefined) {
 		const { revision_delegation: _prior, ...rest } = record;
 		record = input.revision_delegation ? { ...rest, revision_delegation: { confirmation_time: input.confirmation_time } } : rest;
+		// Durable at once: a withdrawn grant must never survive to a later reused tick.
+		if (record.batch_state !== "prepared") record = writeBatchLaneRunState(input.root, record);
 	}
 
 	const persist = (): void => {
 		record = writeBatchLaneRunState(input.root, record);
 	};
+	// Lane writes that leaked into the coordinator checkout, restored only now,
+	// after authorization, and only when every dirty path is provably a Lane's.
+	if (persisted) {
+		const entries = porcelainEntries(input.root);
+		if (entries && entries.length > 0) {
+			const outcome = restoreProvableLaneLeaks(input.root, record, entries, input.now);
+			if (outcome.kind === "restored") {
+				record.restores = [...(record.restores ?? []), outcome.restore];
+				persist();
+			}
+		}
+	}
 	// A resumed park is persisted only after the existing lineage validation below.
 	const resumedPark = persisted?.batch_state === "needs_human" && record.batch_state === "running";
 	if (record.batch_state === "prepared") {
@@ -1148,8 +1169,10 @@ export async function runLaneBatch(
 			});
 			record.children = record.children.map((c) => (c.task_id === child.task_id ? { ...c, state: "integrated", commit, reason: null } : c));
 			record.commits = [...record.commits, commit];
-			resealDelegatedRevision(input, record, child.task_id);
 			persist();
+			// The integration is durable before any reseal; a reseal that cannot be
+			// computed leaves plan_digest as it was, so the change fails closed later.
+			if (resealDelegatedRevision(input, record, child.task_id)) persist();
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			const reason = error instanceof BatchIntegrationError ? error.reason : "batch_integration_conflict";
@@ -1202,7 +1225,7 @@ export async function runLaneBatch(
 	if (record.children.every((c) => c.state === "integrated" || c.state === "released")) {
 		// Full verification of the integrated batch branch, before the immutable
 		// completion report is written. A failure is reported, never rolled back.
-		const final = record.final_verification?.length ? runFinalVerification(input.root, record.final_verification) : undefined;
+		const final = record.final_verification?.length ? await runFinalVerification(input.root, record.final_verification) : undefined;
 		record.batch_state = "completed";
 		persist();
 		return finalizeLane(

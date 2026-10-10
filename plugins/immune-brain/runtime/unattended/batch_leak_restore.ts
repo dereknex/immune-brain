@@ -1,11 +1,13 @@
 // Coordinator-side recovery for a Lane Executor's writes that landed in the
 // coordinator checkout instead of its Lane. On a lane-batch re-entry with a
 // dirty coordinator working tree, every dirty path must be provably a Lane's:
-// its bytes equal that path's bytes in a Lane worktree of this batch or in a
-// commit on that Lane's branch. Only then is each path backed up and restored
-// to HEAD, and the restore is recorded in the batch record. Anything else (a
-// staged change, a deletion, bytes no Lane has) leaves every file untouched,
-// so a user's own uncommitted work is never restored.
+// that Lane changed the path (its bytes differ from the Lane's base) and the
+// coordinator's bytes equal the Lane's, in its worktree or a commit on its
+// branch. Planning is read-only, so the batch preflight can run it before any
+// gate; only the runner, after authorization, backs the paths up, restores
+// them to HEAD and records the restore. Anything else (a staged change, a
+// deletion, bytes no Lane wrote) leaves every file untouched, so a user's own
+// uncommitted work is never restored.
 import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -37,11 +39,17 @@ function blobAt(root: string, commit: string, path: string): string | null {
 	return blob.status === 0 ? blob.stdout.trim() : null;
 }
 
-/** The Lane of this batch whose bytes for `path` equal `blob`, or null. */
+/**
+ * The Lane of this batch that wrote `blob` at `path`, or null. A Lane only
+ * counts when its bytes for the path differ from the Lane's own base: a Lane
+ * that never touched the path still holds its base bytes, and matching those
+ * would mistake a user's revert for a Lane write.
+ */
 function laneOrigin(root: string, record: BatchLaneRunStateRecord, path: string, blob: string): string | null {
 	for (const child of record.children) {
 		const lane = child.lane;
 		if (!lane) continue;
+		if (blobAt(root, lane.base_head, path) === blob) continue;
 		if (existsSync(join(lane.path, path)) && blobOfFile(lane.path, join(lane.path, path)) === blob) return child.task_id;
 		const commits = git(root, ["rev-list", `${lane.base_head}..${lane.branch}`]);
 		if (commits.status !== 0) continue;
@@ -51,22 +59,17 @@ function laneOrigin(root: string, record: BatchLaneRunStateRecord, path: string,
 	return null;
 }
 
-export type LeakRestoreOutcome =
+export type LeakRestorePlan =
 	| { kind: "clean" }
-	| { kind: "restored"; restore: LaneLeakRestore }
+	| { kind: "provable"; paths: LaneLeakRestore["paths"] }
 	| { kind: "unprovable"; path: string; detail: string };
 
-/**
- * Attribute and, only when every dirty path is attributed, back up and restore.
- * `entries` is the coordinator's porcelain status. No file is touched unless
- * all are provable.
- */
-export function restoreProvableLaneLeaks(
+/** Read-only: attribute every dirty path to a Lane of this batch, or name the first that cannot be. */
+export function planLaneLeakRestore(
 	root: string,
 	record: BatchLaneRunStateRecord,
 	entries: Array<{ code: string; path: string }>,
-	now: string,
-): LeakRestoreOutcome {
+): LeakRestorePlan {
 	if (entries.length === 0) return { kind: "clean" };
 	const planned: LaneLeakRestore["paths"] = [];
 	for (const { code, path } of entries) {
@@ -79,6 +82,23 @@ export function restoreProvableLaneLeaks(
 		if (!origin) return { kind: "unprovable", path, detail: "its bytes match no Lane of this batch" };
 		planned.push({ path, kind, lane_task_id: origin });
 	}
+	return { kind: "provable", paths: planned };
+}
+
+/**
+ * Back up and restore an already planned, fully provable set. Called only by
+ * the runner after the batch is authorized; it re-plans against the current
+ * status first, so a change since the preflight is never restored blind.
+ */
+export function restoreProvableLaneLeaks(
+	root: string,
+	record: BatchLaneRunStateRecord,
+	entries: Array<{ code: string; path: string }>,
+	now: string,
+): { kind: "clean" } | { kind: "restored"; restore: LaneLeakRestore } | { kind: "unprovable"; path: string; detail: string } {
+	const plan = planLaneLeakRestore(root, record, entries);
+	if (plan.kind !== "provable") return plan;
+	const planned = plan.paths;
 	const stamp = now.replace(/[^0-9TZ]/g, "");
 	const backup = join(".imm", "state", "batches", "restores", record.batch_id, stamp);
 	const backupRoot = join(root, backup);

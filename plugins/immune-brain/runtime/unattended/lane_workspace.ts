@@ -4,7 +4,7 @@
 // settlement without reading any batch state.
 import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 const LANE_BRANCH = /^imm-lane\/[^/]+\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})$/;
 
@@ -53,6 +53,6 @@ export function laneWriteRefusal(cwd: string, target: unknown): string | null {
 	const laneRoot = realpathOfNearest((top.stdout ?? "").trim());
 	const resolved = realpathOfNearest(isAbsolute(target) ? target : resolve(cwd, target));
 	const inside = relative(laneRoot, resolved);
-	if (inside === "" || (!inside.startsWith("..") && !isAbsolute(inside))) return null;
+	if (inside === "" || (inside !== ".." && !inside.startsWith(`..${sep}`) && !isAbsolute(inside))) return null;
 	return `Lane write refused: ${resolved} is outside this Lane. In a batch Lane every edit and write stays under ${laneRoot}; use the same repository-relative path inside the Lane.`;
 }

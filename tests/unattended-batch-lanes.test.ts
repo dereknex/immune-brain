@@ -1539,6 +1539,16 @@ describe("Child Issue closure after integration (#197)", () => {
 			// A serial batch or single task settles on the coordinator branch and projects as before.
 			expect((await settle(fx.repo))?.status).toBe("updated");
 			expect(calls).toEqual([fx.repo]);
+			// An explicit stop inside the Lane is never integrated, so it still projects at once.
+			const stopped = await projectTerminalTrackerState({
+				root: laneA,
+				task_id: "task-a",
+				projection: { error: null, claim: null, projection: projectionBody({ lifecycle: "stopped" }) } as AssuranceProjectionResult,
+				tombstone: { contract: "assurance_kernel/task_tombstone/v2", task_id: "task-a", lifecycle_status: "terminal", terminal_lifecycle: "stopped", terminal_event_id: "ev-s", final_record_hash: `sha256:${"c".repeat(64)}`, terminalized_at: "2026-10-10T00:00:00.000Z" },
+				markTerminal: async (r) => { calls.push(r); return { contract: "immune_brain/github_issue_tracker_result/v1", operation: "mark-terminal", status: "updated", association_found: true, message: "ok" }; },
+			});
+			expect(stopped?.status).toBe("updated");
+			expect(calls).toEqual([fx.repo, laneA]);
 		} finally {
 			fx.cleanup();
 		}
@@ -1622,6 +1632,28 @@ describe("runtime contract preflight and mismatch park reason (#199)", () => {
 });
 
 describe("Lane write guard and leak restore (#200)", () => {
+	it("does not count a user's revert to a path the Lane never changed as a Lane write", async () => {
+		const { planLaneLeakRestore } = await import("../plugins/immune-brain/runtime/unattended/batch_leak_restore");
+		const fx = fixture();
+		try {
+			const kernel = laneKernel();
+			const args = request(fx, [child("task-a", "S1")], kernel);
+			await startBatch(args);
+			const laneA = fx.lane("task-a");
+			await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] });
+			// The batch branch moves on (a sibling's integration); Lane A still holds the old base bytes.
+			writeFileSync(join(fx.repo, "base.txt"), "integrated by a sibling\n");
+			git(fx.repo, "commit", "-q", "-am", "sibling");
+			// The user deliberately reverts the file in the coordinator checkout.
+			writeFileSync(join(fx.repo, "base.txt"), "base\n");
+			const record = readAnyBatchRunState(fx.repo, BATCH_ID) as never;
+			const plan = planLaneLeakRestore(fx.repo, record, [{ code: " M", path: "base.txt" }]);
+			expect(plan).toMatchObject({ kind: "unprovable", path: "base.txt" });
+		} finally {
+			fx.cleanup();
+		}
+	});
+
 	it("refuses an edit or write from inside a Lane to the coordinator checkout, on both Hosts, and nothing else", async () => {
 		const { laneEditRefusal } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
 		const { laneGuardHookOutput } = await import("../plugins/immune-brain/runtime/claude/lane_guard");
@@ -1635,6 +1667,9 @@ describe("Lane write guard and leak restore (#200)", () => {
 			expect(laneEditRefusal({ toolName: "write", input: { path: "a.txt" } }, laneA)).toBeNull();
 			expect(laneEditRefusal({ toolName: "edit", input: { path: join(laneA, "deep/new.txt") } }, laneA)).toBeNull();
 			expect(laneEditRefusal({ toolName: "bash", input: { command: `echo x > ${outside}` } }, laneA)).toBeNull();
+			// A name inside the Lane that merely begins with ".." is inside.
+			expect(laneEditRefusal({ toolName: "write", input: { path: "..env.local" } }, laneA)).toBeNull();
+			expect(laneEditRefusal({ toolName: "write", input: { path: join(laneA, "..cache/x") } }, laneA)).toBeNull();
 			expect(laneEditRefusal({ toolName: "edit", input: { path: outside } }, fx.repo)).toBeNull();
 			// Claude Code
 			const deny = laneGuardHookOutput({ hook_event_name: "PreToolUse", tool_name: "Write", cwd: laneA, tool_input: { file_path: outside } });
@@ -1669,8 +1704,13 @@ describe("Lane write guard and leak restore (#200)", () => {
 			// The Executor wrote the same bytes into the coordinator by absolute path.
 			writeFileSync(join(fx.repo, "a.txt"), "lane a\n");
 			writeFileSync(join(fx.repo, "base.txt"), "lane edit\n");
+			// The preflight runs before any gate, so it only attributes and touches nothing.
 			const outcome = await preflight();
 			expect(outcome.ok).toBe(true);
+			expect(readFileSync(join(fx.repo, "base.txt"), "utf8")).toBe("lane edit\n");
+			expect((readAnyBatchRunState(fx.repo, BATCH_ID) as { restores?: unknown }).restores).toBeUndefined();
+			// The authorized tick restores.
+			const tick = lanes(await startBatch(request(fx, [child("task-a", "S1")], laneKernel())));
 			expect(git(fx.repo, "status", "--porcelain")).toBe("");
 			expect(readFileSync(join(fx.repo, "base.txt"), "utf8")).toBe("base\n");
 			const record = readAnyBatchRunState(fx.repo, BATCH_ID) as { restores?: Array<{ backup: string; paths: Array<{ path: string; kind: string; lane_task_id: string }> }> };
@@ -1681,9 +1721,8 @@ describe("Lane write guard and leak restore (#200)", () => {
 			expect(readFileSync(join(fx.repo, restore.backup, "files/a.txt"), "utf8")).toBe("lane a\n");
 			expect(readFileSync(join(fx.repo, restore.backup, "files/base.txt"), "utf8")).toBe("lane edit\n");
 			expect(readFileSync(join(fx.repo, restore.backup, "restore.patch"), "utf8")).toContain("+lane edit");
-			// The next report carries the backup location.
-			const report = lanes(await startBatch(request(fx, [child("task-a", "S1")], laneKernel())));
-			expect(report.restores?.[0]?.backup).toBe(restore.backup);
+			// The report carries the backup location.
+			expect(tick.restores?.[0]?.backup).toBe(restore.backup);
 		} finally {
 			fx.cleanup();
 		}
@@ -1913,6 +1952,21 @@ describe("delegated in-Lane Intent revision and plan_digest reseal (ADR 0018, #1
 			// Distinguishable from an in-person approval (literal-user + a Host confirmation ref).
 			expect(entry.authority).toMatchObject({ authority_kind: "user", actor_id: "batch-coordinator", confirmation_ref: `delegated-batch:${BATCH_ID}@${CONFIRMED_AT}` });
 			expect(report.delegated_revisions).toEqual([expect.objectContaining({ task_id: "task-a", from_revision: 1, to_revision: 2, confirmation_ref: `delegated-batch:${BATCH_ID}@${CONFIRMED_AT}` })]);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("persists a withdrawn grant at once, so a later reused tick cannot apply a revision under it", async () => {
+		const { fx, real, lane } = await realLane(true);
+		try {
+			// A fresh confirmation that declines delegation, in a tick that changes nothing else.
+			await startBatch({ ...real, revision_delegation: false, confirmation_time: "2026-02-01T00:00:00.000Z" });
+			expect((readAnyBatchRunState(fx.repo, BATCH_ID) as { revision_delegation?: unknown }).revision_delegation).toBeUndefined();
+			// The next tick reuses the authorization (no answer): the revision is refused.
+			const report = lanes(await startBatch({ ...real, revision_delegation: undefined, lane_revision: parseLaneRevision({ task_id: "task-a", next_intent: revised() }) }));
+			expect(report.lane_revision?.reason).toContain("did not delegate");
+			expect(historyOf(lane).intent_snapshot.revision).toBe(1);
 		} finally {
 			fx.cleanup();
 		}

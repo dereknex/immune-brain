@@ -570,7 +570,7 @@ export async function serveStdio(options: {
 			}
 			let delegateRevisions = false;
 			if (action === "accept") {
-				const content = (result as { content?: unknown }).content ?? {};
+				const content = (result as { content?: unknown }).content;
 				const offered = input.operation === "start_unattended_batch" && input.batchDetails?.lane_mode?.offer_revision_delegation === true;
 				const keys = typeof content === "object" && content !== null && !Array.isArray(content) ? Object.keys(content) : null;
 				const valid = keys !== null && (keys.length === 0 ||

@@ -208,11 +208,12 @@ Only children whose scopes are provably disjoint run together; a child whose sco
 overlaps an in-flight Lane waits until that Lane is integrated. Settled children
 integrate serially, and a parked child ends only itself and its dependents while a
 disjoint sibling keeps moving. A lost Lane parks as `batch_lane_lost`, and
-`qa_failure_limit` counts each child separately. A settlement inside a Lane
-changes Kernel state only and writes nothing to the tracker: the coordinator
+`qa_failure_limit` counts each child separately. A completed settlement inside a
+Lane changes Kernel state only and writes nothing to the tracker: the coordinator
 closes the child's Issue after it integrates that child's commit, exactly once,
 and reports the attempt in `tracker_observations`. A parked or lost child is
-never integrated, so its Issue stays open.
+never integrated, so its Issue stays open; an explicit stop inside a Lane still
+projects `not planned` at once.
 
 The lane batch confirmation offers one opt-in choice, off by default: delegate
 to the coordinator the approval of each Lane child's breaking Intent revisions
@@ -239,8 +240,10 @@ Inside a Lane, the Pi extension and the Claude Code `PreToolUse` hook refuse an
 resolved target lies outside the Lane, naming the Lane path. A shell command is
 not intercepted; this is no bash sandbox. When a lane batch is re-entered with a
 dirty coordinator checkout, each dirty path is restored to HEAD only if every one
-of them is an unstaged modification or untracked file whose bytes equal that
-path's bytes in a Lane worktree or Lane-branch commit of this batch. The bytes are
+of them is an unstaged modification or untracked file that a Lane of this batch
+changed (its bytes differ from that Lane's base) and whose bytes equal the Lane's,
+in its worktree or a Lane-branch commit. The read-only preflight only attributes;
+the runner restores after the batch is authorized. The bytes are
 backed up first under `.imm/state/batches/restores/`, and the backup is recorded
 in the batch record and report as `restores`. If any change has another origin,
 or is staged or deleted, no file is touched and the refusal names it; never
@@ -267,7 +270,7 @@ source directly rather than assuming the Host injected it into context:
 | `Lane Executor Host: <host>` | `claude-code` or `pi` | Every Lane's Executor Host is that Host. When the `lane-steward` did not report it available in a Lane, that Lane has no Executor Host; the Parent does not fall back to the other one. | The Parent's own Host type, else the other allowlisted Host |
 | `Lane Executor model: <model>` | a model identifier of the configured Executor Host | Passed to the Executor Host as `--model <model>` | The Executor Host's own default |
 | `Lane Executor effort: <level>` | a level the configured Executor Host accepts | Passed as `--effort <level>` to `claude-code` and as `--thinking <level>` to `pi` | The Executor Host's own default |
-| `Batch final verification: <command>; <command>` | plain commands without shell syntax, at most 8 | Passed as `final_verification` when a new lane batch starts and shown in its native confirmation; the runner runs them on the batch branch once every child is integrated and writes each command's exit status and timing into the completion report as `final_verification`. A failing command reports the batch as not passed; integrated commits are never rolled back | The commands the repository instruction file names for its full test suite and type check, else none and the completion report says nothing was run |
+| `Batch final verification: <command>; <command>` | plain commands without shell syntax or quoting, at most 8 | Passed as `final_verification` when a new lane batch starts and shown in its native confirmation; the runner runs them on the batch branch once every child is integrated and writes each command's exit status and timing into the completion report as `final_verification`. A failing command reports the batch as not passed; integrated commits are never rolled back | The commands the repository instruction file names for its full test suite and type check, else none and the completion report says nothing was run |
 
 A model identifier and an effort level mean something only to one Host, so
 `Lane Executor model` and `Lane Executor effort` apply only together with

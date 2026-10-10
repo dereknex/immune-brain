@@ -59,16 +59,26 @@ describe("final verification after a lane batch completes", () => {
 		expect(() => parseFinalVerification(["bun test && rm -rf /"])).toThrow(/shell/);
 		expect(() => parseFinalVerification([])).toThrow();
 		expect(() => parseFinalVerification(["a\nb"])).toThrow();
+		// Quoting would be split on spaces and passed literally, so it is refused up front.
+		expect(() => parseFinalVerification(['bun test --test-name-pattern "lane batch"'])).toThrow(/quoting/);
+		expect(() => parseFinalVerification(["bun test --test-name-pattern 'x'"])).toThrow(/quoting/);
 	});
 
-	it("records command, exit status and timing, and marks a failing run as not passed", () => {
+	it("records command, exit status and timing, and marks a failing run as not passed", async () => {
 		const dir = realpathSync(mkdtempSync(join(tmpdir(), "imm-final-")));
 		try {
 			execFileSync("git", ["-C", dir, "init", "-q"]);
-			const passing = runFinalVerification(dir, ["git status"]);
+			const passing = await runFinalVerification(dir, ["git status"]);
 			expect(passing.passed).toBe(true);
 			expect(passing.results[0]).toMatchObject({ command: "git status", exit_code: 0, passed: true });
-			const failing = runFinalVerification(dir, ["git status", "git no-such-subcommand"]);
+			const failing = await runFinalVerification(dir, ["git status", "git no-such-subcommand"]);
+			// Asynchronous: a running suite never blocks the Host's event loop.
+			let ticked = false;
+			const pending = runFinalVerification(dir, ["sleep 1"]);
+			setTimeout(() => { ticked = true; }, 10);
+			expect((await pending).passed).toBe(true);
+			expect(ticked).toBe(true);
+			expect((await runFinalVerification(dir, ["sleep 5"], { timeoutMs: 200 })).results[0]).toMatchObject({ passed: false, signal: "timeout" });
 			expect(failing.passed).toBe(false);
 			expect(failing.results.map((r) => r.passed)).toEqual([true, false]);
 			expect(failing.results[1]!.exit_code).not.toBe(0);
@@ -101,7 +111,7 @@ describe("active task notice", () => {
 		try {
 			const notice = await activeTaskNotice(root);
 			expect(notice).toContain(`Managed task ${taskId} is active`);
-			expect(notice).toContain("next obligation");
+			expect(notice).toContain("which obligation it is waiting on");
 			expect(notice).toContain("src/work.ts");
 			expect(notice).toContain("Ordinary input does not resume it");
 			expect(notice).toContain("Only an explicit imm-run entry continues it.");
