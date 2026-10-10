@@ -1,5 +1,17 @@
 # Changelog
 
+## 5.1.1
+
+### Patch Changes
+
+- [#184](https://github.com/dereknex/immune-brain/pull/184) [`ed3e6b3`](https://github.com/dereknex/immune-brain/commit/ed3e6b3b7ea364dddca97dae7778f374a16e40b4) Thanks [@dereknex](https://github.com/dereknex)! - Make the reviewer's own result bytes the primary Review submission channel: `submit_review` now applies the host-observed receipt when the verdict is omitted (both hosts), the Pi extension records the reserved reviewer's `Agent` result bytes for receipt-bound submission, and the v4 review attestation binds an optional `reviewer_verdict_sha256` so audit can prove the persisted verdict equals what the reviewer produced. Recovery on a fingerprint mismatch now names the no-verdict resubmission first.
+
+- [`6580e18`](https://github.com/dereknex/immune-brain/commit/6580e18dc511f263610f3db4c3a9f4bf2560fd2d) Thanks [@dereknex](https://github.com/dereknex)! - Align the retired file-store residue classification between `inspectStorageLayout` and the mutation guard: an empty `.imm/state/tasks` directory and an ownerless `.imm/state/workspace.json` (`current_working: null`) no longer fail every Kernel mutation closed in a worktree with a valid SQLite store, while any other residue — non-empty task directories, malformed or unknown workspace content, symlinks and unreadable paths — is now rejected consistently by both the inspection and the locked-mutation guard.
+
+- [`66b7ac5`](https://github.com/dereknex/immune-brain/commit/66b7ac5b4f8ed4a524c6d59617bbeeb5dbc9950e) Thanks [@dereknex](https://github.com/dereknex)! - Resume a resolved parked Lane under fresh Batch Authorization bound to its recorded Kernel run. Preserve safe release handoffs on store rejection, isolate archive durability checks from live SQLite, and clarify Review coverage and plan-drift recovery boundaries.
+
+- [`382cdfc`](https://github.com/dereknex/immune-brain/commit/382cdfc7b6a357a8b0d590d6966d10d58ae19515) Thanks [@dereknex](https://github.com/dereknex)! - Add `retire_stale_batch`: one literal-user disposition that retires a batch record the plan moved past, preserving its children, commits, lane bindings, and report while granting no handoff and no approval. A mid-flight child, a record that moved during the gate, and a non-interactive Host are refused with zero writes.
+
 ## 5.1.0
 
 ### Minor Changes
