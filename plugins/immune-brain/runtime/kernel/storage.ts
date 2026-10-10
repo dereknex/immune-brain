@@ -53,6 +53,7 @@ import {
 	FILE_STORE_CLAIM_RELATIVE,
 	FILE_STORE_TRANSACTIONS_RELATIVE,
 	FILE_STORE_WORKSPACE_RELATIVE,
+	inspectRetiredStateResidue,
 	stateDatabasePath,
 } from "./storage_paths";
 import { canonicalRecordHash } from "./reducer";
@@ -262,7 +263,7 @@ function isRetiredFileProvablySuperseded(
 /**
  * Refuse mutation while the retired `.imm/state/*.json` file store (or the
  * pre-cutover `.imm/tasks` layout) still holds authority. The check is bounded
- * to `existsSync` paths so it can run on every locked mutation.
+ * to retired paths so it can run on every locked mutation.
  */
 function assertNoRetiredFileStore(
 	root: string,
@@ -270,11 +271,19 @@ function assertNoRetiredFileStore(
 	taskId?: string | null,
 ): void {
 	const canonical = canonicalRoot(root);
+	let residue: ReturnType<typeof inspectRetiredStateResidue>;
+	try {
+		residue = inspectRetiredStateResidue(canonical);
+	} catch (error) {
+		throw new KernelStoreSecurityError(
+			`retired file-store residue is invalid: ${error instanceof Error ? error.message : String(error)}`,
+		);
+	}
 	// Real authority in the retired store: must be imported, never ignored.
 	const retired: Array<[string, string]> = [
 		[".imm/tasks", "pre-cutover task store"],
 		[".imm/workspace.json", "pre-cutover workspace owner"],
-		[".imm/state/tasks", "task records"],
+		...(residue.task_entries.length > 0 ? [[".imm/state/tasks", "task records"] as [string, string]] : []),
 	];
 	for (const [path, label] of retired) {
 		if (existsSync(resolve(canonical, path)))
@@ -293,6 +302,7 @@ function assertNoRetiredFileStore(
 	];
 	for (const [path, label] of derived) {
 		const full = resolve(canonical, path);
+		if (path === FILE_STORE_WORKSPACE_RELATIVE && residue.workspace_owner === null) continue;
 		if (!existsSync(full)) continue;
 		if (db === undefined || typeof taskId !== "string" || taskId.length === 0)
 			throw new KernelStoreSecurityError(
@@ -325,10 +335,16 @@ function retiredFileStoreConflict(
 	taskId: string | null,
 ): string | null {
 	const canonical = canonicalRoot(root);
+	let residue: ReturnType<typeof inspectRetiredStateResidue>;
+	try {
+		residue = inspectRetiredStateResidue(canonical);
+	} catch (error) {
+		return `retired file-store residue is invalid: ${error instanceof Error ? error.message : String(error)}`;
+	}
 	const authority: Array<[string, string]> = [
 		[".imm/tasks", "pre-cutover task store"],
 		[".imm/workspace.json", "pre-cutover workspace owner"],
-		[".imm/state/tasks", "task records"],
+		...(residue.task_entries.length > 0 ? [[".imm/state/tasks", "task records"] as [string, string]] : []),
 	];
 	for (const [path, label] of authority)
 		if (existsSync(resolve(canonical, path)))
@@ -340,7 +356,7 @@ function retiredFileStoreConflict(
 			[FILE_STORE_WORKSPACE_RELATIVE, "workspace owner"],
 		];
 		for (const [path, label] of derived)
-			if (existsSync(resolve(canonical, path)))
+			if ((path !== FILE_STORE_WORKSPACE_RELATIVE || residue.workspace_owner !== null) && existsSync(resolve(canonical, path)))
 				return `retired file-store authority is present (${label}: ${path}); import it with the supported migration before mutating this worktree`;
 	}
 	const transactions = resolve(canonical, FILE_STORE_TRANSACTIONS_RELATIVE);

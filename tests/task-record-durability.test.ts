@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
@@ -1305,6 +1305,100 @@ describe("SQLite authority store durability", () => {
       expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(true);
       expect(reconcileKernelAuthority(root, taskId)).toMatchObject({ state: "terminal_owner" });
       expect(withKernelRead(root, (db) => readRunRowByTask(db, taskId))).toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("empty retired tasks and an ownerless workspace permit enrollment with zero runs", () => {
+    const root = storeRoot();
+    try {
+      withKernelTransaction(root, () => undefined);
+      const tasks = join(root, ".imm/state/tasks");
+      const workspace = join(root, ".imm/state/workspace.json");
+      mkdirSync(tasks);
+      const bytes = serializeWorkspace({ contract: "assurance_kernel/workspace/v1", current_working: null });
+      writeFileSync(workspace, bytes);
+      expect(withKernelRead(root, (db) => db.prepare("SELECT COUNT(*) AS n FROM runs").get())).toMatchObject({ n: 0 });
+      expect(inspectStorageLayout(root).layout).toBe("ready");
+      expect(reconcileKernelAuthority(root, "residue-test").state).not.toBe("blocked");
+      expect(storeEnrollFixture(root, "residue-test").state).toBe("active");
+      expect(readdirSync(tasks)).toEqual([]);
+      expect(readFileSync(workspace, "utf8")).toBe(bytes);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("invalid ownerless workspace residue blocks inspection and mutation", () => {
+    const root = storeRoot();
+    try {
+      withKernelTransaction(root, () => undefined);
+      for (const bytes of ["{", "null", "[]", "{}", JSON.stringify({ contract: "wrong", current_working: null }),
+        JSON.stringify({ contract: "assurance_kernel/workspace/v1" }),
+        JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null, extra: true }),
+        JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: 0 })]) {
+        const path = join(root, ".imm/state/workspace.json");
+        writeFileSync(path, bytes);
+        expect(inspectStorageLayout(root).layout).toBe("invalid");
+        expect(() => storeEnrollFixture(root, "residue-test")).toThrow(/retired file-store residue is invalid/);
+        expect(readFileSync(path, "utf8")).toBe(bytes);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("symlinked and unreadable residue never grants authority", () => {
+    const root = storeRoot();
+    try {
+      withKernelTransaction(root, () => undefined);
+      const outside = join(root, "outside");
+      mkdirSync(outside);
+      writeFileSync(join(outside, "workspace.json"), serializeWorkspace({ contract: "assurance_kernel/workspace/v1", current_working: null }));
+      for (const [name, target] of [["tasks", outside], ["workspace.json", join(outside, "workspace.json")]]) {
+        const path = join(root, ".imm/state", name);
+        symlinkSync(target, path);
+        expect(inspectStorageLayout(root).layout).toBe("invalid");
+        expect(() => storeEnrollFixture(root, "residue-test")).toThrow(/residue is invalid/);
+        rmSync(path);
+      }
+      // Root bypasses POSIX permissions; exercise unreadable paths as an ordinary user.
+      if (process.getuid?.() !== 0) {
+        for (const name of ["tasks", "workspace.json"]) {
+          const path = join(root, ".imm/state", name);
+          if (name === "tasks") mkdirSync(path);
+          else writeFileSync(path, serializeWorkspace({ contract: "assurance_kernel/workspace/v1", current_working: null }));
+          chmodSync(path, 0);
+          try {
+            expect(inspectStorageLayout(root).layout).toBe("invalid");
+            expect(() => storeEnrollFixture(root, "residue-test")).toThrow(/residue is invalid/);
+          } finally {
+            chmodSync(path, name === "tasks" ? 0o700 : 0o600);
+            rmSync(path, { recursive: true });
+          }
+        }
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("every nonempty retired tasks directory still blocks mutation", () => {
+    const root = storeRoot();
+    try {
+      withKernelTransaction(root, () => undefined);
+      const tasks = join(root, ".imm/state/tasks");
+      mkdirSync(tasks);
+      for (const name of [".hidden", "unknown.txt", "record.json", "nested"]) {
+        const path = join(tasks, name);
+        if (name === "nested") mkdirSync(path);
+        else writeFileSync(path, JSON.stringify({ lifecycle: "done" }));
+        expect(inspectStorageLayout(root).layout).toBe("invalid");
+        expect(() => storeEnrollFixture(root, "residue-test")).toThrow(/retired file-store authority/);
+        expect(existsSync(path)).toBe(true);
+        rmSync(path, { recursive: true });
+      }
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

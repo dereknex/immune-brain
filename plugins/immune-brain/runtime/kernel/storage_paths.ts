@@ -382,6 +382,36 @@ function readSmallFile(root: string, relativePath: string): string | null {
 	}
 }
 
+/** Shared, bounded classification of the two potentially inert retired paths. */
+export function inspectRetiredStateResidue(root: string): {
+	task_entries: string[];
+	workspace_owner: string | null;
+} {
+	const tasksStatus = entryStatus(root, FILE_STORE_TASKS_RELATIVE);
+	if (tasksStatus !== "absent" && tasksStatus !== "directory")
+		throw new Error(`${FILE_STORE_TASKS_RELATIVE} is not a regular directory`);
+	const entries = tasksStatus === "absent" ? [] : listEntries(root, FILE_STORE_TASKS_RELATIVE);
+	if (entries === null) throw new Error(`${FILE_STORE_TASKS_RELATIVE} is unreadable`);
+	const workspaceStatus = entryStatus(root, FILE_STORE_WORKSPACE_RELATIVE);
+	let owner: string | null = null;
+	if (workspaceStatus !== "absent") {
+		if (workspaceStatus !== "file")
+			throw new Error(`${FILE_STORE_WORKSPACE_RELATIVE} is not a regular file`);
+		const content = readSmallFile(root, FILE_STORE_WORKSPACE_RELATIVE);
+		if (content === null) throw new Error(`${FILE_STORE_WORKSPACE_RELATIVE} is unreadable`);
+		const raw = JSON.parse(content);
+		if (
+			raw === null || typeof raw !== "object" || Array.isArray(raw) ||
+			raw.contract !== "assurance_kernel/workspace/v1" ||
+			(raw.current_working !== null &&
+				(typeof raw.current_working !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(raw.current_working))) ||
+			(raw.current_working === null && Object.keys(raw).some((key) => !["contract", "current_working"].includes(key)))
+		) throw new Error(`${FILE_STORE_WORKSPACE_RELATIVE} has invalid workspace content`);
+		owner = raw.current_working;
+	}
+	return { task_entries: entries, workspace_owner: owner };
+}
+
 interface OldLayoutFacts {
 	old_authority_present: boolean;
 	blocked_active: boolean;
@@ -637,6 +667,7 @@ function inspectFileStoreLayout(root: string): FileStoreFacts {
 		if (stateStatus === "symlink" || stateStatus === "other")
 			throw new Error(`${STATE_RELATIVE} is ${stateStatus}`);
 		if (stateStatus !== "directory") return facts;
+		const residue = inspectRetiredStateResidue(root);
 		for (const entry of listEntries(root, STATE_RELATIVE) ?? []) {
 			const full = `${STATE_RELATIVE}/${entry}`;
 			const status = entryStatus(root, full);
@@ -667,13 +698,12 @@ function inspectFileStoreLayout(root: string): FileStoreFacts {
 				continue;
 			}
 			if (full === FILE_STORE_WORKSPACE_RELATIVE) {
-				const owner = readJsonField(root, full, "current_working");
-				if (typeof owner === "string" && owner.length > 0) facts.blocked_active = true;
+				if (residue.workspace_owner !== null) facts.blocked_active = true;
 				continue;
 			}
 			throw new Error(`unknown file under ${STATE_RELATIVE}: ${entry}`);
 		}
-		for (const entry of listEntries(root, FILE_STORE_TASKS_RELATIVE) ?? []) {
+		for (const entry of residue.task_entries) {
 			const full = `${FILE_STORE_TASKS_RELATIVE}/${entry}`;
 			const status = entryStatus(root, full);
 			if (status === "symlink" || status === "other")

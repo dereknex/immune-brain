@@ -733,6 +733,7 @@ var KERNEL_DB_RELATIVE = ".imm/state/kernel.sqlite";
 var KERNEL_STORE_SCHEMA_VERSION = 1;
 var FILE_STORE_CLAIM_RELATIVE = ".imm/state/active-claim.json";
 var FILE_STORE_WORKSPACE_RELATIVE = ".imm/state/workspace.json";
+var FILE_STORE_TASKS_RELATIVE = ".imm/state/tasks";
 var FILE_STORE_TRANSACTIONS_RELATIVE = ".imm/state/transactions";
 var BATCH_STATE_RELATIVE = ".imm/state/batches";
 function stateDatabasePath() {
@@ -791,6 +792,25 @@ function batchCommitEvidencePath(batchId, taskId) {
   validateTaskId(taskId);
   return `${BATCH_STATE_RELATIVE}/commits/${batchId}-${taskId}.json`;
 }
+function entryStatus(root, relativePath) {
+  const candidate = resolve(root, relativePath);
+  let stat;
+  try {
+    stat = lstatSync2(candidate);
+  } catch (error) {
+    const code = error.code;
+    if (code === "ENOENT" || code === "ENOTDIR")
+      return "absent";
+    return "other";
+  }
+  if (stat.isSymbolicLink())
+    return "symlink";
+  if (stat.isFile())
+    return "file";
+  if (stat.isDirectory())
+    return "directory";
+  return "other";
+}
 function listEntries(root, relativePath) {
   const candidate = resolve(root, relativePath);
   try {
@@ -798,6 +818,44 @@ function listEntries(root, relativePath) {
   } catch {
     return null;
   }
+}
+function readSmallFile(root, relativePath) {
+  const candidate = resolve(root, relativePath);
+  try {
+    const fd = openSync2(candidate, FS_CONSTANTS.O_RDONLY | (FS_CONSTANTS.O_NOFOLLOW ?? 0));
+    try {
+      const stat = fstatSync2(fd);
+      if (stat.size > 4 * 1024 * 1024)
+        throw new Error("file exceeds the inspection read bound");
+      return readFileSync(fd, "utf8");
+    } finally {
+      closeSync2(fd);
+    }
+  } catch {
+    return null;
+  }
+}
+function inspectRetiredStateResidue(root) {
+  const tasksStatus = entryStatus(root, FILE_STORE_TASKS_RELATIVE);
+  if (tasksStatus !== "absent" && tasksStatus !== "directory")
+    throw new Error(`${FILE_STORE_TASKS_RELATIVE} is not a regular directory`);
+  const entries = tasksStatus === "absent" ? [] : listEntries(root, FILE_STORE_TASKS_RELATIVE);
+  if (entries === null)
+    throw new Error(`${FILE_STORE_TASKS_RELATIVE} is unreadable`);
+  const workspaceStatus = entryStatus(root, FILE_STORE_WORKSPACE_RELATIVE);
+  let owner = null;
+  if (workspaceStatus !== "absent") {
+    if (workspaceStatus !== "file")
+      throw new Error(`${FILE_STORE_WORKSPACE_RELATIVE} is not a regular file`);
+    const content = readSmallFile(root, FILE_STORE_WORKSPACE_RELATIVE);
+    if (content === null)
+      throw new Error(`${FILE_STORE_WORKSPACE_RELATIVE} is unreadable`);
+    const raw = JSON.parse(content);
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw) || raw.contract !== "assurance_kernel/workspace/v1" || raw.current_working !== null && (typeof raw.current_working !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(raw.current_working)) || raw.current_working === null && Object.keys(raw).some((key) => !["contract", "current_working"].includes(key)))
+      throw new Error(`${FILE_STORE_WORKSPACE_RELATIVE} has invalid workspace content`);
+    owner = raw.current_working;
+  }
+  return { task_entries: entries, workspace_owner: owner };
 }
 
 // plugins/immune-brain/runtime/kernel/sqlite_store.ts
@@ -3592,10 +3650,16 @@ function isRetiredFileProvablySuperseded(path, db, taskId) {
 }
 function assertNoRetiredFileStore(root, db, taskId) {
   const canonical = canonicalRoot2(root);
+  let residue;
+  try {
+    residue = inspectRetiredStateResidue(canonical);
+  } catch (error) {
+    throw new KernelStoreSecurityError(`retired file-store residue is invalid: ${error instanceof Error ? error.message : String(error)}`);
+  }
   const retired = [
     [".imm/tasks", "pre-cutover task store"],
     [".imm/workspace.json", "pre-cutover workspace owner"],
-    [".imm/state/tasks", "task records"]
+    ...residue.task_entries.length > 0 ? [[".imm/state/tasks", "task records"]] : []
   ];
   for (const [path, label] of retired) {
     if (existsSync2(resolve5(canonical, path)))
@@ -3607,6 +3671,8 @@ function assertNoRetiredFileStore(root, db, taskId) {
   ];
   for (const [path, label] of derived) {
     const full = resolve5(canonical, path);
+    if (path === FILE_STORE_WORKSPACE_RELATIVE && residue.workspace_owner === null)
+      continue;
     if (!existsSync2(full))
       continue;
     if (db === undefined || typeof taskId !== "string" || taskId.length === 0)
@@ -3623,10 +3689,16 @@ function assertNoRetiredFileStore(root, db, taskId) {
 }
 function retiredFileStoreConflict(root, db, taskId) {
   const canonical = canonicalRoot2(root);
+  let residue;
+  try {
+    residue = inspectRetiredStateResidue(canonical);
+  } catch (error) {
+    return `retired file-store residue is invalid: ${error instanceof Error ? error.message : String(error)}`;
+  }
   const authority = [
     [".imm/tasks", "pre-cutover task store"],
     [".imm/workspace.json", "pre-cutover workspace owner"],
-    [".imm/state/tasks", "task records"]
+    ...residue.task_entries.length > 0 ? [[".imm/state/tasks", "task records"]] : []
   ];
   for (const [path, label] of authority)
     if (existsSync2(resolve5(canonical, path)))
@@ -3638,7 +3710,7 @@ function retiredFileStoreConflict(root, db, taskId) {
       [FILE_STORE_WORKSPACE_RELATIVE, "workspace owner"]
     ];
     for (const [path, label] of derived)
-      if (existsSync2(resolve5(canonical, path)))
+      if ((path !== FILE_STORE_WORKSPACE_RELATIVE || residue.workspace_owner !== null) && existsSync2(resolve5(canonical, path)))
         return `retired file-store authority is present (${label}: ${path}); import it with the supported migration before mutating this worktree`;
   }
   const transactions = resolve5(canonical, FILE_STORE_TRANSACTIONS_RELATIVE);
