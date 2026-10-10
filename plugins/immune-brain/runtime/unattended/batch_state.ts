@@ -168,6 +168,17 @@ export interface BatchLaneRunStateRecord {
 	interventions?: LaneIntervention[];
 	/** Commands run on the batch branch once every child is integrated; fixed when the batch starts. */
 	final_verification?: string[];
+	/**
+	 * ADR 0018: the literal user's grant, in this batch's confirmation, to let the
+	 * coordinator approve in-envelope Lane Intent revisions. Absent: not granted.
+	 */
+	revision_delegation?: import("./batch_delegation").RevisionDelegationGrant;
+	/** Every revision applied under that grant. */
+	delegated_revisions?: import("./batch_delegation").DelegatedRevisionRecord[];
+	/** Each child's TaskIntent identity behind `plan_digest`; resealed only for a delegated revision. */
+	intent_identities?: Record<string, { intent_path: string; intent_revision: number; intent_content_hash: string }>;
+	/** Each `plan_digest` reseal at integration, with the digest before and after. */
+	reseals?: Array<{ at: string; task_id: string; from_digest: string; to_digest: string; intent_revision: number; intent_content_hash: string }>;
 	created_at: string;
 	updated_at: string;
 }
@@ -687,6 +698,7 @@ export function prepareBatchLaneRunState(input: {
 	max_parallel: number;
 	now: string;
 	final_verification?: string[];
+	revision_delegation?: import("./batch_delegation").RevisionDelegationGrant;
 }): BatchLaneRunStateRecord {
 	validateBatchId(input.batch_id);
 	return {
@@ -712,6 +724,12 @@ export function prepareBatchLaneRunState(input: {
 		})),
 		commits: [],
 		...(input.final_verification?.length ? { final_verification: [...input.final_verification] } : {}),
+		...(input.revision_delegation ? { revision_delegation: { ...input.revision_delegation } } : {}),
+		intent_identities: Object.fromEntries(
+			input.children
+				.filter((child) => child.intent_path !== null && child.intent_revision !== null && child.intent_content_hash !== null)
+				.map((child) => [child.task_id, { intent_path: child.intent_path!, intent_revision: child.intent_revision!, intent_content_hash: child.intent_content_hash! }]),
+		),
 		created_at: input.now,
 		updated_at: input.now,
 	};
@@ -810,6 +828,10 @@ export interface BatchLaneRunReport {
 	final_verification?: import("./batch_final_verification").FinalVerificationReport;
 	/** Coordinator instructions sent to Lane sessions (see BatchLaneRunStateRecord.interventions). */
 	interventions?: LaneIntervention[];
+	/** This tick's decision on the coordinator's `lane_revision` (ADR 0018). */
+	lane_revision?: { task_id: string; accepted: boolean; reason: string | null; fallback?: string };
+	delegated_revisions?: import("./batch_delegation").DelegatedRevisionRecord[];
+	reseals?: BatchLaneRunStateRecord["reseals"];
 	/** This tick's decision on the Parent's `lane_instruction`: send the text only when accepted. */
 	lane_instruction?: { task_id: string; kind: LaneIntervention["kind"]; accepted: boolean; reason: string | null };
 	/** Restored Lane leaks with their backup location (see BatchLaneRunStateRecord.restores). */

@@ -122,6 +122,10 @@ _Avoid_: chat completion, archive-only operation
 One literal-user Enrollment act covering a confirmed ordered child list instead of a single TaskIntent. It spans the batch without becoming a higher authority: every child is still enrolled, assured, settled, and recorded by the Kernel on its own, and no agent may promote a candidate to authority through it.
 _Avoid_: bulk enrollment authority, planner approval, TaskIntent list status
 
+**Revision Delegation**:
+The opt-in answer in one lane batch's own confirmation that lets the batch coordinator approve a Lane child's breaking Intent revisions inside that child's authorized TaskIntent (ADR 0018). Each such approval is recorded with actor `batch-coordinator` and a confirmation reference naming the batch, and may reseal the batch's Plan Digest at integration. It ends with the batch.
+_Avoid_: standing approval, coordinator authority tier
+
 **Batch Plan**:
 The deterministic read-only projection of one Initiative into ordered enrollable children, dependency closure, intent identities, excluded children, budget, and the `plan_digest`. It observes Tracker and TaskRecord facts and writes nothing.
 _Avoid_: schedule, task queue, execution order preference

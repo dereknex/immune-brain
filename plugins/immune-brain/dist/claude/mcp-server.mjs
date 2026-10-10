@@ -6261,6 +6261,8 @@ function prepareBatchLaneRunState(input) {
     })),
     commits: [],
     ...input.final_verification?.length ? { final_verification: [...input.final_verification] } : {},
+    ...input.revision_delegation ? { revision_delegation: { ...input.revision_delegation } } : {},
+    intent_identities: Object.fromEntries(input.children.filter((child) => child.intent_path !== null && child.intent_revision !== null && child.intent_content_hash !== null).map((child) => [child.task_id, { intent_path: child.intent_path, intent_revision: child.intent_revision, intent_content_hash: child.intent_content_hash }])),
     created_at: input.now,
     updated_at: input.now
   };
@@ -8891,11 +8893,13 @@ async function authorizeBatch(options) {
     scope_conflicts: projection.scope_conflicts
   };
   let requestId = null;
+  let revisionDelegation;
   if (!reuseAuthorization) {
     const decision = await options.gate(facts);
     if (decision.kind === "host_rejection")
       return { outcome: "host_rejection", value: decision.value };
     requestId = decision.request_id;
+    revisionDelegation = decision.delegate_revisions === true;
   }
   const drift = await projectBatchDrift({
     root,
@@ -8950,7 +8954,8 @@ async function authorizeBatch(options) {
     batch_id: batchId,
     reuse_authorization: reuseAuthorization,
     reuse_blockers: reuseBlockers,
-    binding
+    binding,
+    ...revisionDelegation !== undefined ? { revision_delegation: revisionDelegation } : {}
   };
 }
 
@@ -11838,9 +11843,9 @@ function createVerdictAuthority(options, registry = createMutationAuthorityRegis
 }
 
 // plugins/immune-brain/runtime/claude/kernel_ports.ts
-import { existsSync as existsSync14, readFileSync as readFileSync17, writeFileSync as writeFileSync9 } from "node:fs";
-import { execFileSync as execFileSync8 } from "node:child_process";
-import { join as join20 } from "node:path";
+import { existsSync as existsSync14, readFileSync as readFileSync17, writeFileSync as writeFileSync10 } from "node:fs";
+import { execFileSync as execFileSync9 } from "node:child_process";
+import { join as join21 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/enrollment_authority.ts
 var ENROLLMENT_CAPABILITY_BRAND = Symbol.for("assurance-kernel.enrollment-capability-brand");
@@ -12720,7 +12725,7 @@ function restoreStagedIntent(root, snapshot) {
 // plugins/immune-brain/runtime/unattended/batch_runner.ts
 import { spawnSync as spawnSync14 } from "node:child_process";
 import { existsSync as existsSync13 } from "node:fs";
-import { join as join19 } from "node:path";
+import { join as join20 } from "node:path";
 
 // plugins/immune-brain/runtime/unattended/batch_git.ts
 import { spawnSync as spawnSync10 } from "node:child_process";
@@ -13289,7 +13294,7 @@ function createDefaultBatchGitPort() {
 import { spawnSync as spawnSync13 } from "node:child_process";
 import { createHash as createHash21 } from "node:crypto";
 import { existsSync as existsSync12, realpathSync as realpathSync13 } from "node:fs";
-import { isAbsolute as isAbsolute7, join as join18 } from "node:path";
+import { isAbsolute as isAbsolute7, join as join19 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/runtime_contracts.ts
 import { existsSync as existsSync11, readFileSync as readFileSync15 } from "node:fs";
@@ -13377,6 +13382,113 @@ function runFinalVerification(root, commands, options = {}) {
     });
   }
   return { passed: results.every((result) => result.passed), head: head.status === 0 ? head.stdout.trim() : null, results };
+}
+
+// plugins/immune-brain/runtime/unattended/batch_delegation.ts
+import { execFileSync as execFileSync8 } from "node:child_process";
+import { join as join18 } from "node:path";
+import { writeFileSync as writeFileSync9 } from "node:fs";
+var REVISION_DELEGATION_TEXT = "Optional, off by default: also let the batch coordinator approve a Lane child's breaking Intent revisions that stay inside that child's authorized TaskIntent (acceptance changes, a narrower scope_hint). Widening scope, changing risk, goal or the bound Spec still needs your own confirmation. The grant ends with this batch.";
+var DELEGATED_ACTOR_ID = "batch-coordinator";
+function delegatedConfirmationRef(batchId, grant) {
+  return `delegated-batch:${batchId}@${grant.confirmation_time}`;
+}
+function parseLaneRevision(value) {
+  if (value === undefined || value === null)
+    return;
+  if (typeof value !== "object" || Array.isArray(value))
+    throw new Error("invalid lane_revision: expected an object");
+  const { task_id: taskId, next_intent: nextIntent, ...rest } = value;
+  if (Object.keys(rest).length > 0)
+    throw new Error("invalid lane_revision: unknown field");
+  if (typeof taskId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(taskId))
+    throw new Error("invalid lane_revision: task_id is not a valid task id");
+  const intent = parseTaskIntentV1(nextIntent);
+  if (intent.task_id !== taskId)
+    throw new Error("invalid lane_revision: next_intent belongs to another task");
+  return { task_id: taskId, next_intent: intent };
+}
+function delegatedRevisionRefusal(authorized, current, next) {
+  if (classifyIntentRevision(current, next) !== "breaking")
+    return "only a breaking revision needs this approval; apply a compatible one with revise_intent";
+  if (next.revision <= current.revision)
+    return "the revision number must increase";
+  if (next.goal !== authorized.goal || next.owner !== authorized.owner || next.task_id !== authorized.task_id)
+    return "goal, owner and task identity are outside the delegation";
+  if (next.risk !== authorized.risk || next.risk !== current.risk)
+    return "a risk change is outside the delegation";
+  if ((boundSpecPath(next) ?? null) !== (boundSpecPath(authorized) ?? null))
+    return "a change of the bound Spec is outside the delegation";
+  const allowed = new Set(authorized.scope_hint);
+  const widened = next.scope_hint.filter((entry) => !allowed.has(entry));
+  if (widened.length > 0)
+    return `widening scope_hint is outside the delegation: ${widened.join(", ")}`;
+  return null;
+}
+function applyDelegatedIntentRevision(input) {
+  return (async () => {
+    const { lane_root: root, task_id: taskId, next_intent: nextIntent, now } = input;
+    recoverKernelStoreFollowUps(root, taskId);
+    const prior = readTaskIntent(root, taskId, readTaskRecordRaw(root, taskId).record?.intent_ref.path);
+    const before = await projectAssurance(root, taskId, taskDeliveryIdentity);
+    if (before.error || before.claim?.task_id !== taskId || before.projection.lifecycle !== "active")
+      throw new Error(`the Lane does not hold an active run of ${taskId}`);
+    const nextHash = canonicalIntentHash(nextIntent);
+    const nextRef = { path: `docs/plans/${taskId}.intent.json`, content_hash: nextHash };
+    const snapshot = captureStagedIntent(root, prior.intent_ref.path);
+    try {
+      writeFileSync9(join18(root, prior.intent_ref.path), `${JSON.stringify(nextIntent, null, 2)}
+`);
+      execFileSync8("git", ["add", "--", prior.intent_ref.path], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
+      const prepared = await projectAssurance(root, taskId, taskDeliveryIdentity);
+      if (prepared.error || prepared.projection.record_revision !== before.projection.record_revision)
+        throw new Error("the Lane's TaskRecord changed while the delegated revision was prepared");
+      const registry = createMutationAuthorityRegistry();
+      const action = capabilityActionFor({
+        op: "approve_breaking_intent_revision",
+        task_id: taskId,
+        at: now,
+        actor_id: DELEGATED_ACTOR_ID,
+        next_intent: nextIntent,
+        next_intent_ref: nextRef
+      });
+      const binding = {
+        authority_kind: "user",
+        task_id: taskId,
+        ...prepared.projection.run_id ? { run_id: prepared.projection.run_id } : {},
+        action_digest: digestOfAction(action),
+        expected_record_hash: prepared.projection.record_revision,
+        intent_revision: nextIntent.revision,
+        intent_content_hash: nextHash,
+        diff_hash: prepared.projection.diff_hash,
+        actor_id: DELEGATED_ACTOR_ID,
+        confirmation_ref: input.confirmation_ref,
+        findings_digest: null
+      };
+      const capability = registry.issue(binding);
+      const result = createCanaryApplication(registry).execute({
+        root,
+        task_id: taskId,
+        operation: {
+          op: "approve_breaking_intent_revision",
+          capability,
+          actor_id: DELEGATED_ACTOR_ID,
+          next_intent: nextIntent,
+          next_intent_ref: nextRef
+        },
+        prior_intent_token: prior.token,
+        diffProvider: taskDeliveryIdentity,
+        now
+      });
+      stagePlanningArtifactTransition(root, result.record);
+      return { from_revision: prior.intent.revision, to_revision: nextIntent.revision, intent_content_hash: nextHash };
+    } catch (error) {
+      const current = readTaskRecordRaw(root, taskId);
+      if (current.record?.intent_snapshot.revision === prior.intent.revision)
+        restoreStagedIntent(root, snapshot);
+      throw error;
+    }
+  })();
 }
 
 // plugins/immune-brain/runtime/unattended/batch_integration.ts
@@ -13694,7 +13806,7 @@ function laneRuntimeDir(root, explicit) {
   if (explicit)
     return explicit;
   try {
-    const manifest = JSON.parse(readFileSync16(join18(root, "package.json"), "utf8"));
+    const manifest = JSON.parse(readFileSync16(join19(root, "package.json"), "utf8"));
     return manifest.name === "immune-brain" ? root : null;
   } catch {
     return null;
@@ -13895,6 +14007,42 @@ var TERMINAL_NEXT_ACTIONS = {
   running: "The batch is still running; no terminal report is due yet.",
   prepared: "The batch is prepared but not started."
 };
+function resealDelegatedRevision(input, record, taskId) {
+  const identities = record.intent_identities;
+  const recorded = identities?.[taskId];
+  if (!identities || !recorded)
+    return;
+  let integrated;
+  try {
+    const read = readTaskIntent(input.root, taskId, recorded.intent_path);
+    integrated = { revision: read.intent.revision, content_hash: read.content_hash };
+  } catch {
+    return;
+  }
+  if (integrated.revision === recorded.intent_revision && integrated.content_hash === recorded.intent_content_hash)
+    return;
+  const delegated = [...record.delegated_revisions ?? []].reverse().find((r) => r.task_id === taskId);
+  if (!delegated || delegated.to_revision !== integrated.revision || delegated.intent_content_hash !== integrated.content_hash)
+    return;
+  const next = { ...identities, [taskId]: { ...recorded, intent_revision: integrated.revision, intent_content_hash: integrated.content_hash } };
+  const children = record.children.map((child) => {
+    const identity = next[child.task_id];
+    if (!identity)
+      throw new Error(`batch record has no intent identity for ${child.task_id}`);
+    return { task_id: child.task_id, intent_path: identity.intent_path, intent_revision: identity.intent_revision, intent_content_hash: identity.intent_content_hash, blocked_by: child.blocked_by };
+  });
+  const toDigest = computeBatchPlanDigest(children);
+  record.reseals = [...record.reseals ?? [], {
+    at: input.now,
+    task_id: taskId,
+    from_digest: record.plan_digest,
+    to_digest: toDigest,
+    intent_revision: integrated.revision,
+    intent_content_hash: integrated.content_hash
+  }];
+  record.intent_identities = next;
+  record.plan_digest = toDigest;
+}
 async function closeIntegratedIssues(input, record, persist) {
   const observations = [];
   if (!input.tracker)
@@ -13944,6 +14092,9 @@ function laneReport(record, reason, nextAction, extra = {}) {
     ...extra.final ? { final_verification: extra.final } : {},
     ...record.interventions?.length ? { interventions: record.interventions } : {},
     ...extra.instruction ? { lane_instruction: extra.instruction } : {},
+    ...extra.revision ? { lane_revision: extra.revision } : {},
+    ...record.delegated_revisions?.length ? { delegated_revisions: record.delegated_revisions } : {},
+    ...record.reseals?.length ? { reseals: record.reseals } : {},
     next_action: nextAction || (TERMINAL_NEXT_ACTIONS[record.batch_state] ?? "Inspect the batch run state."),
     created_at: record.updated_at
   };
@@ -14122,8 +14273,13 @@ async function runLaneBatch(input, persisted) {
       budget: input.budget,
       max_parallel: limit,
       now: input.now,
-      ...input.final_verification?.length ? { final_verification: input.final_verification } : {}
+      ...input.final_verification?.length ? { final_verification: input.final_verification } : {},
+      ...input.revision_delegation ? { revision_delegation: { confirmation_time: input.confirmation_time } } : {}
     });
+  }
+  if (persisted && input.revision_delegation !== undefined) {
+    const { revision_delegation: _prior, ...rest } = record;
+    record = input.revision_delegation ? { ...rest, revision_delegation: { confirmation_time: input.confirmation_time } } : rest;
   }
   const persist = () => {
     record = writeBatchLaneRunState(input.root, record);
@@ -14158,7 +14314,7 @@ async function runLaneBatch(input, persisted) {
     record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "released" } : c);
     persist();
   }
-  const lineage = existsSync12(join18(input.root, ".git")) ? classifyBatchLineage({
+  const lineage = existsSync12(join19(input.root, ".git")) ? classifyBatchLineage({
     root: input.root,
     branch: record.branch ?? "",
     expectedHead: expectedBatchHead(record),
@@ -14203,6 +14359,47 @@ async function runLaneBatch(input, persisted) {
       }];
       persist();
       instruction = { task_id: request.task_id, kind: request.kind, accepted: true, reason: null };
+    }
+  }
+  let revision;
+  if (input.lane_revision) {
+    const request = input.lane_revision;
+    const fallback = "the Executor requests approve_breaking_intent_revision through its own native gate for the user to answer";
+    const refuseRevision = (reason) => {
+      revision = { task_id: request.task_id, accepted: false, reason: `batch_delegation_refused: ${reason}`, fallback };
+    };
+    const child = record.children.find((c) => c.task_id === request.task_id);
+    const planChild = input.children.find((c) => c.task_id === request.task_id);
+    const grant = record.revision_delegation;
+    if (!grant)
+      refuseRevision("this batch's confirmation did not delegate Intent revisions");
+    else if (!child?.lane || child.state !== "enrolled")
+      refuseRevision(`${request.task_id} is not running in its Lane`);
+    else {
+      try {
+        const authorized = readTaskIntent(input.root, request.task_id, planChild?.intent_path ?? undefined).intent;
+        const current = readTaskRecordRaw(child.lane.path, request.task_id).record?.intent_snapshot;
+        if (!current)
+          throw new Error(`the Lane has no TaskRecord for ${request.task_id}`);
+        const outOfBounds = delegatedRevisionRefusal(authorized, current, request.next_intent);
+        if (outOfBounds)
+          refuseRevision(outOfBounds);
+        else {
+          const confirmationRef = delegatedConfirmationRef(record.batch_id, grant);
+          const applied = await applyDelegatedIntentRevision({
+            lane_root: child.lane.path,
+            task_id: request.task_id,
+            next_intent: request.next_intent,
+            confirmation_ref: confirmationRef,
+            now: input.now
+          });
+          record.delegated_revisions = [...record.delegated_revisions ?? [], { at: input.now, task_id: request.task_id, ...applied, confirmation_ref: confirmationRef }];
+          persist();
+          revision = { task_id: request.task_id, accepted: true, reason: null };
+        }
+      } catch (error) {
+        refuseRevision(error instanceof Error ? error.message : String(error));
+      }
     }
   }
   const refusals = [];
@@ -14358,6 +14555,7 @@ async function runLaneBatch(input, persisted) {
       });
       record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "integrated", commit, reason: null } : c);
       record.commits = [...record.commits, commit];
+      resealDelegatedRevision(input, record, child.task_id);
       persist();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -14405,7 +14603,7 @@ async function runLaneBatch(input, persisted) {
     const final = record.final_verification?.length ? runFinalVerification(input.root, record.final_verification) : undefined;
     record.batch_state = "completed";
     persist();
-    return finalizeLane(input.root, record, final && !final.passed ? `all enrollable children integrated; final verification did not pass: ${final.results.filter((r) => !r.passed).map((r) => r.command).join(", ")}` : "all enrollable children integrated", final && !final.passed ? "Every child is integrated but the batch did not pass its final verification; inspect the failing commands on the batch branch. Integrated commits were not rolled back." : "", { handoffs: releaseHandoffs(input, record, lanes), refusals, tracker, instruction, ...final ? { final } : {} });
+    return finalizeLane(input.root, record, final && !final.passed ? `all enrollable children integrated; final verification did not pass: ${final.results.filter((r) => !r.passed).map((r) => r.command).join(", ")}` : "all enrollable children integrated", final && !final.passed ? "Every child is integrated but the batch did not pass its final verification; inspect the failing commands on the batch branch. Integrated commits were not rolled back." : "", { handoffs: releaseHandoffs(input, record, lanes), refusals, tracker, instruction, revision, ...final ? { final } : {} });
   }
   const handoffs = [];
   for (const child of record.children) {
@@ -14444,7 +14642,7 @@ async function runLaneBatch(input, persisted) {
     const parked = record.children.some((c) => c.state === "needs_human" || c.state === "skipped_blocked");
     record.batch_state = parked ? "needs_human" : overBudget ? "budget_stopped" : "needs_human";
     persist();
-    return finalizeLane(input.root, record, parkedMessage ?? (parked ? "a parked child needs a human decision" : overBudget ? `max_children budget exhausted (${record.budget.max_children})` : "no child can start"), "", { refusals, tracker, instruction });
+    return finalizeLane(input.root, record, parkedMessage ?? (parked ? "a parked child needs a human decision" : overBudget ? `max_children budget exhausted (${record.budget.max_children})` : "no child can start"), "", { refusals, tracker, instruction, revision });
   }
   if (!overBudget) {
     for (const taskId of startable) {
@@ -14459,9 +14657,9 @@ async function runLaneBatch(input, persisted) {
     }
   }
   if (reviewOpen.length > 0) {
-    return laneReport(record, reviewOpen.length === 1 ? `child ${reviewOpen[0]} holds an open Review reservation` : `children ${reviewOpen.join(", ")} hold open Review reservations`, "Submit each reserved foreground Review verdict in its own Lane, then call start_unattended_batch again to continue.", { handoffs, refusals, tracker, instruction });
+    return laneReport(record, reviewOpen.length === 1 ? `child ${reviewOpen[0]} holds an open Review reservation` : `children ${reviewOpen.join(", ")} hold open Review reservations`, "Submit each reserved foreground Review verdict in its own Lane, then call start_unattended_batch again to continue.", { handoffs, refusals, tracker, instruction, revision });
   }
-  return laneReport(record, null, handoffs.some((h) => h.role === "coordinator") ? "For each coordinator handoff, read every round's findings in that Lane, start a new Lane session and send one design-level correction as lane_instruction kind correction; run the other handoffs as usual." : handoffs.some((h) => h.role === "lane-steward" && h.action === "provision") ? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers." : "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.", { handoffs, refusals, tracker, instruction });
+  return laneReport(record, null, handoffs.some((h) => h.role === "coordinator") ? "For each coordinator handoff, read every round's findings in that Lane, start a new Lane session and send one design-level correction as lane_instruction kind correction; run the other handoffs as usual." : handoffs.some((h) => h.role === "lane-steward" && h.action === "provision") ? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers." : "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.", { handoffs, refusals, tracker, instruction, revision });
 }
 
 // plugins/immune-brain/runtime/unattended/batch_runner.ts
@@ -14566,7 +14764,7 @@ function failPersistedLineage(root, existing, message) {
   return writeBatchRunState(root, record);
 }
 function reconcileLineage(root, record) {
-  if (!existsSync13(join19(root, ".git")))
+  if (!existsSync13(join20(root, ".git")))
     return { record, failure: null };
   const expected = expectedBatchHead(record);
   const lineage = classifyBatchLineage({
@@ -14589,7 +14787,7 @@ function reconcileLineage(root, record) {
   };
 }
 async function validatePersistedRun(input, record) {
-  if (!record.commits.length && record.children[0]?.state === "settled" && existsSync13(join19(input.root, ".git"))) {
+  if (!record.commits.length && record.children[0]?.state === "settled" && existsSync13(join20(input.root, ".git"))) {
     const head = spawnSync14("git", ["-C", input.root, "rev-parse", "HEAD"], { encoding: "utf8" });
     const live = head.stdout.trim();
     const expected = expectedBatchHead(record);
@@ -14619,7 +14817,7 @@ async function validatePersistedRun(input, record) {
     const git = batchGitPortOf(input);
     const evidence = await git.lookupBatchCommit(input.root, child.task_id, record.batch_id, undefined, record.branch);
     if (!evidence || evidence.commit !== child.commit) {
-      if (evidence === null && typeof child.commit === "string" && child.commit.length > 0 && existsSync13(join19(input.root, ".git"))) {
+      if (evidence === null && typeof child.commit === "string" && child.commit.length > 0 && existsSync13(join20(input.root, ".git"))) {
         const reach = spawnSync14("git", ["-C", input.root, "merge-base", "--is-ancestor", child.commit, "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
         if (reach.status !== 0) {
           throw new Error(`batch_head_lineage_broken: recorded commit ${child.commit} for ${child.task_id} is no longer reachable from HEAD`);
@@ -15059,7 +15257,7 @@ async function driveInterruptedChild(input, child) {
       const planChild = input.children.find((c) => c.task_id === child.task_id);
       const intentPath = planChild?.intent_path ?? undefined;
       const doCommit = async () => batchGitPortOf(input).commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath);
-      if (existing && !record.commits.length && existsSync13(join19(input.root, ".git")) && !ownUnpersistedBatchHead(input.root, record, existing.commit))
+      if (existing && !record.commits.length && existsSync13(join20(input.root, ".git")) && !ownUnpersistedBatchHead(input.root, record, existing.commit))
         throw new Error("first unpersisted batch commit provenance is invalid");
       const adopted = existing ?? await doCommit().catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
@@ -15590,8 +15788,8 @@ class ClaudeRuntime {
     if (!slug)
       return result;
     try {
-      if (existsSync14(join20(this.cwd, ".imm", "audit", taskId)))
-        execFileSync8("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
+      if (existsSync14(join21(this.cwd, ".imm", "audit", taskId)))
+        execFileSync9("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch };
     } catch (error) {
@@ -15687,7 +15885,7 @@ class ClaudeRuntime {
       throw new Error("approve_breaking_intent_revision requires next_intent");
     const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
     const nextIntentRef = nextIntent ? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash } : undefined;
-    const sidecar = nextIntent ? join20(this.cwd, priorIntent.intent_ref.path) : undefined;
+    const sidecar = nextIntent ? join21(this.cwd, priorIntent.intent_ref.path) : undefined;
     const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
     const restoreStagedIntent2 = () => {
       if (!stagedSnapshot)
@@ -15698,9 +15896,9 @@ class ClaudeRuntime {
     let gate;
     try {
       if (sidecar && nextIntent) {
-        writeFileSync9(sidecar, `${JSON.stringify(nextIntent, null, 2)}
+        writeFileSync10(sidecar, `${JSON.stringify(nextIntent, null, 2)}
 `);
-        execFileSync8("git", ["add", "--", priorIntent.intent_ref.path], { cwd: this.cwd, stdio: ["ignore", "pipe", "pipe"] });
+        execFileSync9("git", ["add", "--", priorIntent.intent_ref.path], { cwd: this.cwd, stdio: ["ignore", "pipe", "pipe"] });
         const preparedRecord = await readTaskRecordRaw(this.cwd, taskId);
         if (!preparedRecord.record) {
           throw new NativeAuthorityError("workspace_changed", "TaskRecord changed before the breaking revision digest");
@@ -15796,14 +15994,14 @@ class ClaudeRuntime {
     const { app } = await this.authority();
     const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: await parseTaskIntentV1(input.operation.next_intent) } : input.operation;
     const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
-    const sidecar = join20(ctx.cwd, priorIntent.intent_ref.path);
+    const sidecar = join21(ctx.cwd, priorIntent.intent_ref.path);
     const priorBytes = operation.op === "revise_intent" ? readFileSync17(sidecar) : null;
     const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
     try {
       if (priorBytes) {
-        writeFileSync9(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}
+        writeFileSync10(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}
 `);
-        execFileSync8("git", ["add", "--", priorIntent.intent_ref.path], {
+        execFileSync9("git", ["add", "--", priorIntent.intent_ref.path], {
           cwd: ctx.cwd,
           stdio: ["ignore", "pipe", "pipe"]
         });
@@ -15907,7 +16105,8 @@ class ClaudeRuntime {
                   max_parallel: options.max_parallel,
                   parallel_groups: facts.parallel_groups,
                   serialized: facts.scope_conflicts,
-                  ...options.final_verification ? { final_verification: options.final_verification } : {}
+                  ...options.final_verification ? { final_verification: options.final_verification } : {},
+                  offer_revision_delegation: true
                 }
               } : {},
               ...facts.reuse_blockers.length > 0 ? {
@@ -15949,7 +16148,11 @@ class ClaudeRuntime {
           return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
         if (confirmationResult.decision !== "accept")
           return { kind: "host_rejection", value: batchReason("confirmation_no_decision") };
-        return { kind: "confirmed", request_id: confirmationResult.requestId };
+        return {
+          kind: "confirmed",
+          request_id: confirmationResult.requestId,
+          ...options.max_parallel !== undefined && confirmationResult.delegateRevisions ? { delegate_revisions: true } : {}
+        };
       },
       confirmationRef: ({ batch_id, request_id }) => confirmationRef({
         connectionId: meta.sessionId,
@@ -16014,7 +16217,9 @@ class ClaudeRuntime {
         max_parallel: options.max_parallel,
         tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug),
         ...options.final_verification ? { final_verification: options.final_verification } : {},
-        ...options.lane_instruction ? { lane_instruction: options.lane_instruction } : {}
+        ...options.lane_instruction ? { lane_instruction: options.lane_instruction } : {},
+        ...options.lane_revision ? { lane_revision: options.lane_revision } : {},
+        ...authorization.revision_delegation !== undefined ? { revision_delegation: authorization.revision_delegation } : {}
       } : {},
       ...options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}
     });
@@ -16151,6 +16356,12 @@ function listMcpTools() {
               },
               required: ["task_id", "text", "session_state"],
               additionalProperties: false
+            },
+            lane_revision: {
+              type: "object",
+              properties: { task_id: { type: "string" }, next_intent: { type: "object" } },
+              required: ["task_id", "next_intent"],
+              additionalProperties: false
             }
           } : {}
         } : {
@@ -16226,13 +16437,15 @@ function createMcpRuntime(options = {}) {
         };
         const laneOffers = parseLaneOffers(args.lane_offers);
         const laneInstruction = parseLaneInstruction(args.lane_instruction);
-        const maxParallel = resolveLaneParallel(options.cwd ?? process.cwd(), initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction);
+        const laneRevision = parseLaneRevision(args.lane_revision);
+        const maxParallel = resolveLaneParallel(options.cwd ?? process.cwd(), initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction ?? laneRevision);
         const finalVerification = parseFinalVerification(args.final_verification);
         return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
           ...maxParallel !== undefined ? { max_parallel: maxParallel } : {},
           ...laneOffers !== undefined ? { lane_offers: laneOffers } : {},
           ...finalVerification !== undefined ? { final_verification: finalVerification } : {},
-          ...laneInstruction !== undefined ? { lane_instruction: laneInstruction } : {}
+          ...laneInstruction !== undefined ? { lane_instruction: laneInstruction } : {},
+          ...laneRevision !== undefined ? { lane_revision: laneRevision } : {}
         });
       }
       if (name === "retire_stale_batch") {
@@ -16515,7 +16728,9 @@ ${b.lane_mode.parallel_groups.map((group) => `  - ${group.join(", ")}`).join(`
 `)}` : null,
       b?.lane_mode && b.lane_mode.serialized.length > 0 ? `Serialized by overlapping scope (${b.lane_mode.serialized.length}):
 ${b.lane_mode.serialized.map((c) => `  - ${c.task_id} after ${c.overlaps_with.join(", ")}`).join(`
-`)}` : null
+`)}` : null,
+      b?.lane_mode?.final_verification ? `Final verification: ${b.lane_mode.final_verification.join("; ")}` : null,
+      b?.lane_mode?.offer_revision_delegation ? REVISION_DELEGATION_TEXT : null
     ].filter(Boolean);
     return {
       mode: "form",
@@ -16523,7 +16738,17 @@ ${b.lane_mode.serialized.map((c) => `  - ${c.task_id} after ${c.overlaps_with.jo
 
 ${details.join(`
 `)}`,
-      requestedSchema: { type: "object", properties: {} }
+      requestedSchema: b?.lane_mode?.offer_revision_delegation ? {
+        type: "object",
+        properties: {
+          delegate_in_lane_revisions: {
+            type: "boolean",
+            title: "Delegate in-envelope Lane Intent revisions to the batch coordinator",
+            description: REVISION_DELEGATION_TEXT,
+            default: false
+          }
+        }
+      } : { type: "object", properties: {} }
     };
   }
   const details = [
@@ -16596,13 +16821,18 @@ async function serveStdio(options = {}) {
       if (action !== "accept" && action !== "decline" && action !== "cancel") {
         throw new NativeAuthorityError("correlation_missing", "MCP elicitation returned an invalid action");
       }
+      let delegateRevisions = false;
       if (action === "accept") {
-        const content = result.content;
-        if (typeof content !== "object" || content === null || Array.isArray(content) || Object.keys(content).length !== 0) {
+        const content = result.content ?? {};
+        const offered = input.operation === "start_unattended_batch" && input.batchDetails?.lane_mode?.offer_revision_delegation === true;
+        const keys = typeof content === "object" && content !== null && !Array.isArray(content) ? Object.keys(content) : null;
+        const valid = keys !== null && (keys.length === 0 || offered && keys.length === 1 && keys[0] === "delegate_in_lane_revisions" && typeof content.delegate_in_lane_revisions === "boolean");
+        if (!valid) {
           throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the requested schema");
         }
+        delegateRevisions = offered && content.delegate_in_lane_revisions === true;
       }
-      return { decision: action, requestId };
+      return { decision: action, requestId, ...delegateRevisions ? { delegateRevisions: true } : {} };
     } finally {
       pending.delete(requestId);
       if (abortListener)

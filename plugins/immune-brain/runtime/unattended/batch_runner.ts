@@ -133,6 +133,15 @@ export interface StartBatchInput {
 	 * never sent to a blocked or working session.
 	 */
 	lane_instruction?: import("./batch_lanes").LaneInstructionRequest;
+	/**
+	 * Lane mode only, ADR 0018: the literal user's answer, in this call's own
+	 * batch confirmation, on delegating in-envelope Lane Intent revisions to the
+	 * coordinator. Absent when no gate opened (a reused authorization): the
+	 * recorded grant stands.
+	 */
+	revision_delegation?: boolean;
+	/** Lane mode only, ADR 0018: one breaking Intent revision the coordinator approves under the grant. */
+	lane_revision?: import("./batch_delegation").LaneRevisionRequest;
 }
 
 /** The one tracker effect a lane batch may cause: closing an integrated child's Issue. */

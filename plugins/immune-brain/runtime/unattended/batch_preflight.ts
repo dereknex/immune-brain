@@ -763,7 +763,12 @@ export interface BatchConfirmationFacts {
  * own failure-envelope shape.
  */
 export type BatchGateDecision<HostRejection> =
-	| { kind: "confirmed"; request_id: string }
+	| {
+			kind: "confirmed";
+			request_id: string;
+			/** ADR 0018: the user also delegated in-envelope Lane Intent revisions (lane mode only). */
+			delegate_revisions?: boolean;
+	  }
 	| { kind: "host_rejection"; value: HostRejection };
 
 export type BatchAuthorizationOutcome<HostRejection> =
@@ -773,6 +778,8 @@ export type BatchAuthorizationOutcome<HostRejection> =
 			reuse_authorization: boolean;
 			reuse_blockers: string[];
 			binding: BatchAuthorizationBinding;
+			/** The gate's delegation answer; absent when the authorization was reused and no gate opened. */
+			revision_delegation?: boolean;
 	  }
 	| { outcome: "rejected"; rejection: BatchPreflightRejection }
 	| { outcome: "host_rejection"; value: HostRejection };
@@ -863,10 +870,12 @@ export async function authorizeBatch<HostRejection>(
 	};
 
 	let requestId: string | null = null;
+	let revisionDelegation: boolean | undefined;
 	if (!reuseAuthorization) {
 		const decision = await options.gate(facts);
 		if (decision.kind === "host_rejection") return { outcome: "host_rejection", value: decision.value };
 		requestId = decision.request_id;
+		revisionDelegation = decision.delegate_revisions === true;
 	}
 
 	// Post-gate cascade: the drift projection reports the live claim it read
@@ -931,5 +940,6 @@ export async function authorizeBatch<HostRejection>(
 		reuse_authorization: reuseAuthorization,
 		reuse_blockers: reuseBlockers,
 		binding,
+		...(revisionDelegation !== undefined ? { revision_delegation: revisionDelegation } : {}),
 	};
 }

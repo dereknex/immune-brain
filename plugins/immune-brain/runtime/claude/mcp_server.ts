@@ -16,6 +16,7 @@ import { activeTaskHookOutput, laneGuardHookOutput } from "./lane_guard";
 import { ClaudeRuntime, type ToolMeta } from "./kernel_ports";
 import { parseLaneInstruction, parseLaneOffers, parseMaxParallel, resolveLaneParallel } from "../unattended/batch_lanes";
 import { parseFinalVerification } from "../unattended/batch_final_verification";
+import { parseLaneRevision, REVISION_DELEGATION_TEXT } from "../unattended/batch_delegation";
 import type { AssuranceCoordinatorPorts } from "../assurance/coordinator";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
@@ -68,6 +69,12 @@ export function listMcpTools() {
 											session_state: { type: "string", enum: ["idle", "working", "blocked", "done"] },
 										},
 										required: ["task_id", "text", "session_state"],
+										additionalProperties: false,
+									},
+									lane_revision: {
+										type: "object",
+										properties: { task_id: { type: "string" }, next_intent: { type: "object" } },
+										required: ["task_id", "next_intent"],
 										additionalProperties: false,
 									},
 								}
@@ -168,13 +175,15 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				const laneOffers = parseLaneOffers(args.lane_offers);
 				// A lane_offers-only call resumes the recorded lane batch; refused before any gate otherwise.
 				const laneInstruction = parseLaneInstruction(args.lane_instruction);
-				const maxParallel = resolveLaneParallel(options.cwd ?? process.cwd(), initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction);
+				const laneRevision = parseLaneRevision(args.lane_revision);
+				const maxParallel = resolveLaneParallel(options.cwd ?? process.cwd(), initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction ?? laneRevision);
 				const finalVerification = parseFinalVerification(args.final_verification);
 				return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
 					...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
 					...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),
 					...(finalVerification !== undefined ? { final_verification: finalVerification } : {}),
 					...(laneInstruction !== undefined ? { lane_instruction: laneInstruction } : {}),
+					...(laneRevision !== undefined ? { lane_revision: laneRevision } : {}),
 				});
 			}
 			if (name === "retire_stale_batch") {
@@ -463,11 +472,25 @@ export function elicitationParams(input: NativeConfirmationInput) {
 			b?.lane_mode ? `Lane mode: max_parallel=${b.lane_mode.max_parallel}` : null,
 			b?.lane_mode ? `Parallel groups (${b.lane_mode.parallel_groups.length}):\n${b.lane_mode.parallel_groups.map((group) => `  - ${group.join(", ")}`).join("\n")}` : null,
 			b?.lane_mode && b.lane_mode.serialized.length > 0 ? `Serialized by overlapping scope (${b.lane_mode.serialized.length}):\n${b.lane_mode.serialized.map((c) => `  - ${c.task_id} after ${c.overlaps_with.join(", ")}`).join("\n")}` : null,
+			b?.lane_mode?.final_verification ? `Final verification: ${b.lane_mode.final_verification.join("; ")}` : null,
+			b?.lane_mode?.offer_revision_delegation ? REVISION_DELEGATION_TEXT : null,
 		].filter(Boolean);
 		return {
 			mode: "form",
 			message: `Authorize this unattended batch run for ${input.initiativeSlug}?\n\n${details.join("\n")}`,
-			requestedSchema: { type: "object", properties: {} },
+			requestedSchema: b?.lane_mode?.offer_revision_delegation
+				? {
+						type: "object",
+						properties: {
+							delegate_in_lane_revisions: {
+								type: "boolean",
+								title: "Delegate in-envelope Lane Intent revisions to the batch coordinator",
+								description: REVISION_DELEGATION_TEXT,
+								default: false,
+							},
+						},
+					}
+				: { type: "object", properties: {} },
 		};
 	}
 	const details = [
@@ -545,13 +568,19 @@ export async function serveStdio(options: {
 			if (action !== "accept" && action !== "decline" && action !== "cancel") {
 				throw new NativeAuthorityError("correlation_missing", "MCP elicitation returned an invalid action");
 			}
+			let delegateRevisions = false;
 			if (action === "accept") {
-				const content = (result as { content?: unknown }).content;
-				if (typeof content !== "object" || content === null || Array.isArray(content) || Object.keys(content).length !== 0) {
+				const content = (result as { content?: unknown }).content ?? {};
+				const offered = input.operation === "start_unattended_batch" && input.batchDetails?.lane_mode?.offer_revision_delegation === true;
+				const keys = typeof content === "object" && content !== null && !Array.isArray(content) ? Object.keys(content) : null;
+				const valid = keys !== null && (keys.length === 0 ||
+					(offered && keys.length === 1 && keys[0] === "delegate_in_lane_revisions" && typeof (content as Record<string, unknown>).delegate_in_lane_revisions === "boolean"));
+				if (!valid) {
 					throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the requested schema");
 				}
+				delegateRevisions = offered && (content as Record<string, unknown>).delegate_in_lane_revisions === true;
 			}
-			return { decision: action, requestId };
+			return { decision: action, requestId, ...(delegateRevisions ? { delegateRevisions: true } : {}) };
 		} finally {
 			pending.delete(requestId);
 			if (abortListener) input.signal?.removeEventListener("abort", abortListener);

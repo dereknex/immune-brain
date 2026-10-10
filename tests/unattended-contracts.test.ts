@@ -671,6 +671,11 @@ describe("unattended batch contract text", () => {
 			"restores",
 			"interventions",
 			"final_verification",
+			// ADR 0018: the user's recorded delegation answer and its effects.
+			"revision_delegation",
+			"delegated_revisions",
+			"intent_identities",
+			"reseals",
 			"created_at",
 			"updated_at",
 		]);

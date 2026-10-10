@@ -214,6 +214,17 @@ closes the child's Issue after it integrates that child's commit, exactly once,
 and reports the attempt in `tracker_observations`. A parked or lost child is
 never integrated, so its Issue stays open.
 
+The lane batch confirmation offers one opt-in choice, off by default: delegate
+to the coordinator the approval of each Lane child's breaking Intent revisions
+that stay inside that child's TaskIntent as authorized for the batch (ADR 0018).
+The answer is recorded on the batch record as `revision_delegation`; a batch
+confirmed without it behaves exactly as before, and the grant ends with that
+batch — a terminal, retired or later batch never uses it. When an integrated
+child's TaskIntent equals the last revision applied under that grant, the runner
+reseals `plan_digest` and records both digests in `reseals`, so later children
+continue without retiring the batch. Any other Intent change still fails closed
+as `plan_changed` and takes the ADR 0016 retirement path.
+
 Before a new lane batch provisions any Lane, the runner compares the Kernel
 contract identifiers (TaskRecord, tombstone, projection, store schema) of the
 coordinator's runtime with those of the runtime a Lane Executor loads — never the
@@ -475,6 +486,15 @@ is recorded as a separate follow-up rather than resolved here.
   no new provider or data effect.
 - Text instructions are contracts, not a hard bash sandbox. They guide and are
   reviewed; the Kernel authority gates remain the real boundary.
+- In a Lane whose batch confirmation delegated in-envelope revisions
+  (ADR 0018), the Executor does not open the gate for a revision that only
+  changes acceptance or narrows `scope_hint`: it stops and returns the complete
+  next intent to the Parent, which submits it as `lane_revision` on
+  `start_unattended_batch`. The runner applies it as a delegated approval
+  (actor `batch-coordinator`, confirmation `delegated-batch:<batch_id>@<time>`)
+  or refuses it with `batch_delegation_refused` and a `fallback`; on refusal the
+  Executor uses its own native gate below. Widening scope, changing risk, goal
+  or the bound Spec is never delegated, and nobody answers a dialog in a tab.
 - Invoke `approve_breaking_intent_revision` with the complete next intent
   directly; the native Host gate is the single user decision. Do not overwrite
   enrolled intent sidecars or ask for chat pre-confirmation. A breaking revision
