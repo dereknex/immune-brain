@@ -247,6 +247,35 @@ describe("S4 verification by invariant and environment", () => {
 		expect(REVIEW).not.toContain("seam_coverage");
 	});
 
+	// T7 of docs/specs/user-acceptance-scenarios.spec.md (source: #186 D13): the
+	// Reviewer also checks that delivered tests assert the `Then` of every
+	// automated user scenario the referenced Spec maps to an acceptance.
+	test("the Review prompt checks automated-scenario Then coverage at the agreed seam", () => {
+		for (const prompt of [REVIEW, REVIEW_MIRROR]) {
+			const review = flat(prompt);
+			for (const fragment of [
+				"When the Spec referenced by an acceptance maps an `automated` user scenario to it",
+				"check that the delivered tests at that acceptance's agreed seam assert the scenario's `Then`",
+				"a scenario whose observable result is asserted nowhere is a finding carrying `violated.kind` of `acceptance` with `ref` the acceptance id",
+			]) {
+				expect(review).toContain(fragment);
+			}
+			// Negative control: no scenario, or a manual one, is not a gap.
+			expect(review).toContain(
+				"A `manual` scenario, and an acceptance with no mapped scenario, produce no such finding",
+			);
+			// Bound: the check adds no finding kind and no verdict branch.
+			expect(review).toContain("adds no finding kind and no verdict branch");
+			expect(review).not.toContain("scenario_coverage");
+			expect(review).toContain("`kind`: `acceptance` or `security_boundary`");
+		}
+		// Bound: the pre-existing agreed-seam rule text is unchanged.
+		expect(flat(REVIEW)).toContain(
+			"When an acceptance assertion, or the Spec it references, names an agreed seam, check that the delivered tests exercise that acceptance at that seam",
+		);
+		expect(flat(REVIEW)).toContain("When no seam is named, its absence is not a finding");
+	});
+
 	test("every motivating invariant class has a complete positive/negative/bound control", () => {
 		for (const invariant of SIX) {
 			const verdict = judgeDescriptor(complete(invariant));

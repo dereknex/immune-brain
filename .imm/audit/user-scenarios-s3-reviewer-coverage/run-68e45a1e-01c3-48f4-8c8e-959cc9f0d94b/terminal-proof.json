@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "user-scenarios-s3-reviewer-coverage",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:user-scenarios-s3-reviewer-coverage:2026-10-10T11:03:28.119Z",
+  "final_record_hash": "sha256:cd141d13ce2e0a3b733ff54e2b41cf4387f7ab47092576f7d1306a915a3357e3",
+  "terminalized_at": "2026-10-10T11:03:28.119Z"
+}

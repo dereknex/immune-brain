@@ -53,6 +53,14 @@ seam, or a seam silently replaced by a different one, is a finding carrying
 named, its absence is not a finding: candidates written before this rule carries
 no defect for lacking one.
 
+When the Spec referenced by an acceptance maps an `automated` user scenario to
+it, check that the delivered tests at that acceptance's agreed seam assert the
+scenario's `Then`: a scenario whose observable result is asserted nowhere is a
+finding carrying `violated.kind` of `acceptance` with `ref` the acceptance id.
+A `manual` scenario, and an acceptance with no mapped scenario, produce no such
+finding. This adds no finding kind and no verdict branch: it is the same
+`acceptance` finding the seam rule above already defines.
+
 Before pass, enumerate the immutable change set and read each complete per-file
 diff, including deletions. Page bounded reads until every hunk is visible; a
 truncated aggregate output or summary is incomplete coverage. Trace changed

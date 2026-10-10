@@ -296,6 +296,21 @@ describe("claude host package", () => {
     expect(reviewerDefinitionDrift(ROOT)).toBeNull();
   });
 
+  it("carries the automated-scenario Then coverage rule into the generated reviewer definition", () => {
+    const definition = readFileSync(resolve(PLUGIN_ROOT, "agents/immune-brain-reviewer.md"), "utf8");
+    const flat = (text: string) => text.replace(/\s+/g, " ");
+
+    expect(flat(definition)).toContain(
+      "check that the delivered tests at that acceptance's agreed seam assert the scenario's `Then`",
+    );
+    expect(flat(definition)).toContain(
+      "A `manual` scenario, and an acceptance with no mapped scenario, produce no such finding",
+    );
+    // The generated definition is one composition of the role prompt, so this rule
+    // reaches the Claude-native reviewer without being restated by hand.
+    expect(reviewerDefinitionDrift(ROOT)).toBeNull();
+  });
+
   it("the build check fails when the committed reviewer definition differs from the generated one", () => {
     expect(reviewerDefinitionDrift(ROOT)).toBeNull();
 
