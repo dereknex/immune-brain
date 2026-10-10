@@ -47,6 +47,23 @@ Create a GitHub issue.
 
 ## Existing Initiative amendment (tracker contract)
 
+`imm-tracker publish-initiative --stdin --json` accepts an optional `scenarios`
+array on each Task. A scenario is public projection only and can never widen
+TaskIntent scope or authority. Each entry has `id` (`BR-SCN-<n>` or `SCN-<n>`),
+`actor`, `given`, `when`, `then`, and `mode`. An `automated` scenario names one or
+more of that Task's canonical acceptance IDs and renders as a plain bullet; a
+`manual` scenario requires `manual_reason`, may name no acceptance ID, and renders
+as an unchecked task-list item. The Child shows `## User scenarios` after
+`## Acceptance criteria`; the Parent derives one plain bullet per scenario after
+`## Testing strategy`. Omitting it renders no section, and a publication where no
+Task supplies scenarios is byte-identical to one published without the field. A
+malformed scenario, a repeated id, or an acceptance ID the TaskIntent lacks
+rejects the whole batch before any remote write. Each Child's ownership marker
+block also carries one `<!-- immune-brain:scenarios=<percent-encoded JSON> -->`
+per Task holding all of its scenarios verbatim. An amendment reads historical
+scenarios only from that marker and never parses the visible section; a Child
+without it is treated as having no scenarios, and its bytes are never rewritten.
+
 `imm-tracker publish-initiative --stdin --json` also accepts an optional
 `amendment` input for an already-published Initiative. The caller supplies the
 approved pending frontier plus read-only historical Child identities, each bound

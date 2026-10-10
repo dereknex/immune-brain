@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "user-scenarios-s2-tracker-projection",
-  "owner": "user",
   "goal": "Implement Slice S2 of Initiative user-acceptance-scenarios: imm-tracker publish-initiative accepts optional per-Task scenarios, renders a 'User scenarios' section on the Child and a derived listing on the Parent, and rejects the whole batch before any remote write when a scenario is malformed or names an acceptance ID its TaskIntent lacks. A publication without scenarios renders byte-identical bodies; terminal projection, TaskIntent schema, and Kernel authority are unchanged.",
   "acceptance": [
     {
@@ -11,8 +10,8 @@
     },
     {
       "id": "US-S2-A2",
-      "assertion": "Per T5 of docs/specs/user-acceptance-scenarios.spec.md (source: #186 D8, D11): a batch whose scenarios are a valid mix of automated and manual entries publishes (positive). The tracker returns its existing structured failure, naming the Task and the offending scenario or acceptance ID, and performs zero mutating remote calls when a scenario lacks a required field, has an id matching neither BR-SCN-<n> nor SCN-<n>, repeats an id within the Initiative, is automated with no acceptance ID, names an acceptance ID absent from its Task's canonical TaskIntent, or is manual without manual_reason (negative). A manual scenario that names no acceptance ID is accepted, and scenario text obeys the existing public-projection text rules and bounds (bound).",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/github-issue-projection-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      "assertion": "Per T5 of docs/specs/user-acceptance-scenarios.spec.md (source: #186 D8, D11): a batch whose scenarios are a valid mix of automated and manual entries publishes (positive). It performs zero mutating remote calls and returns its existing structured failure, naming Task and scenario or acceptance ID, for a scenario that lacks a required field, has an id not matching BR-SCN-<n> or SCN-<n>, repeats an id within the Initiative, is automated with no acceptance ID, names an acceptance ID absent from its TaskIntent, or is manual without manual_reason (negative). A manual scenario naming no acceptance ID is accepted; scenario text obeys the existing public-projection text rules and bounds (bound). Every rendered scenario list item starts at line start, with no metadata comment before the bullet or task-list marker (positive). Each Child's ownership marker block carries one <!-- immune-brain:scenarios=<percent-encoded JSON> --> per Task, holding all its scenarios verbatim; manual_reason is required in manual mode, validated whenever supplied, and retained for either mode; an amendment reads each historical Child's scenarios only from its marker: a Child carrying no scenarios marker has no historical scenarios and its bytes are never rewritten; when a marker is present there must be exactly one with a complete frame, validated by the same validator as pending scenarios and re-encoding byte for byte equal to the marker, and any other state rejects the whole batch before any write (negative). Stored values must also survive re-projection, so a value grown past its bound by escaping, or a restricted-context acceptance ID the pending path accepts, is rejected at publish before any write (negative). Multiline text, Markdown headings, and Markdown bullets in scenario fields are data; a pending scenario repeating any historical ID is rejected before any write (negative).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/github-issue-projection-contract.test.ts\",\n      \"tests/github-initiative-recovery.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
     },
     {
       "id": "US-S2-A3",
@@ -34,5 +33,6 @@
     "tests/plugin-package-runtime.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 15,
+  "owner": "user"
 }

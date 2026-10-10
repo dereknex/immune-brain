@@ -410,6 +410,149 @@ describe("GitHub Issue presentation contract", () => {
 		});
 	});
 
+	it("projects user scenarios onto the owning Child and a derived Parent listing", async () => {
+		await withRoot(async (root, gh) => {
+			const input = batch(root);
+			const automated = {
+				id: "SCN-5",
+				actor: "Developer",
+				given: "The Initiative was published with scenarios",
+				when: "They read the Child",
+				then: "The Child shows its own scenarios",
+				mode: "automated" as const,
+				acceptance: ["acc-widget-a"],
+			};
+			const manual = {
+				id: "BR-SCN-4",
+				actor: "Developer",
+				given: "The bound Spec lists a manual scenario",
+				when: "The Loop prints its exit summary",
+				then: "The summary names the scenario as pending",
+				mode: "manual" as const,
+				manual_reason: "a deterministic test cannot assert that a person follows the written contract",
+			};
+			(input.tasks[0] as { scenarios?: unknown }).scenarios = [automated, manual];
+			const published = await runGithubInitiativePublication(root, input, gh);
+			expect(published.status).toBe("created");
+			const [parent, childA, childB] = gh.issues;
+
+			const childSection = childA.body!.split("## Acceptance criteria")[1].split("## Verification")[0];
+			expect(childSection).toContain("## User scenarios");
+			expect(childSection).toContain("- `SCN-5` (automated, `acc-widget-a`): Actor: Developer. Given: The Initiative was published with scenarios. When: They read the Child. Then: The Child shows its own scenarios.");
+			expect(childSection).toContain("- [ ] `BR-SCN-4` (manual, none): Actor: Developer. Given: The bound Spec lists a manual scenario. When: The Loop prints its exit summary. Then: The summary names the scenario as pending. Reason: a deterministic test cannot assert that a person follows the written contract.");
+			expect(childSection.indexOf("- `SCN-5`")).toBeLessThan(childSection.indexOf("- [ ] `BR-SCN-4`"));
+			expect(childSection.split("\n").some((line) => line.startsWith("- [ ] `BR-SCN-4`"))).toBe(true);
+			expect(childSection.split("\n").some((line) => line.startsWith("- `SCN-5`"))).toBe(true);
+
+			const parentSection = parent.body!.split("## Testing strategy")[1].split("## Out of scope")[0];
+			expect(parentSection).toContain("## User scenarios");
+			expect(parentSection).toContain("- `SCN-5` (Slice `a`, automated): When: They read the Child. Then: The Child shows its own scenarios.");
+			expect(parentSection).toContain("- `BR-SCN-4` (Slice `a`, manual): When: The Loop prints its exit summary. Then: The summary names the scenario as pending.");
+			expect(parentSection).not.toContain("- [ ]");
+			expect(parentSection).not.toContain("Actor:");
+
+			// A sibling with no scenarios of its own renders no heading.
+			expect(childB.body).not.toContain("## User scenarios");
+
+			// A ticked manual box is body text. Terminal projection appends its
+			// marker and closes the Child; it never rewrites the box.
+			childA.body = childA.body!.replace("- [ ] `BR-SCN-4`", "- [x] `BR-SCN-4`");
+			const ticked = childA.body;
+			const terminal = await runGithubTrackerOperation(root, {
+				op: "mark-terminal",
+				initiative_id: "widget-tracker",
+				task_id: "widget-a",
+				slice_id: "a",
+				phase: "done",
+				terminal_event_id: "evt-scn-4",
+			} as never, gh);
+			expect(terminal.status).toBe("updated");
+			expect(childA.state).toBe("closed");
+			expect(childA.state_reason).toBe("completed");
+			expect(childA.body?.startsWith(ticked.trimEnd())).toBe(true);
+			expect(childA.body).toContain("- [x] `BR-SCN-4`");
+		});
+	});
+
+	it("rejects a malformed scenario before any remote write and accepts a manual scenario with no acceptance", async () => {
+		const valid = {
+			id: "SCN-1",
+			actor: "Developer",
+			given: "Work is published",
+			when: "They open the Issue",
+			then: "The scenario is listed",
+			mode: "automated" as const,
+			acceptance: ["acc-widget-a"],
+		};
+		const cases: Array<{ name: string; scenarios: unknown; needle: string }> = [
+			{ name: "missing field", scenarios: [{ ...valid, then: undefined }], needle: "missing then" },
+			{ name: "bad id", scenarios: [{ ...valid, id: "SCENE-1" }], needle: "BR-SCN-<n> or SCN-<n>" },
+			{ name: "duplicate id", scenarios: [valid, { ...valid }], needle: "repeats scenario id SCN-1" },
+			{ name: "automated without acceptance", scenarios: [{ ...valid, acceptance: undefined }], needle: "automated with no acceptance id" },
+			{ name: "unknown acceptance", scenarios: [{ ...valid, acceptance: ["acc-missing"] }], needle: "unknown acceptance id acc-missing" },
+			{ name: "manual without reason", scenarios: [{ ...valid, mode: "manual", acceptance: undefined }], needle: "manual without manual_reason" },
+			{ name: "escaped field beyond the bound", scenarios: [{ ...valid, given: "<!--".repeat(100) }], needle: "1-500 safe characters" },
+			{ name: "automated with an invalid manual_reason", scenarios: [{ ...valid, manual_reason: 42 }], needle: "manual_reason must be a string" },
+		];
+		for (const rejection of cases) {
+			await withRoot(async (root, gh) => {
+				const input = batch(root);
+				(input.tasks[0] as { scenarios?: unknown }).scenarios = rejection.scenarios;
+				const failed = await runGithubInitiativePublication(root, input, gh);
+				expect({ name: rejection.name, status: failed.status, message: failed.message }).toEqual({
+					name: rejection.name,
+					status: "permanent_failure",
+					message: expect.stringContaining(rejection.needle),
+				});
+				expect(failed.message).toContain("widget-a");
+				expect(gh.mutations).toBe(0);
+				expect(gh.issues).toEqual([]);
+			});
+		}
+
+		// A canonical acceptance ID that passes the identifier pattern but carries
+		// restricted authority context must fail at publish, not at the later
+		// historical read-back, so a published Child stays amendable.
+		await withRoot(async (root, gh) => {
+			const input = batch(root);
+			const intentPath = join(root, "docs", "plans", "widget-a.intent.json");
+			writeFileSync(intentPath, `${JSON.stringify({
+				contract: "assurance_kernel/task_intent/v1",
+				task_id: "widget-a",
+				goal: "Deliver widget Slice A",
+				acceptance: [{ id: "QA-settlement", assertion: "The bounded result is delivered", verification: "{}" }],
+				scope_hint: ["tests/**"],
+				risk: "material",
+				revision: 1,
+				owner: "user",
+			}, null, 2)}\n`);
+			input.tasks[0].acceptance = [{ id: "QA-settlement", summary: "The bounded result is delivered" }];
+			(input.tasks[0] as { scenarios?: unknown }).scenarios = [{ ...valid, acceptance: ["QA-settlement"] }];
+			const failed = await runGithubInitiativePublication(root, input, gh);
+			expect(failed.status).toBe("permanent_failure");
+			expect(failed.message).toContain("restricted authority context");
+			expect(failed.message).toContain("widget-a");
+			expect(gh.mutations).toBe(0);
+			expect(gh.issues).toEqual([]);
+		});
+
+		await withRoot(async (root, gh) => {
+			const input = batch(root);
+			(input.tasks[0] as { scenarios?: unknown }).scenarios = [{
+				id: "SCN-2",
+				actor: "Developer",
+				given: "No deterministic check exists",
+				when: "They publish",
+				then: "The scenario is accepted",
+				mode: "manual",
+				manual_reason: "no deterministic check can observe this",
+			}];
+			const published = await runGithubInitiativePublication(root, input, gh);
+			expect(published.status).toBe("created");
+			expect(gh.issues[1].body).toContain("- [ ] `SCN-2` (manual, none):");
+		});
+	});
+
 	it("renders declared provenance and creates Children in plan order", async () => {
 		await withRoot(async (root, gh) => {
 			const published = await runGithubInitiativePublication(root, batch(root, { sourceIssue: "29" }), gh);

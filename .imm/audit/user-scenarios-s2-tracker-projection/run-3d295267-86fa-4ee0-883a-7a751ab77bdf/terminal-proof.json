@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "user-scenarios-s2-tracker-projection",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:user-scenarios-s2-tracker-projection:2026-10-10T10:35:58.914Z",
+  "final_record_hash": "sha256:1748061165389fca7360b9de5da992dbed3a8e36bb912f05eeccf498c2bb2d04",
+  "terminalized_at": "2026-10-10T10:35:58.914Z"
+}

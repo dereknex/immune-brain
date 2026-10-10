@@ -263,7 +263,27 @@ published Child; future checklist-only Slices are not allowed in the batch.
 Each Child must provide public `acceptance` entries with `id` and a 1-500
 character `summary`. Their IDs must match every canonical TaskIntent acceptance
 ID exactly once. Canonical assertion prose is authority evidence and must never
-be copied into public GitHub projection. Each Child projection requires
+be copied into public GitHub projection. Each Child may also provide an optional
+`scenarios` array. Omitting it, or giving an empty array, renders no
+`## User scenarios` section for that Child and contributes nothing to the Parent;
+when no Task supplies scenarios the Parent and every Child body are unchanged.
+A scenario is public projection of one user-observable result: `id`
+(`BR-SCN-<n>` or `SCN-<n>`), `actor`, `given`, `when`, `then`, and `mode`.
+`automated` maps to one or more of that Task's canonical acceptance IDs and
+renders as a plain bullet; `manual` requires `manual_reason`, may name no
+acceptance ID, and renders as an unchecked task-list item that also shows the
+reason. The Parent derives one plain bullet per scenario (its ID, owning Slice
+ID, mode, When, and Then) and never a checkbox. Scenarios never widen TaskIntent
+scope or authority. The tracker rejects the whole batch before any remote write
+when a scenario lacks a field, has an id matching neither form, repeats an id
+within the Initiative, is automated with no acceptance ID, names an acceptance ID
+its TaskIntent lacks, or is manual without `manual_reason`. Every scenario list
+item starts at the beginning of its line, so no metadata comment precedes the
+marker. Each Child's ownership marker block also carries one
+`<!-- immune-brain:scenarios=<percent-encoded JSON> -->` per Task holding all of
+its scenarios verbatim; an amendment reads historical scenarios only from that
+marker, never parses the visible section, and treats a Child without it as
+having no scenarios. Each Child projection requires
 `title` (1-60 characters), the short Slice display title, and may contain
 `result`, `current_behavior`,
 `desired_behavior`, `key_interfaces`, `verification`, `blocked_by` Task IDs,

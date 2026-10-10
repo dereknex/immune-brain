@@ -125,7 +125,7 @@ Delegated technical choice for the input shape: each entry of `InitiativePublica
 
 Scenarios are supplied once, on their owning Task. The Parent listing is derived from the Tasks, so Parent and Child cannot disagree.
 
-- **Child**: `## User scenarios` after `## Acceptance criteria`. One list item per scenario with its ID, mode, mapped acceptance IDs, and the four fields. A `manual` item is a `- [ ]` task-list item and shows its reason; an `automated` item is a plain bullet.
+- **Child**: `## User scenarios` after `## Acceptance criteria`. One list item per scenario with its ID, mode, mapped acceptance IDs, and the four fields. A `manual` item is a `- [ ]` task-list item and shows its reason; an `automated` item is a plain bullet. Every list marker starts its line, so no metadata comment precedes it and GitHub still renders both forms. The same marker block that carries `slice-id` and `task-id` also carries one `<!-- immune-brain:scenarios=<percent-encoded JSON> -->` per Task holding all of its scenarios verbatim; that marker is the only source an amendment reads historical scenarios from, and the visible section is never parsed.
 - **Parent**: `## User scenarios` after `## Testing strategy`. One plain bullet per scenario with its ID, owning Slice ID, mode, and its `When`/`Then`. No checkboxes.
 - When no Task supplies scenarios neither heading is rendered (I3). A Child whose own list is empty renders no heading even when siblings have scenarios.
 - Amendment: scenarios on a bound pending Child are part of its approved brief and update it like any other brief change; historical Children are never rewritten.

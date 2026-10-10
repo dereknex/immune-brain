@@ -87,6 +87,20 @@ describe("Initiative carrier Enrollment gate", () => {
 		);
 	});
 
+	it("describes optional per-Task scenarios as public projection that never widens authority", () => {
+		const section = PLANNER.slice(PLANNER.indexOf("### Initiative Carrier Preference"));
+		expect(section).toContain("optional\n`scenarios` array");
+		expect(section).toContain("`BR-SCN-<n>` or `SCN-<n>`");
+		expect(section).toContain("`automated` maps to one or more");
+		expect(section).toContain("`manual` requires `manual_reason`");
+		expect(section).toContain("renders no\n`## User scenarios` section");
+		expect(section).toContain("Scenarios never widen TaskIntent\nscope or authority");
+		const tracker = read("docs/agents/issue-tracker.md");
+		expect(tracker).toContain("optional `scenarios`");
+		expect(tracker).toContain("never widen\nTaskIntent scope or authority");
+		expect(tracker).toContain("Omitting it renders no section");
+	});
+
 	it("performs no GitHub projection at Enrollment and only projects a settled task", () => {
 		// Enrollment is authority; the tracker is transport. The projection step is
 		// reachable only from a settlement path, never from enrollment.
