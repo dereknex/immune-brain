@@ -880,10 +880,13 @@ describe("max_parallel above 1", () => {
 			kernel.frozen.add("task-a");
 			kernel.frozen.add("task-b");
 			const report = lanes(await startBatch(args));
-			expect(report.children.map((c) => c.state)).toEqual(["needs_human", "integrated"]);
+			// task-a exhausted its own limit and waits for a coordinator correction
+			// (#196) while task-b, under its own count, integrates.
+			expect(report.children.map((c) => c.state)).toEqual(["enrolled", "integrated"]);
 			expect(report.children[0]!.qa_failures).toBe(1);
+			expect(report.children[0]!.correction_due).toBe("QA failure limit reached");
 			expect(report.children[1]!.qa_failures).toBe(0);
-			expect(report.batch_state).toBe("needs_human");
+			expect(report.batch_state).toBe("running");
 		} finally {
 			fx.cleanup();
 		}
@@ -1262,6 +1265,14 @@ describe("lane reader and guidance accuracy", () => {
 			writeFileSync(join(laneA, "a.txt"), "a\n");
 			kernel.reworking.add("task-a");
 			kernel.frozen.add("task-a");
+			// The child parks only after both coordinator corrections are spent (#196).
+			const { parseLaneInstruction } = await import("../plugins/immune-brain/runtime/unattended/batch_lanes");
+			for (const round of [1, 2]) {
+				await startBatch(args);
+				kernel.frozen.delete("task-a");
+				await startBatch({ ...args, lane_instruction: parseLaneInstruction({ task_id: "task-a", kind: "correction", text: `correction ${round}`, session_state: "idle" }) });
+				kernel.frozen.add("task-a");
+			}
 			const parked = lanes(await startBatch(args));
 			expect(parked.batch_state).toBe("needs_human");
 			expect(parked.next_action).toContain("lane batch has stopped");
@@ -1791,4 +1802,60 @@ describe("coordinator instruction to a Lane session (#195)", () => {
 			fx.cleanup();
 		}
 	});
+});
+
+describe("coordinator correction when the rework budget is exhausted (#196)", () => {
+	it("hands the child to the coordinator up to twice, each time to a new session, then parks it with its own reason while a sibling integrates", async () => {
+		const { parseLaneInstruction, CORRECTION_LIMIT_REACHED } = await import("../plugins/immune-brain/runtime/unattended/batch_lanes");
+		const fx = fixture({}, { "task-a": ["a.txt"], "task-b": ["b.txt"] });
+		try {
+			const kernel = laneKernel();
+			const args = request(fx, [child("task-a", "S1"), child("task-b", "S2")], kernel, { max_parallel: 2, budget: { max_children: 2, qa_failure_limit: 1 } });
+			await startBatch(args);
+			const offers = ["task-a", "task-b"].map((id) => ({ task_id: id, path: fx.lane(id) }));
+			await startBatch({ ...args, lane_offers: offers });
+			kernel.reworking.add("task-a");
+			kernel.frozen.add("task-a");
+			const correct = (text: string) => startBatch({ ...args, lane_instruction: parseLaneInstruction({ task_id: "task-a", kind: "correction", text, session_state: "idle" }) });
+
+			for (const round of [1, 2]) {
+				const exhausted = lanes(await startBatch(args));
+				const handoff = exhausted.handoffs.find((h) => h.task_id === "task-a")!;
+				expect(handoff).toMatchObject({ role: "coordinator", action: "correct", corrections_used: round - 1, corrections_left: 3 - round, lane_path: offers[0]!.path });
+				// No further Executor attempt is made while the correction is due.
+				const attempts = kernel.advanced.length;
+				await startBatch(args);
+				expect(kernel.advanced.length).toBe(attempts);
+				// An ordinary instruction is refused; the correction is accepted and counted.
+				expect(lanes(await startBatch({ ...args, lane_instruction: parseLaneInstruction({ task_id: "task-a", text: "x", session_state: "idle" }) })).lane_instruction?.accepted).toBe(false);
+				// After a QA rework the Lane's artifacts are active again until the new
+				// session freezes its next delivery.
+				kernel.frozen.delete("task-a");
+				const corrected = lanes(await correct(`design-level correction ${round}`));
+				expect(corrected.lane_instruction?.accepted).toBe(true);
+				expect(corrected.children[0]).toMatchObject({ state: "enrolled", corrections: round, qa_failures: 0 });
+				expect(corrected.children[0]!.correction_due).toBeUndefined();
+				// The new session needs nothing but the Kernel projection and the Lane: the
+				// executor handoff names both.
+				expect(corrected.handoffs.find((h) => h.task_id === "task-a")).toMatchObject({ role: "executor", lane_path: offers[0]!.path, run_id: "run-1", next_obligation: "submit_assurance" });
+				kernel.frozen.add("task-a"); // the new session delivers again, and QA fails again
+			}
+
+			// The sibling keeps moving throughout.
+			writeFileSync(join(offers[1]!.path, "b.txt"), "b\n");
+			kernel.frozen.add("task-b");
+			const third = lanes(await startBatch(args));
+			expect(third.children[0]!.state).toBe("needs_human");
+			expect(third.children[0]!.reason).toStartWith(`${CORRECTION_LIMIT_REACHED}:`);
+			expect(third.children[0]!.reason).not.toBe("QA failure limit reached");
+			expect(third.children[1]!.state).toBe("integrated");
+			expect(third.interventions?.filter((i) => i.kind === "correction")).toHaveLength(2);
+			// A correction beyond the limit is never accepted or recorded.
+			const beyond = lanes(await correct("third"));
+			expect(beyond.lane_instruction?.accepted).not.toBe(true);
+			expect((readAnyBatchRunState(fx.repo, BATCH_ID) as { interventions?: unknown[] }).interventions).toHaveLength(2);
+		} finally {
+			fx.cleanup();
+		}
+	}, 30000);
 });

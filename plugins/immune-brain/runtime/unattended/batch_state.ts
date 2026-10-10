@@ -114,6 +114,14 @@ export interface BatchLaneChildRun {
 	 * integrated. Absent until then; a Lane settlement never closes it.
 	 */
 	tracker_closed?: boolean;
+	/** Coordinator corrections already spent on this child (at most two). */
+	corrections?: number;
+	/**
+	 * Set when the child exhausted its rework budget and waits for one
+	 * design-level coordinator correction instead of parking; cleared when the
+	 * correction is recorded.
+	 */
+	correction_due?: string;
 }
 
 export interface LaneIntervention {
@@ -603,6 +611,10 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 			throw new Error(`batch run state ${batchId} child ${child.task_id} has invalid terminal fields`);
 		if (typeof child.qa_failures !== "number" || !Number.isInteger(child.qa_failures) || child.qa_failures < 0)
 			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid qa_failures`);
+		if (child.corrections !== undefined && (!Number.isInteger(child.corrections) || child.corrections < 0 || child.corrections > 2))
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid corrections count`);
+		if (child.correction_due !== undefined && (typeof child.correction_due !== "string" || !child.correction_due || child.state !== "enrolled"))
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid correction_due`);
 		if (child.tracker_closed !== undefined && child.tracker_closed !== true)
 			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid tracker_closed`);
 		if (child.tracker_closed === true && child.state !== "integrated" && child.state !== "released")
@@ -816,6 +828,21 @@ export type BatchLaneHandoff =
 			executor_hosts: readonly string[];
 	  }
 	| { role: "lane-steward"; action: "release"; task_id: string; lane_branch: string }
+	| {
+			/**
+			 * The child exhausted its rework budget. The Parent reads the findings of
+			 * every round from the Lane's Kernel state, decides whether they share one
+			 * root cause, starts a new Lane session and sends one design-level
+			 * correction as `lane_instruction` kind `correction`.
+			 */
+			role: "coordinator";
+			action: "correct";
+			task_id: string;
+			reason: string;
+			corrections_used: number;
+			corrections_left: number;
+			lane_path: string;
+	  }
 	| {
 			role: "executor";
 			task_id: string;

@@ -381,6 +381,23 @@ coordinator sent is therefore in the report, so Executor-initiated behavior and
 coordinator intervention can be told apart afterwards. This never applies to a
 Review agent: a dispatched reviewer is still never continued or re-prompted.
 
+When a Lane child exhausts its rework budget (the per-child `qa_failure_limit`)
+it does not park for the user at once: the report carries a
+`{ role: "coordinator", action: "correct" }` handoff and the runner makes no
+further attempt for that child. The Parent reads the findings of every round
+from that Lane's Kernel state, decides whether they point at one root cause, and
+writes one design-level correction — the invariant to hold and the shared seam to
+fix — never a patch of its own. It starts a new Executor session in the Lane
+(the old context is not reused; the new session resumes from the Kernel
+projection and the Lane workspace alone) and sends the correction as
+`lane_instruction` kind `correction`; the runner counts it. At most two
+corrections are spent per child: the third exhaustion parks the child as
+`batch_correction_limit_reached`, its dependents are skipped, siblings that do not
+depend on it keep executing and integrating, and the batch reports it at the end.
+Single tasks outside a batch keep their existing budget behavior, and Review
+independence is unchanged. A Review rework budget that the Kernel turns into a
+`replan_required` decision still needs the user's own native decision.
+
 Every live Lane session keeps exactly one `herdr agent wait` armed, so `blocked`
 and idle-without-settlement wake the Parent on their own; a Parent that has
 nothing else to do still ends its turn with those waits armed. A failed or timed-out `herdr` command

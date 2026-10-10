@@ -168,11 +168,20 @@ export function decideLaneInstruction(record: BatchLaneRunStateRecord, request: 
 	const child = record.children.find((c) => c.task_id === request.task_id);
 	if (!child || !child.lane) return `${request.task_id} has no Lane in this batch`;
 	if (child.state !== "enrolled") return `${request.task_id} is ${child.state}, not running in its Lane`;
+	if (request.kind === "correction" && !child.correction_due)
+		return `${request.task_id} has not exhausted its rework budget; send an ordinary instruction instead`;
+	if (request.kind === "instruction" && child.correction_due)
+		return `${request.task_id} waits for a design-level correction; send it with kind correction`;
 	if (request.session_state === "blocked")
 		return `${request.task_id}'s session is blocked on a dialog only the user may answer; send nothing and tell the user`;
 	if (request.session_state !== "idle") return `${request.task_id}'s session is ${request.session_state}; text goes only to an idle session`;
 	return null;
 }
+
+/** How many design-level coordinator corrections one child may receive. */
+export const MAX_COORDINATOR_CORRECTIONS = 2;
+/** The park reason once a child exhausts its budget after its last correction. */
+export const CORRECTION_LIMIT_REACHED = "batch_correction_limit_reached";
 
 export const LANE_CONTRACT_MISMATCH = "batch_lane_contract_mismatch";
 export const RUNTIME_CONTRACT_MISMATCH = "batch_runtime_contract_mismatch";
@@ -840,6 +849,12 @@ export async function runLaneBatch(
 		const refusal = decideLaneInstruction(record, request);
 		if (refusal) instruction = { task_id: request.task_id, kind: request.kind, accepted: false, reason: `batch_lane_instruction_refused: ${refusal}` };
 		else {
+			if (request.kind === "correction")
+				record.children = record.children.map((c) => {
+					if (c.task_id !== request.task_id) return c;
+					const { correction_due: _due, ...rest } = c;
+					return { ...rest, corrections: (c.corrections ?? 0) + 1, qa_failures: 0 };
+				});
 			record.interventions = [...(record.interventions ?? []), {
 				at: input.now,
 				task_id: request.task_id,
@@ -932,6 +947,8 @@ export async function runLaneBatch(
 			parkChild(child.task_id, "claim held by another batch");
 			continue;
 		}
+		// A child waiting for its coordinator correction gets no further attempt.
+		if (child.correction_due) continue;
 		// An unfrozen child, or one with QA pending the Executor's own attempt,
 		// is the Executor's to move; the batch never reruns that attempt.
 		if (fresh.projection.next_obligation === "run_qa" || fresh.projection.artifact_state !== "frozen") continue;
@@ -953,11 +970,24 @@ export async function runLaneBatch(
 			const failures = child.qa_failures + 1;
 			if (failures >= record.budget.qa_failure_limit) {
 				const reason = "QA failure limit reached";
-				record.children = record.children.map((c) =>
-					c.task_id === child.task_id ? { ...c, state: "needs_human", reason, qa_failures: failures } : c,
-				);
+				const used = child.corrections ?? 0;
+				if (used < MAX_COORDINATOR_CORRECTIONS) {
+					// Hand the design judgment to the coordinator instead of parking: one
+					// correction, sent to a new Lane session, before any further attempt.
+					record.children = record.children.map((c) =>
+						c.task_id === child.task_id ? { ...c, qa_failures: failures, correction_due: reason } : c,
+					);
+					persist();
+					continue;
+				}
+				const parked = `${CORRECTION_LIMIT_REACHED}: ${reason} after ${used} coordinator corrections`;
+				record.children = record.children.map((c) => {
+					if (c.task_id !== child.task_id) return c;
+					const { correction_due: _due, ...rest } = c;
+					return { ...rest, state: "needs_human", reason: parked, qa_failures: failures };
+				});
 				skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
-				parkedMessage ??= reason;
+				parkedMessage ??= parked;
 				persist();
 				continue;
 			}
@@ -1097,6 +1127,19 @@ export async function runLaneBatch(
 	const handoffs: BatchLaneHandoff[] = [];
 	for (const child of record.children) {
 		if (child.state !== "enrolled" || !child.lane) continue;
+		if (child.correction_due) {
+			// No further Executor attempt until the coordinator's correction is recorded.
+			handoffs.push({
+				role: "coordinator",
+				action: "correct",
+				task_id: child.task_id,
+				reason: child.correction_due,
+				corrections_used: child.corrections ?? 0,
+				corrections_left: MAX_COORDINATOR_CORRECTIONS - (child.corrections ?? 0),
+				lane_path: child.lane.path,
+			});
+			continue;
+		}
 		const fresh = await input.kernel.projectTask(child.lane.path, child.task_id);
 		if (fresh.error !== null) continue;
 		handoffs.push({
@@ -1150,9 +1193,11 @@ export async function runLaneBatch(
 	return laneReport(
 		record,
 		null,
-		handoffs.some((h) => h.role === "lane-steward" && h.action === "provision")
-			? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers."
-			: "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.",
+		handoffs.some((h) => h.role === "coordinator")
+			? "For each coordinator handoff, read every round's findings in that Lane, start a new Lane session and send one design-level correction as lane_instruction kind correction; run the other handoffs as usual."
+			: handoffs.some((h) => h.role === "lane-steward" && h.action === "provision")
+				? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers."
+				: "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.",
 		{ handoffs, refusals, tracker, instruction },
 	);
 }

@@ -6194,6 +6194,10 @@ function validateLaneRecordShape(value, batchId) {
       throw new Error(`batch run state ${batchId} child ${child.task_id} has invalid terminal fields`);
     if (typeof child.qa_failures !== "number" || !Number.isInteger(child.qa_failures) || child.qa_failures < 0)
       throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid qa_failures`);
+    if (child.corrections !== undefined && (!Number.isInteger(child.corrections) || child.corrections < 0 || child.corrections > 2))
+      throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid corrections count`);
+    if (child.correction_due !== undefined && (typeof child.correction_due !== "string" || !child.correction_due || child.state !== "enrolled"))
+      throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid correction_due`);
     if (child.tracker_closed !== undefined && child.tracker_closed !== true)
       throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid tracker_closed`);
     if (child.tracker_closed === true && child.state !== "integrated" && child.state !== "released")
@@ -13672,12 +13676,18 @@ function decideLaneInstruction(record, request) {
     return `${request.task_id} has no Lane in this batch`;
   if (child.state !== "enrolled")
     return `${request.task_id} is ${child.state}, not running in its Lane`;
+  if (request.kind === "correction" && !child.correction_due)
+    return `${request.task_id} has not exhausted its rework budget; send an ordinary instruction instead`;
+  if (request.kind === "instruction" && child.correction_due)
+    return `${request.task_id} waits for a design-level correction; send it with kind correction`;
   if (request.session_state === "blocked")
     return `${request.task_id}'s session is blocked on a dialog only the user may answer; send nothing and tell the user`;
   if (request.session_state !== "idle")
     return `${request.task_id}'s session is ${request.session_state}; text goes only to an idle session`;
   return null;
 }
+var MAX_COORDINATOR_CORRECTIONS = 2;
+var CORRECTION_LIMIT_REACHED = "batch_correction_limit_reached";
 var LANE_CONTRACT_MISMATCH = "batch_lane_contract_mismatch";
 var RUNTIME_CONTRACT_MISMATCH = "batch_runtime_contract_mismatch";
 function laneRuntimeDir(root, explicit) {
@@ -14177,6 +14187,13 @@ async function runLaneBatch(input, persisted) {
     if (refusal)
       instruction = { task_id: request.task_id, kind: request.kind, accepted: false, reason: `batch_lane_instruction_refused: ${refusal}` };
     else {
+      if (request.kind === "correction")
+        record.children = record.children.map((c) => {
+          if (c.task_id !== request.task_id)
+            return c;
+          const { correction_due: _due, ...rest } = c;
+          return { ...rest, corrections: (c.corrections ?? 0) + 1, qa_failures: 0 };
+        });
       record.interventions = [...record.interventions ?? [], {
         at: input.now,
         task_id: request.task_id,
@@ -14262,6 +14279,8 @@ async function runLaneBatch(input, persisted) {
       parkChild(child.task_id, "claim held by another batch");
       continue;
     }
+    if (child.correction_due)
+      continue;
     if (fresh.projection.next_obligation === "run_qa" || fresh.projection.artifact_state !== "frozen")
       continue;
     const terminal = await input.kernel.advanceTask(child.lane.path, child.task_id);
@@ -14276,9 +14295,21 @@ async function runLaneBatch(input, persisted) {
       const failures = child.qa_failures + 1;
       if (failures >= record.budget.qa_failure_limit) {
         const reason = "QA failure limit reached";
-        record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason, qa_failures: failures } : c);
+        const used = child.corrections ?? 0;
+        if (used < MAX_COORDINATOR_CORRECTIONS) {
+          record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, qa_failures: failures, correction_due: reason } : c);
+          persist();
+          continue;
+        }
+        const parked = `${CORRECTION_LIMIT_REACHED}: ${reason} after ${used} coordinator corrections`;
+        record.children = record.children.map((c) => {
+          if (c.task_id !== child.task_id)
+            return c;
+          const { correction_due: _due, ...rest } = c;
+          return { ...rest, state: "needs_human", reason: parked, qa_failures: failures };
+        });
         skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
-        parkedMessage ??= reason;
+        parkedMessage ??= parked;
         persist();
         continue;
       }
@@ -14380,6 +14411,18 @@ async function runLaneBatch(input, persisted) {
   for (const child of record.children) {
     if (child.state !== "enrolled" || !child.lane)
       continue;
+    if (child.correction_due) {
+      handoffs.push({
+        role: "coordinator",
+        action: "correct",
+        task_id: child.task_id,
+        reason: child.correction_due,
+        corrections_used: child.corrections ?? 0,
+        corrections_left: MAX_COORDINATOR_CORRECTIONS - (child.corrections ?? 0),
+        lane_path: child.lane.path
+      });
+      continue;
+    }
     const fresh = await input.kernel.projectTask(child.lane.path, child.task_id);
     if (fresh.error !== null)
       continue;
@@ -14418,7 +14461,7 @@ async function runLaneBatch(input, persisted) {
   if (reviewOpen.length > 0) {
     return laneReport(record, reviewOpen.length === 1 ? `child ${reviewOpen[0]} holds an open Review reservation` : `children ${reviewOpen.join(", ")} hold open Review reservations`, "Submit each reserved foreground Review verdict in its own Lane, then call start_unattended_batch again to continue.", { handoffs, refusals, tracker, instruction });
   }
-  return laneReport(record, null, handoffs.some((h) => h.role === "lane-steward" && h.action === "provision") ? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers." : "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.", { handoffs, refusals, tracker, instruction });
+  return laneReport(record, null, handoffs.some((h) => h.role === "coordinator") ? "For each coordinator handoff, read every round's findings in that Lane, start a new Lane session and send one design-level correction as lane_instruction kind correction; run the other handoffs as usual." : handoffs.some((h) => h.role === "lane-steward" && h.action === "provision") ? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers." : "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.", { handoffs, refusals, tracker, instruction });
 }
 
 // plugins/immune-brain/runtime/unattended/batch_runner.ts
