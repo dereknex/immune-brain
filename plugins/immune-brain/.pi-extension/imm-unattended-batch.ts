@@ -15,13 +15,14 @@ import {
 	startBatch,
 	type BatchRunnerKernelPort,
 	type BatchRunReport,
+	type BatchTrackerPort,
 } from "../runtime/unattended/batch_runner";
 import { createBatchKernelPort } from "../runtime/unattended/batch_kernel_port";
 import type { BatchRunnerGitPort } from "../runtime/unattended/batch_git";
 import type { InitiativeObservationReader } from "../runtime/unattended/types";
 import { advancePiTask } from "./imm-canary-work";
 import { batchReason } from "../runtime/unattended/batch_reasons";
-import { parseLaneOffers, parseMaxParallel, resolveLaneParallel, type LaneOffer } from "../runtime/unattended/batch_lanes";
+import { createBatchTrackerPort, parseLaneOffers, parseMaxParallel, resolveLaneParallel, type LaneOffer } from "../runtime/unattended/batch_lanes";
 import {
 	authorizeBatch,
 	projectBatchPreflight,
@@ -109,6 +110,8 @@ export interface PiBatchExecutionOptions {
 	lane_offers?: LaneOffer[];
 	batchKernel?: Partial<BatchRunnerKernelPort>;
 	batchGit?: BatchRunnerGitPort;
+	/** Lane mode: closes an integrated child's Issue; defaults to the GitHub projection. */
+	batchTracker?: BatchTrackerPort;
 	readInitiative?: InitiativeObservationReader;
 	confirmBatch?: (details: {
 		title: string;
@@ -292,7 +295,9 @@ export async function executePiUnattendedBatch(
 		now,
 		kernel: kernelPort,
 		git: options.batchGit,
-		...(options.max_parallel !== undefined ? { max_parallel: options.max_parallel } : {}),
+		...(options.max_parallel !== undefined
+			? { max_parallel: options.max_parallel, tracker: options.batchTracker ?? createBatchTrackerPort(root, initiativeSlug) }
+			: {}),
 		...(options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}),
 	});
 

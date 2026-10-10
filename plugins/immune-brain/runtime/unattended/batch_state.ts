@@ -109,6 +109,11 @@ export interface BatchLaneChildRun {
 	commit: string | null;
 	lane: BatchLaneBinding | null;
 	qa_failures: number;
+	/**
+	 * The Child Issue was closed by the coordinator after this child's commit was
+	 * integrated. Absent until then; a Lane settlement never closes it.
+	 */
+	tracker_closed?: boolean;
 }
 
 /**
@@ -545,6 +550,10 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 			throw new Error(`batch run state ${batchId} child ${child.task_id} has invalid terminal fields`);
 		if (typeof child.qa_failures !== "number" || !Number.isInteger(child.qa_failures) || child.qa_failures < 0)
 			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid qa_failures`);
+		if (child.tracker_closed !== undefined && child.tracker_closed !== true)
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid tracker_closed`);
+		if (child.tracker_closed === true && child.state !== "integrated" && child.state !== "released")
+			throw new Error(`batch run state ${batchId} child ${child.task_id} closed its tracker Issue before integration`);
 		const lane = child.lane as BatchLaneBinding | null | undefined;
 		if (lane !== null) {
 			if (
@@ -725,6 +734,11 @@ export interface BatchLaneRunReport {
 	handoffs: BatchLaneHandoff[];
 	/** Offers refused at admission; a refused offer wrote nothing. */
 	lane_refusals?: Array<{ task_id: string; path: string; reason: string }>;
+	/**
+	 * Child Issue closures this tick attempted after integration. A failure is a
+	 * tracker observation beside the batch result, retried by the next tick.
+	 */
+	tracker_observations?: Array<{ task_id: string; status: string; message: string }>;
 	next_action: string;
 	created_at: string;
 }

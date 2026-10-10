@@ -108,6 +108,21 @@ export interface StartBatchInput {
 	max_parallel?: number;
 	/** Present only in lane mode: Lanes someone else created, offered to the batch. */
 	lane_offers?: LaneOffer[];
+	/**
+	 * Lane mode only: the opted-in tracker projection the coordinator runs after
+	 * integrating a child. A Lane settlement writes nothing to the tracker, so
+	 * this is where its Child Issue is closed, exactly once. Absent, nothing is
+	 * projected.
+	 */
+	tracker?: BatchTrackerPort;
+}
+
+/** The one tracker effect a lane batch may cause: closing an integrated child's Issue. */
+export interface BatchTrackerPort {
+	markTerminal(
+		root: string,
+		input: { task_id: string; phase: "done"; terminal_event_id: string },
+	): Promise<{ status: string; message: string }>;
 }
 
 /** One git seam: the injected BatchRunnerGitPort, or the default adapter over

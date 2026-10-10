@@ -505,6 +505,12 @@ when breaking, `approve_breaking_intent_revision` with the complete next intent.
 The native gate is the single user decision for a breaking revision; candidate
 preparation does not apply the revision or authorize expanded execution.
 
+A revision is warranted only when the goal, the `scope_hint`, or a user-visible
+commitment changes. A finding whose defect lies inside the current goal and scope
+is ordinary rework for the Loop, not a revision request: decline to prepare one
+that only appends a single input case to an acceptance assertion. Acceptance
+states principles; enumeration of cases belongs in tests.
+
 ## Planning Rules
 
 - **Entry Contract**: Use when Spec/TaskIntent planning is needed. An already enrolled owner remains on its current Kernel authority and resumes only through explicit `imm-run`; a validated candidate still needs native Enrollment.

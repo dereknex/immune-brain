@@ -100,6 +100,12 @@ Continue while the current projection has a valid action:
    accepted contract and answer with `refute_finding` bound to fresh QA evidence
    for that acceptance. Escalating a local heuristic a third time instead of
    choosing one of those two responses is the loop this step exists to break.
+   A finding whose defect lies inside the TaskIntent goal and `scope_hint` is
+   ordinary rework even when no acceptance names its exact case: fix the code,
+   add the test that pins the case, and dispose the finding. It is never a
+   reason to revise the Intent. Acceptance text states principles; enumeration
+   of specific inputs belongs in tests, so never append a single input case to
+   an acceptance assertion in order to close a finding.
 6. An unresolved decision pauses only dependent execution. On `awaiting_user`,
    invoke `request_authorization` directly before ending the turn; use the
    Decisions and Recovery route for its native-gate handling. End the turn if
@@ -197,7 +203,11 @@ Only children whose scopes are provably disjoint run together; a child whose sco
 overlaps an in-flight Lane waits until that Lane is integrated. Settled children
 integrate serially, and a parked child ends only itself and its dependents while a
 disjoint sibling keeps moving. A lost Lane parks as `batch_lane_lost`, and
-`qa_failure_limit` counts each child separately. A resume with a different
+`qa_failure_limit` counts each child separately. A settlement inside a Lane
+changes Kernel state only and writes nothing to the tracker: the coordinator
+closes the child's Issue after it integrates that child's commit, exactly once,
+and reports the attempt in `tracker_observations`. A parked or lost child is
+never integrated, so its Issue stays open. A resume with a different
 `max_parallel` is refused with `batch_parallel_mismatch`. A Lane holds no batch
 state and its Host session never re-enters the batch.
 
@@ -395,7 +405,12 @@ is recorded as a separate follow-up rather than resolved here.
   reviewed; the Kernel authority gates remain the real boundary.
 - Invoke `approve_breaking_intent_revision` with the complete next intent
   directly; the native Host gate is the single user decision. Do not overwrite
-  enrolled intent sidecars or ask for chat pre-confirmation.
+  enrolled intent sidecars or ask for chat pre-confirmation. A breaking revision
+  is used only when the goal, the `scope_hint`, or a user-visible commitment
+  changes. A defect inside the existing goal and scope is rework under the
+  Execution Loop, not a revision, and the acceptance length limit is never
+  worked around by shortening words: when an assertion grows toward it, the
+  assertion is enumerating cases that belong in tests.
 - On `awaiting_user`, invoke `request_authorization` directly for a concrete
   unresolved decision or rework authorization, not risk tier alone.
 - When the user explicitly asks to stop an active task, invoke the Kernel stop

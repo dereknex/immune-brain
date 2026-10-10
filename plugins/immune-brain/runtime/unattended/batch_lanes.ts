@@ -10,7 +10,10 @@ import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { computeBatchPlanDigest } from "../kernel/batch_authority";
 import { readTaskIntent } from "../kernel/intent";
-import type { StartBatchInput } from "./batch_runner";
+import { readTaskTombstone } from "../kernel/backend_claim";
+import { runGithubTrackerOperation } from "../github_issue_tracker";
+import { hasLocalInitiative } from "../local_initiative";
+import type { BatchTrackerPort, StartBatchInput } from "./batch_runner";
 import {
 	BatchIntegrationError,
 	findIntegratedCandidate,
@@ -107,6 +110,16 @@ export function parseLaneOffers(value: unknown): LaneOffer[] | undefined {
 		seen.add(taskId);
 		return { task_id: taskId, path };
 	});
+}
+
+/**
+ * The production tracker port both Hosts hand a lane batch: the same
+ * `mark-terminal` projection a single task runs after settlement. A Local
+ * Initiative has no tracker, so it gets none.
+ */
+export function createBatchTrackerPort(root: string, initiativeSlug: string): BatchTrackerPort | undefined {
+	if (hasLocalInitiative(root, initiativeSlug)) return undefined;
+	return { markTerminal: (trackerRoot, input) => runGithubTrackerOperation(trackerRoot, { op: "mark-terminal", ...input }) };
 }
 
 /** The branch the Lane for a child must sit on. */
@@ -360,11 +373,56 @@ const TERMINAL_NEXT_ACTIONS: Record<string, string> = {
 	prepared: "The batch is prepared but not started.",
 };
 
+type TrackerObservations = NonNullable<BatchLaneRunReport["tracker_observations"]>;
+
+/**
+ * Close the Child Issue of every integrated child not closed yet. Only the
+ * coordinator does this, and only after integration: a Lane settlement writes
+ * nothing to the tracker, and a parked or lost child is never integrated, so
+ * its Issue stays open. The terminal event comes from the child's audit pair,
+ * which integration brought onto the batch branch. A tracker failure never
+ * changes batch or Kernel state; the next tick retries it, and a confirmed
+ * close is recorded so it is never repeated.
+ */
+async function closeIntegratedIssues(
+	input: StartBatchInput,
+	record: BatchLaneRunStateRecord,
+	persist: () => void,
+): Promise<TrackerObservations> {
+	const observations: TrackerObservations = [];
+	if (!input.tracker) return observations;
+	for (const child of record.children) {
+		if ((child.state !== "integrated" && child.state !== "released") || child.tracker_closed) continue;
+		let status: string;
+		let message: string;
+		try {
+			const tombstone = readTaskTombstone(input.root, child.task_id);
+			if (!tombstone || tombstone.lifecycle_status !== "terminal" || tombstone.terminal_lifecycle !== "done") {
+				observations.push({ task_id: child.task_id, status: "retryable_failure", message: "integrated child has no done terminal proof on the batch branch" });
+				continue;
+			}
+			({ status, message } = await input.tracker.markTerminal(input.root, {
+				task_id: child.task_id,
+				phase: "done",
+				terminal_event_id: tombstone.terminal_event_id,
+			}));
+		} catch (error) {
+			status = "retryable_failure";
+			message = error instanceof Error ? error.message : String(error);
+		}
+		observations.push({ task_id: child.task_id, status, message });
+		if (status !== "updated" && status !== "already_current") continue;
+		record.children = record.children.map((c) => (c.task_id === child.task_id ? { ...c, tracker_closed: true } : c));
+		persist();
+	}
+	return observations;
+}
+
 function laneReport(
 	record: BatchLaneRunStateRecord,
 	reason: string | null,
 	nextAction: string,
-	extra: { handoffs?: BatchLaneHandoff[]; refusals?: BatchLaneRunReport["lane_refusals"] } = {},
+	extra: { handoffs?: BatchLaneHandoff[]; refusals?: BatchLaneRunReport["lane_refusals"]; tracker?: TrackerObservations } = {},
 ): BatchLaneRunReport {
 	return {
 		contract: "assurance_kernel/batch_run_report/v1",
@@ -377,6 +435,7 @@ function laneReport(
 		reason,
 		handoffs: extra.handoffs ?? [],
 		...(extra.refusals?.length ? { lane_refusals: extra.refusals } : {}),
+		...(extra.tracker?.length ? { tracker_observations: extra.tracker } : {}),
 		next_action: nextAction || (TERMINAL_NEXT_ACTIONS[record.batch_state] ?? "Inspect the batch run state."),
 		created_at: record.updated_at,
 	};
@@ -540,10 +599,17 @@ export async function runLaneBatch(
 	if (persisted) {
 		record = persisted;
 		assertPlanMatches(input, record);
-		if (isTerminalBatchState(record.batch_state))
+		if (isTerminalBatchState(record.batch_state)) {
+			// A close that failed on the completing tick is retried here; a terminal
+			// record otherwise stays as it was.
+			const tracker = record.batch_state === "completed"
+				? await closeIntegratedIssues(input, record, () => { record = writeBatchLaneRunState(input.root, record); })
+				: [];
 			return finalizeLane(input.root, record, `terminal state already reached: ${record.batch_state}`, "", {
 				handoffs: record.batch_state === "completed" ? releaseHandoffs(input, record, lanes) : [],
+				tracker,
 			});
+		}
 		if (record.batch_state === "needs_human") {
 			const invalid = validateNewAuthorization(input);
 			if (invalid || Date.parse(input.confirmation_time) <= Date.parse(record.confirmation_time))
@@ -842,6 +908,9 @@ export async function runLaneBatch(
 		}
 	}
 
+	// Close each integrated child's Issue now that its commit is on the batch branch.
+	const tracker = await closeIntegratedIssues(input, record, persist);
+
 	// 3. Admit offered Lanes, then enroll each admitted child into its Lane.
 	const coordinatorReal = lanes.resolveRoot(input.root);
 	for (const offer of input.lane_offers ?? []) {
@@ -880,6 +949,7 @@ export async function runLaneBatch(
 		return finalizeLane(input.root, record, "all enrollable children integrated", "", {
 			handoffs: releaseHandoffs(input, record, lanes),
 			refusals,
+			tracker,
 		});
 	}
 	const handoffs: BatchLaneHandoff[] = [];
@@ -910,7 +980,7 @@ export async function runLaneBatch(
 			record,
 			parkedMessage ?? (parked ? "a parked child needs a human decision" : overBudget ? `max_children budget exhausted (${record.budget.max_children})` : "no child can start"),
 			"",
-			{ refusals },
+			{ refusals, tracker },
 		);
 	}
 	if (!overBudget) {
@@ -932,7 +1002,7 @@ export async function runLaneBatch(
 				? `child ${reviewOpen[0]} holds an open Review reservation`
 				: `children ${reviewOpen.join(", ")} hold open Review reservations`,
 			"Submit each reserved foreground Review verdict in its own Lane, then call start_unattended_batch again to continue.",
-			{ handoffs, refusals },
+			{ handoffs, refusals, tracker },
 		);
 	}
 	return laneReport(
@@ -941,6 +1011,6 @@ export async function runLaneBatch(
 		handoffs.some((h) => h.role === "lane-steward" && h.action === "provision")
 			? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers."
 			: "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.",
-		{ handoffs, refusals },
+		{ handoffs, refusals, tracker },
 	);
 }

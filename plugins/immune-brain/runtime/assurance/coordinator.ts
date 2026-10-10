@@ -23,6 +23,7 @@ import type { AssuranceProjectionResult } from "../kernel/assurance_projection";
 import type { TaskIntentIdentityToken } from "../kernel/intent_token_registry";
 import type { AssuranceHostPort, HostReviewReservation } from "./host_port";
 import type { GithubTrackerResult as GithubTrackerProjectionResult } from "../github_issue_tracker";
+import { isLaneWorkspaceForTask } from "../unattended/lane_workspace";
 
 
 export type AssuranceRole = "qa" | "review";
@@ -87,6 +88,10 @@ export function deriveGithubTerminalProjectionInput(
  * null otherwise), a tracker failure is reported as a retryable failure rather
  * than evidence or a blocker, and a failure never repeats the settling Kernel
  * mutation.
+ *
+ * A settlement inside a batch Lane writes nothing to the tracker: the Lane's
+ * delivery is not on the batch branch yet, so the coordinator closes the Child
+ * only after it integrates that child's commit.
  */
 export async function projectTerminalTrackerState(input: {
 	root: string;
@@ -94,8 +99,10 @@ export async function projectTerminalTrackerState(input: {
 	projection: AssuranceProjectionResult;
 	tombstone: TaskTombstone | null;
 	markTerminal: (root: string, projection: GithubTerminalProjectionInput) => Promise<GithubTrackerProjectionResult>;
+	isLaneWorkspace?: (root: string, taskId: string) => boolean;
 }): Promise<GithubTrackerProjectionResult | undefined> {
 	if (input.projection.error) return undefined;
+	if ((input.isLaneWorkspace ?? isLaneWorkspaceForTask)(input.root, input.task_id)) return undefined;
 	const terminal = deriveGithubTerminalProjectionInput(input.task_id, input.projection, input.tombstone);
 	if (!terminal) return undefined;
 	try {

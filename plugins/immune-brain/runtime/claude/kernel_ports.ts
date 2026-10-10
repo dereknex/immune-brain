@@ -55,9 +55,10 @@ import {
 	startBatch,
 	type BatchRunnerKernelPort,
 	type BatchRunReport,
+	type BatchTrackerPort,
 } from "../unattended/batch_runner";
 import { createBatchKernelPort } from "../unattended/batch_kernel_port";
-import type { LaneOffer } from "../unattended/batch_lanes";
+import { createBatchTrackerPort, type LaneOffer } from "../unattended/batch_lanes";
 import { retireStaleBatch } from "../unattended/batch_disposition";
 import type { BatchLaneRunReport } from "../unattended/batch_state";
 import {
@@ -231,6 +232,7 @@ export interface ClaudeRuntimeOptions {
 	requestConfirmation?: NativeConfirmationPort;
 	batchKernel?: Partial<BatchRunnerKernelPort>;
 	batchGit?: BatchRunnerGitPort;
+	batchTracker?: BatchTrackerPort;
 	readInitiative?: InitiativeObservationReader;
 }
 
@@ -268,6 +270,7 @@ export class ClaudeRuntime {
 	private app: ReturnType<typeof createCanaryApplication> | null = null;
 	private readonly batchKernel?: Partial<BatchRunnerKernelPort>;
 	private readonly batchGit?: BatchRunnerGitPort;
+	private readonly batchTracker?: BatchTrackerPort;
 	private readonly readInitiative?: InitiativeObservationReader;
 
 	constructor(options: ClaudeRuntimeOptions) {
@@ -277,6 +280,7 @@ export class ClaudeRuntime {
 		this.requestConfirmation = options.requestConfirmation;
 		this.batchKernel = options.batchKernel;
 		this.batchGit = options.batchGit;
+		this.batchTracker = options.batchTracker;
 		this.readInitiative = options.readInitiative;
 		this.host = options.host ?? new ClaudeReviewHost(new FileHookEventLog());
 		this.coordinator = new AssuranceCoordinator({
@@ -937,7 +941,9 @@ export class ClaudeRuntime {
 			now,
 			kernel: kernelPort,
 			git: this.batchGit,
-			...(options.max_parallel !== undefined ? { max_parallel: options.max_parallel } : {}),
+			...(options.max_parallel !== undefined
+				? { max_parallel: options.max_parallel, tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug) }
+				: {}),
 			...(options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}),
 		});
 

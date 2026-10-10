@@ -1399,3 +1399,137 @@ describe("lane reader and guidance accuracy", () => {
 		}
 	});
 });
+
+describe("Child Issue closure after integration (#197)", () => {
+	/** Commits a real done terminal proof with the delivery, as a Lane settlement exports it. */
+	function laneGitWithProof(): BatchRunnerGitPort {
+		const base = laneGit();
+		return {
+			...base,
+			async commitChild(...args: Parameters<BatchRunnerGitPort["commitChild"]>) {
+				const [root, taskId] = args;
+				const dir = join(root, ".imm/audit", taskId, "run-1");
+				mkdirSync(dir, { recursive: true });
+				writeFileSync(join(dir, "task-record.json"), "{}\n");
+				writeFileSync(join(dir, "terminal-proof.json"), `${JSON.stringify({
+					contract: "assurance_kernel/task_tombstone/v2", task_id: taskId, lifecycle_status: "terminal",
+					terminal_lifecycle: "done", terminal_event_id: `ev-${taskId}`, final_record_hash: `sha256:${"c".repeat(64)}`,
+					terminalized_at: "2026-10-10T00:00:00.000Z",
+				})}\n`);
+				git(root, "add", "-f", ".imm/audit");
+				return base.commitChild(...args);
+			},
+		};
+	}
+	function recordingTracker(failFirst = false) {
+		const calls: Array<{ task_id: string; terminal_event_id: string }> = [];
+		let failures = failFirst ? 1 : 0;
+		return {
+			calls,
+			port: {
+				async markTerminal(_root: string, input: { task_id: string; phase: "done"; terminal_event_id: string }) {
+					calls.push({ task_id: input.task_id, terminal_event_id: input.terminal_event_id });
+					if (failures-- > 0) return { status: "retryable_failure", message: "gh unavailable" };
+					return { status: "updated", message: "terminal Task Issue closure confirmed" };
+				},
+			},
+		};
+	}
+
+	it("closes nothing while the child is only enrolled or settled in its Lane, then closes it exactly once after integration", async () => {
+		const fx = fixture();
+		try {
+			const kernel = laneKernel();
+			const tracker = recordingTracker();
+			const children = [child("task-a", "S1"), child("task-b", "S2", ["task-a"])];
+			const args = request(fx, children, kernel, { git: laneGitWithProof(), tracker: tracker.port });
+			await startBatch(args);
+			const laneA = fx.lane("task-a");
+			await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] });
+			expect(tracker.calls).toEqual([]);
+			writeFileSync(join(laneA, "a.txt"), "a\n");
+			kernel.frozen.add("task-a");
+			const integrated = lanes(await startBatch(args));
+			expect(integrated.children[0]).toMatchObject({ state: "integrated", tracker_closed: true });
+			expect(integrated.tracker_observations).toEqual([{ task_id: "task-a", status: "updated", message: "terminal Task Issue closure confirmed" }]);
+			expect(tracker.calls).toEqual([{ task_id: "task-a", terminal_event_id: "ev-task-a" }]);
+			// Later ticks never close it again.
+			const again = lanes(await startBatch(args));
+			expect(again.tracker_observations).toBeUndefined();
+			expect(tracker.calls).toHaveLength(1);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("retries a failed close on the next tick without changing batch state", async () => {
+		const fx = fixture();
+		try {
+			const kernel = laneKernel();
+			const tracker = recordingTracker(true);
+			const args = request(fx, [child("task-a", "S1")], kernel, { git: laneGitWithProof(), tracker: tracker.port });
+			await startBatch(args);
+			const laneA = fx.lane("task-a");
+			await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] });
+			writeFileSync(join(laneA, "a.txt"), "a\n");
+			kernel.frozen.add("task-a");
+			const done = lanes(await startBatch(args));
+			expect(done.batch_state).toBe("completed");
+			expect(done.children[0]!.tracker_closed).toBeUndefined();
+			expect(done.tracker_observations?.[0]).toMatchObject({ task_id: "task-a", status: "retryable_failure" });
+			const retried = lanes(await startBatch(args));
+			expect(retried.batch_state).toBe("completed");
+			expect(retried.children[0]!.tracker_closed).toBe(true);
+			expect(tracker.calls).toHaveLength(2);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("keeps the Child open when the child is parked as batch_lane_lost", async () => {
+		const fx = fixture({}, { "task-a": ["a.txt"], "task-b": ["b.txt"] });
+		try {
+			const kernel = laneKernel();
+			const tracker = recordingTracker();
+			const args = request(fx, [child("task-a", "S1"), child("task-b", "S2")], kernel, { git: laneGitWithProof(), tracker: tracker.port, max_parallel: 2 });
+			await startBatch(args);
+			const offers = ["task-a", "task-b"].map((id) => ({ task_id: id, path: fx.lane(id) }));
+			await startBatch({ ...args, lane_offers: offers });
+			kernel.enrolled.delete("task-a");
+			writeFileSync(join(offers[1]!.path, "b.txt"), "b\n");
+			kernel.frozen.add("task-b");
+			const report = lanes(await startBatch(args));
+			expect(report.children.map((c) => c.state)).toEqual(["needs_human", "integrated"]);
+			expect(tracker.calls.map((c) => c.task_id)).toEqual(["task-b"]);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("skips the tracker write for a settlement inside the child's own Lane only", async () => {
+		const { projectTerminalTrackerState } = await import("../plugins/immune-brain/runtime/assurance/coordinator");
+		const { isLaneWorkspaceForTask } = await import("../plugins/immune-brain/runtime/unattended/lane_workspace");
+		const fx = fixture();
+		try {
+			const laneA = fx.lane("task-a");
+			expect(isLaneWorkspaceForTask(laneA, "task-a")).toBe(true);
+			expect(isLaneWorkspaceForTask(laneA, "task-b")).toBe(false);
+			expect(isLaneWorkspaceForTask(fx.repo, "task-a")).toBe(false);
+			const calls: string[] = [];
+			const settle = (root: string) => projectTerminalTrackerState({
+				root,
+				task_id: "task-a",
+				projection: { error: null, claim: null, projection: projectionBody({ lifecycle: "done" }) } as AssuranceProjectionResult,
+				tombstone: { contract: "assurance_kernel/task_tombstone/v2", task_id: "task-a", lifecycle_status: "terminal", terminal_lifecycle: "done", terminal_event_id: "ev-a", final_record_hash: `sha256:${"c".repeat(64)}`, terminalized_at: "2026-10-10T00:00:00.000Z" },
+				markTerminal: async (r) => { calls.push(r); return { contract: "immune_brain/github_issue_tracker_result/v1", operation: "mark-terminal", status: "updated", association_found: true, message: "ok" }; },
+			});
+			expect(await settle(laneA)).toBeUndefined();
+			expect(calls).toEqual([]);
+			// A serial batch or single task settles on the coordinator branch and projects as before.
+			expect((await settle(fx.repo))?.status).toBe("updated");
+			expect(calls).toEqual([fx.repo]);
+		} finally {
+			fx.cleanup();
+		}
+	});
+});
