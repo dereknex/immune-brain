@@ -13,7 +13,8 @@ test("dispatch contracts keep Role-only execution configuration ownership", () =
 		"Pi Host owns model, provider, and thinking defaults.",
 		"Immune-Brain does not define\nmodel tiers, provider mapping, cost routing, or provider fallback.",
 		"complete foreground `Agent` envelope",
-		"submits the resulting structured verdict directly",
+		"without a verdict to apply those observed bytes; a provided verdict must match",
+		"Dispatch/result correlation is part of the local authority",
 	];
 	for (const path of [
 		"docs/reference/subagent-dispatch-protocol.md",
