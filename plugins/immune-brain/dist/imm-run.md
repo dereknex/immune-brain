@@ -505,7 +505,11 @@ Every line reports authority evidence, not prose inference: name the exact
 task/run identity and the observed lifecycle, artifact, obligation, and claim
 facts that decided the exit. If a summary claimed more than the projection
 proves — for example a later Slice as enrolled or the task as completed — report
-the projection instead and correct the prose.
+the projection instead and correct the prose. When the bound Spec lists `manual`
+scenarios owned by the settled Task's Slice, add one line naming those scenario
+IDs as pending manual walkthrough; the line is informational and changes no
+stop reason, obligation, or completion fact, and is absent when that Slice owns
+no manual scenario.
 
 ## Failure Output
 

@@ -1,0 +1,122 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "user-scenarios-s3-reviewer-coverage",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "user-scenarios-s3-reviewer-coverage",
+    "goal": "Implement Slice S3 of Initiative user-acceptance-scenarios: the Reviewer prompt checks that delivered tests at an acceptance's agreed seam assert the Then of every automated user scenario the Spec maps to that acceptance, and reports a gap as an acceptance finding. Prompt source, its mirror, and the generated reviewer definition only; no new finding kind, verdict branch, or state.",
+    "acceptance": [
+      {
+        "id": "US-S3-A1",
+        "assertion": "Per T7 of docs/specs/user-acceptance-scenarios.spec.md (source: #186 D13): the code-review prompt states, beside the agreed-seam rule, that when the Spec referenced by an acceptance maps an automated scenario to it the Reviewer checks that the delivered tests at that acceptance's agreed seam assert the scenario's Then, and that a scenario whose observable result is asserted nowhere is a finding with violated kind acceptance and the acceptance ID as ref (positive); it states that a manual scenario and an acceptance with no mapped scenario produce no such finding, and it introduces no new finding kind or verdict (negative); and the role-prompt mirror and the generated reviewer agent definition match the source while the existing agreed-seam rule text is unchanged (bound).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-verification-invariants.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/user-scenarios-s3-reviewer-coverage.md",
+      "docs/plans/user-scenarios-s3-reviewer-coverage.intent.json",
+      "docs/specs/user-acceptance-scenarios.spec.md",
+      "plugins/immune-brain/agents/immune-brain-reviewer.md",
+      "plugins/immune-brain/dist/role-prompts/code-review.md",
+      "plugins/immune-brain/runtime/prompts/code-review.md",
+      "tests/claude-host-package.test.ts",
+      "tests/workflow-verification-invariants.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/user-scenarios-s3-reviewer-coverage.intent.json",
+    "content_hash": "sha256:60eb021c06fef31bd68cff3fa799f93172cae62b8912b2a5621d75720ba65202"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:60eb021c06fef31bd68cff3fa799f93172cae62b8912b2a5621d75720ba65202",
+  "git_base_head": "4d6fd0bd4d0a7326a9a1c225ba6a50acb2727564",
+  "attestations": [
+    {
+      "id": "approval-qa-5ea8592b",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:60eb021c06fef31bd68cff3fa799f93172cae62b8912b2a5621d75720ba65202",
+      "diff_hash": "sha256:d42333059d12338c0df5bb68702e1bc83509ee4b177d782b3c5db86f9ab7909b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:4ee28b4d58b4f7e2889a7985537adbaf5bb0e789ae3b6a0d4d53a45b51843ac5",
+      "acceptance_results": [
+        {
+          "acceptance_id": "US-S3-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:4ee28b4d58b4f7e2889a7985537adbaf5bb0e789ae3b6a0d4d53a45b51843ac5"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-93f496ad",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:60eb021c06fef31bd68cff3fa799f93172cae62b8912b2a5621d75720ba65202",
+      "diff_hash": "sha256:d42333059d12338c0df5bb68702e1bc83509ee4b177d782b3c5db86f9ab7909b",
+      "actor_id": "parent-mediated-review",
+      "summary": "已验证 manifest digest、snapshot digest、revision 的唯一 parent 与 tree，并完整检查六个文件的 diff 和 immutable source；US-S3-A1 的正向、负向及边界要求均有对应断言，prompt mirror 一致、generated reviewer 包含 source，原 agreed-seam 规则保持不变；Kernel QA outcome 为 passed，未发现阻断问题。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "4d6fd0bd4d0a7326a9a1c225ba6a50acb2727564",
+        "review_commit": "f71cedfa71bafb6a05aa2b3109adc218bed250df",
+        "review_tree": "cee224b45a93e1ea45edb400c9e56a26476a5023",
+        "manifest_digest": "sha256:3341952606cfdce50f34da8f7ce22bcfde6bd5cb02349873b2cdbaf7cfa538c5"
+      },
+      "reviewer_verdict_sha256": "sha256:efd72fddd86009439c8c249213f996faaf728e45e7efeb212f0da37f5955101d"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:user-scenarios-s3-reviewer-coverage:2026-10-10T11:01:35.497Z",
+      "at": "2026-10-10T11:01:35.497Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/user-scenarios-s3-reviewer-coverage.intent.json"
+    },
+    {
+      "id": "record_approval:user-scenarios-s3-reviewer-coverage:2026-10-10T11:01:40.203Z",
+      "at": "2026-10-10T11:01:40.203Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5ea8592b\naction_v2_sha256:e9c39a831f0aa3e179d5b6accdeb85fca9150669fe85e4587fc684d261fed8e3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-5e3681a9a7181cfc",
+        "issued_at": "2026-10-10T11:01:40.203Z"
+      }
+    },
+    {
+      "id": "record_approval:user-scenarios-s3-reviewer-coverage:2026-10-10T11:03:27.097Z",
+      "at": "2026-10-10T11:03:27.097Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-93f496ad\naction_v2_sha256:55f20bcee33e73bfc3a8ba37462fb45ce3b19f2ff07bb4af28b55857e5801e5c",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-24ed1372de37384d",
+        "issued_at": "2026-10-10T11:03:27.097Z"
+      }
+    },
+    {
+      "id": "complete:user-scenarios-s3-reviewer-coverage:2026-10-10T11:03:28.119Z",
+      "at": "2026-10-10T11:03:28.119Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:1d9064ada736f76e053d0f178762d6c5feb77ee3abf22d2ba4a977360989b875"
+    }
+  ]
+}

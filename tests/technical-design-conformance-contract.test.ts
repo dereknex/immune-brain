@@ -151,6 +151,17 @@ describe("risk-tiered Technical Design conformance contract", () => {
       "names exactly one source",
       "an upstream `BR-*` ID, repository evidence, or a delegated technical choice",
       "a user-owned decision that names no source is a defect",
+      "`User scenarios` section",
+      "keeps its upstream `BR-SCN-<n>` ID",
+      "Spec-local `SCN-<n>`",
+      "`automated` with at least one acceptance ID",
+      "`manual` with the reason it cannot be automated",
+      "the mapping is one-way",
+      "exactly one Slice",
+      "the one that first makes it observable",
+      "`BR-SCN-*` items fall under the existing handoff completeness check",
+      "a scenario with no source is a defect",
+      "`no user-visible change` requires a recorded reason",
     ])
   })
 

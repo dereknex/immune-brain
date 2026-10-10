@@ -237,7 +237,7 @@ confirm a name, slug, Child, or dependency that had not yet been shown.
 
 Once decomposition is complete, present one review table containing the Parent
 result and every Child's stable Slice ID, result, scope boundary, risk, blockers,
-and proposed execution order. Ask one focused question: whether the coverage,
+each Slice's scenario IDs or its exemption with the reason, and proposed execution order. Ask one focused question: whether the coverage,
 granularity, and dependencies are correct. Recommend the complete current
 frontier so the user can approve it in one response. Before that approval,
 perform zero GitHub mutations. A partial or progressively disclosed issue set is
@@ -263,7 +263,27 @@ published Child; future checklist-only Slices are not allowed in the batch.
 Each Child must provide public `acceptance` entries with `id` and a 1-500
 character `summary`. Their IDs must match every canonical TaskIntent acceptance
 ID exactly once. Canonical assertion prose is authority evidence and must never
-be copied into public GitHub projection. Each Child projection requires
+be copied into public GitHub projection. Each Child may also provide an optional
+`scenarios` array. Omitting it, or giving an empty array, renders no
+`## User scenarios` section for that Child and contributes nothing to the Parent;
+when no Task supplies scenarios the Parent and every Child body are unchanged.
+A scenario is public projection of one user-observable result: `id`
+(`BR-SCN-<n>` or `SCN-<n>`), `actor`, `given`, `when`, `then`, and `mode`.
+`automated` maps to one or more of that Task's canonical acceptance IDs and
+renders as a plain bullet; `manual` requires `manual_reason`, may name no
+acceptance ID, and renders as an unchecked task-list item that also shows the
+reason. The Parent derives one plain bullet per scenario (its ID, owning Slice
+ID, mode, When, and Then) and never a checkbox. Scenarios never widen TaskIntent
+scope or authority. The tracker rejects the whole batch before any remote write
+when a scenario lacks a field, has an id matching neither form, repeats an id
+within the Initiative, is automated with no acceptance ID, names an acceptance ID
+its TaskIntent lacks, or is manual without `manual_reason`. Every scenario list
+item starts at the beginning of its line, so no metadata comment precedes the
+marker. Each Child's ownership marker block also carries one
+`<!-- immune-brain:scenarios=<percent-encoded JSON> -->` per Task holding all of
+its scenarios verbatim; an amendment reads historical scenarios only from that
+marker, never parses the visible section, and treats a Child without it as
+having no scenarios. Each Child projection requires
 `title` (1-60 characters), the short Slice display title, and may contain
 `result`, `current_behavior`,
 `desired_behavior`, `key_interfaces`, `verification`, `blocked_by` Task IDs,
@@ -515,7 +535,7 @@ preparation does not apply the revision or authorize expanded execution.
   follows Enrolled Intent Revision.
 - **Review Mapping**: In-scope rework stays with the enrolled TaskIntent and explicit `imm-run` entry. Cross-scope findings become a Planner decision delta with concrete missing paths and verification evidence; do not create a successor prose Plan.
 - **Decision Provenance**: Every Spec decision and every acceptance names exactly one source: an upstream `BR-*` ID, repository evidence with a concrete path, or a delegated technical choice as defined by Clarification supplement. The rule applies with or without an upstream Brainstorm manifest, and the source does not have to be a `BR-DEC` item: Direct Planner entry and delegated technical choices stay legitimate sources. A user-owned decision — goal, user, scope, observable behavior, compatibility preference, risk acceptance, or success criterion — that names no source is a defect the Planner removes or returns for clarification under the existing Clarification supplement routes. Simple TaskIntent-only work satisfies the rule when each acceptance traces to the request text and adds no table.
-- **Brainstorm Manifest Mapping**: Record every upstream `BR-*` item in a Spec `Brainstorm Trace` when the work is complex, otherwise on the TaskIntent, mapped to acceptance, a captured decision, or an explicit reason for deferral or exclusion. Resolve every `BR-Q-*` item before handoff. Do not silently narrow confirmed framing.
+- **Brainstorm Manifest Mapping**: Record every upstream `BR-*` item in a Spec `Brainstorm Trace` when the work is complex, otherwise on the TaskIntent, mapped to acceptance, a captured decision, or an explicit reason for deferral or exclusion. Resolve every `BR-Q-*` item before handoff. Do not silently narrow confirmed framing. A Spec for work with a user-observable change has a `User scenarios` section. Each scenario keeps its upstream `BR-SCN-<n>` ID; on direct entry each scenario is confirmed in clarification and recorded as Spec-local `SCN-<n>` sourced to that confirmation, and a scenario with no source is a defect the Planner removes or returns for clarification. Each scenario is tagged `automated` with at least one acceptance ID, or `manual` with the reason it cannot be automated; a `manual` scenario may name no acceptance, and the mapping is one-way — an acceptance need not serve a scenario. In a multi-TaskIntent Initiative a scenario belongs to exactly one Slice, the one that first makes it observable, and an `automated` scenario maps only to that Slice's acceptance. `BR-SCN-*` items fall under the existing handoff completeness check like every other `BR-*` item. When the work has no user-observable change, record `no user-visible change` with a one-line reason — in the Spec for complex work, on the TaskIntent goal for simple work — write no scenario section, and `no user-visible change` requires a recorded reason.
 - **Handoff Completeness Check**: Before reporting a candidate as handoff-ready, confirm every upstream item and required phase is mapped exactly once, that required phases are delivered rather than excused by a reason, and that no confirmed outcome was conserved as a smaller deliverable. Reject a narrowed deliverable as a completeness failure; ask again only for a new material delta, never to reconfirm an unchanged clear request or an already-confirmed decision.
 - **Session Lifecycle Ownership**: The user chooses the current or a new session. Tokens, compactions, tool counts, elapsed time, and review rounds never trigger automatic session creation or termination. Recovery uses TaskRecord and the fresh Kernel projection.
 - **Subagents**: Only when optional research is needed, read Research Dispatch and its shared dispatch reference. Default to inline evidence gathering. Plan conditional reviewers such as `security-reviewer` only if their trigger surfaces are explicit; do not manufacture them.

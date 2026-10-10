@@ -10070,7 +10070,8 @@ function stripPublishedIntentHash(body) {
   return body.replace(/<!-- immune-brain:intent-hash=[A-Za-z0-9][A-Za-z0-9._:-]{0,127} -->\n?/g, "");
 }
 function ownershipMarkerValue(body, name) {
-  const values = [...body.matchAll(new RegExp(`<!-- immune-brain:${name}=([A-Za-z0-9][A-Za-z0-9._-]{0,127}) -->`, "g"))];
+  const pattern = name === "scenarios" ? "[A-Za-z0-9%_!*'()~.-]+" : "[A-Za-z0-9][A-Za-z0-9._-]{0,127}";
+  const values = [...body.matchAll(new RegExp(`<!-- immune-brain:${name}=(${pattern}) -->`, "g"))];
   return values.length === 1 ? values[0][1] : null;
 }
 function taskLookup(issues, repositoryId, taskId) {
@@ -10246,6 +10247,38 @@ function listText(values, fallback) {
   return values?.length ? values.map((value) => `- ${value}`).join(`
 `) : fallback;
 }
+function childScenarioSection(scenarios) {
+  if (!scenarios?.length)
+    return "";
+  const items = scenarios.map((scenario) => {
+    const mapped = scenario.acceptance?.length ? scenario.acceptance.map((id) => `\`${id}\``).join(", ") : "none";
+    const visible = `Actor: ${scenario.actor}. Given: ${scenario.given}. When: ${scenario.when}. Then: ${scenario.then}.`;
+    if (scenario.mode === "manual")
+      return `- [ ] \`${scenario.id}\` (manual, ${mapped}): ${visible} Reason: ${scenario.manual_reason}.`;
+    return `- \`${scenario.id}\` (automated, ${mapped}): ${visible}`;
+  });
+  return `
+## User scenarios
+
+${items.join(`
+`)}
+`;
+}
+function parentScenarioSection(scenarios) {
+  if (!scenarios?.length)
+    return "";
+  const items = scenarios.map((scenario) => {
+    const prefix = scenario.actor && scenario.given ? `Actor: ${scenario.actor}. Given: ${scenario.given}. ` : "";
+    const reason = scenario.manual_reason ? ` Reason: ${scenario.manual_reason}.` : "";
+    return `- \`${scenario.id}\` (Slice \`${scenario.slice_id}\`, ${scenario.mode}): ${prefix}When: ${scenario.when}. Then: ${scenario.then}.${reason}`;
+  });
+  return `
+## User scenarios
+
+${items.join(`
+`)}
+`;
+}
 function bodyLimitFailure(operation, body, reserve = 0) {
   return Buffer.byteLength(body, "utf8") + reserve <= GITHUB_ISSUE_BODY_LIMIT ? null : result(operation, "permanent_failure", "rendered GitHub Issue body exceeds 65,536 UTF-8 bytes");
 }
@@ -10289,7 +10322,7 @@ ${listText(projection.decisions, "- No additional Initiative decisions recorded.
 ## Testing strategy
 
 ${publicText(projection.testing_strategy ?? "Each Child closes from its focused acceptance verification.", "projection.testing_strategy")}
-
+${parentScenarioSection(operation.scenarios)}
 ## Out of scope
 
 ${listText(projection.out_of_scope, "- Unrelated work outside this Initiative.")}
@@ -10370,7 +10403,8 @@ function childBody(repository, operation, parent) {
     marker("initiative-id", operation.initiative_id),
     marker("slice-id", operation.slice_id),
     marker("task-id", operation.task_id),
-    ...operation.intent_hash ? [marker("intent-hash", operation.intent_hash)] : []
+    ...operation.intent_hash ? [marker("intent-hash", operation.intent_hash)] : [],
+    ...operation.scenarios?.length ? [marker("scenarios", encodeURIComponent(JSON.stringify(operation.scenarios)))] : []
   ].join(`
 `)}
 
@@ -10396,7 +10430,7 @@ ${listText(projection.key_interfaces, "- Canonical TaskIntent acceptance and Ker
 ## Acceptance criteria
 
 ${acceptance}
-
+${childScenarioSection(operation.scenarios)}
 ## Verification
 
 ${publicText(projection.verification ?? "Run the focused acceptance verification declared by the TaskIntent.", "projection.verification")}
@@ -10808,7 +10842,8 @@ function validateOperation(operation) {
       acceptance: operation.acceptance.map((item, index) => ({
         id: identifier(item.id, `acceptance[${index}].id`),
         summary: projectionText(item.summary, `acceptance[${index}].summary`, 500)
-      }))
+      })),
+      scenarios: operation.scenarios
     };
     taskIssueTitle(normalized);
     return normalized;

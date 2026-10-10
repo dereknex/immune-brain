@@ -175,7 +175,12 @@ class RecoveryGh implements GhTransport {
 			const issueDetail = endpoint.match(/^repos\/[^/]+\/[^/]+\/issues\/(\d+)$/);
 			if (issueDetail) {
 				const issue = this.issues.find((candidate) => candidate.number === Number(issueDetail[1]));
-				return issue ? this.ok(String(issue.id)) : { ...this.ok(), exit_code: 1, stderr: "not found" };
+				if (!issue) return { ...this.ok(), exit_code: 1, stderr: "not found" };
+				// `--jq` resolves only the database id. A bare read is the Parent
+				// body the terminal projection checks before closing it.
+				// `--jq` resolves only the database id. A bare read is the Parent
+				// body the terminal projection checks before closing it.
+				return this.ok(args.includes("--jq") ? String(issue.id) : JSON.stringify(issue));
 			}
 			if (endpoint.includes("/issues?state=all")) {
 				this.issueListings += 1;
@@ -322,6 +327,12 @@ function sixBatch(root: string) {
 		})),
 	};
 }
+
+/** Scenarios a historical Child was published with, read back from its marker. */
+const historicalScenarios = [
+	{ id: "SCN-1", actor: "Developer", given: "Slice A is published", when: "They open the historical Child", then: "The historical scenario stays listed", mode: "automated", acceptance: ["acc-widget-a"] },
+	{ id: "SCN-2", actor: "Developer", given: "A\n---\nB\n- `widget`\n## Verification", when: "They continue", then: "The second scenario stays reserved", mode: "automated", acceptance: ["acc-widget-a"] },
+];
 
 /** A two-Slice batch: the second Slice is blocked by the first. */
 function batch(root: string) {
@@ -917,6 +928,557 @@ describe("S5 bounded publication recovery", () => {
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
+	});
+
+	it("a publication without scenarios renders the same bodies, and a ticked manual box survives closure", async () => {
+		await withRoot(async (root, gh) => {
+			const plain = await runGithubInitiativePublication(root, batch(root), gh);
+			expect(plain.status).toBe("created");
+			const without = gh.issues.map((issue) => issue.body);
+			for (const body of without) expect(body).not.toContain("## User scenarios");
+
+			// The same batch with an explicit empty list is the same publication.
+			const empty = batch(root);
+			for (const task of empty.tasks) (task as { scenarios?: unknown[] }).scenarios = [];
+			const repeated = await runGithubInitiativePublication(root, empty, gh);
+			expect(repeated.status).toBe("already_current");
+			expect(gh.issues.map((issue) => issue.body)).toEqual(without);
+		});
+	});
+
+	it("an amendment rewrites only the bound pending Child and leaves the historical Child untouched", async () => {
+		await withRoot(async (root, gh) => {
+			const initial = batch(root);
+			initial.tasks[0].scenarios = historicalScenarios;
+			const published = await runGithubInitiativePublication(root, initial, gh);
+			expect(published.status).toBe("created");
+			const [parent, childA, childB] = gh.issues;
+			const historical = childA.body;
+			// The historical Child is already closed. This transport does not model the
+			// single-Issue read terminal projection uses, and that path is covered by
+			// the projection contract; here only the amendment boundary matters.
+			childA.state = "closed";
+			childA.state_reason = "completed";
+			const amendment = await runGithubInitiativePublication(root, {
+				initiative_id: "widget-tracker",
+				goal: "Deliver both widget Slices",
+				projection: {
+					short_name: "widget",
+					title: "Track widget delivery",
+					problem: "Widget work is untracked.",
+					result: "Widget delivery is tracked end to end.",
+					design: "One Parent Issue and one Child per Slice.",
+					decisions: ["Publish the complete graph in one batch."],
+					testing_strategy: "Each Child closes from its focused acceptance verification.",
+					out_of_scope: ["Widget runtime behavior."],
+				},
+				tasks: [{
+					slice_id: "b",
+					intent: "docs/plans/widget-b.intent.json",
+					acceptance: [{ id: "acc-widget-b", summary: "Slice B is delivered" }],
+					projection: { title: "Ship Slice B", blocked_by: [] },
+					scenarios: [{
+						id: "SCN-3",
+						actor: "Developer",
+						given: "The pending brief changed",
+						when: "The amendment publishes",
+						then: "The pending Child shows the scenario",
+						mode: "automated",
+						acceptance: ["acc-widget-b"],
+					}],
+				}],
+				amendment: {
+					parent: { issue_number: parent.number, title: parent.title, body: parent.body, state: "open" },
+					tasks: [{ task_id: "widget-b", binding: { issue_number: childB.number, title: childB.title, body: childB.body, state: "open" } }],
+					historical: [{ task_id: "widget-a", binding: { issue_number: childA.number, title: childA.title, body: childA.body, state: "closed" } }],
+				},
+			} as never, gh);
+			if (amendment.status !== "updated") throw new Error(`amendment:${amendment.status}:${amendment.message}`);
+			expect(childA.body).toBe(historical);
+			expect(childA.body).toContain("<!-- immune-brain:scenarios=");
+			expect(childB.body).toContain("## User scenarios");
+			expect(childB.body).toContain("`SCN-3` (automated, `acc-widget-b`)");
+			expect(parent.body).toContain("- `SCN-1` (Slice `a`, automated):");
+			expect(parent.body).toContain("- `SCN-2` (Slice `a`, automated):");
+			expect(parent.body.indexOf("- `SCN-1`")).toBeLessThan(parent.body.indexOf("- `SCN-3` (Slice `b`, automated):"));
+		});
+	});
+
+	it("an amendment rejects a pending scenario that reuses a historical scenario id before any remote write", async () => {
+		await withRoot(async (root, gh) => {
+			const initial = batch(root);
+			initial.tasks[0].scenarios = historicalScenarios;
+			const published = await runGithubInitiativePublication(root, initial, gh);
+			expect(published.status).toBe("created");
+			const [parent, childA, childB] = gh.issues;
+			childA.state = "closed";
+			childA.state_reason = "completed";
+			const writes = gh.writeCalls;
+			const reused = await runGithubInitiativePublication(root, {
+				initiative_id: "widget-tracker",
+				goal: "Deliver both widget Slices",
+				projection: {
+					short_name: "widget",
+					title: "Track widget delivery",
+					problem: "Widget work is untracked.",
+					result: "Widget delivery is tracked end to end.",
+					design: "One Parent Issue and one Child per Slice.",
+					decisions: ["Publish the complete graph in one batch."],
+					testing_strategy: "Each Child closes from its focused acceptance verification.",
+					out_of_scope: ["Widget runtime behavior."],
+				},
+				tasks: [{
+					slice_id: "b",
+					intent: "docs/plans/widget-b.intent.json",
+					acceptance: [{ id: "acc-widget-b", summary: "Slice B is delivered" }],
+					projection: { title: "Ship Slice B", blocked_by: [] },
+					scenarios: [{
+						id: "SCN-1",
+						actor: "Developer",
+						given: "The pending brief changed",
+						when: "The amendment publishes",
+						then: "The pending Child reuses the historical id",
+						mode: "automated",
+						acceptance: ["acc-widget-b"],
+					}],
+				}],
+				amendment: {
+					parent: { issue_number: parent.number, title: parent.title, body: parent.body, state: "open" },
+					tasks: [{ task_id: "widget-b", binding: { issue_number: childB.number, title: childB.title, body: childB.body, state: "open" } }],
+					historical: [{ task_id: "widget-a", binding: { issue_number: childA.number, title: childA.title, body: childA.body, state: "closed" } }],
+				},
+			} as never, gh);
+			expect(reused.status).toBe("permanent_failure");
+			expect(reused.message).toContain("widget-b");
+			expect(reused.message).toContain("repeats scenario id SCN-1");
+			expect(gh.writeCalls).toBe(writes);
+			const reusedSecond = await runGithubInitiativePublication(root, {
+				initiative_id: "widget-tracker",
+				goal: "Deliver both widget Slices",
+				projection: {
+					short_name: "widget",
+					title: "Track widget delivery",
+					problem: "Widget work is untracked.",
+					result: "Widget delivery is tracked end to end.",
+					design: "One Parent Issue and one Child per Slice.",
+					decisions: ["Publish the complete graph in one batch."],
+					testing_strategy: "Each Child closes from its focused acceptance verification.",
+					out_of_scope: ["Widget runtime behavior."],
+				},
+				tasks: [{
+					slice_id: "b",
+					intent: "docs/plans/widget-b.intent.json",
+					acceptance: [{ id: "acc-widget-b", summary: "Slice B is delivered" }],
+					projection: { title: "Ship Slice B", blocked_by: [] },
+					scenarios: [{
+						id: "SCN-2",
+						actor: "Developer",
+						given: "The pending brief changed",
+						when: "The amendment publishes",
+						then: "The pending Child reuses the second historical id",
+						mode: "automated",
+						acceptance: ["acc-widget-b"],
+					}],
+				}],
+				amendment: {
+					parent: { issue_number: parent.number, title: parent.title, body: parent.body, state: "open" },
+					tasks: [{ task_id: "widget-b", binding: { issue_number: childB.number, title: childB.title, body: childB.body, state: "open" } }],
+					historical: [{ task_id: "widget-a", binding: { issue_number: childA.number, title: childA.title, body: childA.body, state: "closed" } }],
+				},
+			} as never, gh);
+			expect(reusedSecond.status).toBe("permanent_failure");
+			expect(reusedSecond.message).toContain("repeats scenario id SCN-2");
+			expect(gh.writeCalls).toBe(writes);
+			const preserved = await runGithubInitiativePublication(root, {
+				initiative_id: "widget-tracker",
+				goal: "Deliver both widget Slices",
+				projection: {
+					short_name: "widget",
+					title: "Track widget delivery",
+					problem: "Widget work is untracked.",
+					result: "Widget delivery is tracked end to end.",
+					design: "One Parent Issue and one Child per Slice.",
+					decisions: ["Publish the complete graph in one batch."],
+					testing_strategy: "Each Child closes from its focused acceptance verification.",
+					out_of_scope: ["Widget runtime behavior."],
+				},
+				tasks: [{
+					slice_id: "b",
+					intent: "docs/plans/widget-b.intent.json",
+					acceptance: [{ id: "acc-widget-b", summary: "Slice B is delivered" }],
+					projection: { title: "Ship Slice B", blocked_by: [] },
+				}],
+				amendment: {
+					parent: { issue_number: parent.number, title: parent.title, body: parent.body, state: "open" },
+					tasks: [{ task_id: "widget-b", binding: { issue_number: childB.number, title: childB.title, body: childB.body, state: "open" } }],
+					historical: [{ task_id: "widget-a", binding: { issue_number: childA.number, title: childA.title, body: childA.body, state: "closed" } }],
+				},
+			} as never, gh);
+			if (preserved.status !== "updated") throw new Error(`${preserved.status}:${preserved.message}`);
+			expect(parent.body).toContain("When: They open the historical Child. Then: The historical scenario stays listed.");
+			expect(parent.body).toContain("`SCN-1` (Slice `a`, automated): When: They open the historical Child. Then: The historical scenario stays listed.");
+			expect(parent.body).toContain("`SCN-2` (Slice `a`, automated): When: They continue. Then: The second scenario stays reserved.");
+		});
+	});
+
+	it("an amendment rejects historical scenario markers that fail public-projection validation before any remote write", async () => {
+		await withRoot(async (root, gh) => {
+			const input = batch(root);
+			(input.tasks[0] as { scenarios?: unknown }).scenarios = [{
+				id: "BR-SCN-7",
+				actor: "Reviewer",
+				given: "Available resources",
+				when: "They inspect the Child",
+				then: "The result is visible",
+				mode: "manual",
+				manual_reason: "Human judgment is required",
+			}];
+			const published = await runGithubInitiativePublication(root, input, gh);
+			expect(published.status).toBe("created");
+			const [parent, childA, childB] = gh.issues;
+			childA.state = "closed";
+			childA.state_reason = "completed";
+			const writes = gh.writeCalls;
+			const cases: Array<[string, string]> = [
+				["restricted authority context in when", encodeURIComponent(JSON.stringify([{
+					id: "SCN-1", actor: "Developer", given: "Published", when: "run submit_review", then: "Visible", mode: "manual", manual_reason: "Human judgment",
+				}]))],
+				["oversized field", encodeURIComponent(JSON.stringify([{
+					id: "SCN-1", actor: "Developer", given: "Published", when: "x".repeat(501), then: "Visible", mode: "automated",
+				}]))],
+				["non-string manual_reason", encodeURIComponent(JSON.stringify([{
+					id: "SCN-1", actor: "Developer", given: "Published", when: "They inspect", then: "Visible", mode: "manual", manual_reason: 42,
+				}]))],
+				["non-string given", encodeURIComponent(JSON.stringify([{
+					id: "SCN-1", actor: "Developer", given: 42, when: "They inspect", then: "Visible", mode: "automated",
+				}]))],
+				["non-string acceptance element", encodeURIComponent(JSON.stringify([{
+					id: "SCN-1", actor: "Developer", given: "Published", when: "They inspect", then: "Visible", mode: "automated", acceptance: [42],
+				}]))],
+				["duplicate acceptance elements", encodeURIComponent(JSON.stringify([{
+					id: "SCN-1", actor: "Developer", given: "Published", when: "They inspect", then: "Visible", mode: "automated", acceptance: ["acc-widget-a", "acc-widget-a"],
+				}]))],
+				["id outside the scenario id pattern", encodeURIComponent(JSON.stringify([{
+					id: "SCENE-1", actor: "Developer", given: "Published", when: "They inspect", then: "Visible", mode: "automated", acceptance: ["acc-widget-a"],
+				}]))],
+				["missing actor", encodeURIComponent(JSON.stringify([{
+					id: "SCN-1", given: "Published", when: "They inspect", then: "Visible", mode: "automated", acceptance: ["acc-widget-a"],
+				}]))],
+				["missing given", encodeURIComponent(JSON.stringify([{
+					id: "SCN-1", actor: "Developer", when: "They inspect", then: "Visible", mode: "automated", acceptance: ["acc-widget-a"],
+				}]))],
+				["automated without acceptance", encodeURIComponent(JSON.stringify([{
+					id: "SCN-1", actor: "Developer", given: "Published", when: "They inspect", then: "Visible", mode: "automated",
+				}]))],
+				["manual without reason", encodeURIComponent(JSON.stringify([{
+					id: "SCN-1", actor: "Developer", given: "Published", when: "They inspect", then: "Visible", mode: "manual",
+				}]))],
+			];
+			for (const [label, encoded] of cases) {
+				const historical = childA.body.replace(/<!-- immune-brain:scenarios=[^>]* -->/, `<!-- immune-brain:scenarios=${encoded} -->`);
+				const rejected = await runGithubInitiativePublication(root, {
+					initiative_id: "widget-tracker",
+					goal: "Deliver both widget Slices",
+					projection: input.projection,
+					tasks: [{
+						slice_id: "b",
+						intent: "docs/plans/widget-b.intent.json",
+						acceptance: [{ id: "acc-widget-b", summary: "Slice B is delivered" }],
+						projection: { title: "Ship Slice B", blocked_by: [] },
+					}],
+					amendment: {
+						parent: { issue_number: parent.number, title: parent.title, body: parent.body, state: "open" },
+						tasks: [{ task_id: "widget-b", binding: { issue_number: childB.number, title: childB.title, body: childB.body, state: "open" } }],
+						historical: [{ task_id: "widget-a", binding: { issue_number: childA.number, title: childA.title, body: historical, state: "closed" } }],
+					},
+				} as never, gh);
+				expect(rejected.status, label).toBe("permanent_failure");
+				expect(rejected.message, label).toContain("malformed scenarios marker");
+				expect(gh.writeCalls, label).toBe(writes);
+			}
+			const smuggled = childA.body.replace(
+				"<!-- immune-brain:slice-id=a -->",
+				(segment) => `${segment} <!-- immune-brain:scenarios=%%not json%% -->`,
+			);
+			const rejected = await runGithubInitiativePublication(root, {
+				initiative_id: "widget-tracker",
+				goal: "Deliver both widget Slices",
+				projection: input.projection,
+				tasks: [{
+					slice_id: "b",
+					intent: "docs/plans/widget-b.intent.json",
+					acceptance: [{ id: "acc-widget-b", summary: "Slice B is delivered" }],
+					projection: { title: "Ship Slice B", blocked_by: [] },
+				}],
+				amendment: {
+					parent: { issue_number: parent.number, title: parent.title, body: parent.body, state: "open" },
+					tasks: [{ task_id: "widget-b", binding: { issue_number: childB.number, title: childB.title, body: childB.body, state: "open" } }],
+					historical: [{ task_id: "widget-a", binding: { issue_number: childA.number, title: childA.title, body: smuggled, state: "closed" } }],
+				},
+			} as never, gh);
+			expect(rejected.status).toBe("permanent_failure");
+			expect(rejected.message).toContain("duplicate scenarios markers");
+			expect(gh.writeCalls).toBe(writes);
+			const truncated = childA.body.replace(/<!-- immune-brain:scenarios=[^>]* -->/, "<!-- immune-brain:scenarios=abc");
+			const truncatedCase = await runGithubInitiativePublication(root, {
+				initiative_id: "widget-tracker",
+				goal: "Deliver both widget Slices",
+				projection: input.projection,
+				tasks: [{
+					slice_id: "b",
+					intent: "docs/plans/widget-b.intent.json",
+					acceptance: [{ id: "acc-widget-b", summary: "Slice B is delivered" }],
+					projection: { title: "Ship Slice B", blocked_by: [] },
+				}],
+				amendment: {
+					parent: { issue_number: parent.number, title: parent.title, body: parent.body, state: "open" },
+					tasks: [{ task_id: "widget-b", binding: { issue_number: childB.number, title: childB.title, body: childB.body, state: "open" } }],
+					historical: [{ task_id: "widget-a", binding: { issue_number: childA.number, title: childA.title, body: truncated, state: "closed" } }],
+				},
+			} as never, gh);
+			expect(truncatedCase.status).toBe("permanent_failure");
+			expect(truncatedCase.message).toContain("malformed scenarios marker");
+			expect(gh.writeCalls).toBe(writes);
+			const unclosed = `${childA.body} <!-- immune-brain:scenarios=abc`;
+			const unclosedCase = await runGithubInitiativePublication(root, {
+				initiative_id: "widget-tracker",
+				goal: "Deliver both widget Slices",
+				projection: input.projection,
+				tasks: [{
+					slice_id: "b",
+					intent: "docs/plans/widget-b.intent.json",
+					acceptance: [{ id: "acc-widget-b", summary: "Slice B is delivered" }],
+					projection: { title: "Ship Slice B", blocked_by: [] },
+				}],
+				amendment: {
+					parent: { issue_number: parent.number, title: parent.title, body: parent.body, state: "open" },
+					tasks: [{ task_id: "widget-b", binding: { issue_number: childB.number, title: childB.title, body: childB.body, state: "open" } }],
+					historical: [{ task_id: "widget-a", binding: { issue_number: childA.number, title: childA.title, body: unclosed, state: "closed" } }],
+				},
+			} as never, gh);
+			expect(unclosedCase.status).toBe("permanent_failure");
+			expect(unclosedCase.message).toContain("duplicate scenarios markers");
+			expect(gh.writeCalls).toBe(writes);
+		});
+	});
+
+	it("an amendment rejects duplicate or malformed historical scenarios markers before any remote write", async () => {
+		await withRoot(async (root, gh) => {
+			const input = batch(root);
+			(input.tasks[0] as { scenarios?: unknown }).scenarios = [{
+				id: "BR-SCN-7",
+				actor: "Reviewer",
+				given: "Available resources",
+				when: "They inspect the Child",
+				then: "The result is visible",
+				mode: "manual",
+				manual_reason: "Human judgment is required",
+			}];
+			const published = await runGithubInitiativePublication(root, input, gh);
+			expect(published.status).toBe("created");
+			const [parent, childA, childB] = gh.issues;
+			const writes = gh.writeCalls;
+			for (const markerCount of [2, 3] as const) {
+				const historical = childA.body.replace(
+					"<!-- immune-brain:slice-id=a -->",
+					(segment) => `${segment} ` + Array.from({ length: markerCount - 1 }, () => childA.body.match(/<!-- immune-brain:scenarios=[^>]* -->/)![0]).join(" "),
+				);
+				childA.state = "closed";
+				childA.state_reason = "completed";
+				const rejected = await runGithubInitiativePublication(root, {
+					initiative_id: "widget-tracker",
+					goal: "Deliver both widget Slices",
+					projection: input.projection,
+					tasks: [{
+						slice_id: "b",
+						intent: "docs/plans/widget-b.intent.json",
+						acceptance: [{ id: "acc-widget-b", summary: "Slice B is delivered" }],
+						projection: { title: "Ship Slice B", blocked_by: [] },
+					}],
+					amendment: {
+						parent: { issue_number: parent.number, title: parent.title, body: parent.body, state: "open" },
+						tasks: [{ task_id: "widget-b", binding: { issue_number: childB.number, title: childB.title, body: childB.body, state: "open" } }],
+						historical: [{ task_id: "widget-a", binding: { issue_number: childA.number, title: childA.title, body: historical, state: "closed" } }],
+					},
+				} as never, gh);
+				expect(rejected.status).toBe("permanent_failure");
+				expect(rejected.message).toContain("duplicate scenarios markers");
+				expect(gh.writeCalls).toBe(writes);
+			}
+			const malformed = childA.body.replace(
+				/<!-- immune-brain:scenarios=[^>]* -->/,
+				"<!-- immune-brain:scenarios=%%not-json%% -->",
+			);
+			const rejected = await runGithubInitiativePublication(root, {
+				initiative_id: "widget-tracker",
+				goal: "Deliver both widget Slices",
+				projection: input.projection,
+				tasks: [{
+					slice_id: "b",
+					intent: "docs/plans/widget-b.intent.json",
+					acceptance: [{ id: "acc-widget-b", summary: "Slice B is delivered" }],
+					projection: { title: "Ship Slice B", blocked_by: [] },
+				}],
+				amendment: {
+					parent: { issue_number: parent.number, title: parent.title, body: parent.body, state: "open" },
+					tasks: [{ task_id: "widget-b", binding: { issue_number: childB.number, title: childB.title, body: childB.body, state: "open" } }],
+					historical: [{ task_id: "widget-a", binding: { issue_number: childA.number, title: childA.title, body: malformed, state: "closed" } }],
+				},
+			} as never, gh);
+			expect(rejected.status).toBe("permanent_failure");
+			expect(rejected.message).toContain("malformed scenarios marker");
+			expect(gh.writeCalls).toBe(writes);
+		});
+	});
+
+	it("an amendment treats a historical Child without a scenarios marker as having no scenarios", async () => {
+			await withRoot(async (root, gh) => {
+				const input = batch(root);
+				(input.tasks[0] as { scenarios?: unknown }).scenarios = [{
+					id: "BR-SCN-7",
+					actor: "Reviewer",
+					given: "Available resources",
+					when: "They inspect the Child",
+					then: "The result is visible",
+					mode: "manual",
+					manual_reason: "Human judgment is required",
+				}];
+				const published = await runGithubInitiativePublication(root, input, gh);
+				expect(published.status).toBe("created");
+				const [parent, childA, childB] = gh.issues;
+				const markerless = childA.body.replace(/<!-- immune-brain:scenarios=[^>]* -->\s*/, "");
+				expect(markerless).not.toBe(childA.body);
+				childA.body = markerless;
+				childA.state = "closed";
+				childA.state_reason = "completed";
+				const amendment = await runGithubInitiativePublication(root, {
+					initiative_id: "widget-tracker",
+					goal: "Deliver both widget Slices",
+					projection: input.projection,
+					tasks: [{
+						slice_id: "b",
+						intent: "docs/plans/widget-b.intent.json",
+						acceptance: [{ id: "acc-widget-b", summary: "Slice B is delivered" }],
+						projection: { title: "Ship Slice B", blocked_by: [] },
+						scenarios: [{
+							id: "BR-SCN-7",
+							actor: "Reviewer",
+							given: "Available resources",
+							when: "They inspect the reopened Slice",
+							then: "The result is visible",
+							mode: "manual",
+							manual_reason: "Human judgment is required",
+						}],
+					}],
+					amendment: {
+						parent: { issue_number: parent.number, title: parent.title, body: parent.body, state: "open" },
+						tasks: [{ task_id: "widget-b", binding: { issue_number: childB.number, title: childB.title, body: childB.body, state: "open" } }],
+						historical: [{ task_id: "widget-a", binding: { issue_number: childA.number, title: childA.title, body: markerless, state: "closed" } }],
+					},
+				} as never, gh);
+				if (amendment.status !== "updated") throw new Error(`${amendment.status}:${amendment.message}`);
+				expect(childA.body).toBe(markerless);
+				expect(parent.body).not.toContain("BR-SCN-7` (Slice `a`");
+				expect(parent.body).toContain("BR-SCN-7` (Slice `b`");
+				expect(childB.body).toContain("BR-SCN-7");
+			});
+	});
+
+	it("an amendment preserves a historical manual multiline scenario exactly", async () => {
+		await withRoot(async (root, gh) => {
+			const input = batch(root);
+			(input.tasks[0] as { scenarios?: unknown }).scenarios = [{
+				id: "BR-SCN-7",
+				actor: "Reviewer",
+				given: "Available resources\n- `widget`\n## Verification\nStill ready\n---",
+				when: "They inspect the Child",
+				then: "The result is visible",
+				mode: "manual",
+				manual_reason: "Human judgment is required",
+			}];
+			const published = await runGithubInitiativePublication(root, input, gh);
+			expect(published.status).toBe("created");
+			const [parent, childA, childB] = gh.issues;
+			const historical = childA.body;
+			childA.state = "closed";
+			childA.state_reason = "completed";
+			const amendment = await runGithubInitiativePublication(root, {
+				initiative_id: "widget-tracker",
+				goal: "Deliver both widget Slices",
+				projection: input.projection,
+				tasks: [{
+					slice_id: "b",
+					intent: "docs/plans/widget-b.intent.json",
+					acceptance: [{ id: "acc-widget-b", summary: "Slice B is delivered" }],
+					projection: { title: "Ship Slice B", blocked_by: [] },
+				}],
+				amendment: {
+					parent: { issue_number: parent.number, title: parent.title, body: parent.body, state: "open" },
+					tasks: [{ task_id: "widget-b", binding: { issue_number: childB.number, title: childB.title, body: childB.body, state: "open" } }],
+					historical: [{ task_id: "widget-a", binding: { issue_number: childA.number, title: childA.title, body: historical, state: "closed" } }],
+				},
+			} as never, gh);
+			if (amendment.status !== "updated") throw new Error(`${amendment.status}:${amendment.message}`);
+			expect(childA.body).toBe(historical);
+			const marker = historical.match(/<!-- immune-brain:scenarios=([^>]*) -->/);
+			expect(marker).not.toBeNull();
+			const restored = JSON.parse(decodeURIComponent(marker![1]));
+			expect(restored).toEqual([{ id: "BR-SCN-7", actor: "Reviewer", given: "Available resources\n- `widget`\n## Verification\nStill ready\n---", when: "They inspect the Child", then: "The result is visible", mode: "manual", manual_reason: "Human judgment is required" }]);
+			expect(parent.body).toContain("`BR-SCN-7` (Slice `a`, manual): When: They inspect the Child. Then: The result is visible. Reason: Human judgment is required.");
+		});
+	});
+
+	it("an amendment keeps an automated scenario's manual_reason verbatim through the marker", async () => {
+		await withRoot(async (root, gh) => {
+			const input = batch(root);
+			(input.tasks[0] as { scenarios?: unknown }).scenarios = [{
+				id: "SCN-8",
+				actor: "Developer",
+				given: "The automated Child is published",
+				when: "They open the amendment",
+				then: "The historical listing is unchanged",
+				mode: "automated",
+				acceptance: ["acc-widget-a"],
+				manual_reason: "Human judgment is required",
+			}];
+			const published = await runGithubInitiativePublication(root, input, gh);
+			expect(published.status).toBe("created");
+			const [parent, childA, childB] = gh.issues;
+			const historical = childA.body;
+			childA.state = "closed";
+			childA.state_reason = "completed";
+			const amendment = await runGithubInitiativePublication(root, {
+				initiative_id: "widget-tracker",
+				goal: "Deliver both widget Slices",
+				projection: input.projection,
+				tasks: [{
+					slice_id: "b",
+					intent: "docs/plans/widget-b.intent.json",
+					acceptance: [{ id: "acc-widget-b", summary: "Slice B is delivered" }],
+					projection: { title: "Ship Slice B", blocked_by: [] },
+				}],
+				amendment: {
+					parent: { issue_number: parent.number, title: parent.title, body: parent.body, state: "open" },
+					tasks: [{ task_id: "widget-b", binding: { issue_number: childB.number, title: childB.title, body: childB.body, state: "open" } }],
+					historical: [{ task_id: "widget-a", binding: { issue_number: childA.number, title: childA.title, body: historical, state: "closed" } }],
+				},
+			} as never, gh);
+			if (amendment.status !== "updated") throw new Error(`${amendment.status}:${amendment.message}`);
+			const marker = historical.match(/<!-- immune-brain:scenarios=([^>]*) -->/);
+			expect(marker).not.toBeNull();
+			const restored = JSON.parse(decodeURIComponent(marker![1]));
+			expect(restored).toEqual([{
+				id: "SCN-8",
+				actor: "Developer",
+				given: "The automated Child is published",
+				when: "They open the amendment",
+				then: "The historical listing is unchanged",
+				mode: "automated",
+				acceptance: ["acc-widget-a"],
+				manual_reason: "Human judgment is required",
+			}]);
+			expect(parent.body).toContain("`SCN-8` (Slice `a`, automated): When: They open the amendment. Then: The historical listing is unchanged. Reason: Human judgment is required.");
+		});
 	});
 
 	it("the author help never claims an execution handoff from publication alone", () => {

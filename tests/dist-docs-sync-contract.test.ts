@@ -100,6 +100,9 @@ describe("dist/docs packaging sync contract", () => {
       "when that Slice alone has landed",
       "horizontal layer slice",
       "integrate-and-verify Slice",
+      "`User scenarios` section",
+      "keeps its upstream `BR-SCN-<n>` ID",
+      "`no user-visible change` requires a recorded reason",
     ]) {
       expect(source).toContain(fragment)
     }

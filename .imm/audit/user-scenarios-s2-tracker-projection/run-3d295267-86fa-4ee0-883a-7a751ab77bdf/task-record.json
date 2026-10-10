@@ -1,0 +1,1927 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "user-scenarios-s2-tracker-projection",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "user-scenarios-s2-tracker-projection",
+    "goal": "Implement Slice S2 of Initiative user-acceptance-scenarios: imm-tracker publish-initiative accepts optional per-Task scenarios, renders a 'User scenarios' section on the Child and a derived listing on the Parent, and rejects the whole batch before any remote write when a scenario is malformed or names an acceptance ID its TaskIntent lacks. A publication without scenarios renders byte-identical bodies; terminal projection, TaskIntent schema, and Kernel authority are unchanged.",
+    "acceptance": [
+      {
+        "id": "US-S2-A1",
+        "assertion": "Per T4 and invariants I3 and I4 of docs/specs/user-acceptance-scenarios.spec.md (source: #186 D4, D7, D9, D10): given Tasks that supply scenarios, the Child body has '## User scenarios' after '## Acceptance criteria' with one item per own scenario showing its ID, mode, mapped acceptance IDs, and Actor, Given, When, Then, a manual scenario as an unchecked task-list item with its reason and an automated one as a plain bullet; and the Parent body has '## User scenarios' after '## Testing strategy' with one plain bullet per scenario of every Task showing its ID, owning Slice ID, mode, When, and Then (positive). A Child that supplies no scenario renders no such heading even when a sibling does (negative). When no Task supplies scenarios the Parent and every Child body are byte-identical to the bodies rendered without this feature; mark-terminal with phase done on a Child whose manual scenario box was ticked closes it as completed and preserves the tick; and an amendment leaves every historical Child's bytes untouched while a bound pending Child's scenarios update with its brief (bound).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/github-issue-projection-contract.test.ts\",\n      \"tests/github-initiative-recovery.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "US-S2-A2",
+        "assertion": "Per T5 of docs/specs/user-acceptance-scenarios.spec.md (source: #186 D8, D11): a batch whose scenarios are a valid mix of automated and manual entries publishes (positive). It performs zero mutating remote calls and returns its existing structured failure, naming Task and scenario or acceptance ID, for a scenario that lacks a required field, has an id not matching BR-SCN-<n> or SCN-<n>, repeats an id within the Initiative, is automated with no acceptance ID, names an acceptance ID absent from its TaskIntent, or is manual without manual_reason (negative). A manual scenario naming no acceptance ID is accepted; scenario text obeys the existing public-projection text rules and bounds (bound). Every rendered scenario list item starts at line start, with no metadata comment before the bullet or task-list marker (positive). Each Child's ownership marker block carries one <!-- immune-brain:scenarios=<percent-encoded JSON> --> per Task, holding all its scenarios verbatim; manual_reason is required in manual mode, validated whenever supplied, and retained for either mode; an amendment reads each historical Child's scenarios only from its marker: a Child carrying no scenarios marker has no historical scenarios and its bytes are never rewritten; when a marker is present there must be exactly one with a complete frame, validated by the same validator as pending scenarios and re-encoding byte for byte equal to the marker, and any other state rejects the whole batch before any write (negative). Stored values must also survive re-projection, so a value grown past its bound by escaping, or a restricted-context acceptance ID the pending path accepts, is rejected at publish before any write (negative). Multiline text, Markdown headings, and Markdown bullets in scenario fields are data; a pending scenario repeating any historical ID is rejected before any write (negative).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/github-issue-projection-contract.test.ts\",\n      \"tests/github-initiative-recovery.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "US-S2-A3",
+        "assertion": "Per T5 of docs/specs/user-acceptance-scenarios.spec.md (source: #186 D10, D11): the packaged Planner contract's Initiative Carrier Preference section and docs/agents/issue-tracker.md describe the optional per-Task scenarios input, its automated and manual modes, and that omitting it renders no section (positive); the text states scenarios are public projection that never widens TaskIntent scope or authority (negative); and the existing carrier-gate contract assertions are unchanged (bound).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/carrier-enrollment-gate-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/user-scenarios-s2-tracker-projection.md",
+      "docs/agents/issue-tracker.md",
+      "docs/plans/user-scenarios-s2-tracker-projection.intent.json",
+      "docs/specs/user-acceptance-scenarios.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/runtime/github_issue_tracker.ts",
+      "tests/carrier-enrollment-gate-contract.test.ts",
+      "tests/github-initiative-recovery.test.ts",
+      "tests/github-issue-projection-contract.test.ts",
+      "tests/plugin-package-runtime.test.ts"
+    ],
+    "risk": "material",
+    "revision": 15,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/user-scenarios-s2-tracker-projection.intent.json",
+    "content_hash": "sha256:4d3f8cf450ae46e9aec05af400ec6485be5dedfc0531e8cbdc4374253cd1bee5"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:e955acf9e45775c68eec4a72d92b2bafcd2156448c13e2d84f52061084106af2",
+  "git_base_head": "475e346ba0d902d4ff06f13c91088c765a6cb286",
+  "attestations": [
+    {
+      "id": "approval-qa-870556af",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e955acf9e45775c68eec4a72d92b2bafcd2156448c13e2d84f52061084106af2",
+      "diff_hash": "sha256:c76f09b9679a0327f3cff1d7ad1d31c7a46c41ff0560d8c190f135b75efa8a73",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:57b9e2da2e6e4bc851290c628de8662fe5dc4853712cf287e75177bd365a0bac",
+      "acceptance_results": [
+        {
+          "acceptance_id": "US-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:57b9e2da2e6e4bc851290c628de8662fe5dc4853712cf287e75177bd365a0bac"
+        },
+        {
+          "acceptance_id": "US-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:57b9e2da2e6e4bc851290c628de8662fe5dc4853712cf287e75177bd365a0bac"
+        },
+        {
+          "acceptance_id": "US-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:57b9e2da2e6e4bc851290c628de8662fe5dc4853712cf287e75177bd365a0bac"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-34a42f08",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e955acf9e45775c68eec4a72d92b2bafcd2156448c13e2d84f52061084106af2",
+      "diff_hash": "sha256:41186bea9e33ad0bed1f23adc0b086e5c20841f3d1efeae799445e7bba11c6e8",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:a626e0104114de2f62e8130dd91022e1eaa5d472fca43390a1d807775ff65dfe",
+      "acceptance_results": [
+        {
+          "acceptance_id": "US-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:a626e0104114de2f62e8130dd91022e1eaa5d472fca43390a1d807775ff65dfe"
+        },
+        {
+          "acceptance_id": "US-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:a626e0104114de2f62e8130dd91022e1eaa5d472fca43390a1d807775ff65dfe"
+        },
+        {
+          "acceptance_id": "US-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:a626e0104114de2f62e8130dd91022e1eaa5d472fca43390a1d807775ff65dfe"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-7dc7a354",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e955acf9e45775c68eec4a72d92b2bafcd2156448c13e2d84f52061084106af2",
+      "diff_hash": "sha256:79b30f8a4c7e4a0e3086a3b62d0d04b4e59b6569a7113bbddd72fdf0ec8173d6",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:282151ffd21eb914717328d54df9791d051def50b88b7a691852f0e82865bad6",
+      "acceptance_results": [
+        {
+          "acceptance_id": "US-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:282151ffd21eb914717328d54df9791d051def50b88b7a691852f0e82865bad6"
+        },
+        {
+          "acceptance_id": "US-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:282151ffd21eb914717328d54df9791d051def50b88b7a691852f0e82865bad6"
+        },
+        {
+          "acceptance_id": "US-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:282151ffd21eb914717328d54df9791d051def50b88b7a691852f0e82865bad6"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-e633a468",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e955acf9e45775c68eec4a72d92b2bafcd2156448c13e2d84f52061084106af2",
+      "diff_hash": "sha256:c768291f38278dbeea001d02fe2fb0dbab83fb458e3c306266f9ed0a2228f555",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:b825ed0d0c6c2a695ecd075efd06282305c25b26d24da07edd9da3ec5d28bd91",
+      "acceptance_results": [
+        {
+          "acceptance_id": "US-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:b825ed0d0c6c2a695ecd075efd06282305c25b26d24da07edd9da3ec5d28bd91"
+        },
+        {
+          "acceptance_id": "US-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:b825ed0d0c6c2a695ecd075efd06282305c25b26d24da07edd9da3ec5d28bd91"
+        },
+        {
+          "acceptance_id": "US-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:b825ed0d0c6c2a695ecd075efd06282305c25b26d24da07edd9da3ec5d28bd91"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-488a0a18",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e955acf9e45775c68eec4a72d92b2bafcd2156448c13e2d84f52061084106af2",
+      "diff_hash": "sha256:03f24b5f1d55c436f1df32f7a4bc00aca3ad23aa9ebbad8ac2ab0381366c2023",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:81f8ec1e4889030fdbd4430c9911ef02334e732c41d26133224459b1c52dbb19",
+      "acceptance_results": [
+        {
+          "acceptance_id": "US-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:81f8ec1e4889030fdbd4430c9911ef02334e732c41d26133224459b1c52dbb19"
+        },
+        {
+          "acceptance_id": "US-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:81f8ec1e4889030fdbd4430c9911ef02334e732c41d26133224459b1c52dbb19"
+        },
+        {
+          "acceptance_id": "US-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:81f8ec1e4889030fdbd4430c9911ef02334e732c41d26133224459b1c52dbb19"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-8aaccfd2",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e955acf9e45775c68eec4a72d92b2bafcd2156448c13e2d84f52061084106af2",
+      "diff_hash": "sha256:a6a361b3641475b720271b8757666e55e2dba9fc93bd1994fd25f7ff252913ff",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:2ba8cee50a7c15054d5fce3106c6ee392549db249ff472f8c865e3de88cc65f3",
+      "acceptance_results": [
+        {
+          "acceptance_id": "US-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:2ba8cee50a7c15054d5fce3106c6ee392549db249ff472f8c865e3de88cc65f3"
+        },
+        {
+          "acceptance_id": "US-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:2ba8cee50a7c15054d5fce3106c6ee392549db249ff472f8c865e3de88cc65f3"
+        },
+        {
+          "acceptance_id": "US-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:2ba8cee50a7c15054d5fce3106c6ee392549db249ff472f8c865e3de88cc65f3"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-59e8237a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:e210c676addb11b107ee8b71b0fc019cea7fb4128b2ab8b49e70097ee5ad88a5",
+      "diff_hash": "sha256:c5f71ef0508abcecfb90dc0d40fa1f2ace86396df2b3b54210e729a2114a8ff8",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:da71bed05cbd507cde0b8ac980b6c2572fa018bbff626d7cdd4771869bfb607c",
+      "acceptance_results": [
+        {
+          "acceptance_id": "US-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:da71bed05cbd507cde0b8ac980b6c2572fa018bbff626d7cdd4771869bfb607c"
+        },
+        {
+          "acceptance_id": "US-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:da71bed05cbd507cde0b8ac980b6c2572fa018bbff626d7cdd4771869bfb607c"
+        },
+        {
+          "acceptance_id": "US-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:da71bed05cbd507cde0b8ac980b6c2572fa018bbff626d7cdd4771869bfb607c"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-b37fd7d7",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:3475eaabd0591666b42d000457727badb3b703d0d5a25f62623cbf873d1b2506",
+      "diff_hash": "sha256:2a0f7269b3038356596482e503f18f4cdbdb0f5e5961dd1299f70a2ccfbb98d3",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:3ac9a4a4955819b5bb5d9d476bc62845a75c1a711ed83f4f5009f95c0885764c",
+      "acceptance_results": [
+        {
+          "acceptance_id": "US-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:3ac9a4a4955819b5bb5d9d476bc62845a75c1a711ed83f4f5009f95c0885764c"
+        },
+        {
+          "acceptance_id": "US-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:3ac9a4a4955819b5bb5d9d476bc62845a75c1a711ed83f4f5009f95c0885764c"
+        },
+        {
+          "acceptance_id": "US-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:3ac9a4a4955819b5bb5d9d476bc62845a75c1a711ed83f4f5009f95c0885764c"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-2073069e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:9c19e820ea97725260425ef99625c731da5bbc6f466b5b1c4982f91229f65765",
+      "diff_hash": "sha256:8459836f581a10eb43a178d4d65aabb11bc57e654104747a31e620ea999919d7",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:529544ef83230b895053ddedf146cccbd17295b04b7759d5ebc070085f61f880",
+      "acceptance_results": [
+        {
+          "acceptance_id": "US-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:529544ef83230b895053ddedf146cccbd17295b04b7759d5ebc070085f61f880"
+        },
+        {
+          "acceptance_id": "US-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:529544ef83230b895053ddedf146cccbd17295b04b7759d5ebc070085f61f880"
+        },
+        {
+          "acceptance_id": "US-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:529544ef83230b895053ddedf146cccbd17295b04b7759d5ebc070085f61f880"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-41823cdc",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 5,
+      "intent_content_hash": "sha256:b3ab8ff6f174371bfe7295aa9f4cc611645a1dfe5efee55c39618bebd4079c8a",
+      "diff_hash": "sha256:9b6eda7019d616f2792c5584d3f00c166a44df4a91b438c5a12751183d35d81e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:a558cf00ceb1c92d20e62a6525d94b48610bf04fdfeeaf2c5b70b85c6cc539b8",
+      "acceptance_results": [
+        {
+          "acceptance_id": "US-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:a558cf00ceb1c92d20e62a6525d94b48610bf04fdfeeaf2c5b70b85c6cc539b8"
+        },
+        {
+          "acceptance_id": "US-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:a558cf00ceb1c92d20e62a6525d94b48610bf04fdfeeaf2c5b70b85c6cc539b8"
+        },
+        {
+          "acceptance_id": "US-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:a558cf00ceb1c92d20e62a6525d94b48610bf04fdfeeaf2c5b70b85c6cc539b8"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-eb14ad7d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 6,
+      "intent_content_hash": "sha256:213a059bcbe91be0d7c58a7d1579ca49709f07f829efffa6cf60cd00473e5c6b",
+      "diff_hash": "sha256:fc2e7b4752c5e520fea909005e7d93ddf670e780afb2deba77e80d51eb75c5f9",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:9b06509dec151b39d45155cdf4cf32240833dd64509c0085a952af7618534ab7",
+      "acceptance_results": [
+        {
+          "acceptance_id": "US-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:9b06509dec151b39d45155cdf4cf32240833dd64509c0085a952af7618534ab7"
+        },
+        {
+          "acceptance_id": "US-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:9b06509dec151b39d45155cdf4cf32240833dd64509c0085a952af7618534ab7"
+        },
+        {
+          "acceptance_id": "US-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:9b06509dec151b39d45155cdf4cf32240833dd64509c0085a952af7618534ab7"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-282bcfe2",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 7,
+      "intent_content_hash": "sha256:f1cebc5b5679ba414a4573457ba42adbcf6318891f754bb3d86bd5a66bc14f34",
+      "diff_hash": "sha256:af7f725071dfa1031e70954161289c926c4e503fe313a997499adc77f76ee826",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:1a65b110a81a04e6f82b6b981b0814f93039ef35842164c96622323a8a7547e7",
+      "acceptance_results": [
+        {
+          "acceptance_id": "US-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:1a65b110a81a04e6f82b6b981b0814f93039ef35842164c96622323a8a7547e7"
+        },
+        {
+          "acceptance_id": "US-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:1a65b110a81a04e6f82b6b981b0814f93039ef35842164c96622323a8a7547e7"
+        },
+        {
+          "acceptance_id": "US-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:1a65b110a81a04e6f82b6b981b0814f93039ef35842164c96622323a8a7547e7"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-15a352ed",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 8,
+      "intent_content_hash": "sha256:f7001164e493e91c804c9bfc5703c9127dd0939cf375b8ca0d9b2a95d034c5a4",
+      "diff_hash": "sha256:b7145fb067f3a0778e1d351bfc250f369ea31b1397162ec451b8dd6bf2984fab",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:130e57092a1083b70a35329732e2eaa5bf5475cb03fcf61db68f40d842014dd0",
+      "acceptance_results": [
+        {
+          "acceptance_id": "US-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:130e57092a1083b70a35329732e2eaa5bf5475cb03fcf61db68f40d842014dd0"
+        },
+        {
+          "acceptance_id": "US-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:130e57092a1083b70a35329732e2eaa5bf5475cb03fcf61db68f40d842014dd0"
+        },
+        {
+          "acceptance_id": "US-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:130e57092a1083b70a35329732e2eaa5bf5475cb03fcf61db68f40d842014dd0"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-fa9a8eda",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 9,
+      "intent_content_hash": "sha256:6bd8212ba5efbda3a821eaebccc8d022f4ddbf80fed3297db02ae1b115239928",
+      "diff_hash": "sha256:af815e6a65cdcbe6ae204a4a2731922ea77c33a0fbdd87e407079d6043c2161a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:f6fc0f181bdfcd14172fea7a393c9acfe58c7799b885876dd38c687705638b4b",
+      "acceptance_results": [
+        {
+          "acceptance_id": "US-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:f6fc0f181bdfcd14172fea7a393c9acfe58c7799b885876dd38c687705638b4b"
+        },
+        {
+          "acceptance_id": "US-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:f6fc0f181bdfcd14172fea7a393c9acfe58c7799b885876dd38c687705638b4b"
+        },
+        {
+          "acceptance_id": "US-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:f6fc0f181bdfcd14172fea7a393c9acfe58c7799b885876dd38c687705638b4b"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-72678678",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 10,
+      "intent_content_hash": "sha256:0d5f61cdf0732e666c6efe8662397702e10d846b2d0b89236e591b999837b24c",
+      "diff_hash": "sha256:2256c03b105d16db9ca93af557171cf82cebb9ae317401d9c711e48b3b73d056",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:877ff970d1f0d0ccb25b2136031524926a32e013afa4d2ffd519a50e2c2b1375",
+      "acceptance_results": [
+        {
+          "acceptance_id": "US-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:877ff970d1f0d0ccb25b2136031524926a32e013afa4d2ffd519a50e2c2b1375"
+        },
+        {
+          "acceptance_id": "US-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:877ff970d1f0d0ccb25b2136031524926a32e013afa4d2ffd519a50e2c2b1375"
+        },
+        {
+          "acceptance_id": "US-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:877ff970d1f0d0ccb25b2136031524926a32e013afa4d2ffd519a50e2c2b1375"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-07653d40",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 11,
+      "intent_content_hash": "sha256:7400cfdc1b8e3e339805d23a8ccafd665f24119a1b77420a56aff27e5e141bb9",
+      "diff_hash": "sha256:f7083214064ded6fb2fbc682a45d7ba5c17f43f1bcfd75b5c50cba16794c788c",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:ecec85554a1cfd9f2d59a41d3c024d8cb658f413488c75d2e3251b0d30085529",
+      "acceptance_results": [
+        {
+          "acceptance_id": "US-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:ecec85554a1cfd9f2d59a41d3c024d8cb658f413488c75d2e3251b0d30085529"
+        },
+        {
+          "acceptance_id": "US-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:ecec85554a1cfd9f2d59a41d3c024d8cb658f413488c75d2e3251b0d30085529"
+        },
+        {
+          "acceptance_id": "US-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:ecec85554a1cfd9f2d59a41d3c024d8cb658f413488c75d2e3251b0d30085529"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-5ea86f9a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 11,
+      "intent_content_hash": "sha256:7400cfdc1b8e3e339805d23a8ccafd665f24119a1b77420a56aff27e5e141bb9",
+      "diff_hash": "sha256:f0d128aa8c3cba763a3473a4b1916f865e0b7b787b1e67b867be441225397120",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:b68f878fe3046915c3c6cad5d8c5e71a17a91c546e7906a48db5b59fdefbb9fc",
+      "acceptance_results": [
+        {
+          "acceptance_id": "US-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:b68f878fe3046915c3c6cad5d8c5e71a17a91c546e7906a48db5b59fdefbb9fc"
+        },
+        {
+          "acceptance_id": "US-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:b68f878fe3046915c3c6cad5d8c5e71a17a91c546e7906a48db5b59fdefbb9fc"
+        },
+        {
+          "acceptance_id": "US-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:b68f878fe3046915c3c6cad5d8c5e71a17a91c546e7906a48db5b59fdefbb9fc"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-ad78e4e6",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 13,
+      "intent_content_hash": "sha256:70820cbc39b9003501d54067b072d09681056a958d02363ce9c09c93536d4a8d",
+      "diff_hash": "sha256:0295f19480d715461c5539a7fb2046c59aebff652d9f4f8bf3056397909893ec",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:a310e01533bcd6c70f3414e5d021e0301beaf9db20556d5421790ab99875eedf",
+      "acceptance_results": [
+        {
+          "acceptance_id": "US-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:a310e01533bcd6c70f3414e5d021e0301beaf9db20556d5421790ab99875eedf"
+        },
+        {
+          "acceptance_id": "US-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:a310e01533bcd6c70f3414e5d021e0301beaf9db20556d5421790ab99875eedf"
+        },
+        {
+          "acceptance_id": "US-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:a310e01533bcd6c70f3414e5d021e0301beaf9db20556d5421790ab99875eedf"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-bda6227f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 15,
+      "intent_content_hash": "sha256:4d3f8cf450ae46e9aec05af400ec6485be5dedfc0531e8cbdc4374253cd1bee5",
+      "diff_hash": "sha256:9063c12d0eb43f52db62852b853ff1b6740c901a577a004bb7c02e4783ea8af0",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:0b23a169099596fc010f87d2d24765117bd0b138c9197bb5a9d193a4fca05170",
+      "acceptance_results": [
+        {
+          "acceptance_id": "US-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:0b23a169099596fc010f87d2d24765117bd0b138c9197bb5a9d193a4fca05170"
+        },
+        {
+          "acceptance_id": "US-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:0b23a169099596fc010f87d2d24765117bd0b138c9197bb5a9d193a4fca05170"
+        },
+        {
+          "acceptance_id": "US-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:0b23a169099596fc010f87d2d24765117bd0b138c9197bb5a9d193a4fca05170"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-b5f77eb4",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 15,
+      "intent_content_hash": "sha256:4d3f8cf450ae46e9aec05af400ec6485be5dedfc0531e8cbdc4374253cd1bee5",
+      "diff_hash": "sha256:9063c12d0eb43f52db62852b853ff1b6740c901a577a004bb7c02e4783ea8af0",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 manifest digest、revision 的唯一 parent、tree 及全部 10 个变更路径，检查完整 diff、相关调用和嵌入的 QA 通过证据；未发现阻断性正确性、安全或回归问题。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "475e346ba0d902d4ff06f13c91088c765a6cb286",
+        "review_commit": "6ea48798c250ec8a8b3918cb2961141fece93858",
+        "review_tree": "7122900b4b661b3ece4b49d18896d1ba73bc24d9",
+        "manifest_digest": "sha256:ad8be97b3ff52f1e4ae50c663de24d270728ae4f8616c7c0fe0b5e5f9e3e94f0"
+      },
+      "reviewer_verdict_sha256": "sha256:c700bb1b04fcf589ee2b3607cde282bd4d77e7644071cc9109c108120352f01d"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-00aba10fe083-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "US-S2-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts:1209–1217 的 approvedAmendmentContent 仅从 pending Tasks 重建 Parent scenarios，导致 amendment 删除历史 Child 的 Parent 场景条目。应保留 approved baseline 中历史 Slice 的场景条目，再合并 pending 场景，并在约定测试 seam 覆盖历史 Child 原本含有场景的 amendment。",
+      "anchor": "sha256:c75045ec1e84cbb0fff534fa1929b37de12e12452ffdde725311287b2a6e3d46",
+      "evidence": {
+        "trigger": "首次发布时 Task A 含 SCN-1、Task B 仍 pending；A 完成后，将 A 的精确 body 声明为 amendment.historical，仅在 input.tasks 提供 B 的更新。parent.scenarios 只包含 B 的场景，createInitiativeBody 重建 Parent，publishAmendmentDirect 将其写回。A 的 Child 保留 SCN-1，但 Parent 丢失该条目；若 B 没有场景，整个 User scenarios section 被删除。tests/github-initiative-recovery.test.ts:943 的新增测试从无场景的历史 Child 开始，无法发现此缺口。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::runGithubInitiativePublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::approvedAmendmentContent",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::createInitiativeBody",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::publishAmendmentDirect"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "US-S2-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-00aba10fe083-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "US-S2-A2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts:1852 的 seenScenarioIds 只覆盖当前 pending batch，amendment 可重复使用历史 Child 已拥有的 scenario ID，违反 Initiative 内唯一性并发生远端写入。应在写入前将已绑定历史场景 ID 纳入唯一性校验，并在 tests/github-issue-projection-contract.test.ts 增加历史与 pending ID 冲突时零 mutation 的断言。",
+      "anchor": "sha256:c3dd9c64fcd6e4875735b58d690662e57eefeab6f6289ccc90822c71ac85f35d",
+      "evidence": {
+        "trigger": "已发布且完成的 Task A 拥有 SCN-1；amendment.historical 提供 A 的精确绑定，input.tasks 中 pending Task B 又提供 SCN-1，且映射到 B 的合法 canonical acceptance。preflightPublication 创建空 seenScenarioIds，只遍历 input.tasks，normalizeTaskScenarios 接受 B 的 SCN-1；后续 amendment 校验不检查历史 scenario ID，因而更新 Parent 和 B，留下两个 Child 拥有同一 ID。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::runGithubInitiativePublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::preflightPublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::taskPublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::normalizeTaskScenarios",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::publishAmendmentDirect"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "US-S2-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-a9cd5e88e257-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "US-S2-A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "历史 scenario 的渲染与解析不满足无损往返：github_issue_tracker.ts:1036-1040 按行解析并使用贪婪捕获，会把 manual_reason 并入 Then；合法多行字段则导致后续 amendment 被拒绝。应使历史 listing 的提取完整保留允许的文本，并在 tests/github-initiative-recovery.test.ts 补充 manual 和多行历史 scenario 的 amendment 覆盖。",
+      "anchor": "sha256:1558e275923fd3d2ddf926efd1eb2f7b9b522f7ba5c6e5c6ded3df9064e94dd9",
+      "evidence": {
+        "trigger": "同一 invariant class：历史 scenario 投影的无损保留。先发布合法 manual scenario，then='The result is visible'、manual_reason='Human judgment is required'；Child 渲染出 'Then: The result is visible. Reason: Human judgment is required.'。该 Child 关闭并作为 historical binding 参与 amendment 时，1038 行的贪婪 (.*) 将 Then 捕获为 'The result is visible. Reason: Human judgment is required'，1253-1263 行据此重建 Parent，改变原 scenario 的 Then。另一合法输入 given='First condition\\nSecond condition' 可通过 publicText/projectionText 并发布，但成为 historical Child 后，1036 行 split('\\n') 使其无法匹配解析表达式，preflight 返回 malformed User scenarios entry，阻断有效 pending amendment。现有历史测试仅使用单行 automated 条目，未覆盖这一往返 invariant。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:runGithubInitiativePublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:preflightPublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:retainHistoricalScenarioIds",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:historicalScenarioListings",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:approvedAmendmentContent",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:parentScenarioSection"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "US-S2-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-ac26473f79ae-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "US-S2-A1",
+      "source": "review",
+      "review_round": 3,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts:1051-1066：历史 scenario 回读无法覆盖合法多行文本中的 Markdown heading，导致后续 amendment 被拒绝。应使用不依赖可见文本分隔符的完整 scenario 边界，并在既定 recovery seam 增加回归覆盖。",
+      "anchor": "sha256:5db9ee49652fe870bf8e9658b83c120a2b0bc79a1f00c1a9d81affa9ac6d6a68",
+      "evidence": {
+        "trigger": "历史 scenario 的 given 为 \"First condition\\n## Setup\\nSecond condition\"，其余字段合法。projectionText/publicText 允许该输入，首次 publication 会成功；关闭该 Child 后，以其原始 body 绑定 historical 并 amendment 另一个 pending Child。historicalScenarioListings 在第 1051 行遇到 given 内的 '\\n## ' 就提前截断 section，尚未读取 When、Then 或位于条目末尾的编码 markers，随后第 1066 行返回 malformed entry，preflightPublication 将其转换为 permanent_failure，合法 amendment 无法执行。这属于合法 public-projection 文本的序列化与回读一致性类缺口：现有编码 marker 修复及 tests/github-initiative-recovery.test.ts:1051 的普通多行用例没有覆盖结构分隔符，因为 parser 在读取 markers 前就已截断。需要在该既定测试 seam 验证含 heading 和 horizontal-rule 的合法多行字段仍可 amendment，历史 Child bytes 不变且 Parent 保留其 scenario。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::runGithubInitiativePublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::preflightPublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::retainHistoricalScenarioIds",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::historicalScenarioListings"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "US-S2-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-4adab920088e-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "US-S2-A2",
+      "source": "review",
+      "review_round": 4,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts:1052-1057 的历史场景解析存在完整性缺口：合法多行字段中的章节标题或分隔线会提前结束 section，静默遗漏后续场景，使历史 ID 未被保留，允许 pending Task 重用该 ID，并在 amendment 后丢失 Parent 的历史场景条目。应按完整 scenario-end 边界提取场景，避免用字段内的 Markdown 分隔符截断，并增加真实分隔符及重复 ID 的回归覆盖。",
+      "anchor": "sha256:8a9b28ca3889b2c2637a05a6c565720844f973ae348fd1494dc1cc466058491e",
+      "evidence": {
+        "trigger": "已发布且关闭的历史 Child 包含两个场景：SCN-1 的完整普通条目，以及 SCN-2，其 given 为 \"A\\n---\\nB\"；该文本通过 projectionText 的现有规则和 500 字符上限。随后 amendment 的 pending Task 也提供 SCN-2。historicalScenarioListings 在第二条目的分隔线处截断 section；由于第一条已有 scenario-end，代码进入 marker 分支，只提取 SCN-1，且不检查剩余未解析文本。retainHistoricalScenarioIds 因此未保留 SCN-2，重复校验通过，approvedAmendmentContent 重建 Parent 时也遗漏历史 SCN-2。这属于历史场景无损提取及 validation precedes merge 的同一 invariant 缺口：新增 encoded-field/end markers 未覆盖 section 在读取这些 markers 前已被截断的情况。tests/github-initiative-recovery.test.ts:1057 的现有 multiline 输入以 --- 结尾，渲染后紧接 '. When:'，未包含实际触发截断的 '\\n---\\n'。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::runGithubInitiativePublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::preflightPublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::retainHistoricalScenarioIds",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::historicalScenarioListings",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::approvedAmendmentContent"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "US-S2-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-4adab920088e-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "US-S2-A2",
+      "source": "review",
+      "review_round": 4,
+      "summary": "tests/github-initiative-recovery.test.ts:1009、1047 使用不存在的 gh.mutations 验证零远端写入，实际比较的是 undefined 与 undefined，因此即使拒绝前发生写入，该断言仍会通过。应改用 RecoveryGh 已在 transport boundary 计数的 writeCalls。",
+      "anchor": "sha256:7f60b8acd5ccaef31900faf04b8a526ef23444618b13eb8fb8c158c6fcab7a9d",
+      "evidence": {
+        "trigger": "执行新增的历史场景 ID 重用拒绝测试。RecoveryGh 在 tests/github-initiative-recovery.test.ts:111 定义 writeCalls，并在 :161-164 对每个 mutating call 增加计数；该类没有 mutations 属性。新增测试却将 gh.mutations 保存为 writes，再断言 gh.mutations 等于 writes，所以无论实际写入次数如何，零写入断言均为 undefined === undefined，无法证明该 negative control。",
+        "caller_chain": [
+          "tests/github-initiative-recovery.test.ts::an amendment rejects a pending scenario that reuses a historical scenario id before any remote write",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::runGithubInitiativePublication",
+          "tests/github-initiative-recovery.test.ts::RecoveryGh.run"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "US-S2-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-21d1152b00e2-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "US-S2-A1",
+      "source": "review",
+      "review_round": 5,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts:1061–1065：historicalScenarioListings 在读取 scenario-end marker 前按 Markdown 标题截断合法多行 scenario，导致后续 amendment 被拒绝。应先完整读取 marker 界定的条目，仅在条目外识别 section 边界，并在 tests/github-initiative-recovery.test.ts 补充真实发布后转为 historical 的回归测试。",
+      "anchor": "sha256:5db9ee49652fe870bf8e9658b83c120a2b0bc79a1f00c1a9d81affa9ac6d6a68",
+      "evidence": {
+        "trigger": "先正常发布一个合法 manual scenario：id=BR-SCN-7、actor=Reviewer、given=\"First condition\\n## Verification\\nSecond condition\"、when=\"They inspect the Child\"、then=\"The result is visible\"、manual_reason=\"Human judgment is required\"；随后将其 Child 关闭，并以精确历史 binding 对另一个 pending Child 执行 amendment。projectionText 接受该 given，但 historicalScenarioListings 第1061行把字段中的 ## Verification 当成 section 结束，丢掉后面的 When、Then 和编码 markers；第1078行返回 malformed entry，preflightPublication 因而拒绝合法 amendment。违反的是合法 public scenario 文本在历史回读中完整保留的 invariant class：当前 marker 处理发生在 section/entry 正则截断之后，因此不能覆盖标题分隔符碰撞。tests/github-initiative-recovery.test.ts:1052 的多行测试只使用 ## Setup，未触发 parser 特判的 Verification、Out of scope、Slices 标题。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::runGithubInitiativePublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::preflightPublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::retainHistoricalScenarioIds",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::historicalScenarioListings"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "US-S2-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-30ae58571df8-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "US-S2-A2",
+      "source": "review",
+      "review_round": 6,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts:1061-1084 的历史场景解析会合并混合格式的相邻条目，遗漏场景 ID，导致 amendment 接受 Initiative 内重复 ID，并生成错误的 Parent listing。应逐条解析并保留每个条目的身份；在现有 recovery 测试中补充复用第二个历史 ID 的零写入断言，以及两个历史条目各自保留 When/Then 的断言。",
+      "anchor": "sha256:99d5b9eea5f9e2e00770918647f247eee06c5f35a50727a89a469be5c2b633dd",
+      "evidence": {
+        "trigger": "不变量类别：历史场景集合的完整性与 Initiative 范围内 ID 唯一性。tests/github-initiative-recovery.test.ts:1005 已提供具体输入：历史 Child 先包含无 scenario-end marker 的 SCN-1，随后包含带 marker 的 SCN-2。只要 body 含有一个 marker，1062 行正则就从 SCN-1 开始跨越 SCN-2，直到后者的 marker 才结束；1070 行取得 SCN-1 的 ID，1075-1076 行却取得 SCN-2 的 When/Then，因此结果只保留 SCN-1。将同一测试的 pending scenario.id 从 SCN-1 改为 SCN-2，seenScenarioIds 就无法发现重复，amendment 可以继续写入。现有 marker 方案解决了单条多行文本的边界，但未覆盖混合条目格式下完整保留场景集合这一类别；现有测试只复用第一个 ID，未覆盖被合并丢失的第二个 ID。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:runGithubInitiativePublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:preflightPublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:retainHistoricalScenarioIds",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:historicalScenarioListings",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:taskPublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:normalizeTaskScenarios"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "US-S2-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:user-scenarios-s2-tracker-projection:2026-10-10T07:14:11.298Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "kernel",
+      "review_round": 6,
+      "summary": "Review exhausted its 5-round rework budget; a durable replan is required."
+    },
+    {
+      "id": "review-99490f17e6e7-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "US-S2-A2",
+      "source": "review",
+      "review_round": 7,
+      "summary": "历史 scenario 无损恢复这一 invariant 仍有覆盖缺口：plugins/immune-brain/runtime/github_issue_tracker.ts:1065 用最后一个普通 Markdown bullet 猜测 marker entry 的起点，:1070 又把 pre-marker 文本中的 Markdown 标题当作 section 终点，因此合法多行 scenario 会使 amendment 失败。应使用完整 scenario entry 边界定位，避免把字段里的 bullet 或标题解释为结构，并在 tests/github-initiative-recovery.test.ts 增加这两类历史文本的保留与重复 ID 拒绝断言。",
+      "anchor": "sha256:3dbf9b3ccc8a9298e90d36e15f3387018f45148beb9ade6235ef243933851799",
+      "evidence": {
+        "trigger": "一个成功发布后关闭的历史 Child，其 SCN-1.given 为 \"Available resources\\n- `widget`\"，其余字段合法。childScenarioSection 保留该换行并在 entry 尾部生成字段 markers；amendment preflight 的 historicalScenarioListings 在 :1065 选择字段内的 '\\n- `widget`' 作为 entry 起点，:1076 无法解析 scenario header，:1086 返回 malformed entry，导致合法 amendment 被拒绝。同一 invariant 的 pre-marker 变体是 Given 为 \"Ready\\n## Verification\\nStill ready\"：:1070 在字段中的标题处截断 section，尚未读取 When/Then 就返回 malformed entry。当前 encoded-field 修复仅保护字段解码，没有保护 entry 起点或 pre-marker section 边界；tests/github-initiative-recovery.test.ts:1117 的标题案例只覆盖带 marker 且没有字段内 bullet 的 entry，:1000 的混合案例也没有 pre-marker 标题，因此未覆盖这一类合法输入。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:runGithubInitiativePublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:preflightPublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:retainHistoricalScenarioIds",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:historicalScenarioListings"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "US-S2-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:user-scenarios-s2-tracker-projection:2026-10-10T07:27:11.314Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "kernel",
+      "review_round": 7,
+      "summary": "Review exhausted its 5-round rework budget; a durable replan is required."
+    },
+    {
+      "id": "review-3132707790c6-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "US-S2-A1",
+      "source": "review",
+      "review_round": 8,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts:1007-1010 把 HTML comment 放在列表标记之前，生成的 Child scenario 行成为 HTML block，GitHub 不会将 automated 条目渲染为列表或将 manual 条目渲染为可勾选 checkbox；dist/claude/mcp-server.mjs:10265-10268 同样受影响。应让列表标记位于行首，将 metadata 放入列表内容并同步调整历史解析；在现有 projection test seam 增加 Markdown 渲染断言，当前 substring 断言无法发现此缺陷。",
+      "anchor": "sha256:ad82d0e9ab9159262d8d2fbe18d14eac432485a6faeb063464270dcc1077325d",
+      "evidence": {
+        "trigger": "发布任意合法 manual scenario，例如 BR-SCN-4、mode=manual、manual_reason 非空。childScenarioSection 输出以 '<!-- immune-brain:scenario-start -->- [ ]' 开头的行。CommonMark/GFM 将以 HTML comment 开始的整行作为 HTML block，后面的 '- [ ]' 不会成为 task-list item。automated scenario 同样无法成为 plain bullet。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:runGithubInitiativePublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:publishInitiativeDirect",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:childBody",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:childScenarioSection"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "US-S2-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-3132707790c6-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "US-S2-A2",
+      "source": "review",
+      "review_round": 8,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts:1071-1087 的 pre-marker 解析仍把字段中的 Markdown 当成结构，拒绝 acceptance 明确允许的历史 multiline scenario。这属于“历史 scenario 字段内容必须作为数据”的同一 invariant coverage gap：新增 start-marker 修复只保护带该 marker 的条目，没有覆盖 pre-marker 条目。应根据完整 scenario header 和字段边界解析历史条目，并在 recovery test seam 覆盖 pre-marker 字段中的 bullets/headings 与 marker 条目混合的 amendment。",
+      "anchor": "sha256:3dbf9b3ccc8a9298e90d36e15f3387018f45148beb9ade6235ef243933851799",
+      "evidence": {
+        "trigger": "合法 amendment 绑定一个 closed historical Child，其中 SCN-1 是没有 scenario metadata 的旧条目，Given 为 'Available resources\\n- `widget`'，后面仍有完整 When 和 Then；同一 section 可另有带 marker 的 SCN-2。1073 的 entry regex 在字段内的 '\\n- `widget`' 处提前结束 SCN-1，1084 因而找不到 When/Then，1087 返回 malformed entry，整个合法 amendment 在 preflight 被拒绝。字段中的 '\\n## Verification\\n' 也会被1071当作 section 终点。现有混合测试只让 pre-marker 条目包含单行字段，而新增 multiline 测试使用新 start-marker，未覆盖该 invariant 的旧格式范围。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:runGithubInitiativePublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:preflightPublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:retainHistoricalScenarioIds",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:historicalScenarioListings"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "US-S2-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:user-scenarios-s2-tracker-projection:2026-10-10T07:37:51.164Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "kernel",
+      "review_round": 8,
+      "summary": "Review exhausted its 5-round rework budget; a durable replan is required."
+    },
+    {
+      "id": "review-03100075d19d-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "US-S2-A2",
+      "source": "review",
+      "review_round": 9,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts:768、1042 将重复 scenarios marker 当作不存在，导致 amendment 丢失历史列表并允许复用历史 scenario ID。最小修复是区分 absent、bound 与 ambiguous/malformed，仅对真正 absent 保持兼容，并在任何写入前拒绝异常 marker；补充 agreed seam 上的零写入回归测试。",
+      "anchor": "sha256:6e2e6e0431b1c5c6e273c295fc03b78e68b7f64de6f6ba3328a84086e6117b8c",
+      "evidence": {
+        "trigger": "Invariant class: validation precedes merge，具体为 Initiative 内历史 scenario ID 的完整保留。一个已关闭且 ownership 正确的历史 Child 原本包含 SCN-1；其远端 body 和 amendment historical binding 都包含两份相同的合法 scenarios marker，其余 baseline、state 和 topology 均匹配。待处理 Task 提交同名 SCN-1。ownershipMarkerValue 在匹配数为 2 时返回 null，historicalScenarioListings 随即 continue，因此 retainHistoricalScenarioIds 未保留 SCN-1，approvedAmendmentContent 也遗漏历史列表；后续 ownership 校验只检查 task-id、initiative-id、slice-id，允许 Parent 和 pending Child 写入。当前基于 marker 的修复覆盖单个合法 marker，却未覆盖同一 invariant 的 ambiguous-marker 状态；这属于该修复的覆盖缺口。契约只排除了没有 marker 的 Child，并未排除持有重复 marker 的 Child。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::runGithubInitiativePublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::preflightPublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::retainHistoricalScenarioIds",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::historicalScenarioListings",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::ownershipMarkerValue"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "US-S2-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:user-scenarios-s2-tracker-projection:2026-10-10T09:21:42.981Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "kernel",
+      "review_round": 9,
+      "summary": "Review exhausted its 5-round rework budget; a durable replan is required."
+    },
+    {
+      "id": "review-70c5326a5681-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "US-S2-A2",
+      "source": "review",
+      "review_round": 10,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts:1042 和 :1056 未完整实现历史 marker 的 validation precedes merge：重复检测只统计符合编码字符规则的 marker，解析后的文本也只检查类型，随后直接进入 Parent 写入。应先统计所有 scenarios marker 并要求恰好一个，再对解码后的字段应用既有 public-projection 校验；在 recovery 测试中补充有效 JSON 的非法文本，以及一个合法 marker 加一个 malformed marker 的零写入断言。",
+      "anchor": "sha256:f66264d8cc313a271475b434e34c460d2b1b6119e61c0575bf9a8563956fae6a",
+      "evidence": {
+        "trigger": "在一个所有权、attachment 和 baseline 均有效的 amendment 中，historical Child 的唯一 scenarios marker 编码有效 JSON，例如 [{\"id\":\"SCN-1\",\"actor\":\"Developer\",\"given\":\"Published\",\"when\":\"submit_review\",\"then\":\"Visible\",\"mode\":\"manual\",\"manual_reason\":\"Human judgment\"}]。historicalScenarioListings 仅检查 id、mode、when、then 的类型，不调用 projectionText，因此本应因 restricted authority context 被拒绝的 when 被合并并原样写入 Parent；when 或 then 为 501 个字符也会绕过单字段上限。另一个同类触发状态是在合法 marker 旁增加 <!-- immune-brain:scenarios=%%not json%% -->：markerCount 仍为 1，ownershipMarkerValue 返回合法 marker，第二个 malformed marker 被忽略，违反 duplicated marker 必须零写入失败的要求。这属于同一 validation precedes merge 不变量的覆盖缺口；当前 marker 修复及 tests/github-initiative-recovery.test.ts:1140 的重复测试只覆盖多个符合编码字符规则的 marker，:1167 的 malformed 测试只覆盖唯一 marker 解码失败，未覆盖这些状态。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::runGithubInitiativePublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::preflightPublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::retainHistoricalScenarioIds",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::historicalScenarioListings",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::approvedAmendmentContent",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::createInitiativeBody",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::parentScenarioSection",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::publishAmendmentDirect"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "US-S2-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:user-scenarios-s2-tracker-projection:2026-10-10T09:28:37.137Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "kernel",
+      "review_round": 10,
+      "summary": "Review exhausted its 5-round rework budget; a durable replan is required."
+    },
+    {
+      "id": "review-922a65e2b4bc-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "US-S2-A2",
+      "source": "review",
+      "review_round": 11,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts:1069–1072 的历史 marker 校验会静默忽略非字符串 actor、given 或 manual_reason，使不符合 public-projection 规则的 marker 通过并进入 amendment 写入。应对这些字段的原始值执行 projectionText 和相等性检查，验证失败时拒绝整个 batch；在 tests/github-initiative-recovery.test.ts 增加远端 body 与 binding 一致的非字符串字段用例，并断言零写入。",
+      "anchor": "sha256:018d0699eab090c397c2e6dba7d5656a821ddf246fa51fa0d55485fbea55abd1",
+      "evidence": {
+        "trigger": "validation precedes merge 不变量仍有覆盖缺口：一个已关闭、所有权和 native attachment 均有效的历史 Child，其唯一 scenarios marker 解码为 [{\"id\":\"SCN-1\",\"actor\":\"Developer\",\"given\":\"Published\",\"when\":\"They inspect\",\"then\":\"Visible\",\"mode\":\"manual\",\"manual_reason\":42}]，且 amendment historical binding 与实际远端 body 完全一致。此前新增的 readText 检查覆盖非法字符串，但 typeof 值不为 string 时跳过检查，把 manual_reason 变成 undefined；pending Task 和其他 baseline 均有效时，batch 可以写入 Parent，而没有按 US-S2-A2 在写入前拒绝该 marker。现有负向测试只覆盖受限字符串和超长字符串，未覆盖这一类型分支。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::runGithubInitiativePublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::preflightPublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::retainHistoricalScenarioIds",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::historicalScenarioListings",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::approvedAmendmentContent",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::publishAmendmentDirect"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "US-S2-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:user-scenarios-s2-tracker-projection:2026-10-10T09:34:38.596Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "kernel",
+      "review_round": 11,
+      "summary": "Review exhausted its 5-round rework budget; a durable replan is required."
+    },
+    {
+      "id": "review-5c621d61267e-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "US-S2-A2",
+      "source": "review",
+      "review_round": 12,
+      "summary": "历史 scenarios marker 缺失时 amendment 仍可写入，违反 exactly-one 要求，并会丢失历史 Parent listing 与 ID 保留。plugins/immune-brain/runtime/github_issue_tracker.ts:1037 将零 marker 当作无 scenarios 继续；应在写入前拒绝要求携带 marker 的历史 Child，并在 tests/github-initiative-recovery.test.ts 增加删除整个 marker 后零写入的回归覆盖。",
+      "anchor": "sha256:018d0699eab090c397c2e6dba7d5656a821ddf246fa51fa0d55485fbea55abd1",
+      "evidence": {
+        "trigger": "validation precedes merge invariant 的覆盖缺口：先发布含 SCN-1 的 Child，将其关闭后删除整个 scenarios marker，再以匹配实际远端内容的历史 binding 发起 amendment，并让 pending Child 使用 SCN-1。historicalScenarioListings 在 markerStarts === 0 时直接 continue，因此 retainHistoricalScenarioIds 不保留 SCN-1，approvedAmendmentContent 也不再生成其历史 listing；正常 topology/baseline 检查通过后可执行 Parent 和 pending Child 写入。已有针对重复、畸形 marker 的验证只覆盖 marker 存在的分支，未覆盖 marker 完全缺失这一同类边界。嵌入的 US-S2-A2 明确要求每个 historical Child 恰好一个 marker；实现文档中的缺失即无 scenarios 分支没有满足该要求。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::runGithubInitiativePublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::preflightPublication",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::retainHistoricalScenarioIds",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::historicalScenarioListings",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::approvedAmendmentContent",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts::publishAmendmentDirect"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "US-S2-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:user-scenarios-s2-tracker-projection:2026-10-10T10:23:46.019Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "kernel",
+      "review_round": 12,
+      "summary": "Review exhausted its 5-round rework budget; a durable replan is required."
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:user-scenarios-s2-tracker-projection:2026-10-10T05:43:07.832Z",
+      "at": "2026-10-10T05:43:07.832Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/user-scenarios-s2-tracker-projection.intent.json"
+    },
+    {
+      "id": "record_approval:user-scenarios-s2-tracker-projection:2026-10-10T05:43:16.466Z",
+      "at": "2026-10-10T05:43:16.466Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-870556af\naction_v2_sha256:d0d9bdb10f8d5d1f30cbf3c9852148127a4e1b35da2dcaca581f443246ebdee2",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-94b388335e573121",
+        "issued_at": "2026-10-10T05:43:16.466Z"
+      }
+    },
+    {
+      "id": "request_rework:user-scenarios-s2-tracker-projection:2026-10-10T06:05:39.939Z",
+      "at": "2026-10-10T06:05:39.939Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:83b550ac8d05011291a1b68ce4faec842972b1ce679d318572832ea7a5eb7933",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-024c119124aca448",
+        "issued_at": "2026-10-10T06:05:39.939Z"
+      }
+    },
+    {
+      "id": "resolve_finding:user-scenarios-s2-tracker-projection:2026-10-10T06:11:00.250Z",
+      "at": "2026-10-10T06:11:00.250Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-00aba10fe083-1-review-1\naction_v2_sha256:b0812e057990cc50aa3eb2c7b4029b5e7580249163a98154cf328e0d1ad3f670"
+    },
+    {
+      "id": "resolve_finding:user-scenarios-s2-tracker-projection:2026-10-10T06:11:01.009Z",
+      "at": "2026-10-10T06:11:01.009Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-00aba10fe083-2-review-2\naction_v2_sha256:83d2099bd95b1913317ff69b0226675cd7c199b98440f0175949f34a16f1188d"
+    },
+    {
+      "id": "freeze_artifacts:user-scenarios-s2-tracker-projection:2026-10-10T06:11:06.883Z",
+      "at": "2026-10-10T06:11:06.883Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/user-scenarios-s2-tracker-projection.intent.json"
+    },
+    {
+      "id": "record_approval:user-scenarios-s2-tracker-projection:2026-10-10T06:11:16.110Z",
+      "at": "2026-10-10T06:11:16.110Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-34a42f08\naction_v2_sha256:d292429635b39614412a4e0b655640ddd9b7e42711fd253bb34990a9bb97909b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-70238e03f85b188a",
+        "issued_at": "2026-10-10T06:11:16.110Z"
+      }
+    },
+    {
+      "id": "request_rework:user-scenarios-s2-tracker-projection:2026-10-10T06:15:29.011Z",
+      "at": "2026-10-10T06:15:29.011Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:1201bf049f2762175dea0b53826b0251524bafd82b28af168167477f1f53fdc0",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-a3da87e68fb49a40",
+        "issued_at": "2026-10-10T06:15:29.011Z"
+      }
+    },
+    {
+      "id": "resolve_finding:user-scenarios-s2-tracker-projection:2026-10-10T06:20:16.659Z",
+      "at": "2026-10-10T06:20:16.659Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a9cd5e88e257-1-review-1\naction_v2_sha256:23bb7eaa6e16b41194616e58c14d391b127419eb65dd4071c1d8b6bb0c64234a"
+    },
+    {
+      "id": "freeze_artifacts:user-scenarios-s2-tracker-projection:2026-10-10T06:20:23.979Z",
+      "at": "2026-10-10T06:20:23.979Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/user-scenarios-s2-tracker-projection.intent.json"
+    },
+    {
+      "id": "record_approval:user-scenarios-s2-tracker-projection:2026-10-10T06:20:33.622Z",
+      "at": "2026-10-10T06:20:33.622Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-7dc7a354\naction_v2_sha256:3071bde46390a32001ba591bff095543fe566c74c6678d13c33ab57f13ad4530",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-c3cc429b7540a2aa",
+        "issued_at": "2026-10-10T06:20:33.622Z"
+      }
+    },
+    {
+      "id": "request_rework:user-scenarios-s2-tracker-projection:2026-10-10T06:23:49.049Z",
+      "at": "2026-10-10T06:23:49.049Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_3\naction_v2_sha256:a9b8a6e3986df3875c46707cd646810208c1931fbe2ad66361edb22a0f2ed6ba",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-2e6fa6d5e23a8509",
+        "issued_at": "2026-10-10T06:23:49.049Z"
+      }
+    },
+    {
+      "id": "resolve_finding:user-scenarios-s2-tracker-projection:2026-10-10T06:25:45.213Z",
+      "at": "2026-10-10T06:25:45.213Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-ac26473f79ae-1-review-1\naction_v2_sha256:43be3be5f19621e18d03c5c27fc145228f2297df47e3b99b5f9cd6bf79fd1092"
+    },
+    {
+      "id": "freeze_artifacts:user-scenarios-s2-tracker-projection:2026-10-10T06:25:50.791Z",
+      "at": "2026-10-10T06:25:50.791Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/user-scenarios-s2-tracker-projection.intent.json"
+    },
+    {
+      "id": "record_approval:user-scenarios-s2-tracker-projection:2026-10-10T06:25:59.546Z",
+      "at": "2026-10-10T06:25:59.546Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e633a468\naction_v2_sha256:91da0ccf7508e1951b2df31d0f6cc36b00155d088cf16b0429ad722d0251d50a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f9293611f16a4f86",
+        "issued_at": "2026-10-10T06:25:59.547Z"
+      }
+    },
+    {
+      "id": "request_rework:user-scenarios-s2-tracker-projection:2026-10-10T06:59:05.008Z",
+      "at": "2026-10-10T06:59:05.008Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_4\naction_v2_sha256:1a6c8dd9a3268eb46c10d81487879b68d3577ea24d0635de4e9fc54ac6c69f3a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-21dde33857914c3e",
+        "issued_at": "2026-10-10T06:59:05.009Z"
+      }
+    },
+    {
+      "id": "resolve_finding:user-scenarios-s2-tracker-projection:2026-10-10T07:03:47.022Z",
+      "at": "2026-10-10T07:03:47.022Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-4adab920088e-1-review-1\naction_v2_sha256:f3dd570fde6470b65ac32c2baad697838f0bb3f4bc7913e50c1dee39512834dc"
+    },
+    {
+      "id": "resolve_finding:user-scenarios-s2-tracker-projection:2026-10-10T07:03:47.900Z",
+      "at": "2026-10-10T07:03:47.900Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-4adab920088e-2-review-2\naction_v2_sha256:16bcfbc3230b243491fe2b4c3a60e520a54b0f0870d46aaa64b218b8df0bde17"
+    },
+    {
+      "id": "freeze_artifacts:user-scenarios-s2-tracker-projection:2026-10-10T07:03:54.299Z",
+      "at": "2026-10-10T07:03:54.299Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/user-scenarios-s2-tracker-projection.intent.json"
+    },
+    {
+      "id": "record_approval:user-scenarios-s2-tracker-projection:2026-10-10T07:04:04.434Z",
+      "at": "2026-10-10T07:04:04.434Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-488a0a18\naction_v2_sha256:286d3c0f92c5750dd4ede01003bd27137fe4cd79666009ed6bedef15bac2fdc3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-717c229484909c8e",
+        "issued_at": "2026-10-10T07:04:04.434Z"
+      }
+    },
+    {
+      "id": "request_rework:user-scenarios-s2-tracker-projection:2026-10-10T07:07:29.040Z",
+      "at": "2026-10-10T07:07:29.040Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_5\naction_v2_sha256:c826d3e41548743376a1f274aaff4d9215bdbcad39af2367aeb977a563def147",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-dbfd2e56b314179a",
+        "issued_at": "2026-10-10T07:07:29.041Z"
+      }
+    },
+    {
+      "id": "resolve_finding:user-scenarios-s2-tracker-projection:2026-10-10T07:09:05.964Z",
+      "at": "2026-10-10T07:09:05.964Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-21d1152b00e2-1-review-1\naction_v2_sha256:90115e15b6424ff65e81d97cd8e8cdc1b75352d294ead8f3fed451b6d92aa661"
+    },
+    {
+      "id": "freeze_artifacts:user-scenarios-s2-tracker-projection:2026-10-10T07:09:13.114Z",
+      "at": "2026-10-10T07:09:13.114Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/user-scenarios-s2-tracker-projection.intent.json"
+    },
+    {
+      "id": "record_approval:user-scenarios-s2-tracker-projection:2026-10-10T07:09:29.862Z",
+      "at": "2026-10-10T07:09:29.862Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-8aaccfd2\naction_v2_sha256:6d0c4cde86d612dd2762c0b9b2a64d9b57073077d588076bc048dc9619e83f17",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-eee8da1319af4013",
+        "issued_at": "2026-10-10T07:09:29.862Z"
+      }
+    },
+    {
+      "id": "request_rework:user-scenarios-s2-tracker-projection:2026-10-10T07:14:11.298Z",
+      "at": "2026-10-10T07:14:11.298Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_6\naction_v2_sha256:edd4c18c06621c7825b9c6a2af5b64e382c393dff8d2a28048010b61b4687ccd",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-9bb14b503e547542",
+        "issued_at": "2026-10-10T07:14:11.299Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:user-scenarios-s2-tracker-projection:2026-10-10T07:21:33.375Z",
+      "at": "2026-10-10T07:21:33.375Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:0604a41b2b475b79572ef189be4d0f124f262f6bce1077e82a3a72258f36525b",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-8bf0c315f493357c",
+        "issued_at": "2026-10-10T07:21:33.809Z"
+      }
+    },
+    {
+      "id": "resolve_finding:user-scenarios-s2-tracker-projection:2026-10-10T07:23:35.297Z",
+      "at": "2026-10-10T07:23:35.297Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-30ae58571df8-1-review-1\naction_v2_sha256:469f78d265a7a0c04e34465698d12ddd11d80b394ffc47cbbb4a68ab8b45a56d"
+    },
+    {
+      "id": "freeze_artifacts:user-scenarios-s2-tracker-projection:2026-10-10T07:23:42.480Z",
+      "at": "2026-10-10T07:23:42.480Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/user-scenarios-s2-tracker-projection.intent.json"
+    },
+    {
+      "id": "record_approval:user-scenarios-s2-tracker-projection:2026-10-10T07:23:54.179Z",
+      "at": "2026-10-10T07:23:54.179Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-59e8237a\naction_v2_sha256:e396b79b1abb3a17c6efef46fc3cb373e9c02f190444e299f64a77907533e548",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-09b5b04d4371610a",
+        "issued_at": "2026-10-10T07:23:54.179Z"
+      }
+    },
+    {
+      "id": "request_rework:user-scenarios-s2-tracker-projection:2026-10-10T07:27:11.314Z",
+      "at": "2026-10-10T07:27:11.314Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_7\naction_v2_sha256:82ddc7b6e9dca2c10a2191d4d03a86b30246d40f92a3fae11747359f4353b058",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-80284f68280e8bfd",
+        "issued_at": "2026-10-10T07:27:11.314Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:user-scenarios-s2-tracker-projection:2026-10-10T07:31:55.206Z",
+      "at": "2026-10-10T07:31:55.206Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\naction_v2_sha256:b0443c11549b68180fc534dca559b740bab00cddfae21dc60c79acccfe9d8d2e",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-888907d13877d8d4",
+        "issued_at": "2026-10-10T07:31:55.639Z"
+      }
+    },
+    {
+      "id": "resolve_finding:user-scenarios-s2-tracker-projection:2026-10-10T07:33:05.942Z",
+      "at": "2026-10-10T07:33:05.942Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-99490f17e6e7-1-review-1\naction_v2_sha256:a6aaaf6da0f538123499c8035090f5f5e3d614b5ec4645304433ca6a31e5e459"
+    },
+    {
+      "id": "freeze_artifacts:user-scenarios-s2-tracker-projection:2026-10-10T07:33:13.249Z",
+      "at": "2026-10-10T07:33:13.249Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/user-scenarios-s2-tracker-projection.intent.json"
+    },
+    {
+      "id": "record_approval:user-scenarios-s2-tracker-projection:2026-10-10T07:33:25.323Z",
+      "at": "2026-10-10T07:33:25.323Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-b37fd7d7\naction_v2_sha256:422088a843a5c6d058137807d4d2e0e5ae92a0c015c4ac4da6412a79f6f71f35",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-061c11b160064972",
+        "issued_at": "2026-10-10T07:33:25.323Z"
+      }
+    },
+    {
+      "id": "request_rework:user-scenarios-s2-tracker-projection:2026-10-10T07:37:51.164Z",
+      "at": "2026-10-10T07:37:51.164Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_8\naction_v2_sha256:8a72e89522487e21c1f06566de1cc124d7ad5c0fca2fc9d115848615daef58a2",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-58ede8ca2f0e0265",
+        "issued_at": "2026-10-10T07:37:51.164Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:user-scenarios-s2-tracker-projection:2026-10-10T08:41:28.418Z",
+      "at": "2026-10-10T08:41:28.418Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_4\naction_v2_sha256:acb5eb1a542a57f8ead42bf6bba59348a9cbee3b509868f8c4c403ad473e700a",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-f4066bf3f4b66759",
+        "issued_at": "2026-10-10T08:41:28.919Z"
+      }
+    },
+    {
+      "id": "resolve_finding:user-scenarios-s2-tracker-projection:2026-10-10T08:41:54.823Z",
+      "at": "2026-10-10T08:41:54.823Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-3132707790c6-1-review-1\naction_v2_sha256:a0b75193877b943f13defa2b0d5d1ed045c144fd0d2138f9b74847bd74ca8cc2"
+    },
+    {
+      "id": "resolve_finding:user-scenarios-s2-tracker-projection:2026-10-10T08:42:14.693Z",
+      "at": "2026-10-10T08:42:14.693Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-3132707790c6-2-review-2\naction_v2_sha256:fbe24a72b06929ff648c49d9121e634108aae7f6cd389f2a2a20dd7462521f6e"
+    },
+    {
+      "id": "freeze_artifacts:user-scenarios-s2-tracker-projection:2026-10-10T08:42:38.930Z",
+      "at": "2026-10-10T08:42:38.930Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/user-scenarios-s2-tracker-projection.intent.json"
+    },
+    {
+      "id": "record_approval:user-scenarios-s2-tracker-projection:2026-10-10T08:42:50.718Z",
+      "at": "2026-10-10T08:42:50.718Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2073069e\naction_v2_sha256:78314206dd49529db426bd676c8e0d092e24af82cc7d8476ae3ba274d588eebe",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-24303a0939c56be6",
+        "issued_at": "2026-10-10T08:42:50.718Z"
+      }
+    },
+    {
+      "id": "request_rework:user-scenarios-s2-tracker-projection:2026-10-10T09:21:42.981Z",
+      "at": "2026-10-10T09:21:42.981Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_9\naction_v2_sha256:5265e1a23799e0492c0a400f63a7873cd83aa50271e2ad9c2fadd75e1c2eb1ec",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-9f9e1d49d50da303",
+        "issued_at": "2026-10-10T09:21:42.981Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:user-scenarios-s2-tracker-projection:2026-10-10T09:24:44.982Z",
+      "at": "2026-10-10T09:24:44.982Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_5\naction_v2_sha256:6878eafd35ee903b8f53a993a9ebc7824fd0111b84bb50adc80ae8fb886ede35",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-ec7f53bf68f05cc9",
+        "issued_at": "2026-10-10T09:24:45.449Z"
+      }
+    },
+    {
+      "id": "resolve_finding:user-scenarios-s2-tracker-projection:2026-10-10T09:24:56.629Z",
+      "at": "2026-10-10T09:24:56.629Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-03100075d19d-1-review-1\naction_v2_sha256:270164ce98ff2086db653cbe41375df3d9f428664d6508839b5f19ca6dc3e2b1"
+    },
+    {
+      "id": "freeze_artifacts:user-scenarios-s2-tracker-projection:2026-10-10T09:25:00.903Z",
+      "at": "2026-10-10T09:25:00.903Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/user-scenarios-s2-tracker-projection.intent.json"
+    },
+    {
+      "id": "record_approval:user-scenarios-s2-tracker-projection:2026-10-10T09:25:13.780Z",
+      "at": "2026-10-10T09:25:13.780Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-41823cdc\naction_v2_sha256:5f7831392601953186ffb3b5fb57f86c21e158d8910d6cea100c4d5c286e400b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d9ee72d215d2afa9",
+        "issued_at": "2026-10-10T09:25:13.780Z"
+      }
+    },
+    {
+      "id": "request_rework:user-scenarios-s2-tracker-projection:2026-10-10T09:28:37.137Z",
+      "at": "2026-10-10T09:28:37.137Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_10\naction_v2_sha256:42345c8df07e183d8fce2460764cdd3a59d93d56b716bab61371c8b4f03aafec",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-68b6b63ff28c7b4b",
+        "issued_at": "2026-10-10T09:28:37.138Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:user-scenarios-s2-tracker-projection:2026-10-10T09:30:43.665Z",
+      "at": "2026-10-10T09:30:43.665Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_6\naction_v2_sha256:5f4b89d99fa99c06acd82c1a1846d6cd278c519f46ada5327f25581cbc62dda3",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-ab20e255dfb343d0",
+        "issued_at": "2026-10-10T09:30:44.172Z"
+      }
+    },
+    {
+      "id": "resolve_finding:user-scenarios-s2-tracker-projection:2026-10-10T09:30:54.280Z",
+      "at": "2026-10-10T09:30:54.280Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-70c5326a5681-1-review-1\naction_v2_sha256:a979f618ded74b735ebcb751d0e8c44745cd2fe9fd6ef880919eea6cfda883bb"
+    },
+    {
+      "id": "freeze_artifacts:user-scenarios-s2-tracker-projection:2026-10-10T09:30:58.586Z",
+      "at": "2026-10-10T09:30:58.586Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/user-scenarios-s2-tracker-projection.intent.json"
+    },
+    {
+      "id": "record_approval:user-scenarios-s2-tracker-projection:2026-10-10T09:31:12.101Z",
+      "at": "2026-10-10T09:31:12.101Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-eb14ad7d\naction_v2_sha256:8e45eebee557a526f7413011514bbe5bf939c8b1e279eeb82bce6cf93c6d41ff",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-86d1f40c71399097",
+        "issued_at": "2026-10-10T09:31:12.101Z"
+      }
+    },
+    {
+      "id": "request_rework:user-scenarios-s2-tracker-projection:2026-10-10T09:34:38.596Z",
+      "at": "2026-10-10T09:34:38.596Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_11\naction_v2_sha256:8438ab4d2fcf05ccd50897f54c25314cf9a19ea9def49ca1e826fb325b78b995",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-ca2e6c244f00a04d",
+        "issued_at": "2026-10-10T09:34:38.596Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:user-scenarios-s2-tracker-projection:2026-10-10T09:35:44.913Z",
+      "at": "2026-10-10T09:35:44.913Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_7\naction_v2_sha256:bae425df55137c09448304063247a9e8b332c1b84dcd358149317ae4a3c2a6fa",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-8f9e4546d8a1bc14",
+        "issued_at": "2026-10-10T09:35:45.495Z"
+      }
+    },
+    {
+      "id": "resolve_finding:user-scenarios-s2-tracker-projection:2026-10-10T09:35:56.810Z",
+      "at": "2026-10-10T09:35:56.810Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-922a65e2b4bc-1-review-1\naction_v2_sha256:938b149eddad000964671a0c2afc7f259a3ced8e2d507c9580ce982da4208c89"
+    },
+    {
+      "id": "freeze_artifacts:user-scenarios-s2-tracker-projection:2026-10-10T09:36:02.050Z",
+      "at": "2026-10-10T09:36:02.050Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/user-scenarios-s2-tracker-projection.intent.json"
+    },
+    {
+      "id": "record_approval:user-scenarios-s2-tracker-projection:2026-10-10T09:36:19.137Z",
+      "at": "2026-10-10T09:36:19.137Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-282bcfe2\naction_v2_sha256:d658539691fa37e5098e63aa300f9b4f3fba60d1818c01de105895c1048c53de",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-3db79f77115e1efe",
+        "issued_at": "2026-10-10T09:36:19.138Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:user-scenarios-s2-tracker-projection:2026-10-10T09:46:49.256Z",
+      "at": "2026-10-10T09:46:49.256Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "intent_revision_8\naction_v2_sha256:4fe2a28579450d9e7ced656762c908fd0265dd188d39e5c529400bb2dcb2135f",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-85caff5a033c0cc9",
+        "issued_at": "2026-10-10T09:46:49.696Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:user-scenarios-s2-tracker-projection:2026-10-10T09:47:12.391Z",
+      "at": "2026-10-10T09:47:12.391Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/user-scenarios-s2-tracker-projection.intent.json"
+    },
+    {
+      "id": "record_approval:user-scenarios-s2-tracker-projection:2026-10-10T09:47:24.289Z",
+      "at": "2026-10-10T09:47:24.289Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-15a352ed\naction_v2_sha256:f46deab22bd22f5ba3cbc7796fc1ac34f9d7460dd3cc046761abedd966adc130",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-67162442d8145b4a",
+        "issued_at": "2026-10-10T09:47:24.289Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:user-scenarios-s2-tracker-projection:2026-10-10T09:55:32.779Z",
+      "at": "2026-10-10T09:55:32.779Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "intent_revision_9\naction_v2_sha256:fd243e1140d9ed61c7e7ceef403e03c5aa7fe9a8bdd25963709db34f72f4614f",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-e0f07fdbc08717aa",
+        "issued_at": "2026-10-10T09:55:33.224Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:user-scenarios-s2-tracker-projection:2026-10-10T09:55:53.877Z",
+      "at": "2026-10-10T09:55:53.877Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/user-scenarios-s2-tracker-projection.intent.json"
+    },
+    {
+      "id": "record_approval:user-scenarios-s2-tracker-projection:2026-10-10T09:56:05.900Z",
+      "at": "2026-10-10T09:56:05.900Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-fa9a8eda\naction_v2_sha256:d5aacc95fa1ac4917e1a2fdfabc08efad06d9e323040bb79ad78015a479438b5",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-ad9681b4ed42efe2",
+        "issued_at": "2026-10-10T09:56:05.900Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:user-scenarios-s2-tracker-projection:2026-10-10T10:00:29.991Z",
+      "at": "2026-10-10T10:00:29.991Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "intent_revision_10\naction_v2_sha256:23bc2092bdc8a0455061d419f3fc3573774812d4d45e51a9ac6469a04be1f865",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-2104a61c44b5986d",
+        "issued_at": "2026-10-10T10:00:30.446Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:user-scenarios-s2-tracker-projection:2026-10-10T10:00:41.040Z",
+      "at": "2026-10-10T10:00:41.040Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/user-scenarios-s2-tracker-projection.intent.json"
+    },
+    {
+      "id": "record_approval:user-scenarios-s2-tracker-projection:2026-10-10T10:00:53.100Z",
+      "at": "2026-10-10T10:00:53.100Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-72678678\naction_v2_sha256:91ee45b2517b9f58fa4a5ff596c0722ce2fcdad2a49862fabc7fa427b6cf79bd",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-bec4d33e5b092e72",
+        "issued_at": "2026-10-10T10:00:53.100Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:user-scenarios-s2-tracker-projection:2026-10-10T10:08:11.148Z",
+      "at": "2026-10-10T10:08:11.148Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "intent_revision_11\naction_v2_sha256:a563db40253c262e6bd323dd986fd781e9ec98f5d209db18aa83a40c4269953c",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-bef4692bd2cbe99d",
+        "issued_at": "2026-10-10T10:08:11.594Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:user-scenarios-s2-tracker-projection:2026-10-10T10:08:24.891Z",
+      "at": "2026-10-10T10:08:24.891Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/user-scenarios-s2-tracker-projection.intent.json"
+    },
+    {
+      "id": "record_approval:user-scenarios-s2-tracker-projection:2026-10-10T10:08:37.447Z",
+      "at": "2026-10-10T10:08:37.447Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-07653d40\naction_v2_sha256:dd123f1a216607cf7fac4016ec16086e5512583be221f18cde9bb0fa949de54b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-62366156dc15c116",
+        "issued_at": "2026-10-10T10:08:37.447Z"
+      }
+    },
+    {
+      "id": "record_approval:user-scenarios-s2-tracker-projection:2026-10-10T10:17:15.805Z",
+      "at": "2026-10-10T10:17:15.805Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5ea86f9a\naction_v2_sha256:2b6b8d497c3d2f7c6ecff13e7cc64a8168371986f6cf2740d93597bb7925142d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-06e1eaa17f726088",
+        "issued_at": "2026-10-10T10:17:15.805Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:user-scenarios-s2-tracker-projection:2026-10-10T10:19:47.495Z",
+      "at": "2026-10-10T10:19:47.495Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "intent_revision_13\naction_v2_sha256:f94a30a6a5e91448364f98ec8b235f65560e7ce9ce07c6bb8d91710dfd49f668",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-4a5b3fe883d08b10",
+        "issued_at": "2026-10-10T10:19:48.029Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:user-scenarios-s2-tracker-projection:2026-10-10T10:20:00.339Z",
+      "at": "2026-10-10T10:20:00.339Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/user-scenarios-s2-tracker-projection.intent.json"
+    },
+    {
+      "id": "record_approval:user-scenarios-s2-tracker-projection:2026-10-10T10:20:12.890Z",
+      "at": "2026-10-10T10:20:12.890Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ad78e4e6\naction_v2_sha256:3d490ec2f410a87f549806d1a1dcde6a356c750439067a97f81c2aa0eb748c6a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-03cececab5259430",
+        "issued_at": "2026-10-10T10:20:12.890Z"
+      }
+    },
+    {
+      "id": "request_rework:user-scenarios-s2-tracker-projection:2026-10-10T10:23:46.019Z",
+      "at": "2026-10-10T10:23:46.019Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_12\naction_v2_sha256:3da9b5e7eb299236201b3ea9b093d998f33db068e0d460e0cd5e6d1b8fd684ea",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-5ba6995c20116dc1",
+        "issued_at": "2026-10-10T10:23:46.019Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:user-scenarios-s2-tracker-projection:2026-10-10T10:29:28.483Z",
+      "at": "2026-10-10T10:29:28.483Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_14\naction_v2_sha256:68da348f848e673254ab8e6c2617cfe43bc40f1850fcca79a60ea3041de72207",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-eb5b9493153f8f34",
+        "issued_at": "2026-10-10T10:29:28.922Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:user-scenarios-s2-tracker-projection:2026-10-10T10:31:05.691Z",
+      "at": "2026-10-10T10:31:05.691Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_15\naction_v2_sha256:8a617c256a48a1bee8efc98cafeb9d9fa18c1427dea588139afaa0080d53f78f",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-74f08cf75e2e6eaa",
+        "issued_at": "2026-10-10T10:31:06.124Z"
+      }
+    },
+    {
+      "id": "resolve_finding:user-scenarios-s2-tracker-projection:2026-10-10T10:31:23.604Z",
+      "at": "2026-10-10T10:31:23.604Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-5c621d61267e-1-review-1\naction_v2_sha256:996e1496ac4b72a4872e8324a3cb7c95dbb274cdba7729592e74fc8ce8d17079"
+    },
+    {
+      "id": "freeze_artifacts:user-scenarios-s2-tracker-projection:2026-10-10T10:31:27.868Z",
+      "at": "2026-10-10T10:31:27.868Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/user-scenarios-s2-tracker-projection.intent.json"
+    },
+    {
+      "id": "record_approval:user-scenarios-s2-tracker-projection:2026-10-10T10:31:40.631Z",
+      "at": "2026-10-10T10:31:40.631Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-bda6227f\naction_v2_sha256:9813bbd52ac25abad13fd23ebb9d9d5259a28314981b4a52e134982dd78b2a6f",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-1bd54b9786b37dcf",
+        "issued_at": "2026-10-10T10:31:40.631Z"
+      }
+    },
+    {
+      "id": "record_approval:user-scenarios-s2-tracker-projection:2026-10-10T10:35:57.590Z",
+      "at": "2026-10-10T10:35:57.590Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-b5f77eb4\naction_v2_sha256:8a9053ea8c2b3419a9d2a02615d062f2b8229fca846488e318b83b3941b40d54",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-675d0a5e9c8dd875",
+        "issued_at": "2026-10-10T10:35:57.590Z"
+      }
+    },
+    {
+      "id": "complete:user-scenarios-s2-tracker-projection:2026-10-10T10:35:58.914Z",
+      "at": "2026-10-10T10:35:58.914Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:213cca96b307e9d74dd9fb5d6393f1c810d12f397f509907a69530471138f1fb"
+    }
+  ]
+}

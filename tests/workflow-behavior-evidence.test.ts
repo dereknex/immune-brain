@@ -20,11 +20,16 @@ const cohortPath = "tests/fixtures/workflow-decision-closure-benchmark.json";
 const evidencePath = "tests/fixtures/workflow-decision-closure-evidence.json";
 const historicalPlannerPath = "tests/fixtures/workflow-decision-closure-sources/imm-planner.md";
 const plannerPath = "plugins/immune-brain/dist/imm-planner.md";
+const historicalBrainstormPath = "tests/fixtures/workflow-decision-closure-sources/imm-brainstorm.md";
+const brainstormPath = "plugins/immune-brain/dist/imm-brainstorm.md";
 
-// The cohort predates later Planner changes. Re-hash preserved source bytes,
+// The cohort predates later contract changes. Re-hash preserved source bytes,
 // never replace the measured digest with a digest of today's contract.
 function measuredSource(path: string): string {
-	return resolve(repoRoot, path === plannerPath ? historicalPlannerPath : path);
+	const preserved = path === plannerPath ? historicalPlannerPath
+		: path === brainstormPath ? historicalBrainstormPath
+		: path;
+	return resolve(repoRoot, preserved);
 }
 
 const readJson = (path: string): Document =>

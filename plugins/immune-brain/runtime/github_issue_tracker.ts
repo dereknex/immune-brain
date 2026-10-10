@@ -8,6 +8,8 @@ const PROTOCOL_MARKER = "<!-- immune-brain-tracker:v1 -->";
 const KIND_INITIATIVE_MARKER = "<!-- immune-brain:kind=initiative -->";
 const KIND_TASK_MARKER = "<!-- immune-brain:kind=task -->";
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+/** Public scenario identity: an upstream Brainstorm id or a Spec-local id. */
+const SCENARIO_ID_PATTERN = /^(?:BR-SCN|SCN)-[1-9][0-9]{0,8}$/;
 const MAX_GH_OUTPUT = 8 * 1024 * 1024;
 const MAX_DIAGNOSTIC = 512;
 const GH_TIMEOUT_MS = 20_000;
@@ -62,6 +64,23 @@ export interface InitiativeProjection {
 	out_of_scope?: string[];
 }
 
+/**
+ * One user scenario projected onto the Task that first makes it observable.
+ * Public projection only: it never widens TaskIntent scope or authority.
+ */
+export interface InitiativeTaskScenario {
+	id: string;
+	actor: string;
+	given: string;
+	when: string;
+	then: string;
+	mode: "automated" | "manual";
+	/** Canonical acceptance IDs this scenario maps to. Required for automated; optional for manual. */
+	acceptance?: string[];
+	/** Why a deterministic check cannot prove this scenario. Required for manual. */
+	manual_reason?: string;
+}
+
 export interface InitiativePublicationInput {
 	initiative_id: string;
 	goal: string;
@@ -71,6 +90,8 @@ export interface InitiativePublicationInput {
 		intent: string;
 		acceptance: Array<{ id: string; summary: string }>;
 		projection?: TaskProjection;
+		/** Optional. Omitted or empty renders no User scenarios section for this Task. */
+		scenarios?: InitiativeTaskScenario[];
 	}>;
 	/**
 	 * Explicit amendment input: binds the caller's desired pending frontier to
@@ -179,6 +200,15 @@ export type TrackerOperation =
 		goal: string;
 		slices: InitiativeSlice[];
 		projection?: InitiativeProjection;
+		/** Derived Parent listing. Absent or empty renders no User scenarios section. */
+		scenarios?: Array<{
+			slice_id: string;
+			id: string;
+			mode: "automated" | "manual";
+			when: string;
+			then: string;
+			manual_reason?: string;
+		}>;
 	}
 	| {
 		op: "upsert-task";
@@ -191,6 +221,8 @@ export type TrackerOperation =
 		projection?: TaskProjection;
 		/** The canonical TaskIntent content hash this Task was prepared from. */
 		intent_hash?: string;
+		/** Public scenarios owned by this Task. Absent renders no User scenarios section. */
+		scenarios?: InitiativeTaskScenario[];
 	}
 	| {
 		op: "mark-terminal";
@@ -270,7 +302,7 @@ function countLiteral(value: string, needle: string): number {
 	return count;
 }
 
-function marker(name: "repo-id" | "initiative-id" | "task-id" | "slice-id" | "intent-hash", value: string | number): string {
+function marker(name: "repo-id" | "initiative-id" | "task-id" | "slice-id" | "intent-hash" | "scenarios", value: string | number): string {
 	return `<!-- immune-brain:${name}=${value} -->`;
 }
 
@@ -730,8 +762,9 @@ function stripPublishedIntentHash(body: string): string {
 	return body.replace(/<!-- immune-brain:intent-hash=[A-Za-z0-9][A-Za-z0-9._:-]{0,127} -->\n?/g, "");
 }
 
-function ownershipMarkerValue(body: string, name: "initiative-id" | "slice-id" | "task-id"): string | null {
-	const values = [...body.matchAll(new RegExp(`<!-- immune-brain:${name}=([A-Za-z0-9][A-Za-z0-9._-]{0,127}) -->`, "g"))];
+function ownershipMarkerValue(body: string, name: "initiative-id" | "slice-id" | "task-id" | "scenarios"): string | null {
+	const pattern = name === "scenarios" ? "[A-Za-z0-9%_!*'()~.-]+" : "[A-Za-z0-9][A-Za-z0-9._-]{0,127}";
+	const values = [...body.matchAll(new RegExp(`<!-- immune-brain:${name}=(${pattern}) -->`, "g"))];
 	return values.length === 1 ? values[0][1] : null;
 }
 
@@ -953,6 +986,160 @@ function listText(values: string[] | undefined, fallback: string): string {
 	return values?.length ? values.map((value) => `- ${value}`).join("\n") : fallback;
 }
 
+/**
+ * Child section after Acceptance criteria. Empty input returns "" so a Task
+ * without scenarios, and a publication with none at all, stays byte-identical.
+ */
+function childScenarioSection(scenarios: InitiativeTaskScenario[] | undefined): string {
+	if (!scenarios?.length) return "";
+	const items = scenarios.map((scenario) => {
+		const mapped = scenario.acceptance?.length ? scenario.acceptance.map((id) => `\`${id}\``).join(", ") : "none";
+		const visible = `Actor: ${scenario.actor}. Given: ${scenario.given}. When: ${scenario.when}. Then: ${scenario.then}.`;
+		if (scenario.mode === "manual")
+			return `- [ ] \`${scenario.id}\` (manual, ${mapped}): ${visible} Reason: ${scenario.manual_reason}.`;
+		return `- \`${scenario.id}\` (automated, ${mapped}): ${visible}`;
+	});
+	return `\n## User scenarios\n\n${items.join("\n")}\n`;
+}
+
+/**
+ * Parent listing after Testing strategy, derived from the Tasks. One plain
+ * bullet per scenario; no checkboxes. Empty input returns "".
+ */
+function parentScenarioSection(scenarios: Array<{ slice_id: string; id: string; mode: "automated" | "manual"; actor?: string; given?: string; when: string; then: string; manual_reason?: string }> | undefined): string {
+	if (!scenarios?.length) return "";
+	const items = scenarios.map((scenario) => {
+		const prefix = scenario.actor && scenario.given ? `Actor: ${scenario.actor}. Given: ${scenario.given}. ` : "";
+		const reason = scenario.manual_reason ? ` Reason: ${scenario.manual_reason}.` : "";
+		return `- \`${scenario.id}\` (Slice \`${scenario.slice_id}\`, ${scenario.mode}): ${prefix}When: ${scenario.when}. Then: ${scenario.then}.${reason}`;
+	});
+	return `\n## User scenarios\n\n${items.join("\n")}\n`;
+}
+
+
+type HistoricalScenarioListing = InitiativeTaskScenario & { slice_id: string };
+
+/**
+ * Read the Parent listings already published by historical Children. Their
+ * Child bytes stay untouched, but an amendment must keep those listings and
+ * reserve their IDs before it rebuilds the Parent or accepts pending input.
+ */
+function historicalScenarioListings(children: Iterable<{ body?: unknown }>): HistoricalScenarioListing[] | string {
+	const listings: HistoricalScenarioListing[] = [];
+	for (const child of children) {
+		if (typeof child.body !== "string") continue;
+		const sliceId = ownershipMarkerValue(child.body, "slice-id");
+		if (!sliceId) continue;
+		const markerStarts = [...child.body.matchAll(/<!-- immune-brain:scenarios=/g)].length;
+		if (markerStarts > 1) return `historical Slice ${sliceId} has duplicate scenarios markers`;
+		const encoded = ownershipMarkerValue(child.body, "scenarios");
+		if (encoded === null) {
+			if (markerStarts === 0) continue;
+			return `historical Slice ${sliceId} has a malformed scenarios marker`;
+		}
+		const malformed = `historical Slice ${sliceId} has a malformed scenarios marker`;
+		let decoded: unknown;
+		try { decoded = JSON.parse(decodeURIComponent(encoded)); }
+		catch { return malformed; }
+		let scenarios: InitiativeTaskScenario[] | undefined;
+		try { scenarios = normalizeTaskScenarios(decoded, `historical Slice ${sliceId}`, undefined, new Set()); }
+		catch { return malformed; }
+		// The marker is the only source of historical scenarios, so it must hold
+		// exactly what the publish path writes for these values: the same
+		// validator, re-encoded byte for byte. Anything else is an unamendable
+		// Child, and the batch is rejected before any remote write.
+		if (scenarios === undefined || encodeURIComponent(JSON.stringify(scenarios)) !== encoded) return malformed;
+		for (const scenario of scenarios) listings.push({ ...scenario, slice_id: sliceId });
+	}
+	return listings;
+}
+
+function retainHistoricalScenarioIds(children: Iterable<{ body?: unknown }>, seenScenarioIds = new Set<string>()): string | null {
+	const listings = historicalScenarioListings(children);
+	if (typeof listings === "string") return listings;
+	for (const listing of listings) {
+		if (seenScenarioIds.has(listing.id)) return `historical Slice ${listing.slice_id} repeats scenario id ${listing.id}`;
+		seenScenarioIds.add(listing.id);
+	}
+	return null;
+}
+
+/**
+ * Reject the whole batch, before any remote write, when a scenario is malformed
+ * or names an acceptance ID its TaskIntent lacks. Text uses the same public
+ * projection rules as every other projected field. When `acceptanceIds` is
+ * omitted the TaskIntent-bound existence check is skipped, which is what the
+ * historical read-back needs: a published marker already passed it once.
+ */
+function normalizeTaskScenarios(
+	value: unknown,
+	taskId: string,
+	acceptanceIds: Set<string> | undefined,
+	seenScenarioIds: Set<string>,
+): InitiativeTaskScenario[] | undefined {
+	if (value === undefined) return undefined;
+	if (!Array.isArray(value)) throw new Error(`Task ${taskId} scenarios must be an array`);
+	if (value.length === 0) return undefined;
+	return value.map((item, index) => {
+		const name = `Task ${taskId} scenarios[${index}]`;
+		if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error(`${name} must be an object`);
+		const raw = item as Record<string, unknown>;
+		const required = ["id", "actor", "given", "when", "then", "mode"] as const;
+		for (const field of required) {
+			if (raw[field] === undefined) throw new Error(`${name} is missing ${field}`);
+		}
+		const id = typeof raw.id === "string" && SCENARIO_ID_PATTERN.test(raw.id) ? raw.id : null;
+		if (!id) throw new Error(`${name} id must match BR-SCN-<n> or SCN-<n>`);
+		if (seenScenarioIds.has(id)) throw new Error(`Task ${taskId} repeats scenario id ${id}`);
+		seenScenarioIds.add(id);
+		if (raw.mode !== "automated" && raw.mode !== "manual")
+			throw new Error(`${name} mode must be automated or manual`);
+		const acceptance = raw.acceptance === undefined
+			? undefined
+			: normalizedList(raw.acceptance, `${name}.acceptance`, 128)?.map((acceptanceId) => identifier(acceptanceId, `${name}.acceptance`));
+		if (acceptance && new Set(acceptance).size !== acceptance.length)
+			throw new Error(`${name} repeats an acceptance id`);
+		for (const acceptanceId of acceptance ?? []) {
+			if (acceptanceIds && !acceptanceIds.has(acceptanceId))
+				throw new Error(`Task ${taskId} scenario ${id} names unknown acceptance id ${acceptanceId}`);
+		}
+		if (raw.mode === "automated" && !acceptance?.length)
+			throw new Error(`Task ${taskId} scenario ${id} is automated with no acceptance id`);
+		if (raw.mode === "manual" && raw.manual_reason === undefined)
+			throw new Error(`Task ${taskId} scenario ${id} is manual without manual_reason`);
+		const scenario: InitiativeTaskScenario = {
+			id,
+			actor: projectionText(raw.actor, `${name}.actor`, 500),
+			given: projectionText(raw.given, `${name}.given`, 500),
+			when: projectionText(raw.when, `${name}.when`, 500),
+			then: projectionText(raw.then, `${name}.then`, 500),
+			mode: raw.mode,
+			...(acceptance ? { acceptance } : {}),
+			...(raw.manual_reason === undefined ? {} : { manual_reason: projectionText(raw.manual_reason, `${name}.manual_reason`, 500) }),
+		};
+		// The historical read-back re-applies these rules to the stored values, so
+		// each one must survive its own projection a second time. Escaping can grow
+		// a value past its bound and a restricted-context acceptance ID passes the
+		// pending path; either would make a published Child unamendable.
+		const roundTrip: Array<[string, string]> = [
+			["actor", scenario.actor],
+			["given", scenario.given],
+			["when", scenario.when],
+			["then", scenario.then],
+			...(scenario.manual_reason === undefined ? [] : [["manual_reason", scenario.manual_reason] as [string, string]]),
+		];
+		for (const [label, value] of roundTrip) {
+			if (projectionText(value, `${name}.${label}`, 500) !== value)
+				throw new Error(`${name}.${label} fails the public-projection round-trip`);
+		}
+		for (const acceptanceId of acceptance ?? []) {
+			if (projectionText(acceptanceId, `${name}.acceptance`, 128) !== acceptanceId || identifier(acceptanceId, `${name}.acceptance`) !== acceptanceId)
+				throw new Error(`${name}.acceptance fails the public-projection round-trip`);
+		}
+		return scenario;
+	});
+}
+
 function bodyLimitFailure(operation: TrackerOperation["op"], body: string, reserve = 0): GithubTrackerResult | null {
 	return Buffer.byteLength(body, "utf8") + reserve <= GITHUB_ISSUE_BODY_LIMIT
 		? null
@@ -973,7 +1160,7 @@ function createInitiativeBody(
 		KIND_INITIATIVE_MARKER,
 		marker("repo-id", repository.id),
 		marker("initiative-id", operation.initiative_id),
-	].join("\n")}\n\n${provenance}## How to use this Issue\n\n- Edit planning prose and Slice ordering directly after creation.\n- Keep each Slice marker attached to exactly one stable Slice entry.\n- The tracker never rewrites this Parent after creation; the tracker closes it as completed once every Slice Child is completed, and never closes it otherwise.\n\n## Problem\n\n${publicText(projection.problem ?? "The Initiative addresses the bounded delivery described below.", "projection.problem")}\n\n## Result\n\n${publicText(projection.result ?? operation.goal, "projection.result")}\n\n## Initiative design\n\n${publicText(projection.design ?? "Each Child preserves the shared Initiative decisions and boundaries recorded here.", "projection.design")}\n\n## Decisions\n\n${listText(projection.decisions, "- No additional Initiative decisions recorded.")}\n\n## Testing strategy\n\n${publicText(projection.testing_strategy ?? "Each Child closes from its focused acceptance verification.", "projection.testing_strategy")}\n\n## Out of scope\n\n${listText(projection.out_of_scope, "- Unrelated work outside this Initiative.")}\n\n## Slices\n\n${operation.slices.length + historicalSlices.length === 0 ? "No Slices recorded yet." : [...historicalSlices, ...operation.slices.map((slice) => `- [ ] ${marker("slice-id", slice.id)} **${slice.id}**: ${slice.result ?? slice.goal}${slice.blocked_by?.length ? ` (blocked by: ${slice.blocked_by.join(", ")})` : ""}`)].join("\n")}\n\n${ISSUE_FOOTER}\n`;
+	].join("\n")}\n\n${provenance}## How to use this Issue\n\n- Edit planning prose and Slice ordering directly after creation.\n- Keep each Slice marker attached to exactly one stable Slice entry.\n- The tracker never rewrites this Parent after creation; the tracker closes it as completed once every Slice Child is completed, and never closes it otherwise.\n\n## Problem\n\n${publicText(projection.problem ?? "The Initiative addresses the bounded delivery described below.", "projection.problem")}\n\n## Result\n\n${publicText(projection.result ?? operation.goal, "projection.result")}\n\n## Initiative design\n\n${publicText(projection.design ?? "Each Child preserves the shared Initiative decisions and boundaries recorded here.", "projection.design")}\n\n## Decisions\n\n${listText(projection.decisions, "- No additional Initiative decisions recorded.")}\n\n## Testing strategy\n\n${publicText(projection.testing_strategy ?? "Each Child closes from its focused acceptance verification.", "projection.testing_strategy")}\n${parentScenarioSection(operation.scenarios)}\n## Out of scope\n\n${listText(projection.out_of_scope, "- Unrelated work outside this Initiative.")}\n\n## Slices\n\n${operation.slices.length + historicalSlices.length === 0 ? "No Slices recorded yet." : [...historicalSlices, ...operation.slices.map((slice) => `- [ ] ${marker("slice-id", slice.id)} **${slice.id}**: ${slice.result ?? slice.goal}${slice.blocked_by?.length ? ` (blocked by: ${slice.blocked_by.join(", ")})` : ""}`)].join("\n")}\n\n${ISSUE_FOOTER}\n`;
 }
 
 async function createInitiative(
@@ -1056,7 +1243,8 @@ function childBody(
 		// idempotent replay can compare against what was actually published
 		// instead of against whatever bytes it happens to read this time.
 		...(operation.intent_hash ? [marker("intent-hash", operation.intent_hash)] : []),
-	].join("\n")}\n\n## Parent\n\n| Initiative | \`${operation.initiative_id}\` |\n| Parent Issue | [#${parent.number}](${parent.url}) |\n| Slice | \`${operation.slice_id}\` |\n| Risk | \`${operation.risk}\` |\n\n## Current behavior\n\n${publicText(projection.current_behavior ?? "The current behavior is defined by the repository's existing contract.", "projection.current_behavior")}\n\n## Desired behavior\n\n${publicText(projection.desired_behavior ?? projection.result ?? operation.goal, "projection.desired_behavior")}\n\n## Key interfaces\n\n${listText(projection.key_interfaces, "- Canonical TaskIntent acceptance and Kernel lifecycle remain authoritative.")}\n\n## Acceptance criteria\n\n${acceptance}\n\n## Verification\n\n${publicText(projection.verification ?? "Run the focused acceptance verification declared by the TaskIntent.", "projection.verification")}\n\n## Blocked by\n\n${projection.blocked_by?.length ? projection.blocked_by.map((id) => `- \`${identifier(id, "blocked_by task_id")}\``).join("\n") : "None"}\n\n## Out of scope\n\n${listText(projection.out_of_scope, "- Scope not declared by the validated TaskIntent.")}\n\n## Agent handoff\n\n${publicText(projection.agent_handoff ?? "Implement only the bounded TaskIntent result and run the focused checks. Do not widen scope or treat GitHub as authorization.", "projection.agent_handoff")}\n\n${ISSUE_FOOTER}\n`;
+		...(operation.scenarios?.length ? [marker("scenarios", encodeURIComponent(JSON.stringify(operation.scenarios)))] : []),
+	].join("\n")}\n\n## Parent\n\n| Initiative | \`${operation.initiative_id}\` |\n| Parent Issue | [#${parent.number}](${parent.url}) |\n| Slice | \`${operation.slice_id}\` |\n| Risk | \`${operation.risk}\` |\n\n## Current behavior\n\n${publicText(projection.current_behavior ?? "The current behavior is defined by the repository's existing contract.", "projection.current_behavior")}\n\n## Desired behavior\n\n${publicText(projection.desired_behavior ?? projection.result ?? operation.goal, "projection.desired_behavior")}\n\n## Key interfaces\n\n${listText(projection.key_interfaces, "- Canonical TaskIntent acceptance and Kernel lifecycle remain authoritative.")}\n\n## Acceptance criteria\n\n${acceptance}\n${childScenarioSection(operation.scenarios)}\n## Verification\n\n${publicText(projection.verification ?? "Run the focused acceptance verification declared by the TaskIntent.", "projection.verification")}\n\n## Blocked by\n\n${projection.blocked_by?.length ? projection.blocked_by.map((id) => `- \`${identifier(id, "blocked_by task_id")}\``).join("\n") : "None"}\n\n## Out of scope\n\n${listText(projection.out_of_scope, "- Scope not declared by the validated TaskIntent.")}\n\n## Agent handoff\n\n${publicText(projection.agent_handoff ?? "Implement only the bounded TaskIntent result and run the focused checks. Do not widen scope or treat GitHub as authorization.", "projection.agent_handoff")}\n\n${ISSUE_FOOTER}\n`;
 }
 
 /** Derived approved-final content and baseline-derived historical evidence for an amendment. */
@@ -1094,6 +1282,26 @@ function approvedAmendmentContent(
 			blocked_by: operation.projection?.blocked_by,
 		})),
 	}) as Extract<TrackerOperation, { op: "create-initiative" }>;
+	const historicalScenarios = historicalScenarioListings([...amendment.historical.values()].map((binding) => ({ body: binding.body })));
+	if (typeof historicalScenarios === "string") return historicalScenarios;
+	parent.scenarios = [
+		...historicalScenarios.map((scenario) => ({
+			slice_id: scenario.slice_id,
+			id: scenario.id,
+			mode: scenario.mode,
+			when: scenario.when,
+			then: scenario.then,
+			...(typeof scenario.manual_reason === "string" ? { manual_reason: scenario.manual_reason } : {}),
+		})),
+		...prepared.order.flatMap((operation) =>
+			(operation.scenarios ?? []).map((scenario) => ({
+				slice_id: operation.slice_id,
+				id: scenario.id,
+				mode: scenario.mode,
+				when: scenario.when,
+				then: scenario.then,
+			}))),
+	];
 	const historicalSliceIds: Set<string> = new Set();
 	for (const child of amendment.historical.values()) {
 		const sliceId = ownershipMarkerValue(child.body, "slice-id");
@@ -1120,7 +1328,7 @@ function approvedAmendmentContent(
 	void sourceStub;
 	// The approved final Parent body fixes the Slices checklist, so every Child
 	// title is numbered from the Initiative order rather than from this batch.
-	const parentBody = createInitiativeBody(sourceStub.repository, parent, historicalSlices);
+	const parentBody = createInitiativeBody(sourceStub.repository, { ...parent, scenarios: parent.scenarios }, historicalSlices);
 	const oversizedParent = bodyLimitFailure("create-initiative", parentBody);
 	if (oversizedParent) return `${oversizedParent.status}: ${oversizedParent.message}`;
 	const pendingContent = new Map<string, { title: string; body: string }>();
@@ -1587,6 +1795,7 @@ function validateOperation(operation: TrackerOperation): TrackerOperation {
 				id: identifier(item.id, `acceptance[${index}].id`),
 				summary: projectionText(item.summary, `acceptance[${index}].summary`, 500),
 			})),
+			scenarios: operation.scenarios,
 		};
 		taskIssueTitle(normalized);
 		return normalized;
@@ -1727,10 +1936,16 @@ function preflightPublication(root: string, input: InitiativePublicationInput): 
 	// projection is stamped with them, so a missing or oversized display name
 	// fails the batch closed with zero remote writes.
 	const initiativeShortName = initiativeDisplayNames(input.projection).shortName;
+	const seenScenarioIds = new Set<string>();
+	if (input.amendment) {
+		const historicalBindings = (input.amendment.historical ?? []).map((child) => (child as { binding?: { body?: unknown } }).binding ?? {});
+		const historicalScenarioError = retainHistoricalScenarioIds(historicalBindings, seenScenarioIds);
+		if (historicalScenarioError) throw new Error(historicalScenarioError);
+	}
 	const publications = input.tasks.map((task, index) => {
 		if (!task || typeof task !== "object" || Array.isArray(task)) throw new Error(`tasks[${index}] must be an object`);
 		if (typeof task.intent !== "string") throw new Error(`tasks[${index}].intent must be a string`);
-		return taskPublication(root, input.initiative_id, task.slice_id, task.intent, task.acceptance, task.projection, index + 1, initiativeShortName);
+		return taskPublication(root, input.initiative_id, task.slice_id, task.intent, task.acceptance, task.projection, task.scenarios, index + 1, initiativeShortName, seenScenarioIds);
 	});
 	const historicalIds = new Set<string>();
 	if (input.amendment) {
@@ -1772,6 +1987,15 @@ function preflightPublication(root: string, input: InitiativePublicationInput): 
 			blocked_by: operation.projection?.blocked_by,
 		})),
 	}) as Extract<TrackerOperation, { op: "create-initiative" }>;
+	initiative.scenarios = operations.flatMap((operation) =>
+		(operation.scenarios ?? []).map((scenario) => ({
+			slice_id: operation.slice_id,
+			id: scenario.id,
+			mode: scenario.mode,
+			when: scenario.when,
+			then: scenario.then,
+		})),
+	);
 	const intentBindings = new Map(publications.map((publication) => [publication.operation.task_id, {
 		intent_path: publication.intent_path,
 		intent_content_hash: publication.intent_content_hash,
@@ -2874,8 +3098,10 @@ function taskPublication(
 	intentPath: string,
 	acceptance: unknown,
 	projection: TaskProjection | undefined,
+	scenarios: unknown,
 	ordinal: number,
 	initiativeShortName: string,
+	seenScenarioIds: Set<string>,
 ): PreparedPublicationTask {
 	const absoluteRoot = resolve(root);
 	const absolutePath = resolve(absoluteRoot, intentPath);
@@ -2901,6 +3127,7 @@ function taskPublication(
 	});
 	const missingIds = [...expectedIds].filter((id) => !publicById.has(id));
 	if (missingIds.length) throw new Error(`Task ${taskId} is missing public acceptance ids: ${missingIds.join(", ")}`);
+	const normalizedScenarios = normalizeTaskScenarios(scenarios, taskId, expectedIds, seenScenarioIds);
 	// Display names are stamped from the Initiative so every Child title carries
 	// the same short name and its declared Slice position; an explicitly
 	// supplied value must agree, never silently override.
@@ -2924,6 +3151,7 @@ function taskPublication(
 			acceptance: intent.acceptance.map((item) => publicById.get(item.id)!),
 			projection: stampedProjection,
 			intent_hash: read.content_hash,
+			scenarios: normalizedScenarios,
 		}) as Extract<TrackerOperation, { op: "upsert-task" }>,
 		intent_path: read.intent_ref.path,
 		intent_content_hash: read.content_hash,

@@ -1,0 +1,25 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "user-scenarios-s3-reviewer-coverage",
+  "owner": "user",
+  "goal": "Implement Slice S3 of Initiative user-acceptance-scenarios: the Reviewer prompt checks that delivered tests at an acceptance's agreed seam assert the Then of every automated user scenario the Spec maps to that acceptance, and reports a gap as an acceptance finding. Prompt source, its mirror, and the generated reviewer definition only; no new finding kind, verdict branch, or state.",
+  "acceptance": [
+    {
+      "id": "US-S3-A1",
+      "assertion": "Per T7 of docs/specs/user-acceptance-scenarios.spec.md (source: #186 D13): the code-review prompt states, beside the agreed-seam rule, that when the Spec referenced by an acceptance maps an automated scenario to it the Reviewer checks that the delivered tests at that acceptance's agreed seam assert the scenario's Then, and that a scenario whose observable result is asserted nowhere is a finding with violated kind acceptance and the acceptance ID as ref (positive); it states that a manual scenario and an acceptance with no mapped scenario produce no such finding, and it introduces no new finding kind or verdict (negative); and the role-prompt mirror and the generated reviewer agent definition match the source while the existing agreed-seam rule text is unchanged (bound).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-verification-invariants.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/user-scenarios-s3-reviewer-coverage.md",
+    "docs/plans/user-scenarios-s3-reviewer-coverage.intent.json",
+    "docs/specs/user-acceptance-scenarios.spec.md",
+    "plugins/immune-brain/agents/immune-brain-reviewer.md",
+    "plugins/immune-brain/dist/role-prompts/code-review.md",
+    "plugins/immune-brain/runtime/prompts/code-review.md",
+    "tests/claude-host-package.test.ts",
+    "tests/workflow-verification-invariants.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

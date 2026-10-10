@@ -191,6 +191,7 @@ describe("skill dist consistency", () => {
 		expect(framing).toContain("Do not ask the user to reconfirm decisions reflected without change");
 		expect(framing).toContain("Handoff Manifest");
 		expect(framing).toContain("`BR-REQ-*`");
+		expect(framing).toContain("`BR-SCN-*`");
 		expect(framing).toContain("If a decision delta is still unconfirmed");
 		expect(framing).toContain("omit the handoff manifest");
 		expect(framing).toContain("If gates pass: suggest `imm-planner`");
