@@ -12,6 +12,7 @@ import {
 	type NativeConfirmationPort,
 } from "./interaction";
 import { ClaudeReviewHost, FileHookEventLog, parseHookStdin } from "./review_host";
+import { laneGuardHookOutput } from "./lane_guard";
 import { ClaudeRuntime, type ToolMeta } from "./kernel_ports";
 import { parseLaneOffers, parseMaxParallel, resolveLaneParallel } from "../unattended/batch_lanes";
 import type { AssuranceCoordinatorPorts } from "../assurance/coordinator";
@@ -686,7 +687,15 @@ async function runHook(): Promise<void> {
 	const lines: string[] = [];
 	const rl = createInterface({ input: stdin });
 	for await (const line of rl) lines.push(line);
-	const event = parseHookStdin(lines.join("\n"));
+	const raw = lines.join("\n");
+	let payload: Record<string, unknown> | null = null;
+	try { payload = JSON.parse(raw) as Record<string, unknown>; } catch { payload = null; }
+	if (payload?.hook_event_name === "PreToolUse") {
+		const decision = laneGuardHookOutput(payload);
+		if (decision) process.stdout.write(`${decision}\n`);
+		return;
+	}
+	const event = parseHookStdin(raw);
 	if (!event) return;
 	new FileHookEventLog().append(event);
 }

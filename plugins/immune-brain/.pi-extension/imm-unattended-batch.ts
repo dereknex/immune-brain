@@ -22,7 +22,7 @@ import type { BatchRunnerGitPort } from "../runtime/unattended/batch_git";
 import type { InitiativeObservationReader } from "../runtime/unattended/types";
 import { advancePiTask } from "./imm-canary-work";
 import { batchReason } from "../runtime/unattended/batch_reasons";
-import { createBatchTrackerPort, parseLaneOffers, parseMaxParallel, resolveLaneParallel, type LaneOffer } from "../runtime/unattended/batch_lanes";
+import { createBatchTrackerPort, laneRuntimeContractRefusal, parseLaneOffers, parseMaxParallel, resolveLaneParallel, type LaneOffer } from "../runtime/unattended/batch_lanes";
 import {
 	authorizeBatch,
 	projectBatchPreflight,
@@ -174,6 +174,12 @@ export async function executePiUnattendedBatch(
 	const budget = preflight.projection.budget;
 	const planDigest = preflight.projection.plan_digest;
 	const recoveryChildren = preflight.projection.recovery_children;
+	// A new lane batch whose Lane runtime cannot read the coordinator's Kernel
+	// contracts is refused before the gate opens; a match adds nothing.
+	if (options.max_parallel !== undefined && !isResuming) {
+		const contractRefusal = laneRuntimeContractRefusal(root);
+		if (contractRefusal) return batchReason("batch_run_rejected", contractRefusal);
+	}
 
 	// 4. Literal-user gate plus the shared reuse decision, the post-gate
 	// claim/drift cascade, and the Batch Authorization binding. The Host supplies

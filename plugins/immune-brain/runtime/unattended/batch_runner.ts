@@ -115,6 +115,12 @@ export interface StartBatchInput {
 	 * projected.
 	 */
 	tracker?: BatchTrackerPort;
+	/**
+	 * Lane mode only: the plugin or runtime directory the Lane Executor Host
+	 * loads. Absent, the repository's own plugin source is compared when the
+	 * repository is the Immune-Brain package; otherwise nothing is compared.
+	 */
+	executor_runtime?: string;
 }
 
 /** The one tracker effect a lane batch may cause: closing an integrated child's Issue. */

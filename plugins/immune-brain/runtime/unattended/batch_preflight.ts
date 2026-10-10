@@ -26,7 +26,8 @@ import { pathMatchesScope } from "../workspace_scope";
 import { captureBatchReconfirmation, retainReconfirmation, ownUnpersistedBatchHead, type ReconfirmationSnapshot } from "./batch_reconfirmation";
 import { projectBatchPlan } from "./batch_plan";
 import { batchReason, type BatchReasonKey } from "./batch_reasons";
-import { BATCH_RUN_STATES, isLaneBatchRecord, isTerminalBatchState, readAnyBatchRunState, type AnyBatchRunStateRecord, type BatchRunStateRecord } from "./batch_state";
+import { BATCH_RUN_STATES, isLaneBatchRecord, isTerminalBatchState, readAnyBatchRunState, writeBatchLaneRunState, type AnyBatchRunStateRecord, type BatchRunStateRecord } from "./batch_state";
+import { restoreProvableLaneLeaks } from "./batch_leak_restore";
 import type {
 	BatchPlanBudget,
 	BatchPlanChild,
@@ -594,9 +595,23 @@ export async function projectBatchPreflight(
 	if (branchExists.status === 0 && !existingBatch)
 		return reject("branch_already_exists", batchBranch);
 
-	const statusEntries = porcelainEntries(root);
+	let statusEntries = porcelainEntries(root);
 	if (statusEntries === null)
 		return reject("git_status_unreadable");
+	// A lane batch keeps its delivery in Lanes, so a dirty coordinator is a leak.
+	// It is restored only when every dirty path is provably a Lane's bytes; any
+	// change of unknown origin leaves every file alone and is refused below.
+	let unprovableLeak = "";
+	if (statusEntries.length > 0 && activeRecord && isLaneBatchRecord(activeRecord)) {
+		const outcome = restoreProvableLaneLeaks(root, activeRecord, statusEntries, options.now ?? new Date().toISOString());
+		if (outcome.kind === "restored") {
+			writeBatchLaneRunState(root, { ...activeRecord, restores: [...(activeRecord.restores ?? []), outcome.restore] });
+			statusEntries = porcelainEntries(root);
+			if (statusEntries === null) return reject("git_status_unreadable");
+		} else if (outcome.kind === "unprovable") {
+			unprovableLeak = `${outcome.path}: ${outcome.detail}`;
+		}
+	}
 	if (statusEntries.length > 0) {
 		if (!isResuming)
 			return reject("working_tree_dirty");
@@ -616,7 +631,7 @@ export async function projectBatchPreflight(
 		}
 		const dirtyBytes = statusEntries.some(({ code }) => code === "??" || code[1] !== " ");
 		if (dirtyBytes)
-			return reject("working_tree_unstaged");
+			return reject("working_tree_unstaged", unprovableLeak);
 		let outsideScope = false;
 		for (const { path } of statusEntries) {
 			if (path.startsWith(".imm/") || path.startsWith("docs/plans/") || path.startsWith("docs/specs/")) continue;

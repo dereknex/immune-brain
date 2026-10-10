@@ -138,6 +138,11 @@ export interface BatchLaneRunStateRecord {
 	/** Batch-branch commits produced by integration, in integration order. */
 	commits: string[];
 	adopted_heads?: Array<{ from: string; to: string }>;
+	/**
+	 * Lane writes that leaked into the coordinator checkout and were restored on
+	 * re-entry, each with the backup that undoes it. Absent until one happens.
+	 */
+	restores?: import("./batch_leak_restore").LaneLeakRestore[];
 	created_at: string;
 	updated_at: string;
 }
@@ -528,6 +533,17 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 			))
 	)
 		throw new Error(`batch run state ${batchId} has an invalid adopted_heads list`);
+	if (
+		record.restores !== undefined &&
+		(!Array.isArray(record.restores) ||
+			record.restores.some(
+				(r: unknown) =>
+					typeof r !== "object" || r === null ||
+					typeof (r as { backup?: unknown }).backup !== "string" ||
+					!Array.isArray((r as { paths?: unknown }).paths),
+			))
+	)
+		throw new Error(`batch run state ${batchId} has an invalid restores list`);
 	const seenTaskIds = new Set<string>();
 	for (const child of record.children) {
 		if (
@@ -739,6 +755,8 @@ export interface BatchLaneRunReport {
 	 * tracker observation beside the batch result, retried by the next tick.
 	 */
 	tracker_observations?: Array<{ task_id: string; status: string; message: string }>;
+	/** Restored Lane leaks with their backup location (see BatchLaneRunStateRecord.restores). */
+	restores?: import("./batch_leak_restore").LaneLeakRestore[];
 	next_action: string;
 	created_at: string;
 }

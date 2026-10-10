@@ -207,7 +207,28 @@ disjoint sibling keeps moving. A lost Lane parks as `batch_lane_lost`, and
 changes Kernel state only and writes nothing to the tracker: the coordinator
 closes the child's Issue after it integrates that child's commit, exactly once,
 and reports the attempt in `tracker_observations`. A parked or lost child is
-never integrated, so its Issue stays open. A resume with a different
+never integrated, so its Issue stays open.
+
+Before a new lane batch provisions any Lane, the runner compares the Kernel
+contract identifiers (TaskRecord, tombstone, projection, store schema) of the
+coordinator's runtime with those of the runtime a Lane Executor loads — never the
+plugin version number — and refuses with `batch_runtime_contract_mismatch`,
+naming both sources, when they differ; a match adds no confirmation. A Lane whose
+state exists but whose contract the coordinator refuses to read parks as
+`batch_lane_contract_mismatch` with the original parse error, distinct from a
+missing Lane's `batch_lane_lost`.
+
+Inside a Lane, the Pi extension and the Claude Code `PreToolUse` hook refuse an
+`edit`/`write` (Claude: `Edit`, `Write`, `MultiEdit`, `NotebookEdit`) whose
+resolved target lies outside the Lane, naming the Lane path. A shell command is
+not intercepted; this is no bash sandbox. When a lane batch is re-entered with a
+dirty coordinator checkout, each dirty path is restored to HEAD only if every one
+of them is an unstaged modification or untracked file whose bytes equal that
+path's bytes in a Lane worktree or Lane-branch commit of this batch. The bytes are
+backed up first under `.imm/state/batches/restores/`, and the backup is recorded
+in the batch record and report as `restores`. If any change has another origin,
+or is staged or deleted, no file is touched and the refusal names it; never
+stage such changes to get past the refusal. A resume with a different
 `max_parallel` is refused with `batch_parallel_mismatch`. A Lane holds no batch
 state and its Host session never re-enters the batch.
 

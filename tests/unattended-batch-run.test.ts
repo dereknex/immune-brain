@@ -2304,7 +2304,7 @@ describe("shared batch preflight projection", () => {
 			git_status_unreadable: ["branch preflight failed: git status is unreadable", "check the repository integrity and retry in the current Host"],
 			working_tree_dirty: ["branch preflight failed: working tree is dirty", "delete or rename the conflicting branch, or commit working changes in the current Host"],
 			authorized_scope_underivable: ["branch preflight failed: cannot derive the in-flight child's authorized scope", "resolve the child's intent record, then retry in the current Host"],
-			working_tree_unstaged: ["branch preflight failed: working tree has unstaged or untracked changes", "stage the in-flight changes with git add, then retry in the current Host"],
+			working_tree_unstaged: ["branch preflight failed: working tree has unstaged or untracked changes (not restored: <detail>)", "establish where each unstaged or untracked change came from before staging anything; move changes that are not the active child's verified work out of the working tree, then retry in the current Host"],
 			working_tree_out_of_scope: ["branch preflight failed: working tree has changes outside the authorized child scope", "commit or unstage changes outside the active task scope, then retry in the current Host"],
 			empty_enrollable_set: ["empty enrollable child set: no enrollable child tasks found in the initiative plan", "ensure the initiative has uncompleted, non-critical child tasks in the current Host"],
 			plan_projection_failed: ["failed to project batch plan: <detail>", "review initiative issues and planning sidecars in the current Host"],

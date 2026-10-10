@@ -58,7 +58,7 @@ import {
 	type BatchTrackerPort,
 } from "../unattended/batch_runner";
 import { createBatchKernelPort } from "../unattended/batch_kernel_port";
-import { createBatchTrackerPort, type LaneOffer } from "../unattended/batch_lanes";
+import { createBatchTrackerPort, laneRuntimeContractRefusal, type LaneOffer } from "../unattended/batch_lanes";
 import { retireStaleBatch } from "../unattended/batch_disposition";
 import type { BatchLaneRunReport } from "../unattended/batch_state";
 import {
@@ -783,6 +783,12 @@ export class ClaudeRuntime {
 		const budget = preflight.projection.budget;
 		const planDigest = preflight.projection.plan_digest;
 		const recoveryChildren = preflight.projection.recovery_children;
+		// A new lane batch whose Lane runtime cannot read the coordinator's Kernel
+		// contracts is refused before the gate opens; a match adds nothing.
+		if (options.max_parallel !== undefined && !isResuming) {
+			const contractRefusal = laneRuntimeContractRefusal(this.cwd);
+			if (contractRefusal) return batchReason("batch_run_rejected", contractRefusal);
+		}
 		// 5. Literal-user gate plus the shared reuse decision, the post-gate
 		// claim/drift cascade, and the Batch Authorization binding. The Host supplies
 		// only its gate, its confirmation reference, and its binding nonce.

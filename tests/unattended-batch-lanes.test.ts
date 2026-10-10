@@ -1533,3 +1533,175 @@ describe("Child Issue closure after integration (#197)", () => {
 		}
 	});
 });
+
+describe("runtime contract preflight and mismatch park reason (#199)", () => {
+	function runtimeDir(fx: Fixture, overrides: Record<string, unknown>): string {
+		const dir = join(fx.dir, "lane-runtime");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, "runtime_contracts.json"), JSON.stringify({
+			contract: "immune_brain/runtime_contracts/v1",
+			task_record: "assurance_kernel/task_record/v4",
+			task_tombstone: "assurance_kernel/task_tombstone/v2",
+			assurance_projection: "assurance_kernel/assurance_projection/v1",
+			kernel_store_schema: 1,
+			...overrides,
+		}));
+		return dir;
+	}
+
+	it("ships a manifest equal to the running runtime's identifiers, so this repository passes with no refusal", async () => {
+		const { RUNTIME_CONTRACTS, readRuntimeContracts } = await import("../plugins/immune-brain/runtime/kernel/runtime_contracts");
+		const { laneRuntimeContractRefusal } = await import("../plugins/immune-brain/runtime/unattended/batch_lanes");
+		const root = join(import.meta.dir, "..");
+		expect(readRuntimeContracts(root)?.contracts).toEqual(RUNTIME_CONTRACTS);
+		expect(laneRuntimeContractRefusal(root)).toBeNull();
+	});
+
+	it("refuses a new lane batch before any Lane exists when the Lane runtime writes another TaskRecord contract, naming both sources", async () => {
+		const fx = fixture();
+		try {
+			// Same plugin version on both sides is irrelevant: only identifiers are compared.
+			const lane = runtimeDir(fx, { task_record: "assurance_kernel/task_record/v3" });
+			const kernel = laneKernel();
+			const report = lanes(await startBatch(request(fx, [child("task-a", "S1")], kernel, { executor_runtime: lane })));
+			expect(report.batch_state).toBe("rejected");
+			expect(report.reason).toStartWith("batch_runtime_contract_mismatch:");
+			expect(report.reason).toContain("task_record: assurance_kernel/task_record/v4 != assurance_kernel/task_record/v3");
+			expect(report.reason).toContain(join(lane, "runtime_contracts.json"));
+			expect(report.reason).toContain("plugins/immune-brain/runtime/kernel");
+			expect(report.handoffs).toEqual([]);
+			expect(readAnyBatchRunState(fx.repo, BATCH_ID)).toBeNull();
+			expect(git(fx.repo, "rev-parse", "HEAD")).toBe(fx.base);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("starts normally when the identifiers match", async () => {
+		const fx = fixture();
+		try {
+			const report = lanes(await startBatch(request(fx, [child("task-a", "S1")], laneKernel(), { executor_runtime: runtimeDir(fx, {}) })));
+			expect(report.batch_state).toBe("running");
+			expect(report.handoffs.map((h) => h.role)).toEqual(["lane-steward"]);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("parks a Lane whose state exists but is in a contract the coordinator refuses with its own reason and the parse error", async () => {
+		const fx = fixture();
+		try {
+			const kernel = laneKernel();
+			const args = request(fx, [child("task-a", "S1")], kernel);
+			await startBatch(args);
+			const laneA = fx.lane("task-a");
+			await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] });
+			const parseError = "contract must equal assurance_kernel/task_record/v3; unknown field: git_base_head";
+			const project = kernel.projectTask;
+			kernel.projectTask = async (root, taskId) => ({ ...(await project(root, taskId)), error: parseError });
+			const report = lanes(await startBatch(args));
+			expect(report.children[0]!.state).toBe("needs_human");
+			expect(report.children[0]!.reason).toBe(`batch_lane_contract_mismatch: ${parseError}`);
+			// A genuinely missing Lane keeps batch_lane_lost.
+			expect(report.children[0]!.reason).not.toBe("batch_lane_lost");
+		} finally {
+			fx.cleanup();
+		}
+	});
+});
+
+describe("Lane write guard and leak restore (#200)", () => {
+	it("refuses an edit or write from inside a Lane to the coordinator checkout, on both Hosts, and nothing else", async () => {
+		const { laneEditRefusal } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
+		const { laneGuardHookOutput } = await import("../plugins/immune-brain/runtime/claude/lane_guard");
+		const fx = fixture();
+		try {
+			const laneA = fx.lane("task-a");
+			const outside = join(fx.repo, "base.txt");
+			// Pi
+			expect(laneEditRefusal({ toolName: "edit", input: { path: outside } }, laneA)).toContain(`stays under ${laneA}`);
+			expect(laneEditRefusal({ toolName: "write", input: { path: "../repo/new.txt" } }, laneA)).toContain("is outside this Lane");
+			expect(laneEditRefusal({ toolName: "write", input: { path: "a.txt" } }, laneA)).toBeNull();
+			expect(laneEditRefusal({ toolName: "edit", input: { path: join(laneA, "deep/new.txt") } }, laneA)).toBeNull();
+			expect(laneEditRefusal({ toolName: "bash", input: { command: `echo x > ${outside}` } }, laneA)).toBeNull();
+			expect(laneEditRefusal({ toolName: "edit", input: { path: outside } }, fx.repo)).toBeNull();
+			// Claude Code
+			const deny = laneGuardHookOutput({ hook_event_name: "PreToolUse", tool_name: "Write", cwd: laneA, tool_input: { file_path: outside } });
+			expect(JSON.parse(deny!)).toMatchObject({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny" } });
+			expect(JSON.parse(deny!).hookSpecificOutput.permissionDecisionReason).toContain(laneA);
+			expect(laneGuardHookOutput({ hook_event_name: "PreToolUse", tool_name: "Edit", cwd: laneA, tool_input: { file_path: join(laneA, "a.txt") } })).toBeNull();
+			expect(laneGuardHookOutput({ hook_event_name: "PreToolUse", tool_name: "Bash", cwd: laneA, tool_input: { command: "true" } })).toBeNull();
+			expect(laneGuardHookOutput({ hook_event_name: "PreToolUse", tool_name: "Write", cwd: fx.repo, tool_input: { file_path: outside } })).toBeNull();
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	async function enrolledLane(fx: Fixture) {
+		const kernel = laneKernel();
+		const args = request(fx, [child("task-a", "S1")], kernel);
+		await startBatch(args);
+		const laneA = fx.lane("task-a");
+		await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] });
+		return { laneA };
+	}
+	const preflight = () => projectBatchPreflight({ root: fx_root!, initiative_slug: SLUG, now: FAR_FUTURE });
+	let fx_root: string | null = null;
+
+	it("restores leaked Lane writes whose bytes are provably the Lane's, backs them up reversibly, and records the backup", async () => {
+		const fx = fixture();
+		fx_root = fx.repo;
+		try {
+			const { laneA } = await enrolledLane(fx);
+			writeFileSync(join(laneA, "a.txt"), "lane a\n");
+			writeFileSync(join(laneA, "base.txt"), "lane edit\n");
+			// The Executor wrote the same bytes into the coordinator by absolute path.
+			writeFileSync(join(fx.repo, "a.txt"), "lane a\n");
+			writeFileSync(join(fx.repo, "base.txt"), "lane edit\n");
+			const outcome = await preflight();
+			expect(outcome.ok).toBe(true);
+			expect(git(fx.repo, "status", "--porcelain")).toBe("");
+			expect(readFileSync(join(fx.repo, "base.txt"), "utf8")).toBe("base\n");
+			const record = readAnyBatchRunState(fx.repo, BATCH_ID) as { restores?: Array<{ backup: string; paths: Array<{ path: string; kind: string; lane_task_id: string }> }> };
+			expect(record.restores).toHaveLength(1);
+			const restore = record.restores![0]!;
+			expect(restore.paths.map((p) => [p.path, p.kind, p.lane_task_id]).sort()).toEqual([["a.txt", "untracked", "task-a"], ["base.txt", "modified", "task-a"]]);
+			// Reversible: the backup holds both files and the patch.
+			expect(readFileSync(join(fx.repo, restore.backup, "files/a.txt"), "utf8")).toBe("lane a\n");
+			expect(readFileSync(join(fx.repo, restore.backup, "files/base.txt"), "utf8")).toBe("lane edit\n");
+			expect(readFileSync(join(fx.repo, restore.backup, "restore.patch"), "utf8")).toContain("+lane edit");
+			// The next report carries the backup location.
+			const report = lanes(await startBatch(request(fx, [child("task-a", "S1")], laneKernel())));
+			expect(report.restores?.[0]?.backup).toBe(restore.backup);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("touches no file when any change has unknown origin, and never restores the user's own staged work", async () => {
+		const fx = fixture();
+		fx_root = fx.repo;
+		try {
+			const { laneA } = await enrolledLane(fx);
+			writeFileSync(join(laneA, "a.txt"), "lane a\n");
+			writeFileSync(join(fx.repo, "a.txt"), "lane a\n");
+			writeFileSync(join(fx.repo, "notes.txt"), "the user's own notes\n");
+			const mixed = await preflight();
+			expect(mixed.ok).toBe(false);
+			expect((mixed as { reason: string }).reason).toContain("notes.txt: its bytes match no Lane of this batch");
+			expect((mixed as { recovery_action: string }).recovery_action).not.toContain("git add");
+			expect(readFileSync(join(fx.repo, "a.txt"), "utf8")).toBe("lane a\n");
+			expect(readFileSync(join(fx.repo, "notes.txt"), "utf8")).toBe("the user's own notes\n");
+			expect((readAnyBatchRunState(fx.repo, BATCH_ID) as { restores?: unknown }).restores).toBeUndefined();
+
+			rmSync(join(fx.repo, "notes.txt"));
+			git(fx.repo, "add", "a.txt"); // staged: a user act, not a Lane write
+			await preflight();
+			expect((readAnyBatchRunState(fx.repo, BATCH_ID) as { restores?: unknown }).restores).toBeUndefined();
+			expect(git(fx.repo, "diff", "--cached", "--name-only")).toBe("a.txt");
+			expect(existsSync(join(fx.repo, "a.txt"))).toBe(true);
+		} finally {
+			fx.cleanup();
+		}
+	});
+});

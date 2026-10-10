@@ -11,6 +11,13 @@ import { isAbsolute, join } from "node:path";
 import { computeBatchPlanDigest } from "../kernel/batch_authority";
 import { readTaskIntent } from "../kernel/intent";
 import { readTaskTombstone } from "../kernel/backend_claim";
+import {
+	readRuntimeContracts,
+	runningRuntimeSource,
+	RUNTIME_CONTRACTS,
+	runtimeContractDifferences,
+} from "../kernel/runtime_contracts";
+import { readFileSync } from "node:fs";
 import { runGithubTrackerOperation } from "../github_issue_tracker";
 import { hasLocalInitiative } from "../local_initiative";
 import type { BatchTrackerPort, StartBatchInput } from "./batch_runner";
@@ -120,6 +127,58 @@ export function parseLaneOffers(value: unknown): LaneOffer[] | undefined {
 export function createBatchTrackerPort(root: string, initiativeSlug: string): BatchTrackerPort | undefined {
 	if (hasLocalInitiative(root, initiativeSlug)) return undefined;
 	return { markTerminal: (trackerRoot, input) => runGithubTrackerOperation(trackerRoot, { op: "mark-terminal", ...input }) };
+}
+
+export const LANE_CONTRACT_MISMATCH = "batch_lane_contract_mismatch";
+export const RUNTIME_CONTRACT_MISMATCH = "batch_runtime_contract_mismatch";
+
+/**
+ * The runtime a Lane Executor will load, when the coordinator can know it: an
+ * explicit path, else the repository's own plugin source when the repository
+ * is the Immune-Brain package itself (a Host loading the package from the
+ * repository runs that source in every Lane, which is cut from this head).
+ * Null when nothing can be compared.
+ */
+function laneRuntimeDir(root: string, explicit: string | undefined): string | null {
+	if (explicit) return explicit;
+	try {
+		const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { name?: unknown };
+		return manifest.name === "immune-brain" ? root : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Batch-start preflight for lane mode: the coordinator reads every Lane's
+ * Kernel state with its own runtime, so the runtime a Lane Executor loads must
+ * use the same contract identifiers. The comparison is on those identifiers,
+ * never on a plugin version number. A refusal names both sources; a match
+ * returns null and adds nothing, no confirmation included.
+ */
+export function laneRuntimeContractRefusal(root: string, executorRuntime?: string): string | null {
+	const dir = laneRuntimeDir(root, executorRuntime);
+	if (!dir) return null;
+	let lane: ReturnType<typeof readRuntimeContracts>;
+	try {
+		lane = readRuntimeContracts(dir);
+	} catch (error) {
+		return `${RUNTIME_CONTRACT_MISMATCH}: ${error instanceof Error ? error.message : String(error)}`;
+	}
+	if (!lane) return executorRuntime ? `${RUNTIME_CONTRACT_MISMATCH}: no runtime contract manifest under ${executorRuntime}` : null;
+	const differences = runtimeContractDifferences(RUNTIME_CONTRACTS, lane.contracts);
+	if (differences.length === 0) return null;
+	return `${RUNTIME_CONTRACT_MISMATCH}: coordinator runtime ${runningRuntimeSource()} and Lane runtime ${lane.path} disagree (${differences.join("; ")}); load the same runtime on both sides before starting the batch`;
+}
+
+/**
+ * A Lane whose Kernel state exists but that this runtime refuses to read is a
+ * contract mismatch, not a lost Lane: one side was upgraded under the batch.
+ */
+function laneUnreadableReason(error: string): string {
+	return /contract must equal|unknown field|schema version .* incompatible|unknown contract/i.test(error)
+		? `${LANE_CONTRACT_MISMATCH}: ${error}`
+		: "batch_lane_lost";
 }
 
 /** The branch the Lane for a child must sit on. */
@@ -436,6 +495,7 @@ function laneReport(
 		handoffs: extra.handoffs ?? [],
 		...(extra.refusals?.length ? { lane_refusals: extra.refusals } : {}),
 		...(extra.tracker?.length ? { tracker_observations: extra.tracker } : {}),
+		...(record.restores?.length ? { restores: record.restores } : {}),
 		next_action: nextAction || (TERMINAL_NEXT_ACTIONS[record.batch_state] ?? "Inspect the batch run state."),
 		created_at: record.updated_at,
 	};
@@ -638,6 +698,11 @@ export async function runLaneBatch(
 	} else {
 		const invalid = validateNewAuthorization(input);
 		if (invalid) return refuse(input, null, "batch_authorization_invalid", invalid);
+		const contractRefusal = laneRuntimeContractRefusal(input.root, input.executor_runtime);
+		if (contractRefusal) {
+			const [code, ...detail] = contractRefusal.split(": ");
+			return refuse(input, null, code!, detail.join(": "));
+		}
 		const preflight = await git.preflight({
 			root: input.root,
 			initiative_slug: input.initiative_slug,
@@ -761,11 +826,11 @@ export async function runLaneBatch(
 		let fresh: Awaited<ReturnType<StartBatchInput["kernel"]["projectTask"]>>;
 		try {
 			fresh = await input.kernel.projectTask(child.lane.path, child.task_id);
-		} catch {
-			fresh = { error: "unreadable" } as unknown as typeof fresh;
+		} catch (error) {
+			fresh = { error: error instanceof Error ? error.message : String(error) } as unknown as typeof fresh;
 		}
 		if (fresh.error !== null) {
-			parkChild(child.task_id, "batch_lane_lost");
+			parkChild(child.task_id, laneUnreadableReason(String(fresh.error)));
 			continue;
 		}
 		if (child.lane.run_id && fresh.projection.run_id !== child.lane.run_id) {
