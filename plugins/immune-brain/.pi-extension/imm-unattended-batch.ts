@@ -15,13 +15,16 @@ import {
 	startBatch,
 	type BatchRunnerKernelPort,
 	type BatchRunReport,
+	type BatchTrackerPort,
 } from "../runtime/unattended/batch_runner";
 import { createBatchKernelPort } from "../runtime/unattended/batch_kernel_port";
 import type { BatchRunnerGitPort } from "../runtime/unattended/batch_git";
 import type { InitiativeObservationReader } from "../runtime/unattended/types";
 import { advancePiTask } from "./imm-canary-work";
 import { batchReason } from "../runtime/unattended/batch_reasons";
-import { parseLaneOffers, parseMaxParallel, resolveLaneParallel, type LaneOffer } from "../runtime/unattended/batch_lanes";
+import { parseFinalVerification } from "../runtime/unattended/batch_final_verification";
+import { parseLaneRevision, REVISION_DELEGATION_TEXT, type LaneRevisionRequest } from "../runtime/unattended/batch_delegation";
+import { createBatchTrackerPort, laneRuntimeContractRefusal, parseLaneInstruction, type LaneInstructionRequest, parseLaneOffers, parseMaxParallel, resolveLaneParallel, type LaneOffer } from "../runtime/unattended/batch_lanes";
 import {
 	authorizeBatch,
 	projectBatchPreflight,
@@ -70,8 +73,9 @@ export async function readSettledTaskRecord(
  * is the testable unit, and the direct-execution suites cover the decision
  * outcomes (decline -> rejected, cancel/Escape -> cancelled) with zero writes.
  */
-export function mapDialogSelection(selected: string | undefined): "accept" | "decline" | "cancel" {
+export function mapDialogSelection(selected: string | undefined): "accept" | "accept_delegate" | "decline" | "cancel" {
 	if (selected === "confirm") return "accept";
+	if (selected === "confirm_delegate") return "accept_delegate";
 	if (selected === "decline") return "decline";
 	return "cancel";
 }
@@ -107,8 +111,16 @@ export interface PiBatchExecutionOptions {
 	max_parallel?: number;
 	/** Lane mode: Lanes someone else created, offered to the batch. */
 	lane_offers?: LaneOffer[];
+	/** Lane mode: the project's full verification commands, run once every child is integrated. */
+	final_verification?: string[];
+	/** Lane mode: one instruction for an idle Lane session, recorded before it is sent. */
+	lane_instruction?: LaneInstructionRequest;
+	/** Lane mode, ADR 0018: one breaking Intent revision the coordinator approves under the batch's grant. */
+	lane_revision?: LaneRevisionRequest;
 	batchKernel?: Partial<BatchRunnerKernelPort>;
 	batchGit?: BatchRunnerGitPort;
+	/** Lane mode: closes an integrated child's Issue; defaults to the GitHub projection. */
+	batchTracker?: BatchTrackerPort;
 	readInitiative?: InitiativeObservationReader;
 	confirmBatch?: (details: {
 		title: string;
@@ -116,7 +128,9 @@ export interface PiBatchExecutionOptions {
 		details: string;
 		planDigest: string;
 		signal?: AbortSignal;
-	}) => Promise<"accept" | "decline" | "cancel">;
+		/** ADR 0018: offer the opt-in delegation choice (lane mode only). */
+		offerRevisionDelegation?: boolean;
+	}) => Promise<"accept" | "accept_delegate" | "decline" | "cancel">;
 }
 
 export type PiBatchExecutionResult =
@@ -148,7 +162,7 @@ export async function executePiUnattendedBatch(
 	if (!reuseOnly && !interactive) return { state: "rejected", ...nonInteractiveRefusal() };
 
 	// A lane_offers-only call resumes the recorded lane batch; refused before any gate otherwise.
-	const resolvedParallel = resolveLaneParallel(root, initiativeSlug, options.max_parallel, options.lane_offers);
+	const resolvedParallel = resolveLaneParallel(root, initiativeSlug, options.max_parallel, options.lane_offers, options.lane_instruction ?? options.lane_revision);
 	if (resolvedParallel !== undefined) options = { ...options, max_parallel: resolvedParallel };
 
 	// 1. Host-independent batch preflight: claim ownership, branch availability,
@@ -171,6 +185,12 @@ export async function executePiUnattendedBatch(
 	const budget = preflight.projection.budget;
 	const planDigest = preflight.projection.plan_digest;
 	const recoveryChildren = preflight.projection.recovery_children;
+	// A new lane batch whose Lane runtime cannot read the coordinator's Kernel
+	// contracts is refused before the gate opens; a match adds nothing.
+	if (options.max_parallel !== undefined && !isResuming) {
+		const contractRefusal = laneRuntimeContractRefusal(root);
+		if (contractRefusal) return batchReason("batch_run_rejected", contractRefusal);
+	}
 
 	// 4. Literal-user gate plus the shared reuse decision, the post-gate
 	// claim/drift cascade, and the Batch Authorization binding. The Host supplies
@@ -198,15 +218,16 @@ export async function executePiUnattendedBatch(
 			}
 			const confirmDetails = {
 				title: `Authorize Unattended Batch: ${facts.initiative_slug}`,
-				summary: `Initiative: ${facts.initiative_slug}\nBatch branch: ${facts.batch_branch}\nPlan digest: ${facts.plan_digest}\nBudget: max_children=${facts.budget.max_children}, qa_failure_limit=${facts.budget.qa_failure_limit}${options.max_parallel !== undefined ? `\nLane mode: max_parallel=${options.max_parallel}` : ""}`,
+				summary: `Initiative: ${facts.initiative_slug}\nBatch branch: ${facts.batch_branch}\nPlan digest: ${facts.plan_digest}\nBudget: max_children=${facts.budget.max_children}, qa_failure_limit=${facts.budget.qa_failure_limit}${options.max_parallel !== undefined ? `\nLane mode: max_parallel=${options.max_parallel}` : ""}${options.max_parallel !== undefined && options.final_verification ? `\nFinal verification: ${options.final_verification.join("; ")}` : ""}`,
 				details: `Ordered children (${facts.children.length}):\n${facts.children.map((child) => `  - ${child.task_id} (${child.slice_id}) [risk: ${child.risk}] [status: ${child.status === "already_settled" ? "completed" : "pending execution"}]`).join("\n")}${facts.excluded.length > 0 ? `\n\nExcluded children:\n${facts.excluded.map((child) => `  - ${child.task_id} (${child.slice_id}): ${child.reason}`).join("\n")}` : ""}${options.max_parallel !== undefined ? `\n\nParallel groups (${facts.parallel_groups.length}):\n${facts.parallel_groups.map((group) => `  - ${group.join(", ")}`).join("\n")}${facts.scope_conflicts.length > 0 ? `\n\nSerialized by overlapping scope:\n${facts.scope_conflicts.map((c) => `  - ${c.task_id} after ${c.overlaps_with.join(", ")}`).join("\n")}` : ""}` : ""}${facts.reuse_blockers.length > 0 ? `\n\nRe-confirmation required: ${facts.reuse_blockers.join(", ")}.\nRecovery: confirm to issue a fresh authorization bound to the current plan and HEAD.` : ""}`,
 				planDigest: facts.plan_digest,
 				signal,
+				...(options.max_parallel !== undefined ? { offerRevisionDelegation: true } : {}),
 			};
 
 			// The gate settles only on the literal user's answer or the caller's
 			// cancellation signal.
-			let decision: "accept" | "decline" | "cancel";
+			let decision: "accept" | "accept_delegate" | "decline" | "cancel";
 			try {
 				decision = await options.confirmBatch(confirmDetails);
 			} catch (err) {
@@ -223,10 +244,14 @@ export async function executePiUnattendedBatch(
 			if (decision === "decline") {
 				return { kind: "host_rejection", value: batchReason("confirmation_declined") };
 			}
-			if (decision !== "accept") {
+			if (decision !== "accept" && decision !== "accept_delegate") {
 				return { kind: "host_rejection", value: batchReason("confirmation_no_decision") };
 			}
-			return { kind: "confirmed", request_id: randomUUID() };
+			return {
+				kind: "confirmed",
+				request_id: randomUUID(),
+				...(decision === "accept_delegate" && options.max_parallel !== undefined ? { delegate_revisions: true } : {}),
+			};
 		},
 		confirmationRef: ({ batch_id, request_id }) =>
 			piConfirmationRef({
@@ -292,7 +317,16 @@ export async function executePiUnattendedBatch(
 		now,
 		kernel: kernelPort,
 		git: options.batchGit,
-		...(options.max_parallel !== undefined ? { max_parallel: options.max_parallel } : {}),
+		...(options.max_parallel !== undefined
+			? {
+					max_parallel: options.max_parallel,
+					tracker: options.batchTracker ?? createBatchTrackerPort(root, initiativeSlug),
+					...(options.final_verification ? { final_verification: options.final_verification } : {}),
+					...(options.lane_instruction ? { lane_instruction: options.lane_instruction } : {}),
+					...(options.lane_revision ? { lane_revision: options.lane_revision } : {}),
+					...(authorization.revision_delegation !== undefined ? { revision_delegation: authorization.revision_delegation } : {}),
+				}
+			: {}),
 		...(options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}),
 	});
 
@@ -403,10 +437,21 @@ export default function (
 			lane_offers: Type.Optional(Type.Array(
 				Type.Object({ task_id: Type.String(), path: Type.String() }, { additionalProperties: false }),
 			)),
+			final_verification: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 8 })),
+			lane_instruction: Type.Optional(Type.Object({
+				task_id: Type.String(),
+				kind: Type.Optional(Type.Union([Type.Literal("instruction"), Type.Literal("correction")])),
+				text: Type.String(),
+				session_state: Type.Union([Type.Literal("idle"), Type.Literal("working"), Type.Literal("blocked"), Type.Literal("done")]),
+			}, { additionalProperties: false })),
+			lane_revision: Type.Optional(Type.Object({
+				task_id: Type.String(),
+				next_intent: Type.Object({}, { additionalProperties: true }),
+			}, { additionalProperties: false })),
 		}, { additionalProperties: false }),
 		execute: async (
 			_toolCallId: string,
-			params: { initiative_slug: string; max_parallel?: number; lane_offers?: Array<{ task_id: string; path: string }> },
+			params: { initiative_slug: string; max_parallel?: number; lane_offers?: Array<{ task_id: string; path: string }>; final_verification?: string[]; lane_instruction?: unknown; lane_revision?: unknown },
 			signal: AbortSignal | undefined,
 			_onUpdate: unknown,
 			ctx: ExtensionContext,
@@ -427,12 +472,18 @@ export default function (
 
 			const maxParallel = parseMaxParallel(params.max_parallel);
 			const laneOffers = parseLaneOffers(params.lane_offers);
+			const finalVerification = parseFinalVerification(params.final_verification);
+			const laneInstruction = parseLaneInstruction(params.lane_instruction);
+			const laneRevision = parseLaneRevision(params.lane_revision);
 
 			const result = await executePiUnattendedBatch({
 				root: ctx.cwd,
 				initiativeSlug,
 				...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
 				...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),
+				...(finalVerification !== undefined ? { final_verification: finalVerification } : {}),
+				...(laneInstruction !== undefined ? { lane_instruction: laneInstruction } : {}),
+				...(laneRevision !== undefined ? { lane_revision: laneRevision } : {}),
 				interactive: ctx.mode === "tui",
 				signal,
 				readInitiative: dependencies.readInitiative,
@@ -461,6 +512,9 @@ export default function (
 							signal: details.signal,
 							actions: [
 								{ value: "confirm", label: "Authorize batch run", description: "Start the unattended serial batch run" },
+								...(details.offerRevisionDelegation
+									? [{ value: "confirm_delegate", label: "Authorize and delegate in-Lane revisions", description: REVISION_DELEGATION_TEXT }]
+									: []),
 								{ value: "decline", label: "Decline batch", description: "Reject this batch authorization; repository and authority stay unchanged" },
 								{ value: "cancel", label: "Cancel", description: "Leave repository and authority unchanged" },
 							],
@@ -573,7 +627,8 @@ export default function (
 							],
 						},
 					);
-					return mapDialogSelection(selected);
+					const mapped = mapDialogSelection(selected);
+					return mapped === "accept_delegate" ? "accept" : mapped;
 				},
 			});
 

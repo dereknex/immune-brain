@@ -54,6 +54,13 @@ Record missing evidence as blocked and repair it before handoff. The Loop owns
 verdict submission, finding disposition and the second-rework generalize-or-refute
 rule.
 
+A finding whose defect lies inside the TaskIntent goal and `scope_hint` is
+ordinary rework even when no acceptance names its exact case: fix the code and
+add the test that pins the case. Do not propose an Intent revision for it, and
+never append a single input case to an acceptance assertion to close a finding;
+acceptance states principles, tests enumerate cases. Route to `imm-planner` only
+when the goal, the scope, or a user-visible commitment must change.
+
 ## Code Quality Guard
 
 Before handoff, check the implementation for real implementation rather than

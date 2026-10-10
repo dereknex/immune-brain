@@ -29,6 +29,8 @@ Infer the repo from `git remote -v`; `gh` does this automatically when run insid
 
 The Planner never closes a GitHub Initiative Parent. The tracker's terminal projection does: after `mark-terminal` closes a Child as completed, it reads the Parent and its Sub-issue list (Issue-scoped reads, no repository listing) and closes the Parent as completed exactly once when every Sub-issue carrying a Slice marker of that Initiative is closed as completed. An open, stopped, not-planned or parked Child keeps the Parent open and causes no Parent write; an already closed Parent and a rerun of the same `mark-terminal` write nothing. A failed Parent read or close is reported as tracker observation beside the Kernel result, never changes it, and is retried by the same `mark-terminal`.
 
+In a lane-mode batch, a Child settled inside its Lane is not closed by that settlement: the Lane's delivery is not on the batch branch yet. The coordinator runs the same `mark-terminal` after it integrates that child's commit, records the confirmed close so it never repeats it, and retries a failed close on the next batch tick. A Child whose Lane is lost or parked is never integrated and stays open. Serial batches and single tasks close at settlement as before, and Parent closure keeps the rules above.
+
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_

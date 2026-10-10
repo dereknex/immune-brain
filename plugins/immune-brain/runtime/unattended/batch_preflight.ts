@@ -27,6 +27,7 @@ import { captureBatchReconfirmation, retainReconfirmation, ownUnpersistedBatchHe
 import { projectBatchPlan } from "./batch_plan";
 import { batchReason, type BatchReasonKey } from "./batch_reasons";
 import { BATCH_RUN_STATES, isLaneBatchRecord, isTerminalBatchState, readAnyBatchRunState, type AnyBatchRunStateRecord, type BatchRunStateRecord } from "./batch_state";
+import { planLaneLeakRestore } from "./batch_leak_restore";
 import type {
 	BatchPlanBudget,
 	BatchPlanChild,
@@ -374,7 +375,7 @@ function authorizedScopeOf(root: string, taskId: string, state: string): string[
 	return scope;
 }
 
-function porcelainEntries(root: string): Array<{ code: string; path: string }> | null {
+export function porcelainEntries(root: string): Array<{ code: string; path: string }> | null {
 	// review-batch-resume-porcelain-leading-space: parse the NUL-delimited v1
 	// format. Trimming the whole output first shifted the fixed status columns of
 	// an unstaged modification (" M path") and silently mis-scoped the path.
@@ -594,9 +595,19 @@ export async function projectBatchPreflight(
 	if (branchExists.status === 0 && !existingBatch)
 		return reject("branch_already_exists", batchBranch);
 
-	const statusEntries = porcelainEntries(root);
+	let statusEntries = porcelainEntries(root);
 	if (statusEntries === null)
 		return reject("git_status_unreadable");
+	// A lane batch keeps its delivery in Lanes, so a dirty coordinator is a leak.
+	// This read-only check only attributes it: when every dirty path is provably
+	// a Lane's write, the runner restores them after the gate; any change of
+	// unknown origin is refused below and nothing is touched.
+	let unprovableLeak = "";
+	if (statusEntries.length > 0 && activeRecord && isLaneBatchRecord(activeRecord)) {
+		const plan = planLaneLeakRestore(root, activeRecord, statusEntries);
+		if (plan.kind === "provable") statusEntries = [];
+		else if (plan.kind === "unprovable") unprovableLeak = `${plan.path}: ${plan.detail}`;
+	}
 	if (statusEntries.length > 0) {
 		if (!isResuming)
 			return reject("working_tree_dirty");
@@ -616,7 +627,7 @@ export async function projectBatchPreflight(
 		}
 		const dirtyBytes = statusEntries.some(({ code }) => code === "??" || code[1] !== " ");
 		if (dirtyBytes)
-			return reject("working_tree_unstaged");
+			return reject("working_tree_unstaged", unprovableLeak);
 		let outsideScope = false;
 		for (const { path } of statusEntries) {
 			if (path.startsWith(".imm/") || path.startsWith("docs/plans/") || path.startsWith("docs/specs/")) continue;
@@ -748,7 +759,12 @@ export interface BatchConfirmationFacts {
  * own failure-envelope shape.
  */
 export type BatchGateDecision<HostRejection> =
-	| { kind: "confirmed"; request_id: string }
+	| {
+			kind: "confirmed";
+			request_id: string;
+			/** ADR 0018: the user also delegated in-envelope Lane Intent revisions (lane mode only). */
+			delegate_revisions?: boolean;
+	  }
 	| { kind: "host_rejection"; value: HostRejection };
 
 export type BatchAuthorizationOutcome<HostRejection> =
@@ -758,6 +774,8 @@ export type BatchAuthorizationOutcome<HostRejection> =
 			reuse_authorization: boolean;
 			reuse_blockers: string[];
 			binding: BatchAuthorizationBinding;
+			/** The gate's delegation answer; absent when the authorization was reused and no gate opened. */
+			revision_delegation?: boolean;
 	  }
 	| { outcome: "rejected"; rejection: BatchPreflightRejection }
 	| { outcome: "host_rejection"; value: HostRejection };
@@ -848,10 +866,12 @@ export async function authorizeBatch<HostRejection>(
 	};
 
 	let requestId: string | null = null;
+	let revisionDelegation: boolean | undefined;
 	if (!reuseAuthorization) {
 		const decision = await options.gate(facts);
 		if (decision.kind === "host_rejection") return { outcome: "host_rejection", value: decision.value };
 		requestId = decision.request_id;
+		revisionDelegation = decision.delegate_revisions === true;
 	}
 
 	// Post-gate cascade: the drift projection reports the live claim it read
@@ -916,5 +936,6 @@ export async function authorizeBatch<HostRejection>(
 		reuse_authorization: reuseAuthorization,
 		reuse_blockers: reuseBlockers,
 		binding,
+		...(revisionDelegation !== undefined ? { revision_delegation: revisionDelegation } : {}),
 	};
 }

@@ -1638,7 +1638,7 @@ describe("lane mode parameters (parallel-batch-lanes)", () => {
 		const tool = registerBatchTool({ readInitiative: async () => createBatchFixture("lane-schema").observation }) as unknown as {
 			parameters: { properties: Record<string, unknown>; required?: string[] };
 		};
-		expect(Object.keys(tool.parameters.properties)).toEqual(["initiative_slug", "max_parallel", "lane_offers"]);
+		expect(Object.keys(tool.parameters.properties)).toEqual(["initiative_slug", "max_parallel", "lane_offers", "final_verification", "lane_instruction", "lane_revision"]);
 		expect(tool.parameters.required).toEqual(["initiative_slug"]);
 	});
 

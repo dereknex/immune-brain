@@ -1053,7 +1053,13 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 				makeCtx(root, makeUI()),
 			);
 			expect(result).toEqual({ action: "continue" });
-			expect(events.before_agent_start).toBeUndefined();
+			// #201: the only before_agent_start effect is an advisory notice appended
+			// to the system prompt. The user's prompt is never rewritten and nothing
+			// is routed or resumed.
+			const turn = await events.before_agent_start![0]({ prompt: "Explain what remains", systemPrompt: "BASE" }, makeCtx(root, makeUI()));
+			expect(turn).toEqual({ systemPrompt: expect.stringMatching(/^BASE\n\nImmune-Brain: Managed task .+ is active/) });
+			expect(turn).not.toHaveProperty("prompt");
+			expect(turn.systemPrompt).toContain("Ordinary input does not resume it");
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

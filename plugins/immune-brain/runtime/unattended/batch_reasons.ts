@@ -93,8 +93,9 @@ export const BATCH_REASONS: Readonly<Record<BatchReasonKey, BatchReasonSpec>> = 
 	},
 	working_tree_unstaged: {
 		state: "rejected",
-		reason: "branch preflight failed: working tree has unstaged or untracked changes",
-		recovery_action: "stage the in-flight changes with git add, then retry in the current Host",
+		reason: (detail: string) =>
+			`branch preflight failed: working tree has unstaged or untracked changes${detail ? ` (not restored: ${detail})` : ""}`,
+		recovery_action: "establish where each unstaged or untracked change came from before staging anything; move changes that are not the active child's verified work out of the working tree, then retry in the current Host",
 	},
 	working_tree_out_of_scope: {
 		state: "rejected",

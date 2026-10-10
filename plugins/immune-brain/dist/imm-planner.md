@@ -244,7 +244,14 @@ perform zero GitHub mutations. A partial or progressively disclosed issue set is
 not eligible for publication.
 
 After approval, author, stage, and validate every TaskIntent in the decomposition
-with `valid: true` and `enrollment_ready: true`. Resolve `../bin/imm-tracker` from this packaged contract; do not assume a bare command is on `PATH`. Submit the entire approved set once through
+with `valid: true` and `enrollment_ready: true`. Before handoff, compare the
+scopes by machine: run `imm-kernel intent overlap <path> <path>... --json` over
+every TaskIntent of the Initiative, with one `--blocked-by <task-id>=<task-id>,...`
+per dependency, and report its `overlaps` (each shared entry pair) and
+`parallel_groups`. Parallel recommendations follow that output, which uses the
+same projection as the Batch Plan. Never write "disjoint" or "verified" for
+scopes by hand; when the output shows an overlap the Slices run serially unless
+a revised `scope_hint` removes it. Resolve `../bin/imm-tracker` from this packaged contract; do not assume a bare command is on `PATH`. Submit the entire approved set once through
 `imm-tracker publish-initiative --stdin --json`. Its input contains the confirmed
 Initiative slug and goal, Parent projection, and every Child's `slice_id`,
 canonical TaskIntent path, bounded public `acceptance` summaries, and public
@@ -504,6 +511,12 @@ Return the proposal to the current Loop owner for Kernel `revise_intent` or,
 when breaking, `approve_breaking_intent_revision` with the complete next intent.
 The native gate is the single user decision for a breaking revision; candidate
 preparation does not apply the revision or authorize expanded execution.
+
+A revision is warranted only when the goal, the `scope_hint`, or a user-visible
+commitment changes. A finding whose defect lies inside the current goal and scope
+is ordinary rework for the Loop, not a revision request: decline to prepare one
+that only appends a single input case to an acceptance assertion. Acceptance
+states principles; enumeration of cases belongs in tests.
 
 ## Planning Rules
 

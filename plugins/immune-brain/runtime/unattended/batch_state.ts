@@ -109,6 +109,28 @@ export interface BatchLaneChildRun {
 	commit: string | null;
 	lane: BatchLaneBinding | null;
 	qa_failures: number;
+	/**
+	 * The Child Issue was closed by the coordinator after this child's commit was
+	 * integrated. Absent until then; a Lane settlement never closes it.
+	 */
+	tracker_closed?: boolean;
+	/** Coordinator corrections already spent on this child (at most two). */
+	corrections?: number;
+	/**
+	 * Set when the child exhausted its rework budget and waits for one
+	 * design-level coordinator correction instead of parking; cleared when the
+	 * correction is recorded.
+	 */
+	correction_due?: string;
+}
+
+export interface LaneIntervention {
+	at: string;
+	task_id: string;
+	/** `instruction` is an ordinary correction; `correction` is a design-level correction after an exhausted budget. */
+	kind: "instruction" | "correction";
+	text: string;
+	text_digest: string;
 }
 
 /**
@@ -133,6 +155,30 @@ export interface BatchLaneRunStateRecord {
 	/** Batch-branch commits produced by integration, in integration order. */
 	commits: string[];
 	adopted_heads?: Array<{ from: string; to: string }>;
+	/**
+	 * Lane writes that leaked into the coordinator checkout and were restored on
+	 * re-entry, each with the backup that undoes it. Absent until one happens.
+	 */
+	restores?: import("./batch_leak_restore").LaneLeakRestore[];
+	/**
+	 * Every text instruction the coordinator sent a Lane session, recorded before
+	 * it was sent, so coordinator intervention is told apart from the Executor's
+	 * own behavior afterwards.
+	 */
+	interventions?: LaneIntervention[];
+	/** Commands run on the batch branch once every child is integrated; fixed when the batch starts. */
+	final_verification?: string[];
+	/**
+	 * ADR 0018: the literal user's grant, in this batch's confirmation, to let the
+	 * coordinator approve in-envelope Lane Intent revisions. Absent: not granted.
+	 */
+	revision_delegation?: import("./batch_delegation").RevisionDelegationGrant;
+	/** Every revision applied under that grant. */
+	delegated_revisions?: import("./batch_delegation").DelegatedRevisionRecord[];
+	/** Each child's TaskIntent identity behind `plan_digest`; resealed only for a delegated revision. */
+	intent_identities?: Record<string, { intent_path: string; intent_revision: number; intent_content_hash: string }>;
+	/** Each `plan_digest` reseal at integration, with the digest before and after. */
+	reseals?: Array<{ at: string; task_id: string; from_digest: string; to_digest: string; intent_revision: number; intent_content_hash: string }>;
 	created_at: string;
 	updated_at: string;
 }
@@ -523,6 +569,66 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 			))
 	)
 		throw new Error(`batch run state ${batchId} has an invalid adopted_heads list`);
+	if (
+		record.restores !== undefined &&
+		(!Array.isArray(record.restores) ||
+			record.restores.some(
+				(r: unknown) =>
+					typeof r !== "object" || r === null ||
+					typeof (r as { backup?: unknown }).backup !== "string" ||
+					!Array.isArray((r as { paths?: unknown }).paths),
+			))
+	)
+		throw new Error(`batch run state ${batchId} has an invalid restores list`);
+	if (
+		record.final_verification !== undefined &&
+		(!Array.isArray(record.final_verification) ||
+			record.final_verification.length === 0 ||
+			record.final_verification.some((c: unknown) => typeof c !== "string" || !c))
+	)
+		throw new Error(`batch run state ${batchId} has an invalid final_verification list`);
+	if (
+		record.interventions !== undefined &&
+		(!Array.isArray(record.interventions) ||
+			record.interventions.some(
+				(i: unknown) =>
+					typeof i !== "object" || i === null ||
+					typeof (i as LaneIntervention).task_id !== "string" ||
+					((i as LaneIntervention).kind !== "instruction" && (i as LaneIntervention).kind !== "correction") ||
+					typeof (i as LaneIntervention).text !== "string" ||
+					typeof (i as LaneIntervention).text_digest !== "string",
+			))
+	)
+		throw new Error(`batch run state ${batchId} has an invalid interventions list`);
+	// ADR 0018 fields carry authority effects, so a malformed one fails closed.
+	const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+	const isHash = (v: unknown) => typeof v === "string" && /^sha256:[0-9a-f]{64}$/.test(v);
+	const isRevision = (v: unknown) => typeof v === "number" && Number.isSafeInteger(v) && v > 0;
+	if (record.revision_delegation !== undefined &&
+		(!isObject(record.revision_delegation) || Object.keys(record.revision_delegation).join() !== "confirmation_time" ||
+			!isCanonicalTimestamp(record.revision_delegation.confirmation_time)))
+		throw new Error(`batch run state ${batchId} has an invalid revision_delegation`);
+	if (record.delegated_revisions !== undefined &&
+		(!Array.isArray(record.delegated_revisions) || record.delegated_revisions.some((r: unknown) =>
+			!isObject(r) || typeof r.task_id !== "string" || !isRevision(r.from_revision) || !isRevision(r.to_revision) ||
+			(r.to_revision as number) <= (r.from_revision as number) || !isHash(r.intent_content_hash) ||
+			typeof r.confirmation_ref !== "string" || !r.confirmation_ref.startsWith(`delegated-batch:${batchId}@`) ||
+			!isCanonicalTimestamp(r.at))))
+		throw new Error(`batch run state ${batchId} has an invalid delegated_revisions list`);
+	if (record.delegated_revisions?.length && !record.revision_delegation)
+		throw new Error(`batch run state ${batchId} records delegated revisions without a delegation grant`);
+	if (record.intent_identities !== undefined &&
+		(!isObject(record.intent_identities) || Object.values(record.intent_identities).some((i: unknown) =>
+			!isObject(i) || typeof i.intent_path !== "string" || !i.intent_path || !isRevision(i.intent_revision) || typeof i.intent_content_hash !== "string" || !i.intent_content_hash)))
+		throw new Error(`batch run state ${batchId} has an invalid intent_identities map`);
+	if (record.reseals !== undefined &&
+		(!Array.isArray(record.reseals) || record.reseals.some((r: unknown) =>
+			!isObject(r) || typeof r.task_id !== "string" || typeof r.from_digest !== "string" || typeof r.to_digest !== "string" ||
+			!isRevision(r.intent_revision) || !isHash(r.intent_content_hash) ||
+			!(record.delegated_revisions as Array<{ task_id: string; intent_content_hash: string }> | undefined)?.some((d) => d.task_id === r.task_id && d.intent_content_hash === r.intent_content_hash))))
+		throw new Error(`batch run state ${batchId} has an invalid reseals list`);
+	if (record.reseals?.length && record.reseals[record.reseals.length - 1].to_digest !== record.plan_digest)
+		throw new Error(`batch run state ${batchId} plan_digest does not match its last reseal`);
 	const seenTaskIds = new Set<string>();
 	for (const child of record.children) {
 		if (
@@ -545,6 +651,14 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 			throw new Error(`batch run state ${batchId} child ${child.task_id} has invalid terminal fields`);
 		if (typeof child.qa_failures !== "number" || !Number.isInteger(child.qa_failures) || child.qa_failures < 0)
 			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid qa_failures`);
+		if (child.corrections !== undefined && (!Number.isInteger(child.corrections) || child.corrections < 0 || child.corrections > 2))
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid corrections count`);
+		if (child.correction_due !== undefined && (typeof child.correction_due !== "string" || !child.correction_due || child.state !== "enrolled"))
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid correction_due`);
+		if (child.tracker_closed !== undefined && child.tracker_closed !== true)
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid tracker_closed`);
+		if (child.tracker_closed === true && child.state !== "integrated" && child.state !== "released")
+			throw new Error(`batch run state ${batchId} child ${child.task_id} closed its tracker Issue before integration`);
 		const lane = child.lane as BatchLaneBinding | null | undefined;
 		if (lane !== null) {
 			if (
@@ -612,6 +726,8 @@ export function prepareBatchLaneRunState(input: {
 	budget: { max_children: number; qa_failure_limit: number };
 	max_parallel: number;
 	now: string;
+	final_verification?: string[];
+	revision_delegation?: import("./batch_delegation").RevisionDelegationGrant;
 }): BatchLaneRunStateRecord {
 	validateBatchId(input.batch_id);
 	return {
@@ -636,6 +752,13 @@ export function prepareBatchLaneRunState(input: {
 			qa_failures: 0,
 		})),
 		commits: [],
+		...(input.final_verification?.length ? { final_verification: [...input.final_verification] } : {}),
+		...(input.revision_delegation ? { revision_delegation: { ...input.revision_delegation } } : {}),
+		intent_identities: Object.fromEntries(
+			input.children
+				.filter((child) => child.intent_path !== null && child.intent_revision !== null && child.intent_content_hash !== null)
+				.map((child) => [child.task_id, { intent_path: child.intent_path!, intent_revision: child.intent_revision!, intent_content_hash: child.intent_content_hash! }]),
+		),
 		created_at: input.now,
 		updated_at: input.now,
 	};
@@ -725,6 +848,23 @@ export interface BatchLaneRunReport {
 	handoffs: BatchLaneHandoff[];
 	/** Offers refused at admission; a refused offer wrote nothing. */
 	lane_refusals?: Array<{ task_id: string; path: string; reason: string }>;
+	/**
+	 * Child Issue closures this tick attempted after integration. A failure is a
+	 * tracker observation beside the batch result, retried by the next tick.
+	 */
+	tracker_observations?: Array<{ task_id: string; status: string; message: string }>;
+	/** The completion run of the recorded final verification commands; `passed: false` marks the batch not passed. */
+	final_verification?: import("./batch_final_verification").FinalVerificationReport;
+	/** Coordinator instructions sent to Lane sessions (see BatchLaneRunStateRecord.interventions). */
+	interventions?: LaneIntervention[];
+	/** This tick's decision on the coordinator's `lane_revision` (ADR 0018). */
+	lane_revision?: { task_id: string; accepted: boolean; reason: string | null; fallback?: string };
+	delegated_revisions?: import("./batch_delegation").DelegatedRevisionRecord[];
+	reseals?: BatchLaneRunStateRecord["reseals"];
+	/** This tick's decision on the Parent's `lane_instruction`: send the text only when accepted. */
+	lane_instruction?: { task_id: string; kind: LaneIntervention["kind"]; accepted: boolean; reason: string | null };
+	/** Restored Lane leaks with their backup location (see BatchLaneRunStateRecord.restores). */
+	restores?: import("./batch_leak_restore").LaneLeakRestore[];
 	next_action: string;
 	created_at: string;
 }
@@ -739,6 +879,21 @@ export type BatchLaneHandoff =
 			executor_hosts: readonly string[];
 	  }
 	| { role: "lane-steward"; action: "release"; task_id: string; lane_branch: string }
+	| {
+			/**
+			 * The child exhausted its rework budget. The Parent reads the findings of
+			 * every round from the Lane's Kernel state, decides whether they share one
+			 * root cause, starts a new Lane session and sends one design-level
+			 * correction as `lane_instruction` kind `correction`.
+			 */
+			role: "coordinator";
+			action: "correct";
+			task_id: string;
+			reason: string;
+			corrections_used: number;
+			corrections_left: number;
+			lane_path: string;
+	  }
 	| {
 			role: "executor";
 			task_id: string;

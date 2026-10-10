@@ -130,6 +130,8 @@ import {
 	type GithubTrackerResult,
 } from "../runtime/github_issue_tracker";
 import { reviewReworkFindings } from "../runtime/assurance/coordinator";
+import { laneWriteRefusal } from "../runtime/unattended/lane_workspace";
+import { activeTaskNotice } from "../runtime/assurance/active_task_notice";
 
 const LOOP_OWNERS = ["plan", "kernel", "brainstorm", "planner", "loop"] as const;
 const LOOP_TARGETS = [
@@ -371,8 +373,16 @@ export default function (
 		if (ctx.mode !== "tui") return;
 		await refreshTaskRail(ctx);
 	});
+	pi.on("before_agent_start", async (event: { prompt?: string; systemPrompt?: string }, ctx?: ExtensionContext) => {
+		// Advisory only: an active Managed task is announced, never resumed.
+		const notice = await activeTaskNotice(ctx?.cwd ?? process.cwd());
+		if (!notice || typeof event.systemPrompt !== "string") return undefined;
+		return { systemPrompt: `${event.systemPrompt}\n\n${notice}` };
+	});
 	pi.on("tool_call", (event: { toolName?: string; input?: unknown; toolCallId?: string }, ctx?: ExtensionContext) => {
 		if (ctx) railContext = ctx;
+		const laneRefusal = laneEditRefusal(event, ctx?.cwd ?? process.cwd());
+		if (laneRefusal) return { block: true, reason: laneRefusal };
 		if (event.toolName === "Agent") {
 			// ADR 0017: correlate a reserved reviewer dispatch to its reservation.
 			progression.piReviewHost.observeReviewDispatch(event.input as { prompt?: unknown; subagent_type?: unknown } | undefined, event.toolCallId);
@@ -1160,6 +1170,16 @@ export function buildUserDecisionOperation(record: {
 export function readTaskIntentForRecord(root: string, taskId: string): ReadTaskIntentResult {
 	const currentPath = readTaskRecordRaw(root, taskId).record?.intent_ref.path;
 	return readTaskIntent(root, taskId, currentPath);
+}
+
+/**
+ * In a batch Lane, an `edit` or `write` whose resolved target is outside the
+ * Lane is refused before it runs; `bash` is not intercepted.
+ */
+export function laneEditRefusal(event: { toolName?: string; input?: unknown }, cwd: string): string | null {
+	if (event.toolName !== "edit" && event.toolName !== "write") return null;
+	const input = (event.input ?? {}) as { path?: unknown; file_path?: unknown };
+	return laneWriteRefusal(cwd, input.path ?? input.file_path);
 }
 
 async function markGithubTaskTerminal(

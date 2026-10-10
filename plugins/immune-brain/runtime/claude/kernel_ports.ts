@@ -55,9 +55,11 @@ import {
 	startBatch,
 	type BatchRunnerKernelPort,
 	type BatchRunReport,
+	type BatchTrackerPort,
 } from "../unattended/batch_runner";
 import { createBatchKernelPort } from "../unattended/batch_kernel_port";
-import type { LaneOffer } from "../unattended/batch_lanes";
+import type { LaneRevisionRequest } from "../unattended/batch_delegation";
+import { createBatchTrackerPort, laneRuntimeContractRefusal, type LaneInstructionRequest, type LaneOffer } from "../unattended/batch_lanes";
 import { retireStaleBatch } from "../unattended/batch_disposition";
 import type { BatchLaneRunReport } from "../unattended/batch_state";
 import {
@@ -231,6 +233,7 @@ export interface ClaudeRuntimeOptions {
 	requestConfirmation?: NativeConfirmationPort;
 	batchKernel?: Partial<BatchRunnerKernelPort>;
 	batchGit?: BatchRunnerGitPort;
+	batchTracker?: BatchTrackerPort;
 	readInitiative?: InitiativeObservationReader;
 }
 
@@ -268,6 +271,7 @@ export class ClaudeRuntime {
 	private app: ReturnType<typeof createCanaryApplication> | null = null;
 	private readonly batchKernel?: Partial<BatchRunnerKernelPort>;
 	private readonly batchGit?: BatchRunnerGitPort;
+	private readonly batchTracker?: BatchTrackerPort;
 	private readonly readInitiative?: InitiativeObservationReader;
 
 	constructor(options: ClaudeRuntimeOptions) {
@@ -277,6 +281,7 @@ export class ClaudeRuntime {
 		this.requestConfirmation = options.requestConfirmation;
 		this.batchKernel = options.batchKernel;
 		this.batchGit = options.batchGit;
+		this.batchTracker = options.batchTracker;
 		this.readInitiative = options.readInitiative;
 		this.host = options.host ?? new ClaudeReviewHost(new FileHookEventLog());
 		this.coordinator = new AssuranceCoordinator({
@@ -741,7 +746,7 @@ export class ClaudeRuntime {
 	async startUnattendedBatch(
 		initiativeSlug: string,
 		meta: ToolMeta,
-		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[] } = {},
+		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest; lane_revision?: LaneRevisionRequest } = {},
 	): Promise<ClaudeBatchStartResult> {
 		throwIfCancelled(meta.signal);
 		const reuseOnly = options.reuseOnly === true;
@@ -779,6 +784,12 @@ export class ClaudeRuntime {
 		const budget = preflight.projection.budget;
 		const planDigest = preflight.projection.plan_digest;
 		const recoveryChildren = preflight.projection.recovery_children;
+		// A new lane batch whose Lane runtime cannot read the coordinator's Kernel
+		// contracts is refused before the gate opens; a match adds nothing.
+		if (options.max_parallel !== undefined && !isResuming) {
+			const contractRefusal = laneRuntimeContractRefusal(this.cwd);
+			if (contractRefusal) return batchReason("batch_run_rejected", contractRefusal);
+		}
 		// 5. Literal-user gate plus the shared reuse decision, the post-gate
 		// claim/drift cascade, and the Batch Authorization binding. The Host supplies
 		// only its gate, its confirmation reference, and its binding nonce.
@@ -803,7 +814,7 @@ export class ClaudeRuntime {
 					};
 				// The gate settles only on the literal user's answer or the caller's
 				// cancellation signal.
-				let confirmationResult: { decision: NativeDecision; requestId: string };
+				let confirmationResult: { decision: NativeDecision; requestId: string; delegateRevisions?: boolean };
 				try {
 					confirmationResult = await this.requestConfirmation!({
 						operation: "start_unattended_batch",
@@ -830,6 +841,8 @@ export class ClaudeRuntime {
 											max_parallel: options.max_parallel,
 											parallel_groups: facts.parallel_groups,
 											serialized: facts.scope_conflicts,
+											...(options.final_verification ? { final_verification: options.final_verification } : {}),
+											offer_revision_delegation: true,
 										},
 									}
 								: {}),
@@ -874,7 +887,11 @@ export class ClaudeRuntime {
 					return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
 				if (confirmationResult.decision !== "accept")
 					return { kind: "host_rejection", value: batchReason("confirmation_no_decision") };
-				return { kind: "confirmed", request_id: confirmationResult.requestId };
+				return {
+					kind: "confirmed",
+					request_id: confirmationResult.requestId,
+					...(options.max_parallel !== undefined && confirmationResult.delegateRevisions ? { delegate_revisions: true } : {}),
+				};
 			},
 			// A reused authorization keeps this invocation's Kernel binding without a new
 			// literal-user act, so its confirmation reference names the resumed batch
@@ -937,7 +954,16 @@ export class ClaudeRuntime {
 			now,
 			kernel: kernelPort,
 			git: this.batchGit,
-			...(options.max_parallel !== undefined ? { max_parallel: options.max_parallel } : {}),
+			...(options.max_parallel !== undefined
+				? {
+						max_parallel: options.max_parallel,
+						tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug),
+						...(options.final_verification ? { final_verification: options.final_verification } : {}),
+						...(options.lane_instruction ? { lane_instruction: options.lane_instruction } : {}),
+						...(options.lane_revision ? { lane_revision: options.lane_revision } : {}),
+						...(authorization.revision_delegation !== undefined ? { revision_delegation: authorization.revision_delegation } : {}),
+					}
+				: {}),
 			...(options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}),
 		});
 
@@ -969,7 +995,7 @@ export class ClaudeRuntime {
 			initiative_slug: initiativeSlug,
 			now: new Date().toISOString(),
 			gate: async (facts) => {
-				let confirmationResult: { decision: NativeDecision; requestId: string };
+				let confirmationResult: { decision: NativeDecision; requestId: string; delegateRevisions?: boolean };
 				try {
 					confirmationResult = await this.requestConfirmation!({
 						operation: "retire_stale_batch",

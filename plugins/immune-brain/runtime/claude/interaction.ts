@@ -88,6 +88,9 @@ export interface NativeConfirmationInput {
 			max_parallel: number;
 			parallel_groups: string[][];
 			serialized: Array<{ task_id: string; overlaps_with: string[] }>;
+			final_verification?: string[];
+			/** ADR 0018: the gate offers the opt-in delegation of in-envelope Lane Intent revisions. */
+			offer_revision_delegation?: boolean;
 		};
 	};
 	/** Present only for a batch disposition: the record the user is asked to retire. */
@@ -105,6 +108,8 @@ export interface NativeConfirmationInput {
 export interface NativeConfirmationResult {
 	decision: NativeDecision;
 	requestId: string;
+	/** ADR 0018: true only when the user ticked the delegation in a lane batch gate. */
+	delegateRevisions?: boolean;
 }
 
 export type NativeConfirmationPort = (input: NativeConfirmationInput) => Promise<NativeConfirmationResult>;

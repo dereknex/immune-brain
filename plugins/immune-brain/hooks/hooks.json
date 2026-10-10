@@ -1,6 +1,27 @@
 {
-  "description": "Observe Claude Code Review and session lifecycle for Immune-Brain. Hooks never mint authority.",
+  "description": "Observe Claude Code Review and session lifecycle for Immune-Brain, keep a batch Lane's file edits inside its Lane, and announce an active Managed task without resuming it. Hooks never mint authority.",
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/claude/mcp-server.mjs\" --hook"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/claude/mcp-server.mjs\" --hook"
+          }
+        ]
+      }
+    ],
     "SubagentStart": [
       {
         "hooks": [

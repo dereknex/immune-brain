@@ -10,7 +10,12 @@ This skill adheres to the **[BASELINE.md](BASELINE.md)**.
 ## Kernel Canary Routing and Authority
 
 Only explicit `imm-run` entry starts or resumes this loop. Ordinary host input
-stays host-native; it never resumes a Managed owner implicitly. Read the current
+stays host-native; it never resumes a Managed owner implicitly. While a
+non-terminal TaskRecord holds the workspace, both Hosts add a read-only notice
+to ordinary input (Pi `before_agent_start`, Claude Code `UserPromptSubmit`)
+naming the task, its next obligation and its scope: before committing or
+modifying files inside that scope, read `status` and tell the user the task is
+active and what it waits for. The notice resumes nothing. Read the current
 Host's `status` projection first and verify the exact active backend claim,
 TaskIntent, and TaskRecord. Invalid or contradictory projections fail closed. A
 candidate TaskIntent is not Enrollment authority.
@@ -100,6 +105,12 @@ Continue while the current projection has a valid action:
    accepted contract and answer with `refute_finding` bound to fresh QA evidence
    for that acceptance. Escalating a local heuristic a third time instead of
    choosing one of those two responses is the loop this step exists to break.
+   A finding whose defect lies inside the TaskIntent goal and `scope_hint` is
+   ordinary rework even when no acceptance names its exact case: fix the code,
+   add the test that pins the case, and dispose the finding. It is never a
+   reason to revise the Intent. Acceptance text states principles; enumeration
+   of specific inputs belongs in tests, so never append a single input case to
+   an acceptance assertion in order to close a finding.
 6. An unresolved decision pauses only dependent execution. On `awaiting_user`,
    invoke `request_authorization` directly before ending the turn; use the
    Decisions and Recovery route for its native-gate handling. End the turn if
@@ -197,7 +208,46 @@ Only children whose scopes are provably disjoint run together; a child whose sco
 overlaps an in-flight Lane waits until that Lane is integrated. Settled children
 integrate serially, and a parked child ends only itself and its dependents while a
 disjoint sibling keeps moving. A lost Lane parks as `batch_lane_lost`, and
-`qa_failure_limit` counts each child separately. A resume with a different
+`qa_failure_limit` counts each child separately. A completed settlement inside a
+Lane changes Kernel state only and writes nothing to the tracker: the coordinator
+closes the child's Issue after it integrates that child's commit, exactly once,
+and reports the attempt in `tracker_observations`. A parked or lost child is
+never integrated, so its Issue stays open; an explicit stop inside a Lane still
+projects `not planned` at once.
+
+The lane batch confirmation offers one opt-in choice, off by default: delegate
+to the coordinator the approval of each Lane child's breaking Intent revisions
+that stay inside that child's TaskIntent as authorized for the batch (ADR 0018).
+The answer is recorded on the batch record as `revision_delegation`; a batch
+confirmed without it behaves exactly as before, and the grant ends with that
+batch — a terminal, retired or later batch never uses it. When an integrated
+child's TaskIntent equals the last revision applied under that grant, the runner
+reseals `plan_digest` and records both digests in `reseals`, so later children
+continue without retiring the batch. Any other Intent change still fails closed
+as `plan_changed` and takes the ADR 0016 retirement path.
+
+Before a new lane batch provisions any Lane, the runner compares the Kernel
+contract identifiers (TaskRecord, tombstone, projection, store schema) of the
+coordinator's runtime with those of the runtime a Lane Executor loads — never the
+plugin version number — and refuses with `batch_runtime_contract_mismatch`,
+naming both sources, when they differ; a match adds no confirmation. A Lane whose
+state exists but whose contract the coordinator refuses to read parks as
+`batch_lane_contract_mismatch` with the original parse error, distinct from a
+missing Lane's `batch_lane_lost`.
+
+Inside a Lane, the Pi extension and the Claude Code `PreToolUse` hook refuse an
+`edit`/`write` (Claude: `Edit`, `Write`, `MultiEdit`, `NotebookEdit`) whose
+resolved target lies outside the Lane, naming the Lane path. A shell command is
+not intercepted; this is no bash sandbox. When a lane batch is re-entered with a
+dirty coordinator checkout, each dirty path is restored to HEAD only if every one
+of them is an unstaged modification or untracked file that a Lane of this batch
+changed (its bytes differ from that Lane's base) and whose bytes equal the Lane's,
+in its worktree or a Lane-branch commit. The read-only preflight only attributes;
+the runner restores after the batch is authorized. The bytes are
+backed up first under `.imm/state/batches/restores/`, and the backup is recorded
+in the batch record and report as `restores`. If any change has another origin,
+or is staged or deleted, no file is touched and the refusal names it; never
+stage such changes to get past the refusal. A resume with a different
 `max_parallel` is refused with `batch_parallel_mismatch`. A Lane holds no batch
 state and its Host session never re-enters the batch.
 
@@ -220,6 +270,7 @@ source directly rather than assuming the Host injected it into context:
 | `Lane Executor Host: <host>` | `claude-code` or `pi` | Every Lane's Executor Host is that Host. When the `lane-steward` did not report it available in a Lane, that Lane has no Executor Host; the Parent does not fall back to the other one. | The Parent's own Host type, else the other allowlisted Host |
 | `Lane Executor model: <model>` | a model identifier of the configured Executor Host | Passed to the Executor Host as `--model <model>` | The Executor Host's own default |
 | `Lane Executor effort: <level>` | a level the configured Executor Host accepts | Passed as `--effort <level>` to `claude-code` and as `--thinking <level>` to `pi` | The Executor Host's own default |
+| `Batch final verification: <command>; <command>` | plain commands without shell syntax or quoting, at most 8 | Passed as `final_verification` when a new lane batch starts and shown in its native confirmation; the runner runs them on the batch branch once every child is integrated and writes each command's exit status and timing into the completion report as `final_verification`. A failing command reports the batch as not passed; integrated commits are never rolled back | The commands the repository instruction file names for its full test suite and type check, else none and the completion report says nothing was run |
 
 A model identifier and an effort level mean something only to one Host, so
 `Lane Executor model` and `Lane Executor effort` apply only together with
@@ -230,6 +281,11 @@ them, display one non-blocking line with each selected value and its source. On
 a resume the recorded `max_parallel` stands and the directive is not passed
 again. The directives configure how the Parent starts sessions; the runner reads
 none of them, and they grant no permission or trust option.
+
+A repository that names its full test and type-check commands in prose (for
+example "uses `bun test`; type checking is `bun run typecheck`") supplies them as
+the final verification without a directive; the Parent never invents a command
+the repository does not name.
 
 #### Lane Executor Supervision
 
@@ -300,7 +356,8 @@ a live tab:
    `herdr agent start <name> --kind <kind> --pane <pane_id> -- <host arguments>`.
    Host arguments are only those that load the Parent's plugin and those that
    [Lane Preferences](#lane-preferences) resolved for model and effort.
-4. Submit the entry and nothing else, and confirm the turn began:
+4. Submit the entry and nothing else (later text follows only the instruction
+   rule below), and confirm the turn began:
    `herdr agent prompt <pane_id> "<imm-run entry> <task_id>" --wait --until working --until blocked --timeout 30000`.
    The entry is the Executor Host's own `imm-run` invocation as that Host names
    it: a Claude Code Host that loaded the plugin from a directory names it
@@ -312,13 +369,52 @@ a live tab:
 
 `agent_not_ready` from step 3, or a `blocked` state at any time, means the tab
 shows a dialog only the user may answer: workspace trust, sign-in, a permission
-request or a question. The Parent sends that tab no keys and no prompt. It
-tells the user which tab and `task_id` is waiting, leaves the tab open, and
-continues the other Lanes; once the user has answered, step 3's tab is resumed
+request, a question, or a native confirmation such as an Intent revision gate.
+The Parent sends that tab no keys and no prompt, and never answers such a dialog
+for the user. As soon as the wait returns `blocked` it tells the user which tab
+and `task_id` is waiting and what the dialog asks, without waiting to be asked,
+leaves the tab open, and continues the other Lanes; once the user has answered, step 3's tab is resumed
 from step 4 if the entry was never submitted, otherwise from step 5. `idle` or
 `done` is a session end for the rules below, although the tab stays open: the
 Parent calls `start_unattended_batch`, and a relaunch submits the entry again in
-the same tab instead of creating another. A failed or timed-out `herdr` command
+the same tab instead of creating another. When that report shows the child
+neither settled nor waiting on a user decision, the Parent tells the user which
+tab and `task_id` went idle and what the Kernel projection still requires.
+
+The Parent may send one text instruction to a Lane session, and only while it is
+`idle` and its child is still running in the Lane: a correction to the
+Executor's approach, never an answer to a dialog. It first calls
+`start_unattended_batch` with `lane_instruction` (`task_id`, `text`, `kind`
+`instruction` or `correction`, and the `session_state` it just observed with
+`herdr agent get`). The runner records the text in the batch record and report
+as `interventions` and answers `lane_instruction.accepted`; only when accepted
+does the Parent submit it with `herdr agent prompt <pane_id> "<text>" --wait
+--until working --until blocked --timeout 30000` and re-arm step 5. A `blocked`
+or `working` session is refused and receives nothing. Every instruction the
+coordinator sent is therefore in the report, so Executor-initiated behavior and
+coordinator intervention can be told apart afterwards. This never applies to a
+Review agent: a dispatched reviewer is still never continued or re-prompted.
+
+When a Lane child exhausts its rework budget (the per-child `qa_failure_limit`)
+it does not park for the user at once: the report carries a
+`{ role: "coordinator", action: "correct" }` handoff and the runner makes no
+further attempt for that child. The Parent reads the findings of every round
+from that Lane's Kernel state, decides whether they point at one root cause, and
+writes one design-level correction — the invariant to hold and the shared seam to
+fix — never a patch of its own. It starts a new Executor session in the Lane
+(the old context is not reused; the new session resumes from the Kernel
+projection and the Lane workspace alone) and sends the correction as
+`lane_instruction` kind `correction`; the runner counts it. At most two
+corrections are spent per child: the third exhaustion parks the child as
+`batch_correction_limit_reached`, its dependents are skipped, siblings that do not
+depend on it keep executing and integrating, and the batch reports it at the end.
+Single tasks outside a batch keep their existing budget behavior, and Review
+independence is unchanged. A Review rework budget that the Kernel turns into a
+`replan_required` decision still needs the user's own native decision.
+
+Every live Lane session keeps exactly one `herdr agent wait` armed, so `blocked`
+and idle-without-settlement wake the Parent on their own; a Parent that has
+nothing else to do still ends its turn with those waits armed. A failed or timed-out `herdr` command
 proves nothing about delivery; inspect the session's state before repeating it.
 
 The Parent only creates: it closes no tab, including the tabs it created, and
@@ -393,9 +489,23 @@ is recorded as a separate follow-up rather than resolved here.
   no new provider or data effect.
 - Text instructions are contracts, not a hard bash sandbox. They guide and are
   reviewed; the Kernel authority gates remain the real boundary.
+- In a Lane whose batch confirmation delegated in-envelope revisions
+  (ADR 0018), the Executor does not open the gate for a revision that only
+  changes acceptance or narrows `scope_hint`: it stops and returns the complete
+  next intent to the Parent, which submits it as `lane_revision` on
+  `start_unattended_batch`. The runner applies it as a delegated approval
+  (actor `batch-coordinator`, confirmation `delegated-batch:<batch_id>@<time>`)
+  or refuses it with `batch_delegation_refused` and a `fallback`; on refusal the
+  Executor uses its own native gate below. Widening scope, changing risk, goal
+  or the bound Spec is never delegated, and nobody answers a dialog in a tab.
 - Invoke `approve_breaking_intent_revision` with the complete next intent
   directly; the native Host gate is the single user decision. Do not overwrite
-  enrolled intent sidecars or ask for chat pre-confirmation.
+  enrolled intent sidecars or ask for chat pre-confirmation. A breaking revision
+  is used only when the goal, the `scope_hint`, or a user-visible commitment
+  changes. A defect inside the existing goal and scope is rework under the
+  Execution Loop, not a revision, and the acceptance length limit is never
+  worked around by shortening words: when an assertion grows toward it, the
+  assertion is enumerating cases that belong in tests.
 - On `awaiting_user`, invoke `request_authorization` directly for a concrete
   unresolved decision or rework authorization, not risk tier alone.
 - When the user explicitly asks to stop an active task, invoke the Kernel stop
