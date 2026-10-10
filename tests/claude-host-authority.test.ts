@@ -358,7 +358,7 @@ describe("claude host authority", () => {
 			expect(tools.find((tool) => tool.name === name)?.annotations).toEqual({ destructiveHint: true });
 		}
 		const submitReview = tools.find((tool) => tool.name === "submit_review");
-		expect(submitReview?.inputSchema.required).toEqual(["task_id", "verdict"]);
+		expect(submitReview?.inputSchema.required).toEqual(["task_id"]);
 		expect(submitReview?.inputSchema.properties).toHaveProperty("verdict");
 	});
 
@@ -743,15 +743,15 @@ describe("claude host authority", () => {
 		expect(ready.state).toBe("review_ready");
 		const verdict = passVerdict(snapshot("review"));
 		completeReview(host, ready.operation_id, JSON.stringify(verdict));
-		await expect(mcp.callTool("submit_review", { task_id: TASK })).rejects.toThrow("verdict is required");
+		// A relayed malformed verdict keeps the reservation for a retry.
 		expect(await mcp.callTool("submit_review", { task_id: TASK, verdict: { ...verdict, extra: true } })).toMatchObject({
 			state: "blocked",
 			code: "verdict_invalid",
 		});
 		expect(h.counts().applyCount).toBe(1);
 		expect(await mcp.callTool("advance_assurance", { task_id: TASK })).toMatchObject({ code: "verdict_invalid" });
-		// Settlement projects the terminal tracker state alongside the outcome.
-		expect(await mcp.callTool("submit_review", { task_id: TASK, verdict })).toMatchObject({
+		// ADR 0017: the retry may omit the verdict to apply the observed receipt.
+		expect(await mcp.callTool("submit_review", { task_id: TASK })).toMatchObject({
 			state: "completed",
 			tracker: { contract: "immune_brain/github_issue_tracker_result/v1", operation: "mark-terminal" },
 		});
@@ -759,7 +759,51 @@ describe("claude host authority", () => {
 		expect(await mcp.callTool("submit_review", { task_id: TASK, verdict })).toMatchObject({ state: "blocked" });
 	});
 
+	test("an omitted Claude verdict without an observed receipt fails closed", async () => {
+		const host = new ClaudeReviewHost();
+		const h = makeCoordinator({ host });
+		const mcp = createMcpRuntime({ cwd: ROOT, env: ENV, ports: h.ports, authorityOverrides: h.ports, host });
+		await handleJsonRpc({
+			jsonrpc: "2.0",
+			id: 1,
+			method: "initialize",
+			params: { protocolVersion: "2025-06-18", clientInfo: { name: "claude-code", version: "2.1.236" }, capabilities: { elicitation: {} } },
+		}, mcp);
+		const ready = await mcp.callTool("advance_assurance", { task_id: TASK }) as { state: string; operation_id: string };
+		expect(ready.state).toBe("review_ready");
+		const blocked = await mcp.callTool("submit_review", { task_id: TASK }) as { state: string; reason: string; recovery_action?: string };
+		expect(blocked.state).toBe("blocked");
+		expect(blocked.reason).toBe("reserved foreground Agent was not observed");
+		expect(blocked.recovery_action).toContain("do not dispatch or continue another reviewer");
+		expect(h.counts().applyCount).toBe(1);
+	});
 
+
+
+	test("invalid Spec binding blocks ordinary authorization before native confirmation", async () => {
+		const taskId = "invalid-binding-authorization";
+		const fixture = authorityFixtureRoot(taskId);
+		let confirmations = 0;
+		const runtime = new ClaudeRuntime({
+			cwd: fixture.root, env: ENV, interactive: true, permissionMode: "manual",
+			requestConfirmation: async () => { confirmations++; return { decision: "accept", requestId: "binding-confirmation" }; },
+		});
+		const meta = (toolCallId: string): ToolMeta => ({ taskId, sessionId: "s", toolCallId, requiresUserInteraction: true, interactive: true, permissionMode: "manual" });
+		await runtime.enroll(taskId, meta("enroll"));
+		confirmations = 0;
+		const run = withKernelRead(fixture.root, (db) => readRunRowByTask(db, taskId))!;
+		const record = JSON.parse(run.record_json);
+		const invalid = parseTaskIntentV1({ ...record.intent_snapshot, scope_hint: [...record.intent_snapshot.scope_hint, "docs/specs/one.spec.md", "docs/specs/two.spec.md"] });
+		record.intent_snapshot = invalid;
+		record.intent_ref.content_hash = canonicalIntentHash(invalid);
+		const bytes = `${JSON.stringify(record, null, 2)}\n`;
+		withKernelTransaction(fixture.root, (db) => updateRunRecord(db, run.run_id, run.revision, bytes, new Date().toISOString()));
+		writeFileSync(join(fixture.root, `docs/plans/${taskId}.intent.json`), `${JSON.stringify(invalid, null, 2)}\n`);
+		execFileSync("git", ["add", "--", `docs/plans/${taskId}.intent.json`], { cwd: fixture.root });
+		expect(() => runtime.authorize(taskId, "request_authorization", meta("authorize"))).toThrow();
+		expect(confirmations).toBe(0);
+		expect(withKernelRead(fixture.root, (db) => readRunRowByTask(db, taskId))!.record_json).toBe(bytes);
+	});
 
 	test("request_authorization resolves the single bound user decision", async () => {
 		const taskId = "user-decision";
@@ -1544,7 +1588,7 @@ describe("claude host resolve_finding", () => {
 				"retire_stale_batch",
 			]);
 			const submitReview = listMcpTools().find((tool) => tool.name === "submit_review");
-			expect(submitReview?.inputSchema.required).toEqual(["task_id", "verdict"]);
+			expect(submitReview?.inputSchema.required).toEqual(["task_id"]);
 			for (const name of ["enroll", "request_authorization", "approve_breaking_intent_revision", "stop", "start_unattended_batch", "retire_stale_batch"]) {
 				expect(listMcpTools().find((tool) => tool.name === name)?.annotations).toEqual({ destructiveHint: true });
 			}
@@ -1616,7 +1660,7 @@ describe("claude host resolve_finding", () => {
 	test("every blocked Claude review submission names one same-host recovery action", async () => {
 		const released = "Call advance_assurance to obtain a new Review reservation, then dispatch one fresh reviewer with the returned envelope unchanged";
 		const retained = "Wait for the dispatched reviewer to finish, then call submit_review again with its verdict; do not dispatch or continue another reviewer";
-		const mismatch = "Resubmit the reviewer's verdict exactly as the reviewer returned it";
+		const mismatch = "Resubmit without a verdict to apply the observed reviewer receipt, or resubmit the reviewer's verdict exactly as the reviewer returned it";
 		const forbidden = [/another Host/i, /worktree/i, /repair_authority_state/, /\bcommit\b/i, /unmanaged/i];
 		const verdict = () => passVerdict(snapshot("review"));
 

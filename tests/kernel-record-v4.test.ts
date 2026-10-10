@@ -96,6 +96,22 @@ describe("TaskRecord v4 schema", () => {
 		}))).toThrow(/summary/);
 	});
 
+	test("binds the reviewer's own result digest inside the review attestation only", () => {
+		const digest = `sha256:${"e".repeat(64)}`;
+		const parsed = parseTaskRecordV4(record({
+			attestations: [attestation("review", { review_revision: reviewRevision(), reviewer_verdict_sha256: digest })],
+		}));
+		expect(parsed.attestations[0].reviewer_verdict_sha256).toBe(digest);
+		expect(canonicalRecordHash(parsed)).toBe(canonicalRecordHash(parseTaskRecordV4(JSON.parse(JSON.stringify(parsed)))));
+		// Emission-only-when-present keeps legacy records byte-identical.
+		const legacy = parseTaskRecordV4(record({ attestations: [attestation("review", { review_revision: reviewRevision() })] }));
+		expect(legacy.attestations[0]).not.toHaveProperty("reviewer_verdict_sha256");
+		expect(() => parseTaskRecordV4(record({ attestations: [attestation("qa", { reviewer_verdict_sha256: digest })] }))).toThrow(/only valid/);
+		expect(() => parseTaskRecordV4(record({
+			attestations: [attestation("review", { review_revision: reviewRevision(), reviewer_verdict_sha256: "not-a-digest" })],
+		}))).toThrow(/sha256/);
+	});
+
 	test("rejects missing or malformed base and cross-version identity fields", () => {
 		expect(() => parseTaskRecordV4(record({ git_base_head: undefined }))).toThrow();
 		expect(() => parseTaskRecordV4(record({ git_base_head: "A".repeat(40) }))).toThrow();

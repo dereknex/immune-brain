@@ -46,9 +46,10 @@ export type {
 	ReviewTimingProfile,
 } from "../runtime/assurance/coordinator";
 
-import { AssuranceCoordinator, type AssuranceCoordinatorPorts } from "../runtime/assurance/coordinator";
+import { AssuranceCoordinator, type AssuranceCoordinatorPorts, type HostContext, type AssuranceSubmitReviewResult } from "../runtime/assurance/coordinator";
 import type { AssuranceHostPort, HostReviewReservation, ReviewRequest } from "../runtime/assurance/host_port";
-import { reservedAgentParams } from "./pi-canary-native-review";
+import { submitMediatedReview, type ReviewObservation } from "../runtime/assurance/review_mediation";
+import { reservedAgentParams, promptDigest } from "./pi-canary-native-review";
 
 import type { VerdictAuthority } from "../runtime/assurance/verdict_authority";
 
@@ -57,9 +58,18 @@ export type AssuranceProgressionPorts = Omit<AssuranceCoordinatorPorts, "host"> 
 	authorityOverrides?: Partial<VerdictAuthority>;
 };
 
+interface RecordedReviewReceipt {
+	taskId: string;
+	promptDigest: string;
+	toolCallId?: string;
+	result?: string;
+	error?: string;
+}
+
 class PiReviewHost implements AssuranceHostPort {
 	readonly host = "pi" as const;
 	private readonly pending = new Set<string>();
+	private readonly receipts = new Map<string, RecordedReviewReceipt>();
 
 	prepareReview(request: ReviewRequest): HostReviewReservation {
 		const params = reservedAgentParams({
@@ -69,17 +79,70 @@ class PiReviewHost implements AssuranceHostPort {
 			max_turns: request.maxTurns,
 		});
 		this.pending.add(request.operationId);
+		this.receipts.set(request.operationId, { taskId: request.taskId, promptDigest: promptDigest(params.prompt) });
 		return { id: request.operationId, dispatch: params };
 	}
 
 	releaseReview(reservation: HostReviewReservation): void {
 		this.pending.delete(reservation.id);
+		this.receipts.delete(reservation.id);
+	}
+
+	/** Extension event seam: correlate one observed `Agent` dispatch to its reservation (ADR 0017). */
+	observeReviewDispatch(input: { prompt?: unknown; subagent_type?: unknown } | undefined, toolCallId: string | undefined): void {
+		if (typeof input?.prompt !== "string") return;
+		for (const record of this.receipts.values()) {
+			if (record.promptDigest !== promptDigest(input.prompt)) continue;
+			if (input.subagent_type !== "Review") {
+				record.error = "the reserved reviewer prompt was dispatched with a different Agent type";
+				return;
+			}
+			if (record.toolCallId !== undefined && record.toolCallId !== toolCallId) {
+				record.error = "the reserved reviewer was dispatched more than once";
+				return;
+			}
+			record.toolCallId = toolCallId;
+			return;
+		}
+	}
+
+	/** Extension event seam: store the observed reviewer result bytes (ADR 0017). */
+	observeReviewResult(toolCallId: string | undefined, bytes: string): void {
+		if (!toolCallId) return;
+		for (const record of this.receipts.values()) {
+			if (record.toolCallId !== toolCallId) continue;
+			if (record.result === undefined) record.result = bytes;
+			else if (record.result !== bytes) record.error = "the reserved reviewer returned conflicting result bytes";
+			return;
+		}
+	}
+
+	inspectReview(taskId: string): ReviewObservation {
+		for (const record of this.receipts.values()) {
+			if (record.taskId !== taskId) continue;
+			if (record.error) return { ok: false, release: false, reason: record.error };
+			if (record.toolCallId === undefined)
+				return { ok: false, release: false, reason: "the reserved foreground Agent was not observed in this session" };
+			if (record.result === undefined)
+				return { ok: false, release: false, reason: "the reserved foreground reviewer has not returned its result yet; wait for it, then call submit_review again" };
+			return { ok: true, receipt: { actorId: "pi-review-agent", result: record.result } };
+		}
+		return { ok: false, release: true, reason: "the reserved foreground Agent was not observed in this session" };
 	}
 }
 
 export class AssuranceProgression extends AssuranceCoordinator {
+	readonly piReviewHost: PiReviewHost;
+
 	constructor(ports: AssuranceProgressionPorts) {
-		(ports as AssuranceCoordinatorPorts).host = new PiReviewHost();
+		const host = new PiReviewHost();
+		(ports as AssuranceCoordinatorPorts).host = host;
 		super(ports as AssuranceCoordinatorPorts, ports.authorityOverrides);
+		this.piReviewHost = host;
+	}
+
+	/** ADR 0017: verdict-source resolution happens here, before the shared submit path. */
+	submitMediated(taskId: string, ctx: HostContext, verdictInput: unknown): Promise<AssuranceSubmitReviewResult> {
+		return submitMediatedReview(this, ctx, taskId, verdictInput, () => this.piReviewHost.inspectReview(taskId));
 	}
 }

@@ -17,7 +17,40 @@ import {
 	snapshot,
 } from "./helpers/pi-canary-assurance-harness.ts";
 
+
+/** ADR 0017: record the reserved dispatch and its result, then submit the relayed verdict. */
+async function submitObserved(progression: ReturnType<typeof makeHarness>["progression"], taskId: string, verdict: unknown) {
+	const ready = await progression.advance(taskId, ctx);
+	const prompt = (ready as { agent_params?: { prompt?: string } }).agent_params?.prompt;
+	if (prompt) {
+		progression.piReviewHost.observeReviewDispatch({ prompt, subagent_type: "Review" }, "call-1");
+		progression.piReviewHost.observeReviewResult("call-1", typeof verdict === "string" ? verdict : JSON.stringify(verdict));
+	}
+	return progression.submitMediated(taskId, ctx, verdict);
+}
+
 describe("foreground assurance progression", () => {
+	test.each([true, false])("conflict during awaited submission retains reservation (relayed=%s)", async (relayed) => {
+		const h = makeHarness();
+		const ready = await h.progression.advance(TASK, ctx);
+		const prompt = (ready as { agent_params: { prompt: string } }).agent_params.prompt;
+		const verdict = passVerdict(snapshot("review"));
+		h.progression.piReviewHost.observeReviewDispatch({ prompt, subagent_type: "Review" }, "interleaved");
+		h.progression.piReviewHost.observeReviewResult("interleaved", JSON.stringify(verdict));
+		const original = h.ports.projectTask;
+		let entered!: () => void;
+		let release!: () => void;
+		const entry = new Promise<void>((resolve) => { entered = resolve; });
+		const gate = new Promise<void>((resolve) => { release = resolve; });
+		h.ports.projectTask = async (root, task) => { entered(); await gate; return original(root, task); };
+		const submitting = h.progression.submitMediated(TASK, ctx, relayed ? verdict : undefined);
+		await entry;
+		h.progression.piReviewHost.observeReviewResult("interleaved", "");
+		release();
+		expect(await submitting).toMatchObject({ state: "blocked", reason: expect.stringContaining("conflicting result bytes"), recovery_action: "Wait for the dispatched reviewer to finish, then call submit_review again with its verdict; do not dispatch or continue another reviewer" });
+		expect(h.counts().applyCount).toBe(1);
+		expect(h.progression.active(TASK)).toMatchObject({ state: "review_ready", operation_id: (ready as { operation_id: string }).operation_id });
+	});
 	test("runs QA synchronously and returns one foreground Review reservation", async () => {
 		let released!: () => void;
 		const gate = new Promise<void>((resolve) => { released = resolve; });
@@ -167,9 +200,8 @@ describe("foreground assurance progression", () => {
 		expect(advanced.state).toBe("settlement_unknown");
 		h.ports.projectTask = async () => ({ ...projection(), error: "authority unavailable" });
 		expect(await h.progression.advance(TASK, ctx)).toMatchObject({ state: "blocked", reason: "authority unavailable" });
-		expect(await h.progression.submitReview(TASK, ctx, {})).toEqual({
+		expect(await submitObserved(h.progression, TASK, {})).toMatchObject({
 			state: "settlement_unknown",
-			operation: "qa",
 			operation_id: (advanced as { operation_id: string }).operation_id,
 			reason: (advanced as { reason: string }).reason,
 		});
@@ -255,18 +287,24 @@ describe("foreground assurance progression", () => {
 		h.ports.projectTask = async (root, taskId) => {
 			if (failAfterCommit) {
 				postReadyReads += 1;
-				if (postReadyReads > 1) throw new Error("projection unavailable after Review settlement");
+				// The receipt-bound submit reads the projection once to record the
+				// observed receipt, then again while settling.
+				if (postReadyReads > 2) throw new Error("projection unavailable after Review settlement");
 			}
 			return originalProject(root, taskId);
 		};
 		const ready = await h.progression.advance(TASK, ctx);
 		expect(ready.state).toBe("review_ready");
 		failAfterCommit = true;
-		expect(await h.progression.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toMatchObject({
+		const unknown = await submitObserved(h.progression, TASK, passVerdict(snapshot("review")));
+		expect(unknown).toMatchObject({
 			state: "settlement_unknown",
 			operation: "review",
 			reason: "projection unavailable after Review settlement",
 		});
+		for (const verdict of [undefined, passVerdict(snapshot("review"))]) {
+			expect(await h.progression.submitMediated(TASK, ctx, verdict)).toEqual(unknown);
+		}
 		expect(h.counts().applyCount).toBe(2);
 	});
 	test("cancelling Review reservation construction removes its evidence", async () => {
@@ -279,10 +317,10 @@ describe("foreground assurance progression", () => {
 		const h = makeHarness();
 		const ready = await h.progression.advance(TASK, ctx);
 		expect(ready.state).toBe("review_ready");
-		const submitted = await h.progression.submitReview(TASK, ctx, passVerdict(snapshot("review")));
+		const submitted = await submitObserved(h.progression, TASK, passVerdict(snapshot("review")));
 		expect(submitted).toEqual({ state: "completed" });
 		expect(h.counts().applyCount).toBe(2);
-		const duplicate = await h.progression.submitReview(TASK, ctx, passVerdict(snapshot("review")));
+		const duplicate = await submitObserved(h.progression, TASK, passVerdict(snapshot("review")));
 		expect(duplicate).toMatchObject({ state: "blocked" });
 	});
 
@@ -290,39 +328,47 @@ describe("foreground assurance progression", () => {
 		const h = makeHarness({ risk: "critical" });
 		const ready = await h.progression.advance(TASK, ctx);
 		expect(ready.state).toBe("review_ready");
-		expect(await h.progression.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
+		expect(await submitObserved(h.progression, TASK, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
 		expect(h.counts().applyCount).toBe(2);
 	});
 
 	test("a Review pass through the Pi extension must claim the whole reviewed change set", async () => {
 		const h = makeHarness();
-		expect((await h.progression.advance(TASK, ctx)).state).toBe("review_ready");
+		const ready = await h.progression.advance(TASK, ctx);
+		expect(ready.state).toBe("review_ready");
 		const claim = (paths: unknown) => ({
 			...passVerdict(snapshot("review")),
 			approval: { ...passVerdict(snapshot("review")).approval, inspected_paths: paths },
 		});
+		const prompt = (ready as { agent_params: { prompt: string } }).agent_params.prompt;
+		h.progression.piReviewHost.observeReviewDispatch({ prompt, subagent_type: "Review" }, "call-1");
+		h.progression.piReviewHost.observeReviewResult("call-1", JSON.stringify(claim(["src/change.ts"])));
 		// Missing-path control: rejected as a correctable invalid verdict, the
 		// reservation survives, and nothing is applied.
-		const omitted = await h.progression.submitReview(TASK, ctx, claim([]));
+		const omitted = await h.progression.submitMediated(TASK, ctx, claim([]));
 		expect(omitted).toMatchObject({ state: "blocked", code: "verdict_invalid" });
 		expect((omitted as { reason: string }).reason).toContain("omits reviewed changed paths");
 		expect(h.counts().applyCount).toBe(1);
 		// Positive control: the exact change set settles through the same reservation.
-		expect(await h.progression.submitReview(TASK, ctx, claim(["src/change.ts"]))).toEqual({ state: "completed" });
+		expect(await h.progression.submitMediated(TASK, ctx, claim(["src/change.ts"]))).toEqual({ state: "completed" });
 		expect(h.counts().applyCount).toBe(2);
 	});
 
 	test("malformed Parent verdict is retryable without a Review authority write", async () => {
 		const h = makeHarness();
-		expect((await h.progression.advance(TASK, ctx)).state).toBe("review_ready");
-		const invalid = await h.progression.submitReview(TASK, ctx, { decision: "pass" });
+		const ready = await h.progression.advance(TASK, ctx);
+		expect(ready.state).toBe("review_ready");
+		const prompt = (ready as { agent_params: { prompt: string } }).agent_params.prompt;
+		h.progression.piReviewHost.observeReviewDispatch({ prompt, subagent_type: "Review" }, "call-1");
+		h.progression.piReviewHost.observeReviewResult("call-1", JSON.stringify(passVerdict(snapshot("review"))));
+		const invalid = await h.progression.submitMediated(TASK, ctx, { decision: "pass" });
 		expect(invalid).toMatchObject({ state: "blocked", code: "verdict_invalid" });
 		expect(h.counts().applyCount).toBe(1);
 		expect(h.progression.active(TASK)?.state).toBe("review_ready");
 		const repeatedAdvance = await h.progression.advance(TASK, ctx);
 		expect(repeatedAdvance).toMatchObject({ state: "blocked", code: "verdict_invalid" });
 		expect(repeatedAdvance).not.toHaveProperty("agent_params");
-		expect(await h.progression.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
+		expect(await h.progression.submitMediated(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
 	});
 	test("discards a stale Review reservation when Kernel no longer requires Review", async () => {
 		let qaSettled = false;
@@ -370,9 +416,13 @@ describe("foreground assurance progression", () => {
 				? { ...projection("review", "run_review"), projection: { ...projection("review", "run_review").projection, record_revision: "record-new" } } as never
 				: projection("review", projectionReads === 1 ? "run_qa" : "run_review");
 		} });
-		expect((await h.progression.advance(TASK, ctx)).state).toBe("review_ready");
+		const ready = await h.progression.advance(TASK, ctx);
+		expect(ready.state).toBe("review_ready");
+		const prompt = (ready as { agent_params: { prompt: string } }).agent_params.prompt;
+		h.progression.piReviewHost.observeReviewDispatch({ prompt, subagent_type: "Review" }, "call-1");
+		h.progression.piReviewHost.observeReviewResult("call-1", JSON.stringify(passVerdict(snapshot("review"))));
 		stale = true;
-		expect((await h.progression.submitReview(TASK, ctx, passVerdict(snapshot("review")))).state).toBe("blocked");
+		expect((await h.progression.submitMediated(TASK, ctx, passVerdict(snapshot("review")))).state).toBe("blocked");
 		expect(h.counts().removeCount).toBe(1);
 		await h.progression.onSessionShutdown();
 		expect(h.progression.active(TASK)).toBeNull();

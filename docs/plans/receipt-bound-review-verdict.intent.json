@@ -1,0 +1,68 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "receipt-bound-review-verdict",
+  "goal": "Close the remaining Issue #177 acceptance item on verdict transfer integrity: the reviewer's own verdict bytes become the primary submission channel (submit_review with an omitted verdict applies the host-observed receipt), the Pi host gains the Claude-equivalent receipt observation, and the review attestation binds a reviewer_verdict_sha256 digest so post-hoc audit can prove the persisted verdict equals what the reviewer produced. Decision record: docs/adr/0017-receipt-bound-review-verdict-submission.md (merged before this task).",
+  "acceptance": [
+    {
+      "id": "RBV-A1",
+      "assertion": "Per ADR 0017: submit_review with an omitted verdict applies the host-observed reviewer receipt bytes as the review verdict after the existing parseAssuranceVerdict snapshot validation, on both hosts, with the settlement actor unchanged; a provided verdict keeps the existing fingerprint comparison and blocked recovery byte for byte, with recovery_action wording naming the no-verdict resubmission first; the host-neutral mediation is shared by both host adapters (extracted from the Claude adapter) and the coordinator's verdict-source resolution stays in the adapters. Positive: no-verdict submission on a correlated receipt settles a pass/rework review on each host. Negative: a fingerprint mismatch still blocks without writing authority; an omitted verdict with no observed receipt fails closed without releasing the reservation.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\"test\", \"tests/claude-host-authority.test.ts\", \"tests/dual-host-assurance-conformance.test.ts\"],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": { \"prepare\": null, \"writable_paths\": [] }\n}\n"
+    },
+    {
+      "id": "RBV-A2",
+      "assertion": "Per ADR 0017: the Pi extension observes the generic tool_call event for an Agent dispatch whose prompt digest matches the reserved prompt (promptDigest), stores the paired tool_result content bytes on that review reservation, and resolves a submit_review without a verdict from those bytes; the receipt lives in process memory with the same lifetime as the reservation (no new persisted surface, no FileHookEventLog on Pi); a provided-verdict submission with no recorded receipt, or a second distinct result for one reservation, fails closed retaining the reservation with recovery guidance. Positive: a recorded Agent result settles a review through the no-verdict path. Negative: an unobserved or rewritten dispatch cannot submit a provided verdict.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\"test\", \"tests/pi-canary-work-extension.test.ts\", \"tests/pi-canary-assurance-progression.test.ts\"],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": { \"prepare\": null, \"writable_paths\": [] }\n}\n"
+    },
+    {
+      "id": "RBV-A3",
+      "assertion": "Per ADR 0017: TaskApprovalV2 gains optional reviewer_verdict_sha256 (sha256:<64 hex>), bound from the observed receipt bytes at submission, legal only on review attestations; the strict parser emits it only when present so legacy records keep byte-roundtrip and canonical hash stability, the reducer rejects it on non-review approvals, and verdict_authority threads it from the host adapter without the coordinator resolving verdict sources. Positive: a review attestation written with the digest parses back byte-identical and fails on a non-sha256 value. Negative: a qa attestation carrying the field is rejected; records without it are unchanged. Recovery safety, from the reproduced invalid Spec-binding incident: intent revision rejects ambiguous or incomplete Spec bindings before authority writes; an existing invalid active binding exposes only revision recovery and is corrected through the existing native breaking gate while retaining run identity, git_base_head, and append-only authority history. Cancellation retains exact prior authority and sidecar bytes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-record-v4.test.ts\",\n      \"tests/task-record-durability.test.ts\",\n      \"tests/breaking-intent-revision-gate.test.ts\",\n      \"tests/kernel-canary-application.test.ts\",\n      \"tests/kernel-assurance-projection.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RBV-A4",
+      "assertion": "Per ADR 0017: docs/reference/subagent-dispatch-protocol.md retires the trusts-the-Parent sentence and states the receipt-bound submission on both hosts; the generated Claude reviewer definition (plugins/immune-brain/agents/immune-brain-reviewer.md) and any host packaging surface stay in sync with the new submit_review shape; dist/claude/mcp-server.mjs is regenerated from the changed runtime modules and matches a fresh build. Negative: no prompt file outside the reviewer definition changes the reserved review prompt contract.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\"test\", \"tests/claude-host-package.test.ts\", \"tests/dist-docs-sync-contract.test.ts\", \"tests/role-prompt-bridge.test.ts\"],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": { \"prepare\": null, \"writable_paths\": [] }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/receipt-bound-review-verdict.md",
+    "docs/plans/receipt-bound-review-verdict.intent.json",
+    "docs/reference/subagent-dispatch-protocol.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
+    "plugins/immune-brain/agents/immune-brain-reviewer.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain/runtime/assurance/host_port.ts",
+    "plugins/immune-brain/runtime/assurance/review_mediation.ts",
+    "plugins/immune-brain/runtime/assurance/verdict_authority.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+    "plugins/immune-brain/runtime/kernel/canary_application.ts",
+    "plugins/immune-brain/runtime/kernel/completion.ts",
+    "plugins/immune-brain/runtime/kernel/reducer.ts",
+    "plugins/immune-brain/runtime/kernel/spec_binding.ts",
+    "plugins/immune-brain/runtime/kernel/types.ts",
+    "plugins/immune-brain/runtime/kernel/validation.ts",
+    "plugins/immune-brain/runtime/role_prompt_bridge.ts",
+    "tests/breaking-intent-revision-gate.test.ts",
+    "tests/claude-host-authority.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/dist-docs-sync-contract.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/kernel-r2c2-reducer.test.ts",
+    "tests/kernel-record-v4.test.ts",
+    "tests/pi-canary-assurance-advance.test.ts",
+    "tests/pi-canary-assurance-progression.test.ts",
+    "tests/pi-canary-work-extension.test.ts",
+    "tests/role-prompt-bridge.test.ts",
+    "tests/task-record-durability-baseline.json",
+    "tests/task-record-durability.test.ts"
+  ],
+  "risk": "material",
+  "revision": 4,
+  "owner": "user"
+}

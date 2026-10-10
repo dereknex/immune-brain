@@ -173,6 +173,31 @@ describe("TaskRecord v4 reducer", () => {
 		expect(() => reduce(frozenFixture(), action, audit("review"))).toThrow(KernelInvariantError);
 	});
 
+	test("a review approval binds the reviewer's observed result digest in emission order", () => {
+		const digest = `sha256:${"e".repeat(64)}`;
+		const mutation = reduce(frozenFixture(), {
+			...baseAction("record_approval"),
+			approval: {
+				...approval("review"),
+				advisory_findings: [{ id: "adv-1", acceptance_id: null, summary: "advisory" }],
+				reviewer_verdict_sha256: digest,
+			},
+		} as TaskAction, audit("review"));
+		const stored = mutation.record.attestations[0];
+		expect(stored.reviewer_verdict_sha256).toBe(digest);
+		// The strict parser re-emits in this exact order, so the written record
+		// round-trips byte-identically through canonicalRecordHash.
+		expect(Object.keys(stored).slice(-3)).toEqual(["review_revision", "advisory_findings", "reviewer_verdict_sha256"]);
+	});
+
+	test("a non-review approval cannot carry the reviewer result digest", () => {
+		const action = {
+			...baseAction("record_approval"),
+			approval: { ...approval("qa"), reviewer_verdict_sha256: `sha256:${"e".repeat(64)}` },
+		} as TaskAction;
+		expect(() => reduce(frozenFixture(), action, audit("qa"))).toThrow(KernelInvariantError);
+	});
+
 	test("ordinary findings can be recorded and resolved", () => {
 		const finding = {
 			id: "f-1",

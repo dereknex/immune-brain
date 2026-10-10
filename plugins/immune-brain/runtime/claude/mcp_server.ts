@@ -22,7 +22,7 @@ export const TOOLS = [
 	{ name: "status", description: "Read the Kernel Assurance Projection for an exact task.", privileged: false },
 	{ name: "enroll", description: "Enroll a Git-tracked TaskIntent after native confirmation.", privileged: true },
 	{ name: "advance_assurance", description: "Advance frozen Assurance through deterministic QA and Review reservation.", privileged: false },
-	{ name: "submit_review", description: "Submit the Parent-mediated Review verdict bound to the correlated receipt.", privileged: false },
+	{ name: "submit_review", description: "Submit the Review verdict; omit the verdict to apply the correlated reviewer receipt, or relay the reviewer's structured verdict for fingerprint comparison.", privileged: false },
 	{ name: "request_authorization", description: "Apply exact literal-user authorization.", privileged: true },
 	{ name: "revise_intent", description: "Apply a compatible TaskIntent revision.", privileged: false },
 	{ name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
@@ -70,15 +70,13 @@ export function listMcpTools() {
 			},
 			required: tool.name === "start_unattended_batch" || tool.name === "retire_stale_batch"
 				? ["initiative_slug"]
-				: tool.name === "submit_review"
-					? ["task_id", "verdict"]
-					: tool.name === "resolve_finding"
-						? ["task_id", "finding_id"]
-						: tool.name === "refute_finding"
-							? ["task_id", "finding_id", "attestation_id"]
-							: tool.name === "revise_intent"
-								? ["task_id", "next_intent"]
-								: ["task_id"],
+				: tool.name === "resolve_finding"
+					? ["task_id", "finding_id"]
+					: tool.name === "refute_finding"
+						? ["task_id", "finding_id", "attestation_id"]
+						: tool.name === "revise_intent"
+							? ["task_id", "next_intent"]
+							: ["task_id"],
 		},
 		annotations: tool.privileged ? privilegedAnnotations() : { readOnlyHint: tool.name === "status" },
 	}));
@@ -208,8 +206,8 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 			if (name === "enroll") return runtime.enroll(taskId, toolMeta);
 			if (name === "advance_assurance") return runtime.advance(taskId, toolMeta.signal, toolMeta);
 			if (name === "submit_review") {
-				if (!Object.hasOwn(args, "verdict")) throw new Error("verdict is required");
-				return runtime.submitReview(taskId, args.verdict, toolMeta);
+				// ADR 0017: an absent verdict is the receipt-bound submission.
+				return runtime.submitReview(taskId, Object.hasOwn(args, "verdict") ? args.verdict : undefined, toolMeta);
 			}
 			if (name === "revise_intent") {
 				if (!Object.hasOwn(args, "next_intent")) throw new Error("next_intent is required");

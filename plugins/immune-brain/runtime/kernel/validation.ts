@@ -314,7 +314,7 @@ export function parseApprovalV2(
 	const item = objectAt(value, `record.approvals[${index}]`, violations);
 	rejectUnknown(
 		item,
-		["id", "kind", "authority_role", "task_revision", "intent_content_hash", "diff_hash", "actor_id", "summary", "advisory_findings",
+		["id", "kind", "authority_role", "task_revision", "intent_content_hash", "diff_hash", "actor_id", "summary", "advisory_findings", "reviewer_verdict_sha256",
 			...(allowReviewRevision ? ["review_revision"] : [])],
 		`record.approvals[${index}]`,
 		violations,
@@ -364,6 +364,9 @@ export function parseApprovalV2(
 						),
 					),
 				}
+			: {}),
+		...(item.reviewer_verdict_sha256 !== undefined
+			? { reviewer_verdict_sha256: stringAt(item.reviewer_verdict_sha256, `record.approvals[${index}].reviewer_verdict_sha256`, violations) }
 			: {}),
 	};
 }
@@ -419,7 +422,7 @@ function parseAttestationV3(
 	const item = objectAt(value, path, violations);
 	rejectUnknown(
 		item,
-		["id", "kind", "authority_role", "task_revision", "intent_content_hash", "diff_hash", "actor_id", "summary", "acceptance_results", "advisory_findings",
+		["id", "kind", "authority_role", "task_revision", "intent_content_hash", "diff_hash", "actor_id", "summary", "acceptance_results", "advisory_findings", "reviewer_verdict_sha256",
 			...(allowReviewRevision ? ["review_revision"] : [])],
 		path,
 		violations,
@@ -462,6 +465,13 @@ function parseAttestationV3(
 			);
 	if (advisoryFindings !== undefined && kind !== "review")
 		violations.push(`${path}.advisory_findings is only valid on review attestations`);
+	const reviewerVerdictSha256 = item.reviewer_verdict_sha256 === undefined
+		? undefined
+		: stringAt(item.reviewer_verdict_sha256, `${path}.reviewer_verdict_sha256`, violations);
+	if (reviewerVerdictSha256 !== undefined && kind !== "review")
+		violations.push(`${path}.reviewer_verdict_sha256 is only valid on review attestations`);
+	if (reviewerVerdictSha256 !== undefined && !SHA256_HEX.test(reviewerVerdictSha256))
+		violations.push(`${path}.reviewer_verdict_sha256 must be sha256:<64 hex>`);
 	return {
 		id: stringAt(item.id, `${path}.id`, violations),
 		kind,
@@ -474,6 +484,7 @@ function parseAttestationV3(
 		acceptance_results: acceptanceResults,
 		...(reviewRevision ? { review_revision: reviewRevision } : {}),
 		...(advisoryFindings !== undefined ? { advisory_findings: advisoryFindings } : {}),
+		...(reviewerVerdictSha256 !== undefined ? { reviewer_verdict_sha256: reviewerVerdictSha256 } : {}),
 	};
 }
 

@@ -26,7 +26,7 @@ import {
 	type BackendClaim,
 } from "./backend_claim";
 import { canonicalIntentHash } from "./intent";
-import { boundSpecPath, readBoundActiveSpec } from "./spec_binding";
+import { assertValidSpecBinding, boundSpecPath, readBoundActiveSpec } from "./spec_binding";
 import { parseTaskRecord } from "./validation";
 import type { TaskIntentIdentityToken } from "./intent_token_registry";
 import {
@@ -208,6 +208,7 @@ export function createCanaryApplication(
 			const current = readTaskRecordRaw(input.root, input.task_id);
 			if (!current.record)
 				throw new KernelInvariantError([`task ${input.task_id} has no TaskRecord v3`]);
+			assertValidSpecBinding(current.record.intent_snapshot);
 			const workspace = readWorkspaceStateRaw(input.root);
 			if (current.record.artifact_state === "frozen")
 				return { revision: current.revision, record: current.record, workspace };
@@ -318,7 +319,13 @@ export function createCanaryApplication(
 		const diffHash = asTaskDiffSnapshot((input.diffProvider ?? taskDeliveryIdentity)(input.root, snapshot.record)).diff_hash;
 		if (operation.op === "stop" && !("capability" in operation))
 			throw new KernelInvariantError(["stop requires user authority capability"]);
-		const hasBoundSpec = boundSpecPath(snapshot.intent_snapshot) !== undefined;
+		// Only a capability-bound breaking revision may recover an invalid prior
+		// binding. Validate the replacement before any authority write.
+		if (operation.op === "approve_breaking_intent_revision") assertValidSpecBinding(operation.next_intent);
+		else assertValidSpecBinding(snapshot.intent_snapshot);
+		const hasBoundSpec = operation.op === "approve_breaking_intent_revision"
+			? boundSpecPath(operation.next_intent) !== undefined
+			: boundSpecPath(snapshot.intent_snapshot) !== undefined;
 		if (operation.op === "complete" && hasBoundSpec && snapshot.record.artifact_state !== "frozen")
 			throw new KernelInvariantError(["complete requires frozen planning artifacts"]);
 		const artifactTransition =

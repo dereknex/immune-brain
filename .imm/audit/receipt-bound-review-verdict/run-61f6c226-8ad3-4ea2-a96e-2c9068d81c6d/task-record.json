@@ -1,0 +1,1316 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "receipt-bound-review-verdict",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "receipt-bound-review-verdict",
+    "goal": "Close the remaining Issue #177 acceptance item on verdict transfer integrity: the reviewer's own verdict bytes become the primary submission channel (submit_review with an omitted verdict applies the host-observed receipt), the Pi host gains the Claude-equivalent receipt observation, and the review attestation binds a reviewer_verdict_sha256 digest so post-hoc audit can prove the persisted verdict equals what the reviewer produced. Decision record: docs/adr/0017-receipt-bound-review-verdict-submission.md (merged before this task).",
+    "acceptance": [
+      {
+        "id": "RBV-A1",
+        "assertion": "Per ADR 0017: submit_review with an omitted verdict applies the host-observed reviewer receipt bytes as the review verdict after the existing parseAssuranceVerdict snapshot validation, on both hosts, with the settlement actor unchanged; a provided verdict keeps the existing fingerprint comparison and blocked recovery byte for byte, with recovery_action wording naming the no-verdict resubmission first; the host-neutral mediation is shared by both host adapters (extracted from the Claude adapter) and the coordinator's verdict-source resolution stays in the adapters. Positive: no-verdict submission on a correlated receipt settles a pass/rework review on each host. Negative: a fingerprint mismatch still blocks without writing authority; an omitted verdict with no observed receipt fails closed without releasing the reservation.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\"test\", \"tests/claude-host-authority.test.ts\", \"tests/dual-host-assurance-conformance.test.ts\"],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": { \"prepare\": null, \"writable_paths\": [] }\n}\n"
+      },
+      {
+        "id": "RBV-A2",
+        "assertion": "Per ADR 0017: the Pi extension observes the generic tool_call event for an Agent dispatch whose prompt digest matches the reserved prompt (promptDigest), stores the paired tool_result content bytes on that review reservation, and resolves a submit_review without a verdict from those bytes; the receipt lives in process memory with the same lifetime as the reservation (no new persisted surface, no FileHookEventLog on Pi); a provided-verdict submission with no recorded receipt, or a second distinct result for one reservation, fails closed retaining the reservation with recovery guidance. Positive: a recorded Agent result settles a review through the no-verdict path. Negative: an unobserved or rewritten dispatch cannot submit a provided verdict.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\"test\", \"tests/pi-canary-work-extension.test.ts\", \"tests/pi-canary-assurance-progression.test.ts\"],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": { \"prepare\": null, \"writable_paths\": [] }\n}\n"
+      },
+      {
+        "id": "RBV-A3",
+        "assertion": "Per ADR 0017: TaskApprovalV2 gains optional reviewer_verdict_sha256 (sha256:<64 hex>), bound from the observed receipt bytes at submission, legal only on review attestations; the strict parser emits it only when present so legacy records keep byte-roundtrip and canonical hash stability, the reducer rejects it on non-review approvals, and verdict_authority threads it from the host adapter without the coordinator resolving verdict sources. Positive: a review attestation written with the digest parses back byte-identical and fails on a non-sha256 value. Negative: a qa attestation carrying the field is rejected; records without it are unchanged. Recovery safety, from the reproduced invalid Spec-binding incident: intent revision rejects ambiguous or incomplete Spec bindings before authority writes; an existing invalid active binding exposes only revision recovery and is corrected through the existing native breaking gate while retaining run identity, git_base_head, and append-only authority history. Cancellation retains exact prior authority and sidecar bytes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-record-v4.test.ts\",\n      \"tests/task-record-durability.test.ts\",\n      \"tests/breaking-intent-revision-gate.test.ts\",\n      \"tests/kernel-canary-application.test.ts\",\n      \"tests/kernel-assurance-projection.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RBV-A4",
+        "assertion": "Per ADR 0017: docs/reference/subagent-dispatch-protocol.md retires the trusts-the-Parent sentence and states the receipt-bound submission on both hosts; the generated Claude reviewer definition (plugins/immune-brain/agents/immune-brain-reviewer.md) and any host packaging surface stay in sync with the new submit_review shape; dist/claude/mcp-server.mjs is regenerated from the changed runtime modules and matches a fresh build. Negative: no prompt file outside the reviewer definition changes the reserved review prompt contract.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\"test\", \"tests/claude-host-package.test.ts\", \"tests/dist-docs-sync-contract.test.ts\", \"tests/role-prompt-bridge.test.ts\"],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": { \"prepare\": null, \"writable_paths\": [] }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/receipt-bound-review-verdict.md",
+      "docs/plans/receipt-bound-review-verdict.intent.json",
+      "docs/reference/subagent-dispatch-protocol.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
+      "plugins/immune-brain/agents/immune-brain-reviewer.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/assurance/host_port.ts",
+      "plugins/immune-brain/runtime/assurance/review_mediation.ts",
+      "plugins/immune-brain/runtime/assurance/verdict_authority.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+      "plugins/immune-brain/runtime/kernel/canary_application.ts",
+      "plugins/immune-brain/runtime/kernel/completion.ts",
+      "plugins/immune-brain/runtime/kernel/reducer.ts",
+      "plugins/immune-brain/runtime/kernel/spec_binding.ts",
+      "plugins/immune-brain/runtime/kernel/types.ts",
+      "plugins/immune-brain/runtime/kernel/validation.ts",
+      "plugins/immune-brain/runtime/role_prompt_bridge.ts",
+      "tests/breaking-intent-revision-gate.test.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/dist-docs-sync-contract.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/kernel-r2c2-reducer.test.ts",
+      "tests/kernel-record-v4.test.ts",
+      "tests/pi-canary-assurance-advance.test.ts",
+      "tests/pi-canary-assurance-progression.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/role-prompt-bridge.test.ts",
+      "tests/task-record-durability-baseline.json",
+      "tests/task-record-durability.test.ts"
+    ],
+    "risk": "material",
+    "revision": 4,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/receipt-bound-review-verdict.intent.json",
+    "content_hash": "sha256:b3473c62639118df1d3527157efbe860068f76b4e7cdf53d47127f1db41a9e76"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:f69b73d56abe5f443ded8f9ee6d8115d4eb74479fd863523e17dcccf4939c4cd",
+  "git_base_head": "bb466b0313cd96b04efb5bd0cf9cbc867ed12439",
+  "attestations": [
+    {
+      "id": "approval-qa-f4093d5a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:cf9bfa1bff92cb890a36ba6fefd081b31a1778c10c4fc3b196667a0cb5975e63",
+      "diff_hash": "sha256:edf6cce7115ac6dfa1328d9ef77433526ccd6bf849c57b6294917c0a53d45a02",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:3a031d6de46bc6c4f246aaa0d5285078962e4cc728de1c609b5b558c6e87f459",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RBV-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:3a031d6de46bc6c4f246aaa0d5285078962e4cc728de1c609b5b558c6e87f459"
+        },
+        {
+          "acceptance_id": "RBV-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:3a031d6de46bc6c4f246aaa0d5285078962e4cc728de1c609b5b558c6e87f459"
+        },
+        {
+          "acceptance_id": "RBV-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:3a031d6de46bc6c4f246aaa0d5285078962e4cc728de1c609b5b558c6e87f459"
+        },
+        {
+          "acceptance_id": "RBV-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:3a031d6de46bc6c4f246aaa0d5285078962e4cc728de1c609b5b558c6e87f459"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-a7645d49",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:cf9bfa1bff92cb890a36ba6fefd081b31a1778c10c4fc3b196667a0cb5975e63",
+      "diff_hash": "sha256:1fe50a4a5cbcae26d07052604c7c9b5346d30d9b67ea2f17f8bb3fcd65bb9820",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:d74bce6fdc985da68fc132d567e5b2b96ba9c5a2936133f3fba4c258de177db2",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RBV-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:d74bce6fdc985da68fc132d567e5b2b96ba9c5a2936133f3fba4c258de177db2"
+        },
+        {
+          "acceptance_id": "RBV-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:d74bce6fdc985da68fc132d567e5b2b96ba9c5a2936133f3fba4c258de177db2"
+        },
+        {
+          "acceptance_id": "RBV-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:d74bce6fdc985da68fc132d567e5b2b96ba9c5a2936133f3fba4c258de177db2"
+        },
+        {
+          "acceptance_id": "RBV-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:d74bce6fdc985da68fc132d567e5b2b96ba9c5a2936133f3fba4c258de177db2"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-e5e13d02",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:cf9bfa1bff92cb890a36ba6fefd081b31a1778c10c4fc3b196667a0cb5975e63",
+      "diff_hash": "sha256:6bd0f53ef84135b4d22cf3de6fdc8c4d6c2843f85e586d2e34d651fd6179707e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:c158059cb9b6384ba249cf54330e9e9fe8f2550a0b023119b9c24d5d25cc2334",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RBV-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:c158059cb9b6384ba249cf54330e9e9fe8f2550a0b023119b9c24d5d25cc2334"
+        },
+        {
+          "acceptance_id": "RBV-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:c158059cb9b6384ba249cf54330e9e9fe8f2550a0b023119b9c24d5d25cc2334"
+        },
+        {
+          "acceptance_id": "RBV-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:c158059cb9b6384ba249cf54330e9e9fe8f2550a0b023119b9c24d5d25cc2334"
+        },
+        {
+          "acceptance_id": "RBV-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:c158059cb9b6384ba249cf54330e9e9fe8f2550a0b023119b9c24d5d25cc2334"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-9fa35ffb",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:b3473c62639118df1d3527157efbe860068f76b4e7cdf53d47127f1db41a9e76",
+      "diff_hash": "sha256:166d84f8d77bf3b833b066b954d387f537917d6db58c33a3f4df9b0ab2ccff55",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:1d847d7530a48967c51ae06c164e76bd5565b71ea7e34e4d961f4ea704491470",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RBV-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:1d847d7530a48967c51ae06c164e76bd5565b71ea7e34e4d961f4ea704491470"
+        },
+        {
+          "acceptance_id": "RBV-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:1d847d7530a48967c51ae06c164e76bd5565b71ea7e34e4d961f4ea704491470"
+        },
+        {
+          "acceptance_id": "RBV-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:1d847d7530a48967c51ae06c164e76bd5565b71ea7e34e4d961f4ea704491470"
+        },
+        {
+          "acceptance_id": "RBV-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:1d847d7530a48967c51ae06c164e76bd5565b71ea7e34e4d961f4ea704491470"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-058da4e7",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:b3473c62639118df1d3527157efbe860068f76b4e7cdf53d47127f1db41a9e76",
+      "diff_hash": "sha256:8add1eae8bb313415db3fe5aa10e65d4ebec4eb75e63bf45267ff1db0c48f871",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:2725e36c9a8a1467dcecced18b12440cc4ca5f73ac9e77b56c036a8a0942ab0d",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RBV-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:2725e36c9a8a1467dcecced18b12440cc4ca5f73ac9e77b56c036a8a0942ab0d"
+        },
+        {
+          "acceptance_id": "RBV-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:2725e36c9a8a1467dcecced18b12440cc4ca5f73ac9e77b56c036a8a0942ab0d"
+        },
+        {
+          "acceptance_id": "RBV-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:2725e36c9a8a1467dcecced18b12440cc4ca5f73ac9e77b56c036a8a0942ab0d"
+        },
+        {
+          "acceptance_id": "RBV-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:2725e36c9a8a1467dcecced18b12440cc4ca5f73ac9e77b56c036a8a0942ab0d"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-da99c345",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:b3473c62639118df1d3527157efbe860068f76b4e7cdf53d47127f1db41a9e76",
+      "diff_hash": "sha256:8238b19333f6fe0046f37558f8cf248c4df6107e63521ca08d5589363b9c5e94",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:e540a7b7480fd6b3e4c8a77bfcd0513d8a2cc7c37e0d30b83927f6e880687048",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RBV-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e540a7b7480fd6b3e4c8a77bfcd0513d8a2cc7c37e0d30b83927f6e880687048"
+        },
+        {
+          "acceptance_id": "RBV-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e540a7b7480fd6b3e4c8a77bfcd0513d8a2cc7c37e0d30b83927f6e880687048"
+        },
+        {
+          "acceptance_id": "RBV-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e540a7b7480fd6b3e4c8a77bfcd0513d8a2cc7c37e0d30b83927f6e880687048"
+        },
+        {
+          "acceptance_id": "RBV-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e540a7b7480fd6b3e4c8a77bfcd0513d8a2cc7c37e0d30b83927f6e880687048"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-e955b435",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:b3473c62639118df1d3527157efbe860068f76b4e7cdf53d47127f1db41a9e76",
+      "diff_hash": "sha256:b71a8e9485484e8b1d91e475dd7c450301b830e3484ff7618951d8baa1efd16e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:fd9677f43a4194fe7d5320a33b1c572153f979a88e69d5fcca0df27db3881e9b",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RBV-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:fd9677f43a4194fe7d5320a33b1c572153f979a88e69d5fcca0df27db3881e9b"
+        },
+        {
+          "acceptance_id": "RBV-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:fd9677f43a4194fe7d5320a33b1c572153f979a88e69d5fcca0df27db3881e9b"
+        },
+        {
+          "acceptance_id": "RBV-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:fd9677f43a4194fe7d5320a33b1c572153f979a88e69d5fcca0df27db3881e9b"
+        },
+        {
+          "acceptance_id": "RBV-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:fd9677f43a4194fe7d5320a33b1c572153f979a88e69d5fcca0df27db3881e9b"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-750d53d2",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:b3473c62639118df1d3527157efbe860068f76b4e7cdf53d47127f1db41a9e76",
+      "diff_hash": "sha256:8e66d2713ae227739ba6a97d0d26a899de6b6c637dd1c4b4d3fcf91a265974c2",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:c9a0ec99d2226fee9904948fbf0ab3b841688d170f4fbd28e92b82ac95f13617",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RBV-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:c9a0ec99d2226fee9904948fbf0ab3b841688d170f4fbd28e92b82ac95f13617"
+        },
+        {
+          "acceptance_id": "RBV-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:c9a0ec99d2226fee9904948fbf0ab3b841688d170f4fbd28e92b82ac95f13617"
+        },
+        {
+          "acceptance_id": "RBV-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:c9a0ec99d2226fee9904948fbf0ab3b841688d170f4fbd28e92b82ac95f13617"
+        },
+        {
+          "acceptance_id": "RBV-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:c9a0ec99d2226fee9904948fbf0ab3b841688d170f4fbd28e92b82ac95f13617"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-b00ff3c7",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:b3473c62639118df1d3527157efbe860068f76b4e7cdf53d47127f1db41a9e76",
+      "diff_hash": "sha256:1177eee02fb58beeb419284da2476c316bc0cc1ad0212d7e01e388cf6355b658",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:097f472d2a73f397f19e7e3b33a76f28ffc5591cebc81379b64479497f91f26c",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RBV-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:097f472d2a73f397f19e7e3b33a76f28ffc5591cebc81379b64479497f91f26c"
+        },
+        {
+          "acceptance_id": "RBV-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:097f472d2a73f397f19e7e3b33a76f28ffc5591cebc81379b64479497f91f26c"
+        },
+        {
+          "acceptance_id": "RBV-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:097f472d2a73f397f19e7e3b33a76f28ffc5591cebc81379b64479497f91f26c"
+        },
+        {
+          "acceptance_id": "RBV-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:097f472d2a73f397f19e7e3b33a76f28ffc5591cebc81379b64479497f91f26c"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-5f7962a5",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:b3473c62639118df1d3527157efbe860068f76b4e7cdf53d47127f1db41a9e76",
+      "diff_hash": "sha256:1177eee02fb58beeb419284da2476c316bc0cc1ad0212d7e01e388cf6355b658",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验不可变 revision、单一 parent、tree、manifest digest 和全部 29 个文件的 diff；双宿主 receipt-bound 提交、冲突保护、digest 持久化与 Spec-binding 恢复未发现阻断问题，接受内嵌 Kernel QA 通过证据。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "bb466b0313cd96b04efb5bd0cf9cbc867ed12439",
+        "review_commit": "00440cc63a1a658f54a45535af3c9ad6c4059bb9",
+        "review_tree": "e1565b6b88d03a051fb3dd8c80283806e18f25c3",
+        "manifest_digest": "sha256:360392a17b86ecb21946f59657b8811d55fcc4a317a9f02c6b7b00b24a4a64e0"
+      },
+      "reviewer_verdict_sha256": "sha256:ae9305267e1f6a16e8401748ee7afd7e6e13f73f755c1712b37c69f01877c2dd"
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-RBV-A3-ceef2e58-285509",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RBV-A3",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=11720B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "review-bfd2becdd5c6-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RBV-A2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts:110-115：同一 reservation 收到第二份不同结果时，observeReviewResult 静默忽略它，inspectReview 仍返回第一份 receipt。例如先收到 pass、再收到 rework，省略 verdict 的提交仍可写入 pass authority，违反 receipt 唯一性及冲突时 fail-closed 的要求。最小修复是比较后续结果与已存 bytes，发现不同结果时记录不可提交的冲突状态并保留 reservation；通过 extension 的 tool_result seam 验证冲突后两种提交方式均 blocked、无 authority 写入且 reservation 保留。",
+      "anchor": "sha256:91ea759574d4e32b16fd371e32bba189f7d135f9ee52e0eb7306cc6e90be6323",
+      "evidence": {
+        "trigger": "receipt 唯一性 invariant：对一个已匹配 reserved prompt 的 Agent toolCallId，依次观察到有效 pass bytes P 和不同的 rework bytes R，然后调用 submit_review，省略 verdict 或提供 P。第 114 行仅在 result 为 undefined 时赋值，因此 R 被丢弃；inspectReview 返回 P，共享 mediation 将 P 交给 coordinator.submitReview。现有单 receipt 正向测试和 fingerprint mismatch 测试没有覆盖同一 toolCallId 的结果冲突。",
+        "caller_chain": [
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:tool_result",
+          "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts:PiReviewHost.observeReviewResult",
+          "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts:PiReviewHost.inspectReview",
+          "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts:AssuranceProgression.submitMediated",
+          "plugins/immune-brain/runtime/assurance/review_mediation.ts:submitMediatedReview",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.submitReview",
+          "plugins/immune-brain/runtime/assurance/verdict_authority.ts:createVerdictAuthority.applyVerdict"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "RBV-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-bfd2becdd5c6-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RBV-A3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/kernel/canary_application.ts:264、323-324：新增 Spec-binding guard 没有覆盖 freeze_artifacts，它在执行 guard 前直接进入 freezeArtifacts。对于 scope_hint 只含 docs/specs/archive/x.spec.md 的既有无效 active binding，boundSpecPath 返回 undefined，freeze 仍可把 artifact_state 改为 frozen 并追加 authority history，违反无效 binding 仅允许 revision recovery 的要求。最小修复是在 freezeArtifacts 的任何成功返回或写入前检查当前 binding，并补充 archive-only binding 的拒绝测试，断言 record、claim、sidecar 与 history 保持原样。",
+      "anchor": "sha256:f34ca60f6999f880c58a664e570bd0dca731e705edeb2bc9bd7ca31f91921e50",
+      "evidence": {
+        "trigger": "Spec-binding recovery 隔离 invariant：既有 TaskRecord 的 lifecycle=active、artifact_state=active，intent_snapshot 与 sidecar/hash 一致，但 scope_hint 包含 docs/specs/archive/x.spec.md 且不含 active Spec；调用 freeze_artifacts。inspectSpecBinding 将它判为 binding_incomplete，新增 projection 返回 revise_intent，但 execute 第 264 行提前进入 freezeArtifacts，绕过第 324 行。transitionFor 使用的 boundSpecPath 只枚举 active Specs，因而允许 freeze 写入。现有 tests/breaking-intent-revision-gate.test.ts:264-288 仅以两个 active Specs 验证拒绝，依赖 boundSpecPath 原有的 ambiguity 检查，未覆盖 incomplete binding；这是同一 invariant 的覆盖缺口。",
+        "caller_chain": [
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:executeOrdinaryOperation",
+          "plugins/immune-brain/runtime/kernel/canary_application.ts:createCanaryApplication.execute",
+          "plugins/immune-brain/runtime/kernel/canary_application.ts:freezeArtifacts",
+          "plugins/immune-brain/runtime/kernel/canary_application.ts:transitionFor",
+          "plugins/immune-brain/runtime/kernel/spec_binding.ts:boundSpecPath",
+          "plugins/immune-brain/runtime/kernel/canary_application.ts:commitTaskRecordLocked"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "RBV-A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-bfd2becdd5c6-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RBV-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts:123-124：Pi 在已有 reservation 但尚未观察到匹配 dispatch 时返回 release:true；submitMediatedReview 因而调用 abandonReview，删除 reservation、receipt 和 immutable evidence。省略 verdict 且无 receipt 应保留 reservation，RBV-A2 对 provided-verdict 的无 receipt 情况也要求保留。最小修复是让已有 reservation 的无 dispatch/receipt 分支返回 release:false，并调整 tests/dual-host-assurance-conformance.test.ts:734-744 中明确要求释放的错误断言；验证两种提交方式都 blocked、operation_id 和 evidence 保留且无 authority 写入。",
+      "anchor": "sha256:c553cc7c97466fd18b742dc4b02841334cb376549c5160c50dd9ae534126b493",
+      "evidence": {
+        "trigger": "reservation 保留 invariant：advance_assurance 已返回 Pi review_ready，但没有匹配 reserved prompt 的 tool_call，也没有 receipt；随后调用 submit_review 并省略 verdict。PiReviewHost.inspectReview 第 124 行返回 release:true，共享 mediation 第 68 行调用 abandonReview，coordinator.releaseReviewReservation 删除 reservation 并移除 evidence。新 conformance 测试反而要求下一次 advance 返回不同 operation_id，直接固定了与 RBV-A1 相反的行为；提供 verdict 时也走同一释放分支。",
+        "caller_chain": [
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:submit_review",
+          "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts:AssuranceProgression.submitMediated",
+          "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts:PiReviewHost.inspectReview",
+          "plugins/immune-brain/runtime/assurance/review_mediation.ts:submitMediatedReview",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.abandonReview",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.releaseReviewReservation"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "RBV-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-27a31c0c2a5a-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RBV-A2",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/.pi-extension/imm-canary-work.ts:398：空 tool_result 被过滤，导致同一 reservation 的第二个不同结果未触发冲突保护。若先收到有效 pass verdict，再收到 content: [] 或空文本的结果，submit_review 仍可用第一个 receipt 写入 Review authority，违反第二个不同结果必须保留 reservation 并阻断提交的要求。应将空结果也交给 observeReviewResult，并在 extension 的 tool_result seam 增加有效结果后接空结果的负向测试，验证两种提交方式均阻断且 authority 与 evidence 不变。",
+      "anchor": "sha256:18d458a0cfcb14cdfdfc0feb968e42c556665a822c49729ef7d43dc98cfa15e8",
+      "evidence": {
+        "trigger": "已保留的 Pi Review reservation 通过匹配 promptDigest 的 Agent tool_call 绑定 toolCallId；该 toolCallId 先收到含有效 pass verdict 的 tool_result，随后收到 content: [] 或 content: [{type: \"text\", text: \"\"}] 的第二个 tool_result。imm-canary-work.ts:395-398 将第二个结果转换为空字符串后跳过观察，pi-canary-assurance-progression.ts:114-115 的冲突检测因而只覆盖非空结果；随后无 verdict 提交或提供第一个 verdict 的提交均可继续 settlement。这是 receipt 冲突检测不变量的覆盖缺口：当前非空双结果测试没有覆盖空结果边界。",
+        "caller_chain": [
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:tool_result handler",
+          "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts:PiReviewHost.observeReviewResult",
+          "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts:PiReviewHost.inspectReview",
+          "plugins/immune-brain/runtime/assurance/review_mediation.ts:submitMediatedReview",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.submitReviewOnce"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "RBV-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-6e80e5f1bb73-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RBV-A3",
+      "source": "review",
+      "review_round": 3,
+      "summary": "plugins/immune-brain/runtime/kernel/completion.ts:187–205：invalid Spec binding 的新增投影没有关闭非 revision 的 authorization 路径。projectTask 返回 revise_intent 后，assurance_projection 仍将其映射为 authorize_rework，两个 host 的 request_authorization 因此会打开 native gate；确认后 canary_application.ts:325 拒绝旧 binding，恢复无法完成。最小修复是在 invalid binding 时明确禁用普通 authorization readiness，只允许携带有效 next_intent 的 breaking revision recovery，并增加两个 host 在此状态下不打开普通 authorization gate 的测试。",
+      "anchor": "sha256:c16d192c6e52cddcedbdae3afc45c87217cbbcf64f39eeec9beb8c68b74b26a0",
+      "evidence": {
+        "trigger": "Invariant class: invalid Spec binding recovery exposes only revision recovery. An active TaskRecord has two active Spec paths (or only an archived Spec path), no open unresolved_user_decision, and no replan_required finding. The new projectTask branch returns next_obligation='revise_intent'; projectFromRecord then derives authorization.state='authorize_rework'. Calling request_authorization opens a native confirmation for authorize_rework, but an affirmative response reaches assertValidSpecBinding on the invalid current intent and fails. The delivered fix covers next_obligation and direct breaking-revision recovery, but does not cover the authorization readiness derived from that same projection. The unchanged assurance_projection.ts and authorization_operation.ts were inspected because they directly consume the changed projection and own this recovery state transition.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/completion.ts:projectTask",
+          "plugins/immune-brain/runtime/kernel/assurance_projection.ts:projectFromRecord",
+          "plugins/immune-brain/runtime/kernel/assurance_projection.ts:deriveAssuranceAuthorization",
+          "plugins/immune-brain/runtime/authorization_operation.ts:deriveAuthorizationOperation",
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:requestAuthorization",
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:authorizeExactOperation",
+          "plugins/immune-brain/runtime/kernel/canary_application.ts:execute"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "RBV-A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-b9e4ccafdada-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RBV-A1",
+      "source": "review",
+      "review_round": 4,
+      "summary": "plugins/immune-brain/runtime/assurance/review_mediation.ts:69-72：Pi mediation 在 receipt 缺失时掩盖 coordinator 已保存的 settlement_unknown，返回普通 blocked，丢失 operation_id、原始原因和 reconciliation 指引。tests/pi-canary-assurance-progression.test.ts:170-187 将原有保护断言改成接受此回归。应在 receipt 检查前保留 settlement_unknown 返回路径，恢复原有断言并覆盖 Review 提交后响应丢失。",
+      "anchor": "sha256:ff4305efc4370997b1569b40bf7d50698d5631598cfdfa678755f84ca62678bf",
+      "evidence": {
+        "trigger": "不变量类：不确定 settlement 必须保留直到 Kernel reconciliation。QA 或 Review 已跨过 authority commit，随后 hook、projection 或响应失败，coordinator 保存 unknownOperations；Review reservation 已释放，或 QA 尚未建立 reservation。再次通过 Pi submit_review 提供 verdict 时，inspectReview 返回 ok:false，mediation 提前返回 blocked，绕过 submitReviewOnce:1212-1213 的 settlement_unknown 分支。receipt 绑定修复只覆盖活跃 reservation，未覆盖此 settlement 状态。",
+        "caller_chain": [
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:submit_review",
+          "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts:AssuranceProgression.submitMediated",
+          "plugins/immune-brain/runtime/assurance/review_mediation.ts:submitMediatedReview",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:submitReviewOnce"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "RBV-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-b9e4ccafdada-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RBV-A2",
+      "source": "review",
+      "review_round": 4,
+      "summary": "tests/pi-canary-work-extension.test.ts:1504-1533：约定 extension event seam 缺少省略 verdict 的成功验证。extension 成功测试均提供 verdict，省略 verdict 的 extension 测试只覆盖 conflicting result；dual-host 成功测试直接调用 PiReviewHost 和 submitMediated。应通过注册的 tool_call/tool_result handlers 记录有效 receipt，再执行仅含 op:submit_review 的 Tool action，断言 authority、receipt digest 和 reservation 清理。",
+      "anchor": "sha256:3957e9ea21ace165a41176ef4e6a7fe9eb4d9fb13211e8946bf77d1d4013a14f",
+      "evidence": {
+        "trigger": "不变量类：验收必须在约定 seam 上覆盖完整 receipt-bound submission。输入为匹配 reserved prompt 的 Agent tool_call、配对的有效 Agent tool_result，以及省略 verdict 的 imm_kernel_canary submit_review action。RBV-A2 指定 generic tool_call/tool_result extension seam，但 immutable tests 在该 seam 上没有此输入的成功断言；直接调用 PiReviewHost 的测试绕过事件处理与 Tool action 入口。",
+        "caller_chain": [
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:tool_call handler",
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:tool_result handler",
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:imm_kernel_canary.execute",
+          "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts:AssuranceProgression.submitMediated",
+          "plugins/immune-brain/runtime/assurance/review_mediation.ts:submitMediatedReview"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "RBV-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-7e57444f9a9c-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RBV-A2",
+      "source": "review",
+      "review_round": 5,
+      "summary": "plugins/immune-brain/runtime/assurance/review_mediation.ts:72-83 在 submission 开始时只检查一次 receipt；随后 coordinator.ts:1220、1235 的异步校验期间，即使 Pi 收到同一 reservation 的第二份不同 result 并标记 conflict，仍会在 coordinator.ts:1248-1258 释放 reservation 并写入首次 verdict 的 authority。应在释放 reservation、进入 authority settlement 前，通过 adapter 提供的校验重新确认 receipt 未冲突，并覆盖该交错顺序。",
+      "anchor": "sha256:97e5f03430af91f5762a5e288333c6b28bf091b222c00dfe7de77cd43dcd1e10",
+      "evidence": {
+        "trigger": "不变量类：receipt 在 authority commit 前必须持续有效。先观察匹配 reserved prompt 的 Agent dispatch 和有效 result A，调用省略 verdict 或精确转交 A 的 submit_review；在 submitReviewOnce 等待 projectTask 或 ensureReviewRevision 时，再通过同一 toolCallId 观察不同 result B。observeReviewResult 会设置 record.error，但 mediation 已捕获 A，coordinator 不再检查 host receipt，因而仍应用 A。当前 conflicting tool_result 测试只覆盖全部结果先于 submission 到达的顺序，已接受的 conflict 检查未覆盖 submission 校验期间的同类冲突。",
+        "caller_chain": [
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:tool_result handler and submit_review execution",
+          "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts:PiReviewHost.observeReviewResult and AssuranceProgression.submitMediated",
+          "plugins/immune-brain/runtime/assurance/review_mediation.ts:submitMediatedReview",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.submitReviewOnce",
+          "plugins/immune-brain/runtime/assurance/verdict_authority.ts:createVerdictAuthority.applyVerdict"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "RBV-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-a8cabab4bba3-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RBV-A1",
+      "source": "review",
+      "review_round": 6,
+      "summary": "plugins/immune-brain/.pi-extension/imm-canary-work.ts:1520–1542,1621–1647：Pi 的失败转换丢弃 receipt mediation 返回的 recovery_action；fingerprint mismatch 最终只返回 next_action=\"run_review\"，未传达验收要求的“省略 verdict 重提交”恢复步骤。最小修复是在 nextActionForAssuranceResult 中采用 mediation 的 recovery_action，并通过真实注册 Tool 的失败结果测试断言该指导完整保留。",
+      "anchor": "sha256:55a27c48cd94bbf376498a18b3beeaf8dbf5ee787753566d50af9aeb62bd3c2b",
+      "evidence": {
+        "trigger": "恢复指导必须贯穿整个 host 返回链的不变量存在覆盖缺口：Pi reservation 已关联有效 reviewer receipt，Parent 提交同一 snapshot 的有效 verdict，但修改 approval.summary。submitMediatedReview 在 review_mediation.ts:102–103 返回 blocked 和以“Resubmit without a verdict”开头的 recovery_action；imm-canary-work.ts:1520–1542 忽略该字段，回退到 taskState.next_obligation（run_review），随后 :1621–1647 构造 ToolFailure 时仅保留 diagnostics、environment_failure、recovery 和 recovery_error，彻底移除 recovery_action。已有 tests/dual-host-assurance-conformance.test.ts:749–761 仅验证内部 mediation 的 mismatch 与重提交，tests/pi-canary-work-extension.test.ts:1461–1494 仅验证冲突结果的阻断及 reservation 保留，均未覆盖最终 Tool 返回的恢复指导。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/review_mediation.ts::submitMediatedReview",
+          "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts::AssuranceProgression.submitMediated",
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts::imm_kernel_canary.execute",
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts::enrichAssuranceResult",
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts::nextActionForAssuranceResult",
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts::throwIfCanaryToolFailure"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "RBV-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:receipt-bound-review-verdict:2026-10-09T23:44:28.521Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "kernel",
+      "review_round": 6,
+      "summary": "Review exhausted its 5-round rework budget; a durable replan is required."
+    },
+    {
+      "id": "review-cb9cf1291ab3-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RBV-A2",
+      "source": "review",
+      "review_round": 7,
+      "summary": "plugins/immune-brain/runtime/assurance/coordinator.ts:1250-1251: 提交等待期间发生 receipt 冲突时，返回 blocked 并保留 reservation，却丢失 RBV-A2 要求的 recovery guidance。将 validateReceipt 失败结果在共享 mediation 中附上明确 recovery_action，并补充现有交错测试对最终 Tool next_action 的断言。",
+      "anchor": "sha256:e4948b58c624607900cf1508338f362f9bbb0e139b6b1b2f4a1d47b233f8db68",
+      "evidence": {
+        "trigger": "receipt-conflict recovery invariant：已记录有效 Agent result，随后调用 submit_review（省略或提供 verdict）；在 submitReviewOnce 等待 projectTask 或 ensureReviewRevision 时，同一 toolCallId 收到第二份不同结果。validateReceipt 返回 conflicting result bytes，coordinator 直接返回只有 state/reason 的 blocked。正常 run_review projection 的 authorization.state 为 none、且没有其他 findings 时，withRecovery 不生成 recovery；Pi 最终 next_action 回落为 run_review，而不是保留 reservation 所需的明确恢复指引。tests/pi-canary-assurance-progression.test.ts:33-52 覆盖该交错的阻断与 reservation 保留，但未覆盖 guidance，因而已有冲突防护未闭合这个 invariant 的恢复部分。",
+        "caller_chain": [
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:tool_result",
+          "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts:PiReviewHost.observeReviewResult",
+          "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts:AssuranceProgression.submitMediated",
+          "plugins/immune-brain/runtime/assurance/review_mediation.ts:submitMediatedReview.validateReceipt",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.submitReviewOnce",
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:nextActionForAssuranceResult"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "RBV-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-cb9cf1291ab3-2-review-2",
+      "kind": "advisory",
+      "status": "resolved",
+      "acceptance_id": "RBV-A4",
+      "source": "review",
+      "review_round": 7,
+      "summary": "docs/reference/subagent-dispatch-protocol.md:121-123: 同一文档仍声明 lifecycle event matching 不属于 local authority contract，与新增 receipt-bound 提交规则及 Pi 实现冲突；同步更新这段及 dist 镜像，说明提交依赖 reserved Agent dispatch/result 的关联。",
+      "anchor": "sha256:7063c5e57874bcc4907836eb4f97ee00892eb781accad9ceab8d192212afbb4e",
+      "evidence": {
+        "trigger": "Parent 按 Model Selection 段选择不产生已关联 Agent tool_call/tool_result 的 compatible foreground adapter，并依照该段直接提交 structured verdict；Pi inspectReview 将其阻断为未观察到 reserved Agent。文档后面的新增规则要求 receipt，但前面的明确豁免仍保留，造成执行指引相互矛盾。",
+        "caller_chain": [
+          "docs/reference/subagent-dispatch-protocol.md:Model Selection",
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:tool_call",
+          "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts:PiReviewHost.inspectReview",
+          "plugins/immune-brain/runtime/assurance/review_mediation.ts:submitMediatedReview"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "RBV-A4"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:receipt-bound-review-verdict:2026-10-09T23:59:11.000Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "kernel",
+      "review_round": 7,
+      "summary": "Review exhausted its 5-round rework budget; a durable replan is required."
+    },
+    {
+      "id": "review-678834234850-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RBV-A1",
+      "source": "review",
+      "review_round": 8,
+      "summary": "tests/dual-host-assurance-conformance.test.ts:715：省略 verdict 的双宿主测试仅覆盖 pass，缺少 RBV-A1 明确要求的 Review rework settlement。补充两宿主的 correlated rework receipt，验证返回 rework、保留 finding evidence、释放 reservation，且不执行 completion。",
+      "anchor": "sha256:01526722aec1260533447fb20a781423db122305ddaaf94aac2cbe5316299dfc",
+      "evidence": {
+        "trigger": "有效 correlated reviewer receipt 的 decision 为 rework，包含 blocking finding 及 trigger、caller_chain、violated，Parent 调用 submit_review 时省略 verdict。现有双宿主测试只使用 passVerdict；tests/pi-canary-assurance-progression.test.ts:210 的 rework 用例属于 QA，并不经过新增 receipt-bound Review 路径。Kernel outcomes 的通过结果未证明这一明确验收分支。",
+        "caller_chain": [
+          "tests/dual-host-assurance-conformance.test.ts",
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:submitClaudeReview",
+          "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts:AssuranceProgression.submitMediated",
+          "plugins/immune-brain/runtime/assurance/review_mediation.ts:submitMediatedReview",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:submitReviewOnce",
+          "plugins/immune-brain/runtime/assurance/verdict_authority.ts:createVerdictAuthority"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "RBV-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-678834234850-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RBV-A2",
+      "source": "review",
+      "review_round": 8,
+      "summary": "tests/pi-canary-work-extension.test.ts:1499：通用 tool_call/tool_result seam 的测试未覆盖改写 reserved prompt 后提交 provided verdict 的拒绝路径。补充该事件级负例，验证即使结果携带有效 snapshot verdict，也不会写 authority，并保留 reservation 与 evidence。",
+      "anchor": "sha256:c63602dd6b093b1c950412478cf345215d5a4d9e11dd834b8c7d3bfba938b11d",
+      "evidence": {
+        "trigger": "先取得 review_ready.agent_params，再通过扩展注册的 tool_call handler 派发 prompt 被追加或改写的 Agent；通过 tool_result handler 返回该 snapshot 的有效 verdict，随后调用 submit_review 并提供该 verdict。现有事件级测试始终原样派发 agent_params；tests/dual-host-assurance-conformance.test.ts:734 的未观察 dispatch 用例直接调用 progression，未验证 RBV-A2 指定的 generic event seam 对 rewritten dispatch 的拒绝。",
+        "caller_chain": [
+          "tests/pi-canary-work-extension.test.ts",
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:tool_call",
+          "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts:PiReviewHost.observeReviewDispatch",
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:tool_result",
+          "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts:PiReviewHost.observeReviewResult",
+          "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts:AssuranceProgression.submitMediated",
+          "plugins/immune-brain/runtime/assurance/review_mediation.ts:submitMediatedReview"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "RBV-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:receipt-bound-review-verdict:2026-10-10T00:53:54.184Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "kernel",
+      "review_round": 8,
+      "summary": "Review exhausted its 5-round rework budget; a durable replan is required."
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:receipt-bound-review-verdict:2026-10-09T16:24:48.528Z",
+      "at": "2026-10-09T16:24:48.528Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:f5120c08d2219a8d8393e4dc99022aa0db0fdc944febd1e5ff03dde411f012f4",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-f9bc2494b49bfce0",
+        "issued_at": "2026-10-09T16:24:49.160Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:receipt-bound-review-verdict:2026-10-09T16:51:55.538Z",
+      "at": "2026-10-09T16:51:55.538Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\naction_v2_sha256:3b1314595429d5e41c3e8fb615d8dbcafa514c57f57543551dbee31e4cbcc722",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-a37c6ec9b2e879e9",
+        "issued_at": "2026-10-09T16:51:56.452Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:receipt-bound-review-verdict:2026-10-09T16:52:20.193Z",
+      "at": "2026-10-09T16:52:20.193Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/receipt-bound-review-verdict.intent.json"
+    },
+    {
+      "id": "request_rework:receipt-bound-review-verdict:2026-10-09T16:55:23.733Z",
+      "at": "2026-10-09T16:55:23.733Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:871ec9f4d4a7ca1ed961d7f57fffb9b0a4ef56cf8e0ace9b95475635a50b3148",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-4e9a66b8480f4f5b",
+        "issued_at": "2026-10-09T16:55:23.733Z"
+      }
+    },
+    {
+      "id": "resolve_finding:receipt-bound-review-verdict:2026-10-09T16:57:00.493Z",
+      "at": "2026-10-09T16:57:00.493Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-RBV-A3-ceef2e58-285509\naction_v2_sha256:3f5c504f47b87664eee821d0ec86b2801237a9ab3802456070bae8552238e7cd"
+    },
+    {
+      "id": "freeze_artifacts:receipt-bound-review-verdict:2026-10-09T16:57:10.673Z",
+      "at": "2026-10-09T16:57:10.673Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/receipt-bound-review-verdict.intent.json"
+    },
+    {
+      "id": "record_approval:receipt-bound-review-verdict:2026-10-09T16:59:28.576Z",
+      "at": "2026-10-09T16:59:28.576Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-f4093d5a\naction_v2_sha256:0bd929e2d25546657edbd8e525930d0c8977f0e052a821ba181d154d1112cb58",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-3d9b91f077850360",
+        "issued_at": "2026-10-09T16:59:28.577Z"
+      }
+    },
+    {
+      "id": "request_rework:receipt-bound-review-verdict:2026-10-09T17:20:59.120Z",
+      "at": "2026-10-09T17:20:59.120Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:25c279958a74334773e739cd8daf44f99baa8b535b64f50c330be5a4d165515f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-297bbcd73412cb78",
+        "issued_at": "2026-10-09T17:20:59.120Z"
+      }
+    },
+    {
+      "id": "resolve_finding:receipt-bound-review-verdict:2026-10-09T17:25:46.694Z",
+      "at": "2026-10-09T17:25:46.694Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-bfd2becdd5c6-1-review-1\naction_v2_sha256:c3ca36a1f223e382c589b640125730afbc042d280a7750af8b02356b2887a11f"
+    },
+    {
+      "id": "resolve_finding:receipt-bound-review-verdict:2026-10-09T17:25:49.721Z",
+      "at": "2026-10-09T17:25:49.721Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-bfd2becdd5c6-2-review-2\naction_v2_sha256:49d2a06e1a16dd313aeda869e2f1d0e120a913d1ab0ee3e998e94d5ae0a2bddc"
+    },
+    {
+      "id": "resolve_finding:receipt-bound-review-verdict:2026-10-09T17:25:52.669Z",
+      "at": "2026-10-09T17:25:52.669Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-bfd2becdd5c6-3-review-3\naction_v2_sha256:adcfa9feadb67620d14f0ade362a47ee93cbf99392c02f370ba508ca04aeda36"
+    },
+    {
+      "id": "freeze_artifacts:receipt-bound-review-verdict:2026-10-09T17:26:04.997Z",
+      "at": "2026-10-09T17:26:04.997Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/receipt-bound-review-verdict.intent.json"
+    },
+    {
+      "id": "record_approval:receipt-bound-review-verdict:2026-10-09T17:28:36.643Z",
+      "at": "2026-10-09T17:28:36.643Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-a7645d49\naction_v2_sha256:1b6c0faa9c843f83d35ee298aed50dddf06191a620dffbd0b61c852dbcd628a2",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-477a27cd53af07e9",
+        "issued_at": "2026-10-09T17:28:36.643Z"
+      }
+    },
+    {
+      "id": "request_rework:receipt-bound-review-verdict:2026-10-09T17:32:53.144Z",
+      "at": "2026-10-09T17:32:53.144Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:caf2cac12e6085ad221ae40580a1896b2b74ad436b9c3116326a014609b69abd",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-61a9bd4c19b8cb95",
+        "issued_at": "2026-10-09T17:32:53.144Z"
+      }
+    },
+    {
+      "id": "resolve_finding:receipt-bound-review-verdict:2026-10-09T17:33:39.355Z",
+      "at": "2026-10-09T17:33:39.355Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-27a31c0c2a5a-1-review-1\naction_v2_sha256:016eb5dce6b29df124e824d445675c972e2a52e6d446eba23fdc980cae88ec8f"
+    },
+    {
+      "id": "freeze_artifacts:receipt-bound-review-verdict:2026-10-09T17:33:51.660Z",
+      "at": "2026-10-09T17:33:51.660Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/receipt-bound-review-verdict.intent.json"
+    },
+    {
+      "id": "record_approval:receipt-bound-review-verdict:2026-10-09T17:37:00.735Z",
+      "at": "2026-10-09T17:37:00.735Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e5e13d02\naction_v2_sha256:07ae73a7b88ce947406ab50f863c8082c9b5157eb4278e2183119433fc171a3a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-18cf8458e7910684",
+        "issued_at": "2026-10-09T17:37:00.735Z"
+      }
+    },
+    {
+      "id": "request_rework:receipt-bound-review-verdict:2026-10-09T17:43:03.298Z",
+      "at": "2026-10-09T17:43:03.298Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_3\naction_v2_sha256:bab044120c0d80bfc818a8448766412dac969e8097a504f0d0ffb01715e5088b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-9700a2c5e1947149",
+        "issued_at": "2026-10-09T17:43:03.298Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:receipt-bound-review-verdict:2026-10-09T23:18:48.585Z",
+      "at": "2026-10-09T23:18:48.585Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_4\naction_v2_sha256:d565e7417344ffb182c621015eb970b34a65d67835507d64ebe868b017315a92",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-1a3eab93cf6eb671",
+        "issued_at": "2026-10-09T23:18:49.378Z"
+      }
+    },
+    {
+      "id": "resolve_finding:receipt-bound-review-verdict:2026-10-09T23:19:51.686Z",
+      "at": "2026-10-09T23:19:51.686Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-6e80e5f1bb73-1-review-1\naction_v2_sha256:3e8809220e64e2846d8061b267ab69552590184bc6701d2a91d14171b19828c6"
+    },
+    {
+      "id": "freeze_artifacts:receipt-bound-review-verdict:2026-10-09T23:20:00.320Z",
+      "at": "2026-10-09T23:20:00.320Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/receipt-bound-review-verdict.intent.json"
+    },
+    {
+      "id": "record_approval:receipt-bound-review-verdict:2026-10-09T23:22:19.552Z",
+      "at": "2026-10-09T23:22:19.552Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-9fa35ffb\naction_v2_sha256:53e1894fe2566792799e736c11889e01150d87c84d5bb9e62a9a6595f34ae2e8",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-da4b6c887a3dc6d8",
+        "issued_at": "2026-10-09T23:22:19.552Z"
+      }
+    },
+    {
+      "id": "request_rework:receipt-bound-review-verdict:2026-10-09T23:28:03.229Z",
+      "at": "2026-10-09T23:28:03.229Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_4\naction_v2_sha256:5d418b27594f95b9508dba684519c27a93a5c7bbc3c6025db3b2032c54554398",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-29eac02198421eed",
+        "issued_at": "2026-10-09T23:28:03.230Z"
+      }
+    },
+    {
+      "id": "resolve_finding:receipt-bound-review-verdict:2026-10-09T23:30:13.765Z",
+      "at": "2026-10-09T23:30:13.765Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-b9e4ccafdada-1-review-1\naction_v2_sha256:8438951cc545d7450a6a75bc61b04f72075c1fd681bf5ad5f0a72e1defcc1d4e"
+    },
+    {
+      "id": "resolve_finding:receipt-bound-review-verdict:2026-10-09T23:30:16.743Z",
+      "at": "2026-10-09T23:30:16.743Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-b9e4ccafdada-2-review-2\naction_v2_sha256:72115032c055607d7027b96890c9e05d89803d8f7dd14128a8f48ed204c439e2"
+    },
+    {
+      "id": "freeze_artifacts:receipt-bound-review-verdict:2026-10-09T23:30:19.726Z",
+      "at": "2026-10-09T23:30:19.726Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/receipt-bound-review-verdict.intent.json"
+    },
+    {
+      "id": "record_approval:receipt-bound-review-verdict:2026-10-09T23:32:41.309Z",
+      "at": "2026-10-09T23:32:41.309Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-058da4e7\naction_v2_sha256:3c037c1896de12cdc8d43f5bd1cd6a84b87e702184031484cb2434dbe9eac4bf",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-a6b0b300a52699e8",
+        "issued_at": "2026-10-09T23:32:41.309Z"
+      }
+    },
+    {
+      "id": "request_rework:receipt-bound-review-verdict:2026-10-09T23:37:18.774Z",
+      "at": "2026-10-09T23:37:18.774Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_5\naction_v2_sha256:50b37ebf0fa05a98b3f84fc595cb2f018d53609ff2d7707d06722f81a52712d8",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-f07b931a4aa9e631",
+        "issued_at": "2026-10-09T23:37:18.774Z"
+      }
+    },
+    {
+      "id": "resolve_finding:receipt-bound-review-verdict:2026-10-09T23:38:39.578Z",
+      "at": "2026-10-09T23:38:39.578Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-7e57444f9a9c-1-review-1\naction_v2_sha256:7c5416ab15ce35c3ddc59c856637b8e44386c6b564d9c8675b9fcb7c59179876"
+    },
+    {
+      "id": "freeze_artifacts:receipt-bound-review-verdict:2026-10-09T23:38:42.562Z",
+      "at": "2026-10-09T23:38:42.562Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/receipt-bound-review-verdict.intent.json"
+    },
+    {
+      "id": "record_approval:receipt-bound-review-verdict:2026-10-09T23:41:03.381Z",
+      "at": "2026-10-09T23:41:03.381Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-da99c345\naction_v2_sha256:ffcfdc8ed21241d55587c99a78bbf502b159a6d6e13111c408eed80f843078af",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-85256e506050cf8a",
+        "issued_at": "2026-10-09T23:41:03.382Z"
+      }
+    },
+    {
+      "id": "request_rework:receipt-bound-review-verdict:2026-10-09T23:44:28.521Z",
+      "at": "2026-10-09T23:44:28.521Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_6\naction_v2_sha256:ffb6cae98e02a4bc7297b483d1dfe2304857ab503811c5645ae8db088f878451",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-e80a4129acee3adc",
+        "issued_at": "2026-10-09T23:44:28.521Z"
+      }
+    },
+    {
+      "id": "authorize_rework:receipt-bound-review-verdict:2026-10-09T23:51:43.491Z",
+      "at": "2026-10-09T23:51:43.491Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:receipt-bound-review-verdict:2026-10-09T23:44:28.521Z:replan-required\naction_v2_sha256:0e80ee3cbff90ff1619d3ba64c71c15f802b065660c2087d6989f5bfdd9f38bf",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-d3e2eafbbbf661e4",
+        "issued_at": "2026-10-09T23:51:43.491Z"
+      }
+    },
+    {
+      "id": "resolve_finding:receipt-bound-review-verdict:2026-10-09T23:52:30.479Z",
+      "at": "2026-10-09T23:52:30.479Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a8cabab4bba3-1-review-1\naction_v2_sha256:0942c6443312ad7c16453752e530bfaf0ce7b0fed2788bdbe62e8e95c8ddbc1b"
+    },
+    {
+      "id": "freeze_artifacts:receipt-bound-review-verdict:2026-10-09T23:52:33.521Z",
+      "at": "2026-10-09T23:52:33.521Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/receipt-bound-review-verdict.intent.json"
+    },
+    {
+      "id": "record_approval:receipt-bound-review-verdict:2026-10-09T23:54:57.321Z",
+      "at": "2026-10-09T23:54:57.321Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e955b435\naction_v2_sha256:98b5fdfaceb7be435172615ac17664657bb46cb2e12a8ab7068968db8e547221",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-6a0e23d8b860b7f9",
+        "issued_at": "2026-10-09T23:54:57.322Z"
+      }
+    },
+    {
+      "id": "request_rework:receipt-bound-review-verdict:2026-10-09T23:59:11.000Z",
+      "at": "2026-10-09T23:59:11.000Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_7\naction_v2_sha256:1f6ebcf9c01eb8417db08ca575271ed0f3d2959ae94fb9e60370c2029338955b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-e8187ae2d6966402",
+        "issued_at": "2026-10-09T23:59:11.000Z"
+      }
+    },
+    {
+      "id": "authorize_rework:receipt-bound-review-verdict:2026-10-10T00:44:25.433Z",
+      "at": "2026-10-10T00:44:25.433Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:receipt-bound-review-verdict:2026-10-09T23:59:11.000Z:replan-required\naction_v2_sha256:1902dde7ea9b5daa854c4ebf9e6fffa8aea1553b7ca071589354f71756c2e09a",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-833c0e8b39c10d63",
+        "issued_at": "2026-10-10T00:44:25.433Z"
+      }
+    },
+    {
+      "id": "resolve_finding:receipt-bound-review-verdict:2026-10-10T00:46:20.105Z",
+      "at": "2026-10-10T00:46:20.105Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-cb9cf1291ab3-1-review-1\naction_v2_sha256:7c29f9e6ba72ff9feba9fdc4c4f55ebfcfa8b17fc6422f4e1d711d6e7232322b"
+    },
+    {
+      "id": "resolve_finding:receipt-bound-review-verdict:2026-10-10T00:46:23.511Z",
+      "at": "2026-10-10T00:46:23.511Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-cb9cf1291ab3-2-review-2\naction_v2_sha256:89bee4d0dafa3ac4ac473d179ce7b2c25adc1694bea9606bcbb8dba42d5280cb"
+    },
+    {
+      "id": "freeze_artifacts:receipt-bound-review-verdict:2026-10-10T00:46:26.595Z",
+      "at": "2026-10-10T00:46:26.595Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/receipt-bound-review-verdict.intent.json"
+    },
+    {
+      "id": "record_approval:receipt-bound-review-verdict:2026-10-10T00:49:13.799Z",
+      "at": "2026-10-10T00:49:13.799Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-750d53d2\naction_v2_sha256:3b20c1208b3efb60414acb96ef491c6a0203df2a3e10286d3ba9ef26c9c720c0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-439333ed26fa62ce",
+        "issued_at": "2026-10-10T00:49:13.799Z"
+      }
+    },
+    {
+      "id": "request_rework:receipt-bound-review-verdict:2026-10-10T00:53:54.184Z",
+      "at": "2026-10-10T00:53:54.184Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_8\naction_v2_sha256:32f4610361f6625854a1553a82c2ea984edfe7bd3b9b71b814503e24058aa375",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-64c6351f8797dfc3",
+        "issued_at": "2026-10-10T00:53:54.184Z"
+      }
+    },
+    {
+      "id": "authorize_rework:receipt-bound-review-verdict:2026-10-10T00:58:52.433Z",
+      "at": "2026-10-10T00:58:52.433Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:receipt-bound-review-verdict:2026-10-10T00:53:54.184Z:replan-required\naction_v2_sha256:2083cceecef7c0694c29b7001a7c8caa61fcf9a759b06c2fced54378206d56b2",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-9cf9cad82c8a704b",
+        "issued_at": "2026-10-10T00:58:52.433Z"
+      }
+    },
+    {
+      "id": "resolve_finding:receipt-bound-review-verdict:2026-10-10T01:00:19.745Z",
+      "at": "2026-10-10T01:00:19.745Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-678834234850-1-review-1\naction_v2_sha256:db383c5715c2fb6f42c759d54907704ff8882fe56ab037940790ce70a866a7d8"
+    },
+    {
+      "id": "resolve_finding:receipt-bound-review-verdict:2026-10-10T01:00:23.334Z",
+      "at": "2026-10-10T01:00:23.334Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-678834234850-2-review-2\naction_v2_sha256:17cbbdf43ec34b146fc07ae0ef29ce6d5c696a0792a8730648b1d622ea2b09ab"
+    },
+    {
+      "id": "freeze_artifacts:receipt-bound-review-verdict:2026-10-10T01:00:26.602Z",
+      "at": "2026-10-10T01:00:26.602Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/receipt-bound-review-verdict.intent.json"
+    },
+    {
+      "id": "record_approval:receipt-bound-review-verdict:2026-10-10T01:03:31.443Z",
+      "at": "2026-10-10T01:03:31.443Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-b00ff3c7\naction_v2_sha256:1a764c75ac1aed833fd62167c61868973432fa53c3c606a1ed8af524e0dc1043",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-704953577c964160",
+        "issued_at": "2026-10-10T01:03:31.444Z"
+      }
+    },
+    {
+      "id": "record_approval:receipt-bound-review-verdict:2026-10-10T01:06:59.742Z",
+      "at": "2026-10-10T01:06:59.742Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-5f7962a5\naction_v2_sha256:263db428ec2427bba600a75ce07d6a9bffa5333a6344b9d24e76b7565ae69b0f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-f16ab00bf1cb5e9d",
+        "issued_at": "2026-10-10T01:06:59.743Z"
+      }
+    },
+    {
+      "id": "complete:receipt-bound-review-verdict:2026-10-10T01:07:07.199Z",
+      "at": "2026-10-10T01:07:07.199Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:f6a9d8f0d5d7d0914f4ad567e014b12f69be72f2f1e9d103ca480f79a84f17f2"
+    }
+  ]
+}

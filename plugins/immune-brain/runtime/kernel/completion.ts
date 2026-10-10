@@ -1,5 +1,5 @@
 import { classifyTaskRisk } from "./intent";
-import { archivePath, boundSpecPath } from "./spec_binding";
+import { archivePath, boundSpecPath, inspectSpecBinding } from "./spec_binding";
 import type {
 	ApprovalKind,
 	CompletionDecision,
@@ -49,6 +49,8 @@ export function resolveProjectedRisk(
 	intent: TaskIntentV1,
 	changedPaths: readonly string[] = [],
 ): TaskIntentV1["risk"] {
+	// Invalid bindings have no trusted planning-path exclusions.
+	if (!inspectSpecBinding(intent).ok) return classifyTaskRisk(changedPaths, intent.risk);
 	const excluded = ownSidecarPaths(intent);
 	return classifyTaskRisk(
 		changedPaths.filter((path) => !excluded.has(path)),
@@ -182,6 +184,27 @@ export function projectTask(
 	currentIntentContentHash: string,
 	changedPaths: readonly string[] = [],
 ): TaskProjectionV3 {
+	if (record.lifecycle === "active" && !inspectSpecBinding(intent).ok) {
+		assertKernelInvariantsV3(intent, record);
+		return {
+			contract: "assurance_kernel/projection/v3",
+			task_id: record.task_id,
+			intent_revision: intent.revision,
+			lifecycle: record.lifecycle,
+			artifact_state: record.artifact_state,
+			blocked: true,
+			next_obligation: "revise_intent",
+			complete: false,
+			fresh_acceptance_ids: [],
+			missing_acceptance_ids: intent.acceptance.map((item) => item.id),
+			stale_attestation_ids: record.attestations.map((item) => item.id),
+			missing_approval_kinds: REQUIRED_ATTESTATIONS[resolveProjectedRisk(intent, changedPaths)],
+			blocking_finding_ids: record.findings.filter((item) => item.kind === "blocking" && item.status !== "resolved").map((item) => item.id),
+			unresolved_user_decision_ids: record.findings.filter((item) => item.kind === "unresolved_user_decision" && item.status === "open").map((item) => item.id),
+			replan_required_ids: record.findings.filter((item) => item.kind === "replan_required" && item.status === "open").map((item) => item.id),
+			independence_violations: [],
+		};
+	}
 	const decision = completionDecision(
 		intent,
 		record,

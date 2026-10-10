@@ -155,17 +155,25 @@ describe("Kernel assurance obligations", () => {
 		).toBe("run_review");
 	});
 
-	test("ambiguous bound Spec pairs fail closed", () => {
+	test("ambiguous bound Spec pairs project revision recovery and reject completion", () => {
 		const scope = [
 			"docs/specs/one.spec.md",
 			"docs/specs/archive/one.spec.md",
 			"docs/specs/two.spec.md",
 			"docs/specs/archive/two.spec.md",
 		];
-		const [intent, record] = fixture("routine", ["qa"], scope);
-		expect(() => projectTask(intent, record, DIFF, record.intent_ref.content_hash, scope)).toThrow(
-			/at most one scope-bound Spec/,
-		);
+		const [intent, raw] = fixture("routine", ["qa"], scope);
+		const record = parseTaskRecordV4(raw);
+		const before = JSON.stringify(record);
+		expect(projectTask(intent, record, DIFF, record.intent_ref.content_hash, scope)).toMatchObject({
+			blocked: true, complete: false, next_obligation: "revise_intent",
+		});
+		expect(JSON.stringify(record)).toBe(before);
+		expect(() => reduceTask(record, {
+			type: "complete", event_id: "ev-ambiguous-complete", at: "2026-08-12T00:00:00.000Z",
+			actor_id: "executor-1", expected_record_hash: canonicalRecordHash(record),
+			expected_workspace_hash: `sha256:${"b".repeat(64)}`, diff_hash: DIFF,
+		} as TaskAction, null, scope)).toThrow(/not eligible for completion/);
 	});
 
 	test("complete rejects routine QA when trusted changed paths floor to material", () => {

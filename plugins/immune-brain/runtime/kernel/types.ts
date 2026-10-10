@@ -187,6 +187,13 @@ export interface TaskApprovalV2 {
 	review_revision?: ReviewRevisionIdentityV1;
 	/** Legal only on a review attestation, alongside its revision identity. */
 	advisory_findings?: ReviewAdvisoryFindingV1[];
+	/**
+	 * ADR 0017: sha256 over the reviewer's own result bytes as observed by the
+	 * host, bound at submission so post-hoc audit can prove the persisted
+	 * verdict equals what the reviewer produced. Legal only on a review
+	 * attestation; emitted only when present so legacy records stay stable.
+	 */
+	reviewer_verdict_sha256?: string;
 }
 
 export interface ReviewRevisionIdentityV1 {
