@@ -1,0 +1,205 @@
+# Immune-Brain Skill Baseline
+
+## Shared Guards
+
+- On explicit invocation, read only common constraints and selected section routes
+  from `dist/`; nested modes, examples, recovery, and references load on demand.
+- Ask only when missing information would change the goal, scope, observable behavior, compatibility, risk acceptance, a protected effect, or a fact only the user can supply. Resolve repository facts and delegated technical choices with bounded evidence instead of asking.
+- Keep edits inside the user-requested Direct scope or the enrolled TaskIntent acceptance and `scope_hint`.
+- Stage only explicit task-owned paths. This staging authority does not grant
+  commit, push, broad staging, or authority over pre-existing user changes.
+  Never use `git add .` or `git add -A` in a dirty worktree.
+- Grant effects separately: staging, commit, push, publication, and outbound
+  model/data calls are distinct operations. Recovering a stage-only instruction
+  restores staging and nothing more; commit, push, and publication each keep
+  their own existing grant. An explicit approval already covering the same
+  operation, target, and impact — including a valid batch capability — stays
+  usable without another gate.
+- Before a new outbound effect, check the project's existing research channel and
+data scope. A public article, a mock, a documentation example, or a local
+read-only database gives no authority to call an arbitrary provider or send new
+data; authorize only a genuinely new channel/data/effect delta. Distinguish
+documentation, mock, real-channel, and model-quality evidence when reporting.
+- These text rules are instruction contracts, not a hard bash sandbox. They
+guide behavior and are checked as contracts; they do not technically prevent an
+arbitrary shell command, so authority gates and review remain the real boundary.
+- Do not create, switch, or delete Git worktrees; operate only in the Host launch directory.
+- Record reproducible evidence before reporting closure.
+- Required verification must pass before reporting completion; disclosing a gap is not a substitute. Autonomously diagnose, repair, and rerun failing conventional local checks within the authorized scope; never delete, skip, or weaken a valid check to manufacture a pass. If a required check remains failing or cannot run, report the work as incomplete with the concrete blocker.
+- Inspect unknown test scripts before execution. A script named `test` that
+  deploys, writes production data, or uses credentials is a protected effect,
+  not routine local verification; apply Host Confirmation Boundary before it runs.
+- Unanswered questions block only dependent commitments or execution. Continue
+  independent read-only investigation and local alternative drafts; label drafts
+  unapproved and never treat silence as consent or finalize a dependent Spec.
+- Disclose unrelated pre-existing failures without repairing them or widening
+  scope. If they prevent a required check from passing, report that blocker and
+  incomplete verification rather than claiming completion.
+- Use bounded evidence to cover affected callers and state owners for shared-contract, security, migration, persistence, or authority changes; the category alone never requires full-directory reads. Stop expanding once the relevant behavior and verification are understood.
+- Lead with conclusion, evidence, and Next Action.
+- Advisory roles do not implement; Managed execution roles do not close QA.
+- An explicit Managed Skill entry stops host-native mutation and routes scope changes to `imm-planner`; Managed execution remains inside its accepted boundary.
+
+Before local edits or checks, read Verification and Local Recovery below. Read-only
+framing does not load that execution guidance.
+
+## Verification and Local Recovery
+
+- Select required checks from the requested outcome, affected behavior, and project requirements before claiming completion. Documentation changes use relevant link, mirror, and contract checks; local logic uses focused tests; shared behavior, build configuration, cross-module changes, and release preparation widen regression coverage. Never reduce required checks merely because they fail.
+- Reuse a recorded passing local result only while the relevant code, test inputs, command, dependencies, and environment remain unchanged. Changed or uncertain inputs require rerunning affected checks. Role handoff alone does not invalidate local evidence; local evidence never replaces Kernel-owned deterministic QA or fresh snapshot-bound Review.
+- Recover routine local failures within the authorized scope: select an unused port, create temporary outputs, and remove only task-generated disposable files. Never overwrite user data or stop an unrelated process to free a port. Before dependency installation, inspect the existing project command, lifecycle scripts, network use, and credential effects; use it only within existing authorization, without dependency or lockfile changes. Unknown or protected effects follow Host Confirmation Boundary.
+- Retry a failed ordinary operation only after new evidence or a relevant condition changes; do not repeat identical attempts indefinitely. This does not authorize retrying a failed native authority gate or an uncertain remote write.
+- When changing a supported behavior or contract, update its existing tests, remove tests whose protected behavior has retired, merge redundant coverage, and remove orphaned fixtures/helpers within the affected scope. For each removal, identify the retired behavior or the remaining coverage and run the surviving related checks. Never delete by age, count, slowness, or flakiness alone. Temporary tests name their exit condition; no per-test registry or repository-wide audit is required.
+
+## Workflow Activation
+
+Ordinary host input stays host-native and does not run natural-language Managed
+routing. A new Managed workflow starts only from explicit `imm-brainstorm`,
+`imm-planner`, or `imm-run` Skill entry.
+
+1. **Continue an existing Managed owner explicitly**: an active Assurance
+   projection, TaskIntent, TaskRecord, reviewer `follow_up`, or other nonterminal
+   Managed owner remains authoritative; the user resumes it with `imm-run`.
+2. **Start explicitly**: the selected Immune-Brain Skill owns its planning or
+   coordination work. It creates only requested artifacts and their required
+   parent directories. Explicit Planner entry also owns absent routing-policy
+   activation under Planner's Kernel TaskIntent Routing section;
+   it does not otherwise install project-wide contract files.
+3. **Preserve authority**: Planner output is a candidate for later literal-user
+   Enrollment, and Fast-Track preserves TaskIntent scope, Enrollment, QA,
+   Review, authorization, and completion boundaries.
+
+Do not inspect or mutate Immune-Brain state merely because ordinary host input
+contains a mutation verb. File count, local verifier count, ordinary retries,
+read-only advisors, and unrelated dirty files do not change these boundaries.
+
+### Non-Mutating Host Path
+
+Read-only and explicit no-modification requests stay with the ordinary host
+agent. This path creates no Spec, Plan, TaskIntent, TaskRecord, State Ledger,
+acceptance evidence, QA job, mandatory Review job, HANDOFF update, or
+Compounder state. It may explain, inspect, or review without Enrollment.
+
+### Managed Execution And Completion
+
+The matching Managed owner drives execution, evidence, QA, Review, and
+completion without switching to a non-authoritative path. Scope expansion
+returns to `imm-planner`; an enrolled task resumes through `imm-run` from the
+current Assurance projection. Do not create or mutate workflow state while
+classifying a non-mutating request.
+
+### Host Confirmation Boundary
+
+Require exact host confirmation only for privileged effects. For ordinary
+non-Kernel operations, an explicit user approval already covering the same
+operation, target, and impact is sufficient; ask again only for a material delta.
+A generic continuation or configured preference is not blanket authorization.
+Mandatory native gates and hash-bound manifest approvals still apply.
+Privileged effects include:
+
+- publish, release, deployment, or remote-system mutation;
+- destructive or irreversible operations and Git history rewrite;
+- credential, secret, permission, or access-control changes;
+- authority discard, task stop, breaking intent revision, or risk/policy
+  override; and
+- external writes whose target or impact cannot be safely reversed locally.
+
+An existing grant for one of these never inherits another: a stage-only
+instruction stays stage-only, a commit is not push or publication authority,
+and a valid batch capability commits only its own scope-bounded child.
+
+Routine Managed enrollment uses one current-Host native confirmation bound to the TaskIntent content hash after Planner validation. Explicit Plan-only requests stop with candidate artifacts and do not invoke Enrollment; execution-bearing requests open the native gate directly without chat pre-confirmation. Enrollment validates intent, Git ownership, scope, workspace claim, and final authority preconditions without executing acceptance descriptors; deterministic QA executes them after implementation. The routine task proceeds from that single confirmation through enrollment, execution, and QA without a second human stop. Do not request confirmation for local in-scope edits, local verification, ordinary Direct rework, scoped diff review, or completion reporting. Managed evidence, QA, Review, and completion authority remain governed by their Managed contracts; R2 does not weaken them. Managed native-authority failures fail closed with one stable reason and exactly one same-Host recovery action; never offer a Pi, Direct Path, cross-Host/worktree, unmanaged, or automatic-retry fallback.
+
+For an unborn symbolic Git HEAD, the same Enrollment confirmation discloses an empty root commit. After approval, the Host creates that commit without staging project content or changing the index/worktree, then revalidates ownership and rehearses Enrollment against the new base. Git identity uses existing environment/config values with an explicit automation fallback, never config writes. Decline or pre-initialization cancellation leaves HEAD unborn; if later Enrollment fails or is cancelled, report the remaining commit. Invalid Git refs are errors, not initialization candidates.
+
+## Parallel Read-Only Dispatch
+
+State mutations, step activations, QA decisions, and plan switches remain
+strictly sequential. Read-only work — repo exploration, advisory review,
+host probing, planner research — is eligible for parallel dispatch in
+capability terms, but Pi schedules one foreground child at a time: launch one
+child, consume its direct result, then decide whether another child is needed.
+Do not assume multiple foreground Agents run as a concurrent batch.
+
+Parallel dispatch is restricted by capability, not by a closed Skill list. Every
+child delegation packet must enforce read-only advisory behavior: no file edits,
+Plan writes, workflow-state mutation, or QA closure. Eligible examples include
+Brainstorm and Planner research children, Domain Mappers and architecture
+explorers, advisory reviewers, and provider-native read-only explorers such as
+Pi `Explore`. Executor, QA, Compounder, owning Planner, and test-fixer children
+always run sequentially.
+
+## Output Language Policy
+
+- Honor the configured language for user-facing replies and short summaries.
+- Persisted Immune-Brain documents default to English, including `HANDOFF.md`,
+  `docs/brainstorms/`, `docs/specs/`, `docs/plans/`, and `docs/solutions/`.
+- A reply-language instruction such as "use Chinese when replying" does not
+  change document language. Change persisted document language only when the
+  current user request, project instructions such as `AGENTS.md`, or host/user
+  preference contains an explicit document-language instruction.
+- Reply language precedence is: current user instruction, then project
+  instructions such as `AGENTS.md`, then host or user-level preference, then
+  the repo-wide default output contract. Document language precedence is:
+  current explicit document-language instruction, then project explicit
+  document-language instruction, then host or user-level explicit
+  document-language preference, then English.
+- Do not translate or rename machine contracts: schema fields, enum values,
+  CLI flags, JSON keys, file paths, tool names, API names,
+  and code identifiers stay literal.
+- Host-native UI text (Task Rail sentences, authority dialog titles and
+  actions, enrollment progress summaries) is deterministic extension code and
+  cannot follow conversational rules; users localize it with the
+  `IMM_UX_LANGUAGE` environment variable (for example `IMM_UX_LANGUAGE=zh`).
+  Only sentence-level interaction text follows it; machine contracts, domain
+  field labels, and agent-facing Tool result reasons stay literal English.
+- Internal role dispatches (`dispatch_role` and routed role contexts) carry
+  the user-facing interaction language as `interaction_language` in the
+  delegation context, so QA/Review/Explorer roles report in the user's
+  language while keeping machine contracts literal. Omit it to keep English
+  role output.
+- Preserve `CONTEXT.md` canonical terms such as `Step`, `Plan`, `Spec`,
+  `Skill`, `Brainstorm`, `Executor`, `QA`, `Compounder`, `Learning`, and `ADR`;
+  add local-language explanations around them when helpful.
+
+## Success Criteria
+
+- Direct work closes only when the requested result is delivered and the required verification passes: a failed or unavailable required check is reported as incomplete work with its concrete blocker, never as completion. Check breadth follows the request and established project requirements, not a universal full-repository rule. Apply Shared Guards and Verification and Local Recovery for in-scope repair and evidence reuse.
+- A Managed task is ready to execute only when the target result, boundary, and
+  verification path are clear enough to avoid speculative edits.
+- A Managed task is closable only when execution evidence proves the recorded
+  verification path and the TaskRecord still matches the enrolled TaskIntent boundary.
+- Collect missing in-scope evidence and continue under the current owner. Missing
+  evidence alone does not require replanning. Escalate only a demonstrated
+  scope/acceptance mismatch or protected decision through the current owner's
+  revision or authorization path; never silently expand execution or QA scope.
+
+## Retirement Completion
+
+For retirement-class work, deletion of source and contract text is a completion condition. A retirement is not complete until the source and its contract text are deleted.
+
+An absence test is transitional scaffolding proving an in-progress deletion rather than a substitute for one. An absence test is transitional evidence of an in-progress deletion and may not stand in place of one. Distinguish an absence assertion that guards something already gone, which is durable and correct, from one that stands in for a deletion still owed, which is a promise recorded as if it were a result.
+
+## Collaboration Posture
+
+- When to ask: ask only when missing information would change the outcome,
+  authority boundary, or risk profile.
+- When to proceed: proceed on explicit, low-risk assumptions when the next
+  evidence path can validate or reject them.
+- Keep uncertainty visible in evidence, notes, or Next Action instead of
+  silently widening scope.
+
+## Hub skill anatomy
+
+The public Skills `imm-brainstorm`, `imm-planner`, and `imm-run` carry the
+repo's user-facing workflow authority. Execution, QA, review, repair,
+exploration, and learning are internal runtime roles dispatched by Loop through
+packaged role prompts; they are not additional public Skills. Keep explicit
+`Rationalizations`, `Red Flags`, and Verification guidance grounded in
+Immune-Brain commands and `.imm` state.
+
+## Shallow Discovery
+
+Prefer shallow discovery before full-file reads. Start with file lists,
+`rg` hits, symbol/signature scans, and targeted line ranges; read whole files
+only when the narrower evidence path cannot answer the active task question.

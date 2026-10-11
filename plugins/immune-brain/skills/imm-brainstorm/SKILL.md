@@ -25,7 +25,8 @@ or all references as an entry prerequisite.
 - requested framing document: [Output Language Policy](../../dist/BASELINE.md#output-language-policy)
 
 When framing discusses later execution, describe Enrollment only as the
-current Host's native gate. A failed Managed authority interaction stays
+current Host's native gate, opened as the first step of a user-launched
+`imm-run`. Brainstorm stops after framing; the user launches `imm-planner`. A failed Managed authority interaction stays
 fail-closed: report one same-Host recovery action, never another Host,
 worktree, or unmanaged implementation.
 

@@ -20,6 +20,17 @@ Host's `status` projection first and verify the exact active backend claim,
 TaskIntent, and TaskRecord. Invalid or contradictory projections fail closed. A
 candidate TaskIntent is not Enrollment authority.
 
+Enrollment is the first step of an explicit `imm-run` entry and belongs to no
+other Skill. When the entry finds no active claim, resolve the validated
+candidate the user named (or the Planner's recommended first Task when the entry
+names none and exactly one candidate fits), then invoke the current Host's
+native Enrollment gate once, without chat pre-confirmation, and continue from
+the returned projection. Planner and Brainstorm never open that gate; a
+confirmation given to either is not this entry. A gate failure preserves the
+candidate and reports its stable reason plus exactly one same-Host recovery
+action; never recommend another Host, worktree, Direct Path, unmanaged
+implementation, or automatic retry.
+
 Before the first Enrollment of a candidate TaskIntent, confirm the Planner
 returned `tracker_associated` — but only when the candidate belongs to an
 identified GitHub-carried Initiative. Standalone TaskIntents and Local

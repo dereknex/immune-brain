@@ -53,13 +53,13 @@ Each scenario belongs to exactly one Slice, the first that makes it observable: 
 - Any change to Kernel enrollment validation, the native dialog content, QA, Review, or completion authority.
 - Blocking the Pi model from reading packaged Skill files (D5).
 - The untracked project alias `.claude/commands/loop.md`, which still names the retired `imm-loop` skill. It is outside Git and is reported to the user instead.
-- Historical fixtures under `tests/fixtures/workflow-decision-closure-sources/`, which are frozen snapshots.
+- Editing the existing historical fixtures under `tests/fixtures/workflow-decision-closure-sources/`, which are frozen snapshots. S1 adds a preserved pre-change `BASELINE.md` there, because the historical evidence binds that file by hash (found during S1; intent revision 2).
 
 ## Discovery evidence and reference closure
 
 - Direct-Enrollment wording: `plugins/immune-brain/BASELINE.md` and its two byte-identical copies (`skills/BASELINE.md`, `dist/BASELINE.md`, per `scripts/dist-sync-manifest.ts:52`), `dist/imm-planner.md` (Managed Request Routing, Kernel TaskIntent Routing, Initiative Carrier Preference, Boundary, Next Action), `dist/imm-brainstorm.md`, `skills/imm-planner/SKILL.md`.
 - `dist/imm-planner.md` and `dist/imm-run.md` are their own authoring source (`scripts/dist-sync-manifest.ts:120-133`).
-- Asserting test: `tests/imm-planner-kernel-intent-contract.test.ts`. Mirror checks: `tests/dist-docs-sync-contract.test.ts`, `tests/skill-dist-consistency.test.ts`.
+- Asserting tests: `tests/imm-planner-kernel-intent-contract.test.ts`, `tests/direct-first-routing-contract.test.ts`. Hash-bound historical evidence: `tests/workflow-behavior-evidence.test.ts` binds `plugins/immune-brain/BASELINE.md`. User-facing wording: `README.md`. Mirror checks: `tests/dist-docs-sync-contract.test.ts`, `tests/skill-dist-consistency.test.ts`.
 - Pi Enrollment tool guidance: `plugins/immune-brain/.pi-extension/imm-canary-enroll.ts:611`; tested by `tests/pi-canary-enroll-extension.test.ts`.
 - Claude hooks: `plugins/immune-brain/hooks/hooks.json` (`PreToolUse` matches only file tools), `runtime/claude/lane_guard.ts`, dispatched from `runtime/claude/mcp_server.ts` `runHook`.
 - Claude tool boundary: `runtime/claude/mcp_server.ts:157` (`start_unattended_batch`) and `:233` (`enroll`); the handler already requires `claudecode/toolUseId` and fails closed with `correlation_missing`. `NativeAuthorityError` lives in `runtime/claude/interaction.ts:31`.

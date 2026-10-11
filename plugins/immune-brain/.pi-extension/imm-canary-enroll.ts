@@ -609,7 +609,7 @@ export default function (pi: ExtensionAPI) {
 		description: "Run one exact Kernel new-task enrollment synchronously in the foreground with host cancellation before authority commit.",
 		promptSnippet: "Kernel enrollment: invoke once in foreground and consume the direct terminal result.",
 		promptGuidelines: [
-			"Call from the Parent after natural-language routing selects Enrollment; execute once in the foreground and consume the terminal Tool result.",
+			"Call from the Parent only as the first step of an explicit imm-run entry, never from imm-planner or imm-brainstorm; execute once in the foreground and consume the terminal Tool result.",
 			"Do not run this Tool in background, poll for completion, or issue a cancel subcommand; host cancellation is the only pre-commit cancellation path.",
 		],
 		parameters: Type.Object(

@@ -1,0 +1,174 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "explicit-phase-entry-s1-contract",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "explicit-phase-entry-s1-contract",
+    "goal": "Implement Slice S1 of Initiative explicit-phase-entry per docs/specs/explicit-phase-entry.spec.md (T4): every packaged contract copy makes the Planner and Brainstorm stop after candidate validation without invoking Enrollment, and makes native Enrollment the first step of an explicit imm-run entry. User scenarios SCN-1 and SCN-2 belong to this Slice.",
+    "acceptance": [
+      {
+        "id": "EPE-S1-A1",
+        "assertion": "Per T4 and decision D1 of docs/specs/explicit-phase-entry.spec.md (source: user decisions U2, U3): in dist/imm-planner.md, skills/imm-planner/SKILL.md, dist/imm-brainstorm.md and all three BASELINE.md copies, no route invokes the native Enrollment gate from the Planner or Brainstorm; the Planner Next Action reports the validated candidate and names a literal-user imm-run entry as the only next step; the phrases 'without a second human stop' as a Planner route and 'execution-bearing requests open the native gate directly' are absent from every copy, while the Plan-only stop wording remains. Seam: new tests/explicit-phase-entry-planner-contract.test.ts reading those files; it must contain at least one test and fail when any copy keeps the removed route.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/explicit-phase-entry-planner-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "EPE-S1-A2",
+        "assertion": "Per T4 and decision D2 of docs/specs/explicit-phase-entry.spec.md (source: user decision U3): dist/imm-run.md states that an explicit imm-run entry with no active claim resolves the validated candidate and invokes the native Enrollment gate once as its first step, and the Pi imm_canary_enrollment promptGuidelines say the tool is called only as the first step of imm-run and no longer say 'after natural-language routing selects Enrollment'. An ADR under docs/adr records the decision. Seam: new tests/explicit-phase-entry-run-contract.test.ts over dist/imm-run.md and .pi-extension/imm-canary-enroll.ts, with a positive control for the first-step text and a negative control for the retired guideline.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/explicit-phase-entry-run-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "EPE-S1-A3",
+        "assertion": "Per Discovery evidence of docs/specs/explicit-phase-entry.spec.md (source: repository evidence scripts/dist-sync-manifest.ts): the three BASELINE.md copies stay byte-identical, packaged mirrors stay in sync, and the existing Planner contract and Pi Enrollment extension tests pass with their assertions updated to the two-phase route; no valid test is deleted or skipped.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dist-docs-sync-contract.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\",\n      \"tests/imm-planner-kernel-intent-contract.test.ts\",\n      \"tests/pi-canary-enroll-extension.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/explicit-phase-entry-s1-contract.md",
+      "CONTEXT.md",
+      "README.md",
+      "docs/adr/0019-explicit-run-entry-owns-enrollment.md",
+      "docs/plans/explicit-phase-entry-s1-contract.intent.json",
+      "docs/specs/explicit-phase-entry.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+      "plugins/immune-brain/BASELINE.md",
+      "plugins/immune-brain/dist/BASELINE.md",
+      "plugins/immune-brain/dist/imm-brainstorm.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/skills/BASELINE.md",
+      "plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
+      "plugins/immune-brain/skills/imm-planner/SKILL.md",
+      "plugins/immune-brain/skills/imm-run/SKILL.md",
+      "tests/direct-first-routing-contract.test.ts",
+      "tests/dist-docs-sync-contract.test.ts",
+      "tests/explicit-phase-entry-planner-contract.test.ts",
+      "tests/explicit-phase-entry-run-contract.test.ts",
+      "tests/fixtures/workflow-decision-closure-sources/BASELINE.md",
+      "tests/fixtures/workflow-decision-closure-sources/README.md",
+      "tests/imm-planner-kernel-intent-contract.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/skill-dist-consistency.test.ts",
+      "tests/workflow-behavior-evidence.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/explicit-phase-entry-s1-contract.intent.json",
+    "content_hash": "sha256:29ca0d24f4ec0c365e18c1578fa3de544ba0f9582c64c7911c71e7087a65efb4"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:6cb50ca1d00a283487bc999cf1fa5e515402a96fcc596a0209c7a03a87f8d241",
+  "git_base_head": "32d61882ed1eabbb689985c987d7d7999630ff39",
+  "attestations": [
+    {
+      "id": "approval-qa-ee61e23c",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:29ca0d24f4ec0c365e18c1578fa3de544ba0f9582c64c7911c71e7087a65efb4",
+      "diff_hash": "sha256:b1b9c2e033c6d5ada6ee16ff98df2778a11f1917527c6b381008d88c7debaad3",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:128a01c815b983fd5e95a09d409f5e717ad7be658827085492384174807444a4",
+      "acceptance_results": [
+        {
+          "acceptance_id": "EPE-S1-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:128a01c815b983fd5e95a09d409f5e717ad7be658827085492384174807444a4"
+        },
+        {
+          "acceptance_id": "EPE-S1-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:128a01c815b983fd5e95a09d409f5e717ad7be658827085492384174807444a4"
+        },
+        {
+          "acceptance_id": "EPE-S1-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:128a01c815b983fd5e95a09d409f5e717ad7be658827085492384174807444a4"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-6a799a38",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:29ca0d24f4ec0c365e18c1578fa3de544ba0f9582c64c7911c71e7087a65efb4",
+      "diff_hash": "sha256:b1b9c2e033c6d5ada6ee16ff98df2778a11f1917527c6b381008d88c7debaad3",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (base, single parent, tree, manifest digest); every per-file diff read; Planner, Brainstorm and all three byte-identical BASELINE copies no longer route to Enrollment, imm-run and the Pi guideline own it as first step, ADR 0019 records it, and both new seam tests carry positive and negative controls with no test deleted or skipped.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "32d61882ed1eabbb689985c987d7d7999630ff39",
+        "review_commit": "e6ea0bf4f35afd22575f5a146f31b24c7bd25fcf",
+        "review_tree": "e355fd0b84076f0725991ee156cd87df804feed8",
+        "manifest_digest": "sha256:8b349ab9cc5afc4c7cd0d87fbe1962698b08483490a4de5a3bcf7ed24aa74b4b"
+      },
+      "reviewer_verdict_sha256": "sha256:b6a35495115882a7e8cef465e02b4e251e36a61bffb5e6ab7af1454355016584"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:explicit-phase-entry-s1-contract:2026-10-11T12:32:49.447Z",
+      "at": "2026-10-11T12:32:49.447Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:0bf2c86fbebdf72196e39511fcdee076ebf75751314ff784c2a5841d3bf29e5a",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-f37947085a590f12",
+        "issued_at": "2026-10-11T12:33:22.939Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:explicit-phase-entry-s1-contract:2026-10-11T12:43:53.487Z",
+      "at": "2026-10-11T12:43:53.487Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/explicit-phase-entry-s1-contract.intent.json"
+    },
+    {
+      "id": "record_approval:explicit-phase-entry-s1-contract:2026-10-11T12:44:02.165Z",
+      "at": "2026-10-11T12:44:02.165Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ee61e23c\naction_v2_sha256:a005d91bbf7d797ae62ff0321e641d6e8c0b5e42ef72c49a6470cdf08148919f",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-11T12:44:02.165Z"
+      }
+    },
+    {
+      "id": "record_approval:explicit-phase-entry-s1-contract:2026-10-11T12:45:59.049Z",
+      "at": "2026-10-11T12:45:59.049Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-6a799a38\naction_v2_sha256:c54502854a42d31ef528bfb206f01a9c3c32e1ebad284af69e301a27dda0a466",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-11T12:45:59.049Z"
+      }
+    },
+    {
+      "id": "complete:explicit-phase-entry-s1-contract:2026-10-11T12:46:01.014Z",
+      "at": "2026-10-11T12:46:01.014Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:d230be0d0f2885653862ce649aea46ad4c654421a837b8d121102f6a504cf137"
+    }
+  ]
+}
