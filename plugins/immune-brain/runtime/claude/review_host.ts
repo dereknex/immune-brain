@@ -76,21 +76,21 @@ export class MemoryHookEventLog implements HookEventLog {
 
 const CACHE_DIR = "immune-brain-claude";
 
-function sessionHash(sessionId: string): string {
+export function sessionHash(sessionId: string): string {
 	return createHash("sha256").update(sessionId).digest("hex");
 }
 
-function cacheDir(root: string): string {
+export function cacheDir(root: string): string {
 	return join(root, CACHE_DIR);
 }
 
-function ownedByUs(stat: { uid: number; isSymbolicLink(): boolean }): boolean {
+export function ownedByUs(stat: { uid: number; isSymbolicLink(): boolean }): boolean {
 	if (stat.isSymbolicLink()) return false;
 	const uid = process.getuid?.();
 	return uid === undefined || stat.uid === uid;
 }
 
-function ensurePrivateDir(dir: string): boolean {
+export function ensurePrivateDir(dir: string): boolean {
 	try {
 		const existing = lstatSync(dir);
 		return existing.isDirectory() && ownedByUs(existing) && (existing.mode & 0o777) === 0o700;
@@ -106,7 +106,7 @@ function ensurePrivateDir(dir: string): boolean {
 	}
 }
 
-function appendPrivate(path: string, dir: string, line: string): boolean {
+export function appendPrivate(path: string, dir: string, line: string): boolean {
 	if (!ensurePrivateDir(dir)) return false;
 	const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW | constants.O_NONBLOCK;
 	let fd: number;
@@ -122,7 +122,7 @@ function appendPrivate(path: string, dir: string, line: string): boolean {
 	}
 }
 
-function readPrivate(path: string, maxBytes = Number.POSITIVE_INFINITY): string | undefined {
+export function readPrivate(path: string, maxBytes = Number.POSITIVE_INFINITY): string | undefined {
 	let fd: number;
 	try { fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK); } catch { return; }
 	try {

@@ -43,6 +43,118 @@ var PLUGIN_VERSION = "5.1.2";
 
 // plugins/immune-brain/runtime/claude/interaction.ts
 import { createHash, randomUUID } from "node:crypto";
+
+// plugins/immune-brain/runtime/assurance/phase_entry.ts
+var RUN_ENTRY_REQUIRED = "run_entry_required";
+var PHASE_ENTRY_REQUIRED = "phase_entry_required";
+var PHASE_ENTRY_RECOVERY = {
+  [RUN_ENTRY_REQUIRED]: "ask the user to enter imm-run in the current Host",
+  [PHASE_ENTRY_REQUIRED]: "ask the user to enter the Skill themselves in the current Host"
+};
+var PACKAGED = {
+  "imm-planner": "plan",
+  "imm-brainstorm": "plan",
+  "imm-run": "run"
+};
+var ALIAS_TARGETS = { ...PACKAGED, "imm-loop": "run" };
+var PREFIXES = ["immune-brain:", "skill:"];
+var ALIAS_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+var SKILL_MENTION = /(?<![A-Za-z0-9_-])imm-(?:planner|brainstorm|run|loop)(?![A-Za-z0-9_-])/g;
+var EXPANDED = /^<command-message>[^<]*<\/command-message>\s*<command-name>\/([^\s<]+)<\/command-name>/;
+var RAW = /^\/(\S+)/;
+function stripPrefix(name) {
+  for (const prefix of PREFIXES)
+    if (name.startsWith(prefix))
+      return name.slice(prefix.length);
+  return name;
+}
+function packagedPhaseSkill(name) {
+  const trimmed = name.trim();
+  const bare = stripPrefix(trimmed.startsWith("/") ? trimmed.slice(1) : trimmed);
+  return Object.hasOwn(PACKAGED, bare) ? bare : null;
+}
+function recognizePhaseEntry(text, readAlias) {
+  const command = (RAW.exec(text) ?? EXPANDED.exec(text))?.[1];
+  if (!command)
+    return null;
+  const packaged = packagedPhaseSkill(command);
+  if (packaged)
+    return PACKAGED[packaged];
+  if (!ALIAS_NAME.test(command))
+    return null;
+  let body;
+  try {
+    body = readAlias(command);
+  } catch {
+    return null;
+  }
+  if (!body)
+    return null;
+  const targets = new Set(body.match(SKILL_MENTION) ?? []);
+  if (targets.size !== 1)
+    return null;
+  return ALIAS_TARGETS[[...targets][0]] ?? null;
+}
+var NO_PHASE_ENTRY = { prompt_seq: 0, run_live: false, run_prompt_seq: 0, plan_prompt_seq: 0 };
+function applyPrompt(state, entry) {
+  const prompt_seq = state.prompt_seq + 1;
+  if (entry === "run")
+    return { ...state, prompt_seq, run_live: true, run_prompt_seq: prompt_seq };
+  if (entry === "plan")
+    return { prompt_seq, run_live: false, run_prompt_seq: 0, plan_prompt_seq: prompt_seq };
+  return { ...state, prompt_seq };
+}
+function phaseEntryLogLine(entry) {
+  return `${JSON.stringify({ v: 1, entry })}
+`;
+}
+function reducePhaseEntryLog(text) {
+  let state = NO_PHASE_ENTRY;
+  for (const line of text.split(`
+`)) {
+    if (!line)
+      continue;
+    let record;
+    try {
+      record = JSON.parse(line);
+    } catch {
+      return null;
+    }
+    if (!record || typeof record !== "object")
+      return null;
+    const { v, entry } = record;
+    if (v !== 1 || entry !== null && entry !== "plan" && entry !== "run")
+      return null;
+    state = applyPrompt(state, entry);
+  }
+  return state;
+}
+function refuse(reason_code, detail) {
+  return { ok: false, reason_code, detail, recovery_action: PHASE_ENTRY_RECOVERY[reason_code] };
+}
+function admitPhaseOperation(operation, state, context) {
+  if (operation.kind === "tool") {
+    if (state?.run_live)
+      return { ok: true };
+    return refuse(RUN_ENTRY_REQUIRED, `${operation.name} needs a literal-user imm-run entry in this session`);
+  }
+  const latest = state !== null && state.prompt_seq > 0 ? state.prompt_seq : -1;
+  if (operation.skill === "imm-run") {
+    if (state?.run_live && state.run_prompt_seq === latest)
+      return { ok: true };
+    return refuse(PHASE_ENTRY_REQUIRED, "imm-run is entered by the user, not by a model Skill call");
+  }
+  if (state && state.plan_prompt_seq === latest)
+    return { ok: true };
+  if (operation.skill === "imm-planner" && state?.run_live && context.activeClaim)
+    return { ok: true };
+  return refuse(PHASE_ENTRY_REQUIRED, `${operation.skill} is entered by the user, not by a model Skill call`);
+}
+function phaseRefusalMessage(refusal) {
+  return `${refusal.reason_code}: ${refusal.detail}; recovery: ${refusal.recovery_action}`;
+}
+
+// plugins/immune-brain/runtime/claude/interaction.ts
 var PRIVILEGED_OPERATIONS = [
   "enroll",
   "request_authorization",
@@ -57,7 +169,8 @@ var RECOVERY_ACTIONS = {
   user_cancelled: "wait for a fresh literal-user request",
   correlation_missing: "retry through a fresh native gate in the current Host",
   unsupported_host: "upgrade to a supported Claude Code version and retry in the current Host",
-  workspace_changed: "review the current workspace and retry through a fresh native gate"
+  workspace_changed: "review the current workspace and retry through a fresh native gate",
+  ...PHASE_ENTRY_RECOVERY
 };
 
 class NativeAuthorityError extends Error {
@@ -683,6 +796,11 @@ function parseHookStdin(raw) {
     return { type: "SessionEnd", sessionId };
   return null;
 }
+
+// plugins/immune-brain/runtime/claude/lane_guard.ts
+import { lstatSync as lstatSync10, readFileSync as readFileSync10, rmSync as rmSync5 } from "node:fs";
+import { homedir, tmpdir as tmpdir2 } from "node:os";
+import { join as join9 } from "node:path";
 
 // plugins/immune-brain/runtime/unattended/lane_workspace.ts
 import { spawnSync } from "node:child_process";
@@ -6350,7 +6468,7 @@ var oid = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 var id = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var batchAuthor = process.env.GIT_AUTHOR_NAME || "Immune-Brain Batch";
 var decode = (bytes) => new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-function refuse() {
+function refuse2() {
   throw new Error("plan_digest mismatch: batch plan reconfirmation is not eligible");
 }
 function matchesLocalProof(localJson, exported) {
@@ -6359,7 +6477,7 @@ function matchesLocalProof(localJson, exported) {
 function git2(root, args) {
   const r = spawnSync6("git", ["-C", root, ...args], { encoding: "buffer", maxBuffer: 262144, env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } });
   if (r.status !== 0)
-    refuse();
+    refuse2();
   return decode(r.stdout);
 }
 function ownUnpersistedBatchHead(root, record, head) {
@@ -6410,23 +6528,23 @@ function ownUnpersistedBatchHead(root, record, head) {
 var confirmations = new Map;
 function retainReconfirmation(nonce, snapshot) {
   if (confirmations.has(nonce))
-    refuse();
+    refuse2();
   confirmations.set(nonce, snapshot);
 }
 function takeReconfirmation(nonce) {
   const found = confirmations.get(nonce);
   confirmations.delete(nonce);
   if (!found)
-    refuse();
+    refuse2();
   return found;
 }
 async function captureBatchReconfirmation(root, record, children) {
   if (!id.test(record.batch_id) || !oid.test(record.base_head) || isTerminalBatchState(record.batch_state) || record.commits.length || record.children.some((c) => c.commit !== null || c.state === "committed") || record.children.length !== children.length || !children.length)
-    refuse();
+    refuse2();
   const assertNoCommitEvidence = () => {
     for (const child of record.children) {
       if (!id.test(child.task_id))
-        refuse();
+        refuse2();
       const path = batchCommitEvidencePath(record.batch_id, child.task_id);
       let missing = false;
       try {
@@ -6435,17 +6553,17 @@ async function captureBatchReconfirmation(root, record, children) {
         if (error instanceof Error && error.message === `source_missing: ${path}`)
           missing = true;
         else
-          refuse();
+          refuse2();
       }
       if (!missing)
-        refuse();
+        refuse2();
     }
   };
   assertNoCommitEvidence();
   const statePath = batchStatePath(record.batch_id);
   const stateBytes = readSecureProjectBytes(root, statePath);
   if (JSON.stringify(JSON.parse(decode(stateBytes))) !== JSON.stringify(record))
-    refuse();
+    refuse2();
   const files = new Map;
   const capture = (path) => {
     const bytes = readSecureProjectBytes(root, path);
@@ -6457,14 +6575,14 @@ async function captureBatchReconfirmation(root, record, children) {
   let scope = null;
   const workspace = readWorkspaceStateRaw(root);
   if (workspace.state.current_working !== null)
-    refuse();
+    refuse2();
   for (const [index, child] of children.entries()) {
     const previous = record.children[index];
     if (!id.test(child.task_id) || child.task_id !== previous.task_id || child.slice_id !== previous.slice_id || JSON.stringify(child.blocked_by) !== JSON.stringify(previous.blocked_by) || child.intent_path !== `docs/plans/${child.task_id}.intent.json`)
-      refuse();
+      refuse2();
     const old = parseTaskIntentV1(JSON.parse(git2(root, ["show", `${record.base_head}:${child.intent_path}`])));
     if (old.task_id !== child.task_id)
-      refuse();
+      refuse2();
     const oldHash = canonicalIntentHash(old);
     oldChildren.push({ task_id: child.task_id, blocked_by: [...child.blocked_by], intent_path: child.intent_path, intent_revision: old.revision, intent_content_hash: oldHash });
     const currentBytes = capture(child.intent_path);
@@ -6472,46 +6590,46 @@ async function captureBatchReconfirmation(root, record, children) {
     const currentHash = canonicalIntentHash(current);
     const tracked = readTaskIntent(root, child.task_id, child.intent_path);
     if (currentHash !== tracked.content_hash || currentHash !== child.intent_content_hash || current.revision !== child.intent_revision)
-      refuse();
+      refuse2();
     if (currentHash === oldHash)
       continue;
     if (scope !== null || previous.state === "pending" || previous.state === "skipped_blocked" || current.revision <= old.revision || current.goal !== old.goal || current.owner !== old.owner)
-      refuse();
+      refuse2();
     const settled = readSettledRunEvidence(root, child.task_id);
     if (!settled || settled.lifecycle !== "done")
-      refuse();
+      refuse2();
     const run = settled.run_id;
     if (!id.test(run) || settled.enrollment_event_id !== enrollmentEventIdFor(child.task_id, settled.created_at) || Date.parse(settled.created_at) > Date.parse(record.updated_at))
-      refuse();
+      refuse2();
     const pair = readAuditTaskPair(root, child.task_id, run);
     if (!pair || pair.record.contract !== "assurance_kernel/task_record/v4")
-      refuse();
+      refuse2();
     const r = pair.record;
     if (r.lifecycle !== "done" || r.intent_ref.content_hash !== currentHash || canonicalIntentHash(r.intent_snapshot) !== currentHash || r.git_base_head !== record.base_head || pair.proof.terminal_lifecycle !== "done")
-      refuse();
+      refuse2();
     const terminal = r.history.at(-1);
     if (terminal?.type !== "complete" || terminal.from_state !== "active:frozen" || terminal.to_state !== "done:frozen" || terminal.id !== pair.proof.terminal_event_id)
-      refuse();
+      refuse2();
     const recordPath = auditRunRecordPath(child.task_id, run);
     const proofPath = auditRunTerminalProofPath(child.task_id, run);
     if (!capture(recordPath).equals(Buffer.from(settled.record_json)))
-      refuse();
+      refuse2();
     const capturedProof = JSON.parse(decode(capture(proofPath)));
     if (!matchesLocalProof(settled.proof_json, capturedProof) || !matchesLocalProof(settled.proof_json, pair.proof))
-      refuse();
+      refuse2();
     const identity = taskDeliveryIdentity(root, r);
     const projection = await projectAssurance(root, child.task_id, (cwd, task) => {
       if (task.contract !== "assurance_kernel/task_record/v4" || !task.git_base_head)
-        refuse();
+        refuse2();
       return taskDeliveryIdentity(cwd, task);
     });
     if (projection.error || projection.claim || projection.projection.run_id !== run || projection.projection.lifecycle !== "done" || !projection.projection.completion_ready || projection.projection.intent_content_hash !== currentHash || projection.projection.diff_hash !== identity.diff_hash || !projection.projection.fresh_approval_kinds.includes("qa") || projection.projection.risk !== "routine" && !projection.projection.fresh_approval_kinds.includes("review"))
-      refuse();
+      refuse2();
     scope = r.intent_snapshot.scope_hint;
     changed.push({ task: child.task_id, run, identity: JSON.stringify(identity), settled: JSON.stringify(settled) });
   }
   if (computeBatchPlanDigest(oldChildren) !== record.plan_digest || changed.length !== 1 || scope === null)
-    refuse();
+    refuse2();
   const confirmedScope = scope;
   const owner = changed[0];
   const status = () => git2(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none"]);
@@ -6520,42 +6638,42 @@ async function captureBatchReconfirmation(root, record, children) {
   for (const entry of entries) {
     const code = entry.slice(0, 2), path = entry.slice(3);
     if (code[1] !== " " || !["A", "M", "D"].includes(code[0]) || !path.startsWith(`${auditRunDirPath(owner.task, owner.run)}/`) && !confirmedScope.some((s) => pathMatchesScope(path, s)))
-      refuse();
+      refuse2();
   }
   const flagsBytes = git2(root, ["ls-files", "-v"]);
   const flags = flagsBytes.split(`
 `).filter(Boolean);
   if (flags.some((line) => line[0] === "S" || line[0] !== line[0]?.toUpperCase()))
-    refuse();
+    refuse2();
   const head = () => git2(root, ["rev-parse", "HEAD"]).trim();
   const branch = () => git2(root, ["symbolic-ref", "--short", "HEAD"]).trim();
   if (head() !== record.base_head || branch() !== record.branch)
-    refuse();
+    refuse2();
   const assertDeliveryUnchanged = () => {
     for (const c of changed) {
       let settled;
       try {
         settled = readSettledRunEvidence(root, c.task);
       } catch {
-        refuse();
+        refuse2();
       }
       if (!settled || settled.run_id !== c.run || JSON.stringify(settled) !== c.settled)
-        refuse();
+        refuse2();
       const pair = readAuditTaskPair(root, c.task, c.run);
       if (!pair || pair.record.contract !== "assurance_kernel/task_record/v4" || !pair.record.git_base_head)
-        refuse();
+        refuse2();
       const diff = taskDeliveryIdentity(root, pair.record);
       if (JSON.stringify(diff) !== c.identity)
-        refuse();
+        refuse2();
     }
   };
   const assertUnchanged = () => {
     assertNoCommitEvidence();
     if (!readSecureProjectBytes(root, statePath).equals(stateBytes) || head() !== record.base_head || branch() !== record.branch || status() !== statusBytes || git2(root, ["ls-files", "-v"]) !== flagsBytes || readWorkspaceStateRaw(root).revision !== workspace.revision)
-      refuse();
+      refuse2();
     for (const [path, bytes] of files)
       if (!readSecureProjectBytes(root, path).equals(bytes))
-        refuse();
+        refuse2();
     assertDeliveryUnchanged();
   };
   assertUnchanged();
@@ -9014,6 +9132,13 @@ async function activeTaskNotice(root) {
 
 // plugins/immune-brain/runtime/claude/lane_guard.ts
 var FILE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+var GATED_MCP_TOOL = /^mcp__.*immune-brain.*__(enroll|start_unattended_batch)$/;
+var MAX_ALIAS_BYTES = 64 * 1024;
+function denyPreToolUse(reason) {
+  return JSON.stringify({
+    hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason }
+  });
+}
 function laneGuardHookOutput(payload) {
   if (payload.hook_event_name !== "PreToolUse" || !FILE_TOOLS.has(String(payload.tool_name)))
     return null;
@@ -9022,9 +9147,7 @@ function laneGuardHookOutput(payload) {
   const refusal = laneWriteRefusal(cwd, input.file_path ?? input.notebook_path);
   if (!refusal)
     return null;
-  return JSON.stringify({
-    hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: refusal }
-  });
+  return denyPreToolUse(refusal);
 }
 async function activeTaskHookOutput(payload) {
   if (payload.hook_event_name !== "UserPromptSubmit")
@@ -9035,12 +9158,125 @@ async function activeTaskHookOutput(payload) {
     return null;
   return JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: notice } });
 }
+function entryLogPath(sessionId, root) {
+  return join9(cacheDir(root), `${sessionHash(sessionId)}.entry`);
+}
+function admissionPath(toolUseId, root) {
+  return join9(cacheDir(root), `${sessionHash(toolUseId)}.admit`);
+}
+function sessionIdOf(payload) {
+  return typeof payload.session_id === "string" ? payload.session_id : "";
+}
+function cwdOf(payload) {
+  return typeof payload.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
+}
+function claudeAliasReader(cwd, home) {
+  return (name) => {
+    for (const dir of [join9(cwd, ".claude", "commands"), join9(home, ".claude", "commands")]) {
+      try {
+        const path = join9(dir, `${name}.md`);
+        if (lstatSync10(path).size > MAX_ALIAS_BYTES)
+          continue;
+        return readFileSync10(path, "utf8");
+      } catch {}
+    }
+    return null;
+  };
+}
+function readPhaseEntryState(sessionId, root = tmpdir2()) {
+  if (!sessionId)
+    return null;
+  const path = entryLogPath(sessionId, root);
+  try {
+    lstatSync10(path);
+  } catch (error) {
+    return error.code === "ENOENT" ? NO_PHASE_ENTRY : null;
+  }
+  if (!ensurePrivateDir(cacheDir(root)))
+    return null;
+  const text = readPrivate(path);
+  return text === undefined ? null : reducePhaseEntryLog(text);
+}
+function recordPhaseEntryPrompt(payload, locations = {}) {
+  if (payload.hook_event_name !== "UserPromptSubmit")
+    return false;
+  const sessionId = sessionIdOf(payload);
+  if (!sessionId)
+    return false;
+  const root = locations.root ?? tmpdir2();
+  const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
+  const entry = recognizePhaseEntry(prompt, claudeAliasReader(cwdOf(payload), locations.home ?? homedir()));
+  const path = entryLogPath(sessionId, root);
+  return appendPrivate(path, cacheDir(root), phaseEntryLogLine(entry));
+}
+function gatedOperation(payload) {
+  const toolName = String(payload.tool_name ?? "");
+  if (toolName === "Skill") {
+    const input = payload.tool_input ?? {};
+    const skill = typeof input.skill === "string" ? packagedPhaseSkill(input.skill) : null;
+    return skill ? { kind: "skill", skill } : null;
+  }
+  const mcp = GATED_MCP_TOOL.exec(toolName);
+  return mcp ? { kind: "tool", name: mcp[1] } : null;
+}
+function phaseEntryGateHookOutput(payload, locations = {}) {
+  if (payload.hook_event_name !== "PreToolUse")
+    return null;
+  const operation = gatedOperation(payload);
+  if (!operation)
+    return null;
+  const root = locations.root ?? tmpdir2();
+  const state = readPhaseEntryState(sessionIdOf(payload), root);
+  let activeClaim = false;
+  try {
+    activeClaim = readActiveClaimTaskId(cwdOf(payload)) !== null;
+  } catch {}
+  const admission = admitPhaseOperation(operation, state, { activeClaim });
+  if (!admission.ok)
+    return denyPreToolUse(phaseRefusalMessage(admission));
+  if (operation.kind === "skill")
+    return null;
+  const toolUseId = typeof payload.tool_use_id === "string" ? payload.tool_use_id : "";
+  const recorded = toolUseId !== "" && appendPrivate(admissionPath(toolUseId, root), cacheDir(root), `${JSON.stringify({ v: 1, operation: operation.name })}
+`);
+  if (recorded)
+    return null;
+  return denyPreToolUse(`${RUN_ENTRY_REQUIRED}: the admission for this ${operation.name} call could not be recorded; recovery: ${PHASE_ENTRY_RECOVERY[RUN_ENTRY_REQUIRED]}`);
+}
+function consumePhaseAdmission(toolUseId, operation, root = tmpdir2()) {
+  if (!toolUseId || !ensurePrivateDir(cacheDir(root)))
+    return false;
+  const path = admissionPath(toolUseId, root);
+  let text;
+  try {
+    text = readPrivate(path);
+  } catch {
+    return false;
+  }
+  if (text === undefined)
+    return false;
+  try {
+    const stat = lstatSync10(path);
+    if (ownedByUs(stat) && stat.isFile())
+      rmSync5(path, { force: true });
+  } catch {}
+  const lines = text.split(`
+`).filter(Boolean);
+  if (lines.length !== 1)
+    return false;
+  try {
+    const record = JSON.parse(lines[0]);
+    return record.v === 1 && record.operation === operation;
+  } catch {
+    return false;
+  }
+}
 
 // plugins/immune-brain/runtime/assurance/verdict_authority.ts
 import { randomUUID as randomUUID7 } from "node:crypto";
 import { execFileSync as execFileSync4 } from "node:child_process";
 import { existsSync as existsSync9 } from "node:fs";
-import { join as join12, resolve as resolve12 } from "node:path";
+import { join as join13, resolve as resolve12 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/application.ts
 function applyTaskAction(input) {
@@ -9698,15 +9934,15 @@ import { execFileSync as execFileSync2 } from "node:child_process";
 import { createHash as createHash14 } from "node:crypto";
 import {
   mkdtempSync,
-  rmSync as rmSync5,
+  rmSync as rmSync6,
   writeFileSync as writeFileSync6,
   statSync as statSync3,
-  readFileSync as readFileSync10,
+  readFileSync as readFileSync11,
   realpathSync as realpathSync8,
   chmodSync
 } from "node:fs";
-import { tmpdir as tmpdir2 } from "node:os";
-import { join as join9 } from "node:path";
+import { tmpdir as tmpdir3 } from "node:os";
+import { join as join10 } from "node:path";
 var MAX_REVIEW_BUNDLE_BYTES = 2 * 1024 * 1024;
 function bundleDigest(bundle) {
   return `sha256:${createHash14("sha256").update(JSON.stringify(bundle)).digest("hex")}`;
@@ -9930,9 +10166,9 @@ function publishReviewRevision(root, snapshot, diffHash, taskId) {
     throw new Error("review revision base has invalid identity");
   if (!REVISION_DIFF_HASH.test(diffHash))
     throw new Error("review revision diff hash has invalid identity");
-  const indexDirectory = mkdtempSync(join9(tmpdir2(), "imm-review-index-"));
+  const indexDirectory = mkdtempSync(join10(tmpdir3(), "imm-review-index-"));
   try {
-    const indexFile = join9(indexDirectory, "index");
+    const indexFile = join10(indexDirectory, "index");
     const env = { GIT_INDEX_FILE: indexFile };
     gitEvidence(root, ["read-tree", snapshot.base_tree], env);
     for (const [path, entry] of Object.entries(snapshot.changed_paths)) {
@@ -9982,7 +10218,7 @@ function publishReviewRevision(root, snapshot, diffHash, taskId) {
       diff_hash: diffHash
     };
   } finally {
-    rmSync5(indexDirectory, { recursive: true, force: true });
+    rmSync6(indexDirectory, { recursive: true, force: true });
   }
 }
 function publishInput(root, input) {
@@ -10025,19 +10261,19 @@ function captureReviewManifest(root, input) {
   return manifest;
 }
 function writeNativeReviewEvidence(payload) {
-  const rawDirectory = mkdtempSync(join9(tmpdir2(), "imm-canary-native-review-"));
+  const rawDirectory = mkdtempSync(join10(tmpdir3(), "imm-canary-native-review-"));
   try {
     const directory = realpathSync8(rawDirectory);
     chmodSync(directory, 493);
-    const path = join9(directory, "evidence.json");
+    const path = join10(directory, "evidence.json");
     writeFileSync6(path, JSON.stringify(payload), { encoding: "utf8", mode: 420, flag: "wx" });
     assertReviewArtifact(path);
     return {
       path,
-      remove: () => rmSync5(directory, { recursive: true, force: true })
+      remove: () => rmSync6(directory, { recursive: true, force: true })
     };
   } catch (error) {
-    rmSync5(rawDirectory, { recursive: true, force: true });
+    rmSync6(rawDirectory, { recursive: true, force: true });
     throw error;
   }
 }
@@ -10051,7 +10287,7 @@ function assertReviewArtifact(path) {
   }
   if (!stat.isFile() || stat.size === 0)
     throw new Error(`review evidence artifact is missing or empty: ${path}`);
-  const read = readFileSync10(targetPath, { encoding: "utf8" });
+  const read = readFileSync11(targetPath, { encoding: "utf8" });
   if (read.trim().length === 0)
     throw new Error(`review evidence artifact is empty: ${path}`);
 }
@@ -10062,8 +10298,8 @@ import { createHash as createHash17, randomUUID as randomUUID6 } from "node:cryp
 // plugins/immune-brain/runtime/assurance/verification.ts
 import { createHash as createHash15, randomBytes } from "node:crypto";
 import { execFileSync as execFileSync3, spawn as spawn2 } from "node:child_process";
-import { accessSync, constants as constants5, readFileSync as readFileSync11, readdirSync as readdirSync5, realpathSync as realpathSync9, statSync as statSync4 } from "node:fs";
-import { delimiter, isAbsolute as isAbsolute5, join as join10, relative as relative5, resolve as resolve11, sep as sep6 } from "node:path";
+import { accessSync, constants as constants5, readFileSync as readFileSync12, readdirSync as readdirSync5, realpathSync as realpathSync9, statSync as statSync4 } from "node:fs";
+import { delimiter, isAbsolute as isAbsolute5, join as join11, relative as relative5, resolve as resolve11, sep as sep6 } from "node:path";
 class VerificationAbortedError extends Error {
   constructor() {
     super("fixed verification aborted");
@@ -10099,7 +10335,7 @@ function verificationPath() {
 }
 function toolPath(name, path) {
   for (const dir of path.split(delimiter).filter(isAbsolute5)) {
-    const candidate = join10(dir, name);
+    const candidate = join11(dir, name);
     try {
       accessSync(candidate, constants5.X_OK);
       if (statSync4(candidate).isFile())
@@ -10115,7 +10351,7 @@ function identity(path) {
     const stat = statSync4(real);
     if (!stat.isFile())
       throw new Error("not a file");
-    return { path: real, invocation_path: path, dev: stat.dev, ino: stat.ino, content_hash: `sha256:${createHash15("sha256").update(readFileSync11(real)).digest("hex")}` };
+    return { path: real, invocation_path: path, dev: stat.dev, ino: stat.ino, content_hash: `sha256:${createHash15("sha256").update(readFileSync12(real)).digest("hex")}` };
   } catch {
     throw new VerificationDescriptorError("verification executable is unavailable or not executable");
   }
@@ -10123,7 +10359,7 @@ function identity(path) {
 function resolveVerificationCommand(root, command, path = verificationPath()) {
   insideVerificationRoot(root, resolve11(root, command.cwd));
   const entry = identity(command.executable.startsWith("./") ? insideVerificationRoot(root, resolve11(root, command.executable)) : toolPath(command.executable, path));
-  const prefix = readFileSync11(entry.path).subarray(0, 512).toString("utf8");
+  const prefix = readFileSync12(entry.path).subarray(0, 512).toString("utf8");
   let interpreter = null;
   let interpreter_args = [];
   if (prefix.startsWith("#!")) {
@@ -10145,7 +10381,7 @@ function resolveVerificationCommand(root, command, path = verificationPath()) {
       interpreter = identity(name);
       interpreter_args = parts;
     }
-    if (readFileSync11(interpreter.path).subarray(0, 2).toString() === "#!")
+    if (readFileSync12(interpreter.path).subarray(0, 2).toString() === "#!")
       throw new VerificationDescriptorError("verification interpreter is itself a script; resolve the host tool explicitly");
   }
   return { entry, interpreter, interpreter_args };
@@ -10208,7 +10444,7 @@ async function runFixedVerification(root, command, frozen, options) {
     };
     const procEnviron = (pid) => {
       try {
-        return readFileSync11(join10(procRoot, String(pid), "environ"), "utf8");
+        return readFileSync12(join11(procRoot, String(pid), "environ"), "utf8");
       } catch {
         return null;
       }
@@ -10216,7 +10452,7 @@ async function runFixedVerification(root, command, frozen, options) {
     const procSession = (entry) => {
       let stat;
       try {
-        stat = readFileSync11(join10(procRoot, entry, "stat"), "utf8");
+        stat = readFileSync12(join11(procRoot, entry, "stat"), "utf8");
       } catch (error) {
         if (error.code === "ENOENT")
           return null;
@@ -10426,8 +10662,8 @@ function createInvocationRegistry() {
 
 // plugins/immune-brain/runtime/role_prompt_bridge.ts
 import { createHash as createHash16 } from "node:crypto";
-import { existsSync as existsSync8, readFileSync as readFileSync12 } from "node:fs";
-import { join as join11, dirname as dirname8 } from "node:path";
+import { existsSync as existsSync8, readFileSync as readFileSync13 } from "node:fs";
+import { join as join12, dirname as dirname8 } from "node:path";
 import { fileURLToPath } from "node:url";
 var RUNTIME_DIR = dirname8(fileURLToPath(import.meta.url));
 var INTERNAL_ROLE_PROMPTS = {
@@ -10489,16 +10725,16 @@ function roleSpec(role) {
 }
 function rolePromptSearchDirs(moduleDir) {
   return [
-    join11(moduleDir, "..", "dist", "role-prompts"),
-    join11(moduleDir, "..", "role-prompts")
+    join12(moduleDir, "..", "dist", "role-prompts"),
+    join12(moduleDir, "..", "role-prompts")
   ];
 }
 function loadRolePrompt(role) {
   const spec = roleSpec(role);
   for (const dir of rolePromptSearchDirs(RUNTIME_DIR)) {
-    const path = join11(dir, spec.file);
+    const path = join12(dir, spec.file);
     if (existsSync8(path))
-      return readFileSync12(path, "utf8");
+      return readFileSync13(path, "utf8");
   }
   throw new Error(`internal role prompt is not packaged: ${role}`);
 }
@@ -11769,7 +12005,7 @@ function stagePlanningArtifactTransition(root, record) {
     intentArchive,
     ...specActive ? [specActive, specActive.replace("docs/specs/", "docs/specs/archive/")] : []
   ];
-  const paths = candidates.filter((path) => existsSync9(join12(root, path)) || execFileSync4("git", ["ls-files", "--cached", "--", path], { cwd: root, encoding: "utf8" }).trim().length > 0);
+  const paths = candidates.filter((path) => existsSync9(join13(root, path)) || execFileSync4("git", ["ls-files", "--cached", "--", path], { cwd: root, encoding: "utf8" }).trim().length > 0);
   if (paths.length === 0)
     return;
   execFileSync4("git", ["add", "--", ...paths], {
@@ -11863,9 +12099,9 @@ function createVerdictAuthority(options, registry = createMutationAuthorityRegis
 }
 
 // plugins/immune-brain/runtime/claude/kernel_ports.ts
-import { existsSync as existsSync14, readFileSync as readFileSync17, writeFileSync as writeFileSync10 } from "node:fs";
+import { existsSync as existsSync14, readFileSync as readFileSync18, writeFileSync as writeFileSync10 } from "node:fs";
 import { execFileSync as execFileSync9 } from "node:child_process";
-import { join as join21 } from "node:path";
+import { join as join22 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/enrollment_authority.ts
 var ENROLLMENT_CAPABILITY_BRAND = Symbol.for("assurance-kernel.enrollment-capability-brand");
@@ -12239,9 +12475,9 @@ import { createHash as createHash19 } from "node:crypto";
 // plugins/immune-brain/runtime/assurance/delivery_workspace.ts
 import { execFileSync as execFileSync6 } from "node:child_process";
 import { createHash as createHash18 } from "node:crypto";
-import { chmodSync as chmodSync2, lstatSync as lstatSync10, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync2, readdirSync as readdirSync6, readFileSync as readFileSync13, readlinkSync as readlinkSync2, realpathSync as realpathSync10, rmSync as rmSync6 } from "node:fs";
-import { tmpdir as tmpdir3 } from "node:os";
-import { dirname as dirname9, isAbsolute as isAbsolute6, join as join13, parse, relative as relative6, resolve as resolve13, sep as sep7 } from "node:path";
+import { chmodSync as chmodSync2, lstatSync as lstatSync11, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync2, readdirSync as readdirSync6, readFileSync as readFileSync14, readlinkSync as readlinkSync2, realpathSync as realpathSync10, rmSync as rmSync7 } from "node:fs";
+import { tmpdir as tmpdir4 } from "node:os";
+import { dirname as dirname9, isAbsolute as isAbsolute6, join as join14, parse, relative as relative6, resolve as resolve13, sep as sep7 } from "node:path";
 
 class DeliveryWorkspaceError extends Error {
   constructor(message) {
@@ -12253,7 +12489,7 @@ function removeTaskOwnedTree(root) {
   const makeDirectoriesWritable = (path) => {
     let stat;
     try {
-      stat = lstatSync10(path);
+      stat = lstatSync11(path);
     } catch (error) {
       if (error.code === "ENOENT")
         return;
@@ -12263,10 +12499,10 @@ function removeTaskOwnedTree(root) {
       return;
     chmodSync2(path, stat.mode & 4095 | 448);
     for (const name of readdirSync6(path))
-      makeDirectoriesWritable(join13(path, name));
+      makeDirectoriesWritable(join14(path, name));
   };
   makeDirectoriesWritable(root);
-  rmSync6(root, { recursive: true, force: true });
+  rmSync7(root, { recursive: true, force: true });
 }
 var GIT_OBJECT_ID5 = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 function isolatedGitEnv(extra = {}) {
@@ -12314,9 +12550,9 @@ function resolvedSymlinkTarget(path) {
       current = dirname9(current);
       continue;
     }
-    const next = join13(current, part);
+    const next = join14(current, part);
     try {
-      if (!lstatSync10(next).isSymbolicLink()) {
+      if (!lstatSync11(next).isSymbolicLink()) {
         current = next;
         continue;
       }
@@ -12337,8 +12573,8 @@ function resolvedSymlinkTarget(path) {
 function assertNoEscapingSymlinks(root, dir = root) {
   const realRoot = realpathSync10(root);
   for (const name of readdirSync6(dir)) {
-    const path = join13(dir, name);
-    const stat = lstatSync10(path);
+    const path = join14(dir, name);
+    const stat = lstatSync11(path);
     if (stat.isSymbolicLink()) {
       assertInside(realRoot, resolvedSymlinkTarget(path), `symlink ${relative6(root, path)}`);
     } else if (stat.isDirectory()) {
@@ -12347,48 +12583,48 @@ function assertNoEscapingSymlinks(root, dir = root) {
   }
 }
 function writeDeliveryTree(sourceRoot, snapshot) {
-  const indexDirectory = mkdtempSync2(join13(tmpdir3(), "imm-delivery-index-"));
+  const indexDirectory = mkdtempSync2(join14(tmpdir4(), "imm-delivery-index-"));
   try {
     git5(sourceRoot, ["read-tree", snapshot.base_tree], {
-      GIT_INDEX_FILE: join13(indexDirectory, "index"),
-      GIT_DIR: join13(sourceRoot, ".git")
+      GIT_INDEX_FILE: join14(indexDirectory, "index"),
+      GIT_DIR: join14(sourceRoot, ".git")
     });
     for (const [path, entry] of Object.entries(snapshot.changed_paths)) {
       if (entry.oid && entry.mode) {
         git5(sourceRoot, ["update-index", "--add", "--cacheinfo", `${entry.mode},${entry.oid},${path}`], {
-          GIT_INDEX_FILE: join13(indexDirectory, "index"),
-          GIT_DIR: join13(sourceRoot, ".git")
+          GIT_INDEX_FILE: join14(indexDirectory, "index"),
+          GIT_DIR: join14(sourceRoot, ".git")
         });
       } else {
         git5(sourceRoot, ["update-index", "--force-remove", "--", path], {
-          GIT_INDEX_FILE: join13(indexDirectory, "index"),
-          GIT_DIR: join13(sourceRoot, ".git")
+          GIT_INDEX_FILE: join14(indexDirectory, "index"),
+          GIT_DIR: join14(sourceRoot, ".git")
         });
       }
     }
     const next = git5(sourceRoot, ["write-tree"], {
-      GIT_INDEX_FILE: join13(indexDirectory, "index"),
-      GIT_DIR: join13(sourceRoot, ".git")
+      GIT_INDEX_FILE: join14(indexDirectory, "index"),
+      GIT_DIR: join14(sourceRoot, ".git")
     });
     assertTree(next);
     return next;
   } finally {
-    rmSync6(indexDirectory, { recursive: true, force: true });
+    rmSync7(indexDirectory, { recursive: true, force: true });
   }
 }
 function workspaceFiles(root, dir = root, result = Object.create(null)) {
   if (dir === root)
-    result["."] = `${lstatSync10(root).mode & 4095}:directory`;
+    result["."] = `${lstatSync11(root).mode & 4095}:directory`;
   for (const name of readdirSync6(dir).sort()) {
-    const path = join13(dir, name), rel = relative6(root, path);
-    const stat = lstatSync10(path);
+    const path = join14(dir, name), rel = relative6(root, path);
+    const stat = lstatSync11(path);
     if (stat.isSymbolicLink())
       result[rel] = `link:${stat.mode & 4095}:${readlinkSync2(path)}`;
     else if (stat.isDirectory()) {
       result[rel] = `${stat.mode & 4095}:directory`;
       workspaceFiles(root, path, result);
     } else if (stat.isFile())
-      result[rel] = `${stat.mode & 4095}:${createHash18("sha256").update(readFileSync13(path)).digest("hex")}`;
+      result[rel] = `${stat.mode & 4095}:${createHash18("sha256").update(readFileSync14(path)).digest("hex")}`;
     else
       throw new DeliveryWorkspaceError("delivery contains an unsupported filesystem entry");
   }
@@ -12408,7 +12644,7 @@ function assertDeliveryClean(root, tree, seal, writablePaths = []) {
   }
   if (seal === "[]") {
     for (const name of readdirSync6(root)) {
-      const stat = lstatSync10(join13(root, name));
+      const stat = lstatSync11(join14(root, name));
       if (!stat.isDirectory() || name !== ".git")
         throw new DeliveryWorkspaceError("delivery workspace was contaminated");
     }
@@ -12430,18 +12666,18 @@ function assertDeliveryClean(root, tree, seal, writablePaths = []) {
     if (!permitted)
       throw new DeliveryWorkspaceError("delivery undeclared output was contaminated");
     if (bytes.startsWith("link:")) {
-      assertInside(realpathSync10(root), resolvedSymlinkTarget(join13(root, path)), "generated symlink");
+      assertInside(realpathSync10(root), resolvedSymlinkTarget(join14(root, path)), "generated symlink");
     }
   }
 }
 function materializeDeliveryWorkspace(sourceRoot, tree) {
   assertTree(tree);
-  const dest = mkdtempSync2(join13(tmpdir3(), "imm-delivery-"));
+  const dest = mkdtempSync2(join14(tmpdir4(), "imm-delivery-"));
   const cleanup = () => removeTaskOwnedTree(dest);
   try {
     mkdirSync7(dest, { recursive: true });
     const commit = git5(sourceRoot, ["commit-tree", tree, "-m", `delivery ${tree}`], {
-      GIT_DIR: join13(sourceRoot, ".git"),
+      GIT_DIR: join14(sourceRoot, ".git"),
       GIT_AUTHOR_NAME: "Immune-Brain Assurance",
       GIT_AUTHOR_EMAIL: "assurance@immune-brain.local",
       GIT_AUTHOR_DATE: "1970-01-01T00:00:00 +0000",
@@ -12469,8 +12705,8 @@ function materializeDeliveryWorkspace(sourceRoot, tree) {
 
 // plugins/immune-brain/runtime/assurance/qa.ts
 import { mkdtempSync as mkdtempSync3, realpathSync as realpathSync11 } from "node:fs";
-import { tmpdir as tmpdir4 } from "node:os";
-import { join as join14, sep as sep8 } from "node:path";
+import { tmpdir as tmpdir5 } from "node:os";
+import { join as join15, sep as sep8 } from "node:path";
 
 // plugins/immune-brain/runtime/assurance/qa_findings.ts
 import { randomUUID as randomUUID8 } from "node:crypto";
@@ -12537,7 +12773,7 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
       let delivery, home;
       try {
         delivery = (options._materializeDeliveryWorkspace ?? materializeDeliveryWorkspace)(snapshot.root, tree);
-        home = mkdtempSync3(join14(tmpdir4(), "imm-qa-home-"));
+        home = mkdtempSync3(join15(tmpdir5(), "imm-qa-home-"));
         return { delivery, home, deliveryPrefix: `${realpathSync11(delivery.root)}${sep8}` };
       } catch {
         let reason = "delivery_unavailable";
@@ -12704,12 +12940,12 @@ function deriveAuthorizationOperation(input) {
 
 // plugins/immune-brain/runtime/staged_intent.ts
 import { execFileSync as execFileSync7 } from "node:child_process";
-import { readFileSync as readFileSync14, writeFileSync as writeFileSync7 } from "node:fs";
-import { join as join15 } from "node:path";
+import { readFileSync as readFileSync15, writeFileSync as writeFileSync7 } from "node:fs";
+import { join as join16 } from "node:path";
 function captureStagedIntent(root, relativePath) {
   return {
     path: relativePath,
-    bytes: readFileSync14(join15(root, relativePath)),
+    bytes: readFileSync15(join16(root, relativePath)),
     index_state: execFileSync7("git", ["ls-files", "--stage", "-z", "--", relativePath], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"]
@@ -12717,7 +12953,7 @@ function captureStagedIntent(root, relativePath) {
   };
 }
 function restoreStagedIntent(root, snapshot) {
-  writeFileSync7(join15(root, snapshot.path), snapshot.bytes);
+  writeFileSync7(join16(root, snapshot.path), snapshot.bytes);
   execFileSync7("git", ["update-index", "--force-remove", "--", snapshot.path], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
@@ -12729,7 +12965,7 @@ function restoreStagedIntent(root, snapshot) {
       stdio: ["pipe", "ignore", "pipe"]
     });
   }
-  const restoredBytes = readFileSync14(join15(root, snapshot.path));
+  const restoredBytes = readFileSync15(join16(root, snapshot.path));
   if (!restoredBytes.equals(snapshot.bytes)) {
     throw new Error("failed to restore prior intent bytes");
   }
@@ -12745,7 +12981,7 @@ function restoreStagedIntent(root, snapshot) {
 // plugins/immune-brain/runtime/unattended/batch_runner.ts
 import { spawnSync as spawnSync14 } from "node:child_process";
 import { existsSync as existsSync13 } from "node:fs";
-import { join as join20 } from "node:path";
+import { join as join21 } from "node:path";
 
 // plugins/immune-brain/runtime/unattended/batch_git.ts
 import { spawnSync as spawnSync10 } from "node:child_process";
@@ -12754,15 +12990,15 @@ import {
   constants as constants6,
   closeSync as closeSync7,
   existsSync as existsSync10,
-  lstatSync as lstatSync11,
+  lstatSync as lstatSync12,
   mkdirSync as mkdirSync8,
   openSync as openSync7,
   realpathSync as realpathSync12,
   renameSync as renameSync5,
-  rmSync as rmSync7,
+  rmSync as rmSync8,
   writeFileSync as writeFileSync8
 } from "node:fs";
-import { dirname as dirname10, join as join16 } from "node:path";
+import { dirname as dirname10, join as join17 } from "node:path";
 var DEFAULT_GIT_ENV = {
   ...process.env,
   GIT_AUTHOR_NAME: process.env.GIT_AUTHOR_NAME || "Immune-Brain Batch",
@@ -12974,15 +13210,15 @@ function getCommittedDeltaPaths(root) {
   return delta.stdout.split("\x00").filter((p) => p.length > 0);
 }
 function commitEvidencePath(batchId, taskId) {
-  return join16(".imm", "state", "batches", "commits", `${batchId}-${taskId}.json`);
+  return join17(".imm", "state", "batches", "commits", `${batchId}-${taskId}.json`);
 }
 function ensureSecureDirectory3(root, relativePath) {
   const segments = relativePath.split("/").filter(Boolean);
   let current = root;
   for (const segment of segments) {
-    current = join16(current, segment);
+    current = join17(current, segment);
     if (existsSync10(current)) {
-      const stats = lstatSync11(current);
+      const stats = lstatSync12(current);
       if (stats.isSymbolicLink() || !stats.isDirectory()) {
         throw new Error(`${segment} exists but is not a real directory`);
       }
@@ -12993,15 +13229,15 @@ function ensureSecureDirectory3(root, relativePath) {
   return current;
 }
 function writeFileAtomically2(root, relativePath, bytes) {
-  const target = join16(root, relativePath);
+  const target = join17(root, relativePath);
   const targetDir = dirname10(target);
   ensureSecureDirectory3(root, dirname10(relativePath));
-  const stats = lstatSync11(targetDir);
+  const stats = lstatSync12(targetDir);
   if (stats.isSymbolicLink() || !stats.isDirectory()) {
     throw new Error(`${dirname10(relativePath)} is not a real directory`);
   }
   if (existsSync10(target)) {
-    const targetStats = lstatSync11(target);
+    const targetStats = lstatSync12(target);
     if (targetStats.isSymbolicLink()) {
       throw new Error(`${relativePath} is a symlink`);
     }
@@ -13019,7 +13255,7 @@ function writeFileAtomically2(root, relativePath, bytes) {
       closeSync7(fd);
     if (existsSync10(tempPath)) {
       try {
-        rmSync7(tempPath);
+        rmSync8(tempPath);
       } catch {}
     }
   }
@@ -13039,7 +13275,7 @@ function writeBatchCommitEvidence(root, evidence) {
 }
 function readBatchCommitEvidence(root, batchId, taskId) {
   const path = commitEvidencePath(batchId, taskId);
-  const fullPath = join16(root, path);
+  const fullPath = join17(root, path);
   if (!existsSync10(fullPath))
     return null;
   try {
@@ -13314,11 +13550,11 @@ function createDefaultBatchGitPort() {
 import { spawnSync as spawnSync13 } from "node:child_process";
 import { createHash as createHash21 } from "node:crypto";
 import { existsSync as existsSync12, realpathSync as realpathSync13 } from "node:fs";
-import { isAbsolute as isAbsolute7, join as join19 } from "node:path";
+import { isAbsolute as isAbsolute7, join as join20 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/runtime_contracts.ts
-import { existsSync as existsSync11, readFileSync as readFileSync15 } from "node:fs";
-import { dirname as dirname11, join as join17, resolve as resolve14 } from "node:path";
+import { existsSync as existsSync11, readFileSync as readFileSync16 } from "node:fs";
+import { dirname as dirname11, join as join18, resolve as resolve14 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 var RUNTIME_CONTRACTS_MANIFEST = "runtime_contracts.json";
 var RUNTIME_CONTRACTS = {
@@ -13338,15 +13574,15 @@ function runningRuntimeSource() {
 }
 function readRuntimeContracts(runtimeDir) {
   const candidates = [
-    join17(runtimeDir, RUNTIME_CONTRACTS_MANIFEST),
-    join17(runtimeDir, "kernel", RUNTIME_CONTRACTS_MANIFEST),
-    join17(runtimeDir, "runtime", "kernel", RUNTIME_CONTRACTS_MANIFEST),
-    join17(runtimeDir, "plugins", "immune-brain", "runtime", "kernel", RUNTIME_CONTRACTS_MANIFEST)
+    join18(runtimeDir, RUNTIME_CONTRACTS_MANIFEST),
+    join18(runtimeDir, "kernel", RUNTIME_CONTRACTS_MANIFEST),
+    join18(runtimeDir, "runtime", "kernel", RUNTIME_CONTRACTS_MANIFEST),
+    join18(runtimeDir, "plugins", "immune-brain", "runtime", "kernel", RUNTIME_CONTRACTS_MANIFEST)
   ];
   const path = candidates.find((candidate) => existsSync11(candidate));
   if (!path)
     return null;
-  const raw = JSON.parse(readFileSync15(path, "utf8"));
+  const raw = JSON.parse(readFileSync16(path, "utf8"));
   if (raw.contract !== "immune_brain/runtime_contracts/v1")
     throw new Error(`${path} is not an immune_brain/runtime_contracts/v1 manifest`);
   for (const key of KEYS) {
@@ -13361,7 +13597,7 @@ function runtimeContractDifferences(a, b) {
 }
 
 // plugins/immune-brain/runtime/unattended/batch_lanes.ts
-import { readFileSync as readFileSync16 } from "node:fs";
+import { readFileSync as readFileSync17 } from "node:fs";
 
 // plugins/immune-brain/runtime/unattended/batch_final_verification.ts
 import { spawn as spawn3, spawnSync as spawnSync11 } from "node:child_process";
@@ -13412,7 +13648,7 @@ async function runFinalVerification(root, commands, options = {}) {
 
 // plugins/immune-brain/runtime/unattended/batch_delegation.ts
 import { execFileSync as execFileSync8 } from "node:child_process";
-import { join as join18 } from "node:path";
+import { join as join19 } from "node:path";
 import { writeFileSync as writeFileSync9 } from "node:fs";
 var REVISION_DELEGATION_TEXT = "Optional, off by default: also let the batch coordinator approve a Lane child's breaking Intent revisions that stay inside that child's authorized TaskIntent (acceptance changes, a narrower scope_hint). Widening scope, changing risk, goal or the bound Spec still needs your own confirmation. The grant ends with this batch.";
 var DELEGATED_ACTOR_ID = "batch-coordinator";
@@ -13463,7 +13699,7 @@ function applyDelegatedIntentRevision(input) {
     const nextRef = { path: `docs/plans/${taskId}.intent.json`, content_hash: nextHash };
     const snapshot = captureStagedIntent(root, prior.intent_ref.path);
     try {
-      writeFileSync9(join18(root, prior.intent_ref.path), `${JSON.stringify(nextIntent, null, 2)}
+      writeFileSync9(join19(root, prior.intent_ref.path), `${JSON.stringify(nextIntent, null, 2)}
 `);
       execFileSync8("git", ["add", "--", prior.intent_ref.path], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
       const prepared = await projectAssurance(root, taskId, taskDeliveryIdentity);
@@ -13832,7 +14068,7 @@ function laneRuntimeDir(root, explicit) {
   if (explicit)
     return explicit;
   try {
-    const manifest = JSON.parse(readFileSync16(join19(root, "package.json"), "utf8"));
+    const manifest = JSON.parse(readFileSync17(join20(root, "package.json"), "utf8"));
     return manifest.name === "immune-brain" ? root : null;
   } catch {
     return null;
@@ -14140,7 +14376,7 @@ function finalizeLane(root, record, reason, nextAction, extra = {}) {
     writeBatchRunReport(root, report);
   return report;
 }
-function refuse2(input, persisted, code, detail) {
+function refuse3(input, persisted, code, detail) {
   const base = persisted && isLaneBatchRecord(persisted) ? persisted : prepareBatchLaneRunState({
     batch_id: input.batch_id,
     initiative_slug: input.initiative_slug,
@@ -14229,12 +14465,12 @@ function isLineageBreak(message) {
 }
 async function runLaneBatch(input, persisted) {
   if (persisted && !isLaneBatchRecord(persisted))
-    return refuse2(input, persisted, PARALLEL_MISMATCH, "the recorded batch runs serially; max_parallel cannot be added on a resume");
+    return refuse3(input, persisted, PARALLEL_MISMATCH, "the recorded batch runs serially; max_parallel cannot be added on a resume");
   if (persisted && input.max_parallel !== undefined && input.max_parallel !== persisted.max_parallel)
-    return refuse2(input, persisted, PARALLEL_MISMATCH, `the recorded batch runs with max_parallel ${persisted.max_parallel}`);
+    return refuse3(input, persisted, PARALLEL_MISMATCH, `the recorded batch runs with max_parallel ${persisted.max_parallel}`);
   const limit = persisted?.max_parallel ?? input.max_parallel ?? 1;
   if (!input.children.length)
-    return refuse2(input, persisted, "batch_plan_empty", "batch plan is empty");
+    return refuse3(input, persisted, "batch_plan_empty", "batch plan is empty");
   const git = serialGitOf(input);
   const lanes = laneGitOf(input);
   let record;
@@ -14281,11 +14517,11 @@ async function runLaneBatch(input, persisted) {
   } else {
     const invalid = validateNewAuthorization(input);
     if (invalid)
-      return refuse2(input, null, "batch_authorization_invalid", invalid);
+      return refuse3(input, null, "batch_authorization_invalid", invalid);
     const contractRefusal = laneRuntimeContractRefusal(input.root, input.executor_runtime);
     if (contractRefusal) {
       const [code, ...detail] = contractRefusal.split(": ");
-      return refuse2(input, null, code, detail.join(": "));
+      return refuse3(input, null, code, detail.join(": "));
     }
     const preflight = await git.preflight({
       root: input.root,
@@ -14293,7 +14529,7 @@ async function runLaneBatch(input, persisted) {
       base_head: input.base_head
     });
     if (!preflight.ok)
-      return refuse2(input, null, preflight.reason, preflight.message || "Correct the preflight condition and re-confirm.");
+      return refuse3(input, null, preflight.reason, preflight.message || "Correct the preflight condition and re-confirm.");
     record = prepareBatchLaneRunState({
       batch_id: input.batch_id,
       initiative_slug: input.initiative_slug,
@@ -14357,7 +14593,7 @@ async function runLaneBatch(input, persisted) {
     record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "released" } : c);
     persist();
   }
-  const lineage = existsSync12(join19(input.root, ".git")) ? classifyBatchLineage({
+  const lineage = existsSync12(join20(input.root, ".git")) ? classifyBatchLineage({
     root: input.root,
     branch: record.branch ?? "",
     expectedHead: expectedBatchHead(record),
@@ -14808,7 +15044,7 @@ function failPersistedLineage(root, existing, message) {
   return writeBatchRunState(root, record);
 }
 function reconcileLineage(root, record) {
-  if (!existsSync13(join20(root, ".git")))
+  if (!existsSync13(join21(root, ".git")))
     return { record, failure: null };
   const expected = expectedBatchHead(record);
   const lineage = classifyBatchLineage({
@@ -14831,7 +15067,7 @@ function reconcileLineage(root, record) {
   };
 }
 async function validatePersistedRun(input, record) {
-  if (!record.commits.length && record.children[0]?.state === "settled" && existsSync13(join20(input.root, ".git"))) {
+  if (!record.commits.length && record.children[0]?.state === "settled" && existsSync13(join21(input.root, ".git"))) {
     const head = spawnSync14("git", ["-C", input.root, "rev-parse", "HEAD"], { encoding: "utf8" });
     const live = head.stdout.trim();
     const expected = expectedBatchHead(record);
@@ -14861,7 +15097,7 @@ async function validatePersistedRun(input, record) {
     const git = batchGitPortOf(input);
     const evidence = await git.lookupBatchCommit(input.root, child.task_id, record.batch_id, undefined, record.branch);
     if (!evidence || evidence.commit !== child.commit) {
-      if (evidence === null && typeof child.commit === "string" && child.commit.length > 0 && existsSync13(join20(input.root, ".git"))) {
+      if (evidence === null && typeof child.commit === "string" && child.commit.length > 0 && existsSync13(join21(input.root, ".git"))) {
         const reach = spawnSync14("git", ["-C", input.root, "merge-base", "--is-ancestor", child.commit, "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
         if (reach.status !== 0) {
           throw new Error(`batch_head_lineage_broken: recorded commit ${child.commit} for ${child.task_id} is no longer reachable from HEAD`);
@@ -15301,7 +15537,7 @@ async function driveInterruptedChild(input, child) {
       const planChild = input.children.find((c) => c.task_id === child.task_id);
       const intentPath = planChild?.intent_path ?? undefined;
       const doCommit = async () => batchGitPortOf(input).commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath);
-      if (existing && !record.commits.length && existsSync13(join20(input.root, ".git")) && !ownUnpersistedBatchHead(input.root, record, existing.commit))
+      if (existing && !record.commits.length && existsSync13(join21(input.root, ".git")) && !ownUnpersistedBatchHead(input.root, record, existing.commit))
         throw new Error("first unpersisted batch commit provenance is invalid");
       const adopted = existing ?? await doCommit().catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
@@ -15832,7 +16068,7 @@ class ClaudeRuntime {
     if (!slug)
       return result;
     try {
-      if (existsSync14(join21(this.cwd, ".imm", "audit", taskId)))
+      if (existsSync14(join22(this.cwd, ".imm", "audit", taskId)))
         execFileSync9("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch };
@@ -15929,7 +16165,7 @@ class ClaudeRuntime {
       throw new Error("approve_breaking_intent_revision requires next_intent");
     const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
     const nextIntentRef = nextIntent ? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash } : undefined;
-    const sidecar = nextIntent ? join21(this.cwd, priorIntent.intent_ref.path) : undefined;
+    const sidecar = nextIntent ? join22(this.cwd, priorIntent.intent_ref.path) : undefined;
     const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
     const restoreStagedIntent2 = () => {
       if (!stagedSnapshot)
@@ -16038,8 +16274,8 @@ class ClaudeRuntime {
     const { app } = await this.authority();
     const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: await parseTaskIntentV1(input.operation.next_intent) } : input.operation;
     const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
-    const sidecar = join21(ctx.cwd, priorIntent.intent_ref.path);
-    const priorBytes = operation.op === "revise_intent" ? readFileSync17(sidecar) : null;
+    const sidecar = join22(ctx.cwd, priorIntent.intent_ref.path);
+    const priorBytes = operation.op === "revise_intent" ? readFileSync18(sidecar) : null;
     const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
     try {
       if (priorBytes) {
@@ -16442,6 +16678,12 @@ function createMcpRuntime(options = {}) {
   let negotiatedVersion;
   let negotiatedInteractive = false;
   const connectionId = randomUUID10();
+  const consumeAdmission = options.consumePhaseAdmission ?? ((toolCallId, operation) => consumePhaseAdmission(toolCallId, operation));
+  const requireRunEntry = (operation, toolCallId) => {
+    if (consumeAdmission(toolCallId, operation))
+      return;
+    throw new NativeAuthorityError("run_entry_required", `${operation} needs a literal-user imm-run entry in this session`);
+  };
   return {
     runtime,
     host,
@@ -16471,6 +16713,7 @@ function createMcpRuntime(options = {}) {
         const probe = probeHost(options.env ?? process.env, process.platform, negotiatedVersion);
         if (!probe.ok)
           throw new NativeAuthorityError("unsupported_host", probe.reason);
+        requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
         const toolMeta = {
           sessionId: meta.sessionId ?? connectionId,
           toolCallId: meta.toolCallId ?? `call-${name}`,
@@ -16538,8 +16781,10 @@ function createMcpRuntime(options = {}) {
         interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
         signal: meta.signal
       };
-      if (name === "enroll")
+      if (name === "enroll") {
+        requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
         return runtime.enroll(taskId, toolMeta);
+      }
       if (name === "advance_assurance")
         return runtime.advance(taskId, toolMeta.signal, toolMeta);
       if (name === "submit_review") {
@@ -17046,13 +17291,14 @@ async function runHook() {
     payload = null;
   }
   if (payload?.hook_event_name === "PreToolUse") {
-    const decision = laneGuardHookOutput(payload);
+    const decision = laneGuardHookOutput(payload) ?? phaseEntryGateHookOutput(payload);
     if (decision)
       process.stdout.write(`${decision}
 `);
     return;
   }
   if (payload?.hook_event_name === "UserPromptSubmit") {
+    recordPhaseEntryPrompt(payload);
     const notice = await activeTaskHookOutput(payload);
     if (notice)
       process.stdout.write(`${notice}

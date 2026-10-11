@@ -70,7 +70,7 @@ Each scenario belongs to exactly one Slice, the first that makes it observable: 
 
 ## Assumptions to characterize first
 
-- A1: the Claude Code `UserPromptSubmit` payload carries a slash entry either as the raw `/name args` line or as an expanded body. Not verified. S2 records a real payload before fixing the recognizer; the recognizer accepts both.
+- A1: the Claude Code `UserPromptSubmit` payload carries a slash entry either as the raw `/name args` line or as an expanded body. Characterized in S2 on Claude Code 2.1.296 with a payload-recording hook: for a user alias (`/loop task`), a plugin Skill (`/immune-brain:imm-run task`) and a bare alias (`/planner`), `prompt` is the raw line the user typed. The same run recorded that a `PreToolUse` `tool_use_id` equals the `claudecode/toolUseId` the MCP server receives for that call, which is what binds a hook admission to one tool call. The recognizer still accepts the expanded form, only at the start of the prompt.
 - A2: the Pi `input` event carries the raw text before prompt-template expansion and marks extension-injected input with `source === "extension"`. The second half is repository evidence; the first is not verified and is characterized in S3.
 - A3: a headless Lane executor started with an `imm-run` prompt presents that prompt as literal input, so it records its own run entry. Verified by the existing Lane tests staying green in S2 and S3.
 

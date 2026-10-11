@@ -12,7 +12,7 @@ import {
 	type NativeConfirmationPort,
 } from "./interaction";
 import { ClaudeReviewHost, FileHookEventLog, parseHookStdin } from "./review_host";
-import { activeTaskHookOutput, laneGuardHookOutput } from "./lane_guard";
+import { activeTaskHookOutput, consumePhaseAdmission, laneGuardHookOutput, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "./lane_guard";
 import { ClaudeRuntime, type ToolMeta } from "./kernel_ports";
 import { parseLaneInstruction, parseLaneOffers, parseMaxParallel, resolveLaneParallel } from "../unattended/batch_lanes";
 import { parseFinalVerification } from "../unattended/batch_final_verification";
@@ -118,6 +118,11 @@ export interface McpRuntimeOptions {
 	batchKernel?: Partial<import("../unattended/batch_runner").BatchRunnerKernelPort>;
 	batchGit?: import("../unattended/batch_git").BatchRunnerGitPort;
 	readInitiative?: import("../unattended/types").InitiativeObservationReader;
+	/**
+	 * Takes the admission the PreToolUse hook wrote for one `enroll` or
+	 * `start_unattended_batch` call. Defaults to the private file store.
+	 */
+	consumePhaseAdmission?: (toolCallId: string, operation: GatedTool) => boolean;
 }
 
 export function createMcpRuntime(options: McpRuntimeOptions = {}) {
@@ -139,6 +144,14 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 	let negotiatedVersion: string | undefined;
 	let negotiatedInteractive = false;
 	const connectionId = randomUUID();
+	const consumeAdmission = options.consumePhaseAdmission ?? ((toolCallId: string, operation: GatedTool) => consumePhaseAdmission(toolCallId, operation));
+	// The phase entry gate, before any preparation or native dialog. The hook
+	// decided on the session's literal entry; no admission for this exact call
+	// means no hook saw it, which refuses.
+	const requireRunEntry = (operation: GatedTool, toolCallId: string) => {
+		if (consumeAdmission(toolCallId, operation)) return;
+		throw new NativeAuthorityError("run_entry_required", `${operation} needs a literal-user imm-run entry in this session`);
+	};
 	return {
 		runtime,
 		host,
@@ -164,6 +177,7 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				}
 				const probe = probeHost(options.env ?? process.env, process.platform, negotiatedVersion);
 				if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
+				requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
 				const toolMeta: ToolMeta = {
 					sessionId: meta.sessionId ?? connectionId,
 					toolCallId: meta.toolCallId ?? `call-${name}`,
@@ -230,7 +244,10 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
 				signal: meta.signal,
 			};
-			if (name === "enroll") return runtime.enroll(taskId, toolMeta);
+			if (name === "enroll") {
+				requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
+				return runtime.enroll(taskId, toolMeta);
+			}
 			if (name === "advance_assurance") return runtime.advance(taskId, toolMeta.signal, toolMeta);
 			if (name === "submit_review") {
 				// ADR 0017: an absent verdict is the receipt-bound submission.
@@ -737,11 +754,12 @@ async function runHook(): Promise<void> {
 	let payload: Record<string, unknown> | null = null;
 	try { payload = JSON.parse(raw) as Record<string, unknown>; } catch { payload = null; }
 	if (payload?.hook_event_name === "PreToolUse") {
-		const decision = laneGuardHookOutput(payload);
+		const decision = laneGuardHookOutput(payload) ?? phaseEntryGateHookOutput(payload);
 		if (decision) process.stdout.write(`${decision}\n`);
 		return;
 	}
 	if (payload?.hook_event_name === "UserPromptSubmit") {
+		recordPhaseEntryPrompt(payload);
 		const notice = await activeTaskHookOutput(payload);
 		if (notice) process.stdout.write(`${notice}\n`);
 		return;

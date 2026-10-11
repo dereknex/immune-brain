@@ -16,7 +16,8 @@ import { PassThrough } from "node:stream";
 import { ClaudeReviewHost, REVIEWER_AGENT, AGENT_TOOL } from "../plugins/immune-brain/runtime/claude/review_host";
 import { submitClaudeReview, ClaudeRuntime, settledKernelResult, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { probeHost } from "../plugins/immune-brain/runtime/claude/capability";
-import { createMcpRuntime, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
+import { createMcpRuntime as createMcpRuntimeUngated, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
+import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import { BATCH_REASONS, batchReason } from "../plugins/immune-brain/runtime/unattended/batch_reasons";
 import {
@@ -39,6 +40,30 @@ import { withKernelTransaction } from "../plugins/immune-brain/runtime/kernel/sq
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { createDefaultBatchGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
+
+// The phase entry gate (ADR 0019) sits in front of `enroll` and
+// `start_unattended_batch`. These tests exercise what lies behind it, so the
+// session records a real run entry and each gated call is admitted through the
+// real hook; tests/claude-phase-entry-gate.test.ts owns the refusals.
+function withRunEntry(): { consumePhaseAdmission: (toolCallId: string, operation: GatedTool) => boolean } {
+	const root = mkdtempSync(join(tmpdir(), "imm-phase-entry-"));
+	const session = { session_id: "phase-entry-test-session", cwd: root };
+	recordPhaseEntryPrompt({ hook_event_name: "UserPromptSubmit", prompt: "/imm-run", ...session }, { root, home: root });
+	return {
+		consumePhaseAdmission(toolCallId, operation) {
+			phaseEntryGateHookOutput({
+				hook_event_name: "PreToolUse",
+				tool_name: `mcp__plugin_immune-brain_immune-brain__${operation}`,
+				tool_use_id: toolCallId,
+				...session,
+			}, { root });
+			return consumePhaseAdmission(toolCallId, operation, root);
+		},
+	};
+}
+function createMcpRuntime(options: Parameters<typeof createMcpRuntimeUngated>[0] = {}) {
+	return createMcpRuntimeUngated({ ...withRunEntry(), ...options });
+}
 
 // The Kernel QA delivery workspace is a dependency-free checkout of the frozen
 // tree: `typebox` and the Pi host packages belong to the running Host, not to
