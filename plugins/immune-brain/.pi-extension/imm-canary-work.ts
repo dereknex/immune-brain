@@ -20,7 +20,8 @@ import type { ConfirmationReferenceSource } from "../runtime/assurance/host_port
 
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -132,6 +133,15 @@ import {
 import { reviewReworkFindings } from "../runtime/assurance/coordinator";
 import { laneWriteRefusal } from "../runtime/unattended/lane_workspace";
 import { activeTaskNotice } from "../runtime/assurance/active_task_notice";
+import {
+	admitPhaseOperation,
+	applyPrompt,
+	NO_PHASE_ENTRY,
+	recognizePhaseEntry,
+	type AliasReader,
+	type PhaseAdmission,
+	type PhaseEntryState,
+} from "../runtime/assurance/phase_entry";
 
 const LOOP_OWNERS = ["plan", "kernel", "brainstorm", "planner", "loop"] as const;
 const LOOP_TARGETS = [
@@ -287,6 +297,71 @@ export async function advancePiTask(root: string, taskId: string): Promise<any> 
 	return { state: "failed", reason: (result as { reason?: string }).reason ?? "advance failed", ...facts };
 }
 
+const GLOBAL_PI_PHASE_ENTRY_KEY = Symbol.for("immune_brain.pi_phase_entry");
+const MAX_ALIAS_BYTES = 64 * 1024;
+
+type PhaseEntryContext = { cwd?: string; sessionManager?: { getSessionId?: () => unknown } } | undefined;
+
+// Pi loads each extension file as its own module graph, so the entry state
+// lives under a global key that every copy of this module shares. It is
+// process memory: a resumed session starts without an entry and refuses.
+function piPhaseEntries(): Map<string, PhaseEntryState> {
+	const holder = globalThis as unknown as Record<symbol, Map<string, PhaseEntryState> | undefined>;
+	return holder[GLOBAL_PI_PHASE_ENTRY_KEY] ??= new Map();
+}
+
+function piSessionId(ctx: PhaseEntryContext): string {
+	try {
+		const id = ctx?.sessionManager?.getSessionId?.();
+		return typeof id === "string" ? id : "";
+	} catch {
+		return "";
+	}
+}
+
+/** Prompt templates in the order Pi resolves them: the user's, then the project's. */
+function piAliasReader(cwd: string): AliasReader {
+	const agentDir = process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
+	return (name) => {
+		for (const dir of [join(agentDir, "prompts"), join(cwd, ".pi", "prompts")]) {
+			try {
+				const path = join(dir, `${name}.md`);
+				if (lstatSync(path).size > MAX_ALIAS_BYTES) continue;
+				return readFileSync(path, "utf8");
+			} catch { /* not a template here */ }
+		}
+		return null;
+	};
+}
+
+/**
+ * One Host input: record whether this literal prompt entered a phase. Input an
+ * extension injected is never the user's and leaves the entry state untouched.
+ */
+export function recordPiPhaseInput(event: { text?: unknown; source?: unknown }, ctx: PhaseEntryContext): void {
+	if (event.source === "extension") return;
+	const sessionId = piSessionId(ctx);
+	if (!sessionId) return;
+	const entries = piPhaseEntries();
+	const text = typeof event.text === "string" ? event.text : "";
+	const entry = recognizePhaseEntry(text, piAliasReader(ctx?.cwd ?? process.cwd()));
+	entries.set(sessionId, applyPrompt(entries.get(sessionId) ?? NO_PHASE_ENTRY, entry));
+}
+
+/**
+ * The phase entry gate for a Pi tool, checked before any preparation or
+ * authority dialog. A session without an identity refuses.
+ */
+export function piRunEntryRefusal(
+	operation: "enroll" | "start_unattended_batch",
+	ctx: PhaseEntryContext,
+): Extract<PhaseAdmission, { ok: false }> | null {
+	const sessionId = piSessionId(ctx);
+	const state = sessionId ? piPhaseEntries().get(sessionId) ?? NO_PHASE_ENTRY : null;
+	const admission = admitPhaseOperation({ kind: "tool", name: operation }, state, { activeClaim: false });
+	return admission.ok ? null : admission;
+}
+
 export default function (
 	pi: ExtensionAPI,
 	dependencies: CanaryWorkExtensionDependencies = {},
@@ -342,6 +417,7 @@ export default function (
 	});
 	pi.on("input", async (event, ctx) => {
 		if (event.source === "extension") return { action: "continue" } as const;
+		recordPiPhaseInput(event, ctx);
 		railContext = ctx;
 		clearTerminalTaskRailOnInput(ctx);
 		await refreshTaskRail(ctx);

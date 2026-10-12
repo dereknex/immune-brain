@@ -28,7 +28,13 @@ try { await import("@earendil-works/pi-tui"); } catch {
 		truncateToWidth: (s: string, width: number) => s.slice(0, width), visibleWidth: (s: string) => s.length }));
 }
 const { default: registerPiBatch } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
-const { createPiAssuranceProgressionPorts } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
+const { createPiAssuranceProgressionPorts, recordPiPhaseInput } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
+// The phase entry gate (ADR 0019) sits in front of this Tool. These tests
+// exercise what lies behind it, so their session records a real run entry
+// through the function the input handler calls;
+// tests/pi-phase-entry-gate.test.ts owns the refusals.
+const RUN_ENTRY_SESSION = { getSessionId: () => "batch-plan-reconfirmation-tests" };
+recordPiPhaseInput({ text: "/skill:imm-run", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION });
 import { AssuranceProgression } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression";
 import { createMcpRuntime as createMcpRuntimeUngated } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
@@ -185,7 +191,7 @@ async function fixture(host: "pi" | "claude", settle: "done" | "active" | "stopp
 		if (host === "claude") return client.callTool("start_unattended_batch", { initiative_slug: slug });
 		try {
 			const response = await tool.execute(randomUUID(), { initiative_slug: slug }, undefined, undefined,
-				{ cwd: root, mode: "tui", ui: { setWidget() {}, notify() {}, custom: async () => {
+				{ cwd: root, mode: "tui", sessionManager: RUN_ENTRY_SESSION, ui: { setWidget() {}, notify() {}, custom: async () => {
 					gateCalls++; const selected = await answer(); return selected === "accept" ? "confirm" : selected;
 				} } });
 			const content = JSON.parse(response.content[0].text); expect(content).toEqual(response.details); return content;

@@ -1,0 +1,179 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "explicit-phase-entry-s3-pi-gate",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "explicit-phase-entry-s3-pi-gate",
+    "goal": "Implement Slice S3 of Initiative explicit-phase-entry per docs/specs/explicit-phase-entry.spec.md (T3): the Pi extension records literal phase entries from non-extension input and refuses imm_canary_enrollment and start_unattended_batch before the authority dialog in a session without a live imm-run entry, with the same reason code and recovery action as Claude Code. Characterize the real Pi input payload of a slash entry first (assumption A2). User scenario SCN-5 (manual) belongs to this Slice.",
+    "acceptance": [
+      {
+        "id": "EPE-S3-A1",
+        "assertion": "Per T3 and invariants I1, I2, I3 of docs/specs/explicit-phase-entry.spec.md (source: user decision U2; repository evidence .pi-extension/imm-canary-work.ts input handler): on Pi, imm_canary_enrollment and start_unattended_batch reach the authority dialog port only after a literal non-extension imm-run entry in that session; with no entry, an entry carried by extension-sourced input, or a run entry revoked by a later plan entry, the tool returns run_entry_required before the dialog port is called. Seam: new tests/pi-phase-entry-gate.test.ts driving the registered input handler and each tool's execute.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-phase-entry-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "EPE-S3-A2",
+        "assertion": "Per T2, T3 of docs/specs/explicit-phase-entry.spec.md (source: delegated technical choice, one refusal contract for both Hosts): Claude Code and Pi return the identical run_entry_required reason code and the identical single recovery action for a refused Enrollment and a refused batch start, and the existing Pi tool tests pass with a recorded run entry where they exercise those tools. Seam: tests/dual-host-assurance-conformance.test.ts equality assertion plus the existing Pi Enrollment and batch authority tests.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/pi-canary-enroll-extension.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/imm-canary-work-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/explicit-phase-entry-s3-pi-gate.md",
+      "docs/plans/explicit-phase-entry-s3-pi-gate.intent.json",
+      "docs/specs/explicit-phase-entry.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/runtime/assurance/phase_entry.ts",
+      "tests/batch-delegation-gate.test.ts",
+      "tests/batch-plan-reconfirmation.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/enrollment-confirmation-relocation.test.ts",
+      "tests/enrollment-git-base.test.ts",
+      "tests/imm-canary-work-contract.test.ts",
+      "tests/packaged-contract-tool-surface.test.ts",
+      "tests/pi-batch-acceptance-integration.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/pi-canary-lifecycle-package.test.ts",
+      "tests/pi-phase-entry-gate.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/explicit-phase-entry-s3-pi-gate.intent.json",
+    "content_hash": "sha256:e6a490203607e396c4f60631685703f1205ab43a4e1c39f38c8611328ba40f9b"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:6ad85a7cd1bf494b01ef1b7dc00008c306f0f160f4a942f962983c90abb4d416",
+  "git_base_head": "b9e5f18b262c5f35c96b965f0a266ccbab65593c",
+  "attestations": [
+    {
+      "id": "approval-qa-0bfd9c5a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:e6a490203607e396c4f60631685703f1205ab43a4e1c39f38c8611328ba40f9b",
+      "diff_hash": "sha256:ec297d9c59b8e992a0d4b76619bedece868f2f5cc97f2b42b2d545ee11731886",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:a8114230a69aa5194d4d421b0fe58221e1d3119139cd9aec456194b1dd8fcb31",
+      "acceptance_results": [
+        {
+          "acceptance_id": "EPE-S3-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:a8114230a69aa5194d4d421b0fe58221e1d3119139cd9aec456194b1dd8fcb31"
+        },
+        {
+          "acceptance_id": "EPE-S3-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:a8114230a69aa5194d4d421b0fe58221e1d3119139cd9aec456194b1dd8fcb31"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-ae453f36",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:e6a490203607e396c4f60631685703f1205ab43a4e1c39f38c8611328ba40f9b",
+      "diff_hash": "sha256:ec297d9c59b8e992a0d4b76619bedece868f2f5cc97f2b42b2d545ee11731886",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance holds (base, single parent and tree resolve as stated; manifest_digest matches the request but was not recomputed); both Pi tools check the run entry before any preparation or dialog and fail closed without a session id, and the tests drive the registered input handler and each tool's execute for no entry, extension-sourced entry, plan revocation and dual-host refusal equality.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "b9e5f18b262c5f35c96b965f0a266ccbab65593c",
+        "review_commit": "31fedfcbcd899b82cf69b9180876f98645829ef3",
+        "review_tree": "9981b570f0c6e5b51a144b63df17f0c7bd0a2b9e",
+        "manifest_digest": "sha256:e66076a25bbad9c213f8f068bde709dcb7b059ecae9efb58332c96c5d1b73043"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-754b457664c1-1-review-1",
+          "acceptance_id": "EPE-S3-A1",
+          "summary": "piAliasReader bounds the alias size with lstatSync, so a symlinked prompt template is measured by its link length and the 64 KiB cap does not apply to the target that readFileSync then reads in full; the gate still fails closed, so this is non-blocking.",
+          "anchor": "sha256:6ce67d977f9704b1cc1eb3affab560d630152415e8cf53ef27d0c7b0954cfa89",
+          "evidence": {
+            "trigger": "A user or project prompt template such as ~/.pi/agent/prompts/loop.md that is a symlink to a file larger than 64 KiB, followed by a literal /loop input in a Pi session.",
+            "caller_chain": [
+              "plugins/immune-brain/.pi-extension/imm-canary-work.ts:input handler",
+              "plugins/immune-brain/.pi-extension/imm-canary-work.ts:recordPiPhaseInput",
+              "plugins/immune-brain/.pi-extension/imm-canary-work.ts:piAliasReader",
+              "plugins/immune-brain/runtime/assurance/phase_entry.ts:recognizePhaseEntry"
+            ],
+            "violated": {
+              "kind": "security_boundary",
+              "ref": "pi alias read size bound (MAX_ALIAS_BYTES)"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:38ad61297442a965410602f773e9a6aac30c8158dc28899b7ed4a89a5838de5b"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:explicit-phase-entry-s3-pi-gate:2026-10-11T14:36:51.883Z",
+      "at": "2026-10-11T14:36:51.883Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:36f8cc514ff46ac2a70d97a7d0ed7bc575f0cb62a2cb5ec660b2ac7fcaac94df",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-a9c187c8d8aa97ca",
+        "issued_at": "2026-10-11T14:37:01.332Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:explicit-phase-entry-s3-pi-gate:2026-10-11T14:53:31.183Z",
+      "at": "2026-10-11T14:53:31.183Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/explicit-phase-entry-s3-pi-gate.intent.json"
+    },
+    {
+      "id": "record_approval:explicit-phase-entry-s3-pi-gate:2026-10-11T14:54:55.699Z",
+      "at": "2026-10-11T14:54:55.699Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-0bfd9c5a\naction_v2_sha256:99cd6a355780c03b31af290710e778635f42a0684538a24bfebaa9ac0c623dcc",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-11T14:54:55.700Z"
+      }
+    },
+    {
+      "id": "record_approval:explicit-phase-entry-s3-pi-gate:2026-10-11T14:56:34.763Z",
+      "at": "2026-10-11T14:56:34.763Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-ae453f36\naction_v2_sha256:c711fa3bd7535a60b1cb0ee541bcfb98517e8441cbe4e4e72360c84f3629c434",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-11T14:56:34.763Z"
+      }
+    },
+    {
+      "id": "complete:explicit-phase-entry-s3-pi-gate:2026-10-11T14:56:36.195Z",
+      "at": "2026-10-11T14:56:36.195Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:81e2b56766dd91d7c025a0eee845234deb8b4672bd675e66f7aa82ca08870b2b"
+    }
+  ]
+}

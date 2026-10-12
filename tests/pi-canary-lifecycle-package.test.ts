@@ -61,9 +61,20 @@ function loadEnrollmentTool() {
 	return tool;
 }
 
+// The phase entry gate (ADR 0019) sits in front of this Tool. These tests
+// exercise what lies behind it, so their session records a real run entry
+// through the function the input handler calls;
+// tests/pi-phase-entry-gate.test.ts owns the refusals.
+const RUN_ENTRY_SESSION = { getSessionId: () => "pi-canary-lifecycle-package-tests" };
+require("../plugins/immune-brain/.pi-extension/imm-canary-work.ts").recordPiPhaseInput(
+	{ text: "/skill:imm-run", source: "interactive" },
+	{ sessionManager: RUN_ENTRY_SESSION },
+);
+
 function enrollmentContext(root: string) {
 	return {
 		mode: "tui",
+		sessionManager: RUN_ENTRY_SESSION,
 		hasUI: true,
 		cwd: root,
 		isIdle: () => true,

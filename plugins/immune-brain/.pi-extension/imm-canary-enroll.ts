@@ -26,7 +26,7 @@ import {
 	enrollmentGitBaseNotice,
 	initializeEnrollmentGitBase,
 } from "../runtime/assurance/enrollment_git_base";
-import { readTaskIntentForRecord } from "./imm-canary-work";
+import { piRunEntryRefusal, readTaskIntentForRecord } from "./imm-canary-work";
 import {
 	presentTaskRail,
 	presentTaskRailResult,
@@ -646,6 +646,18 @@ export default function (pi: ExtensionAPI) {
 					code: "tui_required",
 					message: "imm_canary_enrollment is TUI-only",
 					next_action: "invoke the TUI launcher",
+				});
+			// The phase entry gate (ADR 0019), before any preparation or dialog.
+			const entryRefusal = piRunEntryRefusal("enroll", ctx);
+			if (entryRefusal)
+				throwToolFailure({
+					tool: "imm_canary_enrollment",
+					task_id: taskId,
+					operation: action,
+					state: "blocked",
+					code: entryRefusal.reason_code,
+					message: entryRefusal.detail,
+					next_action: entryRefusal.recovery_action,
 				});
 			const authorityRegistry = await registry();
 			const result = await coordinator.run(action, taskId, signal, (foregroundSignal, beginCommit) =>

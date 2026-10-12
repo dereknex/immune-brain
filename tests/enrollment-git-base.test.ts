@@ -4,10 +4,18 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import enrollExtension from "../plugins/immune-brain/.pi-extension/imm-canary-enroll";
+import { recordPiPhaseInput } from "../plugins/immune-brain/.pi-extension/imm-canary-work";
 import { ClaudeRuntime } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { inspectEnrollmentGitBase, initializeEnrollmentGitBase } from "../plugins/immune-brain/runtime/assurance/enrollment_git_base";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
+
+// The phase entry gate (ADR 0019) sits in front of this Tool. These tests
+// exercise what lies behind it, so their session records a real run entry
+// through the function the input handler calls;
+// tests/pi-phase-entry-gate.test.ts owns the refusals.
+const RUN_ENTRY_SESSION = { getSessionId: () => "enrollment-git-base-tests" };
+recordPiPhaseInput({ text: "/skill:imm-run", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION });
 
 const roots: string[] = [];
 const taskId = "unborn-enrollment";
@@ -48,7 +56,7 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 				result = await tool.execute("enroll", { action: "new", task_id: taskId }, signal, (update: any) => {
 					if (update.details.stage === "rehearsing") afterInitialize?.();
 				}, {
-					cwd: root, mode: "tui", hasUI: true, isIdle: () => true,
+					cwd: root, mode: "tui", hasUI: true, isIdle: () => true, sessionManager: RUN_ENTRY_SESSION,
 					ui: { setWidget: () => {}, custom: async (factory: any) => {
 						let selection: unknown;
 						const component = factory({ requestRender: () => {} }, { fg: (_: string, text: string) => text, bold: (text: string) => text }, {}, (value: unknown) => { selection = value; });

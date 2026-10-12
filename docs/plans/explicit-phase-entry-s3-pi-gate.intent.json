@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "explicit-phase-entry-s3-pi-gate",
-  "owner": "user",
   "goal": "Implement Slice S3 of Initiative explicit-phase-entry per docs/specs/explicit-phase-entry.spec.md (T3): the Pi extension records literal phase entries from non-extension input and refuses imm_canary_enrollment and start_unattended_batch before the authority dialog in a session without a live imm-run entry, with the same reason code and recovery action as Claude Code. Characterize the real Pi input payload of a slash entry first (assumption A2). User scenario SCN-5 (manual) belongs to this Slice.",
   "acceptance": [
     {
@@ -26,14 +25,18 @@
     "tests/batch-delegation-gate.test.ts",
     "tests/batch-plan-reconfirmation.test.ts",
     "tests/dual-host-assurance-conformance.test.ts",
+    "tests/enrollment-confirmation-relocation.test.ts",
+    "tests/enrollment-git-base.test.ts",
     "tests/imm-canary-work-contract.test.ts",
     "tests/packaged-contract-tool-surface.test.ts",
     "tests/pi-batch-acceptance-integration.test.ts",
     "tests/pi-batch-authority.test.ts",
     "tests/pi-canary-enroll-extension.test.ts",
+    "tests/pi-canary-lifecycle-package.test.ts",
     "tests/pi-phase-entry-gate.test.ts",
     "tests/unattended-contracts.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }
