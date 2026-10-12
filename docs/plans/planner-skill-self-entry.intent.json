@@ -1,0 +1,56 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "planner-skill-self-entry",
+  "owner": "user",
+  "goal": "Implement docs/specs/planner-skill-self-entry.spec.md (T1-T4) in one Slice: on Claude Code the phase-entry hook stops denying model Skill calls for imm-planner and imm-brainstorm, such a call made with no active claim revokes the session run entry, the imm-run Skill is admitted on a live run entry for the session, the two Skill descriptions and the entry contract text become request-triggered, and ADR 0020 records the change and the accepted Pi gap. Enrollment still opens only after a literal-user imm-run entry. User scenarios SCN-1 to SCN-5 are automated here; SCN-6 is a manual check after the plugin cache is refreshed.",
+  "acceptance": [
+    {
+      "id": "PSE-A1",
+      "assertion": "Per T1, T2 and invariants I2, I3, I6 of docs/specs/planner-skill-self-entry.spec.md (source: user decisions G1, G6; delegated choice D3): admitPhaseOperation admits the imm-planner and imm-brainstorm Skills for a fresh, a live and a null state; admits the imm-run Skill whenever the run entry is live, including after later prompts; refuses the imm-run Skill with phase_entry_required for no entry, a revoked entry and a null state; and keeps the enroll and start_unattended_batch rules unchanged. A plan line revokes the run entry, a later run line restores it, and a malformed log line is unreadable. Prompt-sequence state fields that no longer feed a decision are removed. Seam: tests/phase-entry.test.ts on the pure module, with the positive, negative and bound controls named in the Spec.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/phase-entry.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "PSE-A2",
+      "assertion": "Per T3 and the transition table T2 of docs/specs/planner-skill-self-entry.spec.md (source: user decisions G4, G5; delegated choices D1, D2, D4; scenarios SCN-1 to SCN-5): the Claude PreToolUse hook answers null for a model Skill call for imm-planner or imm-brainstorm whatever the store state; with no active claim that call appends a plan line so a following enroll call is denied with run_entry_required, with no same-prompt exception; with an active claim the run entry stays live and enroll is admitted; a failed revocation append drops the session log so enroll is denied; a repeated hook run leaves the same state; the imm-run Skill is allowed after a run entry and a later plain prompt and denied with phase_entry_required when no run entry exists; every other Skill and tool is untouched. Seam: tests/claude-phase-entry-skill-gate.test.ts driving the hook output functions against a real temporary store.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-phase-entry-skill-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "PSE-A3",
+      "assertion": "Per T4 of docs/specs/planner-skill-self-entry.spec.md (source: user decisions G2, G3, G8; delegated choices D6, D7): the imm-planner description is exactly \"Use when the user asks for an Immune-Brain Spec, Plan, or TaskIntent for a repository change.\" and the imm-brainstorm description is exactly \"Use when the user asks to clarify or explore requirements before Immune-Brain planning.\", identical in the loader and the packaged frontmatter, while the six other public Skill descriptions still start with \"Use when the user explicitly requests\"; Planner Managed Request Routing, the two loaders, the three byte-identical BASELINE copies and the plugin README state that the Planner and Brainstorm start on the user's request by slash command or in natural language, that imm-run starts only from a literal-user entry, and no longer state that natural-language input never invokes the Planner; the Planner and Brainstorm still never route to Enrollment; docs/adr/0020 exists and names the Pi gap. Seam: the existing contract tests listed in the Spec mapping, with their assertions updated.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/skill-dist-consistency.test.ts\",\n      \"tests/direct-first-routing-contract.test.ts\",\n      \"tests/baseline-packaging-contract.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\",\n      \"tests/explicit-phase-entry-planner-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "PSE-A4",
+      "assertion": "Per Discovery evidence of docs/specs/planner-skill-self-entry.spec.md (source: repository evidence scripts/build-claude-plugin.ts, hooks/hooks.json, .pi-extension/imm-canary-work.ts): dist/claude/mcp-server.mjs is rebuilt from source, hooks.json still routes the Skill tool and the enroll and start_unattended_batch tools through PreToolUse, and the Claude tool gate, the Pi gate and cross-Host reason-code equality pass with the simplified entry state. Seam: tests/claude-host-package.test.ts, tests/claude-phase-entry-gate.test.ts, tests/pi-phase-entry-gate.test.ts, tests/dual-host-assurance-conformance.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/claude-phase-entry-gate.test.ts\",\n      \"tests/pi-phase-entry-gate.test.ts\",\n      \"tests/dual-host-assurance-conformance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/planner-skill-self-entry.md",
+    "docs/adr/0020-planner-and-brainstorm-skill-self-entry.md",
+    "docs/plans/planner-skill-self-entry.intent.json",
+    "docs/specs/planner-skill-self-entry.spec.md",
+    "plugins/immune-brain/BASELINE.md",
+    "plugins/immune-brain/README.md",
+    "plugins/immune-brain/dist/BASELINE.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-brainstorm.md",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/hooks/hooks.json",
+    "plugins/immune-brain/runtime/assurance/phase_entry.ts",
+    "plugins/immune-brain/runtime/claude/lane_guard.ts",
+    "plugins/immune-brain/skills/BASELINE.md",
+    "plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
+    "plugins/immune-brain/skills/imm-planner/SKILL.md",
+    "tests/baseline-packaging-contract.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/claude-phase-entry-gate.test.ts",
+    "tests/claude-phase-entry-skill-gate.test.ts",
+    "tests/direct-first-routing-contract.test.ts",
+    "tests/explicit-phase-entry-planner-contract.test.ts",
+    "tests/phase-entry.test.ts",
+    "tests/skill-dist-consistency.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
