@@ -459,7 +459,12 @@ describe("claude host package", () => {
   });
 
   it("does not fork the public Skill contracts", () => {
+    // `imm-run-batch.md` is the batch, Lane and Herdr half of the imm-run
+    // contract, loaded by anchor from the imm-run Skill; it is not a Skill.
+    const companions = ["imm-run-batch.md"];
     const dist = readdirSync(resolve(PLUGIN_ROOT, "dist")).filter((name) => name.startsWith("imm-") && name.endsWith(".md"));
-    expect(dist.sort()).toEqual(SKILLS.map((name) => `${name}.md`).sort());
+    expect(dist.sort()).toEqual([...SKILLS.map((name) => `${name}.md`), ...companions].sort());
+    const runSkill = readFileSync(resolve(PLUGIN_ROOT, "skills/imm-run/SKILL.md"), "utf8");
+    for (const name of companions) expect(runSkill).toContain(`dist/${name}`);
   });
 });

@@ -24,6 +24,7 @@ function read(rel: string): string {
 }
 
 const LOOP_CONTRACT = read("plugins/immune-brain/dist/imm-run.md");
+const BATCH_CONTRACT = read("plugins/immune-brain/dist/imm-run-batch.md");
 const LOOP_LOADER = read("plugins/immune-brain/skills/imm-run/SKILL.md");
 const CONSTITUTION = read("IMMUNE.md");
 const CONTEXT = read("CONTEXT.md");
@@ -466,11 +467,11 @@ writeFileSync(join(scratch, "result.json"), JSON.stringify({ initial, resumed, e
 
 describe("unattended batch contract text", () => {
 	it("documents the opt-in entry, the single parameter, and the unchanged default", () => {
-		const optIn = section(LOOP_CONTRACT, "## Unattended Batch Opt-In");
+		const optIn = section(BATCH_CONTRACT, "## Unattended Batch Opt-In");
 		expect(optIn).toContain(BATCH_TOOL);
 		expect(optIn).toContain("`initiative_slug`");
 		// The loader must route to the section, or the contract is unreachable.
-		expect(LOOP_LOADER).toContain("dist/imm-run.md#unattended-batch-opt-in");
+		expect(LOOP_LOADER).toContain("dist/imm-run-batch.md#unattended-batch-opt-in");
 
 		// The opt-in tool and its single parameter are shipped facts, not prose.
 		const claudeServer = read("plugins/immune-brain/runtime/claude/mcp_server.ts");
@@ -483,7 +484,7 @@ describe("unattended batch contract text", () => {
 	});
 
 	it("states the restrictions the runner actually enforces", async () => {
-		const optIn = section(LOOP_CONTRACT, "## Unattended Batch Opt-In");
+		const optIn = section(BATCH_CONTRACT, "## Unattended Batch Opt-In");
 		for (const claim of ["never pushes a ref", "pull request", "user decision", "Git worktree"]) {
 			expect(optIn).toContain(claim);
 		}
@@ -576,8 +577,10 @@ describe("unattended batch contract text", () => {
 	it("keeps default imm-run behavior byte-identical when the batch tool is not invoked", () => {
 		// The opt-in path is a Tool registration; the loop contract's execution
 		// sequence must not make a batch step mandatory or implicit.
-		expect(LOOP_CONTRACT).not.toContain("start_unattended_batch` automatically");
-		expect(LOOP_CONTRACT).not.toMatch(/imm-run must start a batch|先调用 start_unattended_batch/i);
+		for (const contract of [LOOP_CONTRACT, BATCH_CONTRACT]) {
+			expect(contract).not.toContain("start_unattended_batch` automatically");
+			expect(contract).not.toMatch(/imm-run must start a batch|先调用 start_unattended_batch/i);
+		}
 
 		// The shipped entry requires a literal-user confirmation; a non-interactive
 		// invocation is refused, so the opt-in cannot happen implicitly. The refusal

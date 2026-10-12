@@ -60,7 +60,7 @@ describe("Loop execution and repair routing", () => {
 		expect(action.context.prompt).toContain("scope expansion");
 		const guidance = action.context.prompt.replace(/\s+/g, " ");
 		for (const requirement of [
-			"one compact row per acceptance",
+			"one compact row per violated acceptance or invariant only when handling rework",
 			"Entry and consumers",
 			"Positive / negative / boundary controls",
 			"Command, outcome and input",
@@ -185,7 +185,7 @@ describe("Loop execution and repair routing", () => {
 		// contract is shared by both Hosts, so it never names one Host's tools.
 		expect(loop.replace(/\s+/g, " ")).toContain("role-boundary route");
 		expect(loop).toContain("role-prompts/executor.md#delivery-evidence");
-		expect(loop.replace(/\s+/g, " ")).toContain("update affected rows after repair");
+		expect(loop.replace(/\s+/g, " ")).toContain("table for rework only; a first delivery needs no table");
 		expect(loop).not.toContain("buildLoopRoleContext");
 		expect(loop).toContain("test-fixer");
 		expect(loop).toContain("pr-fix");

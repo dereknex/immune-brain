@@ -1,0 +1,226 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "ceremony-trim-r647-s4-contract-slimming",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "ceremony-trim-r647-s4-contract-slimming",
+    "goal": "Remove three contract requirements that produce unused text: Delivery Evidence before the first Assurance attempt, diagram fields on Specs that need no diagram, and batch, Lane and Herdr sections inside the main Loop contract; and deliver docs/reports/contract-rule-audit-r647.md listing each normative rule with its enforcement point, removing no rule.",
+    "acceptance": [
+      {
+        "id": "CT-S4-A1",
+        "assertion": "Meet T4 in docs/specs/ceremony-trim-r647.spec.md: the Executor prompt, its packaged mirror and the Loop contract require the Delivery Evidence table for rework only and no longer before the first Assurance attempt; source and mirror stay identical.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/ceremony-trim-contract.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "CT-S4-A2",
+        "assertion": "Meet D10: the Planner contract asks for Diagram decision and Diagram reason only when a diagram is required and no longer asks why an omitted design view cannot matter; the conformance test asserts the new wording and no test is deleted; runtime/plan_core.ts is unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/technical-design-conformance-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "CT-S4-A3",
+        "assertion": "Meet D11: the batch, Lane and Herdr sections live in plugins/immune-brain/dist/imm-run-batch.md with unchanged wording and are absent from the main Loop contract; every loader anchor in the imm-run Skill and every external link to a moved anchor resolves in the new file; the new contract is registered for packaging and sync.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/role-prompt-bridge.test.ts\",\n      \"tests/unattended-contracts.test.ts\",\n      \"tests/loop-execution-routing.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\",\n      \"tests/ceremony-trim-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/ceremony-trim-s4-contract-slimming.md",
+      "IMMUNE.md",
+      "docs/plans/ceremony-trim-r647-s4-contract-slimming.intent.json",
+      "docs/reference/immune-brain-config.md",
+      "docs/reports/contract-rule-audit-r647.md",
+      "docs/specs/ceremony-trim-r647.spec.md",
+      "plugins/immune-brain/README.md",
+      "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/dist/imm-run-batch.md",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/dist/role-prompts/executor.md",
+      "plugins/immune-brain/runtime/prompts/executor.md",
+      "plugins/immune-brain/skills/imm-run/SKILL.md",
+      "scripts/dist-sync-manifest.ts",
+      "tests/ceremony-trim-contract.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/dist-docs-sync-contract.test.ts",
+      "tests/loop-execution-routing.test.ts",
+      "tests/role-prompt-bridge.test.ts",
+      "tests/skill-dist-consistency.test.ts",
+      "tests/technical-design-conformance-contract.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/ceremony-trim-r647-s4-contract-slimming.intent.json",
+    "content_hash": "sha256:aee33ccf7d8682bd40e58c8b3652646de4d4e0c09e5b60e763a3f9dea3eff668"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:8c82e9e3d4e68ca60185bdc1d0818ae30250a4900f3c5eccfeb8da5a61eaa081",
+  "git_base_head": "f3796632bc38396779ede3418ee92e010fb23090",
+  "attestations": [
+    {
+      "id": "approval-qa-931260f9",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:aee33ccf7d8682bd40e58c8b3652646de4d4e0c09e5b60e763a3f9dea3eff668",
+      "diff_hash": "sha256:c5598de923b7a6fc077910eef5739d106162683361ee85bd8992b630e0d17da3",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:a7c6bd9d82df16d5339af3e8f94c63e65651a6013a19afd865f2187280f0017f",
+      "acceptance_results": [
+        {
+          "acceptance_id": "CT-S4-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:a7c6bd9d82df16d5339af3e8f94c63e65651a6013a19afd865f2187280f0017f"
+        },
+        {
+          "acceptance_id": "CT-S4-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:a7c6bd9d82df16d5339af3e8f94c63e65651a6013a19afd865f2187280f0017f"
+        },
+        {
+          "acceptance_id": "CT-S4-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:a7c6bd9d82df16d5339af3e8f94c63e65651a6013a19afd865f2187280f0017f"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-8d271e2b",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:aee33ccf7d8682bd40e58c8b3652646de4d4e0c09e5b60e763a3f9dea3eff668",
+      "diff_hash": "sha256:c5598de923b7a6fc077910eef5739d106162683361ee85bd8992b630e0d17da3",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified; Delivery Evidence is rework-only with byte-identical mirror, Planner diagram wording slimmed with plan_core.ts untouched, and batch/Lane/Herdr sections moved verbatim into registered imm-run-batch.md with all anchors resolving.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "f3796632bc38396779ede3418ee92e010fb23090",
+        "review_commit": "d67673b06961692e8dfe7c6d879435f501b157f0",
+        "review_tree": "acfbefc06fca77c05e77c14dd57ec502a9859c0e",
+        "manifest_digest": "sha256:dac20f66de3b5435cb9f4e27c50156d1564c9879f210e9502329410b4fd0b94a"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-c6e85670721f-1-review-1",
+          "acceptance_id": "CT-S4-A2",
+          "summary": "docs/reference/planning-quality-gate.md (and its dist mirror) still tell the Planner that Medium/High Specs record `Diagram decision: required|not_required` with a reason, and the updated conformance test pins that old text, so the Planner's quality-gate reference now contradicts the slimmed Planner contract. The file is outside scope_hint and the Spec's S4 edit inventory, so this is a boundary note and not rework; a follow-up slice should align it.",
+          "anchor": "sha256:2a8e8b4d350fefc94c5b1f092631d75211f831d8ac8c85b32b80a22b70286fb4",
+          "evidence": {
+            "trigger": "A Planner preparing an elevated-risk plan loads the Planning Quality Gate checklist whose Mermaid intent bullet still requires the diagram fields for every Medium/High Spec, while dist/imm-planner.md Mermaid Use now says a Spec that needs no diagram records neither field.",
+            "caller_chain": [
+              "plugins/immune-brain/dist/imm-planner.md",
+              "docs/reference/planning-quality-gate.md",
+              "tests/technical-design-conformance-contract.test.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "CT-S4-A2"
+            }
+          }
+        },
+        {
+          "id": "review-c6e85670721f-2-review-2",
+          "acceptance_id": "CT-S4-A2",
+          "summary": "The legacy validator runtime/plan_core.ts validateSpecDesign still errors when a Spec that has `Design risk` omits `Diagram decision`/`Diagram reason`. This matches Spec decision D10 and the acceptance requirement that plan_core.ts stay unchanged, and the validator is reachable only from v4_runtime.ts. The new Planner wording therefore diverges from the legacy validator by design; the audit report documents it under Known inconsistency.",
+          "anchor": "sha256:2f528cf6fea73ecc39940d43563138e121b602b3241b5d4b404a0dd86de5c315",
+          "evidence": {
+            "trigger": "A Medium/High Spec authored under the new Planner wording (Design risk present, no Diagram fields because no diagram is needed) validated through v4_runtime.ts yields 'Referenced Spec Diagram decision must be required or not_required' and 'missing Diagram reason'.",
+            "caller_chain": [
+              "plugins/immune-brain/dist/imm-planner.md",
+              "plugins/immune-brain/runtime/v4_runtime.ts",
+              "plugins/immune-brain/runtime/plan_core.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "CT-S4-A2"
+            }
+          }
+        },
+        {
+          "id": "review-c6e85670721f-3-review-3",
+          "acceptance_id": null,
+          "summary": "Intent scope_hint lists .changeset/ceremony-trim-s4-contract-slimming.md, but no changeset file is in the changed paths, although slices S1-S3 each shipped one. This is not an acceptance assertion and is non-blocking.",
+          "anchor": "sha256:820cb7d9c309290637d26139841bd9b8286d26745db4d86641adab0d873647a3",
+          "evidence": {
+            "trigger": "Release tooling reads .changeset/*.md; this slice changes packaged plugin contracts without a changeset entry.",
+            "caller_chain": [
+              ".changeset/ceremony-trim-s4-contract-slimming.md",
+              "docs/plans/ceremony-trim-r647-s4-contract-slimming.intent.json"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "CT-S4-A3"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:5439a8b2d446c2d28a9f87ff849f906e89e56e44913227199ab1bfdd0ee04009"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:ceremony-trim-r647-s4-contract-slimming:2026-10-12T15:40:49.316Z",
+      "at": "2026-10-12T15:40:49.316Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:9b81563cfe061131995a7c9e0a15810ee7c76836fb440fe8839b0ae5c2132451",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-81f005d3de75de19",
+        "issued_at": "2026-10-12T15:45:50.085Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:ceremony-trim-r647-s4-contract-slimming:2026-10-12T15:46:39.900Z",
+      "at": "2026-10-12T15:46:39.900Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/ceremony-trim-r647-s4-contract-slimming.intent.json"
+    },
+    {
+      "id": "record_approval:ceremony-trim-r647-s4-contract-slimming:2026-10-12T15:46:50.724Z",
+      "at": "2026-10-12T15:46:50.724Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-931260f9\naction_v2_sha256:ae55756caa0452138beea9db1436491dcd5a1e4363782dc2c34e349d60243ae4",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-12T15:46:50.724Z"
+      }
+    },
+    {
+      "id": "record_approval:ceremony-trim-r647-s4-contract-slimming:2026-10-12T16:00:07.005Z",
+      "at": "2026-10-12T16:00:07.005Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-8d271e2b\naction_v2_sha256:19478df60207bbc61a816678e6a081ce482d0a80e5f2b37451601414655f54f1",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-12T16:00:07.006Z"
+      }
+    },
+    {
+      "id": "complete:ceremony-trim-r647-s4-contract-slimming:2026-10-12T16:00:09.917Z",
+      "at": "2026-10-12T16:00:09.917Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:bda8d99b5896e7f0a8c1855e637b1f2b74dddf62e4e82381d18e2f0cb37043f6"
+    }
+  ]
+}

@@ -182,14 +182,25 @@ describe("risk-tiered Technical Design conformance contract", () => {
 
   it("omits compulsory diagram and audit ceremony for Low risk while keeping elevated-risk evidence", () => {
     expectAll(PLANNER, [
-      "Medium/High risk Specs record `**Diagram decision**: required|not_required`",
+      "Only a Medium/High risk Spec whose design requires a diagram records `**Diagram decision**: required` and a non-empty `**Diagram reason**:`",
+      "A Spec that needs no diagram records neither field and does not explain the omission",
       "Low-risk Specs omit the empty ceremony and record neither field",
       "Medium/High risk work records a `Devil's Advocate Audit`",
       "Low-risk work omits the empty template",
+    ], [
+      // D10: a Spec that needs no diagram carries no diagram fields, and an omitted
+      // design view is no longer explained.
+      "`**Diagram decision**: required|not_required`",
+      "`not_required` explains why prose is sufficient",
+      "why any omitted view cannot affect the design",
     ])
     expectAll(QUALITY_GATE, [
-      "Medium/High risk Specs record `**Diagram decision**: required|not_required`",
+      "Only a Medium/High risk Spec whose design requires a diagram records `**Diagram decision**: required` and a non-empty `**Diagram reason**:`",
+      "A Spec that needs no diagram records neither field and does not explain the omission",
       "Low-risk Specs omit the empty ceremony and record neither field",
+    ], [
+      "`**Diagram decision**: required|not_required`",
+      "`not_required` explains why prose is sufficient",
     ])
     for (const obsolete of [
       "Every new or revised Spec records `**Diagram decision**",

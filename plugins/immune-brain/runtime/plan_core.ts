@@ -665,7 +665,7 @@ function validateSpecDesign(spec: ParsedSpecDesign | null): {
 			warnings: [
 				{
 					code: "spec_design_metadata_missing",
-					message: `${spec.path} uses the legacy design contract; add Design risk, Diagram decision, and Diagram reason when revising it.`,
+					message: `${spec.path} uses the legacy design contract; add Design risk (and Diagram decision with Diagram reason only when a diagram is required) when revising it.`,
 					field: "design_metadata",
 				},
 			],
@@ -679,13 +679,20 @@ function validateSpecDesign(spec: ParsedSpecDesign | null): {
 	if (!risk || !["low", "medium", "high"].includes(risk)) {
 		errors.push("Referenced Spec Design risk must be Low, Medium, or High.");
 	}
-	if (!decision || !["required", "not_required"].includes(decision)) {
-		errors.push(
-			"Referenced Spec Diagram decision must be required or not_required.",
-		);
-	}
-	if (!spec.diagram_reason) {
-		errors.push("Referenced Spec is missing Diagram reason.");
+	// A Spec that needs no diagram records neither diagram field; once either
+	// field is present the pair must be complete.
+	const diagramFieldsRecorded = Boolean(
+		spec.diagram_decision || spec.diagram_reason,
+	);
+	if (diagramFieldsRecorded) {
+		if (!decision || !["required", "not_required"].includes(decision)) {
+			errors.push(
+				"Referenced Spec Diagram decision must be required or not_required.",
+			);
+		}
+		if (!spec.diagram_reason) {
+			errors.push("Referenced Spec is missing Diagram reason.");
+		}
 	}
 	if (["medium", "high"].includes(risk || "") && !spec.has_technical_design) {
 		errors.push(

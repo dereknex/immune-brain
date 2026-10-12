@@ -427,6 +427,32 @@ flowchart LR
 		expect(projection(path).warnings).toEqual([]);
 	});
 
+	it("accepts a Spec that records Design risk and no diagram fields", () => {
+		const path = writeFixtureWithSpec(`# Spec
+
+**Design risk**: Medium
+
+## Technical Design
+
+One bounded local contract described in prose.
+`);
+
+		expectAccepted(path);
+		expect(projection(path).warnings).toEqual([]);
+	});
+
+	it("rejects a Diagram reason recorded without a Diagram decision", () => {
+		const path = writeFixtureWithSpec(`# Spec
+
+**Design risk**: Low
+**Diagram reason**: Orphaned reason.
+`);
+
+		expect(rejection(path)).toContain(
+			"Referenced Spec Diagram decision must be required or not_required.",
+		);
+	});
+
 	it("rejects declared medium-risk design without Technical Design", () => {
 		const path = writeFixtureWithSpec(`# Spec
 

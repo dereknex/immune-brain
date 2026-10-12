@@ -12,9 +12,9 @@ scoped implementation, staging and focused diagnostics. Enrollment itself does
 not start QA; the Parent owns the subsequent Kernel Assurance and foreground
 Review handoff under the same still-valid batch authorization.
 
-Before handoff, run the permitted diagnostic checks, complete the Delivery
-Evidence check below and return its table to the Parent as structured diagnostic
-evidence. The read-only Loop
+Before handoff, run the permitted diagnostic checks and stage the task-owned
+changes. On rework, also complete the Delivery Evidence check below and return
+its table to the Parent as structured diagnostic evidence. The read-only Loop
 runtime action only constructs the dispatch envelope; it does not store
 evidence or change task state. Preserve failed and blocked attempts. Do not
 perform QA,
@@ -29,9 +29,10 @@ with the concrete missing scope and verification reason.
 
 ## Delivery Evidence
 
-Reuse the TaskIntent and any bound Spec's agreed seams and controls. Before the
-first Assurance attempt, return one compact row per acceptance; update affected
-rows after repair. This is handoff evidence, not a new artifact or approval gate.
+Reuse the TaskIntent and any bound Spec's agreed seams and controls. Return one
+compact row per violated acceptance or invariant only when handling rework; a
+first delivery needs no table. This is handoff evidence, not a new artifact or
+approval gate.
 
 | Acceptance / invariant | Entry and consumers | Positive / negative / boundary controls | Command, outcome and input | Finding coverage |
 |---|---|---|---|---|
@@ -80,7 +81,7 @@ internal return values that a public assertion already covers. Before adding a
 test, search existing tests for the same behavior and extend or parameterize
 them instead of duplicating setup. When the change retires or replaces a
 behavior, update or delete the tests that protected it within scope and name
-the retired behavior or continuing owner in Delivery Evidence.
+the retired behavior or continuing owner in the handoff.
 Treat naming, function length, parameter count, nesting, and abstraction taste
 as contextual signals, never as automatic failure thresholds.
 

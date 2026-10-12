@@ -207,6 +207,14 @@ export const PACKAGED_CONTRACT_ENTRIES: PackagedContractEntry[] = [
 	// owned skill contracts — self-sourced, loader references them
 	...SKILL_OWNED_ENTRIES,
 	{
+		packaged: "imm-run-batch.md",
+		source: null,
+		kind: "owned",
+		reason:
+			"Batch, Lane and Herdr sections split out of imm-run.md; plugins/immune-brain/skills/imm-run/SKILL.md routes to them by anchor. Its own authoring source, no byte identity.",
+		skill: "imm-run",
+	},
+	{
 		packaged: "claude/mcp-server.mjs",
 		source: "plugins/immune-brain/runtime/claude/mcp_server.ts",
 		kind: "adapted",

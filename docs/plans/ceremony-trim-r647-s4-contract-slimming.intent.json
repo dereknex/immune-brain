@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "ceremony-trim-r647-s4-contract-slimming",
-  "owner": "user",
   "goal": "Remove three contract requirements that produce unused text: Delivery Evidence before the first Assurance attempt, diagram fields on Specs that need no diagram, and batch, Lane and Herdr sections inside the main Loop contract; and deliver docs/reports/contract-rule-audit-r647.md listing each normative rule with its enforcement point, removing no rule.",
   "acceptance": [
     {
@@ -22,6 +21,7 @@
   ],
   "scope_hint": [
     ".changeset/ceremony-trim-s4-contract-slimming.md",
+    "IMMUNE.md",
     "docs/plans/ceremony-trim-r647-s4-contract-slimming.intent.json",
     "docs/reference/immune-brain-config.md",
     "docs/reports/contract-rule-audit-r647.md",
@@ -36,6 +36,7 @@
     "plugins/immune-brain/skills/imm-run/SKILL.md",
     "scripts/dist-sync-manifest.ts",
     "tests/ceremony-trim-contract.test.ts",
+    "tests/claude-host-package.test.ts",
     "tests/dist-docs-sync-contract.test.ts",
     "tests/loop-execution-routing.test.ts",
     "tests/role-prompt-bridge.test.ts",
@@ -44,5 +45,6 @@
     "tests/unattended-contracts.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "ceremony-trim-r647-s4-contract-slimming",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:ceremony-trim-r647-s4-contract-slimming:2026-10-12T16:00:09.917Z",
+  "final_record_hash": "sha256:03cff1facd51e6056ac5aa7d34deecf67ffe1403c1097003b9fe363cf7a4a986",
+  "terminalized_at": "2026-10-12T16:00:09.917Z"
+}
