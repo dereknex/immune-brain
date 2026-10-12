@@ -133,7 +133,8 @@ describe("skill dist consistency", () => {
 		expect(validation).toContain("Deterministic QA owns descriptor execution");
 		expect(handoff).toContain("Plan-only requests stop here");
 		expect(initial + preparation + validation).not.toContain("current Host's native Enrollment Tool");
-		expect(handoff).toContain("current Host's native Enrollment Tool");
+		expect(handoff).toContain("Do not invoke the current Host's native Enrollment Tool");
+		expect(handoff).toContain("name a literal-user `imm-run` entry as the only next step");
 		expect(loader.replace(/\s+/g, " ")).toContain("later stages retain earlier constraints");
 		for (const unrelated of ["visible_actions", "State inventory", "imm-tracker publish-initiative"]) {
 			expect(ordinary).not.toContain(unrelated);

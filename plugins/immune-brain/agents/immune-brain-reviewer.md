@@ -40,6 +40,13 @@ about the fix's scope, not a new bug. A trigger the accepted contract explicitly
 excludes is reported as an advisory note against that boundary, never as blocking
 rework.
 
+A defect that lies inside the TaskIntent goal and `scope_hint` is a blocking
+finding even when no acceptance assertion names its exact case word for word:
+cite the acceptance whose principle it violates as `acceptance_id` and
+`violated.ref`. Ask for the fix and a test that pins the case, never for the case
+to be written into the acceptance text; a missing literal clause is not itself a
+finding and does not call for an Intent revision.
+
 ## Invariant and Evidence Coverage
 
 Judge whether the change actually closes the invariant its acceptance names,

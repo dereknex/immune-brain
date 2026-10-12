@@ -10,6 +10,7 @@ import {
 	listMcpTools,
 	serveStdio,
 } from "../plugins/immune-brain/runtime/claude/mcp_server";
+import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import {
 	NativeAuthorityError,
 	PRIVILEGED_OPERATIONS,
@@ -96,10 +97,30 @@ function parentReadyProject(kernel: Partial<BatchRunnerKernelPort>, ready: Set<s
 			? { ...fresh, projection: { ...fresh.projection, artifact_state: "frozen" } } : fresh;
 	};
 }
+// The phase entry gate (ADR 0019) sits in front of `enroll` and
+// `start_unattended_batch`. These tests exercise what lies behind it, so the
+// session records a real run entry and each gated call is admitted through the
+// real hook; tests/claude-phase-entry-gate.test.ts owns the refusals.
+function withRunEntry(): { consumePhaseAdmission: (toolCallId: string, operation: GatedTool) => boolean } {
+	const root = mkdtempSync(join(tmpdir(), "imm-phase-entry-"));
+	const session = { session_id: "phase-entry-test-session", cwd: root };
+	recordPhaseEntryPrompt({ hook_event_name: "UserPromptSubmit", prompt: "/imm-run", ...session }, { root, home: root });
+	return {
+		consumePhaseAdmission(toolCallId, operation) {
+			phaseEntryGateHookOutput({
+				hook_event_name: "PreToolUse",
+				tool_name: `mcp__plugin_immune-brain_immune-brain__${operation}`,
+				tool_use_id: toolCallId,
+				...session,
+			}, { root });
+			return consumePhaseAdmission(toolCallId, operation, root);
+		},
+	};
+}
 function createMcpRuntime(options: Parameters<typeof createMcpRuntimeOnce>[0]) {
-	if (!options.batchKernel?.advanceTask || options.batchKernel.enrollTask) return createMcpRuntimeOnce(options);
+	if (!options.batchKernel?.advanceTask || options.batchKernel.enrollTask) return createMcpRuntimeOnce({ ...withRunEntry(), ...options });
 	const ready = new Set<string>();
-	const client = createMcpRuntimeOnce({ ...options, batchKernel: { ...options.batchKernel, projectTask: parentReadyProject(options.batchKernel, ready) } });
+	const client = createMcpRuntimeOnce({ ...withRunEntry(), ...options, batchKernel: { ...options.batchKernel, projectTask: parentReadyProject(options.batchKernel, ready) } });
 	const call = client.callTool.bind(client);
 	client.callTool = async (...args: Parameters<typeof call>) => {
 		let result = await call(...args);
@@ -454,7 +475,7 @@ describe("batch foreground Executor integration", () => {
 		execFileSync("git", ["add", "-A"], { cwd: fixture.root });
 		execFileSync("git", ["commit", "-qm", "material two-child fixture"], { cwd: fixture.root });
 		let confirmations = 0;
-		const client = createMcpRuntimeOnce({ cwd: fixture.root, env: ENV, interactive: true,
+		const client = createMcpRuntimeOnce({ ...withRunEntry(), cwd: fixture.root, env: ENV, interactive: true,
 			readInitiative: async () => fixture.observation,
 			requestConfirmation: async () => ({ decision: "accept", requestId: `real-${++confirmations}` }),
 		});
@@ -615,7 +636,12 @@ describe("batch foreground closeout", () => {
 		execFileSync("git", ["add", "-A"], { cwd: fixture.root });
 		execFileSync("git", ["commit", "-qm", "closeout fixture"], { cwd: fixture.root });
 		let confirmations = 0;
-		const client = createMcpRuntimeOnce({ cwd: fixture.root, env: ENV, interactive: true,
+		let admissions = 0;
+		const entry = withRunEntry();
+		const client = createMcpRuntimeOnce({
+			// Counts every phase entry admission the runtime asks for.
+			consumePhaseAdmission: (toolCallId, operation) => { admissions++; return entry.consumePhaseAdmission(toolCallId, operation); },
+			cwd: fixture.root, env: ENV, interactive: true,
 			readInitiative: async () => fixture.observation,
 			requestConfirmation: async () => ({ decision: "accept", requestId: `closeout-${++confirmations}` }),
 		});
@@ -647,6 +673,9 @@ describe("batch foreground closeout", () => {
 				else expect(settled.batch.report.batch_state).toBe("completed");
 				started = settled.batch;
 				expect(confirmations).toBe(1);
+				// The reuseOnly continuation is batch-internal: only the literal
+				// start asked the phase entry gate for an admission.
+				expect(admissions).toBe(1);
 			}
 			const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" });
 			expect(await client.callTool("start_unattended_batch", { initiative_slug: slug })).toMatchObject({ state: "rejected" });
@@ -675,7 +704,7 @@ describe("batch foreground closeout boundaries", () => {
 		execFileSync("git", ["add", "-A"], { cwd: fixture.root });
 		execFileSync("git", ["commit", "-qm", "closeout fixture"], { cwd: fixture.root });
 		let confirmations = 0;
-		const client = createMcpRuntimeOnce({ cwd: fixture.root, env: ENV, interactive: true,
+		const client = createMcpRuntimeOnce({ ...withRunEntry(), cwd: fixture.root, env: ENV, interactive: true,
 			readInitiative: async () => fixture.observation,
 			requestConfirmation: async () => ({ decision: "accept", requestId: `boundary-${++confirmations}` }),
 		});
@@ -744,7 +773,7 @@ describe("acc-claude-batch-gate", () => {
 		expect(batchTool).toBeDefined();
 		expect(batchTool?.annotations).toEqual({ destructiveHint: true });
 		expect(batchTool?.inputSchema.required).toEqual(["initiative_slug"]);
-		expect(Object.keys(batchTool?.inputSchema.properties ?? {})).toEqual(["initiative_slug", "max_parallel", "lane_offers"]);
+		expect(Object.keys(batchTool?.inputSchema.properties ?? {})).toEqual(["initiative_slug", "max_parallel", "lane_offers", "final_verification", "lane_instruction", "lane_revision"]);
 	});
 
 	it("rejects on non-interactive Claude Code session with unsupported_host error code", async () => {
@@ -1687,7 +1716,7 @@ describe("acc-claude-batch-fail-closed", () => {
 
 describe("lane mode parameters (parallel-batch-lanes)", () => {
 	function laneRuntime(fixture: ReturnType<typeof createBatchFixture>, gates: { count: number; details: Array<Record<string, unknown>> }) {
-		const client = createMcpRuntimeOnce({
+		const client = createMcpRuntimeOnce({ ...withRunEntry(),
 			cwd: fixture.root, env: ENV, interactive: true,
 			readInitiative: async () => fixture.observation,
 			requestConfirmation: async (request) => {
@@ -1760,7 +1789,7 @@ describe("lane mode parameters (parallel-batch-lanes)", () => {
 		const claudeFixture = createBatchFixture(slug);
 		const piFixture = createBatchFixture(slug);
 		try {
-			const client = createMcpRuntimeOnce({
+			const client = createMcpRuntimeOnce({ ...withRunEntry(),
 				cwd: claudeFixture.root, env: ENV, interactive: true,
 				readInitiative: async () => claudeFixture.observation,
 				requestConfirmation: async () => ({ decision: "accept", requestId: "parity" }),
@@ -1815,7 +1844,7 @@ describe("lane resume without max_parallel (lane-followups)", () => {
 		);
 
 	function claudeClient(fixture: ReturnType<typeof createBatchFixture>, gates: { count: number }) {
-		const client = createMcpRuntimeOnce({
+		const client = createMcpRuntimeOnce({ ...withRunEntry(),
 			cwd: fixture.root, env: ENV, interactive: true,
 			readInitiative: async () => fixture.observation,
 			requestConfirmation: async () => { gates.count++; return { decision: "accept", requestId: `resume-${gates.count}` }; },

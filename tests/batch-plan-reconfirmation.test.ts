@@ -28,9 +28,16 @@ try { await import("@earendil-works/pi-tui"); } catch {
 		truncateToWidth: (s: string, width: number) => s.slice(0, width), visibleWidth: (s: string) => s.length }));
 }
 const { default: registerPiBatch } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
-const { createPiAssuranceProgressionPorts } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
+const { createPiAssuranceProgressionPorts, recordPiPhaseInput } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
+// The phase entry gate (ADR 0019) sits in front of this Tool. These tests
+// exercise what lies behind it, so their session records a real run entry
+// through the function the input handler calls;
+// tests/pi-phase-entry-gate.test.ts owns the refusals.
+const RUN_ENTRY_SESSION = { getSessionId: () => "batch-plan-reconfirmation-tests" };
+recordPiPhaseInput({ text: "/skill:imm-run", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION });
 import { AssuranceProgression } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression";
-import { createMcpRuntime } from "../plugins/immune-brain/runtime/claude/mcp_server";
+import { createMcpRuntime as createMcpRuntimeUngated } from "../plugins/immune-brain/runtime/claude/mcp_server";
+import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import { diffSnapshotOf } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { capabilityActionFor, createCanaryApplication } from "../plugins/immune-brain/runtime/kernel/canary_application";
@@ -47,6 +54,30 @@ import { commitBatchChild, lookupBatchCommit, runBatchGitPreflight } from "../pl
 import type { BatchRunnerGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
 import type { TaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/types";
+
+// The phase entry gate (ADR 0019) sits in front of `enroll` and
+// `start_unattended_batch`. These tests exercise what lies behind it, so the
+// session records a real run entry and each gated call is admitted through the
+// real hook; tests/claude-phase-entry-gate.test.ts owns the refusals.
+function withRunEntry(): { consumePhaseAdmission: (toolCallId: string, operation: GatedTool) => boolean } {
+	const root = mkdtempSync(join(tmpdir(), "imm-phase-entry-"));
+	const session = { session_id: "phase-entry-test-session", cwd: root };
+	recordPhaseEntryPrompt({ hook_event_name: "UserPromptSubmit", prompt: "/imm-run", ...session }, { root, home: root });
+	return {
+		consumePhaseAdmission(toolCallId, operation) {
+			phaseEntryGateHookOutput({
+				hook_event_name: "PreToolUse",
+				tool_name: `mcp__plugin_immune-brain_immune-brain__${operation}`,
+				tool_use_id: toolCallId,
+				...session,
+			}, { root });
+			return consumePhaseAdmission(toolCallId, operation, root);
+		},
+	};
+}
+function createMcpRuntime(options: Parameters<typeof createMcpRuntimeUngated>[0] = {}) {
+	return createMcpRuntimeUngated({ ...withRunEntry(), ...options });
+}
 
 const ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
 const roots: string[] = [];
@@ -160,7 +191,7 @@ async function fixture(host: "pi" | "claude", settle: "done" | "active" | "stopp
 		if (host === "claude") return client.callTool("start_unattended_batch", { initiative_slug: slug });
 		try {
 			const response = await tool.execute(randomUUID(), { initiative_slug: slug }, undefined, undefined,
-				{ cwd: root, mode: "tui", ui: { setWidget() {}, notify() {}, custom: async () => {
+				{ cwd: root, mode: "tui", sessionManager: RUN_ENTRY_SESSION, ui: { setWidget() {}, notify() {}, custom: async () => {
 					gateCalls++; const selected = await answer(); return selected === "accept" ? "confirm" : selected;
 				} } });
 			const content = JSON.parse(response.content[0].text); expect(content).toEqual(response.details); return content;

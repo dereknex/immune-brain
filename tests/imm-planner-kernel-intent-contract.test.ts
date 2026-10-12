@@ -52,7 +52,8 @@ describe("imm-planner kernel intent contract", () => {
 		expect(skill).not.toContain("imm-canary-work");
 		expect(skill).not.toContain("no Planner path enrolls a task");
 		expect(skill).not.toContain("it never enrolls a task");
-		expect(skill).toContain("Planner may request the native Enrollment gate");
+		expect(skill).not.toContain("Planner may request the native Enrollment gate");
+		expect(skill).toContain("never invokes the native Enrollment gate");
 		expect(skill).toContain("only that gate grants execution authority");
 	});
 
@@ -135,16 +136,18 @@ describe("imm-planner kernel intent contract", () => {
 		expect(skill).toContain("immutable content identity");
 		expect(skill).not.toContain("Include bound active and archive Spec paths needed for artifact freeze");
 		expect(skill).toContain("do not relocate artifacts");
-		expect(skill).toContain("current Host's native Enrollment Tool");
+		expect(skill).toContain("Do not invoke the current Host's native Enrollment Tool");
 	});
 
-	test("Planner opens one native Enrollment gate without chat pre-confirmation", () => {
+	test("Planner stops after validation and leaves Enrollment to an explicit imm-run entry", () => {
 		for (const path of PLANNER_CONTRACTS) {
 			const contract = readFileSync(path, "utf8").replace(/\s+/g, " ");
-			expect(contract).toContain("Explicit Plan-only requests stop");
-			expect(contract).toContain("non-authoritative execution trigger");
-			expect(contract).toContain("clear mutation request that already includes execution");
-			expect(contract).toContain("without asking for chat pre-confirmation");
+			expect(contract).toContain("never invokes the native Enrollment gate");
+			expect(contract).toContain("Every Planner request stops after returning the validated planning artifacts");
+			expect(contract).toContain("is not an `imm-run` entry");
+			expect(contract).not.toContain("non-authoritative execution trigger");
+			expect(contract).not.toContain("clear mutation request that already includes execution");
+			expect(contract).not.toContain("without asking for chat pre-confirmation");
 			expect(contract).toContain("Literal-user confirmation in the current Host's native gate remains the authority boundary");
 		}
 	});
@@ -153,7 +156,7 @@ describe("imm-planner kernel intent contract", () => {
 		const dist = readFileSync(DIST_PATH, "utf8");
 		expect(dist).toContain("imm-plan --routing-status --json");
 		expect(dist).toContain("imm-kernel intent author");
-		expect(dist).toContain("current Host's native Enrollment Tool");
+		expect(dist).toContain("Do not invoke the current Host's native Enrollment Tool");
 		expect(dist).not.toContain("/imm-canary-new");
 		expect(dist).not.toContain("/imm-canary-enroll");
 		expect(dist).toContain("routing_policy_invalid");

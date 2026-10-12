@@ -83,6 +83,14 @@ import { readWorkspaceRow, withKernelRead } from "../plugins/immune-brain/runtim
 import {
 } from "../plugins/immune-brain/runtime/commands/kernel";
 
+// The phase entry gate (ADR 0019) sits in front of this Tool. These tests
+// exercise what lies behind it, so their session records a real run entry
+// through the function the input handler calls;
+// tests/pi-phase-entry-gate.test.ts owns the refusals.
+const { recordPiPhaseInput } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
+const RUN_ENTRY_SESSION = { getSessionId: () => "pi-enroll-extension-tests" };
+recordPiPhaseInput({ text: "/skill:imm-run", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION });
+
 type Mode = "tui" | "rpc" | "json" | "print";
 
 interface FakeUI {
@@ -109,6 +117,7 @@ function makeCtx(root: string, ui: FakeUI, mode: Mode, cwdOverride?: string) {
 		mode,
 		hasUI: mode === "tui" || mode === "rpc",
 		cwd: cwdOverride ?? root,
+		sessionManager: RUN_ENTRY_SESSION,
 		isIdle: () => true,
 		ui: {
 			setWidget: (

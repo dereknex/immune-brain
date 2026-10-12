@@ -12,8 +12,11 @@ import {
 	type NativeConfirmationPort,
 } from "./interaction";
 import { ClaudeReviewHost, FileHookEventLog, parseHookStdin } from "./review_host";
+import { activeTaskHookOutput, consumePhaseAdmission, laneGuardHookOutput, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "./lane_guard";
 import { ClaudeRuntime, type ToolMeta } from "./kernel_ports";
-import { parseLaneOffers, parseMaxParallel, resolveLaneParallel } from "../unattended/batch_lanes";
+import { parseLaneInstruction, parseLaneOffers, parseMaxParallel, resolveLaneParallel } from "../unattended/batch_lanes";
+import { parseFinalVerification } from "../unattended/batch_final_verification";
+import { parseLaneRevision, REVISION_DELEGATION_TEXT } from "../unattended/batch_delegation";
 import type { AssuranceCoordinatorPorts } from "../assurance/coordinator";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
@@ -56,6 +59,24 @@ export function listMcpTools() {
 											additionalProperties: false,
 										},
 									},
+									final_verification: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 8 },
+									lane_instruction: {
+										type: "object",
+										properties: {
+											task_id: { type: "string" },
+											kind: { type: "string", enum: ["instruction", "correction"] },
+											text: { type: "string" },
+											session_state: { type: "string", enum: ["idle", "working", "blocked", "done"] },
+										},
+										required: ["task_id", "text", "session_state"],
+										additionalProperties: false,
+									},
+									lane_revision: {
+										type: "object",
+										properties: { task_id: { type: "string" }, next_intent: { type: "object" } },
+										required: ["task_id", "next_intent"],
+										additionalProperties: false,
+									},
 								}
 							: {}),
 						}
@@ -97,6 +118,11 @@ export interface McpRuntimeOptions {
 	batchKernel?: Partial<import("../unattended/batch_runner").BatchRunnerKernelPort>;
 	batchGit?: import("../unattended/batch_git").BatchRunnerGitPort;
 	readInitiative?: import("../unattended/types").InitiativeObservationReader;
+	/**
+	 * Takes the admission the PreToolUse hook wrote for one `enroll` or
+	 * `start_unattended_batch` call. Defaults to the private file store.
+	 */
+	consumePhaseAdmission?: (toolCallId: string, operation: GatedTool) => boolean;
 }
 
 export function createMcpRuntime(options: McpRuntimeOptions = {}) {
@@ -118,6 +144,14 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 	let negotiatedVersion: string | undefined;
 	let negotiatedInteractive = false;
 	const connectionId = randomUUID();
+	const consumeAdmission = options.consumePhaseAdmission ?? ((toolCallId: string, operation: GatedTool) => consumePhaseAdmission(toolCallId, operation));
+	// The phase entry gate, before any preparation or native dialog. The hook
+	// decided on the session's literal entry; no admission for this exact call
+	// means no hook saw it, which refuses.
+	const requireRunEntry = (operation: GatedTool, toolCallId: string) => {
+		if (consumeAdmission(toolCallId, operation)) return;
+		throw new NativeAuthorityError("run_entry_required", `${operation} needs a literal-user imm-run entry in this session`);
+	};
 	return {
 		runtime,
 		host,
@@ -143,6 +177,7 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				}
 				const probe = probeHost(options.env ?? process.env, process.platform, negotiatedVersion);
 				if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
+				requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
 				const toolMeta: ToolMeta = {
 					sessionId: meta.sessionId ?? connectionId,
 					toolCallId: meta.toolCallId ?? `call-${name}`,
@@ -153,10 +188,16 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				};
 				const laneOffers = parseLaneOffers(args.lane_offers);
 				// A lane_offers-only call resumes the recorded lane batch; refused before any gate otherwise.
-				const maxParallel = resolveLaneParallel(options.cwd ?? process.cwd(), initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers);
+				const laneInstruction = parseLaneInstruction(args.lane_instruction);
+				const laneRevision = parseLaneRevision(args.lane_revision);
+				const maxParallel = resolveLaneParallel(options.cwd ?? process.cwd(), initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction ?? laneRevision);
+				const finalVerification = parseFinalVerification(args.final_verification);
 				return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
 					...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
 					...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),
+					...(finalVerification !== undefined ? { final_verification: finalVerification } : {}),
+					...(laneInstruction !== undefined ? { lane_instruction: laneInstruction } : {}),
+					...(laneRevision !== undefined ? { lane_revision: laneRevision } : {}),
 				});
 			}
 			if (name === "retire_stale_batch") {
@@ -203,7 +244,10 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
 				signal: meta.signal,
 			};
-			if (name === "enroll") return runtime.enroll(taskId, toolMeta);
+			if (name === "enroll") {
+				requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
+				return runtime.enroll(taskId, toolMeta);
+			}
 			if (name === "advance_assurance") return runtime.advance(taskId, toolMeta.signal, toolMeta);
 			if (name === "submit_review") {
 				// ADR 0017: an absent verdict is the receipt-bound submission.
@@ -445,11 +489,25 @@ export function elicitationParams(input: NativeConfirmationInput) {
 			b?.lane_mode ? `Lane mode: max_parallel=${b.lane_mode.max_parallel}` : null,
 			b?.lane_mode ? `Parallel groups (${b.lane_mode.parallel_groups.length}):\n${b.lane_mode.parallel_groups.map((group) => `  - ${group.join(", ")}`).join("\n")}` : null,
 			b?.lane_mode && b.lane_mode.serialized.length > 0 ? `Serialized by overlapping scope (${b.lane_mode.serialized.length}):\n${b.lane_mode.serialized.map((c) => `  - ${c.task_id} after ${c.overlaps_with.join(", ")}`).join("\n")}` : null,
+			b?.lane_mode?.final_verification ? `Final verification: ${b.lane_mode.final_verification.join("; ")}` : null,
+			b?.lane_mode?.offer_revision_delegation ? REVISION_DELEGATION_TEXT : null,
 		].filter(Boolean);
 		return {
 			mode: "form",
 			message: `Authorize this unattended batch run for ${input.initiativeSlug}?\n\n${details.join("\n")}`,
-			requestedSchema: { type: "object", properties: {} },
+			requestedSchema: b?.lane_mode?.offer_revision_delegation
+				? {
+						type: "object",
+						properties: {
+							delegate_in_lane_revisions: {
+								type: "boolean",
+								title: "Delegate in-envelope Lane Intent revisions to the batch coordinator",
+								description: REVISION_DELEGATION_TEXT,
+								default: false,
+							},
+						},
+					}
+				: { type: "object", properties: {} },
 		};
 	}
 	const details = [
@@ -527,13 +585,19 @@ export async function serveStdio(options: {
 			if (action !== "accept" && action !== "decline" && action !== "cancel") {
 				throw new NativeAuthorityError("correlation_missing", "MCP elicitation returned an invalid action");
 			}
+			let delegateRevisions = false;
 			if (action === "accept") {
 				const content = (result as { content?: unknown }).content;
-				if (typeof content !== "object" || content === null || Array.isArray(content) || Object.keys(content).length !== 0) {
+				const offered = input.operation === "start_unattended_batch" && input.batchDetails?.lane_mode?.offer_revision_delegation === true;
+				const keys = typeof content === "object" && content !== null && !Array.isArray(content) ? Object.keys(content) : null;
+				const valid = keys !== null && (keys.length === 0 ||
+					(offered && keys.length === 1 && keys[0] === "delegate_in_lane_revisions" && typeof (content as Record<string, unknown>).delegate_in_lane_revisions === "boolean"));
+				if (!valid) {
 					throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the requested schema");
 				}
+				delegateRevisions = offered && (content as Record<string, unknown>).delegate_in_lane_revisions === true;
 			}
-			return { decision: action, requestId };
+			return { decision: action, requestId, ...(delegateRevisions ? { delegateRevisions: true } : {}) };
 		} finally {
 			pending.delete(requestId);
 			if (abortListener) input.signal?.removeEventListener("abort", abortListener);
@@ -686,7 +750,21 @@ async function runHook(): Promise<void> {
 	const lines: string[] = [];
 	const rl = createInterface({ input: stdin });
 	for await (const line of rl) lines.push(line);
-	const event = parseHookStdin(lines.join("\n"));
+	const raw = lines.join("\n");
+	let payload: Record<string, unknown> | null = null;
+	try { payload = JSON.parse(raw) as Record<string, unknown>; } catch { payload = null; }
+	if (payload?.hook_event_name === "PreToolUse") {
+		const decision = laneGuardHookOutput(payload) ?? phaseEntryGateHookOutput(payload);
+		if (decision) process.stdout.write(`${decision}\n`);
+		return;
+	}
+	if (payload?.hook_event_name === "UserPromptSubmit") {
+		recordPhaseEntryPrompt(payload);
+		const notice = await activeTaskHookOutput(payload);
+		if (notice) process.stdout.write(`${notice}\n`);
+		return;
+	}
+	const event = parseHookStdin(raw);
 	if (!event) return;
 	new FileHookEventLog().append(event);
 }

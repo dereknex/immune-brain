@@ -403,11 +403,20 @@ function textOf(response: { content: Array<{ type: string; text: string }> }): s
 	return response.content.map((entry) => entry.text).join("\n");
 }
 
+// The phase entry gate (ADR 0019) sits in front of this Tool. These tests
+// exercise what lies behind it, so their session records a real run entry
+// through the function the input handler calls;
+// tests/pi-phase-entry-gate.test.ts owns the refusals.
+const { recordPiPhaseInput } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
+const RUN_ENTRY_SESSION = { getSessionId: () => "pi-batch-authority-tests" };
+recordPiPhaseInput({ text: "/skill:imm-run", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION });
+
 /** Minimal TUI context: the native confirm surface resolves to one selection. */
 function fakeTuiContext(root: string, selection: "confirm" | "decline" | "cancel"): unknown {
 	return {
 		cwd: root,
 		mode: "tui",
+		sessionManager: RUN_ENTRY_SESSION,
 		ui: { custom: async (factory: unknown) => {
 			const done = (value: unknown) => value;
 			void factory;
@@ -1631,14 +1640,14 @@ describe("batch authorization reuse (ADR-0005 Decision 1)", () => {
 describe("lane mode parameters (parallel-batch-lanes)", () => {
 	/** A TUI context whose native gate counts how often it opens. */
 	function countingTuiContext(root: string, opened: { count: number }): unknown {
-		return { cwd: root, mode: "tui", ui: { custom: async () => { opened.count++; return "decline"; } } };
+		return { cwd: root, mode: "tui", sessionManager: RUN_ENTRY_SESSION, ui: { custom: async () => { opened.count++; return "decline"; } } };
 	}
 
 	it("declares exactly initiative_slug, max_parallel and lane_offers", () => {
 		const tool = registerBatchTool({ readInitiative: async () => createBatchFixture("lane-schema").observation }) as unknown as {
 			parameters: { properties: Record<string, unknown>; required?: string[] };
 		};
-		expect(Object.keys(tool.parameters.properties)).toEqual(["initiative_slug", "max_parallel", "lane_offers"]);
+		expect(Object.keys(tool.parameters.properties)).toEqual(["initiative_slug", "max_parallel", "lane_offers", "final_verification", "lane_instruction", "lane_revision"]);
 		expect(tool.parameters.required).toEqual(["initiative_slug"]);
 	});
 

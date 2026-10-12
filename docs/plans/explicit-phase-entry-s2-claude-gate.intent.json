@@ -1,0 +1,51 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "explicit-phase-entry-s2-claude-gate",
+  "goal": "Implement Slice S2 of Initiative explicit-phase-entry per docs/specs/explicit-phase-entry.spec.md (T1, T2): a host-neutral phase-entry module plus the Claude Code gate, so enroll and start_unattended_batch are refused before any native dialog in a session without a live literal-user imm-run entry, and a model Skill call for imm-planner, imm-brainstorm or imm-run is denied without a matching entry. Characterize the real UserPromptSubmit payload of a slash entry first (assumption A1). User scenarios SCN-3 and SCN-4 belong to this Slice.",
+  "acceptance": [
+    {
+      "id": "EPE-S2-A1",
+      "assertion": "Per T1 and invariants I2, I3 of docs/specs/explicit-phase-entry.spec.md (source: delegated technical choices D3, D7): runtime/assurance/phase_entry.ts recognizes a literal entry for imm-planner, imm-brainstorm and imm-run by packaged name, by immune-brain: or skill: prefix, by a user alias whose command file names exactly one of those skills (imm-loop maps to run), and in the Host-expanded command form; a mid-sentence mention, an unknown command and non-user text are not entries. A run entry stays live across later prompts; a later plan entry revokes it; a missing or unreadable store refuses. Seam: new tests/phase-entry.test.ts on the pure module with positive, negative and bound controls for each rule.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/phase-entry.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "EPE-S2-A2",
+      "assertion": "Per T2 and invariants I1, I3, I5 of docs/specs/explicit-phase-entry.spec.md (source: user decision U2; repository evidence runtime/claude/mcp_server.ts): on Claude Code, enroll and start_unattended_batch reach the native gate port only when the session has a live run entry and the PreToolUse hook wrote an admission for the call's claudecode/toolUseId; with no entry, a revoked entry, or no admission the call returns reason code run_entry_required with exactly one same-Host recovery action and the gate port is never called; batch-internal reuseOnly continuation is not gated. Seam: new tests/claude-phase-entry-gate.test.ts driving the hook output functions and handleJsonRpc.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-phase-entry-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "EPE-S2-A3",
+      "assertion": "Per T1, T2 and decision D4 of docs/specs/explicit-phase-entry.spec.md (source: user decision U2 refined by D4): the Claude PreToolUse hook denies a Skill call for imm-planner, imm-brainstorm or imm-run with reason code phase_entry_required unless the matching entry was recorded in the latest literal prompt, or, for imm-planner, a run entry is live and a Managed claim is active; every other Skill and tool is left untouched. Seam: new tests/claude-phase-entry-skill-gate.test.ts on the hook output for Skill PreToolUse payloads, with allowed, denied and untouched controls.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-phase-entry-skill-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "EPE-S2-A4",
+      "assertion": "Per Discovery evidence of docs/specs/explicit-phase-entry.spec.md (source: repository evidence scripts/build-claude-plugin.ts, hooks/hooks.json): hooks.json registers PreToolUse for the Skill tool and for the plugin enroll and start_unattended_batch tools, dist/claude/mcp-server.mjs is rebuilt from source, and the existing Claude tool-boundary tests pass with a recorded run entry and admission where they exercise enroll or start_unattended_batch.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/batch-plan-reconfirmation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/explicit-phase-entry-s2-claude-gate.md",
+    "docs/plans/explicit-phase-entry-s2-claude-gate.intent.json",
+    "docs/specs/explicit-phase-entry.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/hooks/hooks.json",
+    "plugins/immune-brain/runtime/assurance/phase_entry.ts",
+    "plugins/immune-brain/runtime/claude/interaction.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/lane_guard.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/claude/review_host.ts",
+    "tests/batch-plan-reconfirmation.test.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/claude-host-authority.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/claude-phase-entry-gate.test.ts",
+    "tests/claude-phase-entry-skill-gate.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/phase-entry.test.ts"
+  ],
+  "risk": "material",
+  "revision": 2,
+  "owner": "user"
+}

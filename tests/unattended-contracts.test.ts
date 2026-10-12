@@ -666,6 +666,16 @@ describe("unattended batch contract text", () => {
 			"children",
 			"commits",
 			"adopted_heads",
+			// Orchestration evidence only: restored Lane leaks and the recorded
+			// final verification commands, and coordinator instructions (retro #195, #200, #201).
+			"restores",
+			"interventions",
+			"final_verification",
+			// ADR 0018: the user's recorded delegation answer and its effects.
+			"revision_delegation",
+			"delegated_revisions",
+			"intent_identities",
+			"reseals",
 			"created_at",
 			"updated_at",
 		]);

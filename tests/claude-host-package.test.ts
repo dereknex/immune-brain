@@ -64,6 +64,35 @@ describe("claude host package", () => {
     }
   });
 
+  it("hooks.json routes the phase entry gate's tools through PreToolUse", () => {
+    const manifest = JSON.parse(readFileSync(resolve(PLUGIN_ROOT, "hooks/hooks.json"), "utf8")) as {
+      hooks: Record<string, { matcher?: string; hooks: { type: string; command: string }[] }[]>;
+    };
+    const HOOK = 'node "${CLAUDE_PLUGIN_ROOT}/dist/claude/mcp-server.mjs" --hook';
+    // Claude Code matches a tool name against the whole matcher pattern.
+    const routed = (tool: string) =>
+      manifest.hooks.PreToolUse.some(
+        (entry) =>
+          entry.matcher !== undefined &&
+          new RegExp(`^(?:${entry.matcher})$`).test(tool) &&
+          entry.hooks.some((hook) => hook.type === "command" && hook.command === HOOK),
+      );
+    for (const tool of [
+      "Skill",
+      "mcp__plugin_immune-brain_immune-brain__enroll",
+      "mcp__plugin_immune-brain_immune-brain__start_unattended_batch",
+      "Edit",
+    ]) expect({ tool, routed: routed(tool) }).toEqual({ tool, routed: true });
+    for (const tool of [
+      "mcp__plugin_immune-brain_immune-brain__status",
+      "mcp__plugin_immune-brain_immune-brain__advance_assurance",
+      "mcp__other__enroll",
+      "Bash",
+    ]) expect({ tool, routed: routed(tool) }).toEqual({ tool, routed: false });
+    // The entry itself is recorded from every literal prompt.
+    expect(manifest.hooks.UserPromptSubmit.some((entry) => entry.matcher === undefined && entry.hooks.some((hook) => hook.command === HOOK))).toBe(true);
+  });
+
   it("checked-in mcp-server.mjs matches a fresh generate", () => {
     checkClaudePlugin(ROOT);
   });

@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { PHASE_ENTRY_RECOVERY } from "../assurance/phase_entry";
 
 export const PRIVILEGED_OPERATIONS = [
 	"enroll",
@@ -17,7 +18,9 @@ export type NativeFailureCode =
 	| "user_cancelled"
 	| "correlation_missing"
 	| "unsupported_host"
-	| "workspace_changed";
+	| "workspace_changed"
+	| "run_entry_required"
+	| "phase_entry_required";
 
 const RECOVERY_ACTIONS: Record<NativeFailureCode, string> = {
 	interaction_not_opened: "retry through a fresh native gate in the current Host",
@@ -26,6 +29,7 @@ const RECOVERY_ACTIONS: Record<NativeFailureCode, string> = {
 	correlation_missing: "retry through a fresh native gate in the current Host",
 	unsupported_host: "upgrade to a supported Claude Code version and retry in the current Host",
 	workspace_changed: "review the current workspace and retry through a fresh native gate",
+	...PHASE_ENTRY_RECOVERY,
 };
 
 export class NativeAuthorityError extends Error {
@@ -88,6 +92,9 @@ export interface NativeConfirmationInput {
 			max_parallel: number;
 			parallel_groups: string[][];
 			serialized: Array<{ task_id: string; overlaps_with: string[] }>;
+			final_verification?: string[];
+			/** ADR 0018: the gate offers the opt-in delegation of in-envelope Lane Intent revisions. */
+			offer_revision_delegation?: boolean;
 		};
 	};
 	/** Present only for a batch disposition: the record the user is asked to retire. */
@@ -105,6 +112,8 @@ export interface NativeConfirmationInput {
 export interface NativeConfirmationResult {
 	decision: NativeDecision;
 	requestId: string;
+	/** ADR 0018: true only when the user ticked the delegation in a lane batch gate. */
+	delegateRevisions?: boolean;
 }
 
 export type NativeConfirmationPort = (input: NativeConfirmationInput) => Promise<NativeConfirmationResult>;

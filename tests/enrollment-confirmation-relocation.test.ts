@@ -95,9 +95,18 @@ function makeFakeUI(confirmResult: boolean): FakeUI {
 	return { confirmCalls: [], customCalls: [], notifyCalls: [], confirmResult };
 }
 
+// The phase entry gate (ADR 0019) sits in front of this Tool. These tests
+// exercise what lies behind it, so their session records a real run entry
+// through the function the input handler calls;
+// tests/pi-phase-entry-gate.test.ts owns the refusals.
+const { recordPiPhaseInput } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
+const RUN_ENTRY_SESSION = { getSessionId: () => "enrollment-confirmation-relocation-tests" };
+recordPiPhaseInput({ text: "/skill:imm-run", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION });
+
 function makeCtx(root: string, ui: FakeUI, mode: Mode, cwdOverride?: string) {
 	return {
 		mode,
+		sessionManager: RUN_ENTRY_SESSION,
 		hasUI: mode === "tui" || mode === "rpc",
 		cwd: cwdOverride ?? root,
 		isIdle: () => true,

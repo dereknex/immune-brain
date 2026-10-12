@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "explicit-phase-entry-s2-claude-gate",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:explicit-phase-entry-s2-claude-gate:2026-10-11T14:11:12.193Z",
+  "final_record_hash": "sha256:9c7d72f1fb12ae4ef50f7a7852fec7d49303a69ab81768f0ce464784e7130959",
+  "terminalized_at": "2026-10-11T14:11:12.193Z"
+}

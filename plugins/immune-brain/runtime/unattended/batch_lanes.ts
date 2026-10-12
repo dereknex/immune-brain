@@ -6,18 +6,33 @@
 // deletes a Git worktree and never names a workspace tool.
 // Defined by docs/specs/parallel-batch-lanes.spec.md and ADR 0013.
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { computeBatchPlanDigest } from "../kernel/batch_authority";
+import { readTaskRecordRaw } from "../kernel/storage";
 import { readTaskIntent } from "../kernel/intent";
-import type { StartBatchInput } from "./batch_runner";
+import { readTaskTombstone } from "../kernel/backend_claim";
+import {
+	readRuntimeContracts,
+	runningRuntimeSource,
+	RUNTIME_CONTRACTS,
+	runtimeContractDifferences,
+} from "../kernel/runtime_contracts";
+import { readFileSync } from "node:fs";
+import { runFinalVerification, type FinalVerificationReport } from "./batch_final_verification";
+import { applyDelegatedIntentRevision, delegatedConfirmationRef, delegatedRevisionRefusal } from "./batch_delegation";
+import { runGithubTrackerOperation } from "../github_issue_tracker";
+import { hasLocalInitiative } from "../local_initiative";
+import type { BatchTrackerPort, StartBatchInput } from "./batch_runner";
 import {
 	BatchIntegrationError,
 	findIntegratedCandidate,
 	integrateGuardedLaneCommit,
 	type IntegrationCheckChild,
 } from "./batch_integration";
-import { classifyBatchLineage, expectedBatchHead, findExistingActiveBatch, readActiveClaimTaskId } from "./batch_preflight";
+import { classifyBatchLineage, expectedBatchHead, findExistingActiveBatch, porcelainEntries, readActiveClaimTaskId } from "./batch_preflight";
+import { restoreProvableLaneLeaks } from "./batch_leak_restore";
 import { startableChildren } from "./batch_schedule";
 import {
 	type AnyBatchRunStateRecord,
@@ -67,11 +82,12 @@ export function resolveLaneParallel(
 	initiativeSlug: string,
 	maxParallel: number | undefined,
 	laneOffers: unknown,
+	laneInstruction?: unknown,
 ): number | undefined {
-	if (maxParallel !== undefined || laneOffers === undefined) return maxParallel;
+	if (maxParallel !== undefined || (laneOffers === undefined && laneInstruction === undefined)) return maxParallel;
 	const lookup = findExistingActiveBatch(root, initiativeSlug);
 	if (lookup === null || lookup.corrupt || !isLaneBatchRecord(lookup.record))
-		throw new Error("lane_offers requires max_parallel unless a recorded lane batch is being resumed");
+		throw new Error(`${laneOffers !== undefined ? "lane_offers" : "lane_instruction"} requires max_parallel unless a recorded lane batch is being resumed`);
 	return lookup.record.max_parallel;
 }
 
@@ -107,6 +123,119 @@ export function parseLaneOffers(value: unknown): LaneOffer[] | undefined {
 		seen.add(taskId);
 		return { task_id: taskId, path };
 	});
+}
+
+/**
+ * The production tracker port both Hosts hand a lane batch: the same
+ * `mark-terminal` projection a single task runs after settlement. A Local
+ * Initiative has no tracker, so it gets none.
+ */
+export function createBatchTrackerPort(root: string, initiativeSlug: string): BatchTrackerPort | undefined {
+	if (hasLocalInitiative(root, initiativeSlug)) return undefined;
+	return { markTerminal: (trackerRoot, input) => runGithubTrackerOperation(trackerRoot, { op: "mark-terminal", ...input }) };
+}
+
+export interface LaneInstructionRequest {
+	task_id: string;
+	kind: "instruction" | "correction";
+	text: string;
+	/** The Lane session's state as the Parent just observed it from its supervised session. */
+	session_state: "idle" | "working" | "blocked" | "done";
+}
+
+const MAX_INSTRUCTION_LENGTH = 4000;
+
+/** Untrusted tool input, shape-checked here and decided against the record below. */
+export function parseLaneInstruction(value: unknown): LaneInstructionRequest | undefined {
+	if (value === undefined || value === null) return undefined;
+	if (typeof value !== "object" || Array.isArray(value)) throw new Error("invalid lane_instruction: expected an object");
+	const { task_id: taskId, kind = "instruction", text, session_state: sessionState, ...rest } = value as Record<string, unknown>;
+	if (Object.keys(rest).length > 0) throw new Error("invalid lane_instruction: unknown field");
+	if (typeof taskId !== "string" || !TASK_ID_PATTERN.test(taskId)) throw new Error("invalid lane_instruction: task_id is not a valid task id");
+	if (kind !== "instruction" && kind !== "correction") throw new Error("invalid lane_instruction: kind must be instruction or correction");
+	if (typeof text !== "string" || !text.trim() || text.length > MAX_INSTRUCTION_LENGTH)
+		throw new Error(`invalid lane_instruction: text must be 1 to ${MAX_INSTRUCTION_LENGTH} characters`);
+	if (sessionState !== "idle" && sessionState !== "working" && sessionState !== "blocked" && sessionState !== "done")
+		throw new Error("invalid lane_instruction: session_state must be idle, working, blocked or done");
+	return { task_id: taskId, kind, text, session_state: sessionState };
+}
+
+/**
+ * Whether the coordinator may send this text to the Lane session now. Text goes
+ * only to an idle session of a child that is still running in its Lane. A
+ * blocked session shows a dialog only the user may answer (trust, sign-in,
+ * permission, a question, a native confirmation), so it never receives input;
+ * a working session is not interrupted. Null means allowed.
+ */
+export function decideLaneInstruction(record: BatchLaneRunStateRecord, request: LaneInstructionRequest): string | null {
+	const child = record.children.find((c) => c.task_id === request.task_id);
+	if (!child || !child.lane) return `${request.task_id} has no Lane in this batch`;
+	if (child.state !== "enrolled") return `${request.task_id} is ${child.state}, not running in its Lane`;
+	if (request.kind === "correction" && !child.correction_due)
+		return `${request.task_id} has not exhausted its rework budget; send an ordinary instruction instead`;
+	if (request.kind === "instruction" && child.correction_due)
+		return `${request.task_id} waits for a design-level correction; send it with kind correction`;
+	if (request.session_state === "blocked")
+		return `${request.task_id}'s session is blocked on a dialog only the user may answer; send nothing and tell the user`;
+	if (request.session_state !== "idle") return `${request.task_id}'s session is ${request.session_state}; text goes only to an idle session`;
+	return null;
+}
+
+/** How many design-level coordinator corrections one child may receive. */
+export const MAX_COORDINATOR_CORRECTIONS = 2;
+/** The park reason once a child exhausts its budget after its last correction. */
+export const CORRECTION_LIMIT_REACHED = "batch_correction_limit_reached";
+
+export const LANE_CONTRACT_MISMATCH = "batch_lane_contract_mismatch";
+export const RUNTIME_CONTRACT_MISMATCH = "batch_runtime_contract_mismatch";
+
+/**
+ * The runtime a Lane Executor will load, when the coordinator can know it: an
+ * explicit path, else the repository's own plugin source when the repository
+ * is the Immune-Brain package itself (a Host loading the package from the
+ * repository runs that source in every Lane, which is cut from this head).
+ * Null when nothing can be compared.
+ */
+function laneRuntimeDir(root: string, explicit: string | undefined): string | null {
+	if (explicit) return explicit;
+	try {
+		const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { name?: unknown };
+		return manifest.name === "immune-brain" ? root : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Batch-start preflight for lane mode: the coordinator reads every Lane's
+ * Kernel state with its own runtime, so the runtime a Lane Executor loads must
+ * use the same contract identifiers. The comparison is on those identifiers,
+ * never on a plugin version number. A refusal names both sources; a match
+ * returns null and adds nothing, no confirmation included.
+ */
+export function laneRuntimeContractRefusal(root: string, executorRuntime?: string): string | null {
+	const dir = laneRuntimeDir(root, executorRuntime);
+	if (!dir) return null;
+	let lane: ReturnType<typeof readRuntimeContracts>;
+	try {
+		lane = readRuntimeContracts(dir);
+	} catch (error) {
+		return `${RUNTIME_CONTRACT_MISMATCH}: ${error instanceof Error ? error.message : String(error)}`;
+	}
+	if (!lane) return executorRuntime ? `${RUNTIME_CONTRACT_MISMATCH}: no runtime contract manifest under ${executorRuntime}` : null;
+	const differences = runtimeContractDifferences(RUNTIME_CONTRACTS, lane.contracts);
+	if (differences.length === 0) return null;
+	return `${RUNTIME_CONTRACT_MISMATCH}: coordinator runtime ${runningRuntimeSource()} and Lane runtime ${lane.path} disagree (${differences.join("; ")}); load the same runtime on both sides before starting the batch`;
+}
+
+/**
+ * A Lane whose Kernel state exists but that this runtime refuses to read is a
+ * contract mismatch, not a lost Lane: one side was upgraded under the batch.
+ */
+function laneUnreadableReason(error: string): string {
+	return /contract must equal|unknown field|schema version .* incompatible|unknown contract/i.test(error)
+		? `${LANE_CONTRACT_MISMATCH}: ${error}`
+		: "batch_lane_lost";
 }
 
 /** The branch the Lane for a child must sit on. */
@@ -360,11 +489,104 @@ const TERMINAL_NEXT_ACTIONS: Record<string, string> = {
 	prepared: "The batch is prepared but not started.",
 };
 
+/**
+ * ADR 0018 / #198: once a child is integrated, its TaskIntent on the batch
+ * branch may differ from the identity the batch authorized. When it equals the
+ * last revision applied under this batch's own delegation, the recorded
+ * identity is replaced and `plan_digest` resealed, with both digests recorded.
+ * Any other difference is left alone, so it still fails closed as `plan_changed`.
+ * Commits and their evidence are never touched.
+ */
+function resealDelegatedRevision(input: StartBatchInput, record: BatchLaneRunStateRecord, taskId: string): boolean {
+	const identities = record.intent_identities;
+	const recorded = identities?.[taskId];
+	if (!identities || !recorded) return false;
+	let integrated: { revision: number; content_hash: string };
+	try {
+		const read = readTaskIntent(input.root, taskId, recorded.intent_path);
+		integrated = { revision: read.intent.revision, content_hash: read.content_hash };
+	} catch {
+		return false;
+	}
+	if (integrated.revision === recorded.intent_revision && integrated.content_hash === recorded.intent_content_hash) return false;
+	const delegated = [...(record.delegated_revisions ?? [])].reverse().find((r) => r.task_id === taskId);
+	if (!delegated || delegated.to_revision !== integrated.revision || delegated.intent_content_hash !== integrated.content_hash) return false;
+	const next = { ...identities, [taskId]: { ...recorded, intent_revision: integrated.revision, intent_content_hash: integrated.content_hash } };
+	// Every child needs a recorded identity, or no digest can be recomputed.
+	if (record.children.some((child) => !next[child.task_id])) return false;
+	let toDigest: string;
+	try {
+		toDigest = computeBatchPlanDigest(record.children.map((child) => {
+			const identity = next[child.task_id]!;
+			return { task_id: child.task_id, intent_path: identity.intent_path, intent_revision: identity.intent_revision, intent_content_hash: identity.intent_content_hash, blocked_by: child.blocked_by };
+		}));
+	} catch {
+		return false;
+	}
+	record.reseals = [...(record.reseals ?? []), {
+		at: input.now,
+		task_id: taskId,
+		from_digest: record.plan_digest,
+		to_digest: toDigest,
+		intent_revision: integrated.revision,
+		intent_content_hash: integrated.content_hash,
+	}];
+	record.intent_identities = next;
+	record.plan_digest = toDigest;
+	return true;
+}
+
+type TrackerObservations = NonNullable<BatchLaneRunReport["tracker_observations"]>;
+
+
+/**
+ * Close the Child Issue of every integrated child not closed yet. Only the
+ * coordinator does this, and only after integration: a Lane settlement writes
+ * nothing to the tracker, and a parked or lost child is never integrated, so
+ * its Issue stays open. The terminal event comes from the child's audit pair,
+ * which integration brought onto the batch branch. A tracker failure never
+ * changes batch or Kernel state; the next tick retries it, and a confirmed
+ * close is recorded so it is never repeated.
+ */
+async function closeIntegratedIssues(
+	input: StartBatchInput,
+	record: BatchLaneRunStateRecord,
+	persist: () => void,
+): Promise<TrackerObservations> {
+	const observations: TrackerObservations = [];
+	if (!input.tracker) return observations;
+	for (const child of record.children) {
+		if ((child.state !== "integrated" && child.state !== "released") || child.tracker_closed) continue;
+		let status: string;
+		let message: string;
+		try {
+			const tombstone = readTaskTombstone(input.root, child.task_id);
+			if (!tombstone || tombstone.lifecycle_status !== "terminal" || tombstone.terminal_lifecycle !== "done") {
+				observations.push({ task_id: child.task_id, status: "retryable_failure", message: "integrated child has no done terminal proof on the batch branch" });
+				continue;
+			}
+			({ status, message } = await input.tracker.markTerminal(input.root, {
+				task_id: child.task_id,
+				phase: "done",
+				terminal_event_id: tombstone.terminal_event_id,
+			}));
+		} catch (error) {
+			status = "retryable_failure";
+			message = error instanceof Error ? error.message : String(error);
+		}
+		observations.push({ task_id: child.task_id, status, message });
+		if (status !== "updated" && status !== "already_current") continue;
+		record.children = record.children.map((c) => (c.task_id === child.task_id ? { ...c, tracker_closed: true } : c));
+		persist();
+	}
+	return observations;
+}
+
 function laneReport(
 	record: BatchLaneRunStateRecord,
 	reason: string | null,
 	nextAction: string,
-	extra: { handoffs?: BatchLaneHandoff[]; refusals?: BatchLaneRunReport["lane_refusals"] } = {},
+	extra: { handoffs?: BatchLaneHandoff[]; refusals?: BatchLaneRunReport["lane_refusals"]; tracker?: TrackerObservations; final?: FinalVerificationReport; instruction?: BatchLaneRunReport["lane_instruction"]; revision?: BatchLaneRunReport["lane_revision"] } = {},
 ): BatchLaneRunReport {
 	return {
 		contract: "assurance_kernel/batch_run_report/v1",
@@ -377,6 +599,14 @@ function laneReport(
 		reason,
 		handoffs: extra.handoffs ?? [],
 		...(extra.refusals?.length ? { lane_refusals: extra.refusals } : {}),
+		...(extra.tracker?.length ? { tracker_observations: extra.tracker } : {}),
+		...(record.restores?.length ? { restores: record.restores } : {}),
+		...(extra.final ? { final_verification: extra.final } : {}),
+		...(record.interventions?.length ? { interventions: record.interventions } : {}),
+		...(extra.instruction ? { lane_instruction: extra.instruction } : {}),
+		...(extra.revision ? { lane_revision: extra.revision } : {}),
+		...(record.delegated_revisions?.length ? { delegated_revisions: record.delegated_revisions } : {}),
+		...(record.reseals?.length ? { reseals: record.reseals } : {}),
 		next_action: nextAction || (TERMINAL_NEXT_ACTIONS[record.batch_state] ?? "Inspect the batch run state."),
 		created_at: record.updated_at,
 	};
@@ -540,10 +770,17 @@ export async function runLaneBatch(
 	if (persisted) {
 		record = persisted;
 		assertPlanMatches(input, record);
-		if (isTerminalBatchState(record.batch_state))
+		if (isTerminalBatchState(record.batch_state)) {
+			// A close that failed on the completing tick is retried here; a terminal
+			// record otherwise stays as it was.
+			const tracker = record.batch_state === "completed"
+				? await closeIntegratedIssues(input, record, () => { record = writeBatchLaneRunState(input.root, record); })
+				: [];
 			return finalizeLane(input.root, record, `terminal state already reached: ${record.batch_state}`, "", {
 				handoffs: record.batch_state === "completed" ? releaseHandoffs(input, record, lanes) : [],
+				tracker,
 			});
+		}
 		if (record.batch_state === "needs_human") {
 			const invalid = validateNewAuthorization(input);
 			if (invalid || Date.parse(input.confirmation_time) <= Date.parse(record.confirmation_time))
@@ -572,6 +809,11 @@ export async function runLaneBatch(
 	} else {
 		const invalid = validateNewAuthorization(input);
 		if (invalid) return refuse(input, null, "batch_authorization_invalid", invalid);
+		const contractRefusal = laneRuntimeContractRefusal(input.root, input.executor_runtime);
+		if (contractRefusal) {
+			const [code, ...detail] = contractRefusal.split(": ");
+			return refuse(input, null, code!, detail.join(": "));
+		}
 		const preflight = await git.preflight({
 			root: input.root,
 			initiative_slug: input.initiative_slug,
@@ -588,12 +830,33 @@ export async function runLaneBatch(
 			budget: input.budget,
 			max_parallel: limit,
 			now: input.now,
+			...(input.final_verification?.length ? { final_verification: input.final_verification } : {}),
+			...(input.revision_delegation ? { revision_delegation: { confirmation_time: input.confirmation_time } } : {}),
 		});
+	}
+	// A fresh confirmation of a persisted batch replaces its grant with that answer.
+	if (persisted && input.revision_delegation !== undefined) {
+		const { revision_delegation: _prior, ...rest } = record;
+		record = input.revision_delegation ? { ...rest, revision_delegation: { confirmation_time: input.confirmation_time } } : rest;
+		// Durable at once: a withdrawn grant must never survive to a later reused tick.
+		if (record.batch_state !== "prepared") record = writeBatchLaneRunState(input.root, record);
 	}
 
 	const persist = (): void => {
 		record = writeBatchLaneRunState(input.root, record);
 	};
+	// Lane writes that leaked into the coordinator checkout, restored only now,
+	// after authorization, and only when every dirty path is provably a Lane's.
+	if (persisted) {
+		const entries = porcelainEntries(input.root);
+		if (entries && entries.length > 0) {
+			const outcome = restoreProvableLaneLeaks(input.root, record, entries, input.now);
+			if (outcome.kind === "restored") {
+				record.restores = [...(record.restores ?? []), outcome.restore];
+				persist();
+			}
+		}
+	}
 	// A resumed park is persisted only after the existing lineage validation below.
 	const resumedPark = persisted?.batch_state === "needs_human" && record.batch_state === "running";
 	if (record.batch_state === "prepared") {
@@ -652,7 +915,71 @@ export async function runLaneBatch(
 	}
 
 	if (resumedPark) persist();
+	// A coordinator instruction is recorded before the Parent sends it, and only
+	// when it may be sent; the report tells the Parent which.
+	let instruction: BatchLaneRunReport["lane_instruction"];
+	if (input.lane_instruction) {
+		const request = input.lane_instruction;
+		const refusal = decideLaneInstruction(record, request);
+		if (refusal) instruction = { task_id: request.task_id, kind: request.kind, accepted: false, reason: `batch_lane_instruction_refused: ${refusal}` };
+		else {
+			if (request.kind === "correction")
+				record.children = record.children.map((c) => {
+					if (c.task_id !== request.task_id) return c;
+					const { correction_due: _due, ...rest } = c;
+					return { ...rest, corrections: (c.corrections ?? 0) + 1, qa_failures: 0 };
+				});
+			record.interventions = [...(record.interventions ?? []), {
+				at: input.now,
+				task_id: request.task_id,
+				kind: request.kind,
+				text: request.text,
+				text_digest: `sha256:${createHash("sha256").update(request.text).digest("hex")}`,
+			}];
+			persist();
+			instruction = { task_id: request.task_id, kind: request.kind, accepted: true, reason: null };
+		}
+	}
+	// ADR 0018: a breaking revision the coordinator approves under the batch's
+	// grant. Out of bounds, or without a grant, it is refused and the Executor's
+	// own native gate stays the only path.
+	let revision: BatchLaneRunReport["lane_revision"];
+	if (input.lane_revision) {
+		const request = input.lane_revision;
+		const fallback = "the Executor requests approve_breaking_intent_revision through its own native gate for the user to answer";
+		const refuseRevision = (reason: string) => { revision = { task_id: request.task_id, accepted: false, reason: `batch_delegation_refused: ${reason}`, fallback }; };
+		const child = record.children.find((c) => c.task_id === request.task_id);
+		const planChild = input.children.find((c) => c.task_id === request.task_id);
+		const grant = record.revision_delegation;
+		if (!grant) refuseRevision("this batch's confirmation did not delegate Intent revisions");
+		else if (!child?.lane || child.state !== "enrolled") refuseRevision(`${request.task_id} is not running in its Lane`);
+		else {
+			try {
+				const authorized = readTaskIntent(input.root, request.task_id, planChild?.intent_path ?? undefined).intent;
+				const current = readTaskRecordRaw(child.lane.path, request.task_id).record?.intent_snapshot;
+				if (!current) throw new Error(`the Lane has no TaskRecord for ${request.task_id}`);
+				const outOfBounds = delegatedRevisionRefusal(authorized, current, request.next_intent);
+				if (outOfBounds) refuseRevision(outOfBounds);
+				else {
+					const confirmationRef = delegatedConfirmationRef(record.batch_id, grant);
+					const applied = await applyDelegatedIntentRevision({
+						lane_root: child.lane.path,
+						task_id: request.task_id,
+						next_intent: request.next_intent,
+						confirmation_ref: confirmationRef,
+						now: input.now,
+					});
+					record.delegated_revisions = [...(record.delegated_revisions ?? []), { at: input.now, task_id: request.task_id, ...applied, confirmation_ref: confirmationRef }];
+					persist();
+					revision = { task_id: request.task_id, accepted: true, reason: null };
+				}
+			} catch (error) {
+				refuseRevision(error instanceof Error ? error.message : String(error));
+			}
+		}
+	}
 	const refusals: NonNullable<BatchLaneRunReport["lane_refusals"]> = [];
+
 	// A parked child ends only itself and its dependents; the batch keeps moving
 	// for every scope-disjoint sibling and settles needs_human at the end of the
 	// tick, when nothing is in flight and nothing can start.
@@ -695,11 +1022,11 @@ export async function runLaneBatch(
 		let fresh: Awaited<ReturnType<StartBatchInput["kernel"]["projectTask"]>>;
 		try {
 			fresh = await input.kernel.projectTask(child.lane.path, child.task_id);
-		} catch {
-			fresh = { error: "unreadable" } as unknown as typeof fresh;
+		} catch (error) {
+			fresh = { error: error instanceof Error ? error.message : String(error) } as unknown as typeof fresh;
 		}
 		if (fresh.error !== null) {
-			parkChild(child.task_id, "batch_lane_lost");
+			parkChild(child.task_id, laneUnreadableReason(String(fresh.error)));
 			continue;
 		}
 		if (child.lane.run_id && fresh.projection.run_id !== child.lane.run_id) {
@@ -733,6 +1060,8 @@ export async function runLaneBatch(
 			parkChild(child.task_id, "claim held by another batch");
 			continue;
 		}
+		// A child waiting for its coordinator correction gets no further attempt.
+		if (child.correction_due) continue;
 		// An unfrozen child, or one with QA pending the Executor's own attempt,
 		// is the Executor's to move; the batch never reruns that attempt.
 		if (fresh.projection.next_obligation === "run_qa" || fresh.projection.artifact_state !== "frozen") continue;
@@ -754,11 +1083,24 @@ export async function runLaneBatch(
 			const failures = child.qa_failures + 1;
 			if (failures >= record.budget.qa_failure_limit) {
 				const reason = "QA failure limit reached";
-				record.children = record.children.map((c) =>
-					c.task_id === child.task_id ? { ...c, state: "needs_human", reason, qa_failures: failures } : c,
-				);
+				const used = child.corrections ?? 0;
+				if (used < MAX_COORDINATOR_CORRECTIONS) {
+					// Hand the design judgment to the coordinator instead of parking: one
+					// correction, sent to a new Lane session, before any further attempt.
+					record.children = record.children.map((c) =>
+						c.task_id === child.task_id ? { ...c, qa_failures: failures, correction_due: reason } : c,
+					);
+					persist();
+					continue;
+				}
+				const parked = `${CORRECTION_LIMIT_REACHED}: ${reason} after ${used} coordinator corrections`;
+				record.children = record.children.map((c) => {
+					if (c.task_id !== child.task_id) return c;
+					const { correction_due: _due, ...rest } = c;
+					return { ...rest, state: "needs_human", reason: parked, qa_failures: failures };
+				});
 				skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
-				parkedMessage ??= reason;
+				parkedMessage ??= parked;
 				persist();
 				continue;
 			}
@@ -828,6 +1170,9 @@ export async function runLaneBatch(
 			record.children = record.children.map((c) => (c.task_id === child.task_id ? { ...c, state: "integrated", commit, reason: null } : c));
 			record.commits = [...record.commits, commit];
 			persist();
+			// The integration is durable before any reseal; a reseal that cannot be
+			// computed leaves plan_digest as it was, so the change fails closed later.
+			if (resealDelegatedRevision(input, record, child.task_id)) persist();
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			const reason = error instanceof BatchIntegrationError ? error.reason : "batch_integration_conflict";
@@ -841,6 +1186,9 @@ export async function runLaneBatch(
 			// The batch branch is unmoved; a disjoint sibling may still integrate.
 		}
 	}
+
+	// Close each integrated child's Issue now that its commit is on the batch branch.
+	const tracker = await closeIntegratedIssues(input, record, persist);
 
 	// 3. Admit offered Lanes, then enroll each admitted child into its Lane.
 	const coordinatorReal = lanes.resolveRoot(input.root);
@@ -875,16 +1223,39 @@ export async function runLaneBatch(
 
 	// 4. Schedule and report. Handoffs are observations, never readiness.
 	if (record.children.every((c) => c.state === "integrated" || c.state === "released")) {
+		// Full verification of the integrated batch branch, before the immutable
+		// completion report is written. A failure is reported, never rolled back.
+		const final = record.final_verification?.length ? await runFinalVerification(input.root, record.final_verification) : undefined;
 		record.batch_state = "completed";
 		persist();
-		return finalizeLane(input.root, record, "all enrollable children integrated", "", {
-			handoffs: releaseHandoffs(input, record, lanes),
-			refusals,
-		});
+		return finalizeLane(
+			input.root,
+			record,
+			final && !final.passed
+				? `all enrollable children integrated; final verification did not pass: ${final.results.filter((r) => !r.passed).map((r) => r.command).join(", ")}`
+				: "all enrollable children integrated",
+			final && !final.passed
+				? "Every child is integrated but the batch did not pass its final verification; inspect the failing commands on the batch branch. Integrated commits were not rolled back."
+				: "",
+			{ handoffs: releaseHandoffs(input, record, lanes), refusals, tracker, instruction, revision, ...(final ? { final } : {}) },
+		);
 	}
 	const handoffs: BatchLaneHandoff[] = [];
 	for (const child of record.children) {
 		if (child.state !== "enrolled" || !child.lane) continue;
+		if (child.correction_due) {
+			// No further Executor attempt until the coordinator's correction is recorded.
+			handoffs.push({
+				role: "coordinator",
+				action: "correct",
+				task_id: child.task_id,
+				reason: child.correction_due,
+				corrections_used: child.corrections ?? 0,
+				corrections_left: MAX_COORDINATOR_CORRECTIONS - (child.corrections ?? 0),
+				lane_path: child.lane.path,
+			});
+			continue;
+		}
 		const fresh = await input.kernel.projectTask(child.lane.path, child.task_id);
 		if (fresh.error !== null) continue;
 		handoffs.push({
@@ -910,7 +1281,7 @@ export async function runLaneBatch(
 			record,
 			parkedMessage ?? (parked ? "a parked child needs a human decision" : overBudget ? `max_children budget exhausted (${record.budget.max_children})` : "no child can start"),
 			"",
-			{ refusals },
+			{ refusals, tracker, instruction, revision },
 		);
 	}
 	if (!overBudget) {
@@ -932,15 +1303,17 @@ export async function runLaneBatch(
 				? `child ${reviewOpen[0]} holds an open Review reservation`
 				: `children ${reviewOpen.join(", ")} hold open Review reservations`,
 			"Submit each reserved foreground Review verdict in its own Lane, then call start_unattended_batch again to continue.",
-			{ handoffs, refusals },
+			{ handoffs, refusals, tracker, instruction, revision },
 		);
 	}
 	return laneReport(
 		record,
 		null,
-		handoffs.some((h) => h.role === "lane-steward" && h.action === "provision")
-			? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers."
-			: "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.",
-		{ handoffs, refusals },
+		handoffs.some((h) => h.role === "coordinator")
+			? "For each coordinator handoff, read every round's findings in that Lane, start a new Lane session and send one design-level correction as lane_instruction kind correction; run the other handoffs as usual."
+			: handoffs.some((h) => h.role === "lane-steward" && h.action === "provision")
+				? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers."
+				: "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.",
+		{ handoffs, refusals, tracker, instruction, revision },
 	);
 }

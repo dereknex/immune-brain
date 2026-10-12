@@ -1,0 +1,42 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "explicit-phase-entry-s3-pi-gate",
+  "goal": "Implement Slice S3 of Initiative explicit-phase-entry per docs/specs/explicit-phase-entry.spec.md (T3): the Pi extension records literal phase entries from non-extension input and refuses imm_canary_enrollment and start_unattended_batch before the authority dialog in a session without a live imm-run entry, with the same reason code and recovery action as Claude Code. Characterize the real Pi input payload of a slash entry first (assumption A2). User scenario SCN-5 (manual) belongs to this Slice.",
+  "acceptance": [
+    {
+      "id": "EPE-S3-A1",
+      "assertion": "Per T3 and invariants I1, I2, I3 of docs/specs/explicit-phase-entry.spec.md (source: user decision U2; repository evidence .pi-extension/imm-canary-work.ts input handler): on Pi, imm_canary_enrollment and start_unattended_batch reach the authority dialog port only after a literal non-extension imm-run entry in that session; with no entry, an entry carried by extension-sourced input, or a run entry revoked by a later plan entry, the tool returns run_entry_required before the dialog port is called. Seam: new tests/pi-phase-entry-gate.test.ts driving the registered input handler and each tool's execute.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-phase-entry-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "EPE-S3-A2",
+      "assertion": "Per T2, T3 of docs/specs/explicit-phase-entry.spec.md (source: delegated technical choice, one refusal contract for both Hosts): Claude Code and Pi return the identical run_entry_required reason code and the identical single recovery action for a refused Enrollment and a refused batch start, and the existing Pi tool tests pass with a recorded run entry where they exercise those tools. Seam: tests/dual-host-assurance-conformance.test.ts equality assertion plus the existing Pi Enrollment and batch authority tests.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/pi-canary-enroll-extension.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/imm-canary-work-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/explicit-phase-entry-s3-pi-gate.md",
+    "docs/plans/explicit-phase-entry-s3-pi-gate.intent.json",
+    "docs/specs/explicit-phase-entry.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/runtime/assurance/phase_entry.ts",
+    "tests/batch-delegation-gate.test.ts",
+    "tests/batch-plan-reconfirmation.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/enrollment-confirmation-relocation.test.ts",
+    "tests/enrollment-git-base.test.ts",
+    "tests/imm-canary-work-contract.test.ts",
+    "tests/packaged-contract-tool-surface.test.ts",
+    "tests/pi-batch-acceptance-integration.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/pi-canary-enroll-extension.test.ts",
+    "tests/pi-canary-lifecycle-package.test.ts",
+    "tests/pi-phase-entry-gate.test.ts",
+    "tests/unattended-contracts.test.ts"
+  ],
+  "risk": "material",
+  "revision": 2,
+  "owner": "user"
+}

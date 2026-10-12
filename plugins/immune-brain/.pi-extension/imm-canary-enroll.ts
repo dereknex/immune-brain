@@ -26,7 +26,7 @@ import {
 	enrollmentGitBaseNotice,
 	initializeEnrollmentGitBase,
 } from "../runtime/assurance/enrollment_git_base";
-import { readTaskIntentForRecord } from "./imm-canary-work";
+import { piRunEntryRefusal, readTaskIntentForRecord } from "./imm-canary-work";
 import {
 	presentTaskRail,
 	presentTaskRailResult,
@@ -609,7 +609,7 @@ export default function (pi: ExtensionAPI) {
 		description: "Run one exact Kernel new-task enrollment synchronously in the foreground with host cancellation before authority commit.",
 		promptSnippet: "Kernel enrollment: invoke once in foreground and consume the direct terminal result.",
 		promptGuidelines: [
-			"Call from the Parent after natural-language routing selects Enrollment; execute once in the foreground and consume the terminal Tool result.",
+			"Call from the Parent only as the first step of an explicit imm-run entry, never from imm-planner or imm-brainstorm; execute once in the foreground and consume the terminal Tool result.",
 			"Do not run this Tool in background, poll for completion, or issue a cancel subcommand; host cancellation is the only pre-commit cancellation path.",
 		],
 		parameters: Type.Object(
@@ -646,6 +646,18 @@ export default function (pi: ExtensionAPI) {
 					code: "tui_required",
 					message: "imm_canary_enrollment is TUI-only",
 					next_action: "invoke the TUI launcher",
+				});
+			// The phase entry gate (ADR 0019), before any preparation or dialog.
+			const entryRefusal = piRunEntryRefusal("enroll", ctx);
+			if (entryRefusal)
+				throwToolFailure({
+					tool: "imm_canary_enrollment",
+					task_id: taskId,
+					operation: action,
+					state: "blocked",
+					code: entryRefusal.reason_code,
+					message: entryRefusal.detail,
+					next_action: entryRefusal.recovery_action,
 				});
 			const authorityRegistry = await registry();
 			const result = await coordinator.run(action, taskId, signal, (foregroundSignal, beginCommit) =>

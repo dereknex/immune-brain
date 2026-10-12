@@ -61,7 +61,8 @@ describe("Skill-explicit workflow routing contract", () => {
     expectAll(ROOT_IMMUNE, ["Skill-explicit Managed Path", "显式 Immune-Brain Skill", "literal-user Enrollment"]);
     expectAll(README, ["Managed Path starts only from explicit `imm-brainstorm`, `imm-planner`, or", "standalone `imm-pr-fix`,\n`imm-doc-prune`, `imm-doc-slim`, `imm-test-prune`, and `imm-retro` stay", "ordinary host input"]);
     expectAll(USER_GUIDE, ["Skill-explicit Managed Path", "普通 host input 保持 host-native"]);
-    expectAll(PLANNER_SKILL, ["entered explicitly by the user", "Planner may request the native Enrollment gate", "only that gate grants execution authority"]);
+    expectAll(PLANNER_SKILL, ["entered explicitly by the user", "never invokes the native Enrollment gate", "only that gate grants execution authority", "first step\nof a literal-user `imm-run` entry"]);
+    expect(PLANNER_SKILL).not.toContain("Planner may request the native Enrollment gate");
     expect(PLANNER_SKILL).not.toContain("never enrolls a task");
     expectAll(QUALITY_GATE, ["explicit Immune-Brain Skill entry starts Managed planning", "literal-user Enrollment remains the authority boundary"]);
     expect(PACKAGED_QUALITY_GATE).toBe(QUALITY_GATE);

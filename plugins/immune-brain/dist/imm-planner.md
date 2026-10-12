@@ -12,21 +12,18 @@ This skill adheres to the **[BASELINE.md](BASELINE.md)**.
 `imm-planner` is entered explicitly by the user for a clear repository mutation.
 Ordinary host input does not invoke this Skill through natural-language routing.
 An active Assurance projection remains authoritative and is resumed only through
-an explicit `imm-run` entry; explicit Planner entry owns planning and the later
-native Enrollment gate.
+an explicit `imm-run` entry; explicit Planner entry owns planning only.
 
-Plan-only output remains non-authoritative. Planner creates or validates a
-candidate Spec/TaskIntent. Planner may request the native Enrollment gate;
-only that gate grants execution authority. Explicit Plan-only requests stop after returning the
-planning artifacts. A later literal-user request to start Enrollment is a
-non-authoritative execution trigger: invoke the native Enrollment gate directly,
-without asking for chat pre-confirmation. For a clear mutation request that
-already includes execution, invoke that gate as soon as the candidate is
-validated and Git-tracked. Literal-user confirmation in the current Host's
-native gate remains the authority boundary. A gate failure preserves candidate
-artifacts and reports its reason plus exactly one same-Host recovery action; it
-must never recommend another Host, worktree, Direct Path, unmanaged
-implementation, or automatic retry. Fast-Track may compress the same phases but
+Planner output remains non-authoritative. Planner creates or validates a
+candidate Spec/TaskIntent and never invokes the native Enrollment gate;
+only that gate grants execution authority, and it opens only as the first step
+of a literal-user `imm-run` entry. Every Planner request stops after returning
+the validated planning artifacts, including a request that also asks for
+execution: report the candidate and name a literal-user `imm-run` entry as the
+only next step. A design confirmation, a generic continuation, or a request to
+start Enrollment received inside the Planner is not an `imm-run` entry and
+opens no gate. Literal-user confirmation in the current Host's
+native gate remains the authority boundary. Fast-Track may compress the same phases but
 cannot bypass that boundary, QA, Review, authorization, or completion.
 
 ## Clarification supplement
@@ -119,13 +116,12 @@ Enrollment.
 
 Host identity is implicit and never a planning input. The production boundary
 that turns a Git-tracked TaskIntent draft into managed execution authority is
-the current Host's native Enrollment gate. Invoke that Host integration
-directly when the route is ready; do not ask for chat pre-confirmation. The
-single literal-user decision is bound to the TaskIntent revision, content hash,
-and preparation digest. Enrollment validates the intent, Git ownership, scope,
-workspace claim, and final authority preconditions without executing acceptance
-descriptors. A routine task proceeds from that single confirmation through
-enrollment, execution and QA without a second human stop.
+the current Host's native Enrollment gate. `imm-run` invokes that Host
+integration as the first step of a literal-user entry; the Planner never does.
+The single literal-user decision is bound to the TaskIntent revision, content
+hash, and preparation digest. Enrollment validates the intent, Git ownership,
+scope, workspace claim, and final authority preconditions without executing
+acceptance descriptors.
 
 **Automatic policy activation**
 
@@ -244,7 +240,14 @@ perform zero GitHub mutations. A partial or progressively disclosed issue set is
 not eligible for publication.
 
 After approval, author, stage, and validate every TaskIntent in the decomposition
-with `valid: true` and `enrollment_ready: true`. Resolve `../bin/imm-tracker` from this packaged contract; do not assume a bare command is on `PATH`. Submit the entire approved set once through
+with `valid: true` and `enrollment_ready: true`. Before handoff, compare the
+scopes by machine: run `imm-kernel intent overlap <path> <path>... --json` over
+every TaskIntent of the Initiative, with one `--blocked-by <task-id>=<task-id>,...`
+per dependency, and report its `overlaps` (each shared entry pair) and
+`parallel_groups`. Parallel recommendations follow that output, which uses the
+same projection as the Batch Plan. Never write "disjoint" or "verified" for
+scopes by hand; when the output shows an overlap the Slices run serially unless
+a revised `scope_hint` removes it. Resolve `../bin/imm-tracker` from this packaged contract; do not assume a bare command is on `PATH`. Submit the entire approved set once through
 `imm-tracker publish-initiative --stdin --json`. Its input contains the confirmed
 Initiative slug and goal, Parent projection, and every Child's `slice_id`,
 canonical TaskIntent path, bounded public `acceptance` summaries, and public
@@ -320,11 +323,9 @@ prompt digests never belong in this external handoff. If
 Local mode performs zero GitHub operations.
 
 The batch result includes an execution recommendation: the first unblocked Task,
-a stable dependency order, and parallel groups. For a plan-only request, report
-that recommendation and stop. For a request that includes execution, invoke the
-native Enrollment gate for the recommended first TaskIntent after successful
-publication; do not ask for another chat confirmation. GitHub selection never
-bypasses Enrollment.
+a stable dependency order, and parallel groups. Report that recommendation and
+stop; the user enrolls the recommended first TaskIntent through a literal-user
+`imm-run` entry. GitHub selection never bypasses Enrollment.
 
 Tracker output is observation, never authority. Before the Planner returns, its
 GitHub carrier outcome must be exactly one of: `tracker_associated` after the
@@ -505,9 +506,15 @@ when breaking, `approve_breaking_intent_revision` with the complete next intent.
 The native gate is the single user decision for a breaking revision; candidate
 preparation does not apply the revision or authorize expanded execution.
 
+A revision is warranted only when the goal, the `scope_hint`, or a user-visible
+commitment changes. A finding whose defect lies inside the current goal and scope
+is ordinary rework for the Loop, not a revision request: decline to prepare one
+that only appends a single input case to an acceptance assertion. Acceptance
+states principles; enumeration of cases belongs in tests.
+
 ## Planning Rules
 
-- **Entry Contract**: Use when Spec/TaskIntent planning is needed. An already enrolled owner remains on its current Kernel authority and resumes only through explicit `imm-run`; a validated candidate still needs native Enrollment.
+- **Entry Contract**: Use when Spec/TaskIntent planning is needed. An already enrolled owner remains on its current Kernel authority and resumes only through explicit `imm-run`; a validated candidate still needs native Enrollment, which only an explicit `imm-run` entry opens.
 - **Output Language Gate**: Before writing or revising any Spec or Plan, read the project output language policy from `AGENTS.md`, `IMMUNE.md`, or Immune-Brain plugin config. Default Spec and Plan prose to English unless the current user request, project instructions, or host/user preference contains an explicit document-language instruction. A reply-language instruction does not change document language. Keep schema fields, CLI commands, file paths, code identifiers, enum values, JSON keys, and canonical terms such as `Step`, `Plan`, `Spec`, `Verification`, `Discovery cache`, and `Devil's Advocate Audit` literal.
 - **Clarification Supplement**: If an upstream `imm-brainstorm` manifest exists, verify that every `BR-Q-*` item is resolved and every confirmed framing decision is represented; must not repeat, reopen, or rewrite confirmed decisions. Ask only a focused omission, repository-conflict, or invalidated-assumption delta tied to concrete evidence. Resolve a local delta here; return to `imm-brainstorm` when it reopens multiple product branches or changes the overall goal or Scope. Finalization requires no unresolved supplement and no unconfirmed decision introduced by Planner.
 - **Planning Bootstrap**: When no upstream `imm-brainstorm` manifest exists, preserve Direct Planner entry by resolving repository facts and deriving ordinary technical choices. An already-clear request takes the zero-question fast path to a non-blocking correction summary. Discovery of an unresolved user-owned goal, user, scope, behavior, compatibility preference, risk acceptance, or success criterion returns to `imm-brainstorm`; Planner does not convert product uncertainty into a silent assumption or duplicate Brainstorm's interview.
@@ -588,7 +595,7 @@ optional advisory dispatch fails, continue inline and record the reason.
 
 - **Allowed**: Write a TaskIntent. Add a Spec only for complex work. Activate an absent routing policy under Kernel TaskIntent Routing. Initiative planning carriers and necessary domain vocabulary.
 - **Blocked**: Implementation edits, direct Kernel-store writes, enrolled intent overwrites, and QA/Review decisions.
-- **Workflow guard**: Execution continues through native Enrollment and explicit `imm-run`. Planner owns design and decomposition, not execution authority.
+- **Workflow guard**: Execution starts only from a literal-user `imm-run` entry, whose first step is native Enrollment. Planner owns design and decomposition, never Enrollment or execution authority.
 
 ## Output artifact
 
@@ -636,11 +643,10 @@ a State Ledger. Keep historical Plan validation strictly read-only.
 - Validate every candidate through `imm-kernel intent validate <path> --json` after authoring and staging. Require `valid: true` and `enrollment_ready: true` before Enrollment. When `git_base_initialization_required: true`, report that the existing native Enrollment confirmation includes an empty root commit; leave initialization to the Host. An invalid `git_base` blocks Enrollment and requires Git repair.
 - For complex work, verify Spec design metadata, document language, reference closure, concrete descriptor paths, and complete Brainstorm traceability before handoff. Simple TaskIntent-only work verifies those properties on the Intent.
 - Enrollment validates descriptor structure only. Deterministic QA owns descriptor execution after implementation; planning does not run the acceptance suite.
-- Managed execution handoff is Git-tracked TaskIntent author/validate plus current-Host native Enrollment. Do not sync a v3 State Ledger or invoke a missing dispatcher.
+- Managed execution handoff is Git-tracked TaskIntent author/validate; current-Host native Enrollment follows in `imm-run`. Do not sync a v3 State Ledger or invoke a missing dispatcher.
 
 ## Next Action
 
-- Gate: Reference closure and clarification are complete; every upstream `BR-*` item is represented; no unresolved user decision remains; Planner-introduced decision deltas are confirmed; the candidate is Git-tracked and validates with `valid: true` and `enrollment_ready: true`; each acceptance has concrete focused verification. Plan-only requests stop here.
-- If gates pass: for Kernel-managed work, invoke the current Host's native Enrollment Tool directly without chat pre-confirmation. Its single literal-user gate binds the TaskIntent revision, content hash, and preparation digest, validates Enrollment preconditions without executing acceptance descriptors, and enrolls the task to continue through `imm-run`.
-- If the native gate fails: preserve candidate artifacts and report the stable reason plus exactly one same-Host recovery action. Do not suggest another Host, worktree, Direct Path, unmanaged implementation, or automatic retry.
+- Gate: Reference closure and clarification are complete; every upstream `BR-*` item is represented; no unresolved user decision remains; Planner-introduced decision deltas are confirmed; the candidate is Git-tracked and validates with `valid: true` and `enrollment_ready: true`; each acceptance has concrete focused verification. Plan-only requests stop here, and so does every other Planner request.
+- If gates pass: report the validated candidate (and, for an Initiative, the recommended first Task) and name a literal-user `imm-run` entry as the only next step. Do not invoke the current Host's native Enrollment Tool: Enrollment is the first step of `imm-run`, and a confirmation of the plan is not that entry.
 - If gates are not met: state which validation failures, unresolved verification paths, or material decision deltas remain; do not name a next skill.

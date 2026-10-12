@@ -108,6 +108,48 @@ export interface StartBatchInput {
 	max_parallel?: number;
 	/** Present only in lane mode: Lanes someone else created, offered to the batch. */
 	lane_offers?: LaneOffer[];
+	/**
+	 * Lane mode only: the opted-in tracker projection the coordinator runs after
+	 * integrating a child. A Lane settlement writes nothing to the tracker, so
+	 * this is where its Child Issue is closed, exactly once. Absent, nothing is
+	 * projected.
+	 */
+	tracker?: BatchTrackerPort;
+	/**
+	 * Lane mode only: the plugin or runtime directory the Lane Executor Host
+	 * loads. Absent, the repository's own plugin source is compared when the
+	 * repository is the Immune-Brain package; otherwise nothing is compared.
+	 */
+	executor_runtime?: string;
+	/**
+	 * Lane mode only: the project's full verification commands, recorded when a
+	 * new batch starts and run on the batch branch once every child is
+	 * integrated. Ignored on a resume; the recorded list stands.
+	 */
+	final_verification?: string[];
+	/**
+	 * Lane mode only: one text instruction the Parent wants to send a Lane
+	 * session. The tick records it and answers whether it may be sent; it is
+	 * never sent to a blocked or working session.
+	 */
+	lane_instruction?: import("./batch_lanes").LaneInstructionRequest;
+	/**
+	 * Lane mode only, ADR 0018: the literal user's answer, in this call's own
+	 * batch confirmation, on delegating in-envelope Lane Intent revisions to the
+	 * coordinator. Absent when no gate opened (a reused authorization): the
+	 * recorded grant stands.
+	 */
+	revision_delegation?: boolean;
+	/** Lane mode only, ADR 0018: one breaking Intent revision the coordinator approves under the grant. */
+	lane_revision?: import("./batch_delegation").LaneRevisionRequest;
+}
+
+/** The one tracker effect a lane batch may cause: closing an integrated child's Issue. */
+export interface BatchTrackerPort {
+	markTerminal(
+		root: string,
+		input: { task_id: string; phase: "done"; terminal_event_id: string },
+	): Promise<{ status: string; message: string }>;
 }
 
 /** One git seam: the injected BatchRunnerGitPort, or the default adapter over

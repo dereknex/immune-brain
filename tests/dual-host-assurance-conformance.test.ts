@@ -16,7 +16,9 @@ import { PassThrough } from "node:stream";
 import { ClaudeReviewHost, REVIEWER_AGENT, AGENT_TOOL } from "../plugins/immune-brain/runtime/claude/review_host";
 import { submitClaudeReview, ClaudeRuntime, settledKernelResult, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { probeHost } from "../plugins/immune-brain/runtime/claude/capability";
-import { createMcpRuntime, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
+import { createMcpRuntime as createMcpRuntimeUngated, handleJsonRpc, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
+import { PHASE_ENTRY_RECOVERY, RUN_ENTRY_REQUIRED } from "../plugins/immune-brain/runtime/assurance/phase_entry";
+import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import { BATCH_REASONS, batchReason } from "../plugins/immune-brain/runtime/unattended/batch_reasons";
 import {
@@ -39,6 +41,30 @@ import { withKernelTransaction } from "../plugins/immune-brain/runtime/kernel/sq
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { createDefaultBatchGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
+
+// The phase entry gate (ADR 0019) sits in front of `enroll` and
+// `start_unattended_batch`. These tests exercise what lies behind it, so the
+// session records a real run entry and each gated call is admitted through the
+// real hook; tests/claude-phase-entry-gate.test.ts owns the refusals.
+function withRunEntry(): { consumePhaseAdmission: (toolCallId: string, operation: GatedTool) => boolean } {
+	const root = mkdtempSync(join(tmpdir(), "imm-phase-entry-"));
+	const session = { session_id: "phase-entry-test-session", cwd: root };
+	recordPhaseEntryPrompt({ hook_event_name: "UserPromptSubmit", prompt: "/imm-run", ...session }, { root, home: root });
+	return {
+		consumePhaseAdmission(toolCallId, operation) {
+			phaseEntryGateHookOutput({
+				hook_event_name: "PreToolUse",
+				tool_name: `mcp__plugin_immune-brain_immune-brain__${operation}`,
+				tool_use_id: toolCallId,
+				...session,
+			}, { root });
+			return consumePhaseAdmission(toolCallId, operation, root);
+		},
+	};
+}
+function createMcpRuntime(options: Parameters<typeof createMcpRuntimeUngated>[0] = {}) {
+	return createMcpRuntimeUngated({ ...withRunEntry(), ...options });
+}
 
 // The Kernel QA delivery workspace is a dependency-free checkout of the frozen
 // tree: `typebox` and the Pi host packages belong to the running Host, not to
@@ -75,7 +101,8 @@ if (!(await hostPackagesAvailable())) {
 }
 
 const { AssuranceProgression } = await import("../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts");
-const { executePiUnattendedBatch } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
+const { default: registerPiBatch, executePiUnattendedBatch } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
+const { default: registerPiEnroll } = await import("../plugins/immune-brain/.pi-extension/imm-canary-enroll");
 const { createPiAssuranceProgressionPorts } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
 
 // Registered seams are process-global; drop them when this file finishes so a
@@ -2801,6 +2828,69 @@ describe("dual-host assurance conformance", () => {
 				rmSync(root, { recursive: true, force: true });
 			}
 		});
+	});
+
+	// ADR 0019: the phase entry gate has one refusal contract. Each Host is driven
+	// at its real tool boundary in a session that never entered imm-run.
+	test("both Hosts refuse Enrollment and batch start without a run entry with one code and one recovery action", async () => {
+		const root = mkdtempSync(join(tmpdir(), "imm-phase-entry-conformance-"));
+		try {
+			let claudeGates = 0;
+			const mcp = createMcpRuntimeUngated({
+				cwd: root, env: HOST_ENV,
+				requestConfirmation: async () => { claudeGates++; return { decision: "decline" as const, requestId: "never" }; },
+				consumePhaseAdmission: (toolCallId: string, operation: GatedTool) => consumePhaseAdmission(toolCallId, operation, root),
+			});
+			await handleJsonRpc({
+				jsonrpc: "2.0", id: 1, method: "initialize",
+				params: { protocolVersion: "2025-06-18", clientInfo: { name: "claude-code", version: "2.1.236" }, capabilities: { elicitation: {} } },
+			}, mcp);
+			const claude = async (name: GatedTool, args: Record<string, unknown>) => {
+				const reply = await handleJsonRpc({
+					jsonrpc: "2.0", id: 2, method: "tools/call",
+					params: { name, arguments: args, _meta: { "claudecode/toolUseId": `toolu_${name}` } },
+				}, mcp);
+				expect(reply?.result).toBeUndefined();
+				return reply?.error?.data as { reason_code: string; recovery_action: string };
+			};
+
+			const tools = new Map<string, { execute: (...args: any[]) => Promise<unknown> }>();
+			const pi = {
+				registerTool: (tool: { name: string; execute: (...args: any[]) => Promise<unknown> }) => tools.set(tool.name, tool),
+				registerCommand() {}, on() {}, events: { on() {}, emit() {} },
+			} as never;
+			registerPiEnroll(pi);
+			registerPiBatch(pi);
+			let piDialogs = 0;
+			const ctx = {
+				cwd: root, mode: "tui", hasUI: true, isIdle: () => true,
+				sessionManager: { getSessionId: () => "conformance-session-without-entry" },
+				ui: { setWidget() {}, setStatus() {}, notify() {}, custom: async () => { piDialogs++; return "decline"; } },
+			};
+			const piRefusal = async (name: string, params: Record<string, unknown>) => {
+				try {
+					await tools.get(name)!.execute("call-1", params, undefined, undefined, ctx);
+				} catch (error) {
+					const failure = JSON.parse((error as Error).message) as { state: string; code: string; next_action: string };
+					expect(failure.state).toBe("blocked");
+					return { reason_code: failure.code, recovery_action: failure.next_action };
+				}
+				throw new Error(`${name} was not refused`);
+			};
+
+			const expected = { reason_code: RUN_ENTRY_REQUIRED, recovery_action: PHASE_ENTRY_RECOVERY[RUN_ENTRY_REQUIRED] };
+			const refusals = [
+				await claude("enroll", { task_id: "conformance-task" }),
+				await claude("start_unattended_batch", { initiative_slug: "conformance-initiative" }),
+				await piRefusal("imm_canary_enrollment", { action: "new", task_id: "conformance-task" }),
+				await piRefusal("start_unattended_batch", { initiative_slug: "conformance-initiative" }),
+			];
+			for (const refusal of refusals) expect(refusal).toEqual(expected);
+			expect(claudeGates).toBe(0);
+			expect(piDialogs).toBe(0);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 
 	// S12 ACT-3: the literal-user identity is one value for both Hosts. The
