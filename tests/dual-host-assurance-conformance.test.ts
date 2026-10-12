@@ -587,7 +587,7 @@ function projectVerificationFixture(taskId: string, mode: "pass" | "prepare-fail
 	const tool = join(root, "tools/future-pm");
 	writeFileSync(tool, `#!/bin/sh
 case "$1" in
-  prepare) [ "$2" != "fail" ] || exit 7; mkdir -p generated; printf ready > generated/ready ;;
+  prepare) [ "$2" != "fail" ] || { echo "install failed: registry unreachable" >&2; exit 7; }; mkdir -p generated; printf ready > generated/ready ;;
   check) test -f generated/ready ;;
   sleep) sleep 10 ;;
 esac
@@ -675,6 +675,13 @@ describe("project-owned-verification", () => {
 		expect(comparable[0]).toEqual(comparable[1]);
 		expect(comparable[0]).toMatchObject({ state: "failed", operation: "qa" });
 		expect(JSON.stringify(comparable[0])).toContain("QA prepare failed");
+		// Both Hosts return the same prepare observation, beside the diagnostics.
+		expect(comparable[0].prepare_observation).toEqual({
+			conditions: { delivery: "isolated_materialization", home_and_cache: "fresh_per_run", worktree_node_modules: "absent" },
+			declared_timeout_ms: 5_000,
+			stderr_tail: "install failed: registry unreachable\n",
+		});
+		expect(JSON.stringify(comparable[0].diagnostics)).not.toContain("registry unreachable");
 		for (const host of ["pi", "claude"] as const) {
 			const taskId = `v1-migration-${host}`, root = projectVerificationFixture(taskId, "v1");
 			try {

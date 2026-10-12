@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "ceremony-trim-r647-s1-qa-prepare-diagnostics",
-  "owner": "user",
   "goal": "Make a failed QA prepare stage locatable: the failed Assurance result states the conditions prepare ran under and a bounded stderr tail, while the check stage and every persisted record stay free of verifier output.",
   "acceptance": [
     {
@@ -33,6 +32,7 @@
     "plugins/immune-brain/runtime/assurance/verification.ts",
     "plugins/immune-brain/runtime/claude/kernel_ports.ts",
     "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "tests/claude-batch-authority.test.ts",
     "tests/claude-host-package.test.ts",
     "tests/dual-host-assurance-conformance.test.ts",
     "tests/host-neutral-assurance-coordinator.test.ts",
@@ -41,5 +41,6 @@
     "tests/shared-deterministic-qa.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

@@ -512,7 +512,12 @@ describe("batch foreground Executor integration", () => {
 						: await progression.advance(task, { cwd: fixture.root });
 					expect(failedEnvironment).toMatchObject({ state: "failed", recovery: { category: "environment", task_id: task, acceptance_ids: ["acc-1"], finding_ids: [], next_obligation: "run_qa" },
 						diagnostics: [{ stage: "prepare", outcome: "nonzero_exit", descriptor_ref: "acceptance/0/verification/environment/prepare" }] });
-					expect(JSON.stringify(failedEnvironment)).not.toContain(outputCanary);
+					// Only the direct Tool result's prepare observation carries the stderr tail;
+					// nothing else in it, the batch state or the stored record does.
+					const { prepare_observation: observed, ...withoutObservation } = failedEnvironment;
+					expect(observed).toMatchObject({ declared_timeout_ms: expect.any(Number), stderr_tail: `${outputCanary}\n` });
+					expect(JSON.stringify(withoutObservation)).not.toContain(outputCanary);
+					expect(JSON.stringify({ batch: readFileSync(statePath, "utf8"), record: readTaskRecordRaw(fixture.root, task).record })).not.toContain(outputCanary);
 					const environmentRevision = readTaskRecordRaw(fixture.root, task).revision;
 					for (let retry = 0; retry < 2; retry++) {
 						const pending = await start();

@@ -1340,6 +1340,35 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		}
 	});
 
+	test("a failed prepare stage returns its conditions and stderr tail in the Tool result, never in the record", { timeout: 15000 }, async () => {
+		const root = makeEnrolledRoot();
+		const secret = "pi-prepare-tail-canary-S1";
+		const observation = {
+			conditions: { delivery: "isolated_materialization", home_and_cache: "fresh_per_run", worktree_node_modules: "absent" },
+			declared_timeout_ms: 4321,
+			stderr_tail: `resolving\n${secret}\n`,
+		} as const;
+		try {
+			const tool = loadSurface({
+				runQa: async () => { throw new QaPreparationError("prepare", ["A1"], "timeout", [], observation); },
+			}).tools[0];
+			const failure = await capturedToolFailure(tool.execute(
+				"advance",
+				{ task_id: TASK, action: { op: "advance_assurance" } },
+				undefined,
+				undefined,
+				makeCtx(root, makeUI()),
+			));
+			expect(failure).toMatchObject({ environment_failure: true, prepare_observation: observation });
+			expect(failure.message).toContain("reproduction in the live worktree is not equivalent");
+			expect(JSON.stringify(failure.diagnostics ?? [])).not.toContain(secret);
+			expect(JSON.stringify(failure.recovery ?? {})).not.toContain(secret);
+			expect(JSON.stringify((await readTaskRecordRaw(root, TASK)).record)).not.toContain(secret);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	test("advance emits bounded foreground updates and returns exact Agent params", { timeout: 15000 }, async () => {
 	const root = makeEnrolledRoot();
 	try {

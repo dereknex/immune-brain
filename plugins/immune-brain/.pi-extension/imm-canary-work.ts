@@ -1735,6 +1735,7 @@ function throwIfCanaryToolFailure(
 		// Preserve only the coordinator's bounded observation metadata.
 		{
 			...(details.diagnostics ? { diagnostics: details.diagnostics } : {}),
+			...(details.prepare_observation ? { prepare_observation: details.prepare_observation } : {}),
 			...(details.environment_failure ? { environment_failure: true } : {}),
 			...(details.recovery ? { recovery: details.recovery } : {}),
 			...(details.recovery_error ? { recovery_error: details.recovery_error } : {}),

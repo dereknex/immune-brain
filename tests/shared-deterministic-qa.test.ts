@@ -84,6 +84,18 @@ describe("shared deterministic QA", () => {
 			outcome: ({ materialize: "delivery_unavailable", resolve: "executable_or_cwd_unavailable", execute: "execution_failed", cleanup: "delivery_cleanup_failed" })[phase] }]);
 		expect(JSON.stringify({ message: error.message, diagnostics: error.diagnostics })).not.toContain(secret);
 	});
+	test("a prepare failure keeps the stderr tail out of diagnostics and the error message", async () => {
+		const secret = "prepare-tail-canary-S1";
+		const prepare = { executable: "novel-prepare-2099", argv: [], cwd: ".", timeout_ms: 1000, max_output_bytes: 1024 };
+		const items = [{ id: "A1", environment: { prepare, writable_paths: [] } }], s = snapshot("prepare-tail", items);
+		const error = await runDeterministicQa(s, descriptors(s, items), injection({
+			_runFixedVerification: async () => ({ exit_code: 2, timed_out: false, output_limited: false, stdout: "", stderr: secret }),
+		})).then(() => null, error => error);
+		expect(error).toBeInstanceOf(QaPreparationError);
+		expect(error.prepare_observation.stderr_tail).toBe(secret);
+		expect(JSON.stringify({ message: error.message, diagnostics: error.diagnostics })).not.toContain(secret);
+		expect(error.diagnostics).toMatchObject([{ stage: "prepare", outcome: "nonzero_exit", stderr_bytes: Buffer.byteLength(secret) }]);
+	});
 	test("cancellation never returns a verdict or starts the next descriptor", async () => {
 		const controller = new AbortController(); let calls = 0; const items = [{ id: "A1" }], s = snapshot("abort", items);
 		await expect(runDeterministicQa(s, descriptors(s, items), injection({ signal: controller.signal, _runFixedVerification: async () => { calls++; controller.abort(); return { exit_code: 0, timed_out: false, output_limited: false, stdout: "", stderr: "" }; } }))).rejects.toBeInstanceOf(VerificationAbortedError);

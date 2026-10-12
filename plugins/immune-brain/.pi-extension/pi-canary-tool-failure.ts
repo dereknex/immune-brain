@@ -1,7 +1,7 @@
 import type { AssuranceAdvanceResult } from "../runtime/assurance/coordinator";
 
 export type AssuranceFailureDetails = Pick<AssuranceAdvanceResult,
-	"diagnostics" | "environment_failure" | "recovery" | "recovery_error">;
+	"diagnostics" | "prepare_observation" | "environment_failure" | "recovery" | "recovery_error">;
 
 export interface ToolFailureV1 extends AssuranceFailureDetails {
 	contract: "immune_brain/tool_failure/v1";

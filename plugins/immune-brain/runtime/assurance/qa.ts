@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { snapshotDigest, QaPreparationError, type AssuranceVerdict, type SnapshotDescriptor, type QaCheckDiagnostic, type QaPreparationReason, type QaVerificationProgressInput } from "./coordinator";
+import { snapshotDigest, QaPreparationError, qaPrepareObservation, type AssuranceVerdict, type SnapshotDescriptor, type QaCheckDiagnostic, type QaPreparationReason, type QaVerificationProgressInput } from "./coordinator";
 export { QaPreparationError, type QaCheckDiagnostic, type QaPreparationReason, type QaVerificationProgressInput } from "./coordinator";
 import { assertDeliveryClean, materializeDeliveryWorkspace, removeTaskOwnedTree, writeDeliveryTree } from "./delivery_workspace";
 import { runFixedVerification, resolveVerificationCommand, assertCommandIdentity, verificationPath, VerificationAbortedError, VerificationCleanupError, VerificationLaunchError, type FrozenCommand, type VerificationDescriptor, type VerificationCommand } from "./verification";
@@ -132,7 +132,8 @@ export async function runDeterministicQa(
 				const result = await execute(environment.prepare, "prepare");
 				if (result.exit_code !== 0 || result.timed_out || result.output_limited)
 					throw new QaPreparationError("prepare", ids, result.timed_out ? "timeout" : result.output_limited ? "output_limit" : "nonzero_exit",
-						diagnostics("prepare", result.timed_out ? "timeout" : result.output_limited ? "output_limit" : "nonzero_exit", group, "prepare", Math.round(performance.now() - prepareStarted), result));
+						diagnostics("prepare", result.timed_out ? "timeout" : result.output_limited ? "output_limit" : "nonzero_exit", group, "prepare", Math.round(performance.now() - prepareStarted), result),
+						qaPrepareObservation(environment.prepare.timeout_ms, result.stderr));
 			}
 			for (const item of group) {
 				const started = performance.now();

@@ -1,0 +1,167 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "ceremony-trim-r647-s1-qa-prepare-diagnostics",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "ceremony-trim-r647-s1-qa-prepare-diagnostics",
+    "goal": "Make a failed QA prepare stage locatable: the failed Assurance result states the conditions prepare ran under and a bounded stderr tail, while the check stage and every persisted record stay free of verifier output.",
+    "acceptance": [
+      {
+        "id": "CT-S1-A1",
+        "assertion": "Meet T1 and D2 in docs/specs/ceremony-trim-r647.spec.md: when the prepare command ends in timeout, nonzero exit or output limit, the failed Assurance result carries the execution conditions (isolated delivery, fresh home and cache directories, no worktree node_modules), the declared timeout, and a stderr tail of at most 2048 bytes taken from the end with control characters other than newline and tab removed. A failing check stage returns none of these. The Loop contract states the stage-specific rule in place of the blanket no-output sentence.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/qa-prepare-diagnostics.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "CT-S1-A2",
+        "assertion": "Meet invariants I1 and I2: the stderr tail is absent from QaCheckDiagnostic entries, from batch failure facts, and from the stored TaskRecord after a failed run; existing assertions that strip injected output fields still hold.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/shared-deterministic-qa.test.ts\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "CT-S1-A3",
+        "assertion": "Both Hosts return the same prepare observation fields in the failed Assurance Tool result, and the packaged Claude bundle matches its source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-work-extension.test.ts\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/ceremony-trim-s1-qa-prepare-diagnostics.md",
+      "docs/plans/ceremony-trim-r647-s1-qa-prepare-diagnostics.intent.json",
+      "docs/specs/ceremony-trim-r647.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-tool-failure.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/assurance/qa.ts",
+      "plugins/immune-brain/runtime/assurance/verification.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/host-neutral-assurance-coordinator.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/qa-prepare-diagnostics.test.ts",
+      "tests/shared-deterministic-qa.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/ceremony-trim-r647-s1-qa-prepare-diagnostics.intent.json",
+    "content_hash": "sha256:3b0bb2e795a4df421a379c096eb98d513aa7021e05a77807b60b8bca78a8ff14"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:da22d2b0aa0cc2d316e48b5c2be3c2dc788c5e1587c459b9672a1703a97067da",
+  "git_base_head": "8d30fe27b9411f9e286cfd0eee56e8e7707aca38",
+  "attestations": [
+    {
+      "id": "approval-qa-d4221e72",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:3b0bb2e795a4df421a379c096eb98d513aa7021e05a77807b60b8bca78a8ff14",
+      "diff_hash": "sha256:1984ca33dcd97145a45d7a8f65391b5e3299ddaee46cd80cb94a271874ff0c1c",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:bf0e46b1dadb4402072ccaaa26dc3ffcea469a53094b258431263f2d1dc0fdf9",
+      "acceptance_results": [
+        {
+          "acceptance_id": "CT-S1-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:bf0e46b1dadb4402072ccaaa26dc3ffcea469a53094b258431263f2d1dc0fdf9"
+        },
+        {
+          "acceptance_id": "CT-S1-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:bf0e46b1dadb4402072ccaaa26dc3ffcea469a53094b258431263f2d1dc0fdf9"
+        },
+        {
+          "acceptance_id": "CT-S1-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:bf0e46b1dadb4402072ccaaa26dc3ffcea469a53094b258431263f2d1dc0fdf9"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-b7ca9f47",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:3b0bb2e795a4df421a379c096eb98d513aa7021e05a77807b60b8bca78a8ff14",
+      "diff_hash": "sha256:1984ca33dcd97145a45d7a8f65391b5e3299ddaee46cd80cb94a271874ff0c1c",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (single parent 8d30fe2, tree eafe246). A failed prepare stage returns bounded stderr tail, conditions and declared timeout only in the direct Tool result on both Hosts; the tail is absent from QaCheckDiagnostic, batch facts and the TaskRecord; the check stage returns no output; the Claude bundle matches its source; tests pin positive, negative and bound cases at the agreed seams.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "8d30fe27b9411f9e286cfd0eee56e8e7707aca38",
+        "review_commit": "5dbed71c7af36fff4fa80638c8b9387568cd55f5",
+        "review_tree": "eafe24615b3b82e30589a8483f0fc6b251f58d3e",
+        "manifest_digest": "sha256:39167c0c5f8852be81715c21d83b080f49f95a0b5f1d36e358e6875bcfccade3"
+      },
+      "reviewer_verdict_sha256": "sha256:53a0ded0c4a930920d96239a12552db950eeaccf795edf0adf14ab7ebab29b4a"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:ceremony-trim-r647-s1-qa-prepare-diagnostics:2026-10-12T11:04:15.367Z",
+      "at": "2026-10-12T11:04:15.367Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:1594f67eb29944e6ae90aa08fbdb91ac804654e7e17434acf1704bda0be4782d",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-36e0c59d43c1ce47",
+        "issued_at": "2026-10-12T11:04:19.590Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:ceremony-trim-r647-s1-qa-prepare-diagnostics:2026-10-12T11:06:43.655Z",
+      "at": "2026-10-12T11:06:43.655Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/ceremony-trim-r647-s1-qa-prepare-diagnostics.intent.json"
+    },
+    {
+      "id": "record_approval:ceremony-trim-r647-s1-qa-prepare-diagnostics:2026-10-12T11:09:31.041Z",
+      "at": "2026-10-12T11:09:31.041Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-d4221e72\naction_v2_sha256:950a86fdf45232c98ae653dcee215ec81ca6f0d35e6a9297c507d207879000d7",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-12T11:09:31.041Z"
+      }
+    },
+    {
+      "id": "record_approval:ceremony-trim-r647-s1-qa-prepare-diagnostics:2026-10-12T11:11:52.164Z",
+      "at": "2026-10-12T11:11:52.164Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-b7ca9f47\naction_v2_sha256:aeefbd244d4005a0b8e8e590a244a68bf7917adf61df2892b391fa9f86b1b035",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-12T11:11:52.164Z"
+      }
+    },
+    {
+      "id": "complete:ceremony-trim-r647-s1-qa-prepare-diagnostics:2026-10-12T11:11:54.114Z",
+      "at": "2026-10-12T11:11:54.114Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:4ca821455018ce0910eb7d8d2749a2744dfff63e2c58a4fed1f859138b7ee28d"
+    }
+  ]
+}

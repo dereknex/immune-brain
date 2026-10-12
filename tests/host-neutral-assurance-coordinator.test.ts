@@ -26,7 +26,7 @@ import type { AssuranceHostPort, HostReviewReservation, ReviewRequest } from "..
 import type { AssuranceProjectionResult } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import { VerificationAbortedError } from "../plugins/immune-brain/runtime/assurance/verification";
-import { QaPreparationError } from "../plugins/immune-brain/runtime/assurance/qa";
+import { QaPreparationError, runDeterministicQa } from "../plugins/immune-brain/runtime/assurance/qa";
 
 const TASK = "phase3-task";
 const ROOT = "/tmp/phase3-assurance";
@@ -681,14 +681,14 @@ describe("host-neutral assurance coordinator", () => {
 
 const authorityRoots: string[] = [];
 afterAll(() => { for (const root of authorityRoots) rmSync(root, { recursive: true, force: true }); });
-function authorityFixture() {
+function authorityFixture(environment: object = { prepare: null, writable_paths: [] }) {
  const root = mkdtempSync(join(tmpdir(), "s4-authority-")); authorityRoots.push(root);
  const taskId = "s4-verdict";
  const intent = parseTaskIntentV1({ contract: "assurance_kernel/task_intent/v1", task_id: taskId,
   owner: "user", goal: "exercise shared verdict authority", risk: "material", revision: 1,
   scope_hint: ["src/work.ts", `docs/plans/archive/${taskId}.intent.json`],
   acceptance: [{ id: "A1", assertion: "work passes", verification: JSON.stringify({
-   contract: "assurance_kernel/verification_descriptor/v2", command: { executable: "bun", argv: ["test", "src/work.ts"], cwd: ".", timeout_ms: 1000, max_output_bytes: 1024 }, environment: { prepare: null, writable_paths: [] } }) }] });
+   contract: "assurance_kernel/verification_descriptor/v2", command: { executable: "bun", argv: ["test", "src/work.ts"], cwd: ".", timeout_ms: 1000, max_output_bytes: 1024 }, environment }) }] });
  mkdirSync(join(root, "src"), { recursive: true }); mkdirSync(join(root, "docs/plans/archive"), { recursive: true });
  writeFileSync(join(root, "src/work.ts"), "export const value = 1;\n");
  writeFileSync(join(root, `docs/plans/archive/${taskId}.intent.json`), JSON.stringify(intent, null, 2)+"\n");
@@ -776,4 +776,29 @@ describe("shared verdict authority through host-configured coordinators", () => 
    h.coordinator.closeInvocation(invocation);
   });
  }
+});
+
+describe("QA prepare failure through the real Kernel", () => {
+ test("the stderr tail reaches the Tool result and never the stored TaskRecord", async () => {
+  const secret = "prepare-stderr-canary-S1";
+  const prepare = { executable: "bun", argv: ["install"], cwd: ".", timeout_ms: 4321, max_output_bytes: 4096 };
+  const f = authorityFixture({ prepare, writable_paths: [] });
+  const coordinator = new AssuranceCoordinator({ host: { host: "pi", prepareReview: () => { throw new Error("unused"); }, releaseReview: () => {} },
+   confirmationReference: ({ actorId }) => `fixture:${actorId}`, projectTask: (r, t) => projectAssurance(r, t),
+   readTaskRecord: async (r, t) => readTaskRecordRaw(r, t), readTaskIntent: async () => ({}),
+   runQa: (s, d, o) => runDeterministicQa(s, d, { ...o,
+    _runFixedVerification: async () => ({ exit_code: 1, timed_out: true, output_limited: false, stdout: "", stderr: `resolving\n${secret}\n` }) }),
+   writeReviewEvidence: () => { throw new Error("unused"); }, applyOrdinaryOperation: async () => {},
+  });
+  Object.assign(coordinator.authority, createVerdictAuthority({ confirmationReference: ({ actorId }) => `fixture:${actorId}`,
+   commitInvocation: t => coordinator.commitInvocation(t) }, createMutationAuthorityRegistry()));
+  const before = readTaskRecordRaw(f.root, f.taskId);
+  const result = await coordinator.advance(f.taskId, { cwd: f.root });
+  expect(result).toMatchObject({ state: "failed", environment_failure: true,
+   prepare_observation: { declared_timeout_ms: 4321, stderr_tail: `resolving\n${secret}\n` } });
+  expect(JSON.stringify((result as { diagnostics?: unknown }).diagnostics)).not.toContain(secret);
+  const after = readTaskRecordRaw(f.root, f.taskId);
+  expect(after.revision).toBe(before.revision);
+  expect(JSON.stringify(after.record)).not.toContain(secret);
+ });
 });

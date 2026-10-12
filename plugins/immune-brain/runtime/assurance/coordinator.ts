@@ -257,6 +257,48 @@ export function qaDiagnosticMetadata(d: QaCheckDiagnostic): QaCheckDiagnostic {
 	return safe;
 }
 
+/**
+ * What a failed `prepare` stage ran under, plus the end of its stderr. It
+ * travels only in the direct Assurance Tool result: it is not part of
+ * `QaCheckDiagnostic` and is never persisted (no TaskRecord, finding, audit
+ * evidence, batch state or tracker projection).
+ */
+export interface QaPrepareObservation {
+	conditions: {
+		delivery: "isolated_materialization";
+		home_and_cache: "fresh_per_run";
+		worktree_node_modules: "absent";
+	};
+	declared_timeout_ms: number;
+	stderr_tail: string;
+}
+export const QA_PREPARE_STDERR_TAIL_BYTES = 2048;
+export const QA_PREPARE_REPRODUCTION_NOTE = "a reproduction in the live worktree is not equivalent: QA runs prepare in an isolated delivery with a fresh home and cache and no worktree node_modules";
+const QA_PREPARE_REASONS: QaPreparationReason[] = ["timeout", "nonzero_exit", "output_limit"];
+// Control characters other than newline and tab: C0, DEL and C1.
+const QA_TAIL_CONTROL = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g;
+/** The last bytes of stderr, whole UTF-8 characters only, without terminal control sequences. */
+export function qaPrepareStderrTail(stderr: string): string {
+	const bytes = Buffer.from(stderr, "utf8");
+	let start = Math.max(0, bytes.length - QA_PREPARE_STDERR_TAIL_BYTES);
+	// Do not begin inside a multi-byte character.
+	while (start < bytes.length && (bytes[start]! & 0xc0) === 0x80) start++;
+	return bytes.subarray(start).toString("utf8").replace(QA_TAIL_CONTROL, "");
+}
+export function qaPrepareObservation(declaredTimeoutMs: number, stderr: string): QaPrepareObservation {
+	return {
+		conditions: { delivery: "isolated_materialization", home_and_cache: "fresh_per_run", worktree_node_modules: "absent" },
+		declared_timeout_ms: declaredTimeoutMs,
+		stderr_tail: qaPrepareStderrTail(stderr),
+	};
+}
+/** The Tool boundary never spreads arbitrary executor fields. */
+export function qaPrepareObservationMetadata(o: QaPrepareObservation): QaPrepareObservation {
+	if (!Number.isSafeInteger(o.declared_timeout_ms) || o.declared_timeout_ms < 0 || typeof o.stderr_tail !== "string")
+		throw new Error("invalid QA prepare observation");
+	return qaPrepareObservation(o.declared_timeout_ms, o.stderr_tail);
+}
+
 export interface QaVerificationProgressInput {
 	index: number;
 	total: number;
@@ -267,13 +309,17 @@ export interface QaVerificationProgressInput {
 }
 
 export class QaPreparationError extends Error {
+	/** Present only for a `prepare` stage ending in timeout, nonzero exit or output limit. */
+	public readonly prepare_observation?: QaPrepareObservation;
 	constructor(public readonly stage: QaCheckDiagnostic["stage"], public readonly acceptance_ids: string[], public readonly reason: QaPreparationReason,
-		public readonly diagnostics: QaCheckDiagnostic[] = []) {
+		public readonly diagnostics: QaCheckDiagnostic[] = [], prepareObservation?: QaPrepareObservation) {
 		if (!QA_STAGES.includes(stage) || !QA_OUTCOMES.includes(reason)) throw new Error("invalid QA preparation classification");
 		const safe = diagnostics.map(qaDiagnosticMetadata);
 		if (Buffer.byteLength(JSON.stringify(safe)) > 16_384) throw new QaPreparationError("prepare", [], "execution_metadata_limit_exceeded");
 		super(`QA ${stage} failed (${reason}); affected checks=${acceptance_ids.length}`);
 		this.diagnostics = safe;
+		if (prepareObservation && stage === "prepare" && QA_PREPARE_REASONS.includes(reason))
+			this.prepare_observation = qaPrepareObservationMetadata(prepareObservation);
 		this.name = "QaPreparationError";
 	}
 }
@@ -332,6 +378,8 @@ export interface AssuranceTimings { total_ms: number; stage_ms: Record<string, n
 type AssuranceRecoveryFields = {
 	timings?: AssuranceTimings;
 	diagnostics?: QaCheckDiagnostic[];
+	/** Direct Tool result only; never persisted (see `QaPrepareObservation`). */
+	prepare_observation?: QaPrepareObservation;
 	environment_failure?: boolean;
 	recovery?: AssuranceRecovery;
 	recovery_error?: "fresh_kernel_projection_unavailable";
@@ -1182,8 +1230,10 @@ export class AssuranceCoordinator {
 				return { state: "failed", operation: "qa", operation_id: operationId, reason: `${phase}: ${boundedAssuranceError(error)}`,
 					recovery_error: "fresh_kernel_projection_unavailable" };
 			if (error instanceof QaPreparationError && !authorityCommitted && !authorityBoundaryStarted && !aborted())
-				return { state: "failed", operation: "qa", operation_id: operationId, reason: error.message,
-					environment_failure: true, diagnostics: error.diagnostics.map(qaDiagnosticMetadata) };
+				return { state: "failed", operation: "qa", operation_id: operationId,
+					reason: error.prepare_observation ? `${error.message}; ${QA_PREPARE_REPRODUCTION_NOTE}` : error.message,
+					environment_failure: true, diagnostics: error.diagnostics.map(qaDiagnosticMetadata),
+					...(error.prepare_observation ? { prepare_observation: qaPrepareObservationMetadata(error.prepare_observation) } : {}) };
 			if (phase === "verifying" && !authorityCommitted && !authorityBoundaryStarted && !aborted() && !(error instanceof VerificationAbortedError))
 				return { state: "failed", operation: "qa", operation_id: operationId,
 					reason: "QA execution failed before attestation (execution_failed)", environment_failure: true };

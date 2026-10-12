@@ -10925,13 +10925,37 @@ function qaDiagnosticMetadata(d) {
     throw new QaPreparationError("prepare", [], "execution_metadata_limit_exceeded");
   return safe;
 }
+var QA_PREPARE_STDERR_TAIL_BYTES = 2048;
+var QA_PREPARE_REPRODUCTION_NOTE = "a reproduction in the live worktree is not equivalent: QA runs prepare in an isolated delivery with a fresh home and cache and no worktree node_modules";
+var QA_PREPARE_REASONS = ["timeout", "nonzero_exit", "output_limit"];
+var QA_TAIL_CONTROL = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g;
+function qaPrepareStderrTail(stderr) {
+  const bytes = Buffer.from(stderr, "utf8");
+  let start = Math.max(0, bytes.length - QA_PREPARE_STDERR_TAIL_BYTES);
+  while (start < bytes.length && (bytes[start] & 192) === 128)
+    start++;
+  return bytes.subarray(start).toString("utf8").replace(QA_TAIL_CONTROL, "");
+}
+function qaPrepareObservation(declaredTimeoutMs, stderr) {
+  return {
+    conditions: { delivery: "isolated_materialization", home_and_cache: "fresh_per_run", worktree_node_modules: "absent" },
+    declared_timeout_ms: declaredTimeoutMs,
+    stderr_tail: qaPrepareStderrTail(stderr)
+  };
+}
+function qaPrepareObservationMetadata(o) {
+  if (!Number.isSafeInteger(o.declared_timeout_ms) || o.declared_timeout_ms < 0 || typeof o.stderr_tail !== "string")
+    throw new Error("invalid QA prepare observation");
+  return qaPrepareObservation(o.declared_timeout_ms, o.stderr_tail);
+}
 
 class QaPreparationError extends Error {
   stage;
   acceptance_ids;
   reason;
   diagnostics;
-  constructor(stage, acceptance_ids, reason, diagnostics = []) {
+  prepare_observation;
+  constructor(stage, acceptance_ids, reason, diagnostics = [], prepareObservation) {
     if (!QA_STAGES.includes(stage) || !QA_OUTCOMES.includes(reason))
       throw new Error("invalid QA preparation classification");
     const safe = diagnostics.map(qaDiagnosticMetadata);
@@ -10943,6 +10967,8 @@ class QaPreparationError extends Error {
     this.reason = reason;
     this.diagnostics = diagnostics;
     this.diagnostics = safe;
+    if (prepareObservation && stage === "prepare" && QA_PREPARE_REASONS.includes(reason))
+      this.prepare_observation = qaPrepareObservationMetadata(prepareObservation);
     this.name = "QaPreparationError";
   }
 }
@@ -11701,9 +11727,10 @@ class AssuranceCoordinator {
           state: "failed",
           operation: "qa",
           operation_id: operationId,
-          reason: error.message,
+          reason: error.prepare_observation ? `${error.message}; ${QA_PREPARE_REPRODUCTION_NOTE}` : error.message,
           environment_failure: true,
-          diagnostics: error.diagnostics.map(qaDiagnosticMetadata)
+          diagnostics: error.diagnostics.map(qaDiagnosticMetadata),
+          ...error.prepare_observation ? { prepare_observation: qaPrepareObservationMetadata(error.prepare_observation) } : {}
         };
       if (phase === "verifying" && !authorityCommitted && !authorityBoundaryStarted && !aborted() && !(error instanceof VerificationAbortedError))
         return {
@@ -12896,7 +12923,7 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
         const prepareStarted = performance.now();
         const result = await execute(environment.prepare, "prepare");
         if (result.exit_code !== 0 || result.timed_out || result.output_limited)
-          throw new QaPreparationError("prepare", ids, result.timed_out ? "timeout" : result.output_limited ? "output_limit" : "nonzero_exit", diagnostics("prepare", result.timed_out ? "timeout" : result.output_limited ? "output_limit" : "nonzero_exit", group, "prepare", Math.round(performance.now() - prepareStarted), result));
+          throw new QaPreparationError("prepare", ids, result.timed_out ? "timeout" : result.output_limited ? "output_limit" : "nonzero_exit", diagnostics("prepare", result.timed_out ? "timeout" : result.output_limited ? "output_limit" : "nonzero_exit", group, "prepare", Math.round(performance.now() - prepareStarted), result), qaPrepareObservation(environment.prepare.timeout_ms, result.stderr));
       }
       for (const item of group) {
         const started = performance.now();

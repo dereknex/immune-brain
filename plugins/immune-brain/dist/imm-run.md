@@ -544,6 +544,14 @@ is recorded as a separate follow-up rather than resolved here.
   Use its canonical descriptor reference/digest, phase/outcome, timing and byte
   counts to diagnose; QA diagnostic metadata is capped at 16 KiB and contains no
   stdout/stderr, argv, environment values or arbitrary executor error text.
+  The stage decides what else a failed result carries. A `prepare` stage ending
+  in timeout, nonzero exit or output limit adds `prepare_observation` to the
+  direct Tool result only: the fixed execution conditions (isolated delivery,
+  fresh home and cache directories, no worktree `node_modules`), the declared
+  timeout, and at most 2048 bytes of the end of stderr with control characters
+  other than newline and tab removed. It is never persisted. A failing `check`
+  stage returns no output text at all. A reproduction in the live worktree is
+  not equivalent to the prepare conditions.
   A frozen child with `run_qa` pending returns to Parent; batch re-entry does not
   blindly retry an unchanged failure. Fix the environment before a fresh attempt.
   Scope/authority exceptions still use their existing native gates. A committed
