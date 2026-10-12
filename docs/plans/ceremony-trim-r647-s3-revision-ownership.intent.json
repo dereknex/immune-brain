@@ -1,0 +1,46 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "ceremony-trim-r647-s3-revision-ownership",
+  "owner": "user",
+  "goal": "Stop a session that entered the Planner from editing files inside the scope of a task another session is executing, and state in the contracts that the Loop owner prepares scope and acceptance revisions in the executing session.",
+  "acceptance": [
+    {
+      "id": "CT-S3-A1",
+      "assertion": "Meet T3, D7, D8 and invariant I6 in docs/specs/ceremony-trim-r647.spec.md on Claude Code: with a plan entry as the session's latest phase entry and an active Managed claim, a file-edit tool call targeting a path inside the active scope is denied with revision_owner_required and one recovery action. Nothing is denied after a run entry, without an active claim, for a path outside the scope, for a planning sidecar under docs/plans or docs/specs, with an unreadable entry store, or for a non-file tool.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/revision-owner-guard.test.ts\",\n      \"tests/claude-phase-entry-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "CT-S3-A2",
+      "assertion": "The Pi tool_call handler applies the same decision with the same reason code and recovery action, and PhaseEntryState reports a latest plan entry without changing the existing run-entry transitions.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-phase-entry-gate.test.ts\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/phase-entry.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "CT-S3-A3",
+      "assertion": "Meet D9: the Planner and Loop contracts state who prepares which revision and that the guard covers file-edit tools only; the packaged Claude bundle matches its source.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/revision-owner-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/ceremony-trim-s3-revision-ownership.md",
+    "docs/plans/ceremony-trim-r647-s3-revision-ownership.intent.json",
+    "docs/specs/ceremony-trim-r647.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/dist/imm-run.md",
+    "plugins/immune-brain/hooks/hooks.json",
+    "plugins/immune-brain/runtime/assurance/phase_entry.ts",
+    "plugins/immune-brain/runtime/assurance/revision_owner.ts",
+    "plugins/immune-brain/runtime/claude/lane_guard.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/claude-phase-entry-gate.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/phase-entry.test.ts",
+    "tests/pi-phase-entry-gate.test.ts",
+    "tests/revision-owner-contract.test.ts",
+    "tests/revision-owner-guard.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

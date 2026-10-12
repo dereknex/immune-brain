@@ -1,0 +1,59 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "ceremony-trim-r647-s2-scope-revision",
+  "owner": "user",
+  "goal": "Let an enrolled task add a sibling file to its scope without a native confirmation, keep the confirmation for every wider scope change, disclose such additions to Review, and stop refusing a revision because the worktree already holds the paths it adds.",
+  "acceptance": [
+    {
+      "id": "CT-S2-A1",
+      "assertion": "Meet D6 and invariant I5 in docs/specs/ceremony-trim-r647.spec.md, characterization first: on both Hosts, a revision whose worktree holds a changed path covered only by the next scope reaches its gate (breaking) or applies (compatible); a changed path outside both the previous and the next scope refuses before the gate port is called; a failed preparation restores the staged sidecar.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/scope-revision-envelope.test.ts\",\n      \"tests/breaking-intent-revision-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "CT-S2-A2",
+      "assertion": "Meet D3, D4 and invariant I3: classifyIntentRevision returns compatible for a scope that contains every previous entry and adds only concrete files whose directory already holds a previous non-glob entry and that touch no risk-floor prefix, docs/specs or docs/plans. It returns breaking for a removed entry, a glob, a new directory, an entry that swallows a previous one, each floor prefix by name, a glob anchor, and any combination with another breaking field. Each Host refuses the compatible route when an added or anchoring entry is a directory in the worktree.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-intent-v2.test.ts\",\n      \"tests/kernel-r2c1-boundary.test.ts\",\n      \"tests/scope-revision-envelope.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "CT-S2-A3",
+      "assertion": "Meet D5 and invariant I4: the Review prompt names every path added by compatible scope revisions of the task, derived from Kernel history across more than one revision, and carries no such line for a task without one. No TaskRecord field is added.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "CT-S2-A4",
+      "assertion": "Lane delegation still refuses a widening that is not compatible; Loop routing, the Planner and Loop contracts, the Executor prompt and its mirror state the same-directory rule and the module-directory default; ADR 0021 records the rule and its relation to ADR 0018; the packaged Claude bundle matches its source.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-delegation-gate.test.ts\",\n      \"tests/scope-revision-contract.test.ts\",\n      \"tests/loop-execution-routing.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/ceremony-trim-s2-scope-revision.md",
+    "docs/adr/0021-same-directory-scope-extension.md",
+    "docs/plans/ceremony-trim-r647-s2-scope-revision.intent.json",
+    "docs/specs/ceremony-trim-r647.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/dist/imm-run.md",
+    "plugins/immune-brain/dist/role-prompts/executor.md",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/kernel/intent.ts",
+    "plugins/immune-brain/runtime/kernel/reducer.ts",
+    "plugins/immune-brain/runtime/loop_contract.ts",
+    "plugins/immune-brain/runtime/prompts/executor.md",
+    "plugins/immune-brain/runtime/unattended/batch_delegation.ts",
+    "plugins/immune-brain/runtime/workspace_scope.ts",
+    "tests/batch-delegation-gate.test.ts",
+    "tests/breaking-intent-revision-gate.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/dist-docs-sync-contract.test.ts",
+    "tests/host-neutral-assurance-coordinator.test.ts",
+    "tests/kernel-intent-v2.test.ts",
+    "tests/kernel-r2c1-boundary.test.ts",
+    "tests/loop-execution-routing.test.ts",
+    "tests/scope-revision-contract.test.ts",
+    "tests/scope-revision-envelope.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

@@ -1,0 +1,48 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "ceremony-trim-r647-s4-contract-slimming",
+  "owner": "user",
+  "goal": "Remove three contract requirements that produce unused text: Delivery Evidence before the first Assurance attempt, diagram fields on Specs that need no diagram, and batch, Lane and Herdr sections inside the main Loop contract; and deliver docs/reports/contract-rule-audit-r647.md listing each normative rule with its enforcement point, removing no rule.",
+  "acceptance": [
+    {
+      "id": "CT-S4-A1",
+      "assertion": "Meet T4 in docs/specs/ceremony-trim-r647.spec.md: the Executor prompt, its packaged mirror and the Loop contract require the Delivery Evidence table for rework only and no longer before the first Assurance attempt; source and mirror stay identical.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/ceremony-trim-contract.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "CT-S4-A2",
+      "assertion": "Meet D10: the Planner contract asks for Diagram decision and Diagram reason only when a diagram is required and no longer asks why an omitted design view cannot matter; the conformance test asserts the new wording and no test is deleted; runtime/plan_core.ts is unchanged.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/technical-design-conformance-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "CT-S4-A3",
+      "assertion": "Meet D11: the batch, Lane and Herdr sections live in plugins/immune-brain/dist/imm-run-batch.md with unchanged wording and are absent from the main Loop contract; every loader anchor in the imm-run Skill and every external link to a moved anchor resolves in the new file; the new contract is registered for packaging and sync.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/role-prompt-bridge.test.ts\",\n      \"tests/unattended-contracts.test.ts\",\n      \"tests/loop-execution-routing.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\",\n      \"tests/ceremony-trim-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/ceremony-trim-s4-contract-slimming.md",
+    "docs/plans/ceremony-trim-r647-s4-contract-slimming.intent.json",
+    "docs/reference/immune-brain-config.md",
+    "docs/reports/contract-rule-audit-r647.md",
+    "docs/specs/ceremony-trim-r647.spec.md",
+    "plugins/immune-brain/README.md",
+    "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/dist/imm-run-batch.md",
+    "plugins/immune-brain/dist/imm-run.md",
+    "plugins/immune-brain/dist/role-prompts/executor.md",
+    "plugins/immune-brain/runtime/prompts/executor.md",
+    "plugins/immune-brain/skills/imm-run/SKILL.md",
+    "scripts/dist-sync-manifest.ts",
+    "tests/ceremony-trim-contract.test.ts",
+    "tests/dist-docs-sync-contract.test.ts",
+    "tests/loop-execution-routing.test.ts",
+    "tests/role-prompt-bridge.test.ts",
+    "tests/skill-dist-consistency.test.ts",
+    "tests/technical-design-conformance-contract.test.ts",
+    "tests/unattended-contracts.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
