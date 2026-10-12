@@ -1664,7 +1664,8 @@ import {
   lstatSync as lstatSync5,
   openSync as openSync4,
   readFileSync as readFileSync4,
-  realpathSync as realpathSync5
+  realpathSync as realpathSync5,
+  statSync as statSync2
 } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join as join4, resolve as resolve5, sep as sep3 } from "node:path";
@@ -1952,16 +1953,84 @@ function contentHashWithoutRevision(intent) {
   const { revision: _revision, ...rest } = intent;
   return canonicalIntentHash(rest);
 }
+function isConcreteScopeEntry(entry) {
+  return !entry.includes("*") && !entry.includes("?");
+}
+function scopeEntryParent(entry) {
+  const slash = entry.lastIndexOf("/");
+  return slash < 0 ? "" : entry.slice(0, slash);
+}
+function touchesChangedPathFloor(entry) {
+  const segments = entry.split("/");
+  return CHANGED_PATH_RISK_FLOOR_PREFIXES.some((prefix) => scopeEntryTouchesPrefixSegments(segments, prefix.split("/")));
+}
+function sameDirectoryScopeAdditions(previous, next) {
+  const prior = new Set(previous);
+  const retained = new Set(next);
+  if (previous.some((entry) => !retained.has(entry)))
+    return null;
+  const added = next.filter((entry) => !prior.has(entry));
+  const anchors = new Set(previous.filter(isConcreteScopeEntry).map(scopeEntryParent));
+  for (const entry of added) {
+    if (!isConcreteScopeEntry(entry) || touchesChangedPathFloor(entry))
+      return null;
+    if (!anchors.has(scopeEntryParent(entry)))
+      return null;
+    if (previous.some((existing) => existing.startsWith(`${entry}/`)))
+      return null;
+  }
+  return added;
+}
+function scopeAdditionAnchors(previous, added) {
+  const parents = new Set(added.map(scopeEntryParent));
+  return previous.filter((entry) => isConcreteScopeEntry(entry) && parents.has(scopeEntryParent(entry)));
+}
+var SCOPE_ADDED_PREFIX = "scope_added:";
+function scopeAdditionsReasonLines(added) {
+  return added.map((entry) => `${SCOPE_ADDED_PREFIX}${entry}`);
+}
+function scopeAdditionsFromHistory(history) {
+  const added = [];
+  for (const entry of history) {
+    if (entry.type !== "revise_intent")
+      continue;
+    for (const line of entry.reason.split(`
+`))
+      if (line.startsWith(SCOPE_ADDED_PREFIX))
+        added.push(line.slice(SCOPE_ADDED_PREFIX.length));
+  }
+  return [...new Set(added)].sort();
+}
 function classifyIntentRevision(previous, next) {
   if (contentHashWithoutRevision(previous) === contentHashWithoutRevision(next))
     return "unchanged";
-  const breaking = previous.contract !== next.contract || previous.task_id !== next.task_id || previous.owner !== next.owner || previous.goal !== next.goal || JSON.stringify(previous.scope_hint) !== JSON.stringify(next.scope_hint) || RISK_RANK[next.risk] < RISK_RANK[previous.risk] || previous.acceptance.some((prior) => {
+  const scopeChanged = JSON.stringify(previous.scope_hint) !== JSON.stringify(next.scope_hint);
+  const breaking = previous.contract !== next.contract || previous.task_id !== next.task_id || previous.owner !== next.owner || previous.goal !== next.goal || scopeChanged && sameDirectoryScopeAdditions(previous.scope_hint, next.scope_hint) === null || RISK_RANK[next.risk] < RISK_RANK[previous.risk] || previous.acceptance.some((prior) => {
     const current = next.acceptance.find((item) => item.id === prior.id);
     return !current || current.assertion !== prior.assertion;
   });
   if (breaking)
     return "breaking";
   return next.revision > previous.revision ? "compatible" : "breaking";
+}
+function assertScopeAdditionsAreFiles(root, previous, next) {
+  const added = sameDirectoryScopeAdditions(previous, next);
+  if (!added || added.length === 0)
+    return;
+  for (const entry of [...added, ...scopeAdditionAnchors(previous, added)]) {
+    let isDirectory = false;
+    try {
+      isDirectory = statSync2(join4(root, entry)).isDirectory();
+    } catch {}
+    if (isDirectory)
+      throw new Error(`scope entry ${entry} is a directory, so adding it is not a same-directory file addition; name concrete files, or widen with a glob entry such as ${entry}/** through approve_breaking_intent_revision`);
+  }
+}
+function withNextScope(record, nextScope) {
+  return {
+    ...record,
+    intent_snapshot: { ...record.intent_snapshot, scope_hint: [...nextScope] }
+  };
 }
 
 class TaskIntentObservationError extends Error {
@@ -3357,6 +3426,7 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths) {
         throw new KernelInvariantError([
           "next intent ref must match the next intent"
         ]);
+      const selfServedAdditions = action.type === "revise_intent" ? sameDirectoryScopeAdditions(record.intent_snapshot.scope_hint, action.next_intent.scope_hint) ?? [] : [];
       record.intent_snapshot = { ...action.next_intent };
       record.intent_ref = { ...action.next_intent_ref };
       if (action.type === "approve_breaking_intent_revision") {
@@ -3367,7 +3437,11 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths) {
         if (record.artifact_state === "frozen")
           record.artifact_state = "active";
       }
-      appendHistory(record, action, from, `intent_revision_${record.intent_snapshot.revision}`, authorityAudit);
+      appendHistory(record, action, from, [
+        `intent_revision_${record.intent_snapshot.revision}`,
+        ...scopeAdditionsReasonLines(selfServedAdditions)
+      ].join(`
+`), authorityAudit);
       break;
     }
     case "request_rework": {
@@ -11046,7 +11120,14 @@ function reviewTurnBudget(workload) {
 function snapshotDigest(snapshot) {
   return `sha256:${createHash17("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
 }
-function buildReviewSnapshotPrompt(snapshot, evidencePath) {
+function selfServedScopeLines(added) {
+  if (!added?.length)
+    return [];
+  return [
+    `Self-served scope additions (added by compatible Intent revisions with no user confirmation; judge each against the goal and its acceptance, not as pre-approved): ${added.join(", ")}`
+  ];
+}
+function buildReviewSnapshotPrompt(snapshot, evidencePath, options = {}) {
   if (snapshot.role !== "review")
     throw new Error("native review prompt requires review role");
   const acceptance = snapshot.acceptance.map((item) => `- ${item.id}: ${item.assertion}`).join(`
@@ -11069,6 +11150,7 @@ function buildReviewSnapshotPrompt(snapshot, evidencePath) {
     `Snapshot digest: ${digest}`,
     `TaskRecord revision: ${snapshot.record_revision}`,
     revision ? `Intent revision ${snapshot.intent_revision} (hash ${snapshot.intent_content_hash}), diff ${snapshot.diff_hash}, review revision ${revision.review_commit} (base ${revision.base_head}, tree ${revision.review_tree}, manifest ${revision.manifest_digest}), state ${snapshot.lifecycle}:${snapshot.artifact_state}.` : `Intent revision ${snapshot.intent_revision} (hash ${snapshot.intent_content_hash}), diff ${snapshot.diff_hash}, review bundle ${snapshot.review_bundle_digest}, state ${snapshot.lifecycle}:${snapshot.artifact_state}.`,
+    ...selfServedScopeLines(options.selfServedScopeAdditions),
     "Acceptance assertions:",
     acceptance,
     `PASS shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>","inspected_paths":["<every changed path of the reviewed change set>"]}}`,
@@ -11078,7 +11160,7 @@ function buildReviewSnapshotPrompt(snapshot, evidencePath) {
   ].join(`
 `);
 }
-function buildReviewPrompt(snapshot, evidencePath) {
+function buildReviewPrompt(snapshot, evidencePath, options = {}) {
   if (snapshot.role !== "review")
     throw new Error("native review prompt requires review role");
   const digest = snapshotDigest(snapshot);
@@ -11094,7 +11176,7 @@ function buildReviewPrompt(snapshot, evidencePath) {
   return [
     rolePacket.prompt,
     ...STATIC_REVIEW_RULES,
-    buildReviewSnapshotPrompt(snapshot, evidencePath)
+    buildReviewSnapshotPrompt(snapshot, evidencePath, options)
   ].join(`
 `);
 }
@@ -11686,11 +11768,14 @@ class AssuranceCoordinator {
       try {
         ensureOperationLive();
         const workload = classifyReviewWorkload(review.snapshot, review.reviewManifest ?? review.reviewBundle);
+        const promptOptions = {
+          selfServedScopeAdditions: scopeAdditionsFromHistory((await this.ports.readTaskRecord(ctx.cwd, taskId)).record?.history ?? [])
+        };
         hostReservation = this.ports.host.prepareReview({
           taskId,
           operationId,
-          prompt: buildReviewPrompt(review.snapshot, evidence.path),
-          snapshotPrompt: buildReviewSnapshotPrompt(review.snapshot, evidence.path),
+          prompt: buildReviewPrompt(review.snapshot, evidence.path, promptOptions),
+          snapshotPrompt: buildReviewSnapshotPrompt(review.snapshot, evidence.path, promptOptions),
           evidencePath: evidence.path,
           maxTurns: reviewTurnBudget(workload)
         });
@@ -15919,8 +16004,8 @@ async function submitMediatedReview(coordinator, ctx, taskId, verdictInput, insp
 function diffSnapshotOf(root, record) {
   return taskDeliveryIdentity(root, record);
 }
-function diffHashOf(root, record) {
-  return diffSnapshotOf(root, record).diff_hash;
+function nextScopeDiffProvider(nextScope) {
+  return (root, record) => diffSnapshotOf(root, withNextScope(record, nextScope));
 }
 function readTaskIntentForRecord(root, taskId) {
   recoverKernelStoreFollowUps(root, taskId);
@@ -16073,8 +16158,8 @@ class ClaudeRuntime {
       })
     };
   }
-  async status(taskId) {
-    return projectAssurance(this.cwd, taskId, diffSnapshotOf);
+  async status(taskId, nextScope) {
+    return projectAssurance(this.cwd, taskId, nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf);
   }
   async enroll(taskId, meta) {
     const now = new Date().toISOString();
@@ -16209,7 +16294,10 @@ class ClaudeRuntime {
       throw new Error(`unsupported privileged operation ${operation}`);
     let op = operation;
     let decisionOp;
-    const projection = await this.status(taskId);
+    const nextIntent = extra.next_intent ? await parseTaskIntentV1(extra.next_intent) : undefined;
+    const nextScope = nextIntent?.scope_hint;
+    const diffProvider = nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf;
+    const projection = await this.status(taskId, nextScope);
     if (projection.error || !projection.claim)
       throw new Error(projection.error ?? "no active backend claim");
     if (operation === "request_authorization") {
@@ -16230,7 +16318,6 @@ class ClaudeRuntime {
     const priorIntent = await readTaskIntentForRecord(this.cwd, taskId);
     const now = new Date().toISOString();
     const actorId = LITERAL_USER_ACTOR_ID;
-    const nextIntent = extra.next_intent ? await parseTaskIntentV1(extra.next_intent) : undefined;
     if (op === "approve_breaking_intent_revision" && !nextIntent)
       throw new Error("approve_breaking_intent_revision requires next_intent");
     const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
@@ -16253,9 +16340,9 @@ class ClaudeRuntime {
         if (!preparedRecord.record) {
           throw new NativeAuthorityError("workspace_changed", "TaskRecord changed before the breaking revision digest");
         }
-        preparedDiffHash = diffHashOf(this.cwd, preparedRecord.record);
+        preparedDiffHash = diffProvider(this.cwd, preparedRecord.record).diff_hash;
       }
-      const preparedProjection = await this.status(taskId);
+      const preparedProjection = await this.status(taskId, nextScope);
       try {
         assertProjectionBinding(projection, preparedProjection, Boolean(nextIntent));
         if (preparedProjection.projection.diff_hash !== preparedDiffHash) {
@@ -16283,7 +16370,7 @@ class ClaudeRuntime {
     const confirmation = gate.confirmation_ref;
     let committed;
     try {
-      const capabilityProjection = await this.status(taskId);
+      const capabilityProjection = await this.status(taskId, nextScope);
       try {
         assertProjectionBinding(projection, capabilityProjection, Boolean(nextIntent));
       } catch (error) {
@@ -16323,7 +16410,7 @@ class ClaudeRuntime {
           ...op === "stop" ? { reason: stopReason(extra.reason) } : {}
         },
         prior_intent_token: priorIntent.token,
-        diffProvider: diffSnapshotOf,
+        diffProvider,
         now
       });
       committed = result;
@@ -16344,6 +16431,9 @@ class ClaudeRuntime {
     const { app } = await this.authority();
     const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: await parseTaskIntentV1(input.operation.next_intent) } : input.operation;
     const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
+    const nextScope = operation.op === "revise_intent" ? operation.next_intent.scope_hint : undefined;
+    if (nextScope)
+      assertScopeAdditionsAreFiles(ctx.cwd, priorIntent.intent.scope_hint, nextScope);
     const sidecar = join22(ctx.cwd, priorIntent.intent_ref.path);
     const priorBytes = operation.op === "revise_intent" ? readFileSync17(sidecar) : null;
     const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
@@ -16361,7 +16451,7 @@ class ClaudeRuntime {
         task_id: input.taskId,
         operation,
         prior_intent_token: priorIntent.token,
-        diffProvider: diffSnapshotOf,
+        diffProvider: nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf,
         now: new Date().toISOString()
       });
       if (operation.op === "freeze_artifacts" || operation.op === "stop")

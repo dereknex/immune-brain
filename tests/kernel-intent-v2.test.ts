@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	canonicalIntentHash,
+	CHANGED_PATH_RISK_FLOOR_PREFIXES,
 	classifyIntentRevision,
 	observeTaskIntent,
 	parseTaskIntentV1,
@@ -208,6 +209,49 @@ describe("classifyIntentRevision", () => {
 			scope_hint: ["changed"],
 		});
 		expect(classifyIntentRevision(prev, sameRevision)).toBe("breaking");
+	});
+});
+
+// ADR 0021 / spec D3: a scope revision is compatible only when it contains every
+// previous entry and adds concrete files whose directory already holds a previous
+// concrete entry, outside every risk-floor prefix, docs/specs and docs/plans.
+describe("classifyIntentRevision: same-directory scope additions", () => {
+	const scoped = (scope: string[], extra: Record<string, unknown> = {}) =>
+		parseTaskIntentV1({ ...INTENT_V1, scope_hint: scope, ...extra });
+	const base = scoped(["src/mod/a.ts", "src/mod/sub/d.ts"], { revision: 2 });
+	const revised = (scope: string[], extra: Record<string, unknown> = {}) =>
+		scoped(scope, { revision: 3, ...extra });
+
+	test("compatible: concrete sibling files of an anchored directory", () => {
+		expect(classifyIntentRevision(base, revised(["src/mod/a.ts", "src/mod/sub/d.ts", "src/mod/b.ts"]))).toBe("compatible");
+		expect(classifyIntentRevision(base, revised(["src/mod/a.ts", "src/mod/sub/d.ts", "src/mod/sub/e.ts", "src/mod/b.ts"]))).toBe("compatible");
+	});
+
+	test.each([
+		["a removed entry", ["src/mod/a.ts"]],
+		["a glob entry", ["src/mod/a.ts", "src/mod/sub/d.ts", "src/mod/*.ts"]],
+		["a new directory", ["src/mod/a.ts", "src/mod/sub/d.ts", "src/other/c.ts"]],
+		["an entry that swallows a previous one", ["src/mod/a.ts", "src/mod/sub/d.ts", "src/mod/sub"]],
+		["an unanchored parent", ["src/mod/a.ts", "src/mod/sub/d.ts", "src/c.ts"]],
+	])("breaking: %s", (_label, scope) => {
+		expect(classifyIntentRevision(base, revised(scope))).toBe("breaking");
+	});
+
+	test("breaking: a glob previous entry does not anchor a sibling", () => {
+		const globbed = scoped(["src/mod/*.ts"], { revision: 2 });
+		expect(classifyIntentRevision(globbed, revised(["src/mod/*.ts", "src/mod/b.ts"]))).toBe("breaking");
+	});
+
+	test.each([...CHANGED_PATH_RISK_FLOOR_PREFIXES])("breaking: a sibling under the %s floor prefix", (prefix) => {
+		const floor = { risk: "critical" };
+		const previous = scoped([`${prefix}/a.ts`], { revision: 2, ...floor });
+		expect(classifyIntentRevision(previous, revised([`${prefix}/a.ts`, `${prefix}/b.ts`], floor))).toBe("breaking");
+	});
+
+	test("breaking: a compatible scope addition combined with any other breaking field", () => {
+		const scope = ["src/mod/a.ts", "src/mod/sub/d.ts", "src/mod/b.ts"];
+		expect(classifyIntentRevision(base, revised(scope, { goal: "A different goal" }))).toBe("breaking");
+		expect(classifyIntentRevision(base, revised(scope, { acceptance: [{ id: "B9", assertion: "Other", verification: "v" }] }))).toBe("breaking");
 	});
 });
 

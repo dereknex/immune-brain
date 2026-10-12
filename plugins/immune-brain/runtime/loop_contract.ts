@@ -56,6 +56,10 @@ export interface LoopRoute {
 export function resolveLoopRoute(input: {
 	ownership: LoopRouteOwnership;
 	target: LoopRouteTarget;
+	/**
+	 * A scope change that is not a same-directory file addition. The owner adds a
+	 * sibling file itself with `revise_intent` (ADR 0021) and stays in the Loop.
+	 */
 	scope_expansion?: boolean;
 }): LoopRoute {
 	if (input.scope_expansion) return { entry: "imm-run", next: "imm-planner" };
@@ -189,6 +193,7 @@ export function buildLoopAction(input: {
 	ownership: LoopRouteOwnership;
 	target: LoopRouteTarget;
 	context?: RoleDelegationContext;
+	/** See `resolveLoopRoute`: a same-directory file addition is not one. */
 	scope_expansion?: boolean;
 	kernel_operation?: Extract<LoopAction, { next: "imm_kernel_canary" }>["tool"]["operation"];
 }): LoopAction {

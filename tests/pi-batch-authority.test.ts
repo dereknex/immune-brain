@@ -1186,6 +1186,7 @@ describe("acc-pi-batch-gate", () => {
 		// The registered dialog exposes three actions; the mapping is the testable
 		// unit because the dialog sits behind plan projection. Escape is cancel.
 		expect(mapDialogSelection("confirm")).toBe("accept");
+		expect(mapDialogSelection("confirm_delegate")).toBe("accept_delegate");
 		expect(mapDialogSelection("decline")).toBe("decline");
 		expect(mapDialogSelection("cancel")).toBe("cancel");
 		expect(mapDialogSelection(undefined)).toBe("cancel");

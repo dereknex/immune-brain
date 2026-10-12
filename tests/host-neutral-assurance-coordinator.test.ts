@@ -245,6 +245,56 @@ describe("host-neutral assurance coordinator", () => {
 		expect(request.snapshotPrompt.length).toBeLessThan(request.prompt.length);
 	});
 
+	describe("Review prompt discloses self-served scope additions (ADR 0021, I4)", () => {
+		const SELF_SERVED = "Self-served scope additions";
+		const historyOf = (...entries: Array<{ type: string; reason: string }>) =>
+			async () => ({ revision: "record-1", record: { findings: [], history: entries } });
+		const capture = async (record?: AssuranceCoordinatorPorts["readTaskRecord"]) => {
+			let captured: ReviewRequest | null = null;
+			const h = makeCoordinator(record ? { record } : {});
+			h.host.prepareReview = (request: ReviewRequest) => {
+				captured = request;
+				return { id: request.operationId, dispatch: { run_in_background: false } };
+			};
+			expect((await h.coordinator.advance(TASK, ctx)).state).toBe("review_ready");
+			return captured as unknown as ReviewRequest;
+		};
+
+		test("names every path added across more than one compatible revision, in both prompt projections", async () => {
+			const request = await capture(historyOf(
+				{ type: "start", reason: "enrolled" },
+				{ type: "revise_intent", reason: "intent_revision_2\nscope_added:src/mod/b.ts" },
+				{ type: "revise_intent", reason: "intent_revision_3\nscope_added:src/mod/d.ts\nscope_added:src/mod/c.ts" },
+			));
+			for (const prompt of [request.snapshotPrompt, request.prompt]) {
+				const line = prompt.split("\n").find((entry) => entry.startsWith(SELF_SERVED));
+				expect(line).toBeDefined();
+				for (const path of ["src/mod/b.ts", "src/mod/c.ts", "src/mod/d.ts"]) expect(line).toContain(path);
+			}
+			expect(request.prompt.endsWith(request.snapshotPrompt)).toBe(true);
+		});
+
+		test("a task without a compatible scope revision carries no such line", async () => {
+			const none = await capture();
+			const plain = await capture(historyOf(
+				{ type: "start", reason: "enrolled" },
+				{ type: "revise_intent", reason: "intent_revision_2" },
+			));
+			for (const request of [none, plain]) {
+				expect(request.snapshotPrompt).not.toContain(SELF_SERVED);
+				expect(request.prompt).not.toContain(SELF_SERVED);
+			}
+		});
+
+		test("only revise_intent history entries disclose; a confirmed breaking revision does not", async () => {
+			const request = await capture(historyOf(
+				{ type: "approve_breaking_intent_revision", reason: "intent_revision_2\nscope_added:src/other/x.ts" },
+			));
+			expect(request.snapshotPrompt).not.toContain(SELF_SERVED);
+			expect(request.snapshotPrompt).not.toContain("src/other/x.ts");
+		});
+	});
+
 	test("open findings return exact repair identities and prevent local green from running QA", async () => {
 		const fresh = projection("active", "resolve_findings", "material", "active");
 		fresh.projection.blocking_finding_ids = ["qa-A1-current"];

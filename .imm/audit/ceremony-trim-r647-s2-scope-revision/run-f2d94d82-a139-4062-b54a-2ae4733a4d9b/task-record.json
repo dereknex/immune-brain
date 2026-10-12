@@ -1,0 +1,443 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "ceremony-trim-r647-s2-scope-revision",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "ceremony-trim-r647-s2-scope-revision",
+    "goal": "Let an enrolled task add a sibling file to its scope without a native confirmation, keep the confirmation for every wider scope change, disclose such additions to Review, and stop refusing a revision because the worktree already holds the paths it adds.",
+    "acceptance": [
+      {
+        "id": "CT-S2-A1",
+        "assertion": "Meet D6 and invariant I5 in docs/specs/ceremony-trim-r647.spec.md, characterization first: on both Hosts, a revision whose worktree holds a changed path covered only by the next scope reaches its gate (breaking) or applies (compatible); a changed path outside both the previous and the next scope refuses before the gate port is called; a failed preparation restores the staged sidecar.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/scope-revision-envelope.test.ts\",\n      \"tests/breaking-intent-revision-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "CT-S2-A2",
+        "assertion": "Meet D3, D4 and invariant I3: classifyIntentRevision returns compatible for a scope that contains every previous entry and adds only concrete files whose directory already holds a previous non-glob entry and that touch no risk-floor prefix, docs/specs or docs/plans. It returns breaking for a removed entry, a glob, a new directory, an entry that swallows a previous one, each floor prefix by name, a glob anchor, and any combination with another breaking field. Each Host refuses the compatible route when an added or anchoring entry is a directory in the worktree.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-intent-v2.test.ts\",\n      \"tests/kernel-r2c1-boundary.test.ts\",\n      \"tests/scope-revision-envelope.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "CT-S2-A3",
+        "assertion": "Meet D5 and invariant I4: the Review prompt names every path added by compatible scope revisions of the task, derived from Kernel history across more than one revision, and carries no such line for a task without one. No TaskRecord field is added.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "CT-S2-A4",
+        "assertion": "Lane delegation still refuses a widening that is not compatible; Loop routing, the Planner and Loop contracts, the Executor prompt and its mirror state the same-directory rule and the module-directory default; ADR 0021 records the rule and its relation to ADR 0018; the packaged Claude bundle matches its source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-delegation-gate.test.ts\",\n      \"tests/scope-revision-contract.test.ts\",\n      \"tests/loop-execution-routing.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/ceremony-trim-s2-scope-revision.md",
+      "docs/adr/0021-same-directory-scope-extension.md",
+      "docs/plans/ceremony-trim-r647-s2-scope-revision.intent.json",
+      "docs/specs/ceremony-trim-r647.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/dist/role-prompts/executor.md",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/kernel/intent.ts",
+      "plugins/immune-brain/runtime/kernel/reducer.ts",
+      "plugins/immune-brain/runtime/loop_contract.ts",
+      "plugins/immune-brain/runtime/prompts/executor.md",
+      "plugins/immune-brain/runtime/unattended/batch_delegation.ts",
+      "plugins/immune-brain/runtime/workspace_scope.ts",
+      "tests/batch-delegation-gate.test.ts",
+      "tests/breaking-intent-revision-gate.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/dist-docs-sync-contract.test.ts",
+      "tests/host-neutral-assurance-coordinator.test.ts",
+      "tests/kernel-intent-v2.test.ts",
+      "tests/kernel-r2c1-boundary.test.ts",
+      "tests/loop-execution-routing.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/scope-revision-contract.test.ts",
+      "tests/scope-revision-envelope.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/ceremony-trim-r647-s2-scope-revision.intent.json",
+    "content_hash": "sha256:d7b88785162825fde2e225520535c42c6a75ddbd1f956b90f64610071fbd3629"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:08c958938488849a7e227731555ea02733cdabc62ed16cd1819bca47382d0da5",
+  "git_base_head": "c265a26e242c59eaab58bbb21c4cd835cdd92728",
+  "attestations": [
+    {
+      "id": "approval-qa-5715fab4",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:08c958938488849a7e227731555ea02733cdabc62ed16cd1819bca47382d0da5",
+      "diff_hash": "sha256:5fd59834c39de864dfd8f49b3721b0ec90c0751ac13d6ecf183d01a7481fb37d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:6ab8b25ec9e1e1a0590c1386c629cd0a2450acf94d983a9fa543ba0b43942bd0",
+      "acceptance_results": [
+        {
+          "acceptance_id": "CT-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:6ab8b25ec9e1e1a0590c1386c629cd0a2450acf94d983a9fa543ba0b43942bd0"
+        },
+        {
+          "acceptance_id": "CT-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:6ab8b25ec9e1e1a0590c1386c629cd0a2450acf94d983a9fa543ba0b43942bd0"
+        },
+        {
+          "acceptance_id": "CT-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:6ab8b25ec9e1e1a0590c1386c629cd0a2450acf94d983a9fa543ba0b43942bd0"
+        },
+        {
+          "acceptance_id": "CT-S2-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:6ab8b25ec9e1e1a0590c1386c629cd0a2450acf94d983a9fa543ba0b43942bd0"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-0d07d04b",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:d7b88785162825fde2e225520535c42c6a75ddbd1f956b90f64610071fbd3629",
+      "diff_hash": "sha256:06671f2a72f5ac6a162e0cb806c8ee34e742979d3e634c122ab110ecb95a7bcb",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:12c1492b1159ab50c7a83a3a2c41c05337710de8f996c60b8b9ed06cbbe891bb",
+      "acceptance_results": [
+        {
+          "acceptance_id": "CT-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:12c1492b1159ab50c7a83a3a2c41c05337710de8f996c60b8b9ed06cbbe891bb"
+        },
+        {
+          "acceptance_id": "CT-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:12c1492b1159ab50c7a83a3a2c41c05337710de8f996c60b8b9ed06cbbe891bb"
+        },
+        {
+          "acceptance_id": "CT-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:12c1492b1159ab50c7a83a3a2c41c05337710de8f996c60b8b9ed06cbbe891bb"
+        },
+        {
+          "acceptance_id": "CT-S2-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:12c1492b1159ab50c7a83a3a2c41c05337710de8f996c60b8b9ed06cbbe891bb"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-5890a7db",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:d7b88785162825fde2e225520535c42c6a75ddbd1f956b90f64610071fbd3629",
+      "diff_hash": "sha256:06671f2a72f5ac6a162e0cb806c8ee34e742979d3e634c122ab110ecb95a7bcb",
+      "actor_id": "parent-mediated-review",
+      "summary": "Same-directory scope extension is classified, envelope-judged against the next scope on both Hosts, disclosed to Review from Kernel history with no new TaskRecord field, and mirrored in contracts, ADR 0021 and the Claude bundle; negative and bound cases are pinned.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "c265a26e242c59eaab58bbb21c4cd835cdd92728",
+        "review_commit": "9810fdf09b7c99d70c675c466b2b5b244f39f20d",
+        "review_tree": "4c6520a1d6992dd87055320cddad49ffef64d5c8",
+        "manifest_digest": "sha256:9ae5082f9680f8f2d978d3a4e31855c44d0b1babaa5d09726e602253842e1544"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-ec7494e73941-1-review-1",
+          "acceptance_id": "CT-S2-A2",
+          "summary": "The directory refusal (D4) only sees directories that exist at submission time, so an absent concrete entry later populated as a directory widens scope into a new subdirectory without a confirmation; the added path is still named to Review, and the residual matches the ADR's textual-classifier limitation.",
+          "anchor": "sha256:c5b26f4b92dd2b9b0f075f04d60e77fa4569b93c67a273c543856542ffcf58fd",
+          "evidence": {
+            "trigger": "Enrolled scope [src/mod/a.ts]; Executor submits revise_intent adding src/mod/newpkg, which does not yet exist. sameDirectoryScopeAdditions returns it (concrete, anchored parent src/mod, no floor), assertScopeAdditionsAreFiles finds no directory, so it classifies compatible. The Executor then creates src/mod/newpkg/deep/x.ts, which pathMatchesScope accepts by the prefix rule for concrete entries, so the envelope passes with no gate.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/kernel/intent.ts:sameDirectoryScopeAdditions",
+              "plugins/immune-brain/runtime/kernel/intent.ts:assertScopeAdditionsAreFiles",
+              "plugins/immune-brain/runtime/claude/kernel_ports.ts:executeOrdinary",
+              "plugins/immune-brain/.pi-extension/imm-canary-work.ts:executeOrdinaryOperation",
+              "plugins/immune-brain/runtime/workspace_scope.ts:pathMatchesScope"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "CT-S2-A2"
+            }
+          }
+        },
+        {
+          "id": "review-ec7494e73941-2-review-2",
+          "acceptance_id": "CT-S2-A3",
+          "summary": "parseScopeHintV1 does not reject control characters such as a newline inside a scope entry, and the disclosure encodes additions as newline-separated scope_added: lines in the history reason and joins them into one Review prompt line. A crafted entry could therefore forge extra disclosed paths or inject text into the Review prompt; this is disclosure text only and acceptance text already reaches the same prompt, so it is not blocking.",
+          "anchor": "sha256:0286a5d1a919f64892c2b6e90af4c4b3ba7583a58c767535a3cf9efbab78c367",
+          "evidence": {
+            "trigger": "revise_intent next_intent.scope_hint contains an entry such as 'src/mod/b.ts\\nscope_added:docs/specs/x.md' whose last '/'-delimited parent is an anchored directory. It classifies compatible, is written by the reducer into the history reason, and scopeAdditionsFromHistory splits on newline and emits the forged path into the Self-served scope additions line.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/kernel/intent.ts:parseScopeHintV1",
+              "plugins/immune-brain/runtime/kernel/reducer.ts:reduceTask",
+              "plugins/immune-brain/runtime/kernel/intent.ts:scopeAdditionsFromHistory",
+              "plugins/immune-brain/runtime/assurance/coordinator.ts:buildReviewSnapshotPrompt"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "CT-S2-A3"
+            }
+          }
+        },
+        {
+          "id": "review-ec7494e73941-3-review-3",
+          "acceptance_id": "CT-S2-A4",
+          "summary": "tests/batch-delegation-gate.test.ts replaced the executable mapDialogSelection assertions with source-text assertions, and the behavioral coverage moved to tests/pi-batch-authority.test.ts (confirm_delegate added there). Coverage is preserved, but the guard in this file is now a string match, so it is advisory only.",
+          "anchor": "sha256:afb38bdc58851663f25e12dcc481040ef80e632c45dfc91366cdeb6ca98c81cf",
+          "evidence": {
+            "trigger": "The batch-delegation-gate test no longer imports mapDialogSelection and only checks that the source text contains the mapping literals; a behavior change that keeps the literals would pass this file, but would fail pi-batch-authority.",
+            "caller_chain": [
+              "tests/batch-delegation-gate.test.ts",
+              "tests/pi-batch-authority.test.ts",
+              "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:mapDialogSelection"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "CT-S2-A4"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:942b99e7476acf9c78d4293f3c6af6269d2219a1e925c1c2f8d31b892cafc63c"
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-CT-S2-A4-2395c0c5-0ca053",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "CT-S2-A4",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=5462B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "review-cdf6d70f2026-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "CT-S2-A4",
+      "source": "review",
+      "review_round": 1,
+      "summary": "tests/batch-delegation-gate.test.ts replaces the behavioral mapDialogSelection assertions with source-substring checks, so the confirm_delegate to accept_delegate mapping of the batch delegation grant is no longer exercised by any behavioral test.",
+      "anchor": "sha256:77c6a843a50438d5e1374a5c222629e7ff406911cfd0f4d8f565452aef25315b",
+      "evidence": {
+        "trigger": "The diff drops the mapDialogSelection import from imm-unattended-batch and the expect(mapDialogSelection('confirm_delegate')).toBe('accept_delegate') assertion, replacing them with expect(source).toContain('if (selected === \"confirm_delegate\") return \"accept_delegate\";'). The stated reason is that an isolated QA delivery has no typebox, which is an environment limit, not a behavior change. tests/pi-batch-authority.test.ts asserts only confirm, decline, cancel and undefined (lines 1188-1191); no other test in the revision mentions accept_delegate or confirm_delegate. A mapping that wrongly granted or dropped revision delegation would still satisfy the substring checks as long as the text remained in the file. The fix is to keep the behavioral assertion (add confirm_delegate to the dynamic-import test in tests/pi-batch-authority.test.ts, or restore it here) rather than weaken it to fit the environment.",
+        "caller_chain": [
+          "tests/batch-delegation-gate.test.ts",
+          "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:mapDialogSelection",
+          "tests/pi-batch-authority.test.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "CT-S2-A4"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-cdf6d70f2026-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "CT-S2-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The Pi Host's breaking-revision (gated) route has no test for its negative and bound cases under the next-scope diff: a changed path outside both scopes, and restoration of the staged sidecar when preparation fails.",
+      "anchor": "sha256:c0e771a11e5aaaa311b962d9b97142f6fe79d02444fe321e8119fd147b7d063a",
+      "evidence": {
+        "trigger": "CT-S2-A1 and invariant I5 require, on both Hosts, that a changed path outside both the previous and the next scope refuses before the gate port is called, and that a failed preparation restores the staged sidecar. The Pi tests added to tests/breaking-intent-revision-gate.test.ts cover only the compatible route for the refusal and restore cases (revise_intent, which has no gate on Pi) and, for the breaking route, only the positive case (staged path covered only by the next scope reaches one dialog). The changed Pi code that builds stagedNextDiffHash and operationDiffHash with withNextScope, and calls projectAssuranceForTask(..., nextIntent?.scope_hint), inside authorizeExactOperation, is the only Pi path that has a gate, yet no test stages a path outside both scopes with approve_breaking_intent_revision and asserts ui.dialogCalls is empty, the sidecar bytes and index entry are unchanged, and the stored scope is the prior one. The Claude Host has this negative in tests/scope-revision-envelope.test.ts; the Pi Host does not. Add a Pi test for the outside-both refusal and the sidecar restore on the breaking route.",
+        "caller_chain": [
+          "tests/breaking-intent-revision-gate.test.ts",
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:authorizeExactOperation",
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:projectAssuranceForTask",
+          "plugins/immune-brain/runtime/kernel/intent.ts:withNextScope"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "CT-S2-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-cdf6d70f2026-3-review-3",
+      "kind": "advisory",
+      "status": "open",
+      "acceptance_id": "CT-S2-A4",
+      "source": "review",
+      "review_round": 1,
+      "summary": "ADR 0021, the changeset and imm-run.md state protections and a route that the implementation does not provide: secret, migration and security paths are not in the classifier floor, and a bare directory entry cannot reach approve_breaking_intent_revision.",
+      "anchor": "sha256:1b3193a85d6aa6b35bf577531f49897b507ab4a68bb03c054eb126262b5556fa",
+      "evidence": {
+        "trigger": "ADR 0021 Consequences and the changeset say Kernel, authority, migration, secret and security paths keep the confirmation because they are the floor the classifier already protects. RISK_FLOOR_SCOPE_PREFIXES plus docs/specs and docs/plans contain no migration, secret or security prefix. For example, a scope holding a root-level file anchors any other root-level file, such as .env, as a compatible addition. ADR decision 2 and imm-run.md also say a directory entry goes through approve_breaking_intent_revision, or is breaking. The classifier returns compatible for a textual directory entry like src/mod/pkg, and reducer.ts rejects approve_breaking_intent_revision unless classifyIntentRevision returns breaking. Only a glob such as src/mod/pkg/** works, which is what the Host error message correctly says. Align the ADR, changeset and Loop text with the D3 floor and the glob-only route. This does not alter the accepted classifier behavior.",
+        "caller_chain": [
+          "docs/adr/0021-same-directory-scope-extension.md",
+          "plugins/immune-brain/dist/imm-run.md",
+          "plugins/immune-brain/runtime/kernel/intent.ts:sameDirectoryScopeAdditions",
+          "plugins/immune-brain/runtime/kernel/reducer.ts:reduceTask"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "CT-S2-A4"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:ceremony-trim-r647-s2-scope-revision:2026-10-12T13:15:09.070Z",
+      "at": "2026-10-12T13:15:09.070Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/ceremony-trim-r647-s2-scope-revision.intent.json"
+    },
+    {
+      "id": "request_rework:ceremony-trim-r647-s2-scope-revision:2026-10-12T13:15:57.519Z",
+      "at": "2026-10-12T13:15:57.519Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:d9172fb7adf298dac79868a5d9b739f2ffc3612b4a173d5cd7c346bf345306a3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-12T13:15:57.519Z"
+      }
+    },
+    {
+      "id": "resolve_finding:ceremony-trim-r647-s2-scope-revision:2026-10-12T13:18:54.198Z",
+      "at": "2026-10-12T13:18:54.198Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-CT-S2-A4-2395c0c5-0ca053\naction_v2_sha256:7fbf49b20b1c8b097154e290e74b48cffcb6c7d7a65a39b47aec8291dea108a3"
+    },
+    {
+      "id": "freeze_artifacts:ceremony-trim-r647-s2-scope-revision:2026-10-12T13:19:00.488Z",
+      "at": "2026-10-12T13:19:00.488Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/ceremony-trim-r647-s2-scope-revision.intent.json"
+    },
+    {
+      "id": "record_approval:ceremony-trim-r647-s2-scope-revision:2026-10-12T13:19:52.786Z",
+      "at": "2026-10-12T13:19:52.786Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5715fab4\naction_v2_sha256:85ed0cdd2795f86648dbbd2893699f823812d80a611df03c6e3841742cc81783",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-12T13:19:52.786Z"
+      }
+    },
+    {
+      "id": "request_rework:ceremony-trim-r647-s2-scope-revision:2026-10-12T13:25:06.369Z",
+      "at": "2026-10-12T13:25:06.369Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:d8d6ef0a193db95e85e7072ba1761a1dc2dfb25c64fd7567d0cda2c534452eab",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-12T13:25:06.370Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:ceremony-trim-r647-s2-scope-revision:2026-10-12T13:26:40.776Z",
+      "at": "2026-10-12T13:26:40.776Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:a2cb0b51721ff3318cbcf5544ad4179cb88ae5d59b8ae8fc883f1171d65b5a2f",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-97da89e8c6c55c07",
+        "issued_at": "2026-10-12T13:28:51.996Z"
+      }
+    },
+    {
+      "id": "resolve_finding:ceremony-trim-r647-s2-scope-revision:2026-10-12T13:46:38.988Z",
+      "at": "2026-10-12T13:46:38.988Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-cdf6d70f2026-1-review-1\naction_v2_sha256:b72edf5c876adda0e12920f0813cb695a6f05a9a5d83400c402be2c1700bb271"
+    },
+    {
+      "id": "resolve_finding:ceremony-trim-r647-s2-scope-revision:2026-10-12T13:47:50.199Z",
+      "at": "2026-10-12T13:47:50.199Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-cdf6d70f2026-2-review-2\naction_v2_sha256:f35214410900e854e1cc791fedc7d40f5ad2029ecd118b335de6dc7c309ad49f"
+    },
+    {
+      "id": "freeze_artifacts:ceremony-trim-r647-s2-scope-revision:2026-10-12T13:47:55.659Z",
+      "at": "2026-10-12T13:47:55.659Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/ceremony-trim-r647-s2-scope-revision.intent.json"
+    },
+    {
+      "id": "record_approval:ceremony-trim-r647-s2-scope-revision:2026-10-12T13:48:52.461Z",
+      "at": "2026-10-12T13:48:52.461Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-0d07d04b\naction_v2_sha256:95d7df12df08bb5acdf4e788348fe5342d49682d03eb775604d245b0de470c89",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-12T13:48:52.461Z"
+      }
+    },
+    {
+      "id": "record_approval:ceremony-trim-r647-s2-scope-revision:2026-10-12T14:06:34.329Z",
+      "at": "2026-10-12T14:06:34.329Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-5890a7db\naction_v2_sha256:8df6a3d2df965d7c84a29d425d7c0fc4ed65dcd5e20f6caaf674604b6cae50a7",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-12T14:06:34.330Z"
+      }
+    },
+    {
+      "id": "complete:ceremony-trim-r647-s2-scope-revision:2026-10-12T14:06:37.755Z",
+      "at": "2026-10-12T14:06:37.755Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:5f68e484b96d5facf4582e61527f5ae910a9abbf576a035ae9d85e60103132c8"
+    }
+  ]
+}

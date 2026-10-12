@@ -18,7 +18,13 @@ import { projectAssurance, type AssuranceProjection, type AssuranceProjectionRes
 import { type TaskFinding, type TaskRecord } from "../kernel/types";
 import { findingsDigestV2 } from "../kernel/reducer";
 import { readTaskRecordRaw, recoverKernelStoreFollowUps } from "../kernel/storage";
-import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../kernel/intent";
+import {
+	assertScopeAdditionsAreFiles,
+	canonicalIntentHash,
+	parseTaskIntentV1,
+	readTaskIntent,
+	withNextScope,
+} from "../kernel/intent";
 import { capabilityActionFor, createCanaryApplication } from "../kernel/canary_application";
 import {
 	createMutationAuthorityRegistry,
@@ -94,6 +100,14 @@ export function diffSnapshotOf(root: string, record: TaskRecord): {
 
 export function diffHashOf(root: string, record: TaskRecord): string {
 	return diffSnapshotOf(root, record).diff_hash;
+}
+
+/**
+ * A revision is prepared, checked and bound against the scope it asks for, so
+ * the delivery identity of that operation reads the next scope (ADR 0021, D6).
+ */
+function nextScopeDiffProvider(nextScope: readonly string[]): typeof diffSnapshotOf {
+	return (root, record) => diffSnapshotOf(root, withNextScope(record, nextScope));
 }
 
 /**
@@ -371,8 +385,8 @@ export class ClaudeRuntime {
 		};
 	}
 
-	async status(taskId: string) {
-		return projectAssurance(this.cwd, taskId, diffSnapshotOf);
+	async status(taskId: string, nextScope?: readonly string[]) {
+		return projectAssurance(this.cwd, taskId, nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf);
 	}
 
 	async enroll(taskId: string, meta: ToolMeta) {
@@ -560,7 +574,11 @@ export class ClaudeRuntime {
 		if (!isPrivilegedOperation(operation) && operation !== "request_authorization") throw new Error(`unsupported privileged operation ${operation}`);
 		let op: PrivilegedOperation | "request_authorization" | "resolve_user_decision" | "authorize_rework" = operation;
 		let decisionOp: { finding_id: string; resolution: string } | undefined;
-		const projection = await this.status(taskId);
+		const nextIntent = extra.next_intent ? await parseTaskIntentV1(extra.next_intent) : undefined;
+		// The whole operation is judged against the scope it asks for (D6).
+		const nextScope = nextIntent?.scope_hint;
+		const diffProvider = nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf;
+		const projection = await this.status(taskId, nextScope);
 		if (projection.error || !projection.claim) throw new Error(projection.error ?? "no active backend claim");
 		// Kernel projection is the sole source of authorization readiness, and the
 		// derivation is the shared export both Hosts use, so it cannot drift:
@@ -584,7 +602,6 @@ export class ClaudeRuntime {
 		const priorIntent = await readTaskIntentForRecord(this.cwd, taskId);
 		const now = new Date().toISOString();
 		const actorId = LITERAL_USER_ACTOR_ID;
-		const nextIntent = extra.next_intent ? await parseTaskIntentV1(extra.next_intent) : undefined;
 		if (op === "approve_breaking_intent_revision" && !nextIntent) throw new Error("approve_breaking_intent_revision requires next_intent");
 		const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
 		const nextIntentRef = nextIntent
@@ -608,9 +625,9 @@ export class ClaudeRuntime {
 				if (!preparedRecord.record) {
 					throw new NativeAuthorityError("workspace_changed", "TaskRecord changed before the breaking revision digest");
 				}
-				preparedDiffHash = diffHashOf(this.cwd, preparedRecord.record);
+				preparedDiffHash = diffProvider(this.cwd, preparedRecord.record).diff_hash;
 			}
-			const preparedProjection = await this.status(taskId);
+			const preparedProjection = await this.status(taskId, nextScope);
 			try {
 				assertProjectionBinding(projection, preparedProjection, Boolean(nextIntent));
 				if (preparedProjection.projection.diff_hash !== preparedDiffHash) {
@@ -638,7 +655,7 @@ export class ClaudeRuntime {
 		const confirmation = gate.confirmation_ref;
 		let committed: ReturnType<typeof app.execute>;
 		try {
-			const capabilityProjection = await this.status(taskId);
+			const capabilityProjection = await this.status(taskId, nextScope);
 			try {
 				assertProjectionBinding(projection, capabilityProjection, Boolean(nextIntent));
 			} catch (error) {
@@ -678,7 +695,7 @@ export class ClaudeRuntime {
 					...(op === "stop" ? { reason: stopReason(extra.reason) } : {}),
 				} as never,
 				prior_intent_token: priorIntent.token,
-				diffProvider: diffSnapshotOf,
+				diffProvider,
 				now,
 			});
 			committed = result;
@@ -709,6 +726,10 @@ export class ClaudeRuntime {
 			? { ...input.operation, next_intent: await parseTaskIntentV1(input.operation.next_intent) }
 			: input.operation;
 		const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
+		const nextScope = operation.op === "revise_intent"
+			? (operation.next_intent as { scope_hint: string[] }).scope_hint
+			: undefined;
+		if (nextScope) assertScopeAdditionsAreFiles(ctx.cwd, priorIntent.intent.scope_hint, nextScope);
 		const sidecar = join(ctx.cwd, priorIntent.intent_ref.path);
 		const priorBytes = operation.op === "revise_intent" ? readFileSync(sidecar) : null;
 		// A content-changing revision writes the sidecar before the kernel's drift
@@ -728,7 +749,7 @@ export class ClaudeRuntime {
 				task_id: input.taskId,
 				operation: operation as never,
 				prior_intent_token: priorIntent.token,
-				diffProvider: diffSnapshotOf,
+				diffProvider: nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf,
 				now: new Date().toISOString(),
 			});
 			if (operation.op === "freeze_artifacts" || operation.op === "stop") stagePlanningArtifactTransition(ctx.cwd, result.record);

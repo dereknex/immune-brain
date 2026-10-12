@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "ceremony-trim-r647-s2-scope-revision",
-  "owner": "user",
   "goal": "Let an enrolled task add a sibling file to its scope without a native confirmation, keep the confirmation for every wider scope change, disclose such additions to Review, and stop refusing a revision because the worktree already holds the paths it adds.",
   "acceptance": [
     {
@@ -51,9 +50,11 @@
     "tests/kernel-intent-v2.test.ts",
     "tests/kernel-r2c1-boundary.test.ts",
     "tests/loop-execution-routing.test.ts",
+    "tests/pi-batch-authority.test.ts",
     "tests/scope-revision-contract.test.ts",
     "tests/scope-revision-envelope.test.ts"
   ],
   "risk": "critical",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

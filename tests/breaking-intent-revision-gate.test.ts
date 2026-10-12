@@ -581,3 +581,179 @@ describe("breaking intent revision gate", () => {
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 });
+
+// CT-S2-A1 on the Pi Host (D6, I5): a scope revision is judged against the NEXT
+// intent's scope. A staged path only the next scope covers is accepted
+// (compatible: no gate; breaking: one gate); a staged path outside both scopes
+// refuses and restores the sidecar. Mirrors tests/scope-revision-envelope.test.ts.
+describe("scope revision is judged against its next scope", () => {
+	// A directory outside every risk-floor prefix: a sibling there is a compatible
+	// scope addition (D3); under plugins/immune-brain it would classify breaking.
+	const SIDECAR = `docs/plans/${TASK}.intent.json`;
+	const ANCHOR = "src/mod/task.ts";
+	const scopeIntent = (extra: string[], revision = 1) => ({
+		...INTENT,
+		scope_hint: [
+			SIDECAR,
+			`docs/plans/archive/${TASK}.intent.json`,
+			`docs/specs/${TASK}.spec.md`,
+			`docs/specs/archive/${TASK}.spec.md`,
+			ANCHOR,
+			...extra,
+		].sort(),
+		revision,
+	});
+
+	function makeScopeRoot(): string {
+		const root = mkdtempSync(join(tmpdir(), "scope-envelope-"));
+		for (const dir of ["docs/plans", "docs/specs", "src/mod", ".imm/state"]) mkdirSync(join(root, dir), { recursive: true });
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		const intent = scopeIntent([]);
+		writeFileSync(join(root, SIDECAR), JSON.stringify(intent, null, 2) + "\n");
+		writeFileSync(join(root, `docs/specs/${TASK}.spec.md`), "# Scope envelope fixture\n");
+		writeFileSync(join(root, ANCHOR), "export const task = 'baseline';\n");
+		execFileSync("git", ["add", "-A"], { cwd: root });
+		execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
+		const registry = createEnrollmentAuthorityRegistry();
+		const prep = preparePiCanary(root, { task_id: TASK, now: "2026-08-12T10:00:00.000Z" });
+		const binding: EnrollmentCapabilityBinding = {
+			task_id: TASK,
+			intent_path: SIDECAR,
+			intent_revision: 1,
+			intent_content_hash: canonicalIntentHash(parseTaskIntentV1(intent)),
+			preparation_digest: prep.digest,
+			actor_id: "user",
+			confirmation_ref: "c",
+			nonce: "n",
+		};
+		enrollCanaryTask(root, {
+			task_id: TASK,
+			intent_path: SIDECAR,
+			intent_revision: 1,
+			preparation_digest: binding.preparation_digest,
+			capability: registry.issue(binding),
+			capability_binding: binding,
+			now: "2026-08-12T10:00:00.000Z",
+		}, registry);
+		return root;
+	}
+
+	function stage(root: string, path: string): void {
+		mkdirSync(join(root, path, ".."), { recursive: true });
+		writeFileSync(join(root, path), "export const staged = 1;\n");
+		execFileSync("git", ["add", "--", path], { cwd: root });
+	}
+
+	test("compatible: a staged sibling file covered only by the next scope applies without a gate", async () => {
+		const root = makeScopeRoot();
+		try {
+			stage(root, "src/mod/sibling.ts");
+			const next = scopeIntent(["src/mod/sibling.ts"], 2);
+			const ui = makeUI();
+
+			await loadSurface().tool.execute("c1", { task_id: TASK, action: { op: "revise_intent", next_intent: next } }, undefined, undefined, makeCtx(root, ui));
+
+			expect(ui.dialogCalls).toHaveLength(0);
+			expect(storedRecord(root).intent_snapshot.scope_hint).toEqual(next.scope_hint);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
+	test("compatible: a staged path outside both scopes refuses and restores the sidecar", async () => {
+		const root = makeScopeRoot();
+		try {
+			stage(root, "src/mod/sibling.ts");
+			stage(root, "src/stray.ts");
+			const before = readFileSync(join(root, SIDECAR), "utf8");
+			const next = scopeIntent(["src/mod/sibling.ts"], 2);
+			const ui = makeUI();
+
+			const failure = await captureToolFailure(loadSurface().tool.execute("c2", { task_id: TASK, action: { op: "revise_intent", next_intent: next } }, undefined, undefined, makeCtx(root, ui)));
+
+			expect(failure.message).toContain("outside the authorization envelope: src/stray.ts");
+			expect(ui.dialogCalls).toHaveLength(0);
+			expect(readFileSync(join(root, SIDECAR), "utf8")).toBe(before);
+			expect(execFileSync("git", ["show", `:${SIDECAR}`], { cwd: root, encoding: "utf8" })).toBe(before);
+			expect(storedRecord(root).intent_snapshot.scope_hint).toEqual(scopeIntent([]).scope_hint);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
+	test("compatible route refuses an added entry that is a directory in the worktree (D4)", async () => {
+		const root = makeScopeRoot();
+		try {
+			mkdirSync(join(root, "src/mod/pkg"), { recursive: true });
+			writeFileSync(join(root, "src/mod/pkg/index.ts"), "export const pkg = 1;\n");
+			const before = JSON.stringify(storedRecord(root).intent_snapshot.scope_hint);
+			const ui = makeUI();
+
+			const failure = await captureToolFailure(loadSurface().tool.execute("d1", { task_id: TASK, action: { op: "revise_intent", next_intent: scopeIntent(["src/mod/pkg"], 2) } }, undefined, undefined, makeCtx(root, ui)));
+
+			expect(failure.message).toContain("src/mod/pkg is a directory");
+			expect(ui.dialogCalls).toHaveLength(0);
+			expect(JSON.stringify(storedRecord(root).intent_snapshot.scope_hint)).toBe(before);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
+	test("breaking: a staged path in another directory covered only by the next scope reaches one gate", async () => {
+		const root = makeScopeRoot();
+		try {
+			stage(root, "tests/envelope.test.ts");
+			const next = scopeIntent(["tests/envelope.test.ts"], 2);
+			const ui = makeUI();
+
+			await loadSurface().tool.execute("b1", { task_id: TASK, action: { op: "approve_breaking_intent_revision", next_intent: next } }, undefined, undefined, makeCtx(root, ui));
+
+			expect(ui.dialogCalls).toHaveLength(1);
+			expect(storedRecord(root).intent_snapshot.scope_hint).toEqual(next.scope_hint);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
+	test("breaking: a staged path outside both scopes refuses before the gate and leaves the sidecar", async () => {
+		const root = makeScopeRoot();
+		try {
+			stage(root, "tests/envelope.test.ts");
+			stage(root, "src/stray.ts");
+			const before = readFileSync(join(root, SIDECAR), "utf8");
+			const priorScope = scopeIntent([]).scope_hint;
+			const ui = makeUI();
+
+			const failure = await captureToolFailure(loadSurface().tool.execute("b2", { task_id: TASK, action: { op: "approve_breaking_intent_revision", next_intent: scopeIntent(["tests/envelope.test.ts"], 2) } }, undefined, undefined, makeCtx(root, ui)));
+
+			expect(failure.message).toContain("outside the authorization envelope: src/stray.ts");
+			expect(ui.dialogCalls).toHaveLength(0);
+			expect(readFileSync(join(root, SIDECAR), "utf8")).toBe(before);
+			expect(execFileSync("git", ["show", `:${SIDECAR}`], { cwd: root, encoding: "utf8" })).toBe(before);
+			expect(storedRecord(root).intent_snapshot.scope_hint).toEqual(priorScope);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
+	test("breaking: a failure after the sidecar is staged restores the sidecar, the index and the scope", async () => {
+		const root = makeScopeRoot();
+		try {
+			stage(root, "tests/envelope.test.ts");
+			const before = {
+				sidecar: readFileSync(join(root, SIDECAR), "utf8"),
+				indexSidecar: execFileSync("git", ["show", `:${SIDECAR}`], { cwd: root, encoding: "utf8" }),
+				status: execFileSync("git", ["status", "--short"], { cwd: root, encoding: "utf8" }),
+				scope: scopeIntent([]).scope_hint,
+			};
+			const ui = makeUI();
+			const { tool } = loadSurface({
+				authorizationAfterSidecarStage: async () => {
+					// Dirty the staged sidecar so the restore is observable, then fail.
+					writeFileSync(join(root, SIDECAR), `${readFileSync(join(root, SIDECAR), "utf8")} `);
+					execFileSync("git", ["add", "--", SIDECAR], { cwd: root });
+					throw new Error("simulated precommit failure");
+				},
+			});
+
+			const failure = await captureToolFailure(tool.execute("b3", { task_id: TASK, action: { op: "approve_breaking_intent_revision", next_intent: scopeIntent(["tests/envelope.test.ts"], 2) } }, undefined, undefined, makeCtx(root, ui)));
+
+			expect(failure.message).toBe("simulated precommit failure");
+			expect(ui.dialogCalls).toHaveLength(1);
+			expect(readFileSync(join(root, SIDECAR), "utf8")).toBe(before.sidecar);
+			expect(execFileSync("git", ["show", `:${SIDECAR}`], { cwd: root, encoding: "utf8" })).toBe(before.indexSidecar);
+			expect(execFileSync("git", ["status", "--short"], { cwd: root, encoding: "utf8" })).toBe(before.status);
+			expect(storedRecord(root).intent_snapshot.scope_hint).toEqual(before.scope);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+});

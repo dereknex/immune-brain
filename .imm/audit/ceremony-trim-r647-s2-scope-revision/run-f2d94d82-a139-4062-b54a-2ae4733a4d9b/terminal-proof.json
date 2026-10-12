@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "ceremony-trim-r647-s2-scope-revision",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:ceremony-trim-r647-s2-scope-revision:2026-10-12T14:06:37.755Z",
+  "final_record_hash": "sha256:c24431d0f224b13a9aa20bb4b081415552684c20bd86243b135b76a44d7c9db7",
+  "terminalized_at": "2026-10-12T14:06:37.755Z"
+}

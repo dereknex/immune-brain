@@ -179,8 +179,10 @@ integration assertions; for runtime changes, include the generated Claude bundle
 when it inlines that runtime and the required release changeset. Resolve these
 paths from the build and test references before Enrollment. Record the concrete paths in the Spec's discovery evidence when the work is
 complex; simple TaskIntent-only work records them in `scope_hint`.
-Do not author while a referenced sibling is unresolved. Use the smallest
-coherent module directory for ordinary implementation scope. Keep Kernel,
+Do not author while a referenced sibling is unresolved. Default ordinary
+implementation scope to the smallest coherent module directory: name the
+concrete files it needs, so a sibling the work later needs is a same-directory
+addition the Loop owner submits itself with `revise_intent` (ADR 0021). Keep Kernel,
 authority, migration, secret, and security-sensitive scope exact to the files
 proved necessary by the trace. Scope is closed by reference evidence, not by an
 exhaustive filename guess.
@@ -504,7 +506,8 @@ changes in the proposal. Preserve the prior on-disk sidecars until Kernel applie
 the revision; do not overwrite the enrolled TaskIntent, invoke the new-intent
 author command, or request a second Enrollment.
 
-Return the proposal to the current Loop owner for Kernel `revise_intent` or,
+A same-directory file addition is not a Planner request: the Loop owner submits
+it directly (ADR 0021). Return the proposal to the current Loop owner for Kernel `revise_intent` or,
 when breaking, `approve_breaking_intent_revision` with the complete next intent.
 The native gate is the single user decision for a breaking revision; candidate
 preparation does not apply the revision or authorize expanded execution.

@@ -492,6 +492,17 @@ is recorded as a separate follow-up rather than resolved here.
   reasons in one request. Do not edit outside scope while waiting or widen it
   piecemeal without new evidence. Bounded test or PR repair stays inside the same
   TaskIntent.
+- Exception to the bullet above, the Loop owner's own call: a same-directory
+  addition. When the new entry is a concrete file in a directory where the scope
+  already names a concrete file, and it is not a risk-floor path (Kernel,
+  assurance, Claude Host authority, Pi extension), `docs/specs` or `docs/plans`,
+  submit `revise_intent` with the complete next intent. It classifies
+  `compatible`, applies without a native gate, and the next Review prompt names
+  the added paths as self-served (ADR 0021). A glob, removed entry, new
+  directory or floor path is breaking; a directory written without a trailing
+  slash is refused by the Host before submission, so name concrete files or
+  widen with a glob entry through `approve_breaking_intent_revision`. The envelope check for a revision is judged against the next
+  scope, so a worktree that already holds the added files no longer blocks it.
 - Effects are separate grants. A stage-only recovery restores staging and grants
   no commit, push, or publication; an existing exact approval, including a valid
   batch capability bounded to one child, stays usable without another chat gate.

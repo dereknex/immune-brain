@@ -102,10 +102,12 @@ import {
 import { inspectStorageLayout } from "../runtime/kernel/storage_paths";
 import { migrateLegacyLayout } from "../runtime/kernel/storage_layout_migration";
 import {
-	readTaskIntent,
-	parseTaskIntentV1,
+	assertScopeAdditionsAreFiles,
 	canonicalIntentHash,
+	parseTaskIntentV1,
+	readTaskIntent,
 	type ReadTaskIntentResult,
+	withNextScope,
 } from "../runtime/kernel/intent";
 import { readBackendClaim, readTaskTombstone } from "../runtime/kernel/backend_claim";
 import {
@@ -663,7 +665,27 @@ export default function (
 				throwIfCanaryToolFailure(taskId, action.op, enriched);
 				return toolResult(JSON.stringify(enriched, null, 2), enriched);
 			}
-			const projection = await projectAssuranceForTask(ctx.cwd, taskId);
+			const requested = requestedScope(action as { op: string; next_intent?: unknown });
+			if (requested) {
+				// The directory rule is the compatible route's own refusal; it runs
+				// before the projection so a directory's files are not reported as
+				// unstaged scope changes instead (ADR 0021, D4).
+				let prior: ReadTaskIntentResult | null = null;
+				try {
+					prior = readTaskIntentForRecord(ctx.cwd, taskId);
+				} catch {
+					// An unreadable intent is the projection's diagnostic to report.
+				}
+				if (prior) {
+					try {
+						assertScopeAdditionsAreFiles(ctx.cwd, prior.intent.scope_hint, requested);
+					} catch (error) {
+						const message = error instanceof Error ? error.message : String(error);
+						return failCanaryTool(taskId, action.op, "blocked", "scope_addition_is_directory", message, "name concrete files, or widen through approve_breaking_intent_revision");
+					}
+				}
+			}
+			const projection = await projectAssuranceForTask(ctx.cwd, taskId, requested);
 			if (projection.error) {
 				const nextAction = recoveryActionForAssuranceFailure(projection.error) ?? "inspect authority state";
 				const details = {
@@ -849,7 +871,7 @@ export default function (
 			return { state: "blocked", reason };
 		}
 		try {
-		const projection = await projectAssuranceForTask(ctx.cwd, taskId);
+		const projection = await projectAssuranceForTask(ctx.cwd, taskId, nextIntent?.scope_hint);
 		if (projection.error || !projection.claim) {
 			const reason = projection.error ?? "no active backend claim";
 			notifyOnce(ctx, `authorization-claim:${taskId}:${reason}`, `cannot authorize ${taskId}: ${reason}`, "error");
@@ -880,7 +902,11 @@ export default function (
 				const stagedRecord = await readTaskRecordRaw(ctx.cwd, taskId);
 				if (!stagedRecord.record || stagedRecord.revision !== projection.projection.record_revision)
 					throw new Error("TaskRecord changed while preparing the breaking revision");
-				stagedNextDiffHash = taskDeliveryIdentity(ctx.cwd, stagedRecord.record).diff_hash;
+				// The revision is bound against the scope it asks for (ADR 0021, D6).
+				stagedNextDiffHash = taskDeliveryIdentity(
+					ctx.cwd,
+					withNextScope(stagedRecord.record, nextIntent.scope_hint),
+				).diff_hash;
 			} catch (error) {
 				let restoreError: unknown;
 				try { restoreStagedIntent(); } catch (err) { restoreError = err; }
@@ -1054,9 +1080,11 @@ export default function (
 					const liveRecord = nextIntent ? await readTaskRecordRaw(ctx.cwd, taskId) : null;
 					if (nextIntent && (!liveRecord?.record || liveRecord.revision !== projection.projection.record_revision || !stagedNextDiffHash))
 						throw new Error("TaskRecord changed before the breaking revision digest");
-					const operationDiffHash = liveRecord?.record
-						? taskDeliveryIdentity(ctx.cwd, liveRecord.record).diff_hash
-						: projection.projection.diff_hash;
+					const operationDiffHash = liveRecord?.record && nextIntent
+						? taskDeliveryIdentity(ctx.cwd, withNextScope(liveRecord.record, nextIntent.scope_hint)).diff_hash
+						: liveRecord?.record
+							? taskDeliveryIdentity(ctx.cwd, liveRecord.record).diff_hash
+							: projection.projection.diff_hash;
 					if (nextIntent && operationDiffHash !== stagedNextDiffHash)
 						throw new Error("staged next-state diff changed after native confirmation");
 					const capability = await mintCapability(registry, {
@@ -1083,7 +1111,8 @@ export default function (
 						task_id: taskId,
 						operation: { ...exactOperation, capability, actor_id: LITERAL_USER_ACTOR_ID } as never,
 						prior_intent_token: priorIntent.token,
-						diffProvider: (root: string, record: TaskRecord) => diffSnapshotOf(root, record),
+						diffProvider: (root: string, record: TaskRecord) =>
+							diffSnapshotOf(root, nextIntent ? withNextScope(record, nextIntent.scope_hint) : record),
 						now,
 					})) as unknown as { record: { lifecycle: string; artifact_state: string; intent_ref: { path: string }; intent_snapshot: { scope_hint: string[] } } };
 					if (exactOperation.op === "stop") progression.releaseStoppedReview(taskId);
@@ -1343,8 +1372,34 @@ function overviewRailState(lifecycle: string, obligation: string): TaskRailState
 	return "Working";
 }
 
-export async function projectAssuranceForTask(root: string, taskId: string): Promise<AssuranceProjectionResult> {
-	return projectAssurance(root, taskId);
+export async function projectAssuranceForTask(
+	root: string,
+	taskId: string,
+	nextScope?: readonly string[],
+): Promise<AssuranceProjectionResult> {
+	// A scope revision is projected against the scope it asks for (ADR 0021, D6).
+	return projectAssurance(
+		root,
+		taskId,
+		nextScope
+			? (rootDir: string, record: TaskRecord) => diffSnapshotOf(rootDir, withNextScope(record, nextScope))
+			: undefined,
+	);
+}
+
+/**
+ * The canonical scope a `revise_intent` payload asks for. It goes through the
+ * Intent parser so entries it would fold away (covered by a directory) match the
+ * scope the Kernel later records; a payload the parser rejects is reported by
+ * the revision path itself, not here.
+ */
+function requestedScope(action: { op: string; next_intent?: unknown }): string[] | undefined {
+	if (action.op !== "revise_intent") return undefined;
+	try {
+		return parseTaskIntentV1(action.next_intent).scope_hint;
+	} catch {
+		return undefined;
+	}
 }
 
 /**
@@ -1483,6 +1538,10 @@ async function executeOrdinaryOperation(
 		? { ...input.operation, next_intent: await parseTaskIntentV1(input.operation.next_intent) }
 		: input.operation;
 	const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
+	const nextScope = operation.op === "revise_intent"
+		? (operation.next_intent as { scope_hint: string[] }).scope_hint
+		: undefined;
+	if (nextScope) assertScopeAdditionsAreFiles(ctx.cwd, priorIntent.intent.scope_hint, nextScope);
 	const sidecar = join(ctx.cwd, priorIntent.intent_ref.path);
 	const priorBytes = operation.op === "revise_intent" ? readFileSync(sidecar) : null;
 	// A content-changing revision writes the sidecar before the kernel's drift
@@ -1503,7 +1562,8 @@ async function executeOrdinaryOperation(
 			task_id: input.taskId,
 			operation: operation as never,
 			prior_intent_token: priorIntent.token,
-			diffProvider: (root: string, record: TaskRecord) => diffSnapshotOf(root, record),
+			diffProvider: (root: string, record: TaskRecord) =>
+				diffSnapshotOf(root, nextScope ? withNextScope(record, nextScope) : record),
 			now: new Date().toISOString(),
 		});
 		if (operation.op === "freeze_artifacts" || operation.op === "stop")
