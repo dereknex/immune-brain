@@ -1,5 +1,23 @@
 # Changelog
 
+## 5.2.0
+
+### Minor Changes
+
+- [#210](https://github.com/dereknex/immune-brain/pull/210) [`ccd7e56`](https://github.com/dereknex/immune-brain/commit/ccd7e5699ed5ac0c676f354f862e3370070abc15) Thanks [@dereknex](https://github.com/dereknex)! - Planner and Brainstorm now always stop after candidate validation; native Enrollment is the first step of an explicit `imm-run` entry (ADR 0019).
+
+- [#210](https://github.com/dereknex/immune-brain/pull/210) [`ccd7e56`](https://github.com/dereknex/immune-brain/commit/ccd7e5699ed5ac0c676f354f862e3370070abc15) Thanks [@dereknex](https://github.com/dereknex)! - Claude Code now refuses `enroll` and `start_unattended_batch` with `run_entry_required` unless the user entered `imm-run` in the session, and refuses a model Skill call for `imm-planner`, `imm-brainstorm` or `imm-run` with `phase_entry_required` unless the user's latest prompt entered that phase (ADR 0019).
+
+- [#210](https://github.com/dereknex/immune-brain/pull/210) [`ccd7e56`](https://github.com/dereknex/immune-brain/commit/ccd7e5699ed5ac0c676f354f862e3370070abc15) Thanks [@dereknex](https://github.com/dereknex)! - Pi now refuses `imm_canary_enrollment` and `start_unattended_batch` with `run_entry_required` before the authority dialog unless the user entered `imm-run` in the session; a later planner or brainstorm entry revokes it. Both Hosts return the same reason code and recovery action (ADR 0019).
+
+- [#213](https://github.com/dereknex/immune-brain/pull/213) [`4834b00`](https://github.com/dereknex/immune-brain/commit/4834b008cba0b057ef10f5508949b42cc700553f) Thanks [@dereknex](https://github.com/dereknex)! - Add `imm-test-prune`, an explicitly invoked standalone host-native Skill that audits and prunes redundant, bloated, or orphaned tests through one exact hash-bound manifest. It uses only the target repository's own test, coverage, and static-check commands; subsumption deletions require covered-line superset evidence when coverage is available and stay `UNVERIFIED` otherwise; assertions are never weakened and production source is never changed (#205).
+
+### Patch Changes
+
+- [#210](https://github.com/dereknex/immune-brain/pull/210) [`ccd7e56`](https://github.com/dereknex/immune-brain/commit/ccd7e5699ed5ac0c676f354f862e3370070abc15) Thanks [@dereknex](https://github.com/dereknex)! - Harden the phase entry gate: a prompt the Claude store cannot record drops the earlier entry, and a store read or admission write that throws denies instead of letting a phase Skill through; an admission written by a repeated hook run for the same call is accepted once instead of refusing every Enrollment; a symlinked command alias or Pi prompt template is bounded by its target's size, not the link's.
+
+- [#213](https://github.com/dereknex/immune-brain/pull/213) [`4834b00`](https://github.com/dereknex/immune-brain/commit/4834b008cba0b057ef10f5508949b42cc700553f) Thanks [@dereknex](https://github.com/dereknex)! - Executor now pins each added test to one acceptance invariant or finding at its public seam, reuses existing tests before adding new ones, and retires tests for behavior a change retires; Code Review treats test-suite growth as advisory only, while weakened or missing acceptance tests stay blocking (#205).
+
 ## 5.1.2
 
 ### Patch Changes
