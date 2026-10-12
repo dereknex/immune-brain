@@ -26,6 +26,8 @@ The Kernel constrains what a task delivers and stops prescribing how the user's 
 | U4 | Review cost (R1) and batch constraints (R2) are measured and investigated first. They are Issues, not Slices. | Same answer; recommendation "先只做测量". |
 | U5 | Name "Leave the development environment to the user", slug `host-owned-environment`, short name `host-owned-env`, five serial Slices S1–S5 with the dependencies below, GitHub carrier. | Decomposition table confirmed ("确认"), 2026-10-12; carrier from `CLAUDE.md` `Initiative carrier default: github`. |
 | U6 | Changing the wording of an acceptance assertion still needs the user's confirmation. | Proposal withdrawn by the Planner and not reopened by the user, 2026-10-12. |
+| U7 | The Lane batch integration recheck keeps the materialized delivery copy; only task QA runs in place. | User answer "仅此处保留副本" to the S1 implementation question, 2026-10-13. |
+| U8 | The in-place equality check covers only paths inside the task's scope; content outside the scope is the user's environment. | User answer "只比较 scope 内" to the S1 implementation question, 2026-10-13. |
 
 ## User scenarios
 
@@ -45,14 +47,14 @@ The Kernel constrains what a task delivers and stops prescribing how the user's 
 | SCN-12 | automated | Given a workspace with no active task, when a tool call or a subagent event fires the hook, then nothing is written. | HE-S5-A1 |
 | SCN-13 | automated | Given an active task, when the user submits a prompt or a Reviewer subagent starts, then the notice and the recorded Review events are as today. | HE-S5-A1 |
 
-SCN-1 to SCN-5 follow U1 and U2; SCN-6 to SCN-8 were the staging-area items the user kept ("其他按你建议"); SCN-9 to SCN-11 follow U3; SCN-12 and SCN-13 are the hook item of the same confirmed table.
+SCN-1 to SCN-3 belong to the replacement task `host-owned-environment-s1-task-qa-in-place` (Slice S1R, Issue #228) and are published there as SCN-14 to SCN-16, because the stopped Slice S1 (#222) keeps the original ids as history; they compare in-scope content only (U8). SCN-1 to SCN-5 follow U1 and U2; SCN-6 to SCN-8 were the staging-area items the user kept ("其他按你建议"); SCN-9 to SCN-11 follow U3; SCN-12 and SCN-13 are the hook item of the same confirmed table.
 
 ## Decision trace
 
 | ID | Decision | Source |
 |---|---|---|
-| D1 | `runDeterministicQa` executes `prepare` and every check with the task's project root as the root. `materializeDeliveryWorkspace`, the byte seal, `assertDeliveryClean` and `removeTaskOwnedTree` are removed; `writeDeliveryTree` stays, because it produces the tree identity the run is compared with. | U1, U2. Repository evidence: `runtime/assurance/qa.ts:74-84`, `runtime/assurance/delivery_workspace.ts:120`, `:174`, `:211`; the materialization has one runtime consumer (`qa.ts:4`). |
-| D2 | Before the first command of a run and after every command, the tracked content of the working directory is compared with the frozen tree, ignoring exactly the paths the snapshot already treats as non-delivery. A difference before the run or after a command fails with the existing reason `protected_input_or_output_drift`; no reason code is added. The differing paths are returned to the caller through the non-persisted Tool-result channel and never stored. | U2. Repository evidence: reason union in `runtime/assurance/coordinator.ts`; `isNonDeliveryPath` in `runtime/workspace_scope.ts`; "Paths and process output are not persisted" at `qa.ts:117`. |
+| D1 | `runDeterministicQa` executes `prepare` and every check with the task's project root as the root. Task QA no longer calls `materializeDeliveryWorkspace`. The materialization stays for one caller, the Lane batch integration recheck, which verifies a merge candidate commit that is never checked out and so has no working directory to run in (U7). | U1, U2, U7. Repository evidence: `runtime/assurance/qa.ts:74-84`, `runtime/assurance/delivery_workspace.ts:120`, `:174`, `:211`; the materialization has one runtime consumer (`qa.ts:4`). |
+| D2 | Before the first command of a run and after every command, the tracked content of the working directory inside the task's `scope_hint` is compared with the frozen tree, ignoring exactly the paths the snapshot already treats as non-delivery. Paths outside the scope are the user's environment and are not compared (U8). A difference before the run or after a command fails with the existing reason `protected_input_or_output_drift`; no reason code is added. The differing paths are returned to the caller through the non-persisted Tool-result channel and never stored. | U2, U8. Repository evidence: reason union in `runtime/assurance/coordinator.ts`; `isNonDeliveryPath` in `runtime/workspace_scope.ts`; "Paths and process output are not persisted" at `qa.ts:117`. |
 | D3 | `environment.writable_paths` stays a parsed v2 field and no longer has an effect: untracked and ignored output is the user's environment. The descriptor contract version does not change, so no enrolled or planned TaskIntent needs revision. | Delegated technical choice. Repository evidence: `runtime/verification_descriptor.ts:99-105`; 63 TaskIntents under `docs/plans` carry the field. |
 | D4 | The eight Git repository-binding variables stay filtered from the child environment. In place, an inherited binding would still point a command at a different repository than the working directory. | Repository evidence: `runtime/assurance/verification.ts:60-63`. |
 | D5 | ADR 0022 records that QA runs in place and why the materialization was removed. `dist/imm-run.md:96-98` and `dist/imm-planner.md:383-389` are rewritten: QA runs in the task's working directory after an equality check with the frozen snapshot; a dependency already present in the working directory is valid provenance. | Delegated technical choice; the contract sentences state the removed behaviour. |
@@ -119,8 +121,8 @@ sequenceDiagram
 
 ### Invariants
 
-- I1: a QA pass is issued only if the tracked content of the working directory equalled the frozen tree before the first command and after the last one (D2).
-- I2: a QA run creates and removes nothing outside what its commands write (D1).
+- I1: a QA pass is issued only if the in-scope tracked content of the working directory equalled the frozen tree before the first command and after the last one (D2).
+- I2: a task QA run creates and removes nothing outside what its commands write (D1). The batch integration recheck is outside this invariant (U7).
 - I3: a command's entry file is identity-pinned for the whole run; timeout and abort still remove every process carrying the run token (D6).
 - I4: no in-scope change that predates Enrollment becomes task work unless the confirmed gate listed it (D8).
 - I5: a snapshot is never frozen over unstaged, untracked or index-flagged in-scope paths (D9, D11).
@@ -131,7 +133,7 @@ sequenceDiagram
 
 ### T1. QA in place (S1; D1–D5)
 
-`runDeterministicQa` keeps its signature except for the removed `_materializeDeliveryWorkspace` test seam; tests that used it supply a real temporary Git repository instead. The equality check is one function used at both points; it runs Git with the repository bindings removed and reads no index flags of its own. A failed check before the run reports stage `integrity`.
+`runDeterministicQa` runs in place by default; the batch integration recheck passes an explicit option that selects the materialized delivery instead. Task QA tests supply a real temporary Git repository. The equality check is one function used at both points; it runs Git with the repository bindings removed and reads no index flags of its own. A failed check before the run reports stage `integrity`.
 
 ### T2. Command resolution (S2; D6, D7)
 

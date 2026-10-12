@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "host-owned-environment-s1-qa-in-place",
-  "owner": "user",
   "goal": "Deterministic QA runs prepare and every check in the task's own working directory instead of a disposable copy: before the first command and after each command the tracked content of the working directory must equal the frozen snapshot tree, a difference fails as protected_input_or_output_drift with the differing paths returned to the caller and never stored, the delivery materialization and its cleanup are removed, and the run and Planner contracts plus ADR 0022 state the in-place rule (Spec host-owned-environment S1; D1-D5, I1, I2).",
   "acceptance": [
     {
@@ -26,20 +25,29 @@
     "docs/plans/host-owned-environment-s1-qa-in-place.intent.json",
     "docs/specs/host-owned-environment.spec.md",
     "plugins/immune-brain/.pi-extension/pi-canary-verification.ts",
+    "plugins/immune-brain/README.md",
     "plugins/immune-brain/dist/claude/mcp-server.mjs",
     "plugins/immune-brain/dist/imm-planner.md",
     "plugins/immune-brain/dist/imm-run.md",
     "plugins/immune-brain/runtime/assurance/coordinator.ts",
     "plugins/immune-brain/runtime/assurance/delivery_workspace.ts",
     "plugins/immune-brain/runtime/assurance/qa.ts",
+    "plugins/immune-brain/runtime/assurance/verification.ts",
+    "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+    "plugins/immune-brain/runtime/workspace_scope.ts",
     "tests/dual-host-assurance-conformance.test.ts",
     "tests/host-neutral-assurance-coordinator.test.ts",
+    "tests/pi-batch-acceptance-integration.test.ts",
     "tests/pi-canary-assurance-authority.test.ts",
     "tests/pi-canary-verification-descriptor.test.ts",
+    "tests/pi-canary-work-extension.test.ts",
+    "tests/qa-prepare-diagnostics.test.ts",
     "tests/shared-deterministic-qa.test.ts",
     "tests/unattended-contracts.test.ts",
+    "tests/v4-runtime-launchers.test.ts",
     "tests/workflow-verification-invariants.test.ts"
   ],
   "risk": "critical",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

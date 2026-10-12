@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "host-owned-environment-s1-qa-in-place",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "stopped",
+  "terminal_event_id": "stop:host-owned-environment-s1-qa-in-place:2026-10-12T16:50:19.503Z",
+  "final_record_hash": "sha256:5071ca3104b0fbef5d34f73935afd240c2d3bd0ad51e09ad77904b7a992da366",
+  "terminalized_at": "2026-10-12T16:50:19.503Z"
+}
