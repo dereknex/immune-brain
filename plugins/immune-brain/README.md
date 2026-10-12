@@ -32,10 +32,13 @@ the user explicitly requested.
 Managed Path starts only from explicit `imm-brainstorm`, `imm-planner`, or
 `imm-run` entry; ordinary host input and standalone `imm-pr-fix`,
 `imm-doc-prune`, `imm-doc-slim`, `imm-test-prune`, and `imm-retro` stay
-host-native and are not classified by natural-language routing.
+host-native and are not classified by natural-language routing. `imm-planner`
+and `imm-brainstorm` also start on the user's request for a Spec, Plan,
+TaskIntent or requirement clarification, by slash command or in natural
+language; `imm-run` starts only from a literal-user entry.
 
 - An active Assurance projection remains authoritative and resumes only when the user explicitly enters `imm-run`.
-- Explicit `imm-brainstorm` frames ambiguity; explicit `imm-planner` plans clear work.
+- `imm-brainstorm` frames ambiguity and `imm-planner` plans clear work, each on the user's request.
 - `imm-run` consumes validated plans and active task recovery; Planner artifacts remain candidates for later literal-user Enrollment in the current Host's native gate.
 - Fast-Track compresses Managed Path without bypassing TaskIntent scope, Enrollment, QA, Review, authorization, or completion.
 - An opted-in serial batch hands each enrolled child to foreground Parent implementation before QA; the Parent dispatches required Review, then resumes the same valid batch for Kernel settlement reconciliation and one scope-bound commit. Optional `max_parallel` selects lane mode instead of the serial default. See [Unattended Batch Opt-In](dist/imm-run.md#unattended-batch-opt-in) and [Parallel Batch Opt-In](dist/imm-run.md#parallel-batch-opt-in).

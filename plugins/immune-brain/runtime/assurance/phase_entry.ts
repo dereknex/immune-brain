@@ -63,23 +63,16 @@ export function recognizePhaseEntry(text: string, readAlias: AliasReader): Phase
 }
 
 export interface PhaseEntryState {
-	/** Count of literal prompts observed in the session. */
-	prompt_seq: number;
 	run_live: boolean;
-	/** The prompt that recorded the live run entry, or 0. */
-	run_prompt_seq: number;
-	/** The prompt that recorded the latest plan entry, or 0. */
-	plan_prompt_seq: number;
 }
 
-export const NO_PHASE_ENTRY: PhaseEntryState = { prompt_seq: 0, run_live: false, run_prompt_seq: 0, plan_prompt_seq: 0 };
+export const NO_PHASE_ENTRY: PhaseEntryState = { run_live: false };
 
 /** One literal prompt: a run entry goes live, a plan entry revokes it. */
 export function applyPrompt(state: PhaseEntryState, entry: PhaseEntry | null): PhaseEntryState {
-	const prompt_seq = state.prompt_seq + 1;
-	if (entry === "run") return { ...state, prompt_seq, run_live: true, run_prompt_seq: prompt_seq };
-	if (entry === "plan") return { prompt_seq, run_live: false, run_prompt_seq: 0, plan_prompt_seq: prompt_seq };
-	return { ...state, prompt_seq };
+	if (entry === "run") return { run_live: true };
+	if (entry === "plan") return { run_live: false };
+	return state;
 }
 
 export function phaseEntryLogLine(entry: PhaseEntry | null): string {
@@ -115,26 +108,23 @@ function refuse(reason_code: typeof RUN_ENTRY_REQUIRED | typeof PHASE_ENTRY_REQU
 
 /**
  * Whether the session's entry state admits one operation. `state` is null when
- * the store could not be read, which refuses everything.
+ * the store could not be read, which refuses `enroll`, `start_unattended_batch`
+ * and the `imm-run` Skill. The Planner and Brainstorm Skills are never refused.
+ * `context` is accepted for Host callers; admission no longer depends on it.
  */
 export function admitPhaseOperation(
 	operation: PhaseOperation,
 	state: PhaseEntryState | null,
-	context: { activeClaim: boolean },
+	context?: { activeClaim: boolean },
 ): PhaseAdmission {
+	void context;
 	if (operation.kind === "tool") {
 		if (state?.run_live) return { ok: true };
 		return refuse(RUN_ENTRY_REQUIRED, `${operation.name} needs a literal-user imm-run entry in this session`);
 	}
-	const latest = state !== null && state.prompt_seq > 0 ? state.prompt_seq : -1;
-	if (operation.skill === "imm-run") {
-		if (state?.run_live && state.run_prompt_seq === latest) return { ok: true };
-		return refuse(PHASE_ENTRY_REQUIRED, "imm-run is entered by the user, not by a model Skill call");
-	}
-	if (state && state.plan_prompt_seq === latest) return { ok: true };
-	// Enrolled Intent Revision: the Loop routes to the Planner inside a run.
-	if (operation.skill === "imm-planner" && state?.run_live && context.activeClaim) return { ok: true };
-	return refuse(PHASE_ENTRY_REQUIRED, `${operation.skill} is entered by the user, not by a model Skill call`);
+	if (operation.skill !== "imm-run") return { ok: true };
+	if (state?.run_live) return { ok: true };
+	return refuse(PHASE_ENTRY_REQUIRED, "imm-run is entered by the user, not by a model Skill call");
 }
 
 /** The single-line message both Hosts return for a refusal. */

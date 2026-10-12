@@ -1,13 +1,14 @@
 ---
 name: imm-brainstorm
-description: Use when the user explicitly requests Immune-Brain requirement clarification.
+description: Use when the user asks to clarify or explore requirements before Immune-Brain planning.
 ---
 
 # Immune-Brain: Brainstorm
 
 Use [`../../dist/imm-brainstorm.md`](../../dist/imm-brainstorm.md) as the
-canonical contract index, not a whole-document read. Explicit entry only: ordinary host questions do not
-start this workflow.
+canonical contract index, not a whole-document read. Starts on the user's request
+to clarify or explore requirements, by slash command or in natural language;
+ordinary host questions do not start this workflow.
 
 Mandatory constraints before any action: Brainstorm is read-only — no code,
 test, or runtime edits; no Spec, Plan, or workflow-state writes. All modes

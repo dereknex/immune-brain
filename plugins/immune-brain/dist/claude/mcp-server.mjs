@@ -95,14 +95,13 @@ function recognizePhaseEntry(text, readAlias) {
     return null;
   return ALIAS_TARGETS[[...targets][0]] ?? null;
 }
-var NO_PHASE_ENTRY = { prompt_seq: 0, run_live: false, run_prompt_seq: 0, plan_prompt_seq: 0 };
+var NO_PHASE_ENTRY = { run_live: false };
 function applyPrompt(state, entry) {
-  const prompt_seq = state.prompt_seq + 1;
   if (entry === "run")
-    return { ...state, prompt_seq, run_live: true, run_prompt_seq: prompt_seq };
+    return { run_live: true };
   if (entry === "plan")
-    return { prompt_seq, run_live: false, run_prompt_seq: 0, plan_prompt_seq: prompt_seq };
-  return { ...state, prompt_seq };
+    return { run_live: false };
+  return state;
 }
 function phaseEntryLogLine(entry) {
   return `${JSON.stringify({ v: 1, entry })}
@@ -138,17 +137,11 @@ function admitPhaseOperation(operation, state, context) {
       return { ok: true };
     return refuse(RUN_ENTRY_REQUIRED, `${operation.name} needs a literal-user imm-run entry in this session`);
   }
-  const latest = state !== null && state.prompt_seq > 0 ? state.prompt_seq : -1;
-  if (operation.skill === "imm-run") {
-    if (state?.run_live && state.run_prompt_seq === latest)
-      return { ok: true };
-    return refuse(PHASE_ENTRY_REQUIRED, "imm-run is entered by the user, not by a model Skill call");
-  }
-  if (state && state.plan_prompt_seq === latest)
+  if (operation.skill !== "imm-run")
     return { ok: true };
-  if (operation.skill === "imm-planner" && state?.run_live && context.activeClaim)
+  if (state?.run_live)
     return { ok: true };
-  return refuse(PHASE_ENTRY_REQUIRED, `${operation.skill} is entered by the user, not by a model Skill call`);
+  return refuse(PHASE_ENTRY_REQUIRED, "imm-run is entered by the user, not by a model Skill call");
 }
 function phaseRefusalMessage(refusal) {
   return `${refusal.reason_code}: ${refusal.detail}; recovery: ${refusal.recovery_action}`;
@@ -9229,20 +9222,25 @@ function dropPrivate(path) {
       rmSync5(path, { force: true });
   } catch {}
 }
+function appendPhaseEntry(sessionId, entry, root, locations) {
+  const path = entryLogPath(sessionId, root);
+  let recorded = false;
+  try {
+    recorded = (locations.append ?? appendPrivate)(path, cacheDir(root), phaseEntryLogLine(entry));
+  } catch {}
+  if (!recorded)
+    dropPrivate(path);
+  return recorded;
+}
 function recordPhaseEntryPrompt(payload, locations = {}) {
   if (payload.hook_event_name !== "UserPromptSubmit")
     return false;
   const sessionId = sessionIdOf(payload);
   if (!sessionId)
     return false;
-  const root = locations.root ?? tmpdir2();
   const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
   const entry = recognizePhaseEntry(prompt, claudeAliasReader(cwdOf(payload), locations.home ?? homedir()));
-  const path = entryLogPath(sessionId, root);
-  const recorded = (locations.append ?? appendPrivate)(path, cacheDir(root), phaseEntryLogLine(entry));
-  if (!recorded)
-    dropPrivate(path);
-  return recorded;
+  return appendPhaseEntry(sessionId, entry, locations.root ?? tmpdir2(), locations);
 }
 function gatedOperation(payload) {
   const toolName = String(payload.tool_name ?? "");
@@ -9261,15 +9259,21 @@ function phaseEntryGateHookOutput(payload, locations = {}) {
   if (!operation)
     return null;
   const root = locations.root ?? tmpdir2();
+  if (operation.kind === "skill" && operation.skill !== "imm-run") {
+    let activeClaim = false;
+    try {
+      activeClaim = readActiveClaimTaskId(cwdOf(payload)) !== null;
+    } catch {}
+    const sessionId = sessionIdOf(payload);
+    if (!activeClaim && sessionId)
+      appendPhaseEntry(sessionId, "plan", root, locations);
+    return null;
+  }
   let state = null;
   try {
     state = readPhaseEntryState(sessionIdOf(payload), root, locations.read);
   } catch {}
-  let activeClaim = false;
-  try {
-    activeClaim = readActiveClaimTaskId(cwdOf(payload)) !== null;
-  } catch {}
-  const admission = admitPhaseOperation(operation, state, { activeClaim });
+  const admission = admitPhaseOperation(operation, state);
   if (!admission.ok)
     return denyPreToolUse(phaseRefusalMessage(admission));
   if (operation.kind === "skill")

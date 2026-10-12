@@ -6,8 +6,10 @@
 //
 // Phase entry gate: UserPromptSubmit records which literal prompt entered
 // planning or execution; PreToolUse denies `enroll`, `start_unattended_batch`
-// and the three phase Skills without a matching entry, and otherwise leaves an
-// admission the tool handler consumes by tool-use id.
+// and the `imm-run` Skill without a live run entry, and otherwise leaves an
+// admission the tool handler consumes by tool-use id. A model Skill call for
+// `imm-planner` or `imm-brainstorm` is never denied; with no active claim it
+// revokes the run entry.
 import { lstatSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -25,6 +27,7 @@ import {
 	reducePhaseEntryLog,
 	RUN_ENTRY_REQUIRED,
 	type AliasReader,
+	type PhaseEntry,
 	type PhaseEntryState,
 	type PhaseOperation,
 } from "../assurance/phase_entry";
@@ -126,22 +129,29 @@ function dropPrivate(path: string): void {
 }
 
 /**
- * UserPromptSubmit: record whether this literal prompt entered a phase. Every
- * prompt is recorded so "the latest prompt" is decidable later. A prompt that
- * could not be recorded drops the log: an earlier entry must not outlive a
- * prompt the store never saw, so the session is back to no entry.
+ * Appends one entry line to the session log. A line that could not be written
+ * drops the log: an earlier entry must not outlive a line the store never saw,
+ * so the session is back to no entry.
+ */
+function appendPhaseEntry(sessionId: string, entry: PhaseEntry | null, root: string, locations: PhaseEntryLocations): boolean {
+	const path = entryLogPath(sessionId, root);
+	let recorded = false;
+	try { recorded = (locations.append ?? appendPrivate)(path, cacheDir(root), phaseEntryLogLine(entry)); } catch { /* an unwritten line drops the log */ }
+	if (!recorded) dropPrivate(path);
+	return recorded;
+}
+
+/**
+ * UserPromptSubmit: record whether this literal prompt entered a phase. A
+ * prompt that could not be recorded drops the log.
  */
 export function recordPhaseEntryPrompt(payload: Record<string, unknown>, locations: PhaseEntryLocations = {}): boolean {
 	if (payload.hook_event_name !== "UserPromptSubmit") return false;
 	const sessionId = sessionIdOf(payload);
 	if (!sessionId) return false;
-	const root = locations.root ?? tmpdir();
 	const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
 	const entry = recognizePhaseEntry(prompt, claudeAliasReader(cwdOf(payload), locations.home ?? homedir()));
-	const path = entryLogPath(sessionId, root);
-	const recorded = (locations.append ?? appendPrivate)(path, cacheDir(root), phaseEntryLogLine(entry));
-	if (!recorded) dropPrivate(path);
-	return recorded;
+	return appendPhaseEntry(sessionId, entry, locations.root ?? tmpdir(), locations);
 }
 
 function gatedOperation(payload: Record<string, unknown>): PhaseOperation | null {
@@ -156,20 +166,27 @@ function gatedOperation(payload: Record<string, unknown>): PhaseOperation | null
 }
 
 /**
- * PreToolUse for a gated tool: deny without a matching entry; for the two MCP
- * tools, otherwise write the admission the handler consumes. Any other tool
- * answers null and runs as configured.
+ * PreToolUse for a gated tool: deny without a live run entry; for the two MCP
+ * tools, otherwise write the admission the handler consumes. A Planner or
+ * Brainstorm Skill call is never denied; with no active claim it records a plan
+ * entry first, which revokes the run entry. Any other tool answers null and
+ * runs as configured.
  */
 export function phaseEntryGateHookOutput(payload: Record<string, unknown>, locations: PhaseEntryLocations = {}): string | null {
 	if (payload.hook_event_name !== "PreToolUse") return null;
 	const operation = gatedOperation(payload);
 	if (!operation) return null;
 	const root = locations.root ?? tmpdir();
+	if (operation.kind === "skill" && operation.skill !== "imm-run") {
+		let activeClaim = false;
+		try { activeClaim = readActiveClaimTaskId(cwdOf(payload)) !== null; } catch { /* unreadable authority is no claim */ }
+		const sessionId = sessionIdOf(payload);
+		if (!activeClaim && sessionId) appendPhaseEntry(sessionId, "plan", root, locations);
+		return null;
+	}
 	let state: PhaseEntryState | null = null;
 	try { state = readPhaseEntryState(sessionIdOf(payload), root, locations.read); } catch { /* an unreadable store refuses */ }
-	let activeClaim = false;
-	try { activeClaim = readActiveClaimTaskId(cwdOf(payload)) !== null; } catch { /* unreadable authority is no claim */ }
-	const admission = admitPhaseOperation(operation, state, { activeClaim });
+	const admission = admitPhaseOperation(operation, state);
 	if (!admission.ok) return denyPreToolUse(phaseRefusalMessage(admission));
 	if (operation.kind === "skill") return null;
 	const toolUseId = typeof payload.tool_use_id === "string" ? payload.tool_use_id : "";

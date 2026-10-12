@@ -60,12 +60,26 @@ describe("Skill-explicit workflow routing contract", () => {
   it("aligns project constitutions and packaged consumers", () => {
     expectAll(ROOT_IMMUNE, ["Skill-explicit Managed Path", "显式 Immune-Brain Skill", "literal-user Enrollment"]);
     expectAll(README, ["Managed Path starts only from explicit `imm-brainstorm`, `imm-planner`, or", "standalone `imm-pr-fix`,\n`imm-doc-prune`, `imm-doc-slim`, `imm-test-prune`, and `imm-retro` stay", "ordinary host input"]);
+    expect(README.replace(/\s+/g, " ")).toContain("also start on the user's request for a Spec, Plan, TaskIntent or requirement clarification, by slash command or in natural language; `imm-run` starts only from a literal-user entry");
     expectAll(USER_GUIDE, ["Skill-explicit Managed Path", "普通 host input 保持 host-native"]);
-    expectAll(PLANNER_SKILL, ["entered explicitly by the user", "never invokes the native Enrollment gate", "only that gate grants execution authority", "first step\nof a literal-user `imm-run` entry"]);
+    expectAll(PLANNER_SKILL, ["never invokes the native Enrollment gate", "only that gate grants execution authority", "first step\nof a literal-user `imm-run` entry"]);
+    const planner = PLANNER_SKILL.replace(/\s+/g, " ");
+    expect(planner).toContain("starts on the user's request for a Spec, Plan, or TaskIntent for a repository change, by slash command or in natural language");
+    expect(planner).toContain("`imm-run` starts only from a literal-user entry");
+    expect(planner).not.toContain("is entered explicitly by the user");
+    expect(planner).not.toContain("does not invoke this Skill through natural-language routing");
+    expect(planner).not.toContain("ordinary host input does not invoke it through natural-language routing");
     expect(PLANNER_SKILL).not.toContain("Planner may request the native Enrollment gate");
     expect(PLANNER_SKILL).not.toContain("never enrolls a task");
     expectAll(QUALITY_GATE, ["explicit Immune-Brain Skill entry starts Managed planning", "literal-user Enrollment remains the authority boundary"]);
     expect(PACKAGED_QUALITY_GATE).toBe(QUALITY_GATE);
+  });
+
+  it("records the Skill self-entry change and the accepted Pi gap in ADR 0020", () => {
+    const adr = read("docs/adr/0020-planner-and-brainstorm-skill-self-entry.md").replace(/\s+/g, " ");
+    expect(adr).toContain("partly supersedes ADR 0019");
+    expect(adr).toContain("## Accepted gap: Pi");
+    expect(adr).toContain("Pi cannot observe a model reading a Skill file");
   });
 
   it("keeps the user guide on current Kernel authority instead of retired v3 operations", () => {

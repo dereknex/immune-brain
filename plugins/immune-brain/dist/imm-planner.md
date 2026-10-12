@@ -1,6 +1,6 @@
 ---
 name: imm-planner
-description: Use when the user explicitly requests Immune-Brain Spec and TaskIntent planning.
+description: Use when the user asks for an Immune-Brain Spec, Plan, or TaskIntent for a repository change.
 ---
 
 # Immune-Brain: Planner
@@ -9,10 +9,13 @@ This skill adheres to the **[BASELINE.md](BASELINE.md)**.
 
 ## Managed Request Routing
 
-`imm-planner` is entered explicitly by the user for a clear repository mutation.
-Ordinary host input does not invoke this Skill through natural-language routing.
+`imm-planner` starts on the user's request for a Spec, Plan, or TaskIntent for a
+repository change, by slash command or in natural language. A request that asks
+for none of these stays host-native, and `imm-run` starts only from a
+literal-user entry. A model-entered Planner outside an enrolled task ends the
+session's run entry, so Enrollment needs a fresh `imm-run` entry.
 An active Assurance projection remains authoritative and is resumed only through
-an explicit `imm-run` entry; explicit Planner entry owns planning only.
+an explicit `imm-run` entry; Planner entry owns planning only.
 
 Planner output remains non-authoritative. Planner creates or validates a
 candidate Spec/TaskIntent and never invokes the native Enrollment gate;
@@ -429,7 +432,7 @@ it, and structural Enrollment readiness is not proof that a descriptor executed.
 - **Planning granularity**: Keep a coherent outcome together when acceptance, risk, rollback, and authority can settle together. Use the TaskIntent decomposition rules below for independent outcomes. File count, tokens, compactions, elapsed time, and review rounds are evidence for judgment, not universal gates.
 - **Historical artifacts**: v3 prose Plan mutation is retired. `imm-plan` is a read-only validator for archived Plans; create no new Roadmap, Phase, successor Plan, or State Ledger.
 - **Risk-Triggered Exploration**: Before authoring a TaskIntent, resolve only unknowns that could change scope, design, or verification using targeted read-only probes. Internal `arch-explorer` and explicit-lens `advisory-reviewer` roles return evidence without writing the Spec, TaskIntent, or workflow state. Stop probing when outcome, scope, and verification are concrete. Do not use retired Plan termination flags to classify discovery failures.
-- **Simplicity**: Apply the BASELINE Workflow Activation gate first. Non-mutating host-native work creates no Planner artifact. Explicit Immune-Brain Skill entry starts this Planner phase; ordinary host input does not invoke it through natural-language routing. Create one coherent outcome instead of expanding ceremony.
+- **Simplicity**: Apply the BASELINE Workflow Activation gate first. Non-mutating host-native work creates no Planner artifact. The user's request for a Spec, Plan, or TaskIntent, by slash command or in natural language, starts this Planner phase; other host input stays host-native. Create one coherent outcome instead of expanding ceremony.
 - **Design-Depth Classification**: Classify change design risk with the smallest sufficient tier: **Low risk** (copy, configuration, trivial rename, or contained local fix) may omit a separate Technical Design; **Medium risk** (non-trivial single-module behavior or internal contract) records affected components, decisions, invariants, failure behavior, and verification implications; **High risk** (cross-module/API/data-flow/state-machine, security, migration, concurrency, architecture ownership, cross-runtime/package-contract, or persisted-state work) records boundaries, interfaces or flow, alternatives, invariants, rollback/compatibility, and verification implications. Medium and High risk require Technical Design in the Spec. Do not classify a change as Low risk when it has a contract, ownership, security, persistence, compatibility, or multi-component concern. Every new or revised Spec records `**Design risk**: Low|Medium|High` with an adjacent rationale.
 - **Design-view selection**: For Medium and High risk, select every materially relevant technical-design view from architecture layers, service/component interfaces, data flow, state transitions, and temporal sequence. Record a short `Design views` statement naming the selected views and why any omitted view cannot affect the design. Do not write empty architecture, interface, data-flow, state, or sequence sections. Low risk remains concise and may omit Technical Design. When a selected view is recorded, also record its required decision content: architecture layers need layer responsibilities, dependency direction, ownership, and prohibited coupling; service/component interfaces need inputs, outputs, errors, compatibility/versioning, and caller/callee ownership; data flow needs source, transformations, validation, destination, and failure handling; state transitions need states, legal transitions, trigger, invariant, terminal ownership, and recovery; temporal sequence needs ordered interactions, authority at each point, interruption behavior, and idempotency.
 - **Technical Design Authority**: The Spec is the single Technical Design baseline. TaskIntent acceptance and scope reference the applicable design decisions or invariants without copying Technical Design prose. If discovery invalidates the baseline, stop execution and return to Planner to update the Spec and decide whether `replan` is required. TaskIntent and Initiative text do not duplicate Technical Design prose or become a prose Plan substitute.

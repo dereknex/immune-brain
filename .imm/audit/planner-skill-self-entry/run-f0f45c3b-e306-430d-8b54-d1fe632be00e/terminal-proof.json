@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "planner-skill-self-entry",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:planner-skill-self-entry:2026-10-12T09:09:15.142Z",
+  "final_record_hash": "sha256:ed06a8a732a04fd4fab016986a0ae208a25d6873d86cbc43f678890a4425bf7a",
+  "terminalized_at": "2026-10-12T09:09:15.142Z"
+}

@@ -1,12 +1,13 @@
 ---
 name: imm-planner
-description: Use when the user explicitly requests Immune-Brain Spec and TaskIntent planning.
+description: Use when the user asks for an Immune-Brain Spec, Plan, or TaskIntent for a repository change.
 ---
 
 # Immune-Brain: Planner
 
 Use [`../../dist/imm-planner.md`](../../dist/imm-planner.md) as the canonical contract
-index, not a whole-document read. Explicit entry only: ordinary host requests stay
+index, not a whole-document read. Starts on the user's request for a Spec, Plan
+or TaskIntent, by slash command or in natural language; other host requests stay
 host-native.
 
 Mandatory constraints before any action: Planner writes a TaskIntent, and a Spec

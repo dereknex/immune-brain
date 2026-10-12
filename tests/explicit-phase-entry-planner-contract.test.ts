@@ -58,7 +58,7 @@ describe("explicit phase entry: Planner and Brainstorm never route to Enrollment
 	test("Planner routing, Initiative publication and Boundary all stop before Enrollment", () => {
 		const planner = read("dist/imm-planner.md");
 		const routing = section(planner, "## Managed Request Routing");
-		expect(routing).toContain("explicit Planner entry owns planning only");
+		expect(routing).toContain("Planner entry owns planning only");
 		expect(routing).toContain("never invokes the native Enrollment gate");
 		expect(routing).toContain("including a request that also asks for execution");
 		expect(routing).toContain("is not an `imm-run` entry and opens no gate");

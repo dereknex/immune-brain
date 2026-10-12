@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
-import { phaseEntryGateHookOutput, recordPhaseEntryPrompt, type PhaseEntryLocations } from "../plugins/immune-brain/runtime/claude/lane_guard";
+import { phaseEntryGateHookOutput, readPhaseEntryState, recordPhaseEntryPrompt, type PhaseEntryLocations } from "../plugins/immune-brain/runtime/claude/lane_guard";
 
 function session() {
 	const root = mkdtempSync(join(tmpdir(), "imm-skill-gate-"));
@@ -69,19 +69,50 @@ function claimWorkspace(cwd: string, taskId: string): void {
 	});
 }
 
+const ENROLL = "mcp__plugin_immune-brain_immune-brain__enroll";
+
 describe("Claude phase entry Skill gate", () => {
-	test("a Skill call is allowed when the latest literal prompt entered that phase", () => {
+	test("a model Planner or Brainstorm call is never denied, with no entry or a live one (SCN-1)", () => {
 		const s = session();
-		expect(s.prompt("/planner add a gate")).toBe(true);
+		for (const skill of ["immune-brain:imm-planner", "imm-planner", "immune-brain:imm-brainstorm", "imm-brainstorm", " imm-planner\n", " /imm-brainstorm "])
+			expect(s.skill(skill)).toBeNull();
+		s.prompt("/loop task-a");
 		expect(s.skill("immune-brain:imm-planner")).toBeNull();
-		expect(s.skill("imm-brainstorm")).toBeNull();
-		expect(s.prompt("/loop task-a")).toBe(true);
-		expect(s.skill("immune-brain:imm-run")).toBeNull();
+		expect(s.skill("immune-brain:imm-brainstorm")).toBeNull();
 	});
 
-	test("model self-entry is denied with phase_entry_required and one recovery action", () => {
+	test("a Planner or Brainstorm call with no claim revokes the run entry, with no same-prompt exception (SCN-2)", () => {
+		for (const skill of ["immune-brain:imm-planner", "immune-brain:imm-brainstorm", " imm-planner\n"]) {
+			const s = session();
+			s.prompt("/loop task-a");
+			expect(s.tool(ENROLL)).toBeNull();
+			expect(s.skill(skill)).toBeNull();
+			s.prompt("confirm");
+			expect(denial(s.tool(ENROLL))).toStartWith("run_entry_required: ");
+			expect(denial(s.skill("immune-brain:imm-run"))).toStartWith("phase_entry_required: ");
+			// A fresh literal entry recovers the session.
+			s.prompt("/loop task-a");
+			expect(s.tool(ENROLL)).toBeNull();
+		}
+		const sameTurn = session();
+		sameTurn.prompt("/loop task-a");
+		expect(sameTurn.skill("immune-brain:imm-planner")).toBeNull();
+		expect(denial(sameTurn.tool(ENROLL))).toStartWith("run_entry_required: ");
+	});
+
+	test("the imm-run Skill is allowed on a live run entry after later plain prompts (SCN-3)", () => {
 		const s = session();
-		for (const skill of ["immune-brain:imm-planner", "imm-planner", "immune-brain:imm-brainstorm", "immune-brain:imm-run"]) {
+		expect(s.prompt("/loop task-a")).toBe(true);
+		expect(s.skill("immune-brain:imm-run")).toBeNull();
+		s.prompt("continue S2");
+		s.prompt("and the next one");
+		expect(s.skill("immune-brain:imm-run")).toBeNull();
+		expect(s.skill(" immune-brain:imm-run ")).toBeNull();
+	});
+
+	test("the imm-run Skill with no run entry is denied with phase_entry_required and one recovery action (SCN-4)", () => {
+		const s = session();
+		for (const skill of ["immune-brain:imm-run", "imm-run", " imm-run", "imm-run ", "\timmune-brain:imm-run\n", " /imm-run "]) {
 			const reason = denial(s.skill(skill));
 			expect(reason).toStartWith("phase_entry_required: ");
 			expect(reason).toEndWith("; recovery: ask the user to enter the Skill themselves in the current Host");
@@ -89,12 +120,49 @@ describe("Claude phase entry Skill gate", () => {
 		}
 	});
 
-	test("a padded Skill name is still gated", () => {
+	test("with an active claim a model Planner call leaves the run entry live (SCN-5)", () => {
 		const s = session();
-		for (const skill of [" imm-run", "imm-run ", "\timmune-brain:imm-planner\n", " /imm-brainstorm "])
-			expect(denial(s.skill(skill))).toStartWith("phase_entry_required: ");
 		s.prompt("/loop task-a");
-		expect(s.skill(" immune-brain:imm-run ")).toBeNull();
+		execFileSync("git", ["init", "-q"], { cwd: s.cwd });
+		claimWorkspace(s.cwd, "task-a");
+		expect(s.skill("immune-brain:imm-planner")).toBeNull();
+		expect(s.skill("immune-brain:imm-brainstorm")).toBeNull();
+		s.prompt("the scope must grow");
+		expect(s.tool(ENROLL)).toBeNull();
+		expect(s.skill("immune-brain:imm-run")).toBeNull();
+	});
+
+	test("a revocation that could not be appended drops the log, so enroll is denied", () => {
+		const s = session();
+		s.prompt("/loop task-a");
+		s.locations.append = () => false;
+		expect(s.skill("immune-brain:imm-planner")).toBeNull();
+		delete s.locations.append;
+		expect(denial(s.tool(ENROLL))).toStartWith("run_entry_required: ");
+		expect(denial(s.skill("immune-brain:imm-run"))).toStartWith("phase_entry_required: ");
+		s.prompt("/loop task-a");
+		expect(s.tool(ENROLL)).toBeNull();
+	});
+
+	test("a revocation append that throws still lets the Skill through and ends the run entry", () => {
+		const s = session();
+		s.prompt("/loop task-a");
+		s.locations.append = () => { throw new Error("EIO"); };
+		expect(s.skill("immune-brain:imm-planner")).toBeNull();
+		delete s.locations.append;
+		expect(denial(s.tool(ENROLL))).toStartWith("run_entry_required: ");
+	});
+
+	test("a repeated hook run leaves the same state", () => {
+		const s = session();
+		s.prompt("/loop task-a");
+		expect(s.skill("immune-brain:imm-planner")).toBeNull();
+		const once = readPhaseEntryState("skill-gate-session", s.locations.root);
+		expect(once).toEqual({ run_live: false });
+		expect(s.skill("immune-brain:imm-planner")).toBeNull();
+		expect(s.skill("immune-brain:imm-brainstorm")).toBeNull();
+		expect(readPhaseEntryState("skill-gate-session", s.locations.root)).toEqual(once);
+		expect(denial(s.tool(ENROLL))).toStartWith("run_entry_required: ");
 	});
 
 	test("a prompt the store could not record drops the earlier entry instead of leaving it live", () => {
@@ -106,19 +174,18 @@ describe("Claude phase entry Skill gate", () => {
 		expect(s.prompt("/planner revise it")).toBe(false);
 		delete s.locations.append;
 		expect(denial(s.skill("immune-brain:imm-run"))).toStartWith("phase_entry_required: ");
-		expect(denial(s.skill("immune-brain:imm-planner"))).toStartWith("phase_entry_required: ");
-		expect(denial(s.tool("mcp__plugin_immune-brain_immune-brain__enroll"))).toStartWith("run_entry_required: ");
+		expect(denial(s.tool(ENROLL))).toStartWith("run_entry_required: ");
 		// A fresh literal entry recovers the session.
 		expect(s.prompt("/loop task-a")).toBe(true);
 		expect(s.skill("immune-brain:imm-run")).toBeNull();
 	});
 
-	test("a store read that throws denies instead of letting the call through", () => {
+	test("a store read that throws denies the imm-run Skill and enroll instead of letting the call through", () => {
 		const s = session();
 		expect(s.prompt("/loop task-a")).toBe(true);
 		s.locations.read = () => { throw new Error("EIO"); };
 		expect(denial(s.skill("immune-brain:imm-run"))).toStartWith("phase_entry_required: ");
-		expect(denial(s.tool("mcp__plugin_immune-brain_immune-brain__enroll"))).toStartWith("run_entry_required: ");
+		expect(denial(s.tool(ENROLL))).toStartWith("run_entry_required: ");
 		expect(s.skill("frontend-design")).toBeNull();
 		delete s.locations.read;
 		expect(s.skill("immune-brain:imm-run")).toBeNull();
@@ -128,7 +195,7 @@ describe("Claude phase entry Skill gate", () => {
 		const s = session();
 		expect(s.prompt("/loop task-a")).toBe(true);
 		s.locations.append = () => { throw new Error("EIO"); };
-		expect(denial(s.tool("mcp__plugin_immune-brain_immune-brain__enroll"))).toStartWith("run_entry_required: ");
+		expect(denial(s.tool(ENROLL))).toStartWith("run_entry_required: ");
 	});
 
 	test("a symlinked alias is bounded by its target, not by the link", () => {
@@ -144,16 +211,6 @@ describe("Claude phase entry Skill gate", () => {
 		expect(s.skill("immune-brain:imm-run")).toBeNull();
 	});
 
-	test("a design confirmation after the entry prompt no longer admits the Skill", () => {
-		const s = session();
-		s.prompt("/planner add a gate");
-		s.prompt("confirm");
-		expect(denial(s.skill("immune-brain:imm-planner"))).toContain("phase_entry_required");
-		s.prompt("/loop task-a");
-		s.prompt("continue");
-		expect(denial(s.skill("immune-brain:imm-run"))).toContain("phase_entry_required");
-	});
-
 	test("a plan entry does not admit imm-run, and a mention is not an entry", () => {
 		const s = session();
 		s.prompt("/planner");
@@ -162,19 +219,9 @@ describe("Claude phase entry Skill gate", () => {
 		expect(denial(s.skill("immune-brain:imm-run"))).toContain("phase_entry_required");
 	});
 
-	test("the revision route admits the Planner inside a live run with an active claim only", () => {
-		const s = session();
-		s.prompt("/loop task-a");
-		s.prompt("the scope must grow");
-		expect(denial(s.skill("immune-brain:imm-planner"))).toContain("phase_entry_required");
-		execFileSync("git", ["init", "-q"], { cwd: s.cwd });
-		claimWorkspace(s.cwd, "task-a");
-		expect(s.skill("immune-brain:imm-planner")).toBeNull();
-		expect(denial(s.skill("immune-brain:imm-brainstorm"))).toContain("phase_entry_required");
-	});
-
 	test("every other Skill and tool is left untouched", () => {
 		const s = session();
+		s.prompt("/loop task-a");
 		expect(s.skill("immune-brain:imm-retro")).toBeNull();
 		expect(s.skill("planner")).toBeNull();
 		expect(s.skill("code-review")).toBeNull();
@@ -183,6 +230,8 @@ describe("Claude phase entry Skill gate", () => {
 		expect(s.tool("mcp__plugin_immune-brain_immune-brain__status", { task_id: "t" })).toBeNull();
 		expect(s.tool("mcp__plugin_immune-brain_immune-brain__advance_assurance", { task_id: "t" })).toBeNull();
 		expect(s.tool("mcp__other__enroll", { task_id: "t" })).toBeNull();
-		expect(phaseEntryGateHookOutput({ hook_event_name: "PostToolUse", tool_name: "Skill", tool_input: { skill: "imm-run" }, session_id: "x" })).toBeNull();
+		expect(phaseEntryGateHookOutput({ hook_event_name: "PostToolUse", tool_name: "Skill", tool_input: { skill: "imm-planner" }, session_id: "x" })).toBeNull();
+		// None of them touched the run entry.
+		expect(readPhaseEntryState("skill-gate-session", s.locations.root)).toEqual({ run_live: true });
 	});
 });

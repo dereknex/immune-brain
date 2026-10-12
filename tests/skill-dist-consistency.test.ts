@@ -58,11 +58,18 @@ function routeLine(loader: string, prefix: string): string {
 	return line!;
 }
 
+// The Planner and Brainstorm start on the user's request, by slash command or in
+// natural language (ADR 0020); the other six public Skills need an explicit entry.
+const REQUEST_TRIGGERED: Record<string, string> = {
+	"imm-planner": "Use when the user asks for an Immune-Brain Spec, Plan, or TaskIntent for a repository change.",
+	"imm-brainstorm": "Use when the user asks to clarify or explore requirements before Immune-Brain planning.",
+};
+
 // These pair explicit entry with weak lexical matches; they assert metadata,
 // not a simulated classifier or a live model's selection rate.
 const TRIGGER_CASES: Array<[name: string, explicit: string, ordinary: string, scope: string]> = [
-	["imm-brainstorm", "clarify requirements with Immune-Brain", "explain this function", "requirement clarification"],
-	["imm-planner", "plan a Spec with Immune-Brain", "fix this bug", "Spec and TaskIntent planning"],
+	["imm-brainstorm", "clarify requirements with Immune-Brain", "explain this function", "clarify or explore requirements"],
+	["imm-planner", "plan a Spec with Immune-Brain", "fix this bug", "Spec, Plan, or TaskIntent"],
 	["imm-run", "resume my Immune-Brain task", "continue explaining", "execution or resumption"],
 	["imm-pr-fix", "repair PR feedback with Immune-Brain", "review this function", "GitHub PR review feedback"],
 	["imm-doc-prune", "prune stale docs with Immune-Brain", "explain this document", "stale current documentation"],
@@ -79,7 +86,13 @@ describe("skill dist consistency", () => {
 	test.each(TRIGGER_CASES)("%s: explicit '%s', not ordinary '%s'", (name, _explicit, _ordinary, scope) => {
 		const loader = read(join(SKILLS_DIR, name, "SKILL.md"));
 		const metadata = Bun.YAML.parse(loader.match(/^---\n([\s\S]*?)\n---/)![1]) as { description: string };
-		expect(metadata.description).toStartWith("Use when the user explicitly requests");
+		const requestTriggered = REQUEST_TRIGGERED[name];
+		if (requestTriggered) {
+			expect(metadata.description).toBe(requestTriggered);
+			expect(metadata.description).not.toStartWith("Use when the user explicitly requests");
+		} else {
+			expect(metadata.description).toStartWith("Use when the user explicitly requests");
+		}
 		expect(metadata.description).toContain(scope);
 		const activation = linkedSections(join(SKILLS_DIR, name, "SKILL.md"),
 			"[Activation](../../dist/BASELINE.md#workflow-activation)");

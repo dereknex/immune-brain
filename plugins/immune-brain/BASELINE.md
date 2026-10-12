@@ -55,7 +55,11 @@ framing does not load that execution guidance.
 
 Ordinary host input stays host-native and does not run natural-language Managed
 routing. A new Managed workflow starts only from explicit `imm-brainstorm`,
-`imm-planner`, or `imm-run` Skill entry.
+`imm-planner`, or `imm-run` Skill entry. For `imm-planner` and `imm-brainstorm`
+the user's request for that planning or clarification, by slash command or in
+natural language, is such an entry; a request that asks for neither stays
+host-native. `imm-run` starts only from a literal-user entry. A model-entered
+Planner outside an enrolled task ends the session's run entry.
 
 1. **Continue an existing Managed owner explicitly**: an active Assurance
    projection, TaskIntent, TaskRecord, reviewer `follow_up`, or other nonterminal
