@@ -238,9 +238,8 @@ is recorded as a separate follow-up rather than resolved here.
   The stage decides what else a failed result carries. A `prepare` stage ending
   in timeout, nonzero exit or output limit adds `prepare_observation` to the
   direct Tool result only: the fixed execution conditions (isolated delivery,
-  fresh home and cache directories, no worktree `node_modules`), the declared
-  timeout, and at most 2048 bytes of the end of stderr with control characters
-  other than newline and tab removed. It is never persisted. A failing `check`
+  no worktree `node_modules`), the declared timeout, and at most 2048 bytes of
+  the end of stderr with control characters other than newline and tab removed. It is never persisted. A failing `check`
   stage returns no output text at all. A reproduction in the live worktree is
   not equivalent to the prepare conditions.
   A frozen child with `run_qa` pending returns to Parent; batch re-entry does not

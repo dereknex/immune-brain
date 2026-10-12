@@ -1344,7 +1344,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		const root = makeEnrolledRoot();
 		const secret = "pi-prepare-tail-canary-S1";
 		const observation = {
-			conditions: { delivery: "isolated_materialization", home_and_cache: "fresh_per_run", worktree_node_modules: "absent" },
+			conditions: { delivery: "isolated_materialization", worktree_node_modules: "absent" },
 			declared_timeout_ms: 4321,
 			stderr_tail: `resolving\n${secret}\n`,
 		} as const;

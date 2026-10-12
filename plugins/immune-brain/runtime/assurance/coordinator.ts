@@ -272,14 +272,13 @@ export function qaDiagnosticMetadata(d: QaCheckDiagnostic): QaCheckDiagnostic {
 export interface QaPrepareObservation {
 	conditions: {
 		delivery: "isolated_materialization";
-		home_and_cache: "fresh_per_run";
 		worktree_node_modules: "absent";
 	};
 	declared_timeout_ms: number;
 	stderr_tail: string;
 }
 export const QA_PREPARE_STDERR_TAIL_BYTES = 2048;
-export const QA_PREPARE_REPRODUCTION_NOTE = "a reproduction in the live worktree is not equivalent: QA runs prepare in an isolated delivery with a fresh home and cache and no worktree node_modules";
+export const QA_PREPARE_REPRODUCTION_NOTE = "a reproduction in the live worktree is not equivalent: QA runs prepare in an isolated delivery with no worktree node_modules";
 const QA_PREPARE_REASONS: QaPreparationReason[] = ["timeout", "nonzero_exit", "output_limit"];
 // Control characters other than newline and tab: C0, DEL and C1.
 const QA_TAIL_CONTROL = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g;
@@ -293,7 +292,7 @@ export function qaPrepareStderrTail(stderr: string): string {
 }
 export function qaPrepareObservation(declaredTimeoutMs: number, stderr: string): QaPrepareObservation {
 	return {
-		conditions: { delivery: "isolated_materialization", home_and_cache: "fresh_per_run", worktree_node_modules: "absent" },
+		conditions: { delivery: "isolated_materialization", worktree_node_modules: "absent" },
 		declared_timeout_ms: declaredTimeoutMs,
 		stderr_tail: qaPrepareStderrTail(stderr),
 	};

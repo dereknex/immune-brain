@@ -57,7 +57,7 @@ describe("QA prepare diagnostics", () => {
 		const error = await failure(qa(snapshot(), true, stage => stage === "prepare" ? outcomes[reason]("resolving\nerror: registry unreachable\n") : PASS));
 		expect(error).toBeInstanceOf(QaPreparationError);
 		expect(error).toMatchObject({ stage: "prepare", reason, prepare_observation: {
-			conditions: { delivery: "isolated_materialization", home_and_cache: "fresh_per_run", worktree_node_modules: "absent" },
+			conditions: { delivery: "isolated_materialization", worktree_node_modules: "absent" },
 			declared_timeout_ms: PREPARE_TIMEOUT_MS,
 			stderr_tail: "resolving\nerror: registry unreachable\n",
 		} });
@@ -141,7 +141,7 @@ describe("QA prepare diagnostics through the coordinator", () => {
 		const result = await h.coordinator.advance(TASK, { cwd: "/tmp/prepare-diagnostics" }) as unknown as Record<string, any>;
 		expect(result).toMatchObject({ state: "failed", environment_failure: true,
 			prepare_observation: { declared_timeout_ms: PREPARE_TIMEOUT_MS, stderr_tail: `log\n${secret}\n`,
-				conditions: { delivery: "isolated_materialization", home_and_cache: "fresh_per_run", worktree_node_modules: "absent" } } });
+				conditions: { delivery: "isolated_materialization", worktree_node_modules: "absent" } } });
 		expect(result.reason).toContain("reproduction in the live worktree is not equivalent");
 		expect(JSON.stringify(result.diagnostics)).not.toContain(secret);
 		expect(JSON.stringify(result.recovery)).not.toContain(secret);
@@ -157,7 +157,7 @@ describe("QA prepare diagnostics through the coordinator", () => {
 	});
 
 	test("a check-stage preparation error carries no observation even when one is injected", async () => {
-		const injected = { conditions: { delivery: "isolated_materialization", home_and_cache: "fresh_per_run", worktree_node_modules: "absent" },
+		const injected = { conditions: { delivery: "isolated_materialization", worktree_node_modules: "absent" },
 			declared_timeout_ms: 1, stderr_tail: "leak" } as never;
 		const h = coordinator(async () => { throw new QaPreparationError("check", ["A1"], "execution_failed", [], injected); });
 		const result = await h.coordinator.advance(TASK, { cwd: "/tmp/prepare-diagnostics" });

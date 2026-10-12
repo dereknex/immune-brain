@@ -682,7 +682,7 @@ describe("project-owned-verification", () => {
 		expect(JSON.stringify(comparable[0])).toContain("QA prepare failed");
 		// Both Hosts return the same prepare observation, beside the diagnostics.
 		expect(comparable[0].prepare_observation).toEqual({
-			conditions: { delivery: "isolated_materialization", home_and_cache: "fresh_per_run", worktree_node_modules: "absent" },
+			conditions: { delivery: "isolated_materialization", worktree_node_modules: "absent" },
 			declared_timeout_ms: 5_000,
 			stderr_tail: "install failed: registry unreachable\n",
 		});

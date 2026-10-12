@@ -11087,7 +11087,7 @@ function qaDiagnosticMetadata(d) {
   return safe;
 }
 var QA_PREPARE_STDERR_TAIL_BYTES = 2048;
-var QA_PREPARE_REPRODUCTION_NOTE = "a reproduction in the live worktree is not equivalent: QA runs prepare in an isolated delivery with a fresh home and cache and no worktree node_modules";
+var QA_PREPARE_REPRODUCTION_NOTE = "a reproduction in the live worktree is not equivalent: QA runs prepare in an isolated delivery with no worktree node_modules";
 var QA_PREPARE_REASONS = ["timeout", "nonzero_exit", "output_limit"];
 var QA_TAIL_CONTROL = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g;
 function qaPrepareStderrTail(stderr) {
@@ -11099,7 +11099,7 @@ function qaPrepareStderrTail(stderr) {
 }
 function qaPrepareObservation(declaredTimeoutMs, stderr) {
   return {
-    conditions: { delivery: "isolated_materialization", home_and_cache: "fresh_per_run", worktree_node_modules: "absent" },
+    conditions: { delivery: "isolated_materialization", worktree_node_modules: "absent" },
     declared_timeout_ms: declaredTimeoutMs,
     stderr_tail: qaPrepareStderrTail(stderr)
   };
