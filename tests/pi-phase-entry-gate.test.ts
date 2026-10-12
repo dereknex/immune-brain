@@ -5,7 +5,7 @@
 
 import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -54,6 +54,11 @@ beforeAll(() => {
 	writeFileSync(join(agentDir, "prompts", "loop.md"), "---\ndescription: run (imm-loop)\n---\n/skill:imm-loop ${@:-resume}\n");
 	writeFileSync(join(agentDir, "prompts", "planner.md"), "---\ndescription: plan\n---\n/skill:imm-planner $@\n");
 	writeFileSync(join(agentDir, "prompts", "both.md"), "Use imm-planner, then imm-run.\n");
+	// Symlinked templates: one whose target is over the alias bound, one within it.
+	writeFileSync(join(agentDir, "big-target.md"), `/skill:imm-run $@\n${"x".repeat(64 * 1024)}`);
+	symlinkSync(join(agentDir, "big-target.md"), join(agentDir, "prompts", "big.md"));
+	writeFileSync(join(agentDir, "small-target.md"), "/skill:imm-run $@\n");
+	symlinkSync(join(agentDir, "small-target.md"), join(agentDir, "prompts", "linked.md"));
 	process.env.PI_CODING_AGENT_DIR = agentDir;
 });
 afterAll(() => {
@@ -188,6 +193,16 @@ describe("Pi phase entry gate", () => {
 			expect(await pi.batch()).toMatchObject(REFUSED);
 		}
 		expect(pi.dialogs.count).toBe(0);
+	});
+
+	test("a symlinked template is bounded by its target, not by the link", async () => {
+		const pi = session(fixtureRoot());
+		await pi.input("/big");
+		expect(await pi.enroll()).toMatchObject(REFUSED);
+		expect(pi.dialogs.count).toBe(0);
+		await pi.input("/linked");
+		await pi.enroll();
+		expect(pi.dialogs.count).toBe(1);
 	});
 
 	test("an entry carried by extension-sourced input is not the user's", async () => {

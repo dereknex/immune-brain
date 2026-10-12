@@ -20,7 +20,7 @@ import type { ConfirmationReferenceSource } from "../runtime/assurance/host_port
 
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, lstatSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -36,6 +36,7 @@ import {
 	writeNativeReviewEvidence,
 } from "./pi-canary-review-bundle";
 import type { InvocationToken } from "./pi-canary-invocations";
+import { readAliasFile } from "../runtime/assurance/alias_file";
 import { runDeterministicQa } from "../runtime/assurance/qa";
 import {
 	captureStagedIntent,
@@ -298,7 +299,6 @@ export async function advancePiTask(root: string, taskId: string): Promise<any> 
 }
 
 const GLOBAL_PI_PHASE_ENTRY_KEY = Symbol.for("immune_brain.pi_phase_entry");
-const MAX_ALIAS_BYTES = 64 * 1024;
 
 type PhaseEntryContext = { cwd?: string; sessionManager?: { getSessionId?: () => unknown } } | undefined;
 
@@ -324,11 +324,8 @@ function piAliasReader(cwd: string): AliasReader {
 	const agentDir = process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
 	return (name) => {
 		for (const dir of [join(agentDir, "prompts"), join(cwd, ".pi", "prompts")]) {
-			try {
-				const path = join(dir, `${name}.md`);
-				if (lstatSync(path).size > MAX_ALIAS_BYTES) continue;
-				return readFileSync(path, "utf8");
-			} catch { /* not a template here */ }
+			const body = readAliasFile(join(dir, `${name}.md`));
+			if (body !== null) return body;
 		}
 		return null;
 	};

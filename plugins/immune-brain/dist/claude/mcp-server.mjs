@@ -798,7 +798,7 @@ function parseHookStdin(raw) {
 }
 
 // plugins/immune-brain/runtime/claude/lane_guard.ts
-import { lstatSync as lstatSync10, readFileSync as readFileSync10, rmSync as rmSync5 } from "node:fs";
+import { lstatSync as lstatSync10, rmSync as rmSync5 } from "node:fs";
 import { homedir, tmpdir as tmpdir2 } from "node:os";
 import { join as join9 } from "node:path";
 
@@ -9130,10 +9130,33 @@ async function activeTaskNotice(root) {
   ].join(" ");
 }
 
+// plugins/immune-brain/runtime/assurance/alias_file.ts
+import { closeSync as closeSync7, constants as constants5, fstatSync as fstatSync5, openSync as openSync7, readSync as readSync2 } from "node:fs";
+var MAX_ALIAS_BYTES = 64 * 1024;
+function readAliasFile(path, maxBytes = MAX_ALIAS_BYTES) {
+  let fd;
+  try {
+    fd = openSync7(path, constants5.O_RDONLY | constants5.O_NONBLOCK);
+  } catch {
+    return null;
+  }
+  try {
+    const stat = fstatSync5(fd);
+    if (!stat.isFile() || stat.size > maxBytes)
+      return null;
+    const buf = Buffer.alloc(maxBytes + 1);
+    const read = readSync2(fd, buf, 0, buf.length, 0);
+    return read > maxBytes ? null : buf.toString("utf8", 0, read);
+  } catch {
+    return null;
+  } finally {
+    closeSync7(fd);
+  }
+}
+
 // plugins/immune-brain/runtime/claude/lane_guard.ts
 var FILE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 var GATED_MCP_TOOL = /^mcp__.*immune-brain.*__(enroll|start_unattended_batch)$/;
-var MAX_ALIAS_BYTES = 64 * 1024;
 function denyPreToolUse(reason) {
   return JSON.stringify({
     hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason }
@@ -9173,17 +9196,14 @@ function cwdOf(payload) {
 function claudeAliasReader(cwd, home) {
   return (name) => {
     for (const dir of [join9(cwd, ".claude", "commands"), join9(home, ".claude", "commands")]) {
-      try {
-        const path = join9(dir, `${name}.md`);
-        if (lstatSync10(path).size > MAX_ALIAS_BYTES)
-          continue;
-        return readFileSync10(path, "utf8");
-      } catch {}
+      const body = readAliasFile(join9(dir, `${name}.md`));
+      if (body !== null)
+        return body;
     }
     return null;
   };
 }
-function readPhaseEntryState(sessionId, root = tmpdir2()) {
+function readPhaseEntryState(sessionId, root = tmpdir2(), read = readPrivate) {
   if (!sessionId)
     return null;
   const path = entryLogPath(sessionId, root);
@@ -9194,8 +9214,20 @@ function readPhaseEntryState(sessionId, root = tmpdir2()) {
   }
   if (!ensurePrivateDir(cacheDir(root)))
     return null;
-  const text = readPrivate(path);
+  let text;
+  try {
+    text = read(path);
+  } catch {
+    return null;
+  }
   return text === undefined ? null : reducePhaseEntryLog(text);
+}
+function dropPrivate(path) {
+  try {
+    const stat = lstatSync10(path);
+    if (ownedByUs(stat) && stat.isFile())
+      rmSync5(path, { force: true });
+  } catch {}
 }
 function recordPhaseEntryPrompt(payload, locations = {}) {
   if (payload.hook_event_name !== "UserPromptSubmit")
@@ -9207,7 +9239,10 @@ function recordPhaseEntryPrompt(payload, locations = {}) {
   const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
   const entry = recognizePhaseEntry(prompt, claudeAliasReader(cwdOf(payload), locations.home ?? homedir()));
   const path = entryLogPath(sessionId, root);
-  return appendPrivate(path, cacheDir(root), phaseEntryLogLine(entry));
+  const recorded = (locations.append ?? appendPrivate)(path, cacheDir(root), phaseEntryLogLine(entry));
+  if (!recorded)
+    dropPrivate(path);
+  return recorded;
 }
 function gatedOperation(payload) {
   const toolName = String(payload.tool_name ?? "");
@@ -9226,7 +9261,10 @@ function phaseEntryGateHookOutput(payload, locations = {}) {
   if (!operation)
     return null;
   const root = locations.root ?? tmpdir2();
-  const state = readPhaseEntryState(sessionIdOf(payload), root);
+  let state = null;
+  try {
+    state = readPhaseEntryState(sessionIdOf(payload), root, locations.read);
+  } catch {}
   let activeClaim = false;
   try {
     activeClaim = readActiveClaimTaskId(cwdOf(payload)) !== null;
@@ -9237,8 +9275,11 @@ function phaseEntryGateHookOutput(payload, locations = {}) {
   if (operation.kind === "skill")
     return null;
   const toolUseId = typeof payload.tool_use_id === "string" ? payload.tool_use_id : "";
-  const recorded = toolUseId !== "" && appendPrivate(admissionPath(toolUseId, root), cacheDir(root), `${JSON.stringify({ v: 1, operation: operation.name })}
+  let recorded = false;
+  try {
+    recorded = toolUseId !== "" && (locations.append ?? appendPrivate)(admissionPath(toolUseId, root), cacheDir(root), `${JSON.stringify({ v: 1, operation: operation.name })}
 `);
+  } catch {}
   if (recorded)
     return null;
   return denyPreToolUse(`${RUN_ENTRY_REQUIRED}: the admission for this ${operation.name} call could not be recorded; recovery: ${PHASE_ENTRY_RECOVERY[RUN_ENTRY_REQUIRED]}`);
@@ -9255,21 +9296,19 @@ function consumePhaseAdmission(toolUseId, operation, root = tmpdir2()) {
   }
   if (text === undefined)
     return false;
-  try {
-    const stat = lstatSync10(path);
-    if (ownedByUs(stat) && stat.isFile())
-      rmSync5(path, { force: true });
-  } catch {}
+  dropPrivate(path);
   const lines = text.split(`
 `).filter(Boolean);
-  if (lines.length !== 1)
+  if (lines.length === 0)
     return false;
-  try {
-    const record = JSON.parse(lines[0]);
-    return record.v === 1 && record.operation === operation;
-  } catch {
-    return false;
-  }
+  return lines.every((line) => {
+    try {
+      const record = JSON.parse(line);
+      return record?.v === 1 && record.operation === operation;
+    } catch {
+      return false;
+    }
+  });
 }
 
 // plugins/immune-brain/runtime/assurance/verdict_authority.ts
@@ -9937,7 +9976,7 @@ import {
   rmSync as rmSync6,
   writeFileSync as writeFileSync6,
   statSync as statSync3,
-  readFileSync as readFileSync11,
+  readFileSync as readFileSync10,
   realpathSync as realpathSync8,
   chmodSync
 } from "node:fs";
@@ -10287,7 +10326,7 @@ function assertReviewArtifact(path) {
   }
   if (!stat.isFile() || stat.size === 0)
     throw new Error(`review evidence artifact is missing or empty: ${path}`);
-  const read = readFileSync11(targetPath, { encoding: "utf8" });
+  const read = readFileSync10(targetPath, { encoding: "utf8" });
   if (read.trim().length === 0)
     throw new Error(`review evidence artifact is empty: ${path}`);
 }
@@ -10298,7 +10337,7 @@ import { createHash as createHash17, randomUUID as randomUUID6 } from "node:cryp
 // plugins/immune-brain/runtime/assurance/verification.ts
 import { createHash as createHash15, randomBytes } from "node:crypto";
 import { execFileSync as execFileSync3, spawn as spawn2 } from "node:child_process";
-import { accessSync, constants as constants5, readFileSync as readFileSync12, readdirSync as readdirSync5, realpathSync as realpathSync9, statSync as statSync4 } from "node:fs";
+import { accessSync, constants as constants6, readFileSync as readFileSync11, readdirSync as readdirSync5, realpathSync as realpathSync9, statSync as statSync4 } from "node:fs";
 import { delimiter, isAbsolute as isAbsolute5, join as join11, relative as relative5, resolve as resolve11, sep as sep6 } from "node:path";
 class VerificationAbortedError extends Error {
   constructor() {
@@ -10337,7 +10376,7 @@ function toolPath(name, path) {
   for (const dir of path.split(delimiter).filter(isAbsolute5)) {
     const candidate = join11(dir, name);
     try {
-      accessSync(candidate, constants5.X_OK);
+      accessSync(candidate, constants6.X_OK);
       if (statSync4(candidate).isFile())
         return candidate;
     } catch {}
@@ -10347,11 +10386,11 @@ function toolPath(name, path) {
 function identity(path) {
   try {
     const real = realpathSync9(path);
-    accessSync(real, constants5.X_OK);
+    accessSync(real, constants6.X_OK);
     const stat = statSync4(real);
     if (!stat.isFile())
       throw new Error("not a file");
-    return { path: real, invocation_path: path, dev: stat.dev, ino: stat.ino, content_hash: `sha256:${createHash15("sha256").update(readFileSync12(real)).digest("hex")}` };
+    return { path: real, invocation_path: path, dev: stat.dev, ino: stat.ino, content_hash: `sha256:${createHash15("sha256").update(readFileSync11(real)).digest("hex")}` };
   } catch {
     throw new VerificationDescriptorError("verification executable is unavailable or not executable");
   }
@@ -10359,7 +10398,7 @@ function identity(path) {
 function resolveVerificationCommand(root, command, path = verificationPath()) {
   insideVerificationRoot(root, resolve11(root, command.cwd));
   const entry = identity(command.executable.startsWith("./") ? insideVerificationRoot(root, resolve11(root, command.executable)) : toolPath(command.executable, path));
-  const prefix = readFileSync12(entry.path).subarray(0, 512).toString("utf8");
+  const prefix = readFileSync11(entry.path).subarray(0, 512).toString("utf8");
   let interpreter = null;
   let interpreter_args = [];
   if (prefix.startsWith("#!")) {
@@ -10381,7 +10420,7 @@ function resolveVerificationCommand(root, command, path = verificationPath()) {
       interpreter = identity(name);
       interpreter_args = parts;
     }
-    if (readFileSync12(interpreter.path).subarray(0, 2).toString() === "#!")
+    if (readFileSync11(interpreter.path).subarray(0, 2).toString() === "#!")
       throw new VerificationDescriptorError("verification interpreter is itself a script; resolve the host tool explicitly");
   }
   return { entry, interpreter, interpreter_args };
@@ -10444,7 +10483,7 @@ async function runFixedVerification(root, command, frozen, options) {
     };
     const procEnviron = (pid) => {
       try {
-        return readFileSync12(join11(procRoot, String(pid), "environ"), "utf8");
+        return readFileSync11(join11(procRoot, String(pid), "environ"), "utf8");
       } catch {
         return null;
       }
@@ -10452,7 +10491,7 @@ async function runFixedVerification(root, command, frozen, options) {
     const procSession = (entry) => {
       let stat;
       try {
-        stat = readFileSync12(join11(procRoot, entry, "stat"), "utf8");
+        stat = readFileSync11(join11(procRoot, entry, "stat"), "utf8");
       } catch (error) {
         if (error.code === "ENOENT")
           return null;
@@ -10662,7 +10701,7 @@ function createInvocationRegistry() {
 
 // plugins/immune-brain/runtime/role_prompt_bridge.ts
 import { createHash as createHash16 } from "node:crypto";
-import { existsSync as existsSync8, readFileSync as readFileSync13 } from "node:fs";
+import { existsSync as existsSync8, readFileSync as readFileSync12 } from "node:fs";
 import { join as join12, dirname as dirname8 } from "node:path";
 import { fileURLToPath } from "node:url";
 var RUNTIME_DIR = dirname8(fileURLToPath(import.meta.url));
@@ -10734,7 +10773,7 @@ function loadRolePrompt(role) {
   for (const dir of rolePromptSearchDirs(RUNTIME_DIR)) {
     const path = join12(dir, spec.file);
     if (existsSync8(path))
-      return readFileSync13(path, "utf8");
+      return readFileSync12(path, "utf8");
   }
   throw new Error(`internal role prompt is not packaged: ${role}`);
 }
@@ -12099,7 +12138,7 @@ function createVerdictAuthority(options, registry = createMutationAuthorityRegis
 }
 
 // plugins/immune-brain/runtime/claude/kernel_ports.ts
-import { existsSync as existsSync14, readFileSync as readFileSync18, writeFileSync as writeFileSync10 } from "node:fs";
+import { existsSync as existsSync14, readFileSync as readFileSync17, writeFileSync as writeFileSync10 } from "node:fs";
 import { execFileSync as execFileSync9 } from "node:child_process";
 import { join as join22 } from "node:path";
 
@@ -12475,7 +12514,7 @@ import { createHash as createHash19 } from "node:crypto";
 // plugins/immune-brain/runtime/assurance/delivery_workspace.ts
 import { execFileSync as execFileSync6 } from "node:child_process";
 import { createHash as createHash18 } from "node:crypto";
-import { chmodSync as chmodSync2, lstatSync as lstatSync11, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync2, readdirSync as readdirSync6, readFileSync as readFileSync14, readlinkSync as readlinkSync2, realpathSync as realpathSync10, rmSync as rmSync7 } from "node:fs";
+import { chmodSync as chmodSync2, lstatSync as lstatSync11, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync2, readdirSync as readdirSync6, readFileSync as readFileSync13, readlinkSync as readlinkSync2, realpathSync as realpathSync10, rmSync as rmSync7 } from "node:fs";
 import { tmpdir as tmpdir4 } from "node:os";
 import { dirname as dirname9, isAbsolute as isAbsolute6, join as join14, parse, relative as relative6, resolve as resolve13, sep as sep7 } from "node:path";
 
@@ -12624,7 +12663,7 @@ function workspaceFiles(root, dir = root, result = Object.create(null)) {
       result[rel] = `${stat.mode & 4095}:directory`;
       workspaceFiles(root, path, result);
     } else if (stat.isFile())
-      result[rel] = `${stat.mode & 4095}:${createHash18("sha256").update(readFileSync14(path)).digest("hex")}`;
+      result[rel] = `${stat.mode & 4095}:${createHash18("sha256").update(readFileSync13(path)).digest("hex")}`;
     else
       throw new DeliveryWorkspaceError("delivery contains an unsupported filesystem entry");
   }
@@ -12940,12 +12979,12 @@ function deriveAuthorizationOperation(input) {
 
 // plugins/immune-brain/runtime/staged_intent.ts
 import { execFileSync as execFileSync7 } from "node:child_process";
-import { readFileSync as readFileSync15, writeFileSync as writeFileSync7 } from "node:fs";
+import { readFileSync as readFileSync14, writeFileSync as writeFileSync7 } from "node:fs";
 import { join as join16 } from "node:path";
 function captureStagedIntent(root, relativePath) {
   return {
     path: relativePath,
-    bytes: readFileSync15(join16(root, relativePath)),
+    bytes: readFileSync14(join16(root, relativePath)),
     index_state: execFileSync7("git", ["ls-files", "--stage", "-z", "--", relativePath], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"]
@@ -12965,7 +13004,7 @@ function restoreStagedIntent(root, snapshot) {
       stdio: ["pipe", "ignore", "pipe"]
     });
   }
-  const restoredBytes = readFileSync15(join16(root, snapshot.path));
+  const restoredBytes = readFileSync14(join16(root, snapshot.path));
   if (!restoredBytes.equals(snapshot.bytes)) {
     throw new Error("failed to restore prior intent bytes");
   }
@@ -12987,12 +13026,12 @@ import { join as join21 } from "node:path";
 import { spawnSync as spawnSync10 } from "node:child_process";
 import { createHash as createHash20, randomUUID as randomUUID9 } from "node:crypto";
 import {
-  constants as constants6,
-  closeSync as closeSync7,
+  constants as constants7,
+  closeSync as closeSync8,
   existsSync as existsSync10,
   lstatSync as lstatSync12,
   mkdirSync as mkdirSync8,
-  openSync as openSync7,
+  openSync as openSync8,
   realpathSync as realpathSync12,
   renameSync as renameSync5,
   rmSync as rmSync8,
@@ -13245,14 +13284,14 @@ function writeFileAtomically2(root, relativePath, bytes) {
   const tempPath = `${target}.${randomUUID9()}.tmp`;
   let fd = null;
   try {
-    fd = openSync7(tempPath, constants6.O_WRONLY | constants6.O_CREAT | constants6.O_EXCL, 384);
+    fd = openSync8(tempPath, constants7.O_WRONLY | constants7.O_CREAT | constants7.O_EXCL, 384);
     writeFileSync8(fd, bytes, "utf8");
-    closeSync7(fd);
+    closeSync8(fd);
     fd = null;
     renameSync5(tempPath, target);
   } finally {
     if (fd !== null)
-      closeSync7(fd);
+      closeSync8(fd);
     if (existsSync10(tempPath)) {
       try {
         rmSync8(tempPath);
@@ -13553,7 +13592,7 @@ import { existsSync as existsSync12, realpathSync as realpathSync13 } from "node
 import { isAbsolute as isAbsolute7, join as join20 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/runtime_contracts.ts
-import { existsSync as existsSync11, readFileSync as readFileSync16 } from "node:fs";
+import { existsSync as existsSync11, readFileSync as readFileSync15 } from "node:fs";
 import { dirname as dirname11, join as join18, resolve as resolve14 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 var RUNTIME_CONTRACTS_MANIFEST = "runtime_contracts.json";
@@ -13582,7 +13621,7 @@ function readRuntimeContracts(runtimeDir) {
   const path = candidates.find((candidate) => existsSync11(candidate));
   if (!path)
     return null;
-  const raw = JSON.parse(readFileSync16(path, "utf8"));
+  const raw = JSON.parse(readFileSync15(path, "utf8"));
   if (raw.contract !== "immune_brain/runtime_contracts/v1")
     throw new Error(`${path} is not an immune_brain/runtime_contracts/v1 manifest`);
   for (const key of KEYS) {
@@ -13597,7 +13636,7 @@ function runtimeContractDifferences(a, b) {
 }
 
 // plugins/immune-brain/runtime/unattended/batch_lanes.ts
-import { readFileSync as readFileSync17 } from "node:fs";
+import { readFileSync as readFileSync16 } from "node:fs";
 
 // plugins/immune-brain/runtime/unattended/batch_final_verification.ts
 import { spawn as spawn3, spawnSync as spawnSync11 } from "node:child_process";
@@ -14068,7 +14107,7 @@ function laneRuntimeDir(root, explicit) {
   if (explicit)
     return explicit;
   try {
-    const manifest = JSON.parse(readFileSync17(join20(root, "package.json"), "utf8"));
+    const manifest = JSON.parse(readFileSync16(join20(root, "package.json"), "utf8"));
     return manifest.name === "immune-brain" ? root : null;
   } catch {
     return null;
@@ -16275,7 +16314,7 @@ class ClaudeRuntime {
     const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: await parseTaskIntentV1(input.operation.next_intent) } : input.operation;
     const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
     const sidecar = join22(ctx.cwd, priorIntent.intent_ref.path);
-    const priorBytes = operation.op === "revise_intent" ? readFileSync18(sidecar) : null;
+    const priorBytes = operation.op === "revise_intent" ? readFileSync17(sidecar) : null;
     const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
     try {
       if (priorBytes) {

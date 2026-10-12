@@ -171,6 +171,27 @@ describe("Claude phase entry gate: enroll", () => {
 		expectRunEntryRequired(await s.call("enroll", { task_id: "gate-a" }, "toolu_1"));
 		expect(s.gateCalls()).toBe(1);
 	});
+
+	test("a hook that ran twice for one call still admits it exactly once", async () => {
+		const s = await session(["gate-a"]);
+		s.prompt("/imm-run gate-a");
+		// Two enabled copies of the plugin both match the tool name.
+		expect(s.hook(ENROLL, "toolu_twice")).toBeNull();
+		expect(s.hook(ENROLL, "toolu_twice")).toBeNull();
+		expect((await s.call("enroll", { task_id: "gate-a" }, "toolu_twice"))?.error).toBeUndefined();
+		expectRunEntryRequired(await s.call("enroll", { task_id: "gate-a" }, "toolu_twice"));
+		expect(s.gateCalls()).toBe(1);
+		expect(s.consumed()).toBe(1);
+	});
+
+	test("repeated admissions that disagree on the operation refuse", async () => {
+		const s = await session(["gate-a"]);
+		s.prompt("/imm-run gate-a");
+		expect(s.hook(ENROLL, "toolu_mixed")).toBeNull();
+		expect(s.hook(BATCH, "toolu_mixed")).toBeNull();
+		expectRunEntryRequired(await s.call("enroll", { task_id: "gate-a" }, "toolu_mixed"));
+		expect(s.gateCalls()).toBe(0);
+	});
 });
 
 describe("Claude phase entry gate: start_unattended_batch", () => {

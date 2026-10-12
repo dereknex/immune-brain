@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
-import { phaseEntryGateHookOutput, recordPhaseEntryPrompt } from "../plugins/immune-brain/runtime/claude/lane_guard";
+import { phaseEntryGateHookOutput, recordPhaseEntryPrompt, type PhaseEntryLocations } from "../plugins/immune-brain/runtime/claude/lane_guard";
 
 function session() {
 	const root = mkdtempSync(join(tmpdir(), "imm-skill-gate-"));
@@ -16,9 +16,11 @@ function session() {
 	writeFileSync(join(home, ".claude", "commands", "planner.md"), "Plan using the `imm-planner` skill.\n");
 	writeFileSync(join(home, ".claude", "commands", "loop.md"), "Execute using the `imm-loop` skill.\n");
 	const base = { session_id: "skill-gate-session", cwd };
-	const locations = { root, home };
+	const locations: PhaseEntryLocations = { root, home };
 	return {
 		cwd,
+		home,
+		locations,
 		prompt: (prompt: string) => recordPhaseEntryPrompt({ hook_event_name: "UserPromptSubmit", prompt, ...base }, locations),
 		skill: (skill: string) => phaseEntryGateHookOutput({ hook_event_name: "PreToolUse", tool_name: "Skill", tool_input: { skill }, tool_use_id: "toolu_skill", ...base }, locations),
 		tool: (tool_name: string, tool_input: Record<string, unknown> = {}) =>
@@ -93,6 +95,53 @@ describe("Claude phase entry Skill gate", () => {
 			expect(denial(s.skill(skill))).toStartWith("phase_entry_required: ");
 		s.prompt("/loop task-a");
 		expect(s.skill(" immune-brain:imm-run ")).toBeNull();
+	});
+
+	test("a prompt the store could not record drops the earlier entry instead of leaving it live", () => {
+		const s = session();
+		expect(s.prompt("/loop task-a")).toBe(true);
+		expect(s.skill("immune-brain:imm-run")).toBeNull();
+		// The plan entry that would revoke the run entry fails to append.
+		s.locations.append = () => false;
+		expect(s.prompt("/planner revise it")).toBe(false);
+		delete s.locations.append;
+		expect(denial(s.skill("immune-brain:imm-run"))).toStartWith("phase_entry_required: ");
+		expect(denial(s.skill("immune-brain:imm-planner"))).toStartWith("phase_entry_required: ");
+		expect(denial(s.tool("mcp__plugin_immune-brain_immune-brain__enroll"))).toStartWith("run_entry_required: ");
+		// A fresh literal entry recovers the session.
+		expect(s.prompt("/loop task-a")).toBe(true);
+		expect(s.skill("immune-brain:imm-run")).toBeNull();
+	});
+
+	test("a store read that throws denies instead of letting the call through", () => {
+		const s = session();
+		expect(s.prompt("/loop task-a")).toBe(true);
+		s.locations.read = () => { throw new Error("EIO"); };
+		expect(denial(s.skill("immune-brain:imm-run"))).toStartWith("phase_entry_required: ");
+		expect(denial(s.tool("mcp__plugin_immune-brain_immune-brain__enroll"))).toStartWith("run_entry_required: ");
+		expect(s.skill("frontend-design")).toBeNull();
+		delete s.locations.read;
+		expect(s.skill("immune-brain:imm-run")).toBeNull();
+	});
+
+	test("an admission write that throws denies the tool call", () => {
+		const s = session();
+		expect(s.prompt("/loop task-a")).toBe(true);
+		s.locations.append = () => { throw new Error("EIO"); };
+		expect(denial(s.tool("mcp__plugin_immune-brain_immune-brain__enroll"))).toStartWith("run_entry_required: ");
+	});
+
+	test("a symlinked alias is bounded by its target, not by the link", () => {
+		const s = session();
+		const commands = join(s.home, ".claude", "commands");
+		writeFileSync(join(s.home, "big.md"), `Execute using the \`imm-run\` skill.\n${"x".repeat(64 * 1024)}`);
+		symlinkSync(join(s.home, "big.md"), join(commands, "big.md"));
+		writeFileSync(join(s.home, "small.md"), "Execute using the `imm-run` skill.\n");
+		symlinkSync(join(s.home, "small.md"), join(commands, "small.md"));
+		s.prompt("/big task-a");
+		expect(denial(s.skill("immune-brain:imm-run"))).toStartWith("phase_entry_required: ");
+		s.prompt("/small task-a");
+		expect(s.skill("immune-brain:imm-run")).toBeNull();
 	});
 
 	test("a design confirmation after the entry prompt no longer admits the Skill", () => {

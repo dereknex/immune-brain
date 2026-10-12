@@ -8,11 +8,12 @@
 // planning or execution; PreToolUse denies `enroll`, `start_unattended_batch`
 // and the three phase Skills without a matching entry, and otherwise leaves an
 // admission the tool handler consumes by tool-use id.
-import { lstatSync, readFileSync, rmSync } from "node:fs";
+import { lstatSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { laneWriteRefusal } from "../unattended/lane_workspace";
 import { activeTaskNotice } from "../assurance/active_task_notice";
+import { readAliasFile } from "../assurance/alias_file";
 import {
 	admitPhaseOperation,
 	NO_PHASE_ENTRY,
@@ -32,7 +33,6 @@ import { appendPrivate, cacheDir, ensurePrivateDir, ownedByUs, readPrivate, sess
 
 const FILE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 const GATED_MCP_TOOL = /^mcp__.*immune-brain.*__(enroll|start_unattended_batch)$/;
-const MAX_ALIAS_BYTES = 64 * 1024;
 
 export type GatedTool = "enroll" | "start_unattended_batch";
 
@@ -42,6 +42,9 @@ export interface PhaseEntryLocations {
 	root?: string;
 	/** The user's home, for `~/.claude/commands`. */
 	home?: string;
+	/** The private store's append and read. Default to the real file operations. */
+	append?: typeof appendPrivate;
+	read?: typeof readPrivate;
 }
 
 function denyPreToolUse(reason: string): string {
@@ -92,18 +95,15 @@ function cwdOf(payload: Record<string, unknown>): string {
 function claudeAliasReader(cwd: string, home: string): AliasReader {
 	return (name) => {
 		for (const dir of [join(cwd, ".claude", "commands"), join(home, ".claude", "commands")]) {
-			try {
-				const path = join(dir, `${name}.md`);
-				if (lstatSync(path).size > MAX_ALIAS_BYTES) continue;
-				return readFileSync(path, "utf8");
-			} catch { /* not an alias here */ }
+			const body = readAliasFile(join(dir, `${name}.md`));
+			if (body !== null) return body;
 		}
 		return null;
 	};
 }
 
 /** The session's entry state: none recorded yet, or null when the store is unreadable. */
-export function readPhaseEntryState(sessionId: string, root = tmpdir()): PhaseEntryState | null {
+export function readPhaseEntryState(sessionId: string, root = tmpdir(), read: typeof readPrivate = readPrivate): PhaseEntryState | null {
 	if (!sessionId) return null;
 	const path = entryLogPath(sessionId, root);
 	try {
@@ -112,13 +112,24 @@ export function readPhaseEntryState(sessionId: string, root = tmpdir()): PhaseEn
 		return (error as NodeJS.ErrnoException).code === "ENOENT" ? NO_PHASE_ENTRY : null;
 	}
 	if (!ensurePrivateDir(cacheDir(root))) return null;
-	const text = readPrivate(path);
+	let text: string | undefined;
+	try { text = read(path); } catch { return null; }
 	return text === undefined ? null : reducePhaseEntryLog(text);
+}
+
+/** Removes one of our private files. Never follows a link or touches another owner's file. */
+function dropPrivate(path: string): void {
+	try {
+		const stat = lstatSync(path);
+		if (ownedByUs(stat) && stat.isFile()) rmSync(path, { force: true });
+	} catch { /* already gone, or not ours to remove */ }
 }
 
 /**
  * UserPromptSubmit: record whether this literal prompt entered a phase. Every
- * prompt is recorded so "the latest prompt" is decidable later.
+ * prompt is recorded so "the latest prompt" is decidable later. A prompt that
+ * could not be recorded drops the log: an earlier entry must not outlive a
+ * prompt the store never saw, so the session is back to no entry.
  */
 export function recordPhaseEntryPrompt(payload: Record<string, unknown>, locations: PhaseEntryLocations = {}): boolean {
 	if (payload.hook_event_name !== "UserPromptSubmit") return false;
@@ -128,7 +139,9 @@ export function recordPhaseEntryPrompt(payload: Record<string, unknown>, locatio
 	const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
 	const entry = recognizePhaseEntry(prompt, claudeAliasReader(cwdOf(payload), locations.home ?? homedir()));
 	const path = entryLogPath(sessionId, root);
-	return appendPrivate(path, cacheDir(root), phaseEntryLogLine(entry));
+	const recorded = (locations.append ?? appendPrivate)(path, cacheDir(root), phaseEntryLogLine(entry));
+	if (!recorded) dropPrivate(path);
+	return recorded;
 }
 
 function gatedOperation(payload: Record<string, unknown>): PhaseOperation | null {
@@ -152,15 +165,19 @@ export function phaseEntryGateHookOutput(payload: Record<string, unknown>, locat
 	const operation = gatedOperation(payload);
 	if (!operation) return null;
 	const root = locations.root ?? tmpdir();
-	const state = readPhaseEntryState(sessionIdOf(payload), root);
+	let state: PhaseEntryState | null = null;
+	try { state = readPhaseEntryState(sessionIdOf(payload), root, locations.read); } catch { /* an unreadable store refuses */ }
 	let activeClaim = false;
 	try { activeClaim = readActiveClaimTaskId(cwdOf(payload)) !== null; } catch { /* unreadable authority is no claim */ }
 	const admission = admitPhaseOperation(operation, state, { activeClaim });
 	if (!admission.ok) return denyPreToolUse(phaseRefusalMessage(admission));
 	if (operation.kind === "skill") return null;
 	const toolUseId = typeof payload.tool_use_id === "string" ? payload.tool_use_id : "";
-	const recorded = toolUseId !== ""
-		&& appendPrivate(admissionPath(toolUseId, root), cacheDir(root), `${JSON.stringify({ v: 1, operation: operation.name })}\n`);
+	let recorded = false;
+	try {
+		recorded = toolUseId !== ""
+			&& (locations.append ?? appendPrivate)(admissionPath(toolUseId, root), cacheDir(root), `${JSON.stringify({ v: 1, operation: operation.name })}\n`);
+	} catch { /* an admission that could not be written refuses */ }
 	if (recorded) return null;
 	return denyPreToolUse(
 		`${RUN_ENTRY_REQUIRED}: the admission for this ${operation.name} call could not be recorded; recovery: ${PHASE_ENTRY_RECOVERY[RUN_ENTRY_REQUIRED]}`,
@@ -169,7 +186,9 @@ export function phaseEntryGateHookOutput(payload: Record<string, unknown>, locat
 
 /**
  * Tool side: take the admission the hook wrote for this exact call. One use;
- * absent, unreadable or written for another operation all refuse.
+ * absent, unreadable or written for another operation all refuse. The hook may
+ * run more than once for one call (two enabled copies of the plugin), so
+ * repeated identical admissions count as one.
  */
 export function consumePhaseAdmission(toolUseId: string, operation: GatedTool, root = tmpdir()): boolean {
 	if (!toolUseId || !ensurePrivateDir(cacheDir(root))) return false;
@@ -177,16 +196,15 @@ export function consumePhaseAdmission(toolUseId: string, operation: GatedTool, r
 	let text: string | undefined;
 	try { text = readPrivate(path); } catch { return false; }
 	if (text === undefined) return false;
-	try {
-		const stat = lstatSync(path);
-		if (ownedByUs(stat) && stat.isFile()) rmSync(path, { force: true });
-	} catch { /* a leftover admission is keyed by an id that never recurs */ }
+	dropPrivate(path);
 	const lines = text.split("\n").filter(Boolean);
-	if (lines.length !== 1) return false;
-	try {
-		const record = JSON.parse(lines[0]) as { v?: unknown; operation?: unknown };
-		return record.v === 1 && record.operation === operation;
-	} catch {
-		return false;
-	}
+	if (lines.length === 0) return false;
+	return lines.every((line) => {
+		try {
+			const record = JSON.parse(line) as { v?: unknown; operation?: unknown } | null;
+			return record?.v === 1 && record.operation === operation;
+		} catch {
+			return false;
+		}
+	});
 }
