@@ -68,6 +68,14 @@ mock or hard-coded success, swallowed unexpected errors, missing validation at
 external trust boundaries, invented dependencies or APIs, unauthorized
 observable behavior changes, and production paths without a current caller.
 Do not weaken tests or hide an incomplete result to make Verification pass.
+
+Keep the test suite lean. Each added test pins one acceptance invariant or
+finding case at its public seam; do not mirror private calls, mock order or
+internal return values that a public assertion already covers. Before adding a
+test, search existing tests for the same behavior and extend or parameterize
+them instead of duplicating setup. When the change retires or replaces a
+behavior, update or delete the tests that protected it within scope and name
+the retired behavior or continuing owner in Delivery Evidence.
 Treat naming, function length, parameter count, nesting, and abstraction taste
 as contextual signals, never as automatic failure thresholds.
 

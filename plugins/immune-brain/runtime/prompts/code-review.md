@@ -26,6 +26,11 @@ material task-local maintenance risks. Pure naming, length, complexity
 thresholds, formatting, and design preference are not findings and must not
 cause style-only rework.
 
+Test-suite growth is advisory, never blocking: note a delivered test that
+duplicates an existing assertion, asserts only private implementation, or
+leaves a test protecting behavior the change retired. Weakened or missing
+tests for an acceptance remain blocking under the rules above.
+
 When a finding repeats an acceptance id or anchor that already produced rework in
 this task, do not file it as a fresh single-trigger defect. Name the invariant
 class it belongs to and state in `evidence.trigger` why the previously accepted
