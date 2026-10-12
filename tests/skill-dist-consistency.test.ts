@@ -67,6 +67,7 @@ const TRIGGER_CASES: Array<[name: string, explicit: string, ordinary: string, sc
 	["imm-pr-fix", "repair PR feedback with Immune-Brain", "review this function", "GitHub PR review feedback"],
 	["imm-doc-prune", "prune stale docs with Immune-Brain", "explain this document", "stale current documentation"],
 	["imm-doc-slim", "minimize AGENTS.md with Immune-Brain", "what does this instruction mean", "tracked AGENTS.md"],
+	["imm-test-prune", "prune redundant tests with Immune-Brain", "is this test redundant", "redundant, bloated, or orphaned tests"],
 	["imm-retro", "review-retro with Immune-Brain", "review this function", "cross-model review load"],
 ];
 
@@ -206,7 +207,7 @@ describe("skill dist consistency", () => {
 	});
 
 	test("maintenance audits stop at manifests and mutation routes expose all guards", () => {
-		for (const name of ["imm-doc-prune", "imm-doc-slim"]) {
+		for (const name of ["imm-doc-prune", "imm-doc-slim", "imm-test-prune"]) {
 			const path = join(SKILLS_DIR, name, "SKILL.md");
 			const loader = read(path);
 			const audit = linkedSections(path, routeLine(loader, "common:")) +

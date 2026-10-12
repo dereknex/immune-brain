@@ -117,7 +117,8 @@ no persistent report, and no automatic commit.
 
 This Skill may modify or delete approved documentation, explicit translation
 or generated mirrors, documentation sync manifests, and tests whose only
-behavior is asserting document existence or obsolete wording. It must stop
+behavior is asserting document existence or obsolete wording; test structure and
+behavioral coverage belong to `imm-test-prune`. It must stop
 when completion requires runtime behavior, business-test semantics, package
 exports, public API, credentials, network writes, Git history rewriting, or
 any Managed authority mutation.
