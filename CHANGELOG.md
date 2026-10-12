@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.3.0
+
+### Minor Changes
+
+- [`209f158`](https://github.com/dereknex/immune-brain/commit/209f15802cebde17b7162daf45ad5b35330666fd) Thanks [@dereknex](https://github.com/dereknex)! - On Claude Code the model can now load `imm-planner` and `imm-brainstorm` itself when the user asks for a Spec, Plan, TaskIntent or requirement clarification; the phase-entry hook no longer denies those Skill calls. A call made while no Managed claim is active records a plan entry, which ends the session's run entry, so Enrollment needs a fresh `imm-run` entry; with an active claim (an Enrolled Intent Revision) the run entry stays live. If that plan entry cannot be written the session log is dropped, so the run entry still ends. `imm-run` is the only phase Skill the literal user must enter, and its Skill call is allowed whenever the run entry is live, not only in the prompt that recorded it. `enroll`, `start_unattended_batch` and the native dialog still need a live run entry. The session phase-entry state shrinks to `run_live`: the per-prompt sequence counters and the active-claim input to admission are gone.
+
+  The `imm-planner` and `imm-brainstorm` Skill descriptions become request-triggered; `imm-run` and the standalone Skills keep "explicitly requests". Pi cannot observe a model reading a Skill file, so it keeps revoking only on a literal Planner or Brainstorm entry; a model-entered Planner after an earlier `imm-run` entry leaves the run entry live there, an accepted gap recorded in ADR 0020. An installed Claude plugin cache keeps the stricter gate until it is refreshed, which fails closed.
+
 ## 5.2.0
 
 ### Minor Changes
