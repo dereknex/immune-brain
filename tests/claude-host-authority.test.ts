@@ -14,7 +14,8 @@ import {
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import { tmpdir } from "node:os";
 import { ClaudeReviewHost, FileHookEventLog, MemoryHookEventLog, hookEventPath, parseHookStdin, REVIEWER_AGENT, AGENT_TOOL } from "../plugins/immune-brain/runtime/claude/review_host";
-import { createMcpRuntime, handleJsonRpc, listMcpTools, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
+import { createMcpRuntime as createMcpRuntimeUngated, handleJsonRpc, listMcpTools, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
+import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import { ClaudeRuntime, diffHashOf, diffSnapshotOf, submitClaudeReview, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { createCanaryApplication, capabilityActionFor } from "../plugins/immune-brain/runtime/kernel/canary_application";
 import { createMutationAuthorityRegistry, digestOfAction } from "../plugins/immune-brain/runtime/kernel/authority_port";
@@ -31,6 +32,30 @@ import { probeHost } from "../plugins/immune-brain/runtime/claude/capability";
 import { PLUGIN_VERSION } from "../plugins/immune-brain/runtime/plugin_version";
 import { readWorkspaceStateRaw } from "../plugins/immune-brain/runtime/kernel/storage";
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
+
+// The phase entry gate (ADR 0019) sits in front of `enroll` and
+// `start_unattended_batch`. These tests exercise what lies behind it, so the
+// session records a real run entry and each gated call is admitted through the
+// real hook; tests/claude-phase-entry-gate.test.ts owns the refusals.
+function withRunEntry(): { consumePhaseAdmission: (toolCallId: string, operation: GatedTool) => boolean } {
+	const root = mkdtempSync(join(tmpdir(), "imm-phase-entry-"));
+	const session = { session_id: "phase-entry-test-session", cwd: root };
+	recordPhaseEntryPrompt({ hook_event_name: "UserPromptSubmit", prompt: "/imm-run", ...session }, { root, home: root });
+	return {
+		consumePhaseAdmission(toolCallId, operation) {
+			phaseEntryGateHookOutput({
+				hook_event_name: "PreToolUse",
+				tool_name: `mcp__plugin_immune-brain_immune-brain__${operation}`,
+				tool_use_id: toolCallId,
+				...session,
+			}, { root });
+			return consumePhaseAdmission(toolCallId, operation, root);
+		},
+	};
+}
+function createMcpRuntime(options: Parameters<typeof createMcpRuntimeUngated>[0] = {}) {
+	return createMcpRuntimeUngated({ ...withRunEntry(), ...options });
+}
 
 const TASK = "phase3-task";
 const ROOT = "/tmp/claude-host-authority";

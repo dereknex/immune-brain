@@ -1,0 +1,53 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "explicit-phase-entry-s1-contract",
+  "goal": "Implement Slice S1 of Initiative explicit-phase-entry per docs/specs/explicit-phase-entry.spec.md (T4): every packaged contract copy makes the Planner and Brainstorm stop after candidate validation without invoking Enrollment, and makes native Enrollment the first step of an explicit imm-run entry. User scenarios SCN-1 and SCN-2 belong to this Slice.",
+  "acceptance": [
+    {
+      "id": "EPE-S1-A1",
+      "assertion": "Per T4 and decision D1 of docs/specs/explicit-phase-entry.spec.md (source: user decisions U2, U3): in dist/imm-planner.md, skills/imm-planner/SKILL.md, dist/imm-brainstorm.md and all three BASELINE.md copies, no route invokes the native Enrollment gate from the Planner or Brainstorm; the Planner Next Action reports the validated candidate and names a literal-user imm-run entry as the only next step; the phrases 'without a second human stop' as a Planner route and 'execution-bearing requests open the native gate directly' are absent from every copy, while the Plan-only stop wording remains. Seam: new tests/explicit-phase-entry-planner-contract.test.ts reading those files; it must contain at least one test and fail when any copy keeps the removed route.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/explicit-phase-entry-planner-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "EPE-S1-A2",
+      "assertion": "Per T4 and decision D2 of docs/specs/explicit-phase-entry.spec.md (source: user decision U3): dist/imm-run.md states that an explicit imm-run entry with no active claim resolves the validated candidate and invokes the native Enrollment gate once as its first step, and the Pi imm_canary_enrollment promptGuidelines say the tool is called only as the first step of imm-run and no longer say 'after natural-language routing selects Enrollment'. An ADR under docs/adr records the decision. Seam: new tests/explicit-phase-entry-run-contract.test.ts over dist/imm-run.md and .pi-extension/imm-canary-enroll.ts, with a positive control for the first-step text and a negative control for the retired guideline.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/explicit-phase-entry-run-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "EPE-S1-A3",
+      "assertion": "Per Discovery evidence of docs/specs/explicit-phase-entry.spec.md (source: repository evidence scripts/dist-sync-manifest.ts): the three BASELINE.md copies stay byte-identical, packaged mirrors stay in sync, and the existing Planner contract and Pi Enrollment extension tests pass with their assertions updated to the two-phase route; no valid test is deleted or skipped.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dist-docs-sync-contract.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\",\n      \"tests/imm-planner-kernel-intent-contract.test.ts\",\n      \"tests/pi-canary-enroll-extension.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/explicit-phase-entry-s1-contract.md",
+    "CONTEXT.md",
+    "README.md",
+    "docs/adr/0019-explicit-run-entry-owns-enrollment.md",
+    "docs/plans/explicit-phase-entry-s1-contract.intent.json",
+    "docs/specs/explicit-phase-entry.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+    "plugins/immune-brain/BASELINE.md",
+    "plugins/immune-brain/dist/BASELINE.md",
+    "plugins/immune-brain/dist/imm-brainstorm.md",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/dist/imm-run.md",
+    "plugins/immune-brain/skills/BASELINE.md",
+    "plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
+    "plugins/immune-brain/skills/imm-planner/SKILL.md",
+    "plugins/immune-brain/skills/imm-run/SKILL.md",
+    "tests/direct-first-routing-contract.test.ts",
+    "tests/dist-docs-sync-contract.test.ts",
+    "tests/explicit-phase-entry-planner-contract.test.ts",
+    "tests/explicit-phase-entry-run-contract.test.ts",
+    "tests/fixtures/workflow-decision-closure-sources/BASELINE.md",
+    "tests/fixtures/workflow-decision-closure-sources/README.md",
+    "tests/imm-planner-kernel-intent-contract.test.ts",
+    "tests/pi-canary-enroll-extension.test.ts",
+    "tests/skill-dist-consistency.test.ts",
+    "tests/workflow-behavior-evidence.test.ts"
+  ],
+  "risk": "material",
+  "revision": 2,
+  "owner": "user"
+}

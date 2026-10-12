@@ -28,7 +28,13 @@ try { await import("@earendil-works/pi-tui"); } catch {
 		truncateToWidth: (s: string, width: number) => s.slice(0, width), visibleWidth: (s: string) => s.length }));
 }
 const { default: registerPiBatch } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
-const { default: registerPiWork } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
+const { default: registerPiWork, recordPiPhaseInput } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
+// The phase entry gate (ADR 0019) sits in front of this Tool. These tests
+// exercise what lies behind it, so their session records a real run entry
+// through the function the input handler calls;
+// tests/pi-phase-entry-gate.test.ts owns the refusals.
+const RUN_ENTRY_SESSION = { getSessionId: () => "pi-batch-acceptance-tests" };
+recordPiPhaseInput({ text: "/skill:imm-run", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION });
 import { readAuditTaskPair } from "../plugins/immune-brain/runtime/kernel/storage";
 import { readBatchRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
@@ -100,7 +106,7 @@ async function fixture(slug: string) {
 		workTool = tools.find(t => t.name === "imm_kernel_canary");
 	};
 	restart();
-	const ctx = () => ({ cwd: root, mode: "tui", ui: { setWidget() {}, setStatus() {}, notify() {}, custom: async () => { gates++; return answer(); } } });
+	const ctx = () => ({ cwd: root, mode: "tui", sessionManager: RUN_ENTRY_SESSION, ui: { setWidget() {}, setStatus() {}, notify() {}, custom: async () => { gates++; return answer(); } } });
 	const call = async (tool: any, params: unknown): Promise<any> => {
 		try {
 			const response = await tool.execute(randomUUID(), params, undefined, undefined, ctx());

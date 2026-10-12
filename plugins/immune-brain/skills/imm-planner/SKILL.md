@@ -42,11 +42,11 @@ own routes instead of these stages.
 - retirement design: [Retirement Completion Contract](../../dist/imm-planner.md#retirement-completion-contract)
 - optional research dispatch: [Research Dispatch](../../dist/imm-planner.md#research-dispatch)
 
-Plan-only requests stop after candidate TaskIntent validation, plus Spec validation when the work is complex. Requests
-that include execution invoke the current Host's native Enrollment gate
-directly, without chat pre-confirmation. Native-gate failure stays fail-closed
-in that Host: report its reason and one retry action only; never suggest
-another Host, worktree, or unmanaged implementation as a fallback.
+Every request stops after candidate TaskIntent validation, plus Spec validation when the work is complex; Plan-only requests stop there too. The Planner
+never invokes the current Host's native Enrollment gate, even when the request also asks for
+execution: report the candidate and name a literal-user `imm-run` entry as the
+only next step. Never suggest another Host, worktree, or unmanaged
+implementation as a fallback.
 
 Before that handoff, confirm complete mapping of every upstream item and
 required phase with each Slice's result and the remaining gap; reject a plan

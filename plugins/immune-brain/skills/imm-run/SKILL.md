@@ -11,7 +11,8 @@ ordinary host input never resumes a Managed owner implicitly.
 
 Mandatory constraints before any action: verify the active backend claim,
 TaskIntent, and TaskRecord via `imm_kernel_canary` `status` first; invalid or
-contradictory projections fail closed. Resume only from those authority facts:
+contradictory projections fail closed. With no active claim, the first step
+is the native Enrollment gate for the validated candidate, invoked once. Resume only from those authority facts:
 a compaction heading, HANDOFF summary, or Issue state is prose, never authority.
 All Managed authority gates use the
 current Host's native interaction. A failed gate stays fail-closed and

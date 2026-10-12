@@ -426,7 +426,7 @@ Without explicit cost levers, multi-agent workflows compound expenses exponentia
 
 Internal roles (Executor, QA, Review, Compounder) are dispatched by `imm-run` — you never invoke them directly.
 
-All 7 skills are invoked explicitly. For new features, start with `imm-brainstorm` (if requirements are uncertain) or `imm-planner` (if requirements are clear), then proceed to `imm-run` once enrolled.
+All 7 skills are invoked explicitly. For new features, start with `imm-brainstorm` (if requirements are uncertain) or `imm-planner` (if requirements are clear), then enter `imm-run`, whose first step is Enrollment.
 
 ### Managed Path entries (brainstorm → planner → loop)
 
@@ -670,7 +670,7 @@ docs/specs/                           # Living specs (updated in place)
 
 ## FAQ
 
-**Do I need to learn all 7 skills?** No. Most of the time you only need `/imm-planner` (to plan and enroll a task) and `/imm-run` (to build and verify it). Use `imm-brainstorm` when requirements need clarifying first, and the maintenance skills (`imm-pr-fix`, etc.) only when specific repair needs arise. Ordinary chat and simple edits don't need any skills at all.
+**Do I need to learn all 7 skills?** No. Most of the time you only need `/imm-planner` (to plan a task) and `/imm-run` (to enroll, build and verify it). Use `imm-brainstorm` when requirements need clarifying first, and the maintenance skills (`imm-pr-fix`, etc.) only when specific repair needs arise. Ordinary chat and simple edits don't need any skills at all.
 
 **What if I interrupt or close the session mid-task?** State is safely stored on disk (`.imm/` + TaskIntent). In Pi or Claude Code, simply re-enter `/imm-run` to resume — the Kernel projection is authoritative.
 

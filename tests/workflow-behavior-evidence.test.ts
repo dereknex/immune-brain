@@ -22,12 +22,15 @@ const historicalPlannerPath = "tests/fixtures/workflow-decision-closure-sources/
 const plannerPath = "plugins/immune-brain/dist/imm-planner.md";
 const historicalBrainstormPath = "tests/fixtures/workflow-decision-closure-sources/imm-brainstorm.md";
 const brainstormPath = "plugins/immune-brain/dist/imm-brainstorm.md";
+const historicalBaselinePath = "tests/fixtures/workflow-decision-closure-sources/BASELINE.md";
+const baselinePath = "plugins/immune-brain/BASELINE.md";
 
 // The cohort predates later contract changes. Re-hash preserved source bytes,
 // never replace the measured digest with a digest of today's contract.
 function measuredSource(path: string): string {
 	const preserved = path === plannerPath ? historicalPlannerPath
 		: path === brainstormPath ? historicalBrainstormPath
+		: path === baselinePath ? historicalBaselinePath
 		: path;
 	return resolve(repoRoot, preserved);
 }

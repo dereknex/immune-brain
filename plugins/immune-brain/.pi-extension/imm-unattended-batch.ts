@@ -20,7 +20,7 @@ import {
 import { createBatchKernelPort } from "../runtime/unattended/batch_kernel_port";
 import type { BatchRunnerGitPort } from "../runtime/unattended/batch_git";
 import type { InitiativeObservationReader } from "../runtime/unattended/types";
-import { advancePiTask } from "./imm-canary-work";
+import { advancePiTask, piRunEntryRefusal } from "./imm-canary-work";
 import { batchReason } from "../runtime/unattended/batch_reasons";
 import { parseFinalVerification } from "../runtime/unattended/batch_final_verification";
 import { parseLaneRevision, REVISION_DELEGATION_TEXT, type LaneRevisionRequest } from "../runtime/unattended/batch_delegation";
@@ -427,7 +427,7 @@ export default function (
 		description: "Start an unattended serial batch run for an Initiative after native confirmation.",
 		promptSnippet: "Start unattended batch run: invoke once in foreground after plan confirmation.",
 		promptGuidelines: [
-			"Call only after plan confirmation; execute once in the foreground and consume the direct terminal result.",
+			"Call only inside an explicit imm-run entry, after plan confirmation; execute once in the foreground and consume the direct terminal result.",
 			"Do not run this Tool in background, poll for completion, or issue a cancel subcommand.",
 		],
 		parameters: Type.Object({
@@ -469,6 +469,19 @@ export default function (
 					next_action: refusal.recovery_action,
 				});
 			}
+			// The phase entry gate (ADR 0019), before any preflight or dialog. The
+			// batch's own reuseOnly continuation never passes through this Tool.
+			const entryRefusal = piRunEntryRefusal("start_unattended_batch", ctx);
+			if (entryRefusal)
+				throwToolFailure({
+					tool: "imm_canary_enrollment",
+					task_id: initiativeSlug,
+					operation: "start_unattended_batch",
+					state: "blocked",
+					code: entryRefusal.reason_code,
+					message: entryRefusal.detail,
+					next_action: entryRefusal.recovery_action,
+				});
 
 			const maxParallel = parseMaxParallel(params.max_parallel);
 			const laneOffers = parseLaneOffers(params.lane_offers);

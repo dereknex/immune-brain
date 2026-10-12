@@ -1,0 +1,420 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "explicit-phase-entry-s2-claude-gate",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "explicit-phase-entry-s2-claude-gate",
+    "goal": "Implement Slice S2 of Initiative explicit-phase-entry per docs/specs/explicit-phase-entry.spec.md (T1, T2): a host-neutral phase-entry module plus the Claude Code gate, so enroll and start_unattended_batch are refused before any native dialog in a session without a live literal-user imm-run entry, and a model Skill call for imm-planner, imm-brainstorm or imm-run is denied without a matching entry. Characterize the real UserPromptSubmit payload of a slash entry first (assumption A1). User scenarios SCN-3 and SCN-4 belong to this Slice.",
+    "acceptance": [
+      {
+        "id": "EPE-S2-A1",
+        "assertion": "Per T1 and invariants I2, I3 of docs/specs/explicit-phase-entry.spec.md (source: delegated technical choices D3, D7): runtime/assurance/phase_entry.ts recognizes a literal entry for imm-planner, imm-brainstorm and imm-run by packaged name, by immune-brain: or skill: prefix, by a user alias whose command file names exactly one of those skills (imm-loop maps to run), and in the Host-expanded command form; a mid-sentence mention, an unknown command and non-user text are not entries. A run entry stays live across later prompts; a later plan entry revokes it; a missing or unreadable store refuses. Seam: new tests/phase-entry.test.ts on the pure module with positive, negative and bound controls for each rule.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/phase-entry.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "EPE-S2-A2",
+        "assertion": "Per T2 and invariants I1, I3, I5 of docs/specs/explicit-phase-entry.spec.md (source: user decision U2; repository evidence runtime/claude/mcp_server.ts): on Claude Code, enroll and start_unattended_batch reach the native gate port only when the session has a live run entry and the PreToolUse hook wrote an admission for the call's claudecode/toolUseId; with no entry, a revoked entry, or no admission the call returns reason code run_entry_required with exactly one same-Host recovery action and the gate port is never called; batch-internal reuseOnly continuation is not gated. Seam: new tests/claude-phase-entry-gate.test.ts driving the hook output functions and handleJsonRpc.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-phase-entry-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "EPE-S2-A3",
+        "assertion": "Per T1, T2 and decision D4 of docs/specs/explicit-phase-entry.spec.md (source: user decision U2 refined by D4): the Claude PreToolUse hook denies a Skill call for imm-planner, imm-brainstorm or imm-run with reason code phase_entry_required unless the matching entry was recorded in the latest literal prompt, or, for imm-planner, a run entry is live and a Managed claim is active; every other Skill and tool is left untouched. Seam: new tests/claude-phase-entry-skill-gate.test.ts on the hook output for Skill PreToolUse payloads, with allowed, denied and untouched controls.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-phase-entry-skill-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "EPE-S2-A4",
+        "assertion": "Per Discovery evidence of docs/specs/explicit-phase-entry.spec.md (source: repository evidence scripts/build-claude-plugin.ts, hooks/hooks.json): hooks.json registers PreToolUse for the Skill tool and for the plugin enroll and start_unattended_batch tools, dist/claude/mcp-server.mjs is rebuilt from source, and the existing Claude tool-boundary tests pass with a recorded run entry and admission where they exercise enroll or start_unattended_batch.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/batch-plan-reconfirmation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/explicit-phase-entry-s2-claude-gate.md",
+      "docs/plans/explicit-phase-entry-s2-claude-gate.intent.json",
+      "docs/specs/explicit-phase-entry.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/hooks/hooks.json",
+      "plugins/immune-brain/runtime/assurance/phase_entry.ts",
+      "plugins/immune-brain/runtime/claude/interaction.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/lane_guard.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/claude/review_host.ts",
+      "tests/batch-plan-reconfirmation.test.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/claude-phase-entry-gate.test.ts",
+      "tests/claude-phase-entry-skill-gate.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/phase-entry.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/explicit-phase-entry-s2-claude-gate.intent.json",
+    "content_hash": "sha256:d36ae95f6e7bbd1ed72874618390f007cf05687f56e69d293d8b39c0216e3840"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:833935ec3794d8abb7ad4727e87ef1aef70e5ddf13790fdcabfeed007574fdd9",
+  "git_base_head": "1d8e6f09f5ac8258e797a278147b915cc02f8c54",
+  "attestations": [
+    {
+      "id": "approval-qa-4206d42c",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:833935ec3794d8abb7ad4727e87ef1aef70e5ddf13790fdcabfeed007574fdd9",
+      "diff_hash": "sha256:b24b69533fb4c95b432a82524994194688cacc06247863bab50ee125ab32cfda",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:0b3b088b77cd1344c59760371c562d65343307fb93eff6cedbfb1b410d201c53",
+      "acceptance_results": [
+        {
+          "acceptance_id": "EPE-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:0b3b088b77cd1344c59760371c562d65343307fb93eff6cedbfb1b410d201c53"
+        },
+        {
+          "acceptance_id": "EPE-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:0b3b088b77cd1344c59760371c562d65343307fb93eff6cedbfb1b410d201c53"
+        },
+        {
+          "acceptance_id": "EPE-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:0b3b088b77cd1344c59760371c562d65343307fb93eff6cedbfb1b410d201c53"
+        },
+        {
+          "acceptance_id": "EPE-S2-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:0b3b088b77cd1344c59760371c562d65343307fb93eff6cedbfb1b410d201c53"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-c45b3f95",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:d36ae95f6e7bbd1ed72874618390f007cf05687f56e69d293d8b39c0216e3840",
+      "diff_hash": "sha256:223d0c76981851dfa03fd44862ce41533eae7f8993c03874f45f04112e735eb7",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:db83d67b3013abb8ce69c60fabb4aef91a62e60f2a20daffbf39e26bc3bfcb9c",
+      "acceptance_results": [
+        {
+          "acceptance_id": "EPE-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:db83d67b3013abb8ce69c60fabb4aef91a62e60f2a20daffbf39e26bc3bfcb9c"
+        },
+        {
+          "acceptance_id": "EPE-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:db83d67b3013abb8ce69c60fabb4aef91a62e60f2a20daffbf39e26bc3bfcb9c"
+        },
+        {
+          "acceptance_id": "EPE-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:db83d67b3013abb8ce69c60fabb4aef91a62e60f2a20daffbf39e26bc3bfcb9c"
+        },
+        {
+          "acceptance_id": "EPE-S2-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:db83d67b3013abb8ce69c60fabb4aef91a62e60f2a20daffbf39e26bc3bfcb9c"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-787c7013",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:d36ae95f6e7bbd1ed72874618390f007cf05687f56e69d293d8b39c0216e3840",
+      "diff_hash": "sha256:223d0c76981851dfa03fd44862ce41533eae7f8993c03874f45f04112e735eb7",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (base, review commit, single parent and tree match the manifest; manifest_digest matches the request but was not independently recomputed); all 18 per-file diffs read; the pure entry module, hook gate, single-use admission bound to tool-use id, and gate placement before preparation and native dialog satisfy EPE-S2-A1..A4 with positive, negative and bound tests at the named seams.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "1d8e6f09f5ac8258e797a278147b915cc02f8c54",
+        "review_commit": "3619ad19a68acc9ae2fb8fd6d4f5fa448e27404c",
+        "review_tree": "6da022ad73214a1f93ec6992815731dd774d0c98",
+        "manifest_digest": "sha256:4d20f946c6e755e70373f230069a8c620d4593a000264cb7f65df77cc74c4c40"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-3bbb617a2c75-1-review-1",
+          "acceptance_id": "EPE-S2-A3",
+          "summary": "Hook-side store failures are not uniformly fail-closed for the Skill gate: runHook ignores the result of recordPhaseEntryPrompt, so a failed append of a plan entry leaves an earlier run entry live and still 'latest', and readPrivate can throw out of readPhaseEntryState with no catch in runHook, in which case the hook exits non-zero without a deny and a Skill call proceeds. The enroll and start_unattended_batch path stays closed because it still needs an admission.",
+          "anchor": "sha256:3d040d74216e61bf26beca327d9313a0d65c083613dd8a652495fd4eac74f576",
+          "evidence": {
+            "trigger": "UserPromptSubmit for '/imm-planner' after a recorded '/imm-run' where appendPrivate returns false (for example a short or failed write), followed by Skill(imm-run); or a PreToolUse Skill payload where fstatSync/readSync throws inside readPrivate",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/claude/mcp_server.ts:runHook",
+              "plugins/immune-brain/runtime/claude/lane_guard.ts:recordPhaseEntryPrompt",
+              "plugins/immune-brain/runtime/claude/review_host.ts:appendPrivate",
+              "plugins/immune-brain/runtime/claude/lane_guard.ts:phaseEntryGateHookOutput",
+              "plugins/immune-brain/runtime/claude/lane_guard.ts:readPhaseEntryState",
+              "plugins/immune-brain/runtime/claude/review_host.ts:readPrivate"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "EPE-S2-A3"
+            }
+          }
+        },
+        {
+          "id": "review-3bbb617a2c75-2-review-2",
+          "acceptance_id": "EPE-S2-A2",
+          "summary": "The admission is appended, not written exclusively, and consumePhaseAdmission requires exactly one line, so any second PreToolUse hook run for the same tool_use_id (for example two enabled copies of the plugin, whose hooks.json matcher both match the tool name) makes every enroll and start_unattended_batch call refuse with run_entry_required despite a live run entry. It fails closed, but the recovery text would mislead the user; no test pins a doubled hook run.",
+          "anchor": "sha256:518d9376074ba049e22485c1ff01b0c6d2ce35d238290cb6a1abdb683ae3c124",
+          "evidence": {
+            "trigger": "phaseEntryGateHookOutput invoked twice with the same tool_use_id and a live run entry, then consumePhaseAdmission for that id",
+            "caller_chain": [
+              "plugins/immune-brain/hooks/hooks.json:PreToolUse",
+              "plugins/immune-brain/runtime/claude/lane_guard.ts:phaseEntryGateHookOutput",
+              "plugins/immune-brain/runtime/claude/review_host.ts:appendPrivate",
+              "plugins/immune-brain/runtime/claude/mcp_server.ts:requireRunEntry",
+              "plugins/immune-brain/runtime/claude/lane_guard.ts:consumePhaseAdmission"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "EPE-S2-A2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:b28151d84aacc04d1cff6448c6649600354b778327ebaacae210ecd3582f8fd8"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-c8b5c0550323-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "EPE-S2-A4",
+      "source": "review",
+      "review_round": 1,
+      "summary": "No delivered test asserts the new hooks.json PreToolUse matcher: the Spec's agreed seam for EPE-S2-A4 (tests/claude-host-package.test.ts, control 'hooks.json matchers present') is unchanged in this revision and only checks that hooks.json exists. Fix: add a test at that seam that parses plugins/immune-brain/hooks/hooks.json and asserts a PreToolUse matcher matches 'Skill', 'mcp__plugin_immune-brain_immune-brain__enroll' and 'mcp__plugin_immune-brain_immune-brain__start_unattended_batch', with a negative control such as the status tool.",
+      "anchor": "sha256:a48e233f804277a5e2d69a60da925b772b7f8c03833880f67c3279375bdb9a31",
+      "evidence": {
+        "trigger": "Delete or mistype the second PreToolUse entry ('Skill|mcp__.*immune-brain.*__(enroll|start_unattended_batch)') in plugins/immune-brain/hooks/hooks.json at 45bd62c4. Every test in the revision still passes: `git grep -e hooks.json -e matcher 45bd62c4 -- tests` finds only the REQUIRED existence entry at tests/claude-host-package.test.ts:30, and the three new test files call phaseEntryGateHookOutput directly with hard-coded tool names, never through the manifest. In the product the Skill gate (EPE-S2-A3) then never runs, and enroll/start_unattended_batch are refused for every user because no admission is ever written. tests/claude-host-package.test.ts is unchanged; it was read because docs/specs/explicit-phase-entry.spec.md 'Verification and acceptance mapping' names it as the EPE-S2-A4 seam.",
+        "caller_chain": [
+          "plugins/immune-brain/hooks/hooks.json",
+          "plugins/immune-brain/runtime/claude/mcp_server.ts:runHook",
+          "plugins/immune-brain/runtime/claude/lane_guard.ts:phaseEntryGateHookOutput",
+          "tests/claude-host-package.test.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "EPE-S2-A4"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-c8b5c0550323-2-review-2",
+      "kind": "advisory",
+      "status": "resolved",
+      "acceptance_id": "EPE-S2-A2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The 'reuseOnly continuation is not gated' bound is correct by structure but not pinned by a test: the gate test only covers child Enrollment inside one start_unattended_batch call. Consider a control at tests/claude-phase-entry-gate.test.ts that completes a batch child through advance_assurance and asserts no further admission is consumed.",
+      "anchor": "sha256:c55b43c9836e5954686113868edbaa03b63c190c5036b7cf49bc58efacad9f2f",
+      "evidence": {
+        "trigger": "Move requireRunEntry from callTool into ClaudeRuntime.startUnattendedBatch. The closeOutBatchChild continuation ({ reuseOnly: true }) would then be gated, yet tests/claude-phase-entry-gate.test.ts still passes (its only bound asserts consumed() === 1 for a single start), and the existing batch tests still pass because their withRunEntry helper runs the hook and admits on every consume call.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/mcp_server.ts:callTool",
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:closeOutBatchChild",
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:startUnattendedBatch",
+          "tests/claude-phase-entry-gate.test.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "EPE-S2-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-c8b5c0550323-3-review-3",
+      "kind": "advisory",
+      "status": "resolved",
+      "acceptance_id": "EPE-S2-A3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "packagedPhaseSkill matches the Skill name exactly after stripping one leading '/' and one prefix, with no whitespace trimming. If the Claude Code Skill tool trims its `skill` input before resolving it (not verifiable from the revision; this is an unconfirmed assumption about the Host), a padded name would skip the gate. Consider trimming before matching and adding a denied control.",
+      "anchor": "sha256:6d8676a9dfa6f87d71ab99c67806925e354d9af63d31cfa553799e7835ce947e",
+      "evidence": {
+        "trigger": "PreToolUse payload { tool_name: 'Skill', tool_input: { skill: ' imm-run' } } (or 'imm-run ') in a session with no phase entry: gatedOperation returns null, so phaseEntryGateHookOutput returns null and the call is left untouched instead of denied with phase_entry_required. Whether the Host then resolves the padded name to the packaged Skill was not confirmed.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/lane_guard.ts:phaseEntryGateHookOutput",
+          "plugins/immune-brain/runtime/claude/lane_guard.ts:gatedOperation",
+          "plugins/immune-brain/runtime/assurance/phase_entry.ts:packagedPhaseSkill"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "EPE-S2-A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "qa-EPE-S2-A4-101dadf3-b05575",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "EPE-S2-A4",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1, timed out) stdout=28B stderr=17974B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:explicit-phase-entry-s2-claude-gate:2026-10-11T13:31:57.423Z",
+      "at": "2026-10-11T13:31:57.423Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/explicit-phase-entry-s2-claude-gate.intent.json"
+    },
+    {
+      "id": "record_approval:explicit-phase-entry-s2-claude-gate:2026-10-11T13:37:02.798Z",
+      "at": "2026-10-11T13:37:02.798Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-4206d42c\naction_v2_sha256:6e4da0d7185a4bea648439aaa02ab966c8064a5084b96389a68d6727a648a328",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-11T13:37:02.798Z"
+      }
+    },
+    {
+      "id": "request_rework:explicit-phase-entry-s2-claude-gate:2026-10-11T13:40:00.585Z",
+      "at": "2026-10-11T13:40:00.585Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:55f8ffe966639f322c2f3e10eebf2d330e96324afc100b19326c74c09ffa095d",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-11T13:40:00.585Z"
+      }
+    },
+    {
+      "id": "resolve_finding:explicit-phase-entry-s2-claude-gate:2026-10-11T13:51:23.077Z",
+      "at": "2026-10-11T13:51:23.077Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c8b5c0550323-1-review-1\naction_v2_sha256:1e30c87ae58e2c18a3cff4d2cb0ba9e9353bb5a5fe37704d4e89a64be7df09a0"
+    },
+    {
+      "id": "resolve_finding:explicit-phase-entry-s2-claude-gate:2026-10-11T13:51:27.938Z",
+      "at": "2026-10-11T13:51:27.938Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c8b5c0550323-2-review-2\naction_v2_sha256:2d333a5af26232c7e4093cd6204cb75d9b1703577e819ecee1a18ab0d950f069"
+    },
+    {
+      "id": "resolve_finding:explicit-phase-entry-s2-claude-gate:2026-10-11T13:51:29.108Z",
+      "at": "2026-10-11T13:51:29.108Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c8b5c0550323-3-review-3\naction_v2_sha256:57f0fca95f8b8f855545c2d754186664785ab8d0033e1e7057fbc10d7a437ba3"
+    },
+    {
+      "id": "freeze_artifacts:explicit-phase-entry-s2-claude-gate:2026-10-11T13:51:33.225Z",
+      "at": "2026-10-11T13:51:33.225Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/explicit-phase-entry-s2-claude-gate.intent.json"
+    },
+    {
+      "id": "request_rework:explicit-phase-entry-s2-claude-gate:2026-10-11T13:56:40.608Z",
+      "at": "2026-10-11T13:56:40.608Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:eacfad300b70ee43699b50bc590f3fac4627f67002fc68863018091a10606c4c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-11T13:56:40.608Z"
+      }
+    },
+    {
+      "id": "revise_intent:explicit-phase-entry-s2-claude-gate:2026-10-11T14:01:48.185Z",
+      "at": "2026-10-11T14:01:48.185Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:6045e841050b924f97daad79b6f59c5dceea57cff2dfd9439bd5c795e70a9202"
+    },
+    {
+      "id": "resolve_finding:explicit-phase-entry-s2-claude-gate:2026-10-11T14:01:54.117Z",
+      "at": "2026-10-11T14:01:54.117Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-EPE-S2-A4-101dadf3-b05575\naction_v2_sha256:e175576e4781c102768c2ba7585f657469cb2f236e531551f801fddc4e33dce6"
+    },
+    {
+      "id": "freeze_artifacts:explicit-phase-entry-s2-claude-gate:2026-10-11T14:01:59.931Z",
+      "at": "2026-10-11T14:01:59.931Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/explicit-phase-entry-s2-claude-gate.intent.json"
+    },
+    {
+      "id": "record_approval:explicit-phase-entry-s2-claude-gate:2026-10-11T14:08:20.429Z",
+      "at": "2026-10-11T14:08:20.429Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-c45b3f95\naction_v2_sha256:03bbbd291914fd4a29a71e3aa4cee96be1ca092bfd49c1bf18b7d9e6c367d842",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-11T14:08:20.430Z"
+      }
+    },
+    {
+      "id": "record_approval:explicit-phase-entry-s2-claude-gate:2026-10-11T14:11:10.501Z",
+      "at": "2026-10-11T14:11:10.501Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-787c7013\naction_v2_sha256:a71fc09f780c6d6e9d7de1b4f618db8fd4559a10134947c5b70b6ac34219d2db",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-11T14:11:10.501Z"
+      }
+    },
+    {
+      "id": "complete:explicit-phase-entry-s2-claude-gate:2026-10-11T14:11:12.193Z",
+      "at": "2026-10-11T14:11:12.193Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:bf4730e80386ec516b3fc09f41e3a0e1383b29df90134064dd763cb63cc7066d"
+    }
+  ]
+}

@@ -45,7 +45,7 @@ One TaskIntent acceptance item combining an observable assertion with a focused 
 _Avoid_: implementation step, enrollment rehearsal
 
 **Enrollment**:
-The single native user-authority gate that atomically turns a validated, Git-tracked TaskIntent into an active TaskRecord and workspace claim. It does not execute acceptance descriptors.
+The single native user-authority gate that atomically turns a validated, Git-tracked TaskIntent into an active TaskRecord and workspace claim. It is opened only as the first step of an explicit `imm-run` entry, never by the Planner or Brainstorm (ADR 0019). It does not execute acceptance descriptors.
 _Avoid_: task creation, planning confirmation, QA
 
 **Task**:
