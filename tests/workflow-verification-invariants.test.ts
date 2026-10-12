@@ -156,7 +156,8 @@ describe("S4 verification by invariant and environment", () => {
 		const contract = flat(PLANNER);
 		for (const fragment of [
 			"**Environment and prerequisite discipline.** A descriptor that needs a prerequisite states its provenance and how it is obtained",
-			"Preparation must not hide a download, credential use, production write, or system change",
+			"QA commands run with the host process environment, and the Kernel does not judge how dependencies are obtained",
+			"Preparation must not hide a production write or system change: authorize it explicitly, or redesign the check to avoid it",
 			"Require cleanup on failure and interruption, and restoration of any explicitly authorized setting",
 			"An absent dependency, a missing simulator, or a preparation failure is a failed check, not a pass",
 			"Zero matched checks and skipped required checks are failures",
@@ -166,6 +167,7 @@ describe("S4 verification by invariant and environment", () => {
 		]) {
 			expect(contract).toContain(fragment);
 		}
+		expect(contract).not.toContain("hide a download");
 		// The pre-existing descriptor discipline is preserved.
 		expect(contract).toContain("environment.prepare");
 		expect(contract).toContain("environment.writable_paths");

@@ -1,0 +1,28 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "host-owned-environment-s5-hook-only-for-active-work",
+  "owner": "user",
+  "goal": "A session whose workspace has no active task and no active batch does not write Immune-Brain hook events: on PostToolUse, SubagentStart, SubagentStop and SessionEnd the Claude hook appends to the event log only for active work, while PreToolUse and UserPromptSubmit behave as before and hooks.json keeps its registrations (Spec host-owned-environment S5; D15, I9).",
+  "acceptance": [
+    {
+      "id": "HE-S5-A1",
+      "assertion": "Through the hook entry with a temporary state root: with an active task and with an active batch each of the four events appends to the event log; with neither, none of the four appends anything; UserPromptSubmit still records a phase entry when no task exists; seam: tests/claude-host-authority.test.ts (Spec SCN-12, SCN-13, D15, I9).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "HE-S5-A2",
+      "assertion": "The existing asynchronous Reviewer evidence tests pass unchanged and the generated Claude bundle matches the runtime source; seams: tests/claude-review-host-async-agent.test.ts, tests/claude-host-package.test.ts (Spec SCN-13, I9).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-review-host-async-agent.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/host-owned-environment-s5-hook-only-for-active-work.md",
+    "docs/plans/host-owned-environment-s5-hook-only-for-active-work.intent.json",
+    "docs/specs/host-owned-environment.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "tests/claude-host-authority.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

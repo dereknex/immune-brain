@@ -348,9 +348,8 @@ function releaseWorkspaceForTest(root: string): void {
 // Every test here drives a real host runtime and temporary Git repositories, so
 // the per-test bound must clear bun's 5s default even under the Kernel QA
 // minimal environment (which is slower than an interactive session).
-// Deterministic QA runs these files in the Kernel's minimal environment (no
-// node_modules, HOME/TMPDIR reset), which is roughly 1.5x slower than an
-// interactive session. The three end-to-end integration tests below drive real
+// Deterministic QA runs these files in a dependency-free delivery checkout (no
+// node_modules), which is roughly 1.5x slower than an interactive session. The three end-to-end integration tests below drive real
 // QA and Review through the shared coordinator and already exceed 25s here, so
 // 60s leaves no headroom for a slower machine and turns a slow pass into a
 // timeout failure.

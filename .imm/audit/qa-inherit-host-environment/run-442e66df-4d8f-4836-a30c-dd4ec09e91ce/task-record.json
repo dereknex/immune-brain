@@ -1,0 +1,166 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "qa-inherit-host-environment",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "qa-inherit-host-environment",
+    "goal": "Deterministic QA commands run with the environment of the process hosting the Kernel instead of a rebuilt one: the Kernel no longer creates a throwaway home or overrides HOME, TMPDIR and XDG_CACHE_HOME, Git repository-binding variables stay out of the child, the per-run process token stays in, and the Planner contract stops forbidding a download or credential use during preparation. QA still runs in the disposable delivery materialization.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "A command run by runFixedVerification sees the hosting process's HOME and other variables and the per-run process token, sees none of the Git repository-binding variables of the hosting process (GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, GIT_OBJECT_DIRECTORY, GIT_ALTERNATE_OBJECT_DIRECTORIES, GIT_COMMON_DIR, GIT_NAMESPACE, GIT_PREFIX) while another GIT_ variable still arrives, has PATH equal to the supplied absolute-entry path, and has no HOME when the host has none; seam: tests/pi-canary-verification-descriptor.test.ts through runFixedVerification with a real child process (Spec D1, D2, I1-I3).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-verification-descriptor.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "A deterministic QA run supplies no throwaway home: through runDeterministicQa with the real runFixedVerification, a check that exits zero only when its HOME equals the hosting process's HOME passes and fails when a different path is expected; seam: tests/pi-canary-assurance-authority.test.ts (Spec D3, I4).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-assurance-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "The Planner contract states that QA commands run with the host process environment and that the Kernel does not judge how dependencies are obtained, keeps the preparation rule for production writes and system changes, and no longer contains 'hide a download'; the generated Claude bundle matches the runtime source; seams: tests/workflow-verification-invariants.test.ts and tests/claude-host-package.test.ts (Spec D5).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-verification-invariants.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/qa-inherit-host-environment.md",
+      "docs/plans/qa-inherit-host-environment.intent.json",
+      "docs/specs/qa-inherit-host-environment.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/runtime/assurance/qa.ts",
+      "plugins/immune-brain/runtime/assurance/verification.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/pi-canary-assurance-authority.test.ts",
+      "tests/pi-canary-verification-descriptor.test.ts",
+      "tests/unattended-contracts.test.ts",
+      "tests/workflow-verification-invariants.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/qa-inherit-host-environment.intent.json",
+    "content_hash": "sha256:740dc356854f3c3b0fdb134ca49b2b8be20b894cd6934c1db562007297db7134"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:740dc356854f3c3b0fdb134ca49b2b8be20b894cd6934c1db562007297db7134",
+  "git_base_head": "8e7e7b35641c04ab48b2a3d8419a8963fac39b79",
+  "attestations": [
+    {
+      "id": "approval-qa-ab856371",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:740dc356854f3c3b0fdb134ca49b2b8be20b894cd6934c1db562007297db7134",
+      "diff_hash": "sha256:3a36e56faa9b2390eadbb45269faa161e4db91fc404229501ee8181b9bb64881",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:35ace06b09e025487c8e3d484b047e6c3a7bef162b2ef3e406d8a36fe82a2684",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:35ace06b09e025487c8e3d484b047e6c3a7bef162b2ef3e406d8a36fe82a2684"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:35ace06b09e025487c8e3d484b047e6c3a7bef162b2ef3e406d8a36fe82a2684"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:35ace06b09e025487c8e3d484b047e6c3a7bef162b2ef3e406d8a36fe82a2684"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-b36c8111",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:740dc356854f3c3b0fdb134ca49b2b8be20b894cd6934c1db562007297db7134",
+      "diff_hash": "sha256:3a36e56faa9b2390eadbb45269faa161e4db91fc404229501ee8181b9bb64881",
+      "actor_id": "parent-mediated-review",
+      "summary": "Child env is host env minus the 8 Git binding vars plus absolute PATH and process token; home lifecycle and option removed from qa.ts/verification.ts; planner contract and Claude bundle updated; tests exercise AC1/AC2/AC3 at agreed seams.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "8e7e7b35641c04ab48b2a3d8419a8963fac39b79",
+        "review_commit": "713c8274b1f4b626c9980544993dbbca6a805f70",
+        "review_tree": "b530b64a7a82612214308a224939f8f1e1d469c1",
+        "manifest_digest": "sha256:006bc080babb4d9a5b8f272af8c7a1f9b1e0e6e9ec29c8208577dda96fcd570d"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-015b02bd7857-1-review-1",
+          "acceptance_id": "AC2",
+          "summary": "The AC2 test builds its expected value with process.env.HOME ?? \"\"; on a host with no HOME the passing branch would compare the child's undefined HOME against an empty string and fail. Harmless where HOME is set, but it makes the test depend on the host.",
+          "anchor": "sha256:7869d232a361510ffbd2cfdf6af984cb989914b6f9b7f734b5d231e5a2e545da",
+          "evidence": {
+            "trigger": "Test process started without HOME: homeIs(\"\") exits 1 because child HOME is undefined, so the expected pass branch returns rework.",
+            "caller_chain": [
+              "tests/pi-canary-assurance-authority.test.ts",
+              "plugins/immune-brain/runtime/assurance/qa.ts:runDeterministicQa",
+              "plugins/immune-brain/runtime/assurance/verification.ts:runFixedVerification"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:8a3f65664a2f8a533ed1601ca0e710533d3b1db807a1cbc23719a9026d9da538"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:qa-inherit-host-environment:2026-10-12T10:41:14.435Z",
+      "at": "2026-10-12T10:41:14.435Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/qa-inherit-host-environment.intent.json"
+    },
+    {
+      "id": "record_approval:qa-inherit-host-environment:2026-10-12T10:41:42.149Z",
+      "at": "2026-10-12T10:41:42.149Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ab856371\naction_v2_sha256:308ec4e03be4e41c803a291694d54b397a446ed771a29c58d75ad8624fd672e5",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-12T10:41:42.149Z"
+      }
+    },
+    {
+      "id": "record_approval:qa-inherit-host-environment:2026-10-12T10:42:57.335Z",
+      "at": "2026-10-12T10:42:57.335Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-b36c8111\naction_v2_sha256:0474b399fac8efa0e8e1f71b0cd200b2b8d56641884343534a6910666f9dc84a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-12T10:42:57.335Z"
+      }
+    },
+    {
+      "id": "complete:qa-inherit-host-environment:2026-10-12T10:42:59.531Z",
+      "at": "2026-10-12T10:42:59.531Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:8203cd2c96dfaa4e30680118c774d08682f19ba1bfef3997bdf29011a74f4dd0"
+    }
+  ]
+}

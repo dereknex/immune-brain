@@ -340,4 +340,27 @@ describe("canary assurance authority", () => {
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
+
+	test("deterministic QA supplies no throwaway home to its checks", async () => {
+		const root = mkdtempSync(join(tmpdir(), "canary-qa-"));
+		try {
+			execFileSync("git", ["init", "-q"], { cwd: root });
+			execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+			execFileSync("git", ["config", "user.name", "Test"], { cwd: root });
+			execFileSync("git", ["commit", "--allow-empty", "-qm", "base"], { cwd: root });
+			const options = {
+				_writeDeliveryTree: () => "0".repeat(40),
+				_materializeDeliveryWorkspace: () => ({ root, tree: "0".repeat(40), seal: "[]", cleanup: () => undefined }),
+				_runFixedVerification: runFixedVerification,
+			} as const;
+			const s = snapshot({ root, role: "qa", acceptance: [{ id: "A1", assertion: "home", verification: "descriptor" }] });
+			const homeIs = (expected: string) => descriptor(["-e", `process.exit(process.env.HOME === ${JSON.stringify(expected)} ? 0 : 1)`]);
+			const same = await runDeterministicQa(s, new Map([["A1", homeIs(process.env.HOME ?? "")]]), options);
+			expect(same.decision).toBe("pass");
+			const different = await runDeterministicQa(s, new Map([["A1", homeIs(join(root, "other-home"))]]), options);
+			expect(different.decision).toBe("rework");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
 });

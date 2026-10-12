@@ -414,9 +414,10 @@ own duration evidence. These are workflow-quality input patterns, not requests
 to edit the original applications that motivated the audit.
 
 **Environment and prerequisite discipline.** A descriptor that needs a
-prerequisite states its provenance and how it is obtained. Preparation must not
-hide a download, credential use, production write, or system change: authorize
-it explicitly, or redesign the check to avoid it. Require cleanup on failure and
+prerequisite states its provenance and how it is obtained. QA commands run with
+the host process environment, and the Kernel does not judge how dependencies are
+obtained. Preparation must not hide a production write or system change:
+authorize it explicitly, or redesign the check to avoid it. Require cleanup on failure and
 interruption, and restoration of any explicitly authorized setting. An absent
 dependency, a missing simulator, or a preparation failure is a failed check, not
 a pass. Zero matched checks and skipped required checks are failures: a required

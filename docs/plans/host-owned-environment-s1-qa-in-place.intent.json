@@ -1,0 +1,45 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "host-owned-environment-s1-qa-in-place",
+  "owner": "user",
+  "goal": "Deterministic QA runs prepare and every check in the task's own working directory instead of a disposable copy: before the first command and after each command the tracked content of the working directory must equal the frozen snapshot tree, a difference fails as protected_input_or_output_drift with the differing paths returned to the caller and never stored, the delivery materialization and its cleanup are removed, and the run and Planner contracts plus ADR 0022 state the in-place rule (Spec host-owned-environment S1; D1-D5, I1, I2).",
+  "acceptance": [
+    {
+      "id": "HE-S1-A1",
+      "assertion": "Through runDeterministicQa on a real temporary Git repository: a check that reads a file from an ignored directory of the working directory passes; a tracked edit outside the frozen snapshot refuses before any command runs; a check that rewrites a tracked file fails as protected_input_or_output_drift; a non-delivery path may differ, untracked output is allowed, and the run creates no directory outside the repository; seam: tests/shared-deterministic-qa.test.ts (Spec SCN-1, SCN-2, SCN-3, D1, D2, I1, I2).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/shared-deterministic-qa.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "HE-S1-A2",
+      "assertion": "Both Hosts and the host-neutral coordinator complete a passing QA run with no delivery materialization; the differing paths of a refused run are absent from the stored TaskRecord and from persisted diagnostics; aborting during a command still removes its processes; seams: tests/pi-canary-assurance-authority.test.ts, tests/pi-canary-verification-descriptor.test.ts, tests/host-neutral-assurance-coordinator.test.ts, tests/dual-host-assurance-conformance.test.ts (Spec D2, D4).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-assurance-authority.test.ts\",\n      \"tests/pi-canary-verification-descriptor.test.ts\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\",\n      \"tests/dual-host-assurance-conformance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "HE-S1-A3",
+      "assertion": "dist/imm-run.md and dist/imm-planner.md state that QA runs in the task's working directory after an equality check with the frozen snapshot and that a dependency already present there is valid provenance, neither contains 'disposable delivery', ADR 0022 exists, and the generated Claude bundle matches the runtime source; seams: tests/workflow-verification-invariants.test.ts, tests/claude-host-package.test.ts, tests/unattended-contracts.test.ts (Spec D5).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-verification-invariants.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/unattended-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/host-owned-environment-s1-qa-in-place.md",
+    "docs/adr/0022-deterministic-qa-runs-in-place.md",
+    "docs/plans/host-owned-environment-s1-qa-in-place.intent.json",
+    "docs/specs/host-owned-environment.spec.md",
+    "plugins/immune-brain/.pi-extension/pi-canary-verification.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/dist/imm-run.md",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain/runtime/assurance/delivery_workspace.ts",
+    "plugins/immune-brain/runtime/assurance/qa.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/host-neutral-assurance-coordinator.test.ts",
+    "tests/pi-canary-assurance-authority.test.ts",
+    "tests/pi-canary-verification-descriptor.test.ts",
+    "tests/shared-deterministic-qa.test.ts",
+    "tests/unattended-contracts.test.ts",
+    "tests/workflow-verification-invariants.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

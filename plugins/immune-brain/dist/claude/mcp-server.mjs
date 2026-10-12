@@ -10526,6 +10526,23 @@ function insideVerificationRoot(root, candidate) {
 function verificationPath() {
   return (process.env.PATH ?? "").split(delimiter).filter((path) => isAbsolute6(path)).join(delimiter);
 }
+var GIT_REPOSITORY_BINDINGS = new Set([
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_COMMON_DIR",
+  "GIT_NAMESPACE",
+  "GIT_PREFIX"
+]);
+function verificationEnvironment(path, processToken) {
+  const env = {};
+  for (const [name, value] of Object.entries(process.env))
+    if (value !== undefined && !GIT_REPOSITORY_BINDINGS.has(name))
+      env[name] = value;
+  return { ...env, PATH: path, IMM_VERIFICATION_PROCESS_TOKEN: processToken };
+}
 function toolPath(name, path) {
   for (const dir of path.split(delimiter).filter(isAbsolute6)) {
     const candidate = join12(dir, name);
@@ -10604,13 +10621,7 @@ async function runFixedVerification(root, command, frozen, options) {
       cwd,
       shell: false,
       detached: true,
-      env: {
-        PATH: options.path,
-        HOME: options.home,
-        TMPDIR: options.home,
-        XDG_CACHE_HOME: options.home,
-        IMM_VERIFICATION_PROCESS_TOKEN: processToken
-      },
+      env: verificationEnvironment(options.path, processToken),
       stdio: ["ignore", "pipe", "pipe"]
     });
     const killGroup = () => {
@@ -12332,7 +12343,7 @@ function createVerdictAuthority(options, registry = createMutationAuthorityRegis
 // plugins/immune-brain/runtime/claude/kernel_ports.ts
 import { existsSync as existsSync14, readFileSync as readFileSync17, writeFileSync as writeFileSync10 } from "node:fs";
 import { execFileSync as execFileSync9 } from "node:child_process";
-import { join as join23 } from "node:path";
+import { join as join22 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/enrollment_authority.ts
 var ENROLLMENT_CAPABILITY_BRAND = Symbol.for("assurance-kernel.enrollment-capability-brand");
@@ -12935,9 +12946,8 @@ function materializeDeliveryWorkspace(sourceRoot, tree) {
 }
 
 // plugins/immune-brain/runtime/assurance/qa.ts
-import { mkdtempSync as mkdtempSync3, realpathSync as realpathSync12 } from "node:fs";
-import { tmpdir as tmpdir5 } from "node:os";
-import { join as join16, sep as sep9 } from "node:path";
+import { realpathSync as realpathSync12 } from "node:fs";
+import { sep as sep9 } from "node:path";
 
 // plugins/immune-brain/runtime/assurance/qa_findings.ts
 import { randomUUID as randomUUID8 } from "node:crypto";
@@ -13000,21 +13010,15 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
       stdout_bytes: result ? Buffer.byteLength(result.stdout) : null,
       stderr_bytes: result ? Buffer.byteLength(result.stderr) : null
     }));
-    const { delivery, home, deliveryPrefix } = (() => {
-      let delivery, home;
+    const { delivery, deliveryPrefix } = (() => {
+      let delivery;
       try {
         delivery = (options._materializeDeliveryWorkspace ?? materializeDeliveryWorkspace)(snapshot.root, tree);
-        home = mkdtempSync3(join16(tmpdir5(), "imm-qa-home-"));
-        return { delivery, home, deliveryPrefix: `${realpathSync12(delivery.root)}${sep9}` };
+        return { delivery, deliveryPrefix: `${realpathSync12(delivery.root)}${sep9}` };
       } catch {
         let reason = "delivery_unavailable";
         try {
-          try {
-            delivery?.cleanup();
-          } finally {
-            if (home)
-              removeTaskOwnedTree(home);
-          }
+          delivery?.cleanup();
         } catch {
           reason = "delivery_cleanup_failed";
         }
@@ -13044,7 +13048,7 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
       }
       let result;
       try {
-        result = await (options._runFixedVerification ?? runFixedVerification)(delivery.root, command, frozen, { signal: options.signal, home, path });
+        result = await (options._runFixedVerification ?? runFixedVerification)(delivery.root, command, frozen, { signal: options.signal, path });
       } catch (error) {
         if (error instanceof VerificationAbortedError)
           throw error;
@@ -13118,11 +13122,7 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
       }
     } finally {
       try {
-        try {
-          delivery.cleanup();
-        } finally {
-          removeTaskOwnedTree(home);
-        }
+        delivery.cleanup();
       } catch {
         throw new QaPreparationError("integrity", ids, "delivery_cleanup_failed", diagnostics("integrity", "delivery_cleanup_failed"));
       }
@@ -13172,11 +13172,11 @@ function deriveAuthorizationOperation(input) {
 // plugins/immune-brain/runtime/staged_intent.ts
 import { execFileSync as execFileSync7 } from "node:child_process";
 import { readFileSync as readFileSync14, writeFileSync as writeFileSync7 } from "node:fs";
-import { join as join17 } from "node:path";
+import { join as join16 } from "node:path";
 function captureStagedIntent(root, relativePath) {
   return {
     path: relativePath,
-    bytes: readFileSync14(join17(root, relativePath)),
+    bytes: readFileSync14(join16(root, relativePath)),
     index_state: execFileSync7("git", ["ls-files", "--stage", "-z", "--", relativePath], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"]
@@ -13184,7 +13184,7 @@ function captureStagedIntent(root, relativePath) {
   };
 }
 function restoreStagedIntent(root, snapshot) {
-  writeFileSync7(join17(root, snapshot.path), snapshot.bytes);
+  writeFileSync7(join16(root, snapshot.path), snapshot.bytes);
   execFileSync7("git", ["update-index", "--force-remove", "--", snapshot.path], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
@@ -13196,7 +13196,7 @@ function restoreStagedIntent(root, snapshot) {
       stdio: ["pipe", "ignore", "pipe"]
     });
   }
-  const restoredBytes = readFileSync14(join17(root, snapshot.path));
+  const restoredBytes = readFileSync14(join16(root, snapshot.path));
   if (!restoredBytes.equals(snapshot.bytes)) {
     throw new Error("failed to restore prior intent bytes");
   }
@@ -13212,7 +13212,7 @@ function restoreStagedIntent(root, snapshot) {
 // plugins/immune-brain/runtime/unattended/batch_runner.ts
 import { spawnSync as spawnSync15 } from "node:child_process";
 import { existsSync as existsSync13 } from "node:fs";
-import { join as join22 } from "node:path";
+import { join as join21 } from "node:path";
 
 // plugins/immune-brain/runtime/unattended/batch_git.ts
 import { spawnSync as spawnSync11 } from "node:child_process";
@@ -13229,7 +13229,7 @@ import {
   rmSync as rmSync8,
   writeFileSync as writeFileSync8
 } from "node:fs";
-import { dirname as dirname11, join as join18 } from "node:path";
+import { dirname as dirname11, join as join17 } from "node:path";
 var DEFAULT_GIT_ENV = {
   ...process.env,
   GIT_AUTHOR_NAME: process.env.GIT_AUTHOR_NAME || "Immune-Brain Batch",
@@ -13441,13 +13441,13 @@ function getCommittedDeltaPaths(root) {
   return delta.stdout.split("\x00").filter((p) => p.length > 0);
 }
 function commitEvidencePath(batchId, taskId) {
-  return join18(".imm", "state", "batches", "commits", `${batchId}-${taskId}.json`);
+  return join17(".imm", "state", "batches", "commits", `${batchId}-${taskId}.json`);
 }
 function ensureSecureDirectory3(root, relativePath) {
   const segments = relativePath.split("/").filter(Boolean);
   let current = root;
   for (const segment of segments) {
-    current = join18(current, segment);
+    current = join17(current, segment);
     if (existsSync10(current)) {
       const stats = lstatSync12(current);
       if (stats.isSymbolicLink() || !stats.isDirectory()) {
@@ -13460,7 +13460,7 @@ function ensureSecureDirectory3(root, relativePath) {
   return current;
 }
 function writeFileAtomically2(root, relativePath, bytes) {
-  const target = join18(root, relativePath);
+  const target = join17(root, relativePath);
   const targetDir = dirname11(target);
   ensureSecureDirectory3(root, dirname11(relativePath));
   const stats = lstatSync12(targetDir);
@@ -13506,7 +13506,7 @@ function writeBatchCommitEvidence(root, evidence) {
 }
 function readBatchCommitEvidence(root, batchId, taskId) {
   const path = commitEvidencePath(batchId, taskId);
-  const fullPath = join18(root, path);
+  const fullPath = join17(root, path);
   if (!existsSync10(fullPath))
     return null;
   try {
@@ -13781,11 +13781,11 @@ function createDefaultBatchGitPort() {
 import { spawnSync as spawnSync14 } from "node:child_process";
 import { createHash as createHash21 } from "node:crypto";
 import { existsSync as existsSync12, realpathSync as realpathSync14 } from "node:fs";
-import { isAbsolute as isAbsolute8, join as join21 } from "node:path";
+import { isAbsolute as isAbsolute8, join as join20 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/runtime_contracts.ts
 import { existsSync as existsSync11, readFileSync as readFileSync15 } from "node:fs";
-import { dirname as dirname12, join as join19, resolve as resolve15 } from "node:path";
+import { dirname as dirname12, join as join18, resolve as resolve15 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 var RUNTIME_CONTRACTS_MANIFEST = "runtime_contracts.json";
 var RUNTIME_CONTRACTS = {
@@ -13805,10 +13805,10 @@ function runningRuntimeSource() {
 }
 function readRuntimeContracts(runtimeDir) {
   const candidates = [
-    join19(runtimeDir, RUNTIME_CONTRACTS_MANIFEST),
-    join19(runtimeDir, "kernel", RUNTIME_CONTRACTS_MANIFEST),
-    join19(runtimeDir, "runtime", "kernel", RUNTIME_CONTRACTS_MANIFEST),
-    join19(runtimeDir, "plugins", "immune-brain", "runtime", "kernel", RUNTIME_CONTRACTS_MANIFEST)
+    join18(runtimeDir, RUNTIME_CONTRACTS_MANIFEST),
+    join18(runtimeDir, "kernel", RUNTIME_CONTRACTS_MANIFEST),
+    join18(runtimeDir, "runtime", "kernel", RUNTIME_CONTRACTS_MANIFEST),
+    join18(runtimeDir, "plugins", "immune-brain", "runtime", "kernel", RUNTIME_CONTRACTS_MANIFEST)
   ];
   const path = candidates.find((candidate) => existsSync11(candidate));
   if (!path)
@@ -13879,7 +13879,7 @@ async function runFinalVerification(root, commands, options = {}) {
 
 // plugins/immune-brain/runtime/unattended/batch_delegation.ts
 import { execFileSync as execFileSync8 } from "node:child_process";
-import { join as join20 } from "node:path";
+import { join as join19 } from "node:path";
 import { writeFileSync as writeFileSync9 } from "node:fs";
 var REVISION_DELEGATION_TEXT = "Optional, off by default: also let the batch coordinator approve a Lane child's breaking Intent revisions that stay inside that child's authorized TaskIntent (acceptance changes, a narrower scope_hint). Widening scope, changing risk, goal or the bound Spec still needs your own confirmation. The grant ends with this batch.";
 var DELEGATED_ACTOR_ID = "batch-coordinator";
@@ -13930,7 +13930,7 @@ function applyDelegatedIntentRevision(input) {
     const nextRef = { path: `docs/plans/${taskId}.intent.json`, content_hash: nextHash };
     const snapshot = captureStagedIntent(root, prior.intent_ref.path);
     try {
-      writeFileSync9(join20(root, prior.intent_ref.path), `${JSON.stringify(nextIntent, null, 2)}
+      writeFileSync9(join19(root, prior.intent_ref.path), `${JSON.stringify(nextIntent, null, 2)}
 `);
       execFileSync8("git", ["add", "--", prior.intent_ref.path], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
       const prepared = await projectAssurance(root, taskId, taskDeliveryIdentity);
@@ -14299,7 +14299,7 @@ function laneRuntimeDir(root, explicit) {
   if (explicit)
     return explicit;
   try {
-    const manifest = JSON.parse(readFileSync16(join21(root, "package.json"), "utf8"));
+    const manifest = JSON.parse(readFileSync16(join20(root, "package.json"), "utf8"));
     return manifest.name === "immune-brain" ? root : null;
   } catch {
     return null;
@@ -14824,7 +14824,7 @@ async function runLaneBatch(input, persisted) {
     record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "released" } : c);
     persist();
   }
-  const lineage = existsSync12(join21(input.root, ".git")) ? classifyBatchLineage({
+  const lineage = existsSync12(join20(input.root, ".git")) ? classifyBatchLineage({
     root: input.root,
     branch: record.branch ?? "",
     expectedHead: expectedBatchHead(record),
@@ -15275,7 +15275,7 @@ function failPersistedLineage(root, existing, message) {
   return writeBatchRunState(root, record);
 }
 function reconcileLineage(root, record) {
-  if (!existsSync13(join22(root, ".git")))
+  if (!existsSync13(join21(root, ".git")))
     return { record, failure: null };
   const expected = expectedBatchHead(record);
   const lineage = classifyBatchLineage({
@@ -15298,7 +15298,7 @@ function reconcileLineage(root, record) {
   };
 }
 async function validatePersistedRun(input, record) {
-  if (!record.commits.length && record.children[0]?.state === "settled" && existsSync13(join22(input.root, ".git"))) {
+  if (!record.commits.length && record.children[0]?.state === "settled" && existsSync13(join21(input.root, ".git"))) {
     const head = spawnSync15("git", ["-C", input.root, "rev-parse", "HEAD"], { encoding: "utf8" });
     const live = head.stdout.trim();
     const expected = expectedBatchHead(record);
@@ -15328,7 +15328,7 @@ async function validatePersistedRun(input, record) {
     const git = batchGitPortOf(input);
     const evidence = await git.lookupBatchCommit(input.root, child.task_id, record.batch_id, undefined, record.branch);
     if (!evidence || evidence.commit !== child.commit) {
-      if (evidence === null && typeof child.commit === "string" && child.commit.length > 0 && existsSync13(join22(input.root, ".git"))) {
+      if (evidence === null && typeof child.commit === "string" && child.commit.length > 0 && existsSync13(join21(input.root, ".git"))) {
         const reach = spawnSync15("git", ["-C", input.root, "merge-base", "--is-ancestor", child.commit, "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
         if (reach.status !== 0) {
           throw new Error(`batch_head_lineage_broken: recorded commit ${child.commit} for ${child.task_id} is no longer reachable from HEAD`);
@@ -15768,7 +15768,7 @@ async function driveInterruptedChild(input, child) {
       const planChild = input.children.find((c) => c.task_id === child.task_id);
       const intentPath = planChild?.intent_path ?? undefined;
       const doCommit = async () => batchGitPortOf(input).commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath);
-      if (existing && !record.commits.length && existsSync13(join22(input.root, ".git")) && !ownUnpersistedBatchHead(input.root, record, existing.commit))
+      if (existing && !record.commits.length && existsSync13(join21(input.root, ".git")) && !ownUnpersistedBatchHead(input.root, record, existing.commit))
         throw new Error("first unpersisted batch commit provenance is invalid");
       const adopted = existing ?? await doCommit().catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
@@ -16299,7 +16299,7 @@ class ClaudeRuntime {
     if (!slug)
       return result;
     try {
-      if (existsSync14(join23(this.cwd, ".imm", "audit", taskId)))
+      if (existsSync14(join22(this.cwd, ".imm", "audit", taskId)))
         execFileSync9("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch };
@@ -16398,7 +16398,7 @@ class ClaudeRuntime {
       throw new Error("approve_breaking_intent_revision requires next_intent");
     const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
     const nextIntentRef = nextIntent ? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash } : undefined;
-    const sidecar = nextIntent ? join23(this.cwd, priorIntent.intent_ref.path) : undefined;
+    const sidecar = nextIntent ? join22(this.cwd, priorIntent.intent_ref.path) : undefined;
     const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
     const restoreStagedIntent2 = () => {
       if (!stagedSnapshot)
@@ -16510,7 +16510,7 @@ class ClaudeRuntime {
     const nextScope = operation.op === "revise_intent" ? operation.next_intent.scope_hint : undefined;
     if (nextScope)
       assertScopeAdditionsAreFiles(ctx.cwd, priorIntent.intent.scope_hint, nextScope);
-    const sidecar = join23(ctx.cwd, priorIntent.intent_ref.path);
+    const sidecar = join22(ctx.cwd, priorIntent.intent_ref.path);
     const priorBytes = operation.op === "revise_intent" ? readFileSync17(sidecar) : null;
     const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
     try {

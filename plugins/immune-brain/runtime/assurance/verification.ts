@@ -54,6 +54,21 @@ export function verificationPath(): string {
 	return (process.env.PATH ?? "").split(delimiter).filter(path => isAbsolute(path)).join(delimiter);
 }
 
+// A hosting process that carries one of these would point a command's Git calls
+// at its own repository instead of the delivery materialization. Every other
+// variable, including Git identity and transport settings, is user environment.
+const GIT_REPOSITORY_BINDINGS: ReadonlySet<string> = new Set([
+	"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_NAMESPACE", "GIT_PREFIX",
+]);
+
+function verificationEnvironment(path: string, processToken: string): Record<string, string> {
+	const env: Record<string, string> = {};
+	for (const [name, value] of Object.entries(process.env))
+		if (value !== undefined && !GIT_REPOSITORY_BINDINGS.has(name)) env[name] = value;
+	return { ...env, PATH: path, IMM_VERIFICATION_PROCESS_TOKEN: processToken };
+}
+
 function toolPath(name: string, path: string): string {
 	for (const dir of path.split(delimiter).filter(isAbsolute)) {
 		const candidate = join(dir, name);
@@ -112,7 +127,7 @@ export async function runFixedVerification(
 	root: string,
 	command: VerificationCommand,
 	frozen: FrozenCommand,
-	options: { signal?: AbortSignal; home: string; path: string; _processScanner?: string; _procRoot?: string } ,
+	options: { signal?: AbortSignal; path: string; _processScanner?: string; _procRoot?: string },
 ): Promise<VerificationResult> {
 	if (options.signal?.aborted) throw new VerificationAbortedError();
 	if (process.platform === "win32") throw new VerificationDescriptorError("fixed verification process-group isolation requires a POSIX host");
@@ -133,8 +148,7 @@ export async function runFixedVerification(
 			? [...frozen.interpreter_args, frozen.entry.path, ...command.argv] : command.argv;
 		const child = spawn(frozen.interpreter?.invocation_path ?? frozen.entry.invocation_path, args, {
 			cwd, shell: false, detached: true,
-			env: { PATH: options.path, HOME: options.home, TMPDIR: options.home, XDG_CACHE_HOME: options.home,
-				IMM_VERIFICATION_PROCESS_TOKEN: processToken },
+			env: verificationEnvironment(options.path, processToken),
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 		const killGroup = () => {

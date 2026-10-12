@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { execFileSync, spawn } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { assertDeliveryClean, DeliveryWorkspaceError, materializeDeliveryWorkspace, removeTaskOwnedTree, writeDeliveryTree } from "../plugins/immune-brain/runtime/assurance/delivery_workspace";
 import { captureGitTaskRevisionSnapshot } from "../plugins/immune-brain/runtime/workspace_scope";
 import { parseVerificationDescriptor, canonicalDescriptorBytes, resolveVerificationCommand, assertCommandIdentity, runFixedVerification, findingsDigest } from "../plugins/immune-brain/.pi-extension/pi-canary-verification";
@@ -20,7 +20,7 @@ function gitRepo() {
 function tree(root: string) { return git(root, ["rev-parse", "HEAD^{tree}"]); }
 async function run(root: string, overrides = {}, signal?: AbortSignal) {
 	const c = good(overrides).command, path = verificationPath();
-	return runFixedVerification(root, c, resolveVerificationCommand(root, c, path), { home: root, path, signal });
+	return runFixedVerification(root, c, resolveVerificationCommand(root, c, path), { path, signal });
 }
 
 describe("project command verification", () => {
@@ -60,7 +60,7 @@ describe("project command verification", () => {
 			const c = good({ executable: "./unheard-of-tool", argv: [] }).command;
 			const frozen = resolveVerificationCommand(root, c);
 			expect(frozen.entry.content_hash).toMatch(/^sha256:/); expect(frozen.interpreter).not.toBeNull();
-			const result = await runFixedVerification(root, c, frozen, { home: root, path: verificationPath() });
+			const result = await runFixedVerification(root, c, frozen, { path: verificationPath() });
 			expect(result.stdout).toBe("unknown-tool"); expect(result.exit_code).toBe(0);
 			writeFileSync(file, "#!/bin/sh\nexit 1\n"); expect(() => assertCommandIdentity(frozen)).toThrow("identity changed");
 		} finally { remove(root); }
@@ -150,7 +150,7 @@ describe("project command verification", () => {
 			writeFileSync(scanner, "#!/bin/sh\nexit 1\n"); chmodSync(scanner, 0o755);
 			const c = good({ argv: ["run", script] }).command, path = verificationPath();
 			await expect(runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
-				home: root, path, _processScanner: scanner,
+				path, _processScanner: scanner,
 			})).rejects.toBeInstanceOf(VerificationCleanupError);
 			pid = Number(readFileSync(join(root, "detached-scanner-failure.pid"), "utf8"));
 		} finally {
@@ -172,7 +172,7 @@ describe("project command verification", () => {
 			// Discovery is broken while the check is still running: the known child is
 			// killed anyway, and the unproven cleanup outranks the timeout outcome.
 			await expect(runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
-				home: root, path, _processScanner: scanner,
+				path, _processScanner: scanner,
 			})).rejects.toBeInstanceOf(VerificationCleanupError);
 			const pid = Number(readFileSync(join(root, "scanner-failure-running.pid"), "utf8"));
 			expect(() => process.kill(pid, 0)).toThrow();
@@ -202,7 +202,7 @@ describe("project command verification", () => {
 			].join("\n"));
 			const c = good({ argv: ["run", script, proc, String(inSession.pid), String(unrelated.pid)] }).command, path = verificationPath();
 			expect((await runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
-				home: root, path, _procRoot: proc,
+				path, _procRoot: proc,
 			})).exit_code).toBe(0);
 			expect(() => process.kill(inSession.pid!, 0)).toThrow();
 			expect(() => process.kill(unrelated.pid!, 0)).not.toThrow();
@@ -239,7 +239,7 @@ describe("project command verification", () => {
 			writeFileSync(join(proc, "999991", "stat"), "999991 (kthreadd) S 0 0 0 0");
 			const c = good({ argv: ["-e", "1"] }).command, path = verificationPath();
 			expect((await runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
-				home: root, path, _procRoot: proc,
+				path, _procRoot: proc,
 			})).exit_code).toBe(0);
 			for (const bystander of bystanders) expect(() => process.kill(bystander.pid!, 0)).not.toThrow();
 		} finally {
@@ -262,7 +262,7 @@ describe("project command verification", () => {
 			// Neither platform can prove anything about the table here, so the run must
 			// fail closed while the directly known child is still terminated first.
 			await expect(runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
-				home: root, path, _procRoot: join(root, "missing-proc"), _processScanner: scanner,
+				path, _procRoot: join(root, "missing-proc"), _processScanner: scanner,
 			})).rejects.toBeInstanceOf(VerificationCleanupError);
 			expect(() => process.kill(Number(readFileSync(join(root, "unreadable-table.pid"), "utf8")), 0)).toThrow();
 		} finally { remove(root); }
@@ -297,13 +297,13 @@ describe("project command verification", () => {
 			].join("\n"));
 			const c = good({ argv: ["run", script, proc] }).command, path = verificationPath();
 			expect((await runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
-				home: root, path, _procRoot: proc,
+				path, _procRoot: proc,
 			})).exit_code).toBe(0);
 			carrierPid = Number(readFileSync(join(root, "procfs-carrier.pid"), "utf8"));
 			expect(carrierPid).not.toBe(0);
 			expect(() => process.kill(carrierPid, 0)).toThrow();
 			await expect(runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
-				home: root, path, _procRoot: join(root, "absent-proc"),
+				path, _procRoot: join(root, "absent-proc"),
 			})).rejects.toBeInstanceOf(VerificationCleanupError);
 			carrierPid = Number(readFileSync(join(root, "procfs-carrier.pid"), "utf8"));
 		} finally {
@@ -459,5 +459,44 @@ describe("delivery workspace materialization", () => {
 			expect(existsSync(root)).toBe(false);
 			expect(lstatSync(outside).mode & 0o7777).toBe(0o500);
 		} finally { chmodSync(outside, 0o700); remove(root); remove(outside); }
+	});
+	describe("child environment", () => {
+		const BINDINGS = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_NAMESPACE", "GIT_PREFIX"];
+		// Reports the child's own environment; the test process owns restoration.
+		async function childEnv(env: Record<string, string | undefined>, withPath?: (hostPath: string, path: string) => string) {
+			const saved = new Map(Object.keys(env).concat("PATH").map(key => [key, process.env[key]] as const));
+			const root = temp(), path = verificationPath();
+			try {
+				for (const [key, value] of Object.entries(env)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+				if (withPath) process.env.PATH = withPath(process.env.PATH ?? "", path);
+				const c = good({ argv: ["-e", "console.log(JSON.stringify(process.env))"] }).command;
+				const result = await runFixedVerification(root, c, resolveVerificationCommand(root, c, path), { path });
+				return { path, env: JSON.parse(result.stdout) as Record<string, string | undefined> };
+			} finally {
+				for (const [key, value] of saved) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+				remove(root);
+			}
+		}
+		test("a command sees the host environment and the per-run process token", async () => {
+			const { env } = await childEnv({ HOME: "/imm-host-home", IMM_QA_HOST_MARKER: "kept" });
+			expect(env.HOME).toBe("/imm-host-home");
+			expect(env.IMM_QA_HOST_MARKER).toBe("kept");
+			expect(env.TMPDIR).toBe(process.env.TMPDIR);
+			expect(env.IMM_VERIFICATION_PROCESS_TOKEN).toMatch(/^[0-9a-f]{48}$/);
+		});
+		test("Git repository-binding variables stay out while other GIT_ variables arrive", async () => {
+			const { env } = await childEnv({ ...Object.fromEntries(BINDINGS.map(name => [name, "/imm-host-repository"])), GIT_AUTHOR_NAME: "Host User" });
+			for (const name of BINDINGS) expect(env[name]).toBeUndefined();
+			expect(env.GIT_AUTHOR_NAME).toBe("Host User");
+		});
+		test("PATH is the supplied absolute-entry path, not the host PATH", async () => {
+			const { env, path } = await childEnv({}, (hostPath, absolute) => `relative-bin${delimiter}${absolute}${delimiter}${hostPath}`);
+			expect(env.PATH).toBe(path);
+			expect(env.PATH).not.toContain("relative-bin");
+		});
+		test("a host without HOME yields a child without HOME", async () => {
+			const { env } = await childEnv({ HOME: undefined });
+			expect("HOME" in env).toBe(false);
+		});
 	});
 });

@@ -1,11 +1,10 @@
 import { createHash } from "node:crypto";
 import { snapshotDigest, QaPreparationError, qaPrepareObservation, type AssuranceVerdict, type SnapshotDescriptor, type QaCheckDiagnostic, type QaPreparationReason, type QaVerificationProgressInput } from "./coordinator";
 export { QaPreparationError, type QaCheckDiagnostic, type QaPreparationReason, type QaVerificationProgressInput } from "./coordinator";
-import { assertDeliveryClean, materializeDeliveryWorkspace, removeTaskOwnedTree, writeDeliveryTree } from "./delivery_workspace";
+import { assertDeliveryClean, materializeDeliveryWorkspace, writeDeliveryTree } from "./delivery_workspace";
 import { runFixedVerification, resolveVerificationCommand, assertCommandIdentity, verificationPath, VerificationAbortedError, VerificationCleanupError, VerificationLaunchError, type FrozenCommand, type VerificationDescriptor, type VerificationCommand } from "./verification";
-import { mkdtempSync, realpathSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, sep } from "node:path";
+import { realpathSync } from "node:fs";
+import { sep } from "node:path";
 import { qaFindingId } from "./qa_findings";
 import { captureGitTaskRevisionSnapshot } from "../workspace_scope";
 import { readTaskRecordRaw } from "../kernel/storage";
@@ -72,15 +71,14 @@ export async function runDeterministicQa(
 				descriptor_digest: `sha256:${createHash("sha256").update(JSON.stringify(item.descriptor)).digest("hex")}`,
 				stage, outcome, elapsed_ms: elapsed, exit_code: result?.exit_code ?? null,
 				stdout_bytes: result ? Buffer.byteLength(result.stdout) : null, stderr_bytes: result ? Buffer.byteLength(result.stderr) : null }));
-		const { delivery, home, deliveryPrefix } = (() => {
-			let delivery: ReturnType<typeof materializeDeliveryWorkspace> | undefined, home: string | undefined;
+		const { delivery, deliveryPrefix } = (() => {
+			let delivery: ReturnType<typeof materializeDeliveryWorkspace> | undefined;
 			try {
 				delivery = (options._materializeDeliveryWorkspace ?? materializeDeliveryWorkspace)(snapshot.root, tree);
-				home = mkdtempSync(join(tmpdir(), "imm-qa-home-"));
-				return { delivery, home, deliveryPrefix: `${realpathSync(delivery.root)}${sep}` };
+				return { delivery, deliveryPrefix: `${realpathSync(delivery.root)}${sep}` };
 			} catch {
 				let reason: QaPreparationReason = "delivery_unavailable";
-				try { try { delivery?.cleanup(); } finally { if (home) removeTaskOwnedTree(home); } }
+				try { delivery?.cleanup(); }
 				catch { reason = "delivery_cleanup_failed"; }
 				throw new QaPreparationError("prepare", ids, reason, diagnostics("prepare", reason));
 			}
@@ -100,7 +98,7 @@ export async function runDeterministicQa(
 			try { frozen = (options._resolveVerificationCommand ?? resolveVerificationCommand)(delivery.root, command, path); }
 			catch { throw fail("resolution", "executable_or_cwd_unavailable"); }
 			let result;
-			try { result = await (options._runFixedVerification ?? runFixedVerification)(delivery.root, command, frozen, { signal: options.signal, home, path }); }
+			try { result = await (options._runFixedVerification ?? runFixedVerification)(delivery.root, command, frozen, { signal: options.signal, path }); }
 			catch (error) {
 				if (error instanceof VerificationAbortedError) throw error;
 				if (error instanceof VerificationLaunchError) throw fail("resolution", "process_launch_failed");
@@ -153,7 +151,7 @@ export async function runDeterministicQa(
 				for (const frozen of groupCommands) if (frozen?.entry) assertCommandIdentity(frozen);
 			} catch { throw new QaPreparationError("integrity", ids, "command_identity_changed", diagnostics("integrity", "command_identity_changed")); }
 		} finally {
-			try { try { delivery.cleanup(); } finally { removeTaskOwnedTree(home); } }
+			try { delivery.cleanup(); }
 			catch { throw new QaPreparationError("integrity", ids, "delivery_cleanup_failed", diagnostics("integrity", "delivery_cleanup_failed")); }
 		}
 	}
