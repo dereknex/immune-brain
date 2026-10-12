@@ -136,6 +136,7 @@ import {
 import { reviewReworkFindings } from "../runtime/assurance/coordinator";
 import { laneWriteRefusal } from "../runtime/unattended/lane_workspace";
 import { activeTaskNotice } from "../runtime/assurance/active_task_notice";
+import { revisionOwnerEditRefusal } from "../runtime/assurance/revision_owner";
 import {
 	admitPhaseOperation,
 	applyPrompt,
@@ -361,6 +362,19 @@ export function piRunEntryRefusal(
 	return admission.ok ? null : admission;
 }
 
+/**
+ * The revision-owner guard for a Pi `edit` or `write`: refused inside the active
+ * claim's scope when this session's latest entry is a plan entry. `bash` is not
+ * intercepted. A session without an identity or entry state denies nothing.
+ */
+export function piRevisionOwnerRefusal(event: { toolName?: string; input?: unknown }, ctx: PhaseEntryContext): string | null {
+	if (event.toolName !== "edit" && event.toolName !== "write") return null;
+	const sessionId = piSessionId(ctx);
+	const state = sessionId ? piPhaseEntries().get(sessionId) ?? null : null;
+	const input = (event.input ?? {}) as { path?: unknown; file_path?: unknown };
+	return revisionOwnerEditRefusal(ctx?.cwd ?? process.cwd(), input.path ?? input.file_path, state);
+}
+
 export default function (
 	pi: ExtensionAPI,
 	dependencies: CanaryWorkExtensionDependencies = {},
@@ -458,6 +472,8 @@ export default function (
 		if (ctx) railContext = ctx;
 		const laneRefusal = laneEditRefusal(event, ctx?.cwd ?? process.cwd());
 		if (laneRefusal) return { block: true, reason: laneRefusal };
+		const ownerRefusal = piRevisionOwnerRefusal(event, ctx);
+		if (ownerRefusal) return { block: true, reason: ownerRefusal };
 		if (event.toolName === "Agent") {
 			// ADR 0017: correlate a reserved reviewer dispatch to its reservation.
 			progression.piReviewHost.observeReviewDispatch(event.input as { prompt?: unknown; subagent_type?: unknown } | undefined, event.toolCallId);

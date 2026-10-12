@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "ceremony-trim-r647-s3-revision-ownership",
-  "owner": "user",
   "goal": "Stop a session that entered the Planner from editing files inside the scope of a task another session is executing, and state in the contracts that the Loop owner prepares scope and acceptance revisions in the executing session.",
   "acceptance": [
     {
@@ -35,6 +34,7 @@
     "plugins/immune-brain/runtime/claude/mcp_server.ts",
     "tests/claude-host-package.test.ts",
     "tests/claude-phase-entry-gate.test.ts",
+    "tests/claude-phase-entry-skill-gate.test.ts",
     "tests/dual-host-assurance-conformance.test.ts",
     "tests/phase-entry.test.ts",
     "tests/pi-phase-entry-gate.test.ts",
@@ -42,5 +42,6 @@
     "tests/revision-owner-guard.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

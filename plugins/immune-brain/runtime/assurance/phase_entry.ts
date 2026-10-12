@@ -64,14 +64,16 @@ export function recognizePhaseEntry(text: string, readAlias: AliasReader): Phase
 
 export interface PhaseEntryState {
 	run_live: boolean;
+	/** The latest literal entry was a plan entry; the revision-owner guard reads it. */
+	plan_latest: boolean;
 }
 
-export const NO_PHASE_ENTRY: PhaseEntryState = { run_live: false };
+export const NO_PHASE_ENTRY: PhaseEntryState = { run_live: false, plan_latest: false };
 
 /** One literal prompt: a run entry goes live, a plan entry revokes it. */
 export function applyPrompt(state: PhaseEntryState, entry: PhaseEntry | null): PhaseEntryState {
-	if (entry === "run") return { run_live: true };
-	if (entry === "plan") return { run_live: false };
+	if (entry === "run") return { run_live: true, plan_latest: false };
+	if (entry === "plan") return { run_live: false, plan_latest: true };
 	return state;
 }
 

@@ -93,13 +93,13 @@ describe("phase entry recognition", () => {
 
 describe("phase entry state", () => {
 	test("a run entry stays live across later prompts", () => {
-		expect(after("run", null, null)).toEqual({ run_live: true });
+		expect(after("run", null, null)).toEqual({ run_live: true, plan_latest: false });
 	});
 
 	test("a later plan entry revokes the run entry; a later run entry restores it", () => {
-		expect(after("run", null, "plan")).toEqual({ run_live: false });
-		expect(after("run", "plan", null)).toEqual({ run_live: false });
-		expect(after("run", "plan", "run")).toEqual({ run_live: true });
+		expect(after("run", null, "plan")).toEqual({ run_live: false, plan_latest: true });
+		expect(after("run", "plan", null)).toEqual({ run_live: false, plan_latest: true });
+		expect(after("run", "plan", "run")).toEqual({ run_live: true, plan_latest: false });
 	});
 
 	test("the log folds to the same state and any malformed line is unreadable", () => {

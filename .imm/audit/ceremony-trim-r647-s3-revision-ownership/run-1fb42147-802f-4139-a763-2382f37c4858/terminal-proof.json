@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "ceremony-trim-r647-s3-revision-ownership",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:ceremony-trim-r647-s3-revision-ownership:2026-10-12T14:58:42.423Z",
+  "final_record_hash": "sha256:1ffd428ab46db8683d1ec77cae60be9233ec5511ba306ebfbcc10bcf82d75500",
+  "terminalized_at": "2026-10-12T14:58:42.423Z"
+}

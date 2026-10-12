@@ -512,6 +512,16 @@ when breaking, `approve_breaking_intent_revision` with the complete next intent.
 The native gate is the single user decision for a breaking revision; candidate
 preparation does not apply the revision or authorize expanded execution.
 
+Revision ownership: the Loop owner prepares a scope or acceptance revision in
+the executing session, through Kernel `revise_intent` or
+`approve_breaking_intent_revision`. A Planner session is for a change of goal,
+bound Spec design, or decomposition, and returns any other proposal to the
+executing session instead of editing the task's files. Both Hosts enforce this
+for file-edit tools only, not shell commands: a file edit inside the active
+task's scope from a session whose latest entry is a plan entry is refused with
+`revision_owner_required`, except planning sidecars under `docs/plans` and
+`docs/specs`. The rule above stays the protection against a shell write.
+
 A revision is warranted only when the goal, the `scope_hint`, or a user-visible
 commitment changes. A finding whose defect lies inside the current goal and scope
 is ordinary rework for the Loop, not a revision request: decline to prepare one

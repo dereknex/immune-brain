@@ -18,7 +18,8 @@ import { submitClaudeReview, ClaudeRuntime, settledKernelResult, type ToolMeta }
 import { probeHost } from "../plugins/immune-brain/runtime/claude/capability";
 import { createMcpRuntime as createMcpRuntimeUngated, handleJsonRpc, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { PHASE_ENTRY_RECOVERY, RUN_ENTRY_REQUIRED } from "../plugins/immune-brain/runtime/assurance/phase_entry";
-import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
+import { REVISION_OWNER_RECOVERY } from "../plugins/immune-brain/runtime/assurance/revision_owner";
+import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt, revisionOwnerHookOutput, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import { BATCH_REASONS, batchReason } from "../plugins/immune-brain/runtime/unattended/batch_reasons";
 import {
@@ -115,7 +116,7 @@ const FIXTURE_NOW = "2026-08-12T10:00:00.000Z";
 const HOST_ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
 
 /** One enrolled fixture repository both Host adapters drive below. */
-function enrolledHostFixture(taskId: string): string {
+function enrolledHostFixture(taskId: string, extraScope: string[] = []): string {
 	const root = mkdtempSync(join(tmpdir(), "imm-host-divergence-"));
 	mkdirSync(join(root, ".imm/state"), { recursive: true });
 	mkdirSync(join(root, "docs/plans"), { recursive: true });
@@ -130,10 +131,15 @@ function enrolledHostFixture(taskId: string): string {
 			`docs/plans/${taskId}.intent.json`,
 			`docs/specs/${taskId}.spec.md`,
 			`docs/specs/archive/${taskId}.spec.md`,
+			...extraScope,
 		],
 		risk: "routine",
 		revision: 1,
 	};
+	for (const path of extraScope) {
+		mkdirSync(join(root, path, ".."), { recursive: true });
+		writeFileSync(join(root, path), "export {};\n");
+	}
 	writeFileSync(join(root, "docs/plans", `${taskId}.intent.json`), `${JSON.stringify(intent, null, 2)}\n`);
 	writeFileSync(join(root, "docs/specs", `${taskId}.spec.md`), `# ${taskId}\n`);
 	execFileSync("git", ["init", "-q"], { cwd: root });
@@ -2767,6 +2773,62 @@ describe("dual-host assurance conformance", () => {
 				process.env.PATH = previousPath;
 				rmSync(shimDir, { recursive: true, force: true });
 				rmSync(root, { recursive: true, force: true });
+			}
+		});
+
+		test("denies an in-scope file edit from a plan-entry session with the same code and recovery on both Hosts", async () => {
+			const taskId = "owner-parity";
+			const fixture = enrolledHostFixture(taskId, ["src/mod/a.ts"]);
+			const store = mkdtempSync(join(tmpdir(), "imm-owner-parity-"));
+			try {
+				// Claude Code: the plan entry is recorded by the real UserPromptSubmit hook.
+				const locations = { root: store, home: store };
+				const base = { session_id: "owner-parity-session", cwd: fixture };
+				recordPhaseEntryPrompt({ hook_event_name: "UserPromptSubmit", prompt: "/immune-brain:imm-planner revise", ...base }, locations);
+				const claudeOutput = revisionOwnerHookOutput(
+					{ hook_event_name: "PreToolUse", tool_name: "Edit", tool_input: { file_path: "src/mod/a.ts" }, ...base },
+					locations,
+				);
+				const claudeReason = (JSON.parse(claudeOutput!) as { hookSpecificOutput: { permissionDecisionReason: string } })
+					.hookSpecificOutput.permissionDecisionReason;
+
+				// Pi: the registered input and tool_call handlers over the same claim.
+				const handlers = new Map<string, (event: any, ctx: any) => unknown>();
+				const piModule = require("../plugins/immune-brain/.pi-extension/imm-canary-work.ts");
+				(piModule.default as (pi: ExtensionAPI) => void)({
+					on: (name: string, handler: (event: any, ctx: any) => unknown) => { if (!handlers.has(name)) handlers.set(name, handler); },
+					registerMessageRenderer: () => {},
+					registerCommand: () => undefined,
+					registerTool: () => {},
+					events: { on() {}, emit() {} },
+				} as unknown as ExtensionAPI);
+				const ctx = {
+					cwd: fixture,
+					mode: "tui",
+					hasUI: true,
+					isIdle: () => true,
+					sessionManager: { getSessionId: () => "owner-parity-pi" },
+					ui: { setWidget() {}, setStatus() {}, notify() {}, custom: async () => undefined },
+				};
+				await handlers.get("input")!({ type: "input", text: "/skill:imm-planner revise", source: "interactive" }, ctx);
+				const piDecision = (await handlers.get("tool_call")!({ toolName: "edit", input: { path: "src/mod/a.ts" } }, ctx)) as
+					| { block?: boolean; reason?: string }
+					| undefined;
+
+				expect(piDecision?.block).toBe(true);
+				expect(piDecision?.reason).toStartWith("revision_owner_required: ");
+				// One reason code and one recovery action, identical on both Hosts.
+				expect(piDecision?.reason).toBe(claudeReason);
+				expect(claudeReason).toEndWith(`; recovery: ${REVISION_OWNER_RECOVERY}`);
+
+				// The same edit after a run entry, and a sidecar edit, are not denied on Pi.
+				expect(await handlers.get("tool_call")!({ toolName: "edit", input: { path: `docs/plans/${taskId}.intent.json` } }, ctx)).not.toHaveProperty("block");
+				expect(await handlers.get("tool_call")!({ toolName: "bash", input: { command: "echo > src/mod/a.ts" } }, ctx)).not.toHaveProperty("block");
+				await handlers.get("input")!({ type: "input", text: "/skill:imm-run", source: "interactive" }, ctx);
+				expect(await handlers.get("tool_call")!({ toolName: "write", input: { path: "src/mod/a.ts" } }, ctx)).not.toHaveProperty("block");
+			} finally {
+				rmSync(fixture, { recursive: true, force: true });
+				rmSync(store, { recursive: true, force: true });
 			}
 		});
 

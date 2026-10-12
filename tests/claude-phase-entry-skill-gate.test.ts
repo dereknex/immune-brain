@@ -158,7 +158,7 @@ describe("Claude phase entry Skill gate", () => {
 		s.prompt("/loop task-a");
 		expect(s.skill("immune-brain:imm-planner")).toBeNull();
 		const once = readPhaseEntryState("skill-gate-session", s.locations.root);
-		expect(once).toEqual({ run_live: false });
+		expect(once).toEqual({ run_live: false, plan_latest: true });
 		expect(s.skill("immune-brain:imm-planner")).toBeNull();
 		expect(s.skill("immune-brain:imm-brainstorm")).toBeNull();
 		expect(readPhaseEntryState("skill-gate-session", s.locations.root)).toEqual(once);
@@ -232,6 +232,6 @@ describe("Claude phase entry Skill gate", () => {
 		expect(s.tool("mcp__other__enroll", { task_id: "t" })).toBeNull();
 		expect(phaseEntryGateHookOutput({ hook_event_name: "PostToolUse", tool_name: "Skill", tool_input: { skill: "imm-planner" }, session_id: "x" })).toBeNull();
 		// None of them touched the run entry.
-		expect(readPhaseEntryState("skill-gate-session", s.locations.root)).toEqual({ run_live: true });
+		expect(readPhaseEntryState("skill-gate-session", s.locations.root)).toEqual({ run_live: true, plan_latest: false });
 	});
 });

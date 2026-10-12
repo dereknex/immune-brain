@@ -4,6 +4,9 @@
 // intercepted. Outside a Lane the hook answers nothing and the tool runs as
 // configured.
 //
+// Revision-owner guard: the same file-edit tools are denied inside the active
+// claim's scope in a session whose latest entry is a plan entry.
+//
 // Phase entry gate: UserPromptSubmit records which literal prompt entered
 // planning or execution; PreToolUse denies `enroll`, `start_unattended_batch`
 // and the `imm-run` Skill without a live run entry, and otherwise leaves an
@@ -31,6 +34,7 @@ import {
 	type PhaseEntryState,
 	type PhaseOperation,
 } from "../assurance/phase_entry";
+import { revisionOwnerEditRefusal } from "../assurance/revision_owner";
 import { readActiveClaimTaskId } from "../unattended/batch_preflight";
 import { appendPrivate, cacheDir, ensurePrivateDir, ownedByUs, readPrivate, sessionHash } from "./review_host";
 
@@ -163,6 +167,23 @@ function gatedOperation(payload: Record<string, unknown>): PhaseOperation | null
 	}
 	const mcp = GATED_MCP_TOOL.exec(toolName);
 	return mcp ? { kind: "tool", name: mcp[1] as GatedTool } : null;
+}
+
+/**
+ * PreToolUse revision-owner guard: a file-edit tool call inside the active
+ * claim's scope is denied when this session's latest entry is a plan entry.
+ * An unreadable entry store denies nothing; the guard is not an authority
+ * boundary (Spec ceremony-trim-r647 D7). Shell commands are not intercepted.
+ */
+export function revisionOwnerHookOutput(payload: Record<string, unknown>, locations: PhaseEntryLocations = {}): string | null {
+	if (payload.hook_event_name !== "PreToolUse" || !FILE_TOOLS.has(String(payload.tool_name))) return null;
+	const sessionId = sessionIdOf(payload);
+	if (!sessionId) return null;
+	let state: PhaseEntryState | null = null;
+	try { state = readPhaseEntryState(sessionId, locations.root ?? tmpdir(), locations.read); } catch { return null; }
+	const input = (payload.tool_input ?? {}) as { file_path?: unknown; notebook_path?: unknown };
+	const refusal = revisionOwnerEditRefusal(cwdOf(payload), input.file_path ?? input.notebook_path, state);
+	return refusal ? denyPreToolUse(refusal) : null;
 }
 
 /**

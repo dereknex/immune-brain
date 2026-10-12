@@ -1,0 +1,168 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "ceremony-trim-r647-s3-revision-ownership",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "ceremony-trim-r647-s3-revision-ownership",
+    "goal": "Stop a session that entered the Planner from editing files inside the scope of a task another session is executing, and state in the contracts that the Loop owner prepares scope and acceptance revisions in the executing session.",
+    "acceptance": [
+      {
+        "id": "CT-S3-A1",
+        "assertion": "Meet T3, D7, D8 and invariant I6 in docs/specs/ceremony-trim-r647.spec.md on Claude Code: with a plan entry as the session's latest phase entry and an active Managed claim, a file-edit tool call targeting a path inside the active scope is denied with revision_owner_required and one recovery action. Nothing is denied after a run entry, without an active claim, for a path outside the scope, for a planning sidecar under docs/plans or docs/specs, with an unreadable entry store, or for a non-file tool.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/revision-owner-guard.test.ts\",\n      \"tests/claude-phase-entry-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "CT-S3-A2",
+        "assertion": "The Pi tool_call handler applies the same decision with the same reason code and recovery action, and PhaseEntryState reports a latest plan entry without changing the existing run-entry transitions.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-phase-entry-gate.test.ts\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/phase-entry.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "CT-S3-A3",
+        "assertion": "Meet D9: the Planner and Loop contracts state who prepares which revision and that the guard covers file-edit tools only; the packaged Claude bundle matches its source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/revision-owner-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/ceremony-trim-s3-revision-ownership.md",
+      "docs/plans/ceremony-trim-r647-s3-revision-ownership.intent.json",
+      "docs/specs/ceremony-trim-r647.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/hooks/hooks.json",
+      "plugins/immune-brain/runtime/assurance/phase_entry.ts",
+      "plugins/immune-brain/runtime/assurance/revision_owner.ts",
+      "plugins/immune-brain/runtime/claude/lane_guard.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/claude-phase-entry-gate.test.ts",
+      "tests/claude-phase-entry-skill-gate.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/phase-entry.test.ts",
+      "tests/pi-phase-entry-gate.test.ts",
+      "tests/revision-owner-contract.test.ts",
+      "tests/revision-owner-guard.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/ceremony-trim-r647-s3-revision-ownership.intent.json",
+    "content_hash": "sha256:0599a6859f6e5b1f84c7f5ce53619eaebe96e8d1f644ee4b1dec21b5a332d588"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:bcf7345de9d22c50b2176741b7a75edb44b1f57f0bfad140acdd587c7047adec",
+  "git_base_head": "8d6cf264ebc7ab62d35e419368b513d13cd5c4ee",
+  "attestations": [
+    {
+      "id": "approval-qa-787fe8cd",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:0599a6859f6e5b1f84c7f5ce53619eaebe96e8d1f644ee4b1dec21b5a332d588",
+      "diff_hash": "sha256:dfec2fde26e81e9a826703a0ed913eab1675d100624571269dc7e81dd0b3ab7b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:3c3bf6ee0b644800764bd93d787044ab141e45da4ece651bf2c3b7dc582f6ce6",
+      "acceptance_results": [
+        {
+          "acceptance_id": "CT-S3-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:3c3bf6ee0b644800764bd93d787044ab141e45da4ece651bf2c3b7dc582f6ce6"
+        },
+        {
+          "acceptance_id": "CT-S3-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:3c3bf6ee0b644800764bd93d787044ab141e45da4ece651bf2c3b7dc582f6ce6"
+        },
+        {
+          "acceptance_id": "CT-S3-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:3c3bf6ee0b644800764bd93d787044ab141e45da4ece651bf2c3b7dc582f6ce6"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-bb7b257a",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:0599a6859f6e5b1f84c7f5ce53619eaebe96e8d1f644ee4b1dec21b5a332d588",
+      "diff_hash": "sha256:dfec2fde26e81e9a826703a0ed913eab1675d100624571269dc7e81dd0b3ab7b",
+      "actor_id": "parent-mediated-review",
+      "summary": "Revision-owner guard denies in-scope file edits from a latest-plan-entry session identically on Claude and Pi, fails open on unreadable state, exempts planning sidecars, leaves run-entry transitions unchanged, and the Planner/Loop contracts and packaged Claude bundle match source.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "8d6cf264ebc7ab62d35e419368b513d13cd5c4ee",
+        "review_commit": "603f50cbfe71c1fe30cb613b34e8e44be717b7aa",
+        "review_tree": "cc6487a378d8c103828a9064769e70f3839538b1",
+        "manifest_digest": "sha256:ea13a7cf4dfaf8ac0bf6879a385c9163f1827b48c24eb5557491d2130c73581e"
+      },
+      "reviewer_verdict_sha256": "sha256:b4851e06aa4289c99487098c384cda9c22b1d9eb6cda5b21227e17bee7a611bf"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:ceremony-trim-r647-s3-revision-ownership:2026-10-12T14:33:58.177Z",
+      "at": "2026-10-12T14:33:58.177Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:e31b1e36b0319071c612cd4caaca28d9180df7aafd2a0b3dd6a4c029619660b8",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-91f45d804151a572",
+        "issued_at": "2026-10-12T14:34:41.829Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:ceremony-trim-r647-s3-revision-ownership:2026-10-12T14:56:00.289Z",
+      "at": "2026-10-12T14:56:00.289Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/ceremony-trim-r647-s3-revision-ownership.intent.json"
+    },
+    {
+      "id": "record_approval:ceremony-trim-r647-s3-revision-ownership:2026-10-12T14:57:07.984Z",
+      "at": "2026-10-12T14:57:07.984Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-787fe8cd\naction_v2_sha256:4076886ec5ef30074f5175d316ff67bc8c416dc7e05bba70f3374de6936e15ac",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-12T14:57:07.984Z"
+      }
+    },
+    {
+      "id": "record_approval:ceremony-trim-r647-s3-revision-ownership:2026-10-12T14:58:40.377Z",
+      "at": "2026-10-12T14:58:40.377Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-bb7b257a\naction_v2_sha256:ab1156393389950edad84b7d8b83386a1d0ea525c46a4804a8636eb0baeccfe2",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-12T14:58:40.377Z"
+      }
+    },
+    {
+      "id": "complete:ceremony-trim-r647-s3-revision-ownership:2026-10-12T14:58:42.423Z",
+      "at": "2026-10-12T14:58:42.423Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:ca4dadb96dc881658421999f39eb58c3321ab82854c68efa103dae1b0dc98e8f"
+    }
+  ]
+}

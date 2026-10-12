@@ -95,12 +95,12 @@ function recognizePhaseEntry(text, readAlias) {
     return null;
   return ALIAS_TARGETS[[...targets][0]] ?? null;
 }
-var NO_PHASE_ENTRY = { run_live: false };
+var NO_PHASE_ENTRY = { run_live: false, plan_latest: false };
 function applyPrompt(state, entry) {
   if (entry === "run")
-    return { run_live: true };
+    return { run_live: true, plan_latest: false };
   if (entry === "plan")
-    return { run_live: false };
+    return { run_live: false, plan_latest: true };
   return state;
 }
 function phaseEntryLogLine(entry) {
@@ -793,7 +793,7 @@ function parseHookStdin(raw) {
 // plugins/immune-brain/runtime/claude/lane_guard.ts
 import { lstatSync as lstatSync10, rmSync as rmSync5 } from "node:fs";
 import { homedir, tmpdir as tmpdir2 } from "node:os";
-import { join as join9 } from "node:path";
+import { join as join10 } from "node:path";
 
 // plugins/immune-brain/runtime/unattended/lane_workspace.ts
 import { spawnSync } from "node:child_process";
@@ -9221,6 +9221,66 @@ function readAliasFile(path, maxBytes = MAX_ALIAS_BYTES) {
   }
 }
 
+// plugins/immune-brain/runtime/assurance/revision_owner.ts
+import { spawnSync as spawnSync9 } from "node:child_process";
+import { realpathSync as realpathSync8 } from "node:fs";
+import { basename as basename3, dirname as dirname8, isAbsolute as isAbsolute4, join as join9, relative as relative5, resolve as resolve11, sep as sep6 } from "node:path";
+var REVISION_OWNER_REQUIRED = "revision_owner_required";
+var REVISION_OWNER_RECOVERY = "return the proposed change to the executing session, which prepares the revision through its Loop";
+var PLANNING_SIDECARS = ["docs/plans", "docs/specs"];
+function revisionOwnerRefusal(state, activeScope, path) {
+  if (!state?.plan_latest || !activeScope || activeScope.length === 0)
+    return null;
+  if (PLANNING_SIDECARS.some((dir) => pathMatchesScope(path, dir)))
+    return null;
+  if (!activeScope.some((entry) => pathMatchesScope(path, entry)))
+    return null;
+  return {
+    reason_code: REVISION_OWNER_REQUIRED,
+    detail: `${path} is inside the scope of the task another session is executing, and this session's latest entry is a plan entry`,
+    recovery_action: REVISION_OWNER_RECOVERY
+  };
+}
+function revisionOwnerMessage(refusal) {
+  return `${refusal.reason_code}: ${refusal.detail}; recovery: ${refusal.recovery_action}`;
+}
+function realpathOfNearest2(path) {
+  let current = path;
+  const suffix = [];
+  for (;; ) {
+    try {
+      return join9(realpathSync8(current), ...suffix.reverse());
+    } catch {
+      const parent = dirname8(current);
+      if (parent === current)
+        return path;
+      suffix.push(basename3(current));
+      current = parent;
+    }
+  }
+}
+function revisionOwnerEditRefusal(cwd, target, state) {
+  if (typeof target !== "string" || !target || !state?.plan_latest)
+    return null;
+  try {
+    const top = spawnSync9("git", ["-C", cwd, "rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    const root = realpathOfNearest2(top.status === 0 ? (top.stdout ?? "").trim() : cwd);
+    const taskId = readActiveClaimTaskId(root);
+    if (!taskId)
+      return null;
+    const record = readTaskRecordRaw(root, taskId).record;
+    if (!record || record.lifecycle === "done" || record.lifecycle === "stopped")
+      return null;
+    const inside = relative5(root, realpathOfNearest2(isAbsolute4(target) ? target : resolve11(cwd, target)));
+    if (inside === "" || inside === ".." || inside.startsWith(`..${sep6}`) || isAbsolute4(inside))
+      return null;
+    const refusal = revisionOwnerRefusal(state, record.intent_snapshot.scope_hint, inside.split(sep6).join("/"));
+    return refusal ? revisionOwnerMessage(refusal) : null;
+  } catch {
+    return null;
+  }
+}
+
 // plugins/immune-brain/runtime/claude/lane_guard.ts
 var FILE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 var GATED_MCP_TOOL = /^mcp__.*immune-brain.*__(enroll|start_unattended_batch)$/;
@@ -9249,10 +9309,10 @@ async function activeTaskHookOutput(payload) {
   return JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: notice } });
 }
 function entryLogPath(sessionId, root) {
-  return join9(cacheDir(root), `${sessionHash(sessionId)}.entry`);
+  return join10(cacheDir(root), `${sessionHash(sessionId)}.entry`);
 }
 function admissionPath(toolUseId, root) {
-  return join9(cacheDir(root), `${sessionHash(toolUseId)}.admit`);
+  return join10(cacheDir(root), `${sessionHash(toolUseId)}.admit`);
 }
 function sessionIdOf(payload) {
   return typeof payload.session_id === "string" ? payload.session_id : "";
@@ -9262,8 +9322,8 @@ function cwdOf(payload) {
 }
 function claudeAliasReader(cwd, home) {
   return (name) => {
-    for (const dir of [join9(cwd, ".claude", "commands"), join9(home, ".claude", "commands")]) {
-      const body = readAliasFile(join9(dir, `${name}.md`));
+    for (const dir of [join10(cwd, ".claude", "commands"), join10(home, ".claude", "commands")]) {
+      const body = readAliasFile(join10(dir, `${name}.md`));
       if (body !== null)
         return body;
     }
@@ -9325,6 +9385,22 @@ function gatedOperation(payload) {
   }
   const mcp = GATED_MCP_TOOL.exec(toolName);
   return mcp ? { kind: "tool", name: mcp[1] } : null;
+}
+function revisionOwnerHookOutput(payload, locations = {}) {
+  if (payload.hook_event_name !== "PreToolUse" || !FILE_TOOLS.has(String(payload.tool_name)))
+    return null;
+  const sessionId = sessionIdOf(payload);
+  if (!sessionId)
+    return null;
+  let state = null;
+  try {
+    state = readPhaseEntryState(sessionId, locations.root ?? tmpdir2(), locations.read);
+  } catch {
+    return null;
+  }
+  const input = payload.tool_input ?? {};
+  const refusal = revisionOwnerEditRefusal(cwdOf(payload), input.file_path ?? input.notebook_path, state);
+  return refusal ? denyPreToolUse(refusal) : null;
 }
 function phaseEntryGateHookOutput(payload, locations = {}) {
   if (payload.hook_event_name !== "PreToolUse")
@@ -9393,7 +9469,7 @@ function consumePhaseAdmission(toolUseId, operation, root = tmpdir2()) {
 import { randomUUID as randomUUID7 } from "node:crypto";
 import { execFileSync as execFileSync4 } from "node:child_process";
 import { existsSync as existsSync9 } from "node:fs";
-import { join as join13, resolve as resolve12 } from "node:path";
+import { join as join14, resolve as resolve13 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/application.ts
 function applyTaskAction(input) {
@@ -9955,7 +10031,7 @@ function createMutationAuthorityRegistry() {
 }
 
 // plugins/immune-brain/runtime/verification_descriptor.ts
-import { isAbsolute as isAbsolute4 } from "node:path";
+import { isAbsolute as isAbsolute5 } from "node:path";
 var VERIFICATION_DESCRIPTOR_CONTRACT = "assurance_kernel/verification_descriptor/v2";
 var VERIFICATION_DESCRIPTOR_BOUNDS = {
   max_arg_tokens: 64,
@@ -9982,7 +10058,7 @@ function object(value, fields, label) {
   return raw;
 }
 function verificationRelativePath(value, label) {
-  if (typeof value !== "string" || !value || value.length > 512 || /[\x00-\x1f\x7f\\]/.test(value) || isAbsolute4(value) || value.startsWith("~") || value.split("/").includes("..") || value.split("/").includes(".git") || value.split("/").length > VERIFICATION_DESCRIPTOR_BOUNDS.max_cwd_depth)
+  if (typeof value !== "string" || !value || value.length > 512 || /[\x00-\x1f\x7f\\]/.test(value) || isAbsolute5(value) || value.startsWith("~") || value.split("/").includes("..") || value.split("/").includes(".git") || value.split("/").length > VERIFICATION_DESCRIPTOR_BOUNDS.max_cwd_depth)
     throw new VerificationDescriptorError(`${label} must stay inside the repository`);
   return value.split("/").filter((part) => part && part !== ".").join("/") || ".";
 }
@@ -10055,11 +10131,11 @@ import {
   writeFileSync as writeFileSync6,
   statSync as statSync3,
   readFileSync as readFileSync10,
-  realpathSync as realpathSync8,
+  realpathSync as realpathSync9,
   chmodSync
 } from "node:fs";
 import { tmpdir as tmpdir3 } from "node:os";
-import { join as join10 } from "node:path";
+import { join as join11 } from "node:path";
 var MAX_REVIEW_BUNDLE_BYTES = 2 * 1024 * 1024;
 function bundleDigest(bundle) {
   return `sha256:${createHash14("sha256").update(JSON.stringify(bundle)).digest("hex")}`;
@@ -10261,7 +10337,7 @@ function reviewRefTaskSegment(taskId) {
   return `_${Buffer.from(taskId, "utf8").toString("base64url")}`;
 }
 function workspaceRefSegment(root) {
-  return createHash14("sha256").update(realpathSync8(root)).digest("hex").slice(0, 16);
+  return createHash14("sha256").update(realpathSync9(root)).digest("hex").slice(0, 16);
 }
 function reviewRef(root, taskId, reviewCommit) {
   const taskSegment = reviewRefTaskSegment(taskId);
@@ -10283,9 +10359,9 @@ function publishReviewRevision(root, snapshot, diffHash, taskId) {
     throw new Error("review revision base has invalid identity");
   if (!REVISION_DIFF_HASH.test(diffHash))
     throw new Error("review revision diff hash has invalid identity");
-  const indexDirectory = mkdtempSync(join10(tmpdir3(), "imm-review-index-"));
+  const indexDirectory = mkdtempSync(join11(tmpdir3(), "imm-review-index-"));
   try {
-    const indexFile = join10(indexDirectory, "index");
+    const indexFile = join11(indexDirectory, "index");
     const env = { GIT_INDEX_FILE: indexFile };
     gitEvidence(root, ["read-tree", snapshot.base_tree], env);
     for (const [path, entry] of Object.entries(snapshot.changed_paths)) {
@@ -10378,11 +10454,11 @@ function captureReviewManifest(root, input) {
   return manifest;
 }
 function writeNativeReviewEvidence(payload) {
-  const rawDirectory = mkdtempSync(join10(tmpdir3(), "imm-canary-native-review-"));
+  const rawDirectory = mkdtempSync(join11(tmpdir3(), "imm-canary-native-review-"));
   try {
-    const directory = realpathSync8(rawDirectory);
+    const directory = realpathSync9(rawDirectory);
     chmodSync(directory, 493);
-    const path = join10(directory, "evidence.json");
+    const path = join11(directory, "evidence.json");
     writeFileSync6(path, JSON.stringify(payload), { encoding: "utf8", mode: 420, flag: "wx" });
     assertReviewArtifact(path);
     return {
@@ -10395,7 +10471,7 @@ function writeNativeReviewEvidence(payload) {
   }
 }
 function assertReviewArtifact(path) {
-  const targetPath = realpathSync8(path);
+  const targetPath = realpathSync9(path);
   let stat;
   try {
     stat = statSync3(targetPath);
@@ -10415,8 +10491,8 @@ import { createHash as createHash17, randomUUID as randomUUID6 } from "node:cryp
 // plugins/immune-brain/runtime/assurance/verification.ts
 import { createHash as createHash15, randomBytes } from "node:crypto";
 import { execFileSync as execFileSync3, spawn as spawn2 } from "node:child_process";
-import { accessSync, constants as constants6, readFileSync as readFileSync11, readdirSync as readdirSync5, realpathSync as realpathSync9, statSync as statSync4 } from "node:fs";
-import { delimiter, isAbsolute as isAbsolute5, join as join11, relative as relative5, resolve as resolve11, sep as sep6 } from "node:path";
+import { accessSync, constants as constants6, readFileSync as readFileSync11, readdirSync as readdirSync5, realpathSync as realpathSync10, statSync as statSync4 } from "node:fs";
+import { delimiter, isAbsolute as isAbsolute6, join as join12, relative as relative6, resolve as resolve12, sep as sep7 } from "node:path";
 class VerificationAbortedError extends Error {
   constructor() {
     super("fixed verification aborted");
@@ -10440,19 +10516,19 @@ class VerificationCleanupError extends Error {
 var CLEANUP_CONFIRM_TIMEOUT_MS = 2000;
 var CLEANUP_CONFIRM_POLL_MS = 25;
 function insideVerificationRoot(root, candidate) {
-  const realRoot = realpathSync9(root);
-  const real = realpathSync9(candidate);
-  const rel = relative5(realRoot, real);
-  if (rel === ".." || rel.startsWith(`..${sep6}`) || isAbsolute5(rel))
+  const realRoot = realpathSync10(root);
+  const real = realpathSync10(candidate);
+  const rel = relative6(realRoot, real);
+  if (rel === ".." || rel.startsWith(`..${sep7}`) || isAbsolute6(rel))
     throw new VerificationDescriptorError("verification path escapes the materialization");
   return real;
 }
 function verificationPath() {
-  return (process.env.PATH ?? "").split(delimiter).filter((path) => isAbsolute5(path)).join(delimiter);
+  return (process.env.PATH ?? "").split(delimiter).filter((path) => isAbsolute6(path)).join(delimiter);
 }
 function toolPath(name, path) {
-  for (const dir of path.split(delimiter).filter(isAbsolute5)) {
-    const candidate = join11(dir, name);
+  for (const dir of path.split(delimiter).filter(isAbsolute6)) {
+    const candidate = join12(dir, name);
     try {
       accessSync(candidate, constants6.X_OK);
       if (statSync4(candidate).isFile())
@@ -10463,7 +10539,7 @@ function toolPath(name, path) {
 }
 function identity(path) {
   try {
-    const real = realpathSync9(path);
+    const real = realpathSync10(path);
     accessSync(real, constants6.X_OK);
     const stat = statSync4(real);
     if (!stat.isFile())
@@ -10474,8 +10550,8 @@ function identity(path) {
   }
 }
 function resolveVerificationCommand(root, command, path = verificationPath()) {
-  insideVerificationRoot(root, resolve11(root, command.cwd));
-  const entry = identity(command.executable.startsWith("./") ? insideVerificationRoot(root, resolve11(root, command.executable)) : toolPath(command.executable, path));
+  insideVerificationRoot(root, resolve12(root, command.cwd));
+  const entry = identity(command.executable.startsWith("./") ? insideVerificationRoot(root, resolve12(root, command.executable)) : toolPath(command.executable, path));
   const prefix = readFileSync11(entry.path).subarray(0, 512).toString("utf8");
   let interpreter = null;
   let interpreter_args = [];
@@ -10486,7 +10562,7 @@ function resolveVerificationCommand(root, command, path = verificationPath()) {
       throw new VerificationDescriptorError("verification interpreter declaration is unbounded");
     const parts = prefix.slice(2, lineEnd).trim().split(/\s+/);
     const name = parts.shift();
-    if (!isAbsolute5(name))
+    if (!isAbsolute6(name))
       throw new VerificationDescriptorError("verification interpreter must be absolute");
     if (name === "/usr/bin/env" || name === "/bin/env") {
       if (parts.length !== 1 || !/^[A-Za-z0-9_][A-Za-z0-9_.+-]*$/.test(parts[0]))
@@ -10514,7 +10590,7 @@ async function runFixedVerification(root, command, frozen, options) {
     throw new VerificationAbortedError;
   if (process.platform === "win32")
     throw new VerificationDescriptorError("fixed verification process-group isolation requires a POSIX host");
-  const cwd = insideVerificationRoot(root, resolve11(root, command.cwd));
+  const cwd = insideVerificationRoot(root, resolve12(root, command.cwd));
   assertCommandIdentity(frozen);
   const processScanner = process.platform === "linux" ? null : identity(options._processScanner ?? toolPath("ps", verificationPath()));
   const procRoot = options._procRoot ?? "/proc";
@@ -10561,7 +10637,7 @@ async function runFixedVerification(root, command, frozen, options) {
     };
     const procEnviron = (pid) => {
       try {
-        return readFileSync11(join11(procRoot, String(pid), "environ"), "utf8");
+        return readFileSync11(join12(procRoot, String(pid), "environ"), "utf8");
       } catch {
         return null;
       }
@@ -10569,7 +10645,7 @@ async function runFixedVerification(root, command, frozen, options) {
     const procSession = (entry) => {
       let stat;
       try {
-        stat = readFileSync11(join11(procRoot, entry, "stat"), "utf8");
+        stat = readFileSync11(join12(procRoot, entry, "stat"), "utf8");
       } catch (error) {
         if (error.code === "ENOENT")
           return null;
@@ -10780,9 +10856,9 @@ function createInvocationRegistry() {
 // plugins/immune-brain/runtime/role_prompt_bridge.ts
 import { createHash as createHash16 } from "node:crypto";
 import { existsSync as existsSync8, readFileSync as readFileSync12 } from "node:fs";
-import { join as join12, dirname as dirname8 } from "node:path";
+import { join as join13, dirname as dirname9 } from "node:path";
 import { fileURLToPath } from "node:url";
-var RUNTIME_DIR = dirname8(fileURLToPath(import.meta.url));
+var RUNTIME_DIR = dirname9(fileURLToPath(import.meta.url));
 var INTERNAL_ROLE_PROMPTS = {
   qa: { file: "qa.md", authority: "qa", tool_policy: "no tools" },
   "code-review": {
@@ -10842,14 +10918,14 @@ function roleSpec(role) {
 }
 function rolePromptSearchDirs(moduleDir) {
   return [
-    join12(moduleDir, "..", "dist", "role-prompts"),
-    join12(moduleDir, "..", "role-prompts")
+    join13(moduleDir, "..", "dist", "role-prompts"),
+    join13(moduleDir, "..", "role-prompts")
   ];
 }
 function loadRolePrompt(role) {
   const spec = roleSpec(role);
   for (const dir of rolePromptSearchDirs(RUNTIME_DIR)) {
-    const path = join12(dir, spec.file);
+    const path = join13(dir, spec.file);
     if (existsSync8(path))
       return readFileSync12(path, "utf8");
   }
@@ -12038,7 +12114,7 @@ function buildSnapshot(input) {
     dirty_files: [...input.dirty_files ?? []].sort(),
     review_bundle_digest: input.review_bundle_digest ?? null,
     ...input.review_revision ? { review_revision: input.review_revision } : {},
-    root: resolve12(input.root)
+    root: resolve13(input.root)
   };
 }
 async function ensureReviewRevision(root, taskId, projection) {
@@ -12160,7 +12236,7 @@ function stagePlanningArtifactTransition(root, record) {
     intentArchive,
     ...specActive ? [specActive, specActive.replace("docs/specs/", "docs/specs/archive/")] : []
   ];
-  const paths = candidates.filter((path) => existsSync9(join13(root, path)) || execFileSync4("git", ["ls-files", "--cached", "--", path], { cwd: root, encoding: "utf8" }).trim().length > 0);
+  const paths = candidates.filter((path) => existsSync9(join14(root, path)) || execFileSync4("git", ["ls-files", "--cached", "--", path], { cwd: root, encoding: "utf8" }).trim().length > 0);
   if (paths.length === 0)
     return;
   execFileSync4("git", ["add", "--", ...paths], {
@@ -12256,7 +12332,7 @@ function createVerdictAuthority(options, registry = createMutationAuthorityRegis
 // plugins/immune-brain/runtime/claude/kernel_ports.ts
 import { existsSync as existsSync14, readFileSync as readFileSync17, writeFileSync as writeFileSync10 } from "node:fs";
 import { execFileSync as execFileSync9 } from "node:child_process";
-import { join as join22 } from "node:path";
+import { join as join23 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/enrollment_authority.ts
 var ENROLLMENT_CAPABILITY_BRAND = Symbol.for("assurance-kernel.enrollment-capability-brand");
@@ -12553,7 +12629,7 @@ function enrollCanaryTask(root, input, registry) {
 }
 
 // plugins/immune-brain/runtime/assurance/enrollment_git_base.ts
-import { execFileSync as execFileSync5, spawnSync as spawnSync9 } from "node:child_process";
+import { execFileSync as execFileSync5, spawnSync as spawnSync10 } from "node:child_process";
 function git4(root, args, input, env = process.env) {
   return execFileSync5("git", args, { cwd: root, encoding: "utf8", input, env, stdio: ["pipe", "pipe", "pipe"] }).trim();
 }
@@ -12566,8 +12642,8 @@ function inspectEnrollmentGitBase(root) {
   const branch = git4(root, ["symbolic-ref", "--no-recurse", "HEAD"]);
   if (!branch.startsWith("refs/heads/"))
     throw new Error("Enrollment HEAD must name a local branch");
-  const ref = spawnSync9("git", ["show-ref", "--verify", "--quiet", branch], { cwd: root });
-  const symbolic = spawnSync9("git", ["symbolic-ref", "-q", branch], { cwd: root });
+  const ref = spawnSync10("git", ["show-ref", "--verify", "--quiet", branch], { cwd: root });
+  const symbolic = spawnSync10("git", ["symbolic-ref", "-q", branch], { cwd: root });
   if (ref.status !== 1 || symbolic.status !== 1)
     throw new Error("Enrollment Git HEAD is invalid; only an absent branch can be initialized");
   return { state: "unborn", branch };
@@ -12577,7 +12653,7 @@ function enrollmentGitBaseNotice(base) {
 }
 function identityEnv(root) {
   const configured = (key) => {
-    const result = spawnSync9("git", ["config", "--get", key], { cwd: root, encoding: "utf8" });
+    const result = spawnSync10("git", ["config", "--get", key], { cwd: root, encoding: "utf8" });
     if (result.status !== 0 && result.status !== 1)
       throw new Error(`Cannot read Git identity: ${key}`);
     return result.stdout?.trim() ?? "";
@@ -12630,9 +12706,9 @@ import { createHash as createHash19 } from "node:crypto";
 // plugins/immune-brain/runtime/assurance/delivery_workspace.ts
 import { execFileSync as execFileSync6 } from "node:child_process";
 import { createHash as createHash18 } from "node:crypto";
-import { chmodSync as chmodSync2, lstatSync as lstatSync11, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync2, readdirSync as readdirSync6, readFileSync as readFileSync13, readlinkSync as readlinkSync2, realpathSync as realpathSync10, rmSync as rmSync7 } from "node:fs";
+import { chmodSync as chmodSync2, lstatSync as lstatSync11, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync2, readdirSync as readdirSync6, readFileSync as readFileSync13, readlinkSync as readlinkSync2, realpathSync as realpathSync11, rmSync as rmSync7 } from "node:fs";
 import { tmpdir as tmpdir4 } from "node:os";
-import { dirname as dirname9, isAbsolute as isAbsolute6, join as join14, parse, relative as relative6, resolve as resolve13, sep as sep7 } from "node:path";
+import { dirname as dirname10, isAbsolute as isAbsolute7, join as join15, parse, relative as relative7, resolve as resolve14, sep as sep8 } from "node:path";
 
 class DeliveryWorkspaceError extends Error {
   constructor(message) {
@@ -12654,7 +12730,7 @@ function removeTaskOwnedTree(root) {
       return;
     chmodSync2(path, stat.mode & 4095 | 448);
     for (const name of readdirSync6(path))
-      makeDirectoriesWritable(join14(path, name));
+      makeDirectoriesWritable(join15(path, name));
   };
   makeDirectoriesWritable(root);
   rmSync7(root, { recursive: true, force: true });
@@ -12688,24 +12764,24 @@ function assertTree(tree) {
     throw new DeliveryWorkspaceError("delivery tree has invalid identity");
 }
 function assertInside(root, candidate, label) {
-  const rel = relative6(root, candidate);
-  if (rel.startsWith(`..${sep7}`) || rel === ".." || isAbsolute6(rel))
+  const rel = relative7(root, candidate);
+  if (rel.startsWith(`..${sep8}`) || rel === ".." || isAbsolute7(rel))
     throw new DeliveryWorkspaceError(`delivery ${label} escapes materialization: ${rel}`);
 }
 function resolvedSymlinkTarget(path) {
   const target = readlinkSync2(path);
-  let current = isAbsolute6(target) ? parse(target).root : parse(path).root;
-  let pending = (isAbsolute6(target) ? target.split(sep7) : [...relative6(current, dirname9(path)).split(sep7), ...target.split(sep7)]).filter(Boolean);
+  let current = isAbsolute7(target) ? parse(target).root : parse(path).root;
+  let pending = (isAbsolute7(target) ? target.split(sep8) : [...relative7(current, dirname10(path)).split(sep8), ...target.split(sep8)]).filter(Boolean);
   let links = 0;
   while (pending.length) {
     const part = pending.shift();
     if (part === ".")
       continue;
     if (part === "..") {
-      current = dirname9(current);
+      current = dirname10(current);
       continue;
     }
-    const next = join14(current, part);
+    const next = join15(current, part);
     try {
       if (!lstatSync11(next).isSymbolicLink()) {
         current = next;
@@ -12714,9 +12790,9 @@ function resolvedSymlinkTarget(path) {
       if (++links > 40)
         throw new DeliveryWorkspaceError("delivery symlink chain is too deep");
       const nested = readlinkSync2(next);
-      if (isAbsolute6(nested))
+      if (isAbsolute7(nested))
         current = parse(nested).root;
-      pending = [...nested.split(sep7).filter(Boolean), ...pending];
+      pending = [...nested.split(sep8).filter(Boolean), ...pending];
     } catch (error) {
       if (error.code !== "ENOENT")
         throw error;
@@ -12726,40 +12802,40 @@ function resolvedSymlinkTarget(path) {
   return current;
 }
 function assertNoEscapingSymlinks(root, dir = root) {
-  const realRoot = realpathSync10(root);
+  const realRoot = realpathSync11(root);
   for (const name of readdirSync6(dir)) {
-    const path = join14(dir, name);
+    const path = join15(dir, name);
     const stat = lstatSync11(path);
     if (stat.isSymbolicLink()) {
-      assertInside(realRoot, resolvedSymlinkTarget(path), `symlink ${relative6(root, path)}`);
+      assertInside(realRoot, resolvedSymlinkTarget(path), `symlink ${relative7(root, path)}`);
     } else if (stat.isDirectory()) {
       assertNoEscapingSymlinks(root, path);
     }
   }
 }
 function writeDeliveryTree(sourceRoot, snapshot) {
-  const indexDirectory = mkdtempSync2(join14(tmpdir4(), "imm-delivery-index-"));
+  const indexDirectory = mkdtempSync2(join15(tmpdir4(), "imm-delivery-index-"));
   try {
     git5(sourceRoot, ["read-tree", snapshot.base_tree], {
-      GIT_INDEX_FILE: join14(indexDirectory, "index"),
-      GIT_DIR: join14(sourceRoot, ".git")
+      GIT_INDEX_FILE: join15(indexDirectory, "index"),
+      GIT_DIR: join15(sourceRoot, ".git")
     });
     for (const [path, entry] of Object.entries(snapshot.changed_paths)) {
       if (entry.oid && entry.mode) {
         git5(sourceRoot, ["update-index", "--add", "--cacheinfo", `${entry.mode},${entry.oid},${path}`], {
-          GIT_INDEX_FILE: join14(indexDirectory, "index"),
-          GIT_DIR: join14(sourceRoot, ".git")
+          GIT_INDEX_FILE: join15(indexDirectory, "index"),
+          GIT_DIR: join15(sourceRoot, ".git")
         });
       } else {
         git5(sourceRoot, ["update-index", "--force-remove", "--", path], {
-          GIT_INDEX_FILE: join14(indexDirectory, "index"),
-          GIT_DIR: join14(sourceRoot, ".git")
+          GIT_INDEX_FILE: join15(indexDirectory, "index"),
+          GIT_DIR: join15(sourceRoot, ".git")
         });
       }
     }
     const next = git5(sourceRoot, ["write-tree"], {
-      GIT_INDEX_FILE: join14(indexDirectory, "index"),
-      GIT_DIR: join14(sourceRoot, ".git")
+      GIT_INDEX_FILE: join15(indexDirectory, "index"),
+      GIT_DIR: join15(sourceRoot, ".git")
     });
     assertTree(next);
     return next;
@@ -12771,7 +12847,7 @@ function workspaceFiles(root, dir = root, result = Object.create(null)) {
   if (dir === root)
     result["."] = `${lstatSync11(root).mode & 4095}:directory`;
   for (const name of readdirSync6(dir).sort()) {
-    const path = join14(dir, name), rel = relative6(root, path);
+    const path = join15(dir, name), rel = relative7(root, path);
     const stat = lstatSync11(path);
     if (stat.isSymbolicLink())
       result[rel] = `link:${stat.mode & 4095}:${readlinkSync2(path)}`;
@@ -12799,7 +12875,7 @@ function assertDeliveryClean(root, tree, seal, writablePaths = []) {
   }
   if (seal === "[]") {
     for (const name of readdirSync6(root)) {
-      const stat = lstatSync11(join14(root, name));
+      const stat = lstatSync11(join15(root, name));
       if (!stat.isDirectory() || name !== ".git")
         throw new DeliveryWorkspaceError("delivery workspace was contaminated");
     }
@@ -12807,7 +12883,7 @@ function assertDeliveryClean(root, tree, seal, writablePaths = []) {
   }
   const expected = JSON.parse(seal);
   for (const path of writablePaths) {
-    if (path === "." || path === ".git" || path.startsWith(".git/") || isAbsolute6(path) || path.split("/").includes("..") || Object.keys(expected).some((p) => p === path || p.startsWith(`${path}/`)))
+    if (path === "." || path === ".git" || path.startsWith(".git/") || isAbsolute7(path) || path.split("/").includes("..") || Object.keys(expected).some((p) => p === path || p.startsWith(`${path}/`)))
       throw new DeliveryWorkspaceError("delivery writable path overlaps protected inputs");
   }
   const current = workspaceFiles(root);
@@ -12821,18 +12897,18 @@ function assertDeliveryClean(root, tree, seal, writablePaths = []) {
     if (!permitted)
       throw new DeliveryWorkspaceError("delivery undeclared output was contaminated");
     if (bytes.startsWith("link:")) {
-      assertInside(realpathSync10(root), resolvedSymlinkTarget(join14(root, path)), "generated symlink");
+      assertInside(realpathSync11(root), resolvedSymlinkTarget(join15(root, path)), "generated symlink");
     }
   }
 }
 function materializeDeliveryWorkspace(sourceRoot, tree) {
   assertTree(tree);
-  const dest = mkdtempSync2(join14(tmpdir4(), "imm-delivery-"));
+  const dest = mkdtempSync2(join15(tmpdir4(), "imm-delivery-"));
   const cleanup = () => removeTaskOwnedTree(dest);
   try {
     mkdirSync7(dest, { recursive: true });
     const commit = git5(sourceRoot, ["commit-tree", tree, "-m", `delivery ${tree}`], {
-      GIT_DIR: join14(sourceRoot, ".git"),
+      GIT_DIR: join15(sourceRoot, ".git"),
       GIT_AUTHOR_NAME: "Immune-Brain Assurance",
       GIT_AUTHOR_EMAIL: "assurance@immune-brain.local",
       GIT_AUTHOR_DATE: "1970-01-01T00:00:00 +0000",
@@ -12843,7 +12919,7 @@ function materializeDeliveryWorkspace(sourceRoot, tree) {
     if (!GIT_OBJECT_ID5.test(commit))
       throw new DeliveryWorkspaceError("delivery commit write failed");
     git5(dest, ["init", "-q"]);
-    git5(dest, ["fetch", "--depth=1", `file://${resolve13(sourceRoot)}`, `${commit}:refs/heads/delivery`]);
+    git5(dest, ["fetch", "--depth=1", `file://${resolve14(sourceRoot)}`, `${commit}:refs/heads/delivery`]);
     git5(dest, ["checkout", "-q", "delivery"]);
     const got = git5(dest, ["rev-parse", "HEAD^{tree}"]);
     if (got !== tree)
@@ -12859,9 +12935,9 @@ function materializeDeliveryWorkspace(sourceRoot, tree) {
 }
 
 // plugins/immune-brain/runtime/assurance/qa.ts
-import { mkdtempSync as mkdtempSync3, realpathSync as realpathSync11 } from "node:fs";
+import { mkdtempSync as mkdtempSync3, realpathSync as realpathSync12 } from "node:fs";
 import { tmpdir as tmpdir5 } from "node:os";
-import { join as join15, sep as sep8 } from "node:path";
+import { join as join16, sep as sep9 } from "node:path";
 
 // plugins/immune-brain/runtime/assurance/qa_findings.ts
 import { randomUUID as randomUUID8 } from "node:crypto";
@@ -12928,8 +13004,8 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
       let delivery, home;
       try {
         delivery = (options._materializeDeliveryWorkspace ?? materializeDeliveryWorkspace)(snapshot.root, tree);
-        home = mkdtempSync3(join15(tmpdir5(), "imm-qa-home-"));
-        return { delivery, home, deliveryPrefix: `${realpathSync11(delivery.root)}${sep8}` };
+        home = mkdtempSync3(join16(tmpdir5(), "imm-qa-home-"));
+        return { delivery, home, deliveryPrefix: `${realpathSync12(delivery.root)}${sep9}` };
       } catch {
         let reason = "delivery_unavailable";
         try {
@@ -13096,11 +13172,11 @@ function deriveAuthorizationOperation(input) {
 // plugins/immune-brain/runtime/staged_intent.ts
 import { execFileSync as execFileSync7 } from "node:child_process";
 import { readFileSync as readFileSync14, writeFileSync as writeFileSync7 } from "node:fs";
-import { join as join16 } from "node:path";
+import { join as join17 } from "node:path";
 function captureStagedIntent(root, relativePath) {
   return {
     path: relativePath,
-    bytes: readFileSync14(join16(root, relativePath)),
+    bytes: readFileSync14(join17(root, relativePath)),
     index_state: execFileSync7("git", ["ls-files", "--stage", "-z", "--", relativePath], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"]
@@ -13108,7 +13184,7 @@ function captureStagedIntent(root, relativePath) {
   };
 }
 function restoreStagedIntent(root, snapshot) {
-  writeFileSync7(join16(root, snapshot.path), snapshot.bytes);
+  writeFileSync7(join17(root, snapshot.path), snapshot.bytes);
   execFileSync7("git", ["update-index", "--force-remove", "--", snapshot.path], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
@@ -13120,7 +13196,7 @@ function restoreStagedIntent(root, snapshot) {
       stdio: ["pipe", "ignore", "pipe"]
     });
   }
-  const restoredBytes = readFileSync14(join16(root, snapshot.path));
+  const restoredBytes = readFileSync14(join17(root, snapshot.path));
   if (!restoredBytes.equals(snapshot.bytes)) {
     throw new Error("failed to restore prior intent bytes");
   }
@@ -13134,12 +13210,12 @@ function restoreStagedIntent(root, snapshot) {
 }
 
 // plugins/immune-brain/runtime/unattended/batch_runner.ts
-import { spawnSync as spawnSync14 } from "node:child_process";
+import { spawnSync as spawnSync15 } from "node:child_process";
 import { existsSync as existsSync13 } from "node:fs";
-import { join as join21 } from "node:path";
+import { join as join22 } from "node:path";
 
 // plugins/immune-brain/runtime/unattended/batch_git.ts
-import { spawnSync as spawnSync10 } from "node:child_process";
+import { spawnSync as spawnSync11 } from "node:child_process";
 import { createHash as createHash20, randomUUID as randomUUID9 } from "node:crypto";
 import {
   constants as constants7,
@@ -13148,12 +13224,12 @@ import {
   lstatSync as lstatSync12,
   mkdirSync as mkdirSync8,
   openSync as openSync8,
-  realpathSync as realpathSync12,
+  realpathSync as realpathSync13,
   renameSync as renameSync5,
   rmSync as rmSync8,
   writeFileSync as writeFileSync8
 } from "node:fs";
-import { dirname as dirname10, join as join17 } from "node:path";
+import { dirname as dirname11, join as join18 } from "node:path";
 var DEFAULT_GIT_ENV = {
   ...process.env,
   GIT_AUTHOR_NAME: process.env.GIT_AUTHOR_NAME || "Immune-Brain Batch",
@@ -13164,7 +13240,7 @@ var DEFAULT_GIT_ENV = {
 function runBatchGitPreflight(input) {
   const { root, initiative_slug: initiativeSlug, base_head: baseHead } = input;
   const branch = `imm/${initiativeSlug}`;
-  const toplevelResult = spawnSync10("git", ["-C", root, "rev-parse", "--show-toplevel"], {
+  const toplevelResult = spawnSync11("git", ["-C", root, "rev-parse", "--show-toplevel"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -13178,8 +13254,8 @@ function runBatchGitPreflight(input) {
   let realToplevel;
   let realRoot;
   try {
-    realToplevel = realpathSync12(toplevelResult.stdout.trim());
-    realRoot = realpathSync12(root);
+    realToplevel = realpathSync13(toplevelResult.stdout.trim());
+    realRoot = realpathSync13(root);
   } catch {
     return {
       ok: false,
@@ -13202,7 +13278,7 @@ function runBatchGitPreflight(input) {
       message: `unsupported index flags (assume-unchanged/skip-worktree) detected: ${flaggedPreflight.join(", ")}`
     };
   }
-  const statusResult = spawnSync10("git", ["-C", root, "status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none"], {
+  const statusResult = spawnSync11("git", ["-C", root, "status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -13220,7 +13296,7 @@ function runBatchGitPreflight(input) {
       message: "working tree is dirty before batch preflight"
     };
   }
-  const headResult = spawnSync10("git", ["-C", root, "rev-parse", "--verify", "HEAD^{commit}"], {
+  const headResult = spawnSync11("git", ["-C", root, "rev-parse", "--verify", "HEAD^{commit}"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -13231,11 +13307,11 @@ function runBatchGitPreflight(input) {
       message: "HEAD is uncommitted or not a valid commit"
     };
   }
-  const branchCheck = spawnSync10("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`], { stdio: ["ignore", "ignore", "ignore"] });
+  const branchCheck = spawnSync11("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`], { stdio: ["ignore", "ignore", "ignore"] });
   if (branchCheck.status === 0) {
     const settled = findSettledBatchRecord(root, initiativeSlug);
-    const currentBranch = spawnSync10("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], { encoding: "utf8" });
-    if (findExistingActiveBatch(root, initiativeSlug) === null && settled?.branch === branch && currentBranch.status === 0 && currentBranch.stdout.trim() === branch && headResult.stdout.trim() === baseHead && spawnSync10("git", ["-C", root, "merge-base", "--is-ancestor", expectedBatchHead(settled), baseHead]).status === 0)
+    const currentBranch = spawnSync11("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], { encoding: "utf8" });
+    if (findExistingActiveBatch(root, initiativeSlug) === null && settled?.branch === branch && currentBranch.status === 0 && currentBranch.stdout.trim() === branch && headResult.stdout.trim() === baseHead && spawnSync11("git", ["-C", root, "merge-base", "--is-ancestor", expectedBatchHead(settled), baseHead]).status === 0)
       return { ok: true, branch };
     return {
       ok: false,
@@ -13243,25 +13319,25 @@ function runBatchGitPreflight(input) {
       message: `branch refs/heads/${branch} already exists`
     };
   }
-  const originalBranchResult = spawnSync10("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
+  const originalBranchResult = spawnSync11("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
   const originalBranch = originalBranchResult.stdout.trim();
-  const checkoutResult = spawnSync10("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "checkout", "-b", branch, baseHead], {
+  const checkoutResult = spawnSync11("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "checkout", "-b", branch, baseHead], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     env: DEFAULT_GIT_ENV
   });
   if (checkoutResult.status !== 0) {
     const stderr = checkoutResult.stderr?.trim() || "";
-    const branchExists = stderr.includes("already exists") || spawnSync10("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`]).status === 0;
-    const currentBranchCheck = spawnSync10("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
+    const branchExists = stderr.includes("already exists") || spawnSync11("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`]).status === 0;
+    const currentBranchCheck = spawnSync11("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     }).stdout.trim();
     if (currentBranchCheck === branch && originalBranch && originalBranch !== branch) {
-      spawnSync10("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "checkout", originalBranch], {
+      spawnSync11("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "checkout", originalBranch], {
         stdio: ["ignore", "ignore", "ignore"]
       });
     }
@@ -13284,7 +13360,7 @@ function hasBoundaryWhitespace(path) {
   return path.split("/").some((segment) => segment.trim() !== segment || segment.length === 0);
 }
 function getUnsupportedIndexFlags(root) {
-  const result = spawnSync10("git", ["-C", root, "ls-files", "-v", "-z", "--"], {
+  const result = spawnSync11("git", ["-C", root, "ls-files", "-v", "-z", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -13318,13 +13394,13 @@ function isPathAllowedForChild(path, taskId, scopeHint) {
   });
 }
 function getChangedProjectPaths(root) {
-  const tracked = spawnSync10("git", ["-C", root, "diff-index", "--name-only", "-z", "--ignore-submodules=none", "HEAD", "--"], {
+  const tracked = spawnSync11("git", ["-C", root, "diff-index", "--name-only", "-z", "--ignore-submodules=none", "HEAD", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
   if (tracked.status !== 0)
     throw new Error("failed to inspect tracked diff vs HEAD");
-  const untracked = spawnSync10("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--"], {
+  const untracked = spawnSync11("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -13334,7 +13410,7 @@ function getChangedProjectPaths(root) {
   return [...new Set([...splitZ(tracked.stdout), ...splitZ(untracked.stdout)])];
 }
 function getStagedProjectPaths(root) {
-  const staged = spawnSync10("git", ["-C", root, "diff-index", "--cached", "--name-only", "-z", "--ignore-submodules=none", "HEAD", "--"], {
+  const staged = spawnSync11("git", ["-C", root, "diff-index", "--cached", "--name-only", "-z", "--ignore-submodules=none", "HEAD", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -13343,13 +13419,13 @@ function getStagedProjectPaths(root) {
   return staged.stdout.split("\x00").filter((p) => p.length > 0);
 }
 function getUnstagedProjectPaths(root) {
-  const diffFiles = spawnSync10("git", ["-C", root, "diff-files", "--name-only", "-z", "--ignore-submodules=none", "--"], {
+  const diffFiles = spawnSync11("git", ["-C", root, "diff-files", "--name-only", "-z", "--ignore-submodules=none", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
   if (diffFiles.status !== 0)
     throw new Error("failed to inspect unstaged tracked changes");
-  const untracked = spawnSync10("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--"], {
+  const untracked = spawnSync11("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -13359,19 +13435,19 @@ function getUnstagedProjectPaths(root) {
   return [...new Set([...splitZ(diffFiles.stdout), ...splitZ(untracked.stdout)])];
 }
 function getCommittedDeltaPaths(root) {
-  const delta = spawnSync10("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", "HEAD~1", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const delta = spawnSync11("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", "HEAD~1", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   if (delta.status !== 0)
     throw new Error("failed to inspect committed tree delta");
   return delta.stdout.split("\x00").filter((p) => p.length > 0);
 }
 function commitEvidencePath(batchId, taskId) {
-  return join17(".imm", "state", "batches", "commits", `${batchId}-${taskId}.json`);
+  return join18(".imm", "state", "batches", "commits", `${batchId}-${taskId}.json`);
 }
 function ensureSecureDirectory3(root, relativePath) {
   const segments = relativePath.split("/").filter(Boolean);
   let current = root;
   for (const segment of segments) {
-    current = join17(current, segment);
+    current = join18(current, segment);
     if (existsSync10(current)) {
       const stats = lstatSync12(current);
       if (stats.isSymbolicLink() || !stats.isDirectory()) {
@@ -13384,12 +13460,12 @@ function ensureSecureDirectory3(root, relativePath) {
   return current;
 }
 function writeFileAtomically2(root, relativePath, bytes) {
-  const target = join17(root, relativePath);
-  const targetDir = dirname10(target);
-  ensureSecureDirectory3(root, dirname10(relativePath));
+  const target = join18(root, relativePath);
+  const targetDir = dirname11(target);
+  ensureSecureDirectory3(root, dirname11(relativePath));
   const stats = lstatSync12(targetDir);
   if (stats.isSymbolicLink() || !stats.isDirectory()) {
-    throw new Error(`${dirname10(relativePath)} is not a real directory`);
+    throw new Error(`${dirname11(relativePath)} is not a real directory`);
   }
   if (existsSync10(target)) {
     const targetStats = lstatSync12(target);
@@ -13430,7 +13506,7 @@ function writeBatchCommitEvidence(root, evidence) {
 }
 function readBatchCommitEvidence(root, batchId, taskId) {
   const path = commitEvidencePath(batchId, taskId);
-  const fullPath = join17(root, path);
+  const fullPath = join18(root, path);
   if (!existsSync10(fullPath))
     return null;
   try {
@@ -13480,7 +13556,7 @@ async function commitBatchChild(input) {
   const goal = typeof intentSnapshot.goal === "string" ? intentSnapshot.goal : "";
   const scopeHint = Array.isArray(intentSnapshot.scope_hint) ? intentSnapshot.scope_hint.filter((s) => typeof s === "string") : [];
   if (expectedBranch !== undefined) {
-    const currentBranchResult = spawnSync10("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
+    const currentBranchResult = spawnSync11("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -13489,7 +13565,7 @@ async function commitBatchChild(input) {
       throw new Error(`batch_head_lineage_broken: current branch ${currentBranch} does not match expected branch ${expectedBranch}`);
     }
   }
-  const currentHeadResult = spawnSync10("git", ["-C", root, "rev-parse", "HEAD"], {
+  const currentHeadResult = spawnSync11("git", ["-C", root, "rev-parse", "HEAD"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -13508,7 +13584,7 @@ async function commitBatchChild(input) {
   }
   const pathsToStage = getUnstagedProjectPaths(root);
   if (pathsToStage.length > 0) {
-    const addResult = spawnSync10("git", ["-C", root, "--literal-pathspecs", "add", "-A", "--", ...pathsToStage], {
+    const addResult = spawnSync11("git", ["-C", root, "--literal-pathspecs", "add", "-A", "--", ...pathsToStage], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -13523,7 +13599,7 @@ async function commitBatchChild(input) {
   const staged = getStagedProjectPaths(root);
   const stagedOutside = staged.filter((p) => !isPathAllowedForChild(p, taskId, scopeHint));
   if (stagedOutside.length > 0) {
-    spawnSync10("git", ["-C", root, "reset", "--quiet"], { stdio: ["ignore", "ignore", "ignore"] });
+    spawnSync11("git", ["-C", root, "reset", "--quiet"], { stdio: ["ignore", "ignore", "ignore"] });
     throw new Error("dirty_outside_scope");
   }
   const record = authoritative;
@@ -13541,7 +13617,7 @@ async function commitBatchChild(input) {
 
 Immune-Brain-Batch: ${batchId}
 `;
-  const commitResult = spawnSync10("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "commit", "--no-verify", "-F", "-"], {
+  const commitResult = spawnSync11("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "commit", "--no-verify", "-F", "-"], {
     input: commitMessage,
     encoding: "utf8",
     stdio: ["pipe", "pipe", "pipe"],
@@ -13550,7 +13626,7 @@ Immune-Brain-Batch: ${batchId}
   if (commitResult.status !== 0) {
     throw new Error(`commit failed for child ${taskId}: ${commitResult.stderr?.trim() || "git commit failed"}`);
   }
-  const newHeadResult = spawnSync10("git", ["-C", root, "rev-parse", "HEAD"], {
+  const newHeadResult = spawnSync11("git", ["-C", root, "rev-parse", "HEAD"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -13558,7 +13634,7 @@ Immune-Brain-Batch: ${batchId}
   if (newHeadResult.status !== 0 || !newHead || newHead === expectedHead) {
     throw new Error("commit_failed");
   }
-  const parentsResult = spawnSync10("git", ["-C", root, "rev-parse", "HEAD^@"], {
+  const parentsResult = spawnSync11("git", ["-C", root, "rev-parse", "HEAD^@"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -13591,7 +13667,7 @@ async function lookupBatchCommit(input) {
   let candidates = [];
   let evidenceBacked = false;
   if (evidence && evidence.commit) {
-    const direct = spawnSync10("git", ["-C", root, "log", "-n", "1", `--format=${FORMAT}`, evidence.commit, "--"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    const direct = spawnSync11("git", ["-C", root, "log", "-n", "1", `--format=${FORMAT}`, evidence.commit, "--"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     if (direct.status !== 0) {
       throw new Error(`failed to inspect batch commit for ${taskId}: ${direct.stderr?.trim() || "git log failed"}`);
     }
@@ -13604,7 +13680,7 @@ async function lookupBatchCommit(input) {
     }
   }
   if (!candidates.length) {
-    const result = spawnSync10("git", [
+    const result = spawnSync11("git", [
       "-C",
       root,
       "log",
@@ -13641,7 +13717,7 @@ async function lookupBatchCommit(input) {
     throw new Error(`batch_head_lineage_broken: adopted commit author ${match.authorName} does not match batch authority ${DEFAULT_GIT_ENV.GIT_AUTHOR_NAME}`);
   }
   if (expectedBranch !== undefined) {
-    const currentBranchResult = spawnSync10("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
+    const currentBranchResult = spawnSync11("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -13662,17 +13738,17 @@ async function lookupBatchCommit(input) {
     throw new Error(`batch_head_lineage_broken: adopted commit task lifecycle is not done: ${lifecycle}`);
   }
   if (expectedHead !== undefined) {
-    const currentHeadResult = spawnSync10("git", ["-C", root, "rev-parse", "HEAD"], {
+    const currentHeadResult = spawnSync11("git", ["-C", root, "rev-parse", "HEAD"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
     const currentHead = currentHeadResult.stdout.trim();
-    if (currentHead !== commit && spawnSync10("git", ["-C", root, "merge-base", "--is-ancestor", commit, currentHead], {
+    if (currentHead !== commit && spawnSync11("git", ["-C", root, "merge-base", "--is-ancestor", commit, currentHead], {
       stdio: ["ignore", "ignore", "ignore"]
     }).status !== 0) {
       throw new Error(`batch_head_lineage_broken: current HEAD ${currentHead} diverged from adopted commit ${commit}`);
     }
-    const parentsResult = spawnSync10("git", ["-C", root, "rev-parse", `${commit}^@`], {
+    const parentsResult = spawnSync11("git", ["-C", root, "rev-parse", `${commit}^@`], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -13681,7 +13757,7 @@ async function lookupBatchCommit(input) {
       throw new Error(`batch_head_lineage_broken: adopted commit parent ${parents.join(",")} does not match expected_head ${expectedHead}`);
     }
     const scopeHint = Array.isArray(authoritative.intent_snapshot.scope_hint) ? authoritative.intent_snapshot.scope_hint.filter((s) => typeof s === "string") : [];
-    const deltaResult = spawnSync10("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", expectedHead, commit], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    const deltaResult = spawnSync11("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", expectedHead, commit], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     if (deltaResult.status !== 0) {
       throw new Error("batch_head_lineage_broken: failed to inspect adopted commit delta");
     }
@@ -13702,14 +13778,14 @@ function createDefaultBatchGitPort() {
 }
 
 // plugins/immune-brain/runtime/unattended/batch_lanes.ts
-import { spawnSync as spawnSync13 } from "node:child_process";
+import { spawnSync as spawnSync14 } from "node:child_process";
 import { createHash as createHash21 } from "node:crypto";
-import { existsSync as existsSync12, realpathSync as realpathSync13 } from "node:fs";
-import { isAbsolute as isAbsolute7, join as join20 } from "node:path";
+import { existsSync as existsSync12, realpathSync as realpathSync14 } from "node:fs";
+import { isAbsolute as isAbsolute8, join as join21 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/runtime_contracts.ts
 import { existsSync as existsSync11, readFileSync as readFileSync15 } from "node:fs";
-import { dirname as dirname11, join as join18, resolve as resolve14 } from "node:path";
+import { dirname as dirname12, join as join19, resolve as resolve15 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 var RUNTIME_CONTRACTS_MANIFEST = "runtime_contracts.json";
 var RUNTIME_CONTRACTS = {
@@ -13722,17 +13798,17 @@ var RUNTIME_CONTRACTS = {
 var KEYS = ["task_record", "task_tombstone", "assurance_projection", "kernel_store_schema"];
 function runningRuntimeSource() {
   try {
-    return dirname11(fileURLToPath2(import.meta.url));
+    return dirname12(fileURLToPath2(import.meta.url));
   } catch {
     return "unknown";
   }
 }
 function readRuntimeContracts(runtimeDir) {
   const candidates = [
-    join18(runtimeDir, RUNTIME_CONTRACTS_MANIFEST),
-    join18(runtimeDir, "kernel", RUNTIME_CONTRACTS_MANIFEST),
-    join18(runtimeDir, "runtime", "kernel", RUNTIME_CONTRACTS_MANIFEST),
-    join18(runtimeDir, "plugins", "immune-brain", "runtime", "kernel", RUNTIME_CONTRACTS_MANIFEST)
+    join19(runtimeDir, RUNTIME_CONTRACTS_MANIFEST),
+    join19(runtimeDir, "kernel", RUNTIME_CONTRACTS_MANIFEST),
+    join19(runtimeDir, "runtime", "kernel", RUNTIME_CONTRACTS_MANIFEST),
+    join19(runtimeDir, "plugins", "immune-brain", "runtime", "kernel", RUNTIME_CONTRACTS_MANIFEST)
   ];
   const path = candidates.find((candidate) => existsSync11(candidate));
   if (!path)
@@ -13745,7 +13821,7 @@ function readRuntimeContracts(runtimeDir) {
     if (key === "kernel_store_schema" ? !Number.isSafeInteger(value) : typeof value !== "string" || !value)
       throw new Error(`${path} has an invalid ${key}`);
   }
-  return { contracts: raw, path: resolve14(path) };
+  return { contracts: raw, path: resolve15(path) };
 }
 function runtimeContractDifferences(a, b) {
   return KEYS.filter((key) => a[key] !== b[key]).map((key) => `${key}: ${String(a[key])} != ${String(b[key])}`);
@@ -13755,7 +13831,7 @@ function runtimeContractDifferences(a, b) {
 import { readFileSync as readFileSync16 } from "node:fs";
 
 // plugins/immune-brain/runtime/unattended/batch_final_verification.ts
-import { spawn as spawn3, spawnSync as spawnSync11 } from "node:child_process";
+import { spawn as spawn3, spawnSync as spawnSync12 } from "node:child_process";
 var MAX_FINAL_VERIFICATION_COMMANDS = 8;
 var MAX_COMMAND_LENGTH = 512;
 var DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
@@ -13794,7 +13870,7 @@ function runOne(root, command, timeoutMs) {
   });
 }
 async function runFinalVerification(root, commands, options = {}) {
-  const head = spawnSync11("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
+  const head = spawnSync12("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
   const results = [];
   for (const command of commands)
     results.push(await runOne(root, command, options.timeoutMs ?? DEFAULT_TIMEOUT_MS));
@@ -13803,7 +13879,7 @@ async function runFinalVerification(root, commands, options = {}) {
 
 // plugins/immune-brain/runtime/unattended/batch_delegation.ts
 import { execFileSync as execFileSync8 } from "node:child_process";
-import { join as join19 } from "node:path";
+import { join as join20 } from "node:path";
 import { writeFileSync as writeFileSync9 } from "node:fs";
 var REVISION_DELEGATION_TEXT = "Optional, off by default: also let the batch coordinator approve a Lane child's breaking Intent revisions that stay inside that child's authorized TaskIntent (acceptance changes, a narrower scope_hint). Widening scope, changing risk, goal or the bound Spec still needs your own confirmation. The grant ends with this batch.";
 var DELEGATED_ACTOR_ID = "batch-coordinator";
@@ -13854,7 +13930,7 @@ function applyDelegatedIntentRevision(input) {
     const nextRef = { path: `docs/plans/${taskId}.intent.json`, content_hash: nextHash };
     const snapshot = captureStagedIntent(root, prior.intent_ref.path);
     try {
-      writeFileSync9(join19(root, prior.intent_ref.path), `${JSON.stringify(nextIntent, null, 2)}
+      writeFileSync9(join20(root, prior.intent_ref.path), `${JSON.stringify(nextIntent, null, 2)}
 `);
       execFileSync8("git", ["add", "--", prior.intent_ref.path], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
       const prepared = await projectAssurance(root, taskId, taskDeliveryIdentity);
@@ -13909,7 +13985,7 @@ function applyDelegatedIntentRevision(input) {
 }
 
 // plugins/immune-brain/runtime/unattended/batch_integration.ts
-import { spawnSync as spawnSync12 } from "node:child_process";
+import { spawnSync as spawnSync13 } from "node:child_process";
 class BatchIntegrationError extends Error {
   reason;
   constructor(reason, message) {
@@ -13923,7 +13999,7 @@ var COMMITTER_ENV = {
   GIT_COMMITTER_EMAIL: process.env.GIT_COMMITTER_EMAIL || "immune-brain@local"
 };
 function git6(root, args, extra = {}) {
-  const result = spawnSync12("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", ...args], {
+  const result = spawnSync13("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", ...args], {
     encoding: "utf8",
     stdio: ["pipe", "pipe", "pipe"],
     input: extra.input,
@@ -14167,7 +14243,7 @@ function parseLaneOffers(value) {
       throw new Error("invalid lane_offers: unknown offer field");
     if (typeof taskId !== "string" || !TASK_ID_PATTERN2.test(taskId))
       throw new Error("invalid lane_offers: task_id is not a valid task id");
-    if (typeof path !== "string" || !path || path.length > MAX_PATH_LENGTH || path.includes("\x00") || !isAbsolute7(path))
+    if (typeof path !== "string" || !path || path.length > MAX_PATH_LENGTH || path.includes("\x00") || !isAbsolute8(path))
       throw new Error("invalid lane_offers: path must be an absolute path");
     if (seen.has(taskId))
       throw new Error(`invalid lane_offers: duplicate offer for ${taskId}`);
@@ -14223,7 +14299,7 @@ function laneRuntimeDir(root, explicit) {
   if (explicit)
     return explicit;
   try {
-    const manifest = JSON.parse(readFileSync16(join20(root, "package.json"), "utf8"));
+    const manifest = JSON.parse(readFileSync16(join21(root, "package.json"), "utf8"));
     return manifest.name === "immune-brain" ? root : null;
   } catch {
     return null;
@@ -14253,7 +14329,7 @@ function laneBranchName(initiativeSlug, taskId) {
   return `imm-lane/${initiativeSlug}/${taskId}`;
 }
 function gitRead(root, args) {
-  const result = spawnSync13("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const result = spawnSync14("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   return { status: result.status, stdout: (result.stdout ?? "").trim() };
 }
 function commonDir(root) {
@@ -14261,14 +14337,14 @@ function commonDir(root) {
   if (result.status !== 0 || !result.stdout)
     return null;
   try {
-    return realpathSync13(result.stdout);
+    return realpathSync14(result.stdout);
   } catch {
     return null;
   }
 }
 function resolveRealPath(path) {
   try {
-    return realpathSync13(path);
+    return realpathSync14(path);
   } catch {
     return null;
   }
@@ -14748,7 +14824,7 @@ async function runLaneBatch(input, persisted) {
     record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "released" } : c);
     persist();
   }
-  const lineage = existsSync12(join20(input.root, ".git")) ? classifyBatchLineage({
+  const lineage = existsSync12(join21(input.root, ".git")) ? classifyBatchLineage({
     root: input.root,
     branch: record.branch ?? "",
     expectedHead: expectedBatchHead(record),
@@ -15199,7 +15275,7 @@ function failPersistedLineage(root, existing, message) {
   return writeBatchRunState(root, record);
 }
 function reconcileLineage(root, record) {
-  if (!existsSync13(join21(root, ".git")))
+  if (!existsSync13(join22(root, ".git")))
     return { record, failure: null };
   const expected = expectedBatchHead(record);
   const lineage = classifyBatchLineage({
@@ -15222,8 +15298,8 @@ function reconcileLineage(root, record) {
   };
 }
 async function validatePersistedRun(input, record) {
-  if (!record.commits.length && record.children[0]?.state === "settled" && existsSync13(join21(input.root, ".git"))) {
-    const head = spawnSync14("git", ["-C", input.root, "rev-parse", "HEAD"], { encoding: "utf8" });
+  if (!record.commits.length && record.children[0]?.state === "settled" && existsSync13(join22(input.root, ".git"))) {
+    const head = spawnSync15("git", ["-C", input.root, "rev-parse", "HEAD"], { encoding: "utf8" });
     const live = head.stdout.trim();
     const expected = expectedBatchHead(record);
     const adoptable = () => classifyBatchLineage({
@@ -15252,8 +15328,8 @@ async function validatePersistedRun(input, record) {
     const git = batchGitPortOf(input);
     const evidence = await git.lookupBatchCommit(input.root, child.task_id, record.batch_id, undefined, record.branch);
     if (!evidence || evidence.commit !== child.commit) {
-      if (evidence === null && typeof child.commit === "string" && child.commit.length > 0 && existsSync13(join21(input.root, ".git"))) {
-        const reach = spawnSync14("git", ["-C", input.root, "merge-base", "--is-ancestor", child.commit, "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+      if (evidence === null && typeof child.commit === "string" && child.commit.length > 0 && existsSync13(join22(input.root, ".git"))) {
+        const reach = spawnSync15("git", ["-C", input.root, "merge-base", "--is-ancestor", child.commit, "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
         if (reach.status !== 0) {
           throw new Error(`batch_head_lineage_broken: recorded commit ${child.commit} for ${child.task_id} is no longer reachable from HEAD`);
         }
@@ -15692,7 +15768,7 @@ async function driveInterruptedChild(input, child) {
       const planChild = input.children.find((c) => c.task_id === child.task_id);
       const intentPath = planChild?.intent_path ?? undefined;
       const doCommit = async () => batchGitPortOf(input).commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath);
-      if (existing && !record.commits.length && existsSync13(join21(input.root, ".git")) && !ownUnpersistedBatchHead(input.root, record, existing.commit))
+      if (existing && !record.commits.length && existsSync13(join22(input.root, ".git")) && !ownUnpersistedBatchHead(input.root, record, existing.commit))
         throw new Error("first unpersisted batch commit provenance is invalid");
       const adopted = existing ?? await doCommit().catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
@@ -16223,7 +16299,7 @@ class ClaudeRuntime {
     if (!slug)
       return result;
     try {
-      if (existsSync14(join22(this.cwd, ".imm", "audit", taskId)))
+      if (existsSync14(join23(this.cwd, ".imm", "audit", taskId)))
         execFileSync9("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch };
@@ -16322,7 +16398,7 @@ class ClaudeRuntime {
       throw new Error("approve_breaking_intent_revision requires next_intent");
     const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
     const nextIntentRef = nextIntent ? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash } : undefined;
-    const sidecar = nextIntent ? join22(this.cwd, priorIntent.intent_ref.path) : undefined;
+    const sidecar = nextIntent ? join23(this.cwd, priorIntent.intent_ref.path) : undefined;
     const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
     const restoreStagedIntent2 = () => {
       if (!stagedSnapshot)
@@ -16434,7 +16510,7 @@ class ClaudeRuntime {
     const nextScope = operation.op === "revise_intent" ? operation.next_intent.scope_hint : undefined;
     if (nextScope)
       assertScopeAdditionsAreFiles(ctx.cwd, priorIntent.intent.scope_hint, nextScope);
-    const sidecar = join22(ctx.cwd, priorIntent.intent_ref.path);
+    const sidecar = join23(ctx.cwd, priorIntent.intent_ref.path);
     const priorBytes = operation.op === "revise_intent" ? readFileSync17(sidecar) : null;
     const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
     try {
@@ -17451,7 +17527,7 @@ async function runHook() {
     payload = null;
   }
   if (payload?.hook_event_name === "PreToolUse") {
-    const decision = laneGuardHookOutput(payload) ?? phaseEntryGateHookOutput(payload);
+    const decision = laneGuardHookOutput(payload) ?? revisionOwnerHookOutput(payload) ?? phaseEntryGateHookOutput(payload);
     if (decision)
       process.stdout.write(`${decision}
 `);
