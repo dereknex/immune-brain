@@ -1,0 +1,39 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "qa-inherit-host-environment",
+  "owner": "user",
+  "goal": "Deterministic QA commands run with the environment of the process hosting the Kernel instead of a rebuilt one: the Kernel no longer creates a throwaway home or overrides HOME, TMPDIR and XDG_CACHE_HOME, Git repository-binding variables stay out of the child, the per-run process token stays in, and the Planner contract stops forbidding a download or credential use during preparation. QA still runs in the disposable delivery materialization.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "A command run by runFixedVerification sees the hosting process's HOME and other variables and the per-run process token, sees none of the Git repository-binding variables of the hosting process (GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, GIT_OBJECT_DIRECTORY, GIT_ALTERNATE_OBJECT_DIRECTORIES, GIT_COMMON_DIR, GIT_NAMESPACE, GIT_PREFIX) while another GIT_ variable still arrives, has PATH equal to the supplied absolute-entry path, and has no HOME when the host has none; seam: tests/pi-canary-verification-descriptor.test.ts through runFixedVerification with a real child process (Spec D1, D2, I1-I3).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-verification-descriptor.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "A deterministic QA run supplies no throwaway home: through runDeterministicQa with the real runFixedVerification, a check that exits zero only when its HOME equals the hosting process's HOME passes and fails when a different path is expected; seam: tests/pi-canary-assurance-authority.test.ts (Spec D3, I4).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-assurance-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "The Planner contract states that QA commands run with the host process environment and that the Kernel does not judge how dependencies are obtained, keeps the preparation rule for production writes and system changes, and no longer contains 'hide a download'; the generated Claude bundle matches the runtime source; seams: tests/workflow-verification-invariants.test.ts and tests/claude-host-package.test.ts (Spec D5).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-verification-invariants.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/qa-inherit-host-environment.md",
+    "docs/plans/qa-inherit-host-environment.intent.json",
+    "docs/specs/qa-inherit-host-environment.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/runtime/assurance/qa.ts",
+    "plugins/immune-brain/runtime/assurance/verification.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/pi-canary-assurance-authority.test.ts",
+    "tests/pi-canary-verification-descriptor.test.ts",
+    "tests/unattended-contracts.test.ts",
+    "tests/workflow-verification-invariants.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
