@@ -56,6 +56,15 @@ skills:
     output_artifacts: [maintain_report]
     next_actions: []
     boundary: Minimize tracked agent-instruction context after explicit manifest approval; no Managed authority mutation, contract installation, or reference-document creation.
+  - name: imm-test-prune
+    path: skills/imm-test-prune/SKILL.md
+    role: execute
+    title: Test Prune
+    role_class: repair
+    canonical: true
+    output_artifacts: [test_prune_report]
+    next_actions: []
+    boundary: Audit and prune redundant tests after explicit manifest approval; no Managed authority mutation, production-source change, or assertion weakening.
   - name: imm-retro
     path: skills/imm-retro/SKILL.md
     role: execute

@@ -71,9 +71,9 @@ Before a child dispatch, read the [Subagent Dispatch Protocol](docs/reference/su
 Never load an internal role as a public Skill or spawn another loop process;
 the only exception is a Lane's Executor Host under
 [Lane Executor Supervision](#lane-executor-supervision).
-The standalone `imm-pr-fix`, `imm-doc-prune`, and `imm-doc-slim` are host-native
-maintenance entries, never dispatched as the Loop role. Internal `test-fixer`
-and `pr-fix` repairs remain bounded by the enrolled TaskIntent.
+The standalone `imm-pr-fix`, `imm-doc-prune`, `imm-doc-slim`, and `imm-test-prune`
+are host-native maintenance entries, never dispatched as the Loop role. Internal
+`test-fixer` and `pr-fix` repairs remain bounded by the enrolled TaskIntent.
 
 ## Execution Loop
 

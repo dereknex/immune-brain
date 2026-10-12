@@ -8,6 +8,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { publicSkillNames } from "./helpers/public-skills.ts";
 
 const ROOT = resolve(__dirname, "..");
 const RETIRED_PROGRESS_FILES = [
@@ -155,7 +156,7 @@ describe("packed artifact loader", () => {
 					)
 					.map((s: { name: string }) => s.name)
 					.sort();
-				expect(skills).toEqual(["imm-brainstorm", "imm-doc-prune", "imm-doc-slim", "imm-planner", "imm-pr-fix", "imm-retro", "imm-run"]);
+				expect(skills).toEqual(publicSkillNames().sort());
 
 				const work = extensions.find((extension: { path?: string }) =>
 					extension.path?.endsWith("imm-canary-work.ts"),

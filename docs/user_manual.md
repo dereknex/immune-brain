@@ -1,6 +1,6 @@
 # Immune-Brain 使用手册
 
-Immune-Brain 是一套 Skill-explicit Managed 工作流，支持 Pi 与本地交互式 Claude Code，并提供四个独立 host-native Skill。用户可发现七个 public Skills：
+Immune-Brain 是一套 Skill-explicit Managed 工作流，支持 Pi 与本地交互式 Claude Code，并提供五个独立 host-native Skill。用户可发现八个 public Skills：
 
 - `imm-brainstorm`：澄清需求、约束、风险和非目标。
 - `imm-planner`：创建或修订 Spec、Plan 和候选 TaskIntent。
@@ -8,6 +8,7 @@ Immune-Brain 是一套 Skill-explicit Managed 工作流，支持 Pi 与本地交
 - `imm-pr-fix`：直接诊断并修复一个 GitHub PR，不创建 Managed authority。
 - `imm-doc-prune`：在显式 manifest 批准后清理过期当前文档，不创建 Managed authority。
 - `imm-doc-slim`：在显式 manifest 批准后整理 tracked agent instruction 文件，不创建 Managed authority。
+- `imm-test-prune`：在显式 manifest 批准后合并、参数化或删除冗余测试，不弱化断言，不创建 Managed authority。
 - `imm-retro`：按模型统计审查负载与项目使用量，只读 session logs，不创建 Managed authority。
 
 ### `imm-doc-prune`
@@ -17,6 +18,10 @@ Immune-Brain 是一套 Skill-explicit Managed 工作流，支持 Pi 与本地交
 ### `imm-doc-slim`
 
 独立整理 tracked `AGENTS.md`、`CLAUDE.md`、`GEMINI.md` 中的最小必要上下文。它盘点当前仓库根级和嵌套文件，按四项价值门槛分类，输出精确 manifest，用户显式批准后才删除冗余、改写规则或改为指向已有权威文档的指针。无法确认价值的规则保留为 `UNVERIFIED`；无法确定的冲突标记 `BLOCKED`。它不创建参考文档，不安装或校验项目级契约，不修改用户级全局文件，也不进入 Managed Path。`imm-doc-prune` 仍只处理有证据的 stale 内容；两个 Skill 不互相调用。
+
+### `imm-test-prune`
+
+独立治理测试膨胀。它用仓库自身的测试、覆盖率和静态检查命令盘点测试并记录基线，机械筛选同构用例、重复 setup、可从权威清单派生的硬编码列表和失去保护对象的孤立测试，输出精确 manifest，用户显式批准后逐条修改。删除需要行为退休证明，或由覆盖率证明的包含关系；项目没有可用覆盖率工具时，此类条目保持 `UNVERIFIED`，只做不改变语义的合并与参数化。它不安装依赖、不弱化断言、不修改生产代码；纯文档措辞测试交给 `imm-doc-prune`。
 
 ### `imm-retro`
 
@@ -48,7 +53,7 @@ request
 
 显式 Skill 使用项目现有结构，并只创建当前工作需要的 artifact 及其父目录。Runtime 不安装、覆盖或校验项目级 `AGENTS.md`、`IMMUNE.md` 或 `CONTEXT.md`。
 
-## 七个 public Skills
+## 八个 public Skills
 
 ### `imm-brainstorm`
 
@@ -100,7 +105,7 @@ PR 仍通过 `imm-run` 继续。
 
 ## 验证与发布
 
-公共 surface 由 `skills/registry.yaml` 声明，必须与七个 `skills/*/SKILL.md`、对应
+公共 surface 由 `skills/registry.yaml` 声明，必须与八个 `skills/*/SKILL.md`、对应
 `dist/imm-*.md`、package manifest 和实际 Pi loader 结果一致。未注册的旧 Skill 目录、
 旧 dist entry files 和兼容 alias 不应重新加入 registry。
 

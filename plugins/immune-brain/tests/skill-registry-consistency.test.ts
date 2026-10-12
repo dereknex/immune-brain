@@ -49,7 +49,7 @@ function distReference(skillPath: string): string | null {
 const registry = parseRegistry(readFileSync(REGISTRY_PATH, "utf-8"))
 
 describe("skill registry consistency", () => {
-  it("publishes the three Managed Skills and four standalone host-native Skills", () => {
+  it("publishes the three Managed Skills and five standalone host-native Skills", () => {
     expect(registry.map((entry) => entry.name)).toEqual([
       "imm-brainstorm",
       "imm-planner",
@@ -57,6 +57,7 @@ describe("skill registry consistency", () => {
       "imm-pr-fix",
       "imm-doc-prune",
       "imm-doc-slim",
+      "imm-test-prune",
       "imm-retro",
     ])
   })

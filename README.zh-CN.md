@@ -28,7 +28,7 @@ Pi 与 Claude Code 是支持的宿主。未声明的适配器仍不受支持。C
 - [推荐工作流：与 mattpocock/skills 组合使用](#推荐工作流与-mattpocockskills-组合使用)
 - [实战案例](#实战案例)
 - [核心设计哲学：把“判断”变成“查表”](#核心设计哲学把判断变成查表用确定性工程驾驭多模型)
-- [7 个 Skills](#7-个-skills)
+- [8 个 Skills](#8-个-skills)
 - [生命周期](#生命周期)
 - [无人值守批次运行](#无人值守批次运行)
 - [配置](#配置)
@@ -54,7 +54,7 @@ Pi 通过 `package.json`（或全局 Pi 配置）自动发现 Skills 与扩展�
 }
 ```
 
-无需额外 server 配置，通过 Pi 安装本 package 后 7 个 Skill 即自动可用。
+无需额外 server 配置，通过 Pi 安装本 package 后 8 个 Skill 即自动可用。
 
 ### 在 Claude Code 中使用
 
@@ -123,6 +123,7 @@ Immune-Brain 提供两种清晰的工作模式：日常轻量编码走 **Host-na
 | PR 被评论 / CI 挂了 | 对该 PR 使用 `/imm-pr-fix` | → 独立修复：在当前 PR 内针对性修复，不创建新 managed 任务 |
 | 文档过时需要清理 | `/imm-doc-prune` | → 只读审计过时文档，仅删除经哈希审批的条目 |
 | Agent 指令文件膨胀 | `/imm-doc-slim` | → 将 tracked `AGENTS.md` / `CLAUDE.md` 压到最小必要上下文 |
+| 测试用例膨胀、重复 | `/imm-test-prune` | → 只读审计测试，仅合并或删除经审批、有退休或覆盖率证据的条目 |
 | 想知道哪个模型的改动总被审查 | `/imm-retro` | → 按模型排名审查负载，并从 session logs 汇报项目使用量 |
 
 > **核心原则：Skill 显式调用**
@@ -415,7 +416,7 @@ Immune-Brain 的核心假设是：**不要让弱模型做架构决策，把它�
 
 ---
 
-## 7 个 Skills
+## 8 个 Skills
 
 | Skill | 类型 | 何时使用 | 职责 |
 |---|---|---|---|
@@ -425,11 +426,12 @@ Immune-Brain 的核心假设是：**不要让弱模型做架构决策，把它�
 | `imm-pr-fix` | 独立 | PR 需修复 | 原地修复单个 PR，不触及 managed authority |
 | `imm-doc-prune` | 独立 | 清理过时文档 | 仅删除哈希绑定的 manifest 条目 |
 | `imm-doc-slim` | 独立 | Agent instruction 膨胀 | 将 tracked AGENTS/CLAUDE/GEMINI.md 压到最小必要上下文 |
+| `imm-test-prune` | 独立 | 测试膨胀或重复 | 合并、参数化或删除经审批的测试条目，不弱化断言 |
 | `imm-retro` | 独立 | 比较模型的审查负载 | 排名被审查代码的作者并汇报项目使用量 |
 
 Executor、QA、Review、Compounder 等为 `imm-run` 内部调度的角色，无需手动调用。
 
-所有 7 个 Skill 均显式调用。新需求开发时：若需求含糊先调 `imm-brainstorm`，目标清晰直接调 `imm-planner`，完成确认后调 `imm-run` 推进闭环。
+所有 8 个 Skill 均显式调用。新需求开发时：若需求含糊先调 `imm-brainstorm`，目标清晰直接调 `imm-planner`，完成确认后调 `imm-run` 推进闭环。
 
 ### Managed Path 入口（brainstorm → planner → loop）
 
@@ -476,6 +478,11 @@ Executor、QA、Review、Compounder 等为 `imm-run` 内部调度的角色，无
 
 - **触发方式：** 显式要求精简版本控制下的 `AGENTS.md` / `CLAUDE.md` / `GEMINI.md`。
 - **职责：** 遵循与 `imm-doc-prune` 相同的「只读审计 + 哈希清单审批」模式，仅保留无法直接推导的必要规则。
+
+#### `imm-test-prune` — 测试套件瘦身
+
+- **触发方式：** 显式要求审计或清理冗余、膨胀或孤立的测试。
+- **职责：** 使用仓库自身的测试与覆盖率命令盘点测试，按用户明确审批的哈希绑定 manifest 合并、参数化或删除条目。删除需要行为退休证明或覆盖率支撑的包含关系；项目没有覆盖率工具时这类条目保持 unverified。从不弱化断言，也不修改生产代码。
 
 #### `imm-retro` — 审查负载与项目使用回顾
 
@@ -660,7 +667,7 @@ Immune-Brain **没有独立配置文件**，偏好设置写在仓库根目录下
 package.json                          # Pi package manifest（skills + extensions）
 plugins/immune-brain/
 ├── .pi-extension/                    # Pi TUI + Kernel 扩展
-├── skills/                           # 7 个公开 Skills（触发 shim）
+├── skills/                           # 8 个公开 Skills（触发 shim）
 ├── dist/                             # 构建后的 skill 契约与参考文档
 ├── runtime/                          # Bun + TypeScript 运行时与 Kernel
 └── bin/                              # CLI wrappers（→ runtime/v4_runtime.ts）

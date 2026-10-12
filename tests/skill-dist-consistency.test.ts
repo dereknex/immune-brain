@@ -7,6 +7,7 @@ import {
 	SKILL_OWNED_ENTRIES,
 	renderDistDoc,
 } from "../scripts/dist-sync-manifest.ts";
+import { publicSkillNames } from "./helpers/public-skills.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const SKILLS_DIR = join(ROOT, "plugins/immune-brain/skills");
@@ -57,18 +58,25 @@ function routeLine(loader: string, prefix: string): string {
 	return line!;
 }
 
+// These pair explicit entry with weak lexical matches; they assert metadata,
+// not a simulated classifier or a live model's selection rate.
+const TRIGGER_CASES: Array<[name: string, explicit: string, ordinary: string, scope: string]> = [
+	["imm-brainstorm", "clarify requirements with Immune-Brain", "explain this function", "requirement clarification"],
+	["imm-planner", "plan a Spec with Immune-Brain", "fix this bug", "Spec and TaskIntent planning"],
+	["imm-run", "resume my Immune-Brain task", "continue explaining", "execution or resumption"],
+	["imm-pr-fix", "repair PR feedback with Immune-Brain", "review this function", "GitHub PR review feedback"],
+	["imm-doc-prune", "prune stale docs with Immune-Brain", "explain this document", "stale current documentation"],
+	["imm-doc-slim", "minimize AGENTS.md with Immune-Brain", "what does this instruction mean", "tracked AGENTS.md"],
+	["imm-test-prune", "prune redundant tests with Immune-Brain", "is this test redundant", "redundant, bloated, or orphaned tests"],
+	["imm-retro", "review-retro with Immune-Brain", "review this function", "cross-model review load"],
+];
+
 describe("skill dist consistency", () => {
-	// These pair explicit entry with weak lexical matches; they assert metadata,
-	// not a simulated classifier or a live model's selection rate.
-	test.each([
-		["imm-brainstorm", "clarify requirements with Immune-Brain", "explain this function", "requirement clarification"],
-		["imm-planner", "plan a Spec with Immune-Brain", "fix this bug", "Spec and TaskIntent planning"],
-		["imm-run", "resume my Immune-Brain task", "continue explaining", "execution or resumption"],
-		["imm-pr-fix", "repair PR feedback with Immune-Brain", "review this function", "GitHub PR review feedback"],
-		["imm-doc-prune", "prune stale docs with Immune-Brain", "explain this document", "stale current documentation"],
-		["imm-doc-slim", "minimize AGENTS.md with Immune-Brain", "what does this instruction mean", "tracked AGENTS.md"],
-		["imm-retro", "review-retro with Immune-Brain", "review this function", "cross-model review load"],
-	])("%s: explicit '%s', not ordinary '%s'", (name, _explicit, _ordinary, scope) => {
+	test("trigger cases cover every public Skill", () => {
+		expect(TRIGGER_CASES.map(([name]) => name)).toEqual(publicSkillNames());
+	});
+
+	test.each(TRIGGER_CASES)("%s: explicit '%s', not ordinary '%s'", (name, _explicit, _ordinary, scope) => {
 		const loader = read(join(SKILLS_DIR, name, "SKILL.md"));
 		const metadata = Bun.YAML.parse(loader.match(/^---\n([\s\S]*?)\n---/)![1]) as { description: string };
 		expect(metadata.description).toStartWith("Use when the user explicitly requests");
@@ -200,7 +208,7 @@ describe("skill dist consistency", () => {
 	});
 
 	test("maintenance audits stop at manifests and mutation routes expose all guards", () => {
-		for (const name of ["imm-doc-prune", "imm-doc-slim"]) {
+		for (const name of ["imm-doc-prune", "imm-doc-slim", "imm-test-prune"]) {
 			const path = join(SKILLS_DIR, name, "SKILL.md");
 			const loader = read(path);
 			const audit = linkedSections(path, routeLine(loader, "common:")) +
@@ -216,15 +224,7 @@ describe("skill dist consistency", () => {
 
 	test("every public skill has a packaged counterpart", () => {
 		const skills = publicSkills();
-		expect(skills.map((item) => item.name).sort()).toEqual([
-			"imm-brainstorm",
-			"imm-doc-prune",
-			"imm-doc-slim",
-			"imm-planner",
-			"imm-pr-fix",
-			"imm-retro",
-			"imm-run",
-		]);
+		expect(skills.map((item) => item.name).sort()).toEqual(publicSkillNames().sort());
 		for (const item of skills) {
 			expect(read(item.skill).length).toBeGreaterThan(0);
 			expect(read(item.dist).length).toBeGreaterThan(0);
@@ -271,7 +271,7 @@ describe("skill dist consistency", () => {
 
 		// Every owned skill contract is tracked
 		expect(SKILL_OWNED_ENTRIES.map((e) => e.packaged).sort()).toEqual(
-			["imm-brainstorm.md", "imm-doc-prune.md", "imm-doc-slim.md", "imm-planner.md", "imm-pr-fix.md", "imm-retro.md", "imm-run.md"].sort(),
+			publicSkillNames().map((name) => `${name}.md`).sort(),
 		);
 	});
 

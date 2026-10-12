@@ -28,7 +28,7 @@ Pi and Claude Code are the supported hosts. Undeclared adapters remain unsupport
 - [Recommended Workflows: Composing with mattpocock/skills](#recommended-workflows-composing-with-mattpocockskills)
 - [Real-World Case Studies](#real-world-case-studies)
 - [Core Philosophy: Turn "Judgment" into "Table Lookup"](#core-philosophy-turn-judgment-into-table-lookup-harnessing-multi-model-tiers-with-determinism)
-- [The 7 Skills](#the-7-skills)
+- [The 8 Skills](#the-8-skills)
 - [Lifecycle](#lifecycle)
 - [Unattended Batch Runs](#unattended-batch-runs)
 - [Configuration](#configuration)
@@ -54,7 +54,7 @@ Pi discovers Skills and extensions from `package.json` (or your global Pi config
 }
 ```
 
-No extra server config is needed. Installing the package via Pi makes all 7 Skills available automatically.
+No extra server config is needed. Installing the package via Pi makes all 8 Skills available automatically.
 
 ### In Claude Code
 
@@ -123,6 +123,7 @@ Immune-Brain provides two clean modes: **Host-native** for daily coding, and **M
 | PR has review comments or failing CI | `/imm-pr-fix` on that PR | → Standalone repair: minimal scoped fix in place, no managed task created |
 | Project docs out of date | `/imm-doc-prune` | → Read-only audit; deletes only user-approved stale docs from manifest |
 | Agent instructions bloated | `/imm-doc-slim` | → Minimizes tracked `AGENTS.md` / `CLAUDE.md` to essential non-discoverable rules |
+| Test suite bloated with redundant cases | `/imm-test-prune` | → Audits tests read-only, then merges or deletes only approved entries backed by retirement or coverage evidence |
 | Which model's edits keep coming back for review | `/imm-retro` | → Ranks models by review load and reports project usage from session logs |
 
 > **Core Principle: Skill-Explicit Entry**
@@ -412,7 +413,7 @@ Without explicit cost levers, multi-agent workflows compound expenses exponentia
 
 ---
 
-## The 7 Skills
+## The 8 Skills
 
 | Skill | Type | When to use | What it does |
 |---|---|---|---|
@@ -422,11 +423,12 @@ Without explicit cost levers, multi-agent workflows compound expenses exponentia
 | `imm-pr-fix` | Standalone | CI failed / review comments on a PR | Repairs one PR in place, no managed authority |
 | `imm-doc-prune` | Standalone | Stale current docs | Deletes only the hash-approved manifest entries |
 | `imm-doc-slim` | Standalone | Bloated agent instructions | Minimizes tracked AGENTS/CLAUDE/GEMINI.md to necessary context |
+| `imm-test-prune` | Standalone | Bloated or redundant tests | Merges, parameterizes, or deletes approved test entries without weakening assertions |
 | `imm-retro` | Standalone | Compare models by review load | Ranks authors of reviewed code and reports project usage |
 
 Internal roles (Executor, QA, Review, Compounder) are dispatched by `imm-run` — you never invoke them directly.
 
-All 7 skills are invoked explicitly. For new features, start with `imm-brainstorm` (if requirements are uncertain) or `imm-planner` (if requirements are clear), then enter `imm-run`, whose first step is Enrollment.
+All 8 skills are invoked explicitly. For new features, start with `imm-brainstorm` (if requirements are uncertain) or `imm-planner` (if requirements are clear), then proceed to `imm-run` once enrolled.
 
 ### Managed Path entries (brainstorm → planner → loop)
 
@@ -473,6 +475,11 @@ The three repair/maintenance skills are host-native: they never create a managed
 
 - **Trigger:** explicit request to minimize tracked `AGENTS.md` / `CLAUDE.md` / `GEMINI.md`.
 - **What it does:** keeps only the necessary non-discoverable rules in agent instruction files, under the same read-only-audit + hash-bound-manifest-approval model as `imm-doc-prune`.
+
+#### `imm-test-prune` — test suite pruning
+
+- **Trigger:** explicit request to audit or prune redundant, bloated, or orphaned tests.
+- **What it does:** inventories tests with the repository's own test and coverage commands, then merges, parameterizes, or deletes only entries you approved in an exact hash-bound manifest. Deletion needs retirement proof or coverage-backed subsumption; without coverage tooling those entries stay unverified. It never weakens an assertion or touches production source.
 
 #### `imm-retro` — review load and project usage
 
@@ -652,7 +659,7 @@ See [`docs/reference/immune-brain-config.md`](docs/reference/immune-brain-config
 package.json                          # Pi package manifest (skills + extensions)
 plugins/immune-brain/
 ├── .pi-extension/                    # Pi TUI + Kernel authority extension
-├── skills/                           # 7 public Skills (trigger shims)
+├── skills/                           # 8 public Skills (trigger shims)
 ├── dist/                             # Built skill contracts & references
 ├── runtime/                          # Bun + TypeScript runtime & Kernel
 └── bin/                              # CLI wrappers (→ runtime/v4_runtime.ts)
@@ -670,7 +677,7 @@ docs/specs/                           # Living specs (updated in place)
 
 ## FAQ
 
-**Do I need to learn all 7 skills?** No. Most of the time you only need `/imm-planner` (to plan a task) and `/imm-run` (to enroll, build and verify it). Use `imm-brainstorm` when requirements need clarifying first, and the maintenance skills (`imm-pr-fix`, etc.) only when specific repair needs arise. Ordinary chat and simple edits don't need any skills at all.
+**Do I need to learn all 8 skills?** No. Most of the time you only need `/imm-planner` (to plan and enroll a task) and `/imm-run` (to build and verify it). Use `imm-brainstorm` when requirements need clarifying first, and the maintenance skills (`imm-pr-fix`, etc.) only when specific repair needs arise. Ordinary chat and simple edits don't need any skills at all.
 
 **What if I interrupt or close the session mid-task?** State is safely stored on disk (`.imm/` + TaskIntent). In Pi or Claude Code, simply re-enter `/imm-run` to resume — the Kernel projection is authoritative.
 
