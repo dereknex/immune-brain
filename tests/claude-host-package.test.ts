@@ -20,6 +20,7 @@ import { stampPluginManifest, validateManifests } from "../scripts/plugin_versio
 import { MIN_CLAUDE_CODE_VERSION, probeHost } from "../plugins/immune-brain/runtime/claude/capability";
 import { PLUGIN_VERSION } from "../plugins/immune-brain/runtime/plugin_version";
 import { handleJsonRpc, listMcpTools } from "../plugins/immune-brain/runtime/claude/mcp_server";
+import { publicSkillNames } from "./helpers/public-skills";
 
 const ROOT = resolve(import.meta.dir, "..");
 const PLUGIN_ROOT = resolve(ROOT, "plugins/immune-brain");
@@ -36,7 +37,7 @@ const REJECTED = [
   "plugins/immune-brain/.cursor-plugin",
   "plugins/immune-brain/.opencode-plugin",
 ];
-const SKILLS = ["imm-brainstorm", "imm-planner", "imm-run", "imm-pr-fix", "imm-doc-prune", "imm-doc-slim"];
+const SKILLS = publicSkillNames();
 
 describe("claude host package", () => {
   it("ships one versioned Pi+Claude allowlist and rejects undeclared hosts", () => {
@@ -430,6 +431,6 @@ describe("claude host package", () => {
 
   it("does not fork the public Skill contracts", () => {
     const dist = readdirSync(resolve(PLUGIN_ROOT, "dist")).filter((name) => name.startsWith("imm-") && name.endsWith(".md"));
-    expect(dist.sort()).toEqual(["imm-brainstorm.md", "imm-doc-prune.md", "imm-doc-slim.md", "imm-planner.md", "imm-pr-fix.md", "imm-retro.md", "imm-run.md"]);
+    expect(dist.sort()).toEqual(SKILLS.map((name) => `${name}.md`).sort());
   });
 });
