@@ -62,9 +62,15 @@ function enrollmentBaselinePath(root: string): string {
 	return join(root, ".imm/state/enrollment-baseline.json");
 }
 
-export function writeEnrollmentBaseline(root: string): void {
+/**
+ * Records the dirt that predates the task. `claimedPaths` are the in-scope
+ * paths the confirmed Enrollment gate listed: they are left out, so later
+ * snapshots treat them as task work instead of withholding them.
+ */
+export function writeEnrollmentBaseline(root: string, claimedPaths: readonly string[] = []): void {
 	const snapshot = captureGitWorkspaceSnapshot(root);
 	if (!snapshot) return;
+	for (const path of claimedPaths) delete snapshot.dirty_files[path];
 	const path = enrollmentBaselinePath(root);
 	mkdirSync(dirname(path), { recursive: true });
 	writeFileSync(path, `${JSON.stringify(snapshot)}\n`);
@@ -395,9 +401,10 @@ function taskPathMatchesScope(path: string, scope: string[]): boolean {
 
 /**
  * A staged in-scope path that still equals the Enrollment baseline predates the
- * task. Dropping it silently let QA attest workspace bytes that the Review
- * revision did not carry, so it is a hard stop instead: reverting and reapplying
- * yields the same bytes, and only a fresh Enrollment from a clean scope recovers.
+ * task and was not listed by the confirmed Enrollment gate. Dropping it silently
+ * let QA attest workspace bytes that the Review revision did not carry, so it is
+ * a hard stop instead: reverting and reapplying yields the same bytes, and only
+ * a fresh Enrollment that lists the path, or starts from a clean scope, recovers.
  * The task's own planning sidecar is exempt, as it is in dirtyScopePaths:
  * Enrollment requires it tracked, so it is routinely staged in the baseline.
  */
@@ -412,14 +419,15 @@ function assertNoPreEnrollmentScopeChanges(root: string, scopedStagedPaths: read
 		.sort(comparePaths);
 	if (withheld.length > 0)
 		throw new Error(
-			`task scope contains staged changes that predate Enrollment and cannot become task work: ${withheld.join(", ")}; stop the task and re-enroll from a clean scope`,
+			`task scope contains staged changes that predate Enrollment and cannot become task work: ${withheld.join(", ")}; stop the task and enroll again so the Enrollment gate lists them, or from a clean scope`,
 		);
 }
 
 /**
  * In-scope paths that are already staged, modified or untracked relative to
- * HEAD. Enrollment refuses these: the baseline would record them as user dirt
- * and they could never be delivered by the task.
+ * HEAD. The Enrollment gate lists them; the ones it listed are claimed as task
+ * work, and any other one refuses Enrollment, because the baseline would record
+ * it as user dirt and the task could never deliver it.
  */
 export function dirtyScopePaths(projectRoot: string, scopeHint: unknown, taskId?: string): string[] {
 	const root = realpathSync(resolve(projectRoot));
@@ -431,7 +439,7 @@ export function dirtyScopePaths(projectRoot: string, scopeHint: unknown, taskId?
 	);
 }
 
-function taskSnapshotOnce(root: string, scope: string[], taskId?: string): GitTaskSnapshot {
+function taskSnapshotOnce(root: string, scope: string[], taskId?: string, tolerated?: string[]): GitTaskSnapshot {
 	const repositoryRoot = git(root, ["rev-parse", "--show-toplevel"])?.trim();
 	const head = git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
 	if (!repositoryRoot || !head || !GIT_OBJECT_ID.test(head))
@@ -463,8 +471,10 @@ function taskSnapshotOnce(root: string, scope: string[], taskId?: string): GitTa
 	const uncommittedInScope = [...new Set([...unstagedPaths, ...untrackedPaths])]
 		.filter((path) => taskPathMatchesScope(path, scope))
 		.sort(comparePaths);
-	if (uncommittedInScope.length > 0)
-		throw new Error(`task scope contains unstaged or untracked changes: ${uncommittedInScope.join(", ")}`);
+	if (uncommittedInScope.length > 0) {
+		if (!tolerated) throw new Error(`task scope contains unstaged or untracked changes: ${uncommittedInScope.join(", ")}`);
+		tolerated.splice(0, tolerated.length, ...uncommittedInScope);
+	}
 
 	const taskPaths = [...new Set(stagedPaths)]
 		.filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope))
@@ -496,6 +506,7 @@ export function captureGitTaskSnapshot(
 	projectRoot: string,
 	scopeHint: unknown,
 	taskId?: string,
+	tolerated?: string[],
 ): GitTaskSnapshot {
 	const requestedRoot = resolve(projectRoot);
 	const requestedStat = lstatSync(requestedRoot);
@@ -503,9 +514,9 @@ export function captureGitTaskSnapshot(
 		throw new Error("task snapshot root must be a real directory");
 	const root = realpathSync(requestedRoot);
 	const scope = assertCanonicalTaskScope(scopeHint);
-	const before = taskSnapshotOnce(root, scope, taskId);
+	const before = taskSnapshotOnce(root, scope, taskId, tolerated);
 	gitTaskSnapshotTestHook?.();
-	const after = taskSnapshotOnce(root, scope, taskId);
+	const after = taskSnapshotOnce(root, scope, taskId, tolerated);
 	if (JSON.stringify(after) !== JSON.stringify(before))
 		throw new Error("Git task snapshot changed while being captured");
 	return before;
@@ -562,6 +573,7 @@ function taskRevisionSnapshotOnce(
 	scope: string[],
 	baseHead: string,
 	taskId?: string,
+	tolerated?: string[],
 ): GitTaskRevisionSnapshot {
 	const repositoryRoot = git(root, ["rev-parse", "--show-toplevel"])?.trim();
 	const head = git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
@@ -607,8 +619,10 @@ function taskRevisionSnapshotOnce(
 		"Git task revision paths",
 	);
 	const drift = [...new Set([...scopedUnstagedPaths, ...scopedUntrackedPaths])].sort(comparePaths);
-	if (drift.length > 0)
-		throw new Error(`task scope contains unstaged or untracked changes: ${drift.join(", ")}`);
+	if (drift.length > 0) {
+		if (!tolerated) throw new Error(`task scope contains unstaged or untracked changes: ${drift.join(", ")}`);
+		tolerated.splice(0, tolerated.length, ...drift);
+	}
 
 	const changed = [...new Set(scopedStagedPaths)].sort(comparePaths);
 	const changedPaths: Record<string, GitTaskIndexEntry> = {};
@@ -641,6 +655,7 @@ export function captureGitTaskRevisionSnapshot(
 	scopeHint: unknown,
 	baseHead: unknown,
 	taskId?: string,
+	tolerated?: string[],
 ): GitTaskRevisionSnapshot {
 	const requestedRoot = resolve(projectRoot);
 	const requestedStat = lstatSync(requestedRoot);
@@ -651,9 +666,9 @@ export function captureGitTaskRevisionSnapshot(
 		throw new Error("task revision base must be a Git commit id");
 	const scope = assertCanonicalTaskScope(scopeHint);
 	const normalizedBase = baseHead.toLowerCase();
-	const before = taskRevisionSnapshotOnce(root, scope, normalizedBase, taskId);
+	const before = taskRevisionSnapshotOnce(root, scope, normalizedBase, taskId, tolerated);
 	gitTaskSnapshotTestHook?.();
-	const after = taskRevisionSnapshotOnce(root, scope, normalizedBase, taskId);
+	const after = taskRevisionSnapshotOnce(root, scope, normalizedBase, taskId, tolerated);
 	if (JSON.stringify(after) !== JSON.stringify(before))
 		throw new Error("Git task revision changed while being captured");
 	return before;
@@ -704,6 +719,36 @@ export function taskDeliveryIdentity(
 		);
 	}
 	return taskDiffIdentity(projectRoot, record.intent_snapshot.scope_hint, record.task_id);
+}
+
+/**
+ * The delivery identity for a read-only status projection. Unstaged or
+ * untracked in-scope paths do not refuse it: the identity is the staged one and
+ * the paths are returned for a warning. Nothing may be frozen from this value;
+ * every snapshot that is frozen goes through `taskDeliveryIdentity`, which
+ * still refuses those paths.
+ */
+export function taskStatusIdentity(
+	projectRoot: string,
+	record: TaskDeliveryRecord,
+): GitTaskDiffIdentity & { unstaged_scope_paths: string[] } {
+	const unstaged: string[] = [];
+	const scope = record.intent_snapshot.scope_hint;
+	if (record.contract === "assurance_kernel/task_record/v4") {
+		if (!record.git_base_head) throw new Error("TaskRecord v4 is missing git_base_head");
+		const snapshot = captureGitTaskRevisionSnapshot(projectRoot, scope, record.git_base_head, record.task_id, unstaged);
+		return {
+			diff_hash: hashTaskSnapshot(snapshot),
+			changed_paths: Object.keys(snapshot.changed_paths).sort(comparePaths),
+			unstaged_scope_paths: unstaged,
+		};
+	}
+	const snapshot = captureGitTaskSnapshot(projectRoot, scope, record.task_id, unstaged);
+	return {
+		diff_hash: hashTaskSnapshot(snapshot),
+		changed_paths: Object.keys(snapshot.staged_files).sort(comparePaths),
+		unstaged_scope_paths: unstaged,
+	};
 }
 
 /** The same v4 identity for an immutable delivered commit, without touching the index. */

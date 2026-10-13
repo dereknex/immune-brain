@@ -15,6 +15,7 @@ import {
 	buildReviewPrompt,
 	buildReviewSnapshotPrompt,
 	parseAssuranceVerdict,
+	projectTaskStatus,
 	reviewAdvisoryRecords,
 	snapshotDigest,
 	type AssuranceCoordinatorPorts,
@@ -25,6 +26,7 @@ import { STATIC_REVIEW_RULES } from "../plugins/immune-brain/runtime/role_prompt
 import type { AssuranceHostPort, HostReviewReservation, ReviewRequest } from "../plugins/immune-brain/runtime/assurance/host_port";
 import type { AssuranceProjectionResult } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
+import { taskDeliveryIdentity } from "../plugins/immune-brain/runtime/workspace_scope";
 import { VerificationAbortedError } from "../plugins/immune-brain/runtime/assurance/verification";
 import { QaPreparationError, runDeterministicQa } from "../plugins/immune-brain/runtime/assurance/qa";
 
@@ -850,5 +852,49 @@ describe("QA prepare failure through the real Kernel", () => {
   const after = readTaskRecordRaw(f.root, f.taskId);
   expect(after.revision).toBe(before.revision);
   expect(JSON.stringify(after.record)).not.toContain(secret);
+ });
+});
+
+// Spec host-owned-environment D9 / SCN-6: the status projection both Hosts
+// return reads through unstaged in-scope paths and reports them once.
+describe("status projection through the real Kernel", () => {
+ const refusing = (root: string, taskId: string) => projectAssurance(root, taskId, taskDeliveryIdentity);
+
+ test("a staged scope projects exactly what the refusing projection does, with no warning", async () => {
+  const f = authorityFixture();
+  const status = await projectTaskStatus(f.root, f.taskId);
+  expect(status.error).toBeNull();
+  expect(status.warnings).toBeUndefined();
+  expect(status).toEqual(await refusing(f.root, f.taskId));
+ });
+
+ test("an unstaged in-scope path keeps the projection and adds one warning; the refusing projection still fails", async () => {
+  const f = authorityFixture();
+  const staged = await refusing(f.root, f.taskId);
+  writeFileSync(join(f.root, "src/work.ts"), "export const value = 3; // unstaged\n");
+  const before = readTaskRecordRaw(f.root, f.taskId);
+
+  const status = await projectTaskStatus(f.root, f.taskId);
+  expect(status.error).toBeNull();
+  expect(status.projection).toEqual(staged.projection);
+  expect(status.warnings).toEqual([{
+   code: "unstaged_scope_paths",
+   paths: ["src/work.ts"],
+   message: "task scope contains unstaged or untracked changes: src/work.ts; advance_assurance refuses until they are staged or removed",
+  }]);
+  // Reading status wrote nothing.
+  expect(readTaskRecordRaw(f.root, f.taskId).revision).toBe(before.revision);
+
+  const refused = await refusing(f.root, f.taskId);
+  expect(refused.error).toBe("task scope contains unstaged or untracked changes: src/work.ts");
+  expect((refused as { warnings?: unknown }).warnings).toBeUndefined();
+ });
+
+ test("a failure other than unstaged scope paths is still reported as the error", async () => {
+  const f = authorityFixture();
+  f.git("update-index", "--skip-worktree", "src/work.ts");
+  const status = await projectTaskStatus(f.root, f.taskId);
+  expect(status.error).toContain("contains unsupported index flags: src/work.ts (skip-worktree)");
+  expect(status.warnings).toBeUndefined();
  });
 });

@@ -228,13 +228,31 @@ describe("classifyIntentRevision: same-directory scope additions", () => {
 	});
 
 	test.each([
-		["a removed entry", ["src/mod/a.ts"]],
 		["a glob entry", ["src/mod/a.ts", "src/mod/sub/d.ts", "src/mod/*.ts"]],
 		["a new directory", ["src/mod/a.ts", "src/mod/sub/d.ts", "src/other/c.ts"]],
 		["an entry that swallows a previous one", ["src/mod/a.ts", "src/mod/sub/d.ts", "src/mod/sub"]],
 		["an unanchored parent", ["src/mod/a.ts", "src/mod/sub/d.ts", "src/c.ts"]],
 	])("breaking: %s", (_label, scope) => {
 		expect(classifyIntentRevision(base, revised(scope))).toBe("breaking");
+	});
+
+	// Spec host-owned-environment D10: narrowing removes authority, so a next
+	// scope made only of previous entries needs no confirmation. Replaces the
+	// former "breaking: a removed entry" case.
+	test("compatible: a strict subset of the previous scope", () => {
+		expect(classifyIntentRevision(base, revised(["src/mod/a.ts"]))).toBe("compatible");
+		expect(classifyIntentRevision(base, revised(["src/mod/sub/d.ts"]))).toBe("compatible");
+	});
+
+	test("a subset keeps its previous result once anything else changes", () => {
+		// One added entry is still judged by the same-directory rule (I6).
+		expect(classifyIntentRevision(base, revised(["src/mod/a.ts", "src/other/c.ts"]))).toBe("breaking");
+		expect(classifyIntentRevision(base, revised(["src/mod/a.ts", "src/mod/b.ts"]))).toBe("breaking");
+		expect(classifyIntentRevision(base, revised(["src/mod/a.ts"], { goal: "A different goal" }))).toBe("breaking");
+		// An empty scope is not a narrowing.
+		expect(classifyIntentRevision(base, { ...base, scope_hint: [], revision: 3 })).toBe("breaking");
+		// A subset without a revision bump is not a revision.
+		expect(classifyIntentRevision(base, scoped(["src/mod/a.ts"], { revision: 2 }))).toBe("breaking");
 	});
 
 	test("breaking: a glob previous entry does not anchor a sibling", () => {

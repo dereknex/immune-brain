@@ -1305,15 +1305,28 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		const resolutionRoots = resolutionReasons.map(() => makeEnrolledRoot());
 		try {
 			writeFileSync(join(unstagedRoot, "plugins", "immune-brain", ".pi-extension", "task.ts"), "export const task = 'changed';\n");
-			const unstaged = await capturedToolFailure(loadSurface().tools[0].execute(
+			// Status stays readable with an unstaged in-scope path; the refusal and
+			// its recovery action belong to the operation that freezes a snapshot.
+			const status = await loadSurface().tools[0].execute(
 				"status",
 				{ task_id: TASK, action: { op: "status" } },
 				undefined,
 				undefined,
 				makeCtx(unstagedRoot, makeUI()),
+			);
+			expect(JSON.parse(status.content[0].text).warnings).toMatchObject([{
+				code: "unstaged_scope_paths",
+				paths: ["plugins/immune-brain/.pi-extension/task.ts"],
+			}]);
+			const unstaged = await capturedToolFailure(loadSurface().tools[0].execute(
+				"advance",
+				{ task_id: TASK, action: { op: "advance_assurance" } },
+				undefined,
+				undefined,
+				makeCtx(unstagedRoot, makeUI()),
 			));
 			expect(unstaged).toMatchObject({
-				code: "projection_unavailable",
+				code: "assurance_blocked",
 				next_action: "stage only the listed task-owned paths, then retry the blocked operation",
 			});
 

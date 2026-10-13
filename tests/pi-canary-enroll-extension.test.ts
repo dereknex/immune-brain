@@ -662,6 +662,48 @@ describe("pi canary enroll handler integration", () => {
 		}
 	});
 
+	// Spec host-owned-environment D8 / SCN-7: the gate lists in-scope changes
+	// that already exist, and confirming it makes them task work.
+	test("the gate lists in-scope changes that already exist and confirmation claims them", async () => {
+		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
+		try {
+			makeEligibleRepo(root, TASK);
+			mkdirSync(join(root, "publish"), { recursive: true });
+			writeFileSync(join(root, "publish", "early.txt"), "written before Enrollment\n");
+			writeFileSync(join(root, "outside.txt"), "not task work\n");
+			const ui = makeFakeUI(true);
+			const result = await runTool(root, ui, [], "new");
+			expect(ui.confirmCalls).toHaveLength(1);
+			expect(ui.confirmCalls[0].body).toContain(
+				"In-scope changes that already exist (1) and become task work on confirmation: publish/early.txt",
+			);
+			expect(ui.confirmCalls[0].body).not.toContain("outside.txt");
+			expect(result.details.state).toBe("completed");
+			const baseline = JSON.parse(readFileSync(join(root, ".imm/state/enrollment-baseline.json"), "utf8"));
+			expect(Object.keys(baseline.dirty_files)).toContain("outside.txt");
+			expect(Object.keys(baseline.dirty_files)).not.toContain("publish/early.txt");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("a declined gate over a dirty scope claims nothing", async () => {
+		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
+		try {
+			makeEligibleRepo(root, TASK);
+			mkdirSync(join(root, "publish"), { recursive: true });
+			writeFileSync(join(root, "publish", "early.txt"), "written before Enrollment\n");
+			const before = authoritySnapshot(root);
+			const ui = makeFakeUI(false);
+			const result = await runTool(root, ui, [], "new");
+			expect(ui.confirmCalls[0].body).toContain("publish/early.txt");
+			expect(result.details.state).toBe("rejected");
+			expect(authoritySnapshot(root)).toBe(before);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	test("material new retains the confirmation gate", async () => {
 		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
 		try {

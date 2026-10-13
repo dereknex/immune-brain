@@ -36,7 +36,7 @@ import {
 	createEnrollmentAuthorityRegistry,
 	type EnrollmentCapabilityBinding,
 } from "../kernel/enrollment_authority";
-import { enrollTask } from "../kernel/enrollment";
+import { enrollmentScopeDisclosure, enrollTask } from "../kernel/enrollment";
 import { reconcileKernelAuthority, repairKernelAuthority } from "../kernel/storage";
 import { inspectEnrollmentGitBase, enrollmentGitBaseNotice, initializeEnrollmentGitBase } from "../assurance/enrollment_git_base";
 import { preparePiCanary, revalidatePiCanary } from "../kernel/pi_canary_prepare";
@@ -49,7 +49,7 @@ import {
 	captureStagedIntent,
 	restoreStagedIntent as restoreStagedIntentShared,
 } from "../staged_intent";
-import { projectTerminalTrackerState, TRACKER_PROJECTION_FAILURE } from "../assurance/coordinator";
+import { projectTaskStatus, projectTerminalTrackerState, TRACKER_PROJECTION_FAILURE } from "../assurance/coordinator";
 import { runGithubTrackerOperation } from "../github_issue_tracker";
 import { readTaskTombstone } from "../kernel/backend_claim";
 import {
@@ -385,7 +385,13 @@ export class ClaudeRuntime {
 		};
 	}
 
+	/** The status Tool: readable with unstaged in-scope paths, which come back as a warning. */
 	async status(taskId: string, nextScope?: readonly string[]) {
+		return nextScope ? this.project(taskId, nextScope) : projectTaskStatus(this.cwd, taskId);
+	}
+
+	/** The refusing projection every mutation and authorization is bound to. */
+	private async project(taskId: string, nextScope?: readonly string[]) {
 		return projectAssurance(this.cwd, taskId, nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf);
 	}
 
@@ -394,12 +400,15 @@ export class ClaudeRuntime {
 		let preparation = await preparePiCanary(this.cwd, { task_id: taskId, now });
 		const intent = await readTaskIntentForRecord(this.cwd, taskId);
 		const gitBase = inspectEnrollmentGitBase(this.cwd);
+		// In-scope changes that already exist are shown in the gate and only the
+		// ones shown are claimed as task work on confirmation.
+		const disclosure = enrollmentScopeDisclosure(this.cwd, taskId);
 		const gate = await this.gate("enroll", { ...meta, taskId }, {
 			risk: intent.intent.risk,
 			intentRevision: preparation.intent?.revision,
 			intentContentHash: preparation.intent?.content_hash,
 			bindingDigest: preparation.digest,
-			gitBaseNotice: enrollmentGitBaseNotice(gitBase),
+			gitBaseNotice: [enrollmentGitBaseNotice(gitBase), disclosure.notice].filter(Boolean).join("\n") || undefined,
 		});
 		const { unchanged } = await revalidatePiCanary(this.cwd, { task_id: taskId, now }, preparation);
 		if (!unchanged) throw new NativeAuthorityError("workspace_changed", "workspace changed after native confirmation");
@@ -420,7 +429,7 @@ export class ClaudeRuntime {
 				confirmation_ref: gate.confirmation_ref,
 				nonce,
 			};
-			return await enrollTask(this.cwd, this.enrollmentRegistry, { binding, now });
+			return await enrollTask(this.cwd, this.enrollmentRegistry, { binding, now, disclosed_scope_paths: disclosure.paths });
 		} catch (error) {
 			if (gitBaseNote) throw new Error(`${error instanceof Error ? error.message : String(error)}${gitBaseNote}`);
 			throw error;
@@ -503,6 +512,8 @@ export class ClaudeRuntime {
 		if (result === null || typeof result !== "object") return result;
 		if (!settledKernelResult(result)) return result;
 		try {
+			// An observation after the commit, not an authority binding: it reads
+			// through the same status the Tool returns.
 			const projection = await this.status(taskId);
 			const tracker = await projectTerminalTrackerState({
 				root: this.cwd,
@@ -578,7 +589,7 @@ export class ClaudeRuntime {
 		// The whole operation is judged against the scope it asks for (D6).
 		const nextScope = nextIntent?.scope_hint;
 		const diffProvider = nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf;
-		const projection = await this.status(taskId, nextScope);
+		const projection = await this.project(taskId, nextScope);
 		if (projection.error || !projection.claim) throw new Error(projection.error ?? "no active backend claim");
 		// Kernel projection is the sole source of authorization readiness, and the
 		// derivation is the shared export both Hosts use, so it cannot drift:
@@ -627,7 +638,7 @@ export class ClaudeRuntime {
 				}
 				preparedDiffHash = diffProvider(this.cwd, preparedRecord.record).diff_hash;
 			}
-			const preparedProjection = await this.status(taskId, nextScope);
+			const preparedProjection = await this.project(taskId, nextScope);
 			try {
 				assertProjectionBinding(projection, preparedProjection, Boolean(nextIntent));
 				if (preparedProjection.projection.diff_hash !== preparedDiffHash) {
@@ -655,7 +666,7 @@ export class ClaudeRuntime {
 		const confirmation = gate.confirmation_ref;
 		let committed: ReturnType<typeof app.execute>;
 		try {
-			const capabilityProjection = await this.status(taskId, nextScope);
+			const capabilityProjection = await this.project(taskId, nextScope);
 			try {
 				assertProjectionBinding(projection, capabilityProjection, Boolean(nextIntent));
 			} catch (error) {

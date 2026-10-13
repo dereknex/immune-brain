@@ -19,7 +19,8 @@ import type { ReviewBundle, ReviewManifestV5 } from "./review_evidence";
 import { createVerdictAuthority, type VerdictAuthority } from "./verdict_authority";
 import type { ConfirmationReferenceSource } from "./host_port";
 import { buildRoleDelegationPacket, STATIC_REVIEW_RULES } from "../role_prompt_bridge";
-import type { AssuranceProjectionResult } from "../kernel/assurance_projection";
+import { projectAssurance, type AssuranceProjectionResult } from "../kernel/assurance_projection";
+import { taskStatusIdentity } from "../workspace_scope";
 import type { TaskIntentIdentityToken } from "../kernel/intent_token_registry";
 import { scopeAdditionsFromHistory } from "../kernel/intent";
 import type { AssuranceHostPort, HostReviewReservation } from "./host_port";
@@ -350,6 +351,33 @@ export interface AssuranceRecovery {
 	acceptance_ids: string[];
 	finding_ids: string[];
 	next_action: string;
+}
+
+export interface StatusProjectionWarning {
+	code: "unstaged_scope_paths";
+	paths: string[];
+	message: string;
+}
+export type StatusProjectionResult = AssuranceProjectionResult & { warnings?: StatusProjectionWarning[] };
+/**
+ * The read-only status projection both Hosts return from their status Tool.
+ * Unstaged or untracked in-scope paths come back as a warning beside the
+ * projection instead of replacing it. Every path that freezes a snapshot or
+ * binds authority keeps projecting through the refusing delivery identity.
+ */
+export async function projectTaskStatus(root: string, taskId: string): Promise<StatusProjectionResult> {
+	let unstaged: string[] = [];
+	const result = await projectAssurance(root, taskId, (dir, record) => {
+		const identity = taskStatusIdentity(dir, record);
+		unstaged = identity.unstaged_scope_paths;
+		return identity;
+	});
+	if (result.error || unstaged.length === 0) return result;
+	return { ...result, warnings: [{
+		code: "unstaged_scope_paths",
+		paths: unstaged,
+		message: `task scope contains unstaged or untracked changes: ${unstaged.join(", ")}; advance_assurance refuses until they are staged or removed`,
+	}] };
 }
 
 /** Observation only; fresh Kernel facts remain the sole owner of the obligation. */

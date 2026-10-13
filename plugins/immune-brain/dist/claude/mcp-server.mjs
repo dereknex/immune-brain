@@ -2005,7 +2005,9 @@ function classifyIntentRevision(previous, next) {
   if (contentHashWithoutRevision(previous) === contentHashWithoutRevision(next))
     return "unchanged";
   const scopeChanged = JSON.stringify(previous.scope_hint) !== JSON.stringify(next.scope_hint);
-  const breaking = previous.contract !== next.contract || previous.task_id !== next.task_id || previous.owner !== next.owner || previous.goal !== next.goal || scopeChanged && sameDirectoryScopeAdditions(previous.scope_hint, next.scope_hint) === null || RISK_RANK[next.risk] < RISK_RANK[previous.risk] || previous.acceptance.some((prior) => {
+  const priorScope = new Set(previous.scope_hint);
+  const scopeNarrowed = next.scope_hint.length > 0 && next.scope_hint.every((entry) => priorScope.has(entry));
+  const breaking = previous.contract !== next.contract || previous.task_id !== next.task_id || previous.owner !== next.owner || previous.goal !== next.goal || scopeChanged && !scopeNarrowed && sameDirectoryScopeAdditions(previous.scope_hint, next.scope_hint) === null || RISK_RANK[next.risk] < RISK_RANK[previous.risk] || previous.acceptance.some((prior) => {
     const current = next.acceptance.find((item) => item.id === prior.id);
     return !current || current.assertion !== prior.assertion;
   });
@@ -5359,10 +5361,12 @@ function isPlanningNoise(path, taskId) {
 function enrollmentBaselinePath(root) {
   return join5(root, ".imm/state/enrollment-baseline.json");
 }
-function writeEnrollmentBaseline(root) {
+function writeEnrollmentBaseline(root, claimedPaths = []) {
   const snapshot = captureGitWorkspaceSnapshot(root);
   if (!snapshot)
     return;
+  for (const path of claimedPaths)
+    delete snapshot.dirty_files[path];
   const path = enrollmentBaselinePath(root);
   mkdirSync4(dirname5(path), { recursive: true });
   writeFileSync3(path, `${JSON.stringify(snapshot)}
@@ -5594,7 +5598,7 @@ function assertNoPreEnrollmentScopeChanges(root, scopedStagedPaths, taskId) {
     throw new Error("enrollment baseline cannot be compared because Git is unavailable");
   const withheld = [...new Set(scopedStagedPaths)].filter((path) => !isOwnPlanningSidecar(path, taskId)).filter((path) => baseline.dirty_files[path] !== undefined && baseline.dirty_files[path] === current.dirty_files[path]).sort(comparePaths);
   if (withheld.length > 0)
-    throw new Error(`task scope contains staged changes that predate Enrollment and cannot become task work: ${withheld.join(", ")}; stop the task and re-enroll from a clean scope`);
+    throw new Error(`task scope contains staged changes that predate Enrollment and cannot become task work: ${withheld.join(", ")}; stop the task and enroll again so the Enrollment gate lists them, or from a clean scope`);
 }
 function dirtyScopePaths(projectRoot, scopeHint, taskId) {
   const root = realpathSync7(resolve8(projectRoot));
@@ -5604,7 +5608,7 @@ function dirtyScopePaths(projectRoot, scopeHint, taskId) {
     throw new Error("cannot inspect the task scope outside a committed Git workspace");
   return paths.filter((path) => !isNonDeliveryPath(path) && !isOwnPlanningSidecar(path, taskId) && taskPathMatchesScope(path, scope));
 }
-function taskSnapshotOnce(root, scope, taskId) {
+function taskSnapshotOnce(root, scope, taskId, tolerated) {
   const repositoryRoot = git(root, ["rev-parse", "--show-toplevel"])?.trim();
   const head = git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
   if (!repositoryRoot || !head || !GIT_OBJECT_ID3.test(head))
@@ -5624,8 +5628,11 @@ function taskSnapshotOnce(root, scope, taskId) {
   assertNoCaseFoldCollisions([...stagedPaths, ...unstagedPaths, ...untrackedPaths], "Git task paths");
   assertNoEnvelopeEscape(root, stagedPaths, scope, taskId);
   const uncommittedInScope = [...new Set([...unstagedPaths, ...untrackedPaths])].filter((path) => taskPathMatchesScope(path, scope)).sort(comparePaths);
-  if (uncommittedInScope.length > 0)
-    throw new Error(`task scope contains unstaged or untracked changes: ${uncommittedInScope.join(", ")}`);
+  if (uncommittedInScope.length > 0) {
+    if (!tolerated)
+      throw new Error(`task scope contains unstaged or untracked changes: ${uncommittedInScope.join(", ")}`);
+    tolerated.splice(0, tolerated.length, ...uncommittedInScope);
+  }
   const taskPaths = [...new Set(stagedPaths)].filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope)).sort(comparePaths);
   assertNoPreEnrollmentScopeChanges(root, taskPaths, taskId);
   const stagedFiles = {};
@@ -5650,16 +5657,16 @@ function taskSnapshotOnce(root, scope, taskId) {
     staged_files: stagedFiles
   };
 }
-function captureGitTaskSnapshot(projectRoot, scopeHint, taskId) {
+function captureGitTaskSnapshot(projectRoot, scopeHint, taskId, tolerated) {
   const requestedRoot = resolve8(projectRoot);
   const requestedStat = lstatSync7(requestedRoot);
   if (requestedStat.isSymbolicLink() || !requestedStat.isDirectory())
     throw new Error("task snapshot root must be a real directory");
   const root = realpathSync7(requestedRoot);
   const scope = assertCanonicalTaskScope(scopeHint);
-  const before = taskSnapshotOnce(root, scope, taskId);
+  const before = taskSnapshotOnce(root, scope, taskId, tolerated);
   gitTaskSnapshotTestHook?.();
-  const after = taskSnapshotOnce(root, scope, taskId);
+  const after = taskSnapshotOnce(root, scope, taskId, tolerated);
   if (JSON.stringify(after) !== JSON.stringify(before))
     throw new Error("Git task snapshot changed while being captured");
   return before;
@@ -5683,7 +5690,7 @@ function gitRequired(root, args, failure) {
     throw new Error(failure);
   return output.trim();
 }
-function taskRevisionSnapshotOnce(root, scope, baseHead, taskId) {
+function taskRevisionSnapshotOnce(root, scope, baseHead, taskId, tolerated) {
   const repositoryRoot = git(root, ["rev-parse", "--show-toplevel"])?.trim();
   const head = git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
   if (!repositoryRoot || !head || !GIT_OBJECT_ID3.test(head))
@@ -5714,8 +5721,11 @@ function taskRevisionSnapshotOnce(root, scope, baseHead, taskId) {
   const scopedUntrackedPaths = untrackedPaths.filter((path) => taskPathMatchesScope(path, scope));
   assertNoCaseFoldCollisions([...scopedStagedPaths, ...scopedUnstagedPaths, ...scopedUntrackedPaths], "Git task revision paths");
   const drift = [...new Set([...scopedUnstagedPaths, ...scopedUntrackedPaths])].sort(comparePaths);
-  if (drift.length > 0)
-    throw new Error(`task scope contains unstaged or untracked changes: ${drift.join(", ")}`);
+  if (drift.length > 0) {
+    if (!tolerated)
+      throw new Error(`task scope contains unstaged or untracked changes: ${drift.join(", ")}`);
+    tolerated.splice(0, tolerated.length, ...drift);
+  }
   const changed = [...new Set(scopedStagedPaths)].sort(comparePaths);
   const changedPaths = {};
   for (const path of changed) {
@@ -5742,7 +5752,7 @@ function taskRevisionSnapshotOnce(root, scope, baseHead, taskId) {
     changed_paths: changedPaths
   };
 }
-function captureGitTaskRevisionSnapshot(projectRoot, scopeHint, baseHead, taskId) {
+function captureGitTaskRevisionSnapshot(projectRoot, scopeHint, baseHead, taskId, tolerated) {
   const requestedRoot = resolve8(projectRoot);
   const requestedStat = lstatSync7(requestedRoot);
   if (requestedStat.isSymbolicLink() || !requestedStat.isDirectory())
@@ -5752,9 +5762,9 @@ function captureGitTaskRevisionSnapshot(projectRoot, scopeHint, baseHead, taskId
     throw new Error("task revision base must be a Git commit id");
   const scope = assertCanonicalTaskScope(scopeHint);
   const normalizedBase = baseHead.toLowerCase();
-  const before = taskRevisionSnapshotOnce(root, scope, normalizedBase, taskId);
+  const before = taskRevisionSnapshotOnce(root, scope, normalizedBase, taskId, tolerated);
   gitTaskSnapshotTestHook?.();
-  const after = taskRevisionSnapshotOnce(root, scope, normalizedBase, taskId);
+  const after = taskRevisionSnapshotOnce(root, scope, normalizedBase, taskId, tolerated);
   if (JSON.stringify(after) !== JSON.stringify(before))
     throw new Error("Git task revision changed while being captured");
   return before;
@@ -5773,6 +5783,26 @@ function taskDeliveryIdentity(projectRoot, record) {
     return taskRevisionIdentity(projectRoot, record.intent_snapshot.scope_hint, record.git_base_head, record.task_id);
   }
   return taskDiffIdentity(projectRoot, record.intent_snapshot.scope_hint, record.task_id);
+}
+function taskStatusIdentity(projectRoot, record) {
+  const unstaged = [];
+  const scope = record.intent_snapshot.scope_hint;
+  if (record.contract === "assurance_kernel/task_record/v4") {
+    if (!record.git_base_head)
+      throw new Error("TaskRecord v4 is missing git_base_head");
+    const snapshot = captureGitTaskRevisionSnapshot(projectRoot, scope, record.git_base_head, record.task_id, unstaged);
+    return {
+      diff_hash: hashTaskSnapshot(snapshot),
+      changed_paths: Object.keys(snapshot.changed_paths).sort(comparePaths),
+      unstaged_scope_paths: unstaged
+    };
+  }
+  const snapshot = captureGitTaskSnapshot(projectRoot, scope, record.task_id, unstaged);
+  return {
+    diff_hash: hashTaskSnapshot(snapshot),
+    changed_paths: Object.keys(snapshot.staged_files).sort(comparePaths),
+    unstaged_scope_paths: unstaged
+  };
 }
 function taskCommitRevisionIdentity(projectRoot, scopeHint, baseHead, commit) {
   const requested = resolve8(projectRoot);
@@ -11192,6 +11222,21 @@ class QaPreparationError extends Error {
     this.name = "QaPreparationError";
   }
 }
+async function projectTaskStatus(root, taskId) {
+  let unstaged = [];
+  const result = await projectAssurance(root, taskId, (dir, record) => {
+    const identity = taskStatusIdentity(dir, record);
+    unstaged = identity.unstaged_scope_paths;
+    return identity;
+  });
+  if (result.error || unstaged.length === 0)
+    return result;
+  return { ...result, warnings: [{
+    code: "unstaged_scope_paths",
+    paths: unstaged,
+    message: `task scope contains unstaged or untracked changes: ${unstaged.join(", ")}; advance_assurance refuses until they are staged or removed`
+  }] };
+}
 function deriveAssuranceRecovery(taskId, fresh, result, findings = []) {
   if (fresh.error || fresh.claim?.task_id !== taskId || fresh.projection.lifecycle !== "active")
     return null;
@@ -12438,6 +12483,19 @@ function createEnrollmentAuthorityRegistry() {
 }
 
 // plugins/immune-brain/runtime/kernel/enrollment.ts
+function enrollmentScopeDisclosure(root, taskId) {
+  let paths = [];
+  try {
+    paths = dirtyScopePaths(root, readTaskIntent(root, taskId).intent.scope_hint, taskId);
+  } catch {
+    return { paths: [], notice: null };
+  }
+  return {
+    paths,
+    notice: paths.length === 0 ? null : `In-scope changes that already exist (${paths.length}) and become task work on confirmation: ${paths.join(", ")}`
+  };
+}
+
 class EnrollmentRehearsalError extends Error {
   blockers;
   constructor(blockers) {
@@ -12464,6 +12522,7 @@ function runEnrollmentPreconditionChecks(root, input, capability, registry, mode
     let workspace = null;
     let intent = null;
     let gitBaseHead = null;
+    let claimedScopePaths = [];
     const fail = (report, error) => {
       if (mode === "fail_fast")
         throw error instanceof Error ? error : new Error(String(error));
@@ -12498,11 +12557,14 @@ function runEnrollmentPreconditionChecks(root, input, capability, registry, mode
     }
     if (intent && gitBaseHead) {
       try {
+        const disclosed = new Set(input.disclosed_scope_paths ?? []);
         const dirty = dirtyScopePaths(root, intent.intent.scope_hint, input.task_id);
-        if (dirty.length > 0) {
-          const message = `task scope is already dirty before Enrollment: ${dirty.join(", ")}; commit, stash or revert these paths first`;
+        const unlisted = dirty.filter((path) => !disclosed.has(path));
+        if (unlisted.length > 0) {
+          const message = `task scope is already dirty before Enrollment: ${unlisted.join(", ")}; the confirmed Enrollment gate did not list these paths, so enroll again to review them, or commit, stash or revert them first`;
           fail(message, new Error(message));
-        }
+        } else
+          claimedScopePaths = dirty;
       } catch (error) {
         fail(`scope: ${error instanceof Error ? error.message : String(error)}`, error);
       }
@@ -12512,7 +12574,8 @@ function runEnrollmentPreconditionChecks(root, input, capability, registry, mode
       current,
       workspace,
       intent,
-      gitBaseHead
+      gitBaseHead,
+      claimedScopePaths
     };
     return onReady ? onReady(state) : { ...state, blockers };
   });
@@ -12547,6 +12610,7 @@ function runEnrollmentRehearsal(root, input, capability, registry) {
       task_id: input.task_id,
       outcome: preconditions.blockers.length === 0 ? "ready" : "not_ready",
       blockers: preconditions.blockers,
+      claimed_scope_paths: preconditions.claimedScopePaths,
       generated_at: input.now
     }
   };
@@ -12556,7 +12620,7 @@ function enrollmentEventId(taskId, now) {
 }
 var CANCELLATION_BOUNDARY = Promise.resolve();
 async function enrollTask(root, registry, request) {
-  const { binding, batch, now, checkpoint } = request;
+  const { binding, batch, now, checkpoint, disclosed_scope_paths } = request;
   const capability = registry.issue(binding);
   const input = {
     task_id: binding.task_id,
@@ -12566,6 +12630,7 @@ async function enrollTask(root, registry, request) {
     capability,
     capability_binding: binding,
     ...batch ? { batch } : {},
+    ...disclosed_scope_paths ? { disclosed_scope_paths } : {},
     now
   };
   const { eventId, digest } = digestForEnrollment(input);
@@ -12674,7 +12739,7 @@ function enrollCanaryTask(root, input, registry) {
         next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}
 `
       }, claim, digest);
-      writeEnrollmentBaseline(root);
+      writeEnrollmentBaseline(root, checks.claimedScopePaths);
       return {
         record: mutation.record,
         backend_claim: claim,
@@ -16300,6 +16365,9 @@ class ClaudeRuntime {
     };
   }
   async status(taskId, nextScope) {
+    return nextScope ? this.project(taskId, nextScope) : projectTaskStatus(this.cwd, taskId);
+  }
+  async project(taskId, nextScope) {
     return projectAssurance(this.cwd, taskId, nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf);
   }
   async enroll(taskId, meta) {
@@ -16307,12 +16375,14 @@ class ClaudeRuntime {
     let preparation = await preparePiCanary(this.cwd, { task_id: taskId, now });
     const intent = await readTaskIntentForRecord(this.cwd, taskId);
     const gitBase = inspectEnrollmentGitBase(this.cwd);
+    const disclosure = enrollmentScopeDisclosure(this.cwd, taskId);
     const gate = await this.gate("enroll", { ...meta, taskId }, {
       risk: intent.intent.risk,
       intentRevision: preparation.intent?.revision,
       intentContentHash: preparation.intent?.content_hash,
       bindingDigest: preparation.digest,
-      gitBaseNotice: enrollmentGitBaseNotice(gitBase)
+      gitBaseNotice: [enrollmentGitBaseNotice(gitBase), disclosure.notice].filter(Boolean).join(`
+`) || undefined
     });
     const { unchanged } = await revalidatePiCanary(this.cwd, { task_id: taskId, now }, preparation);
     if (!unchanged)
@@ -16336,7 +16406,7 @@ class ClaudeRuntime {
         confirmation_ref: gate.confirmation_ref,
         nonce
       };
-      return await enrollTask(this.cwd, this.enrollmentRegistry, { binding, now });
+      return await enrollTask(this.cwd, this.enrollmentRegistry, { binding, now, disclosed_scope_paths: disclosure.paths });
     } catch (error) {
       if (gitBaseNote)
         throw new Error(`${error instanceof Error ? error.message : String(error)}${gitBaseNote}`);
@@ -16438,7 +16508,7 @@ class ClaudeRuntime {
     const nextIntent = extra.next_intent ? await parseTaskIntentV1(extra.next_intent) : undefined;
     const nextScope = nextIntent?.scope_hint;
     const diffProvider = nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf;
-    const projection = await this.status(taskId, nextScope);
+    const projection = await this.project(taskId, nextScope);
     if (projection.error || !projection.claim)
       throw new Error(projection.error ?? "no active backend claim");
     if (operation === "request_authorization") {
@@ -16483,7 +16553,7 @@ class ClaudeRuntime {
         }
         preparedDiffHash = diffProvider(this.cwd, preparedRecord.record).diff_hash;
       }
-      const preparedProjection = await this.status(taskId, nextScope);
+      const preparedProjection = await this.project(taskId, nextScope);
       try {
         assertProjectionBinding(projection, preparedProjection, Boolean(nextIntent));
         if (preparedProjection.projection.diff_hash !== preparedDiffHash) {
@@ -16511,7 +16581,7 @@ class ClaudeRuntime {
     const confirmation = gate.confirmation_ref;
     let committed;
     try {
-      const capabilityProjection = await this.status(taskId, nextScope);
+      const capabilityProjection = await this.project(taskId, nextScope);
       try {
         assertProjectionBinding(projection, capabilityProjection, Boolean(nextIntent));
       } catch (error) {

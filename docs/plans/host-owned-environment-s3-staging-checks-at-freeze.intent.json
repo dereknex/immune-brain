@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "host-owned-environment-s3-staging-checks-at-freeze",
-  "owner": "user",
   "goal": "The staging area is inspected when a snapshot is frozen and not before: the read-only status projection of an active task is returned with a warning when its scope holds unstaged or untracked paths, the Enrollment gate on both Hosts lists in-scope paths that are already staged, modified or untracked and on confirmation leaves them out of the Enrollment baseline so they are task work, and a scope revision whose entries are all previous entries is compatible. Freezing a snapshot and the index-flag refusal are unchanged (Spec host-owned-environment S3; D8-D11, I4-I6).",
   "acceptance": [
     {
@@ -30,6 +29,7 @@
     "docs/plans/host-owned-environment-s3-staging-checks-at-freeze.intent.json",
     "docs/specs/host-owned-environment.spec.md",
     "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
     "plugins/immune-brain/dist/claude/mcp-server.mjs",
     "plugins/immune-brain/dist/imm-run.md",
     "plugins/immune-brain/runtime/assurance/coordinator.ts",
@@ -44,8 +44,10 @@
     "tests/host-neutral-assurance-coordinator.test.ts",
     "tests/kernel-intent-v2.test.ts",
     "tests/managed-task-snapshot-isolation.test.ts",
-    "tests/pi-canary-enroll-extension.test.ts"
+    "tests/pi-canary-enroll-extension.test.ts",
+    "tests/pi-canary-work-extension.test.ts"
   ],
   "risk": "critical",
-  "revision": 1
+  "revision": 3,
+  "owner": "user"
 }

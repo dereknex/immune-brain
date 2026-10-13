@@ -31,6 +31,18 @@ candidate and reports its stable reason plus exactly one same-Host recovery
 action; never recommend another Host, worktree, Direct Path, unmanaged
 implementation, or automatic retry.
 
+The Enrollment gate lists every in-scope path that is already staged, modified
+or untracked. Confirming the gate claims exactly the listed paths as task work,
+so a task may start from work the user already began; no clean scope is
+required. An in-scope path that changed after the gate text was built was not
+shown, so it refuses the Enrollment: enroll again to review it. Changes outside
+the scope stay the user's and are never claimed.
+
+`status` is a read, not a freeze. It stays readable while the scope holds
+unstaged or untracked paths and returns them as a `warnings` entry beside the
+projection. Freezing a snapshot still refuses those paths, and an in-scope path
+carrying a skip-worktree or assume-unchanged index flag still refuses both.
+
 Before the first Enrollment of a candidate TaskIntent, confirm the Planner
 returned `tracker_associated` — but only when the candidate belongs to an
 identified GitHub-carried Initiative. Standalone TaskIntents and Local
@@ -175,8 +187,11 @@ is recorded as a separate follow-up rather than resolved here.
   assurance, Claude Host authority, Pi extension), `docs/specs` or `docs/plans`,
   submit `revise_intent` with the complete next intent. It classifies
   `compatible`, applies without a native gate, and the next Review prompt names
-  the added paths as self-served (ADR 0021). A glob, removed entry, new
-  directory or floor path is breaking; a directory written without a trailing
+  the added paths as self-served (ADR 0021). A revision that only removes
+  entries is `compatible` as well: narrowing removes authority, so it applies
+  through `revise_intent` without a gate, provided at least one entry remains.
+  A glob, new directory or floor path is breaking, and so is an addition
+  combined with a removed entry; a directory written without a trailing
   slash is refused by the Host before submission, so name concrete files or
   widen with a glob entry through `approve_breaking_intent_revision`. The envelope check for a revision is judged against the next
   scope, so a worktree that already holds the added files no longer blocks it.
@@ -196,14 +211,16 @@ is recorded as a separate follow-up rather than resolved here.
 - Text instructions are contracts, not a hard bash sandbox. They guide and are
   reviewed; the Kernel authority gates remain the real boundary.
 - In a Lane whose batch confirmation delegated in-envelope revisions
-  (ADR 0018), the Executor does not open the gate for a revision that only
-  changes acceptance or narrows `scope_hint`: it stops and returns the complete
-  next intent to the Parent, which submits it as `lane_revision` on
-  `start_unattended_batch`. The runner applies it as a delegated approval
+  (ADR 0018), the Executor does not open the gate for a breaking revision that
+  changes acceptance, alone or with a narrowed `scope_hint`: it stops and
+  returns the complete next intent to the Parent, which submits it as
+  `lane_revision` on `start_unattended_batch`. The runner applies it as a delegated approval
   (actor `batch-coordinator`, confirmation `delegated-batch:<batch_id>@<time>`)
   or refuses it with `batch_delegation_refused` and a `fallback`; on refusal the
   Executor uses its own native gate below. Widening scope, changing risk, goal
-  or the bound Spec is never delegated, and nobody answers a dialog in a tab.
+  or the bound Spec is never delegated, and nobody answers a dialog in a tab. A
+  revision that only narrows `scope_hint` is compatible and is not delegated:
+  the Executor applies it with `revise_intent`.
 - Invoke `approve_breaking_intent_revision` with the complete next intent
   directly; the native Host gate is the single user decision. Do not overwrite
   enrolled intent sidecars or ask for chat pre-confirmation. A breaking revision

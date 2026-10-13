@@ -218,9 +218,10 @@ function jsonLineReader(output: PassThrough): () => Promise<Record<string, unkno
 	return () => queue.length ? Promise.resolve(queue.shift()!) : new Promise((resolve) => waiters.push(resolve));
 }
 
-async function runWireEnrollment(response: Record<string, unknown>, options: { cancelOuter?: boolean; replay?: boolean; unknownFirst?: boolean } = {}) {
+async function runWireEnrollment(response: Record<string, unknown>, options: { cancelOuter?: boolean; replay?: boolean; unknownFirst?: boolean; prepare?: (root: string, taskId: string) => void } = {}) {
 	const taskId = `wire-${Math.random().toString(16).slice(2)}`;
 	const fixture = authorityFixtureRoot(taskId);
+	options.prepare?.(fixture.root, taskId);
 	const input = new PassThrough();
 	const output = new PassThrough();
 	const next = jsonLineReader(output);
@@ -455,6 +456,32 @@ describe("claude host authority", () => {
 		expect(message).toContain("Binding digest:");
 		expect(JSON.stringify(result)).not.toContain("error");
 		expect(readWorkspaceStateRaw(root).state.current_working).toBe(taskId);
+	});
+
+	// Spec host-owned-environment D8 / SCN-7: the gate lists in-scope changes
+	// that already exist, and accepting it makes them task work.
+	test("the Enrollment gate lists in-scope changes that already exist and acceptance claims them", async () => {
+		const dirty = (root: string, taskId: string) => {
+			writeFileSync(join(root, "docs", "specs", `${taskId}.spec.md`), `# ${taskId}\n\nwritten before Enrollment\n`);
+			writeFileSync(join(root, "outside.txt"), "not task work\n");
+		};
+		const { root, taskId, elicitation, result } = await runWireEnrollment(
+			{ result: { action: "accept", content: {} } },
+			{ prepare: dirty },
+		);
+		const path = `docs/specs/${taskId}.spec.md`;
+		const message = ((elicitation.params as { message?: string }).message ?? "");
+		expect(message).toContain(`In-scope changes that already exist (1) and become task work on confirmation: ${path}`);
+		expect(message).not.toContain("outside.txt");
+		expect(JSON.stringify(result)).not.toContain("error");
+		expect(readWorkspaceStateRaw(root).state.current_working).toBe(taskId);
+		const baseline = JSON.parse(readFileSync(join(root, ".imm/state/enrollment-baseline.json"), "utf8"));
+		expect(Object.keys(baseline.dirty_files)).toContain("outside.txt");
+		expect(Object.keys(baseline.dirty_files)).not.toContain(path);
+
+		const declined = await runWireEnrollment({ result: { action: "decline" } }, { prepare: dirty });
+		expect((declined.elicitation.params as { message?: string }).message ?? "").toContain(`docs/specs/${declined.taskId}.spec.md`);
+		expect(readWorkspaceStateRaw(declined.root).state.current_working).toBeNull();
 	});
 
 	test("decline, cancel, malformed response, unsupported elicitation, and outer cancellation mint zero authority", async () => {

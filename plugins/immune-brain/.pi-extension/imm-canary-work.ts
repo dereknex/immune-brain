@@ -133,7 +133,7 @@ import {
 	runGithubTrackerOperation,
 	type GithubTrackerResult,
 } from "../runtime/github_issue_tracker";
-import { reviewReworkFindings } from "../runtime/assurance/coordinator";
+import { projectTaskStatus, reviewReworkFindings, type StatusProjectionResult } from "../runtime/assurance/coordinator";
 import { laneWriteRefusal } from "../runtime/unattended/lane_workspace";
 import { activeTaskNotice } from "../runtime/assurance/active_task_notice";
 import { revisionOwnerEditRefusal } from "../runtime/assurance/revision_owner";
@@ -701,7 +701,11 @@ export default function (
 					}
 				}
 			}
-			const projection = await projectAssuranceForTask(ctx.cwd, taskId, requested);
+			// Status is a read: unstaged in-scope paths come back as a warning. Every
+			// other operation projects through the refusing delivery identity.
+			const projection: StatusProjectionResult = action.op === "status"
+				? await projectTaskStatus(ctx.cwd, taskId)
+				: await projectAssuranceForTask(ctx.cwd, taskId, requested);
 			if (projection.error) {
 				const nextAction = recoveryActionForAssuranceFailure(projection.error) ?? "inspect authority state";
 				const details = {
@@ -720,7 +724,8 @@ export default function (
 				const blockers = state.blocking_finding_ids.length
 					+ state.unresolved_user_decision_ids.length
 					+ state.replan_required_ids.length;
-				const status = { plugin_version: PLUGIN_VERSION, ...state };
+				const warnings = projection.warnings ?? [];
+				const status = { plugin_version: PLUGIN_VERSION, ...state, ...(warnings.length > 0 ? { warnings } : {}) };
 				const details = {
 					state: "status",
 					operation: "status",
@@ -728,7 +733,8 @@ export default function (
 					lifecycle: state.lifecycle,
 					artifact_state: state.artifact_state,
 					task_state: state,
-					result: `${fresh}/${total} acceptance items fresh; ${blockers} blocker${blockers === 1 ? "" : "s"}`,
+					...(warnings.length > 0 ? { warnings } : {}),
+					result: `${fresh}/${total} acceptance items fresh; ${blockers} blocker${blockers === 1 ? "" : "s"}${warnings.map((warning) => `; ${warning.message}`).join("")}`,
 					next_action: state.next_obligation,
 				};
 				presentTaskRailResult(ctx, taskId, details);

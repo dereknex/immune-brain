@@ -450,12 +450,19 @@ export function classifyIntentRevision(
 
 	const scopeChanged =
 		JSON.stringify(previous.scope_hint) !== JSON.stringify(next.scope_hint);
+	// Narrowing removes authority: a next scope made only of previous entries
+	// needs no confirmation. An empty scope is not a narrowing, and any added
+	// entry is classified by the same-directory rule below, as before.
+	const priorScope = new Set(previous.scope_hint);
+	const scopeNarrowed =
+		next.scope_hint.length > 0 && next.scope_hint.every((entry) => priorScope.has(entry));
 	const breaking =
 		previous.contract !== next.contract ||
 		previous.task_id !== next.task_id ||
 		previous.owner !== next.owner ||
 		previous.goal !== next.goal ||
 		(scopeChanged &&
+			!scopeNarrowed &&
 			sameDirectoryScopeAdditions(previous.scope_hint, next.scope_hint) === null) ||
 		RISK_RANK[next.risk] < RISK_RANK[previous.risk] ||
 		previous.acceptance.some((prior) => {

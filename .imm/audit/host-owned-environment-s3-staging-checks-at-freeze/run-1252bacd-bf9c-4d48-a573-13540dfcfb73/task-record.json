@@ -1,0 +1,234 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "host-owned-environment-s3-staging-checks-at-freeze",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "host-owned-environment-s3-staging-checks-at-freeze",
+    "goal": "The staging area is inspected when a snapshot is frozen and not before: the read-only status projection of an active task is returned with a warning when its scope holds unstaged or untracked paths, the Enrollment gate on both Hosts lists in-scope paths that are already staged, modified or untracked and on confirmation leaves them out of the Enrollment baseline so they are task work, and a scope revision whose entries are all previous entries is compatible. Freezing a snapshot and the index-flag refusal are unchanged (Spec host-owned-environment S3; D8-D11, I4-I6).",
+    "acceptance": [
+      {
+        "id": "HE-S3-A1",
+        "assertion": "With an unstaged file inside the scope of an active task, the status Tool on both Hosts returns the task projection plus a warning naming the path; advance_assurance on the same state still refuses, and an index-flagged in-scope path still refuses a snapshot; seams: tests/dual-host-assurance-conformance.test.ts, tests/host-neutral-assurance-coordinator.test.ts, tests/managed-task-snapshot-isolation.test.ts (Spec SCN-6, D9, D11, I5).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\",\n      \"tests/managed-task-snapshot-isolation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "HE-S3-A2",
+        "assertion": "Enrollment over a scope that already holds staged, modified or untracked paths succeeds when the confirmed gate text listed them, and those paths appear in the first snapshot; a path dirtied after the gate text was built is not claimed; out-of-scope dirt stays in the Enrollment baseline; seams: tests/enrollment-dirty-scope.test.ts, tests/pi-canary-enroll-extension.test.ts, tests/claude-host-authority.test.ts (Spec SCN-7, D8, I4).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/enrollment-dirty-scope.test.ts\",\n      \"tests/pi-canary-enroll-extension.test.ts\",\n      \"tests/claude-host-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "HE-S3-A3",
+        "assertion": "classifyIntentRevision returns compatible for a next scope that is a strict subset of the previous scope, and keeps its previous result for a subset plus one added entry, for a subset with a changed goal, and for an empty next scope; seam: tests/kernel-intent-v2.test.ts (Spec SCN-8, D10, I6).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-intent-v2.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "HE-S3-A4",
+        "assertion": "dist/imm-run.md states that Enrollment discloses and claims listed in-scope changes and that status stays readable with unstaged scope paths; the generated Claude bundle matches the runtime source; seams: tests/explicit-phase-entry-run-contract.test.ts, tests/claude-host-package.test.ts (Spec D8, D9).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/explicit-phase-entry-run-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/host-owned-environment-s3-staging-checks-at-freeze.md",
+      "docs/plans/host-owned-environment-s3-staging-checks-at-freeze.intent.json",
+      "docs/specs/host-owned-environment.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment.ts",
+      "plugins/immune-brain/runtime/kernel/intent.ts",
+      "plugins/immune-brain/runtime/workspace_scope.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/enrollment-dirty-scope.test.ts",
+      "tests/explicit-phase-entry-run-contract.test.ts",
+      "tests/host-neutral-assurance-coordinator.test.ts",
+      "tests/kernel-intent-v2.test.ts",
+      "tests/managed-task-snapshot-isolation.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/pi-canary-work-extension.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 3,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/host-owned-environment-s3-staging-checks-at-freeze.intent.json",
+    "content_hash": "sha256:1aade77c34b163fac7733237afe18a75d4f0f894d18dbbcf218fc873b05ad2f6"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:0d869356b61fa110fd171fd03126cec0939c5482b5cf996ca0b5dce69e13c975",
+  "git_base_head": "ab1cd3b46799959a9b33fea2a0247cbfaf2fe1a8",
+  "attestations": [
+    {
+      "id": "approval-qa-3f833a2c",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:1aade77c34b163fac7733237afe18a75d4f0f894d18dbbcf218fc873b05ad2f6",
+      "diff_hash": "sha256:7fa2ea536dbf9650b92288047c2eb25c79018090d57261b7039919199e5864d4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:8022a9d562a1c71d38053332080ab9d6bd852008c31a45770961004602025f2c",
+      "acceptance_results": [
+        {
+          "acceptance_id": "HE-S3-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:8022a9d562a1c71d38053332080ab9d6bd852008c31a45770961004602025f2c"
+        },
+        {
+          "acceptance_id": "HE-S3-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:8022a9d562a1c71d38053332080ab9d6bd852008c31a45770961004602025f2c"
+        },
+        {
+          "acceptance_id": "HE-S3-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:8022a9d562a1c71d38053332080ab9d6bd852008c31a45770961004602025f2c"
+        },
+        {
+          "acceptance_id": "HE-S3-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:8022a9d562a1c71d38053332080ab9d6bd852008c31a45770961004602025f2c"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-497e2df0",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:1aade77c34b163fac7733237afe18a75d4f0f894d18dbbcf218fc873b05ad2f6",
+      "diff_hash": "sha256:7fa2ea536dbf9650b92288047c2eb25c79018090d57261b7039919199e5864d4",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (single parent ab1cd3b, tree 5a2d4d2); all 20 per-file diffs read. Status tolerance is confined to the status Tool and the post-commit tracker observation while every authorization and freeze still projects through the refusing identity; Enrollment claims only gate-listed in-scope paths and fails closed on unlisted ones; scope narrowing is compatible only for a non-empty subset; the Claude bundle mirrors the runtime source; tests assert each acceptance at its named seams.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "ab1cd3b46799959a9b33fea2a0247cbfaf2fe1a8",
+        "review_commit": "c81a894629ce18bc149fa10d4b935c78f6582edf",
+        "review_tree": "5a2d4d273efb6547c089bd4c1cb2ea9380cfc029",
+        "manifest_digest": "sha256:ac893489f48beb2be237065fdbe33a543c4666c7e835f11c62b2c1208befdd52"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-499c584cb0c1-1-review-1",
+          "acceptance_id": "HE-S3-A2",
+          "summary": "The Enrollment gate notice joins raw in-scope path names with no control-character escaping, so a file name containing a newline that matches a glob scope entry can add extra lines to the confirmation text on both Hosts.",
+          "anchor": "sha256:b097779cb2e20f92d19022d2b9c7544caa255c373b893d3c6c5018188213b919",
+          "evidence": {
+            "trigger": "Scope holds a glob entry such as src/** and an untracked file whose name contains a newline followed by text resembling a gate line exists before Enrollment; dirtyPaths splits git -z output without rejecting control characters and enrollmentScopeDisclosure interpolates the names into the notice with paths.join(\", \").",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/workspace_scope.ts:dirtyPaths",
+              "plugins/immune-brain/runtime/workspace_scope.ts:dirtyScopePaths",
+              "plugins/immune-brain/runtime/kernel/enrollment.ts:enrollmentScopeDisclosure",
+              "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.enroll",
+              "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts:executeForegroundEnrollment"
+            ],
+            "violated": {
+              "kind": "security_boundary",
+              "ref": "enrollment-gate-text-integrity"
+            }
+          }
+        },
+        {
+          "id": "review-499c584cb0c1-2-review-2",
+          "acceptance_id": "HE-S3-A1",
+          "summary": "The tolerated-path list is overwritten only when a capture pass finds in-scope drift, so an untracked in-scope file removed between the two capture passes still appears in the status warning; this affects warning text only, never the identity.",
+          "anchor": "sha256:15f03b2ba00a82f57a15ebd88125dc9e7b33605d413eabadb7e22a7556a4daad",
+          "evidence": {
+            "trigger": "An untracked in-scope file exists during the first taskRevisionSnapshotOnce pass and is deleted before the second; both staged snapshots compare equal, the second pass skips tolerated.splice because drift is empty, and projectTaskStatus reports the path from the first pass.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/assurance/coordinator.ts:projectTaskStatus",
+              "plugins/immune-brain/runtime/workspace_scope.ts:taskStatusIdentity",
+              "plugins/immune-brain/runtime/workspace_scope.ts:captureGitTaskRevisionSnapshot",
+              "plugins/immune-brain/runtime/workspace_scope.ts:taskRevisionSnapshotOnce"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "HE-S3-A1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:8ead468dc97b49365033f18cf34dfe8d5d4f4382ccebfb4c68c082fa7ff1a7c3"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:host-owned-environment-s3-staging-checks-at-freeze:2026-10-13T01:01:30.555Z",
+      "at": "2026-10-13T01:01:30.555Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:070e3ade3c3426f0bac5a4ada01b1bc19445edabd30d21aae7bc7071c02a2139",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-3c7aee5bef08df8d",
+        "issued_at": "2026-10-13T01:01:40.731Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:host-owned-environment-s3-staging-checks-at-freeze:2026-10-13T01:32:30.540Z",
+      "at": "2026-10-13T01:32:30.540Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\naction_v2_sha256:5e9a205841e46f2a120cbb1733d879ed00adeed36fd04f822f41a51a37039249",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-35f5c9b377072d82",
+        "issued_at": "2026-10-13T01:32:45.959Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:host-owned-environment-s3-staging-checks-at-freeze:2026-10-13T01:40:03.386Z",
+      "at": "2026-10-13T01:40:03.386Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/host-owned-environment-s3-staging-checks-at-freeze.intent.json"
+    },
+    {
+      "id": "record_approval:host-owned-environment-s3-staging-checks-at-freeze:2026-10-13T01:42:48.573Z",
+      "at": "2026-10-13T01:42:48.573Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-3f833a2c\naction_v2_sha256:d884e8231d0396ef1e6af5e56a17c8bc60c43004059077072281f67a632de5f4",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-13T01:42:48.573Z"
+      }
+    },
+    {
+      "id": "record_approval:host-owned-environment-s3-staging-checks-at-freeze:2026-10-13T01:45:29.514Z",
+      "at": "2026-10-13T01:45:29.514Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-497e2df0\naction_v2_sha256:cdc7616346d0e851d0d2acc2dca09e96fba3b7cb7df69a936f411406221eb4da",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-13T01:45:29.514Z"
+      }
+    },
+    {
+      "id": "complete:host-owned-environment-s3-staging-checks-at-freeze:2026-10-13T01:45:32.651Z",
+      "at": "2026-10-13T01:45:32.651Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:91ec05044e5dbbf7be633826a07a3f485d3c08faa6d01a9120bbd40d0dba7dc3"
+    }
+  ]
+}

@@ -3134,3 +3134,61 @@ describe("dual-host assurance conformance", () => {
 		}
 	});
 });
+
+// Spec host-owned-environment D9 / SCN-6: a status read is not a freeze. With
+// an unstaged file inside the scope of an active task, both Hosts return the
+// task projection plus one warning naming the path, and both still refuse to
+// advance assurance on the same state.
+describe("status stays readable with unstaged scope paths on both Hosts", () => {
+	test("status returns the projection and a warning; advance_assurance still refuses", async () => {
+		const taskId = "status-unstaged-scope";
+		const claudeRoot = enrolledHostFixture(taskId, ["src/impl.ts"]);
+		const piRoot = enrolledHostFixture(taskId, ["src/impl.ts"]);
+		try {
+			for (const root of [claudeRoot, piRoot]) writeFileSync(join(root, "src/impl.ts"), "export const impl = 2; // unstaged\n");
+			const warning = {
+				code: "unstaged_scope_paths",
+				paths: ["src/impl.ts"],
+				message: "task scope contains unstaged or untracked changes: src/impl.ts; advance_assurance refuses until they are staged or removed",
+			};
+
+			const claude = createMcpRuntime({ cwd: claudeRoot, env: HOST_ENV });
+			const claudeStatus = await claude.callTool("status", { task_id: taskId }, { toolCallId: "toolu-status" }) as Record<string, any>;
+			const pi = piCanaryTool({});
+			const piStatus = (await pi.execute("status", { task_id: taskId, action: { op: "status" } }, undefined, undefined, piCanaryCtx(piRoot)) as { details: Record<string, any> }).details;
+
+			expect(claudeStatus.error).toBeNull();
+			expect(claudeStatus.warnings).toEqual([warning]);
+			expect(claudeStatus.projection).toMatchObject({ lifecycle: "active", artifact_state: "active", next_obligation: "submit_assurance" });
+			expect(piStatus.state).toBe("status");
+			expect(piStatus.warnings).toEqual([warning]);
+			expect(piStatus.task_state).toMatchObject({ lifecycle: "active", artifact_state: "active", next_obligation: "submit_assurance" });
+			expect(piStatus.result).toContain(warning.message);
+
+			const refused = /task scope contains unstaged or untracked changes: src\/impl\.ts/;
+			// The MCP wire needs a negotiated Host version for a mutation, so the
+			// Claude advance is driven through the runtime the Tool dispatches to.
+			const claudeRuntime = new ClaudeRuntime({
+				cwd: claudeRoot,
+				env: HOST_ENV,
+				host: new ClaudeReviewHost(),
+				interactive: true,
+				permissionMode: "manual",
+				requestConfirmation: async () => ({ decision: "accept", requestId: "r-status" }),
+			});
+			const claudeAdvance = await claudeRuntime.advance(taskId).then(
+				(value: unknown) => JSON.stringify(value),
+				(error: unknown) => (error instanceof Error ? error.message : String(error)),
+			);
+			const piAdvance = await pi.execute("advance", { task_id: taskId, action: { op: "advance_assurance" } }, undefined, undefined, piCanaryCtx(piRoot)).then(
+				(value: unknown) => JSON.stringify(value),
+				(error: unknown) => (error instanceof Error ? error.message : String(error)),
+			);
+			expect(claudeAdvance).toMatch(refused);
+			expect(piAdvance).toMatch(refused);
+		} finally {
+			rmSync(claudeRoot, { recursive: true, force: true });
+			rmSync(piRoot, { recursive: true, force: true });
+		}
+	});
+});
