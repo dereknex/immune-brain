@@ -27,7 +27,7 @@ import { parseLaneRevision, REVISION_DELEGATION_TEXT, type LaneRevisionRequest }
 import { createBatchTrackerPort, laneRuntimeContractRefusal, parseLaneInstruction, type LaneInstructionRequest, parseLaneOffers, parseMaxParallel, resolveLaneParallel, type LaneOffer } from "../runtime/unattended/batch_lanes";
 import {
 	authorizeBatch,
-	projectBatchPreflight,
+	prepareBatchPreflight,
 } from "../runtime/unattended/batch_preflight";
 import { retireStaleBatch, type StaleBatchFacts } from "../runtime/unattended/batch_disposition";
 import type { BatchLaneRunReport } from "../runtime/unattended/batch_state";
@@ -155,11 +155,26 @@ function piConfirmationRef(input: {
 export async function executePiUnattendedBatch(
 	options: PiBatchExecutionOptions,
 ): Promise<PiBatchExecutionResult> {
+	let commit: string | undefined;
+	try {
+		const result = await executePreparedPiBatch(options, (value) => { commit = value; });
+		if (commit && result.state !== "started") result.reason += `; batch precondition commit ${commit} remains`;
+		return result;
+	} catch (error) {
+		if (commit && error instanceof Error) error.message += `; batch precondition commit ${commit} remains`;
+		throw error;
+	}
+}
+
+async function executePreparedPiBatch(
+	options: PiBatchExecutionOptions, onCommit: (commit: string | undefined) => void,
+): Promise<PiBatchExecutionResult> {
 	const { root, initiativeSlug, signal } = options;
 	const reuseOnly = options.reuseOnly === true;
 	const interactive = options.interactive ?? true;
 
 	if (!reuseOnly && !interactive) return { state: "rejected", ...nonInteractiveRefusal() };
+	if (!reuseOnly && !options.confirmBatch) return batchReason("confirmation_port_unavailable");
 
 	// A lane_offers-only call resumes the recorded lane batch; refused before any gate otherwise.
 	const resolvedParallel = resolveLaneParallel(root, initiativeSlug, options.max_parallel, options.lane_offers, options.lane_instruction ?? options.lane_revision);
@@ -170,12 +185,14 @@ export async function executePiUnattendedBatch(
 	// plan digest, and base HEAD are one shared projection, so neither Host
 	// re-implements a batch decision.
 	let now = new Date().toISOString();
-	const preflight = await projectBatchPreflight({
+	const preflight = await prepareBatchPreflight({
 		root,
 		initiative_slug: initiativeSlug,
 		now,
 		readInitiative: options.readInitiative,
+		signal, reuseOnly,
 	});
+	onCommit(preflight.precondition_commit);
 	if (!preflight.ok) {
 		return { state: preflight.state, reason: preflight.reason, recovery_action: preflight.recovery_action };
 	}
@@ -362,7 +379,7 @@ function retireConfirmationDetails(facts: StaleBatchFacts): {
 		details: `Children (${facts.children.length}):\n${facts.children
 			.map(
 				(child) =>
-					`  - ${child.task_id} (${child.slice_id}) [state: ${child.state}]${child.commit ? ` [commit: ${child.commit}]` : " [no commit]"}${child.lane_branch ? ` [lane: ${child.lane_branch}]` : ""}`,
+					`  - ${child.task_id} (${child.slice_id}) [state: ${child.state}]${child.commit ? ` [commit: ${child.commit}]` : " [no commit]"}${child.lane_branch ? ` [lane: ${child.lane_branch}]` : ""}${child.kernel_lifecycle ? ` [Kernel run: ${child.kernel_lifecycle}]` : ""}`,
 			)
 			.join("\n")}\n\nRetiring writes this record to the terminal superseded state. Child states, recorded commits and the batch branch are preserved as evidence; nothing is deleted and no batch trailer or approval is manufactured.\n\nA child without a commit was never executed by this batch: it carries no delivery evidence, and the retired authorization is never reused for a revised plan.\n\nAfter retiring, run each remaining child with imm-run under its own authorization, or start a new batch for this Initiative.`,
 	};

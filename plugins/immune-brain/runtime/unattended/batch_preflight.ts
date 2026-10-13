@@ -19,9 +19,10 @@ import { LITERAL_USER_ACTOR_ID } from "../kernel/actor_identity";
 import { readBackendClaim } from "../kernel/backend_claim";
 import { computeBatchPlanDigest, type BatchAuthorizationBinding } from "../kernel/batch_authority";
 import { readGitHead } from "../kernel/pi_canary_prepare";
-import { readTaskIntent } from "../kernel/intent";
-import { readTaskRecordRaw, readSettledTaskEvidence, readWorkspaceStateRaw, enrollmentEventIdFor, reconcileKernelAuthority } from "../kernel/storage";
+import { readTaskIntent, observeEnrollmentTaskIntent } from "../kernel/intent";
+import { readTaskRecordRaw, readSettledTaskEvidence, readWorkspaceStateRaw, enrollmentEventIdFor, reconcileKernelAuthority, withKernelStoreLock } from "../kernel/storage";
 import type { TaskRecord } from "../kernel/types";
+import { commitWorkflowPaths } from "../assurance/workflow_autocommit";
 import { pathMatchesScope } from "../workspace_scope";
 import { captureBatchReconfirmation, retainReconfirmation, ownUnpersistedBatchHead, type ReconfirmationSnapshot } from "./batch_reconfirmation";
 import { projectBatchPlan } from "./batch_plan";
@@ -419,6 +420,7 @@ type PlanSurfaceOutcome =
  * and the post-confirmation drift check so both read one implementation.
  */
 async function projectPlanSurface(input: {
+	preparing?: boolean;
 	root: string;
 	initiative_slug: string;
 	is_resuming: boolean;
@@ -500,7 +502,7 @@ async function projectPlanSurface(input: {
 	} else {
 		let plan;
 		try {
-			plan = await projectBatchPlan(root, initiativeSlug, { confirmation_time: now }, input.readInitiative);
+			plan = await projectBatchPlan(root, initiativeSlug, { confirmation_time: now }, input.readInitiative, input.preparing);
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
 			if (msg.includes("has no enrollable children"))
@@ -528,7 +530,9 @@ async function projectPlanSurface(input: {
 		for (const c of plan.children.filter((item) => item.status === "enrollable")) {
 			let childRisk = "material";
 			try {
-				childRisk = readTaskIntent(root, c.task_id, c.intent_path ?? undefined).intent.risk;
+				childRisk = (input.preparing
+					? observeEnrollmentTaskIntent(root, c.task_id)
+					: readTaskIntent(root, c.task_id, c.intent_path ?? undefined)).intent.risk;
 			} catch {
 				// fallback
 			}
@@ -555,8 +559,62 @@ async function projectPlanSurface(input: {
 	};
 }
 
-export async function projectBatchPreflight(
-	options: BatchPreflightOptions,
+export async function projectBatchPreflight(options: BatchPreflightOptions): Promise<BatchPreflightOutcome> {
+	return projectPreflight(options, false);
+}
+
+/** Host preparation only: commit fresh-batch preconditions before capturing the binding. */
+export async function prepareBatchPreflight(
+	options: BatchPreflightOptions & { signal?: AbortSignal; reuseOnly?: boolean },
+): Promise<BatchPreflightOutcome & { precondition_commit?: string }> {
+	options.signal?.throwIfAborted();
+	const projected = await projectPreflight(options, !options.reuseOnly);
+	if (!projected.ok || projected.projection.is_resuming || options.reuseOnly) return projected;
+	const { root, initiative_slug: slug } = options;
+	const initialEntries = porcelainEntries(root);
+	if (!initialEntries) return reject("git_status_unreadable");
+	if (initialEntries.length === 0) return projected;
+	let commit: string | undefined;
+	try {
+		const refusal = withKernelStoreLock(root, () => {
+			options.signal?.throwIfAborted();
+			const claim = readActiveClaimTaskId(root);
+			if (claim) return reject("claim_already_active", claim);
+			if (findExistingActiveBatch(root, slug)) return reject("plan_changed");
+			if (readGitHead(root) !== projected.projection.base_head) return reject("head_moved");
+			const scopes: string[] = [];
+			for (const child of projected.projection.recovery_children) {
+				const observed = observeEnrollmentTaskIntent(root, child.task_id);
+				if (observed.content_hash !== child.intent_content_hash) return reject("plan_changed");
+				scopes.push(...observed.intent.scope_hint);
+			}
+			const entries = porcelainEntries(root);
+			if (!entries) return reject("git_status_unreadable");
+			const paths = entries.map(({ path }) => path).filter((path) =>
+				[".imm/audit/", "docs/plans/", "docs/specs/"].some((prefix) => path.startsWith(prefix))
+				|| scopes.some((scope) => pathMatchesScope(path, scope)),
+			);
+			const result = commitWorkflowPaths(root, {
+				paths, subject: `chore(imm): commit batch preconditions for ${slug}`, signal: options.signal,
+			});
+			if (result.committed) commit = result.commit;
+			return null;
+		});
+		if (refusal) return refusal;
+		if (!commit) {
+			const remaining = porcelainEntries(root);
+			if (!remaining) return reject("git_status_unreadable");
+			return remaining.length ? reject("working_tree_dirty", remaining.map(({ path }) => path).join(", ")) : projected;
+		}
+		return { ...await projectBatchPreflight(options), precondition_commit: commit };
+	} catch (error) {
+		return { ...reject("precondition_commit_failed", error instanceof Error ? error.message : String(error)),
+			...(commit ? { precondition_commit: commit } : {}) };
+	}
+}
+
+async function projectPreflight(
+	options: BatchPreflightOptions, allowNewDirt: boolean,
 ): Promise<BatchPreflightOutcome> {
 	const { root, initiative_slug: initiativeSlug, readInitiative } = options;
 	if (!INITIATIVE_SLUG_PATTERN.test(initiativeSlug))
@@ -609,49 +667,52 @@ export async function projectBatchPreflight(
 		else if (plan.kind === "unprovable") unprovableLeak = `${plan.path}: ${plan.detail}`;
 	}
 	if (statusEntries.length > 0) {
-		if (!isResuming)
-			return reject("working_tree_dirty");
-		// Kernel projections accept staged in-flight work inside the active child's
-		// authorized scope, and reject unstaged/untracked bytes or out-of-scope paths.
-		// `settled` belongs here: Kernel settlement happens before the batch commits
-		// the child, and settlement clears the live state record, so a crash in that
-		// window resumes into a settled child whose staged work is legitimate.
-		const inFlightChild = existingBatch!.children.find(
-			(c) => c.state === "enrolled" || c.state === "needs_human" || c.state === "settled",
-		);
-		let authorizedScope: string[] = [];
-		if (inFlightChild) {
-			authorizedScope = authorizedScopeOf(root, inFlightChild.task_id, inFlightChild.state);
-			if (authorizedScope.length === 0)
-				return reject("authorized_scope_underivable");
-		}
-		const dirtyBytes = statusEntries.some(({ code }) => code === "??" || code[1] !== " ");
-		if (dirtyBytes)
-			return reject("working_tree_unstaged", unprovableLeak);
-		let outsideScope = false;
-		for (const { path } of statusEntries) {
-			if (path.startsWith(".imm/") || path.startsWith("docs/plans/") || path.startsWith("docs/specs/")) continue;
-			// Scope entries may be exact files, directories, or globs; delegate the
-			// boundary matching to the Kernel's own helper instead of exact includes.
-			let matched = false;
-			for (const scopePath of authorizedScope) {
-				if (pathMatchesScope(path, scopePath)) {
-					matched = true;
+		if (!isResuming && !allowNewDirt)
+			return reject("working_tree_dirty", statusEntries.map(({ path }) => path).join(", "));
+		if (isResuming) {
+			// Kernel projections accept staged in-flight work inside the active child's
+			// authorized scope, and reject unstaged/untracked bytes or out-of-scope paths.
+			// `settled` belongs here: Kernel settlement happens before the batch commits
+			// the child, and settlement clears the live state record, so a crash in that
+			// window resumes into a settled child whose staged work is legitimate.
+			const inFlightChild = existingBatch!.children.find(
+				(c) => c.state === "enrolled" || c.state === "needs_human" || c.state === "settled",
+			);
+			let authorizedScope: string[] = [];
+			if (inFlightChild) {
+				authorizedScope = authorizedScopeOf(root, inFlightChild.task_id, inFlightChild.state);
+				if (authorizedScope.length === 0)
+					return reject("authorized_scope_underivable");
+			}
+			const dirtyBytes = statusEntries.some(({ code }) => code === "??" || code[1] !== " ");
+			if (dirtyBytes)
+				return reject("working_tree_unstaged", unprovableLeak);
+			let outsideScope = false;
+			for (const { path } of statusEntries) {
+				if (path.startsWith(".imm/") || path.startsWith("docs/plans/") || path.startsWith("docs/specs/")) continue;
+				// Scope entries may be exact files, directories, or globs; delegate the
+				// boundary matching to the Kernel's own helper instead of exact includes.
+				let matched = false;
+				for (const scopePath of authorizedScope) {
+					if (pathMatchesScope(path, scopePath)) {
+						matched = true;
+						break;
+					}
+				}
+				if (!matched) {
+					outsideScope = true;
 					break;
 				}
 			}
-			if (!matched) {
-				outsideScope = true;
-				break;
-			}
+			if (outsideScope)
+				return reject("working_tree_out_of_scope");
 		}
-		if (outsideScope)
-			return reject("working_tree_out_of_scope");
 	}
 
 	// 3. Project or reconstruct the plan (pre-confirmation).
 	const now = options.now ?? new Date().toISOString();
 	const planSurface = await projectPlanSurface({
+		preparing: allowNewDirt && !isResuming,
 		root,
 		initiative_slug: initiativeSlug,
 		is_resuming: isResuming,
@@ -665,7 +726,7 @@ export async function projectBatchPreflight(
 	if (activeRecord && !isLaneBatchRecord(activeRecord) && activeRecord.plan_digest !== planSurface.surface.plan_digest) {
 		try { reconfirmation = await captureBatchReconfirmation(root, activeRecord, planSurface.surface.recovery_children); }
 		catch { return reject("plan_projection_failed", activeRecord.commits.length
-			? `batch plan changed after ${activeRecord.commits.length} recorded child commit(s). The old authorization cannot execute the revised plan. Preserve the batch record, report, commit evidence and audit; inspect each remaining child's Kernel run before an explicit imm-run handoff. Do not re-enroll settled children or manufacture batch trailers. To close the parked record explicitly, dispose it with the retire_stale_batch Tool for this Initiative; a child that is still mid-flight must settle first. This rejection neither terminates the old batch nor authorizes the revised plan.`
+			? `batch plan changed after ${activeRecord.commits.length} recorded child commit(s). The old authorization cannot execute the revised plan. Preserve the batch record, report, commit evidence and audit; inspect each remaining child's Kernel run before an explicit imm-run handoff. Do not re-enroll settled children or manufacture batch trailers. To close the parked record explicitly, dispose it with the retire_stale_batch Tool for this Initiative; a child whose Kernel run is still live must settle first, while one that already ended outside the batch does not block the disposition. This rejection neither terminates the old batch nor authorizes the revised plan.`
 			: "batch plan reconfirmation is not eligible"); }
 	}
 

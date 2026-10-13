@@ -20,11 +20,14 @@ import { evaluateCanaryEligibility } from "../runtime/kernel/canary_eligibility"
 import { enrollmentScopeDisclosure, enrollTask, EnrollmentRehearsalError } from "../runtime/kernel/enrollment";
 import { reconcileKernelAuthority, withKernelStoreLock } from "../runtime/kernel/storage";
 import { inspectStorageLayout } from "../runtime/kernel/storage_paths";
-import { migrateLegacyLayout } from "../runtime/kernel/storage_layout_migration";
+import { commitPendingMigrationDiff, migrateAndCommitLegacyLayout } from "../runtime/kernel/storage_layout_migration";
 import {
+	commitEnrollmentPreconditions,
+	commitUnbornEnrollmentPreconditions,
 	inspectEnrollmentGitBase,
 	enrollmentGitBaseNotice,
 	initializeEnrollmentGitBase,
+	preconditionCommitNote,
 } from "../runtime/assurance/enrollment_git_base";
 import { piRunEntryRefusal, readTaskIntentForRecord } from "./imm-canary-work";
 import {
@@ -280,6 +283,8 @@ async function classifyCommitFailure(
 	);
 }
 
+const terminalWithoutCommitNote = terminal;
+
 async function executeForegroundEnrollment(
 	root: string,
 	action: EnrollmentAction,
@@ -293,6 +298,14 @@ async function executeForegroundEnrollment(
 ): Promise<EnrollmentTerminal> {
 	let stage = "preparing";
 	let gitBaseNote = "";
+	// Every unsuccessful exit reports the Git effects that preceded authority.
+	const terminal: typeof terminalWithoutCommitNote = (action, taskId, state, stage, summary, nextAction) => {
+		if (state !== "completed" && gitBaseNote) {
+			if (summary.endsWith(gitBaseNote)) summary = summary.slice(0, -gitBaseNote.length);
+			summary = `${summary.slice(0, 4_096 - gitBaseNote.length)}${gitBaseNote}`;
+		}
+		return terminalWithoutCommitNote(action, taskId, state, stage, summary, nextAction);
+	};
 	const progress = (nextStage: string, summary: string) => {
 		stage = nextStage;
 		const update = updateResult(action, taskId, nextStage, summary);
@@ -314,74 +327,31 @@ async function executeForegroundEnrollment(
 		const now = new Date().toISOString();
 		let taskIntent: Awaited<ReturnType<typeof readTaskIntentForRecord>>;
 
-		// Storage-layout gate (BR-REQ-005/006): enrollment is the stateful
-		// mutation boundary. Kernel transaction markers recover under the
-		// store lock; the one-release migrator relocates an owner-free legacy
-		// layout and stops, and the literal user retries after committing the
-		// affected migration diff. Repreparation never proceeds on a dirty
-		// or blocked layout.
+		// Recover markers first; only a pending diff or supported legacy import may advance.
 		{
-			const recoverLayout = async (): Promise<
-				EnrollmentTerminal | undefined
-			> => {
-				try {
-					await withKernelStoreLock(root, () => undefined);
-				} catch (error) {
-					return terminal(
-						action,
-						taskId,
-						"blocked",
-						stage,
-						`Kernel transaction recovery failed before enrollment: ${errorMessage(error)}`,
-						"resolve the pending Kernel transaction marker and retry",
-					);
-				}
-				const inspection = await inspectStorageLayout(root);
-				if (inspection.layout === "ready") return undefined;
-				if (
-					inspection.layout === "migration_required" ||
-					inspection.layout === "recovery_required"
-				) {
-					const migration = await migrateLegacyLayout(root);
-					if (migration.outcome === "migrated")
-						return terminal(
-							action,
-							taskId,
-							"blocked",
-							stage,
-							`Legacy storage migrated (${migration.affected_paths.length} paths); commit the affected migration diff and retry enrollment`,
-							"commit .imm/audit/** and .imm/legacy paths, then retry",
-						);
-					if (migration.outcome === "migration_uncommitted")
-						return terminal(
-							action,
-							taskId,
-							"blocked",
-							stage,
-							`Migration completed but affected paths are uncommitted: ${migration.affected_paths.join(", ")}`,
-							"commit the affected migration diff, then retry",
-						);
-					return terminal(
-						action,
-							taskId,
-						"blocked",
-						stage,
-						`Enrollment blocked by storage layout (${migration.outcome}): ${migration.reason ?? inspection.reason ?? ""}`,
-						"resolve the reported layout condition and retry",
-					);
-				}
-				return terminal(
-					action,
-					taskId,
-					"blocked",
-					stage,
-					`Enrollment blocked by storage layout (${inspection.layout}): ${inspection.reason ?? ""}`,
-					"resolve the reported layout condition and retry",
-				);
-			};
-			const blocked = await recoverLayout();
-			if (blocked) return blocked;
+			let inspection = inspectStorageLayout(root);
+			if (inspection.layout === "migration_uncommitted") {
+				gitBaseNote += preconditionCommitNote(commitPendingMigrationDiff(root, signal));
+				inspection = inspectStorageLayout(root);
+			}
+			if (inspection.layout === "migration_required") {
+				const migration = migrateAndCommitLegacyLayout(root, signal);
+				for (const commit of migration.commits)
+					gitBaseNote += preconditionCommitNote({ committed: true, commit, paths: migration.affected_paths });
+				if (migration.outcome !== "migrated" && migration.outcome !== "already_migrated")
+					return terminal(action, taskId, "blocked", stage, `Enrollment blocked by storage layout (${migration.outcome}): ${migration.reason ?? ""}`, "resolve the reported layout condition and retry");
+				inspection = inspectStorageLayout(root);
+			}
+			if (inspection.layout !== "ready")
+				return terminal(action, taskId, "blocked", stage, `Enrollment blocked by storage layout (${inspection.layout}): ${inspection.reason ?? ""}`, "resolve the reported layout condition and retry");
+			await withKernelStoreLock(root, () => undefined);
 		}
+
+		// Commit the task's own dirty preconditions first, so every read and the
+		// confirmation below bind the HEAD that results. An owned workspace
+		// commits nothing.
+		gitBaseNote += preconditionCommitNote(await commitEnrollmentPreconditions(root, taskId, signal));
+		signal.throwIfAborted();
 
 		try {
 			taskIntent = await readTaskIntentForRecord(root, taskId);
@@ -514,7 +484,7 @@ async function executeForegroundEnrollment(
 			);
 			if (signal.aborted) return cancelled();
 			if (!confirmed)
-				return terminal(action, taskId, "rejected", stage, "Enrollment confirmation was rejected; zero authority writes were requested", "invoke the launcher again only if enrollment is still intended");
+				return terminal(action, taskId, "rejected", stage, `Enrollment confirmation was rejected; zero authority writes were requested${gitBaseNote}`, "invoke the launcher again only if enrollment is still intended");
 		}
 		{
 			let liveEarly: string | null = null;
@@ -545,7 +515,14 @@ async function executeForegroundEnrollment(
 		signal.throwIfAborted();
 
 		preparation = await initializeEnrollmentGitBase(root, { task_id: taskId, now }, preparation, gitBase, signal);
-		if (gitBase.state === "unborn") gitBaseNote = `; empty initial commit ${preparation.git_base_head} remains`;
+		if (gitBase.state === "unborn") {
+			gitBaseNote += `; empty initial commit ${preparation.git_base_head} remains`;
+			// The scope could not be compared with an unborn HEAD; commit it now
+			// that a base exists and bind the HEAD that results.
+			const late = await commitUnbornEnrollmentPreconditions(root, { task_id: taskId, now }, preparation, signal);
+			gitBaseNote += preconditionCommitNote(late.result);
+			preparation = late.preparation;
+		}
 		if (!preparation.intent) throw new Error("Enrollment requires a readable TaskIntent");
 		signal.throwIfAborted();
 

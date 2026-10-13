@@ -99,7 +99,8 @@ Continue while the current projection has a valid action:
    to the user. If a file mixes pre-existing user changes with task changes and
    the task-owned hunks cannot be isolated reliably, stop with that ownership
    conflict instead of staging the whole file. Staging grants no commit or push
-   authority. Complete the [Executor Delivery Evidence](role-prompts/executor.md#delivery-evidence)
+   authority. The runtime commits an Enrollment precondition's committable set
+   itself; never commit those paths by hand and never ask the user to. Complete the [Executor Delivery Evidence](role-prompts/executor.md#delivery-evidence)
    table for rework only; a first delivery needs no table.
    Executor checks are diagnostic evidence, not a QA or Review approval.
 2. Call `advance_assurance` in the foreground and consume its direct terminal
@@ -197,11 +198,8 @@ is recorded as a separate follow-up rather than resolved here.
   scope, so a worktree that already holds the added files no longer blocks it.
 - Revision ownership: the Loop owner prepares a scope or acceptance revision in
   the executing session. Planner's route is for a change of goal, bound Spec
-  design, or decomposition. A file edit inside the active scope from a session
-  whose latest entry is a plan entry is refused with `revision_owner_required`;
-  the guard covers file-edit tools only, not shell commands, and planning
-  sidecars under `docs/plans` and `docs/specs` stay editable. The recovery is to
-  return the proposal to the executing session.
+  design, or decomposition, and returns any other proposal to the executing
+  session. No Host refuses a file edit because of the session's entry.
 - Effects are separate grants. A stage-only recovery restores staging and grants
   no commit, push, or publication; an existing exact approval, including a valid
   batch capability bounded to one child, stays usable without another chat gate.

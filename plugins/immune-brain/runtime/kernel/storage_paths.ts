@@ -849,7 +849,7 @@ export function inspectStorageLayout(root: string): StorageLayoutInspection {
 			old_authority_present: false,
 			pending_marker: null,
 			dirty_affected_paths: dirty,
-			reason: "affected audit or retired legacy paths differ from HEAD; commit the diff before any managed mutation",
+			reason: "affected audit or retired legacy paths differ from HEAD; automatic migration preconditions are pending",
 		};
 	}
 	if (auditPresent && dirty === null) {

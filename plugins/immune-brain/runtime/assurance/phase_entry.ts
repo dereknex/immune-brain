@@ -64,16 +64,14 @@ export function recognizePhaseEntry(text: string, readAlias: AliasReader): Phase
 
 export interface PhaseEntryState {
 	run_live: boolean;
-	/** The latest literal entry was a plan entry; the revision-owner guard reads it. */
-	plan_latest: boolean;
 }
 
-export const NO_PHASE_ENTRY: PhaseEntryState = { run_live: false, plan_latest: false };
+export const NO_PHASE_ENTRY: PhaseEntryState = { run_live: false };
 
 /** One literal prompt: a run entry goes live, a plan entry revokes it. */
 export function applyPrompt(state: PhaseEntryState, entry: PhaseEntry | null): PhaseEntryState {
-	if (entry === "run") return { run_live: true, plan_latest: false };
-	if (entry === "plan") return { run_live: false, plan_latest: true };
+	if (entry === "run") return { run_live: true };
+	if (entry === "plan") return { run_live: false };
 	return state;
 }
 
@@ -112,14 +110,8 @@ function refuse(reason_code: typeof RUN_ENTRY_REQUIRED | typeof PHASE_ENTRY_REQU
  * Whether the session's entry state admits one operation. `state` is null when
  * the store could not be read, which refuses `enroll`, `start_unattended_batch`
  * and the `imm-run` Skill. The Planner and Brainstorm Skills are never refused.
- * `context` is accepted for Host callers; admission no longer depends on it.
  */
-export function admitPhaseOperation(
-	operation: PhaseOperation,
-	state: PhaseEntryState | null,
-	context?: { activeClaim: boolean },
-): PhaseAdmission {
-	void context;
+export function admitPhaseOperation(operation: PhaseOperation, state: PhaseEntryState | null): PhaseAdmission {
 	if (operation.kind === "tool") {
 		if (state?.run_live) return { ok: true };
 		return refuse(RUN_ENTRY_REQUIRED, `${operation.name} needs a literal-user imm-run entry in this session`);

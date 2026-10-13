@@ -252,7 +252,7 @@ function runEnrollmentPreconditionChecks<T>(
 				const dirty = dirtyScopePaths(root, intent.intent.scope_hint, input.task_id);
 				const unlisted = dirty.filter((path) => !disclosed.has(path));
 				if (unlisted.length > 0) {
-					const message = `task scope is already dirty before Enrollment: ${unlisted.join(", ")}; the confirmed Enrollment gate did not list these paths, so enroll again to review them, or commit, stash or revert them first`;
+					const message = `task scope is already dirty before Enrollment: ${unlisted.join(", ")}; the confirmed Enrollment gate did not list these paths, so enroll again from the Host to review them`;
 					fail(message, new Error(message));
 				} else claimedScopePaths = dirty;
 			} catch (error) {

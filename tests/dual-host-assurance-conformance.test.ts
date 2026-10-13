@@ -18,8 +18,7 @@ import { submitClaudeReview, ClaudeRuntime, settledKernelResult, type ToolMeta }
 import { probeHost } from "../plugins/immune-brain/runtime/claude/capability";
 import { createMcpRuntime as createMcpRuntimeUngated, handleJsonRpc, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { PHASE_ENTRY_RECOVERY, RUN_ENTRY_REQUIRED } from "../plugins/immune-brain/runtime/assurance/phase_entry";
-import { REVISION_OWNER_RECOVERY } from "../plugins/immune-brain/runtime/assurance/revision_owner";
-import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt, revisionOwnerHookOutput, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
+import { consumePhaseAdmission, laneGuardHookOutput, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import { BATCH_REASONS, batchReason } from "../plugins/immune-brain/runtime/unattended/batch_reasons";
 import {
@@ -2801,7 +2800,7 @@ describe("dual-host assurance conformance", () => {
 			}
 		});
 
-		test("denies an in-scope file edit from a plan-entry session with the same code and recovery on both Hosts", async () => {
+		test("allows an in-scope file edit from a plan-entry session on both Hosts (BR-SCN-5)", async () => {
 			const taskId = "owner-parity";
 			const fixture = enrolledHostFixture(taskId, ["src/mod/a.ts"]);
 			const store = mkdtempSync(join(tmpdir(), "imm-owner-parity-"));
@@ -2810,12 +2809,12 @@ describe("dual-host assurance conformance", () => {
 				const locations = { root: store, home: store };
 				const base = { session_id: "owner-parity-session", cwd: fixture };
 				recordPhaseEntryPrompt({ hook_event_name: "UserPromptSubmit", prompt: "/immune-brain:imm-planner revise", ...base }, locations);
-				const claudeOutput = revisionOwnerHookOutput(
-					{ hook_event_name: "PreToolUse", tool_name: "Edit", tool_input: { file_path: "src/mod/a.ts" }, ...base },
-					locations,
-				);
-				const claudeReason = (JSON.parse(claudeOutput!) as { hookSpecificOutput: { permissionDecisionReason: string } })
-					.hookSpecificOutput.permissionDecisionReason;
+				// Every Claude PreToolUse decision that sees a file-edit tool answers "no denial".
+				for (const tool_name of ["Edit", "Write", "MultiEdit"]) {
+					const payload = { hook_event_name: "PreToolUse", tool_name, tool_input: { file_path: "src/mod/a.ts" }, ...base };
+					expect(laneGuardHookOutput(payload)).toBeNull();
+					expect(phaseEntryGateHookOutput(payload, locations)).toBeNull();
+				}
 
 				// Pi: the registered input and tool_call handlers over the same claim.
 				const handlers = new Map<string, (event: any, ctx: any) => unknown>();
@@ -2836,21 +2835,12 @@ describe("dual-host assurance conformance", () => {
 					ui: { setWidget() {}, setStatus() {}, notify() {}, custom: async () => undefined },
 				};
 				await handlers.get("input")!({ type: "input", text: "/skill:imm-planner revise", source: "interactive" }, ctx);
-				const piDecision = (await handlers.get("tool_call")!({ toolName: "edit", input: { path: "src/mod/a.ts" } }, ctx)) as
-					| { block?: boolean; reason?: string }
-					| undefined;
-
-				expect(piDecision?.block).toBe(true);
-				expect(piDecision?.reason).toStartWith("revision_owner_required: ");
-				// One reason code and one recovery action, identical on both Hosts.
-				expect(piDecision?.reason).toBe(claudeReason);
-				expect(claudeReason).toEndWith(`; recovery: ${REVISION_OWNER_RECOVERY}`);
-
-				// The same edit after a run entry, and a sidecar edit, are not denied on Pi.
-				expect(await handlers.get("tool_call")!({ toolName: "edit", input: { path: `docs/plans/${taskId}.intent.json` } }, ctx)).not.toHaveProperty("block");
-				expect(await handlers.get("tool_call")!({ toolName: "bash", input: { command: "echo > src/mod/a.ts" } }, ctx)).not.toHaveProperty("block");
-				await handlers.get("input")!({ type: "input", text: "/skill:imm-run", source: "interactive" }, ctx);
-				expect(await handlers.get("tool_call")!({ toolName: "write", input: { path: "src/mod/a.ts" } }, ctx)).not.toHaveProperty("block");
+				for (const toolName of ["edit", "write"]) {
+					const piDecision = (await handlers.get("tool_call")!({ toolName, input: { path: "src/mod/a.ts" } }, ctx)) as
+						| { block?: boolean }
+						| undefined;
+					expect(piDecision?.block).toBeUndefined();
+				}
 			} finally {
 				rmSync(fixture, { recursive: true, force: true });
 				rmSync(store, { recursive: true, force: true });

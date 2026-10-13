@@ -25,18 +25,21 @@ change how a batch starts (ADR 0005) or how lanes run (ADR 0013).
    `findExistingActiveBatch`, so a new batch for the Initiative may start, and
    it joins the lineage `findSettledBatchRecord` already permits a later run to
    reuse.
-3. **A mid-flight child blocks the disposition.** `enrolled`, `settled`,
-   `lane_admitted`, and `lane_committed` children belong to live Kernel runs.
-   The operation refuses before the gate and names the child.
+3. **A live child blocks the disposition.** An `enrolled`, `settled`,
+   `lane_admitted`, or `lane_committed` child blocks unless the coordinator's
+   Kernel store holds a terminal (`done` or `stopped`) run for it that no longer
+   owns the workspace claim. The operation refuses before the gate and names the
+   child; no run, a live run, or an unreadable store all block.
 4. **The confirmation binds the record it described.** After the gate the record
    is re-read and must be byte-identical to the projection the user saw; a
    record that moved is refused with `plan_changed`.
 5. **No new authority.** No capability is created or consumed, and no
    TaskRecord, attestation, claim, or Intent is touched. A non-interactive Host
    is refused exactly as it is for `start_unattended_batch`.
-6. **The state owner stays the single validator.** A superseded record with a
-   mid-flight child is invalid state, so the writer refuses it; the disposition
-   cannot park a live child under a terminal batch.
+6. **The disposition cannot park a live child under a terminal batch.** The
+   Kernel check in invariant 3 enforces this. The state owner therefore accepts
+   a mid-flight child state under `superseded` only; `failed`, `rejected`, and
+   `budget_stopped` still refuse it.
 
 ## Both Hosts
 
@@ -52,5 +55,5 @@ change how a batch starts (ADR 0005) or how lanes run (ADR 0013).
 ## Non-goals
 
 - Automating the disposition from a preflight refusal, or from the runner.
-- Retiring a batch with a mid-flight child.
+- Retiring a batch whose mid-flight child still has a live Kernel run.
 - Any change to what a batch authorization grants, or to child settlement.

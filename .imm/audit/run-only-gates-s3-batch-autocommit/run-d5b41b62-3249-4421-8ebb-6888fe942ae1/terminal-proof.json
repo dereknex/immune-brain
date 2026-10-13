@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "run-only-gates-s3-batch-autocommit",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:run-only-gates-s3-batch-autocommit:2026-10-13T07:20:12.433Z",
+  "final_record_hash": "sha256:8da035c6929cb89df423d4e0afc3147e2d328ffada92cb77916a797a43ad41a8",
+  "terminalized_at": "2026-10-13T07:20:12.433Z"
+}

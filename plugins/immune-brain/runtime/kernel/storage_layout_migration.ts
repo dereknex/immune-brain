@@ -16,16 +16,21 @@
  * retired file store.
  */
 import { existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 
 import {
 	KERNEL_DB_RELATIVE,
+	LEGACY_ARTIFACT_RETIREMENT,
+	FILE_STORE_WORKSPACE_RELATIVE,
+	LEGACY_WORKSPACE_RELATIVE,
 	MIGRATION_MARKER_RELATIVE,
 	auditTaskRecordPath,
 	auditTerminalProofPath,
 	inspectStorageLayout,
 } from "./storage_paths";
 import { hasMigrationReceipt, importLegacyWorkspace } from "./sqlite_migration";
+import { commitWorkflowPaths, type WorkflowCommitResult } from "../assurance/workflow_autocommit";
 
 export interface MigrationOutcome {
 	contract: "immune_brain/storage_layout_migration_result/v1";
@@ -81,7 +86,7 @@ export function migrateLegacyLayout(root: string): MigrationOutcome {
 			return confirmRetired({
 				contract: CONTRACT,
 				outcome: "already_migrated",
-				affected_paths: affected,
+				affected_paths: [],
 				reason: "finished the interrupted cleanup for an already published import",
 			});
 		return {
@@ -162,4 +167,81 @@ export function migrateLegacyLayout(root: string): MigrationOutcome {
 		affected_paths: affected,
 		reason: imported.reason ?? "the SQLite import refused this layout",
 	};
+}
+
+const MIGRATION_SUBJECT = "chore(imm): commit storage-layout migration";
+
+function retiredEvidencePath(path: string): string | undefined {
+	const artifact = LEGACY_ARTIFACT_RETIREMENT.find((entry) => entry.source === path);
+	if (artifact) return artifact.evidence;
+	const match = /^\.imm\/(?:tasks|state\/tasks)\/([^/]+)\.json$/.exec(path);
+	if (!match || match[1].startsWith(".")) return undefined;
+	const proof = match[1].endsWith(".backend-claim");
+	const taskId = proof ? match[1].slice(0, -".backend-claim".length) : match[1];
+	return proof ? auditTerminalProofPath(taskId) : auditTaskRecordPath(taskId);
+}
+
+/** The importer validates current bytes; committed evidence identifies retired paths on retry. */
+function pendingCleanupPaths(root: string): string[] {
+	const tree = execFileSync("git", ["-C", root, "ls-tree", "-r", "-z", "HEAD", "--", ".imm"],
+		{ encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+	const blobs = new Map(tree.split("\0").filter(Boolean).map((entry) => {
+		const tab = entry.indexOf("\t");
+		return [entry.slice(tab + 1), entry.slice(0, tab).split(" ")[2]] as const;
+	}));
+	return [...blobs.keys()].filter((path) => {
+		if (existsSync(join(root, path))) return false;
+		const evidence = retiredEvidencePath(path);
+		if (evidence) return blobs.has(evidence);
+		if (path === FILE_STORE_WORKSPACE_RELATIVE || path === LEGACY_WORKSPACE_RELATIVE) return true;
+		return false;
+	});
+}
+
+/** Consumers may commit an existing diff, but never initiate a conversion. */
+export function commitPendingMigrationDiff(root: string, signal?: AbortSignal): WorkflowCommitResult {
+	const inspection = inspectStorageLayout(root);
+	if (inspection.layout !== "migration_uncommitted") return { committed: false };
+	return commitWorkflowPaths(root, { paths: inspection.dirty_affected_paths, subject: MIGRATION_SUBJECT, signal });
+}
+
+/** Preserve the importer's committed-evidence barrier, then commit its cleanup. */
+export function migrateAndCommitLegacyLayout(root: string, signal?: AbortSignal): MigrationOutcome & { commits: string[] } {
+	const commits: string[] = [];
+	const affected = new Set<string>();
+	const commit = (paths: string[]) => {
+		const result = commitWorkflowPaths(root, { paths, subject: MIGRATION_SUBJECT, signal });
+		if (result.committed) {
+			commits.push(result.commit);
+			for (const path of result.paths) affected.add(path);
+		}
+		return result.committed;
+	};
+	try {
+		// At most two pending phases: original source dirt, then preserved evidence.
+		for (let phase = 0; phase < 3; phase++) {
+			signal?.throwIfAborted();
+			const migration = migrateLegacyLayout(root);
+			if (migration.outcome === "migration_uncommitted") {
+				const tracked = execFileSync("git", ["-C", root, "ls-files", "-z", "--", ".imm"],
+					{ encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }).split("\0");
+				const evidence = new Set(migration.affected_paths);
+				const sources = tracked.filter((path) => existsSync(join(root, path)) && evidence.has(retiredEvidencePath(path) ?? ""));
+				if (!commit([...migration.affected_paths, ...sources]))
+					throw new Error("migration reported a pending diff but no affected path could be committed");
+				continue;
+			}
+			if (migration.outcome !== "migrated" && migration.outcome !== "already_migrated")
+				return { ...migration, commits };
+			commit([...migration.affected_paths, ...pendingCleanupPaths(root)]);
+			const after = inspectStorageLayout(root);
+			if (after.layout !== "ready") throw new Error(`storage layout is still ${after.layout}: ${after.reason ?? ""}`);
+			return { ...migration, affected_paths: [...affected].sort(), reason: "storage layout is ready", commits };
+		}
+		throw new Error("migration remained uncommitted after the source and evidence phases");
+	} catch (error) {
+		const note = commits.length ? `; precondition commit(s) remain: ${commits.join(", ")}` : "";
+		return { contract: CONTRACT, outcome: "invalid", affected_paths: [...affected].sort(), commits,
+			reason: `${error instanceof Error ? error.message : String(error)}${note}` };
+	}
 }

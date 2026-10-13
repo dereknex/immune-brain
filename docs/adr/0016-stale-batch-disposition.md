@@ -62,15 +62,27 @@ Three facts shape the decision:
    disposition preserves evidence and grants no batch trailer and no approval.
    Every child, state, commit, lane binding, recorded commit, `plan_digest`,
    `base_head`, and the old `confirmation_time` stay byte-identical. A lane
-   record retires to a lane report with empty handoffs. A retired record with a
-   mid-flight child is invalid state, so the writer refuses it rather than
-   parking a live child under a terminal batch.
+   record retires to a lane report with empty handoffs. A `superseded` record
+   may carry a child still recorded mid-flight, because point 4 admits one only
+   when its Kernel run has already ended; the other terminal states still refuse
+   such a child.
 
-4. **A mid-flight child blocks the disposition.** `enrolled`, `settled`,
-   `lane_admitted`, and `lane_committed` children belong to live Kernel runs.
-   The operation refuses with `stale_batch_in_flight` naming the child and
+4. **A live child blocks the disposition.** `enrolled`, `settled`,
+   `lane_admitted`, and `lane_committed` children normally belong to live Kernel
+   runs. The operation refuses with `stale_batch_in_flight` naming the child and
    directing the operator to settle or stop it through its own task first. A
    decline or a cancel is the Host's own envelope and writes nothing.
+
+   Liveness is the Kernel's fact, not the record's string (amended 2026-10-13).
+   Only the batch runner moves a child out of these states, and a drifted batch
+   cannot run, so a child finished by a manual `imm-run` stays `enrolled` in the
+   record forever. On the `run-only-gates` batch that made the record
+   unretirable with nothing left to settle. The child therefore blocks only
+   while the coordinator's Kernel store does not hold a terminal run for it:
+   a `done` or `stopped` run that no longer owns the workspace claim does not
+   block. No run, a live run, or an unreadable store still blocks. The gate
+   shows each child's Kernel lifecycle beside its recorded state, and the
+   retirement still rewrites no child.
 
 5. **The confirmation is consumed by the record it described.** After the gate
    the operation re-reads the record and requires the identical bytes; a record

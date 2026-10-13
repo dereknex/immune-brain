@@ -38,7 +38,7 @@ import {
 } from "../kernel/enrollment_authority";
 import { enrollmentScopeDisclosure, enrollTask } from "../kernel/enrollment";
 import { reconcileKernelAuthority, repairKernelAuthority } from "../kernel/storage";
-import { inspectEnrollmentGitBase, enrollmentGitBaseNotice, initializeEnrollmentGitBase } from "../assurance/enrollment_git_base";
+import { commitEnrollmentPreconditions, commitUnbornEnrollmentPreconditions, inspectEnrollmentGitBase, enrollmentGitBaseNotice, initializeEnrollmentGitBase, preconditionCommitNote } from "../assurance/enrollment_git_base";
 import { preparePiCanary, revalidatePiCanary } from "../kernel/pi_canary_prepare";
 import { runDeterministicQa } from "../assurance/qa";
 import { taskDeliveryIdentity } from "../workspace_scope";
@@ -54,7 +54,7 @@ import { runGithubTrackerOperation } from "../github_issue_tracker";
 import { readTaskTombstone } from "../kernel/backend_claim";
 import {
 	authorizeBatch,
-	projectBatchPreflight,
+	prepareBatchPreflight,
 	findResumableBatchSlugForTask,
 } from "../unattended/batch_preflight";
 import {
@@ -397,26 +397,36 @@ export class ClaudeRuntime {
 
 	async enroll(taskId: string, meta: ToolMeta) {
 		const now = new Date().toISOString();
-		let preparation = await preparePiCanary(this.cwd, { task_id: taskId, now });
-		const intent = await readTaskIntentForRecord(this.cwd, taskId);
-		const gitBase = inspectEnrollmentGitBase(this.cwd);
-		// In-scope changes that already exist are shown in the gate and only the
-		// ones shown are claimed as task work on confirmation.
-		const disclosure = enrollmentScopeDisclosure(this.cwd, taskId);
-		const gate = await this.gate("enroll", { ...meta, taskId }, {
-			risk: intent.intent.risk,
-			intentRevision: preparation.intent?.revision,
-			intentContentHash: preparation.intent?.content_hash,
-			bindingDigest: preparation.digest,
-			gitBaseNotice: [enrollmentGitBaseNotice(gitBase), disclosure.notice].filter(Boolean).join("\n") || undefined,
-		});
-		const { unchanged } = await revalidatePiCanary(this.cwd, { task_id: taskId, now }, preparation);
-		if (!unchanged) throw new NativeAuthorityError("workspace_changed", "workspace changed after native confirmation");
-		if (!preparation.intent) throw new Error("enrollment requires a readable TaskIntent");
-		throwIfCancelled(meta.signal);
-		preparation = initializeEnrollmentGitBase(this.cwd, { task_id: taskId, now }, preparation, gitBase, meta.signal);
-		const gitBaseNote = gitBase.state === "unborn" ? `; empty initial commit ${preparation.git_base_head} remains` : "";
+		// Commit the task's own dirty preconditions first, so the confirmation
+		// below binds the HEAD that results. An owned workspace commits nothing.
+		let gitBaseNote = preconditionCommitNote(commitEnrollmentPreconditions(this.cwd, taskId, meta.signal));
 		try {
+			let preparation = await preparePiCanary(this.cwd, { task_id: taskId, now });
+			const intent = await readTaskIntentForRecord(this.cwd, taskId);
+			const gitBase = inspectEnrollmentGitBase(this.cwd);
+			// In-scope changes that already exist are shown in the gate and only the
+			// ones shown are claimed as task work on confirmation.
+			const disclosure = enrollmentScopeDisclosure(this.cwd, taskId);
+			const gate = await this.gate("enroll", { ...meta, taskId }, {
+				risk: intent.intent.risk,
+				intentRevision: preparation.intent?.revision,
+				intentContentHash: preparation.intent?.content_hash,
+				bindingDigest: preparation.digest,
+				gitBaseNotice: [enrollmentGitBaseNotice(gitBase), disclosure.notice].filter(Boolean).join("\n") || undefined,
+			});
+			const { unchanged } = await revalidatePiCanary(this.cwd, { task_id: taskId, now }, preparation);
+			if (!unchanged) throw new NativeAuthorityError("workspace_changed", "workspace changed after native confirmation");
+			if (!preparation.intent) throw new Error("enrollment requires a readable TaskIntent");
+			throwIfCancelled(meta.signal);
+			preparation = initializeEnrollmentGitBase(this.cwd, { task_id: taskId, now }, preparation, gitBase, meta.signal);
+			if (gitBase.state === "unborn") {
+				gitBaseNote += `; empty initial commit ${preparation.git_base_head} remains`;
+				// The scope could not be compared with an unborn HEAD; commit it
+				// now that a base exists and bind the HEAD that results.
+				const late = commitUnbornEnrollmentPreconditions(this.cwd, { task_id: taskId, now }, preparation, meta.signal);
+				gitBaseNote += preconditionCommitNote(late.result);
+				preparation = late.preparation;
+			}
 			if (!preparation.intent) throw new Error("Enrollment requires a readable TaskIntent");
 			const nonce = enrollmentNonce();
 			const binding: EnrollmentCapabilityBinding = {
@@ -431,8 +441,13 @@ export class ClaudeRuntime {
 			};
 			return await enrollTask(this.cwd, this.enrollmentRegistry, { binding, now, disclosed_scope_paths: disclosure.paths });
 		} catch (error) {
-			if (gitBaseNote) throw new Error(`${error instanceof Error ? error.message : String(error)}${gitBaseNote}`);
-			throw error;
+			if (!gitBaseNote) throw error;
+			// A native-gate error keeps its type and code; only the text grows.
+			if (error instanceof NativeAuthorityError) {
+				error.message += gitBaseNote;
+				throw error;
+			}
+			throw new Error(`${error instanceof Error ? error.message : String(error)}${gitBaseNote}`);
 		}
 	}
 
@@ -780,6 +795,22 @@ export class ClaudeRuntime {
 		meta: ToolMeta,
 		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest; lane_revision?: LaneRevisionRequest } = {},
 	): Promise<ClaudeBatchStartResult> {
+		let commit: string | undefined;
+		try {
+			const result = await this.startPreparedBatch(initiativeSlug, meta, options, (value) => { commit = value; });
+			if (commit && "reason" in result) result.reason += `; batch precondition commit ${commit} remains`;
+			return result;
+		} catch (error) {
+			if (commit && error instanceof Error) error.message += `; batch precondition commit ${commit} remains`;
+			throw error;
+		}
+	}
+
+	private async startPreparedBatch(
+		initiativeSlug: string, meta: ToolMeta,
+		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest; lane_revision?: LaneRevisionRequest },
+		onCommit: (commit: string | undefined) => void,
+	): Promise<ClaudeBatchStartResult> {
 		throwIfCancelled(meta.signal);
 		const reuseOnly = options.reuseOnly === true;
 		const probe = probeHost(this.env, process.platform, this.hostVersion);
@@ -797,12 +828,14 @@ export class ClaudeRuntime {
 		// recovery children, plan digest, and base HEAD are one shared projection,
 		// so neither Host re-implements a batch decision.
 		let now = new Date().toISOString();
-		const preflight = await projectBatchPreflight({
+		const preflight = await prepareBatchPreflight({
 			root: this.cwd,
 			initiative_slug: initiativeSlug,
 			now,
 			readInitiative: this.readInitiative ?? observeInitiative,
+			signal: meta.signal, reuseOnly,
 		});
+		onCommit(preflight.precondition_commit);
 		if (!preflight.ok) {
 			return {
 				state: preflight.state,
@@ -1045,6 +1078,7 @@ export class ClaudeRuntime {
 								state: child.state,
 								commit: child.commit,
 								lane_branch: child.lane_branch,
+								kernel_lifecycle: child.kernel_lifecycle,
 							})),
 						},
 						signal: meta.signal,

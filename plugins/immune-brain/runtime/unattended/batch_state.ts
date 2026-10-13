@@ -339,11 +339,13 @@ function validateRecordShape(value: unknown, batchId: string): asserts value is 
 		if (child.state === "committed" && child.commit !== null && !record.commits.includes(child.commit))
 			throw new Error(`batch run state ${batchId} child ${child.task_id} commit is missing from commits`);
 	}
+	// `superseded` is exempt: a retired record carries its children untouched, and
+	// the disposition owner admits a mid-flight state only when the Kernel store
+	// proves that run already ended outside the batch (ADR 0016).
 	if (
 		(record.batch_state === "budget_stopped" ||
 			record.batch_state === "failed" ||
-			record.batch_state === "rejected" ||
-			record.batch_state === "superseded") &&
+			record.batch_state === "rejected") &&
 		record.children.some((child) => child.state === "enrolled" || child.state === "settled")
 	)
 		throw new Error(`batch run state ${batchId} is ${String(record.batch_state)} but a child is still mid-flight`);
@@ -702,9 +704,9 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 		child.state === "enrolled" ||
 		child.state === "settled" ||
 		child.state === "lane_committed";
+	// `superseded` is exempt for the same reason as the serial record (ADR 0016).
 	if (
-		(record.batch_state === "budget_stopped" || record.batch_state === "failed" || record.batch_state === "rejected" ||
-			record.batch_state === "superseded") &&
+		(record.batch_state === "budget_stopped" || record.batch_state === "failed" || record.batch_state === "rejected") &&
 		record.children.some(inFlight)
 	)
 		throw new Error(`batch run state ${batchId} is ${String(record.batch_state)} but a child is still mid-flight`);

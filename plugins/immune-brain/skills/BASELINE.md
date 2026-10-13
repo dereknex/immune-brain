@@ -15,6 +15,12 @@
   their own existing grant. An explicit approval already covering the same
   operation, target, and impact — including a valid batch capability — stays
   usable without another gate.
+- A precondition commit is the one commit the runtime makes without a separate
+  grant. When an `imm-run` precondition would fail only because paths are
+  uncommitted, the runtime commits that precondition's committable set, an
+  explicit path list, silently and continues. It runs Git hooks normally and
+  grants no push, publication, history rewrite, or commit of any other path. A
+  model never makes this commit itself and never asks the user to make it.
 - Before a new outbound effect, check the project's existing research channel and
 data scope. A public article, a mock, a documentation example, or a local
 read-only database gives no authority to call an arbitrary provider or send new
@@ -59,7 +65,7 @@ routing. A new Managed workflow starts only from explicit `imm-brainstorm`,
 the user's request for that planning or clarification, by slash command or in
 natural language, is such an entry; a request that asks for neither stays
 host-native. `imm-run` starts only from a literal-user entry. A model-entered
-Planner outside an enrolled task ends the session's run entry.
+Planner or Brainstorm leaves the session's run entry unchanged.
 
 1. **Continue an existing Managed owner explicitly**: an active Assurance
    projection, TaskIntent, TaskRecord, reviewer `follow_up`, or other nonterminal
@@ -115,6 +121,8 @@ and a valid batch capability commits only its own scope-bounded child.
 Routine Managed enrollment is the first step of an explicit `imm-run` entry and uses one current-Host native confirmation bound to the TaskIntent content hash after Planner validation. Planner and Brainstorm stop with candidate artifacts and never invoke Enrollment, whether or not the request also asks for execution; explicit Plan-only requests stop the same way. `imm-run` opens the native gate directly without chat pre-confirmation. Enrollment validates intent, Git ownership, scope, workspace claim, and final authority preconditions without executing acceptance descriptors; deterministic QA executes them after implementation. Once the user has entered `imm-run`, the routine task proceeds from that single confirmation through enrollment, execution, and QA with no further confirmation. Do not request confirmation for local in-scope edits, local verification, ordinary Direct rework, scoped diff review, or completion reporting. Managed evidence, QA, Review, and completion authority remain governed by their Managed contracts; R2 does not weaken them. Managed native-authority failures fail closed with one stable reason and exactly one same-Host recovery action; never offer a Pi, Direct Path, cross-Host/worktree, unmanaged, or automatic-retry fallback.
 
 For an unborn symbolic Git HEAD, the same Enrollment confirmation discloses an empty root commit. After approval, the Host creates that commit without staging project content or changing the index/worktree, then revalidates ownership and rehearses Enrollment against the new base. Git identity uses existing environment/config values with an explicit automation fallback, never config writes. Decline or pre-initialization cancellation leaves HEAD unborn; if later Enrollment fails or is cancelled, report the remaining commit. Invalid Git refs are errors, not initialization candidates.
+
+Before Enrollment prepares its binding, the Host commits the Enrollment committable set when an untracked TaskIntent would otherwise fail it. The set is the task's own TaskIntent and the Spec its binding names. In-scope changes that already exist are not committed: the Enrollment gate lists them and only the listed paths become task work on confirmation, so a dirty scope is never claimed without that list being shown. The commit is silent, needs no separate confirmation, and the native confirmation binds the HEAD that results. When no precondition fails, no commit is made. Dirty paths outside the set are left as they are and do not block Enrollment. With an unborn HEAD the empty root commit comes first and this commit follows it. A commit Git refuses fails Enrollment with Git's message and is never retried with hooks bypassed; if Enrollment is declined, cancelled or fails afterwards, report the remaining commit.
 
 ## Parallel Read-Only Dispatch
 

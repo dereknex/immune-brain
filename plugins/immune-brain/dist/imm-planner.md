@@ -12,8 +12,8 @@ This skill adheres to the **[BASELINE.md](BASELINE.md)**.
 `imm-planner` starts on the user's request for a Spec, Plan, or TaskIntent for a
 repository change, by slash command or in natural language. A request that asks
 for none of these stays host-native, and `imm-run` starts only from a
-literal-user entry. A model-entered Planner outside an enrolled task ends the
-session's run entry, so Enrollment needs a fresh `imm-run` entry.
+literal-user entry. A model-entered Planner leaves the session's run entry
+unchanged; a literal `imm-planner` entry ends it.
 An active Assurance projection remains authoritative and is resumed only through
 an explicit `imm-run` entry; Planner entry owns planning only.
 
@@ -90,6 +90,13 @@ from the declared Skill location: `../../bin/imm-plan` and
 resolved wrapper and use the resolved `imm-kernel` wrapper for every Kernel
 command below. Do not assume either bare command is available on shell `PATH`.
 Then route deterministically:
+
+When `intent author` reports `layout_migration_required`, run the resolved
+`imm-kernel migrate --storage-layout` wrapper yourself and retry authoring after
+its `ready` result, without interrupting the user. A pending migration diff is
+committed automatically. On a Git failure, repair the reported precondition
+and retry; `recovery_required`, `migration_blocked_active` and `invalid` remain
+blocking layout conditions.
 
 - an active Kernel claim remains with `imm-run` for foreground Kernel Tool
   coordination, except a Loop-requested revision follows Enrolled Intent Revision
@@ -519,11 +526,8 @@ Revision ownership: the Loop owner prepares a scope or acceptance revision in
 the executing session, through Kernel `revise_intent` or
 `approve_breaking_intent_revision`. A Planner session is for a change of goal,
 bound Spec design, or decomposition, and returns any other proposal to the
-executing session instead of editing the task's files. Both Hosts enforce this
-for file-edit tools only, not shell commands: a file edit inside the active
-task's scope from a session whose latest entry is a plan entry is refused with
-`revision_owner_required`, except planning sidecars under `docs/plans` and
-`docs/specs`. The rule above stays the protection against a shell write.
+executing session instead of editing the task's files. No Host refuses a file
+edit because of the session's entry.
 
 A revision is warranted only when the goal, the `scope_hint`, or a user-visible
 commitment changes. A finding whose defect lies inside the current goal and scope

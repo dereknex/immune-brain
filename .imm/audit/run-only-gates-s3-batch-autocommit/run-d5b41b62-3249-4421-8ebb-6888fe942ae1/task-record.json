@@ -1,0 +1,458 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "run-only-gates-s3-batch-autocommit",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "run-only-gates-s3-batch-autocommit",
+    "goal": "A new unattended batch starts over a working tree whose only dirt is workflow files and files inside its children's scopes: the Host commits that set silently before binding the batch, and dirt outside it is left untouched and reported once with its paths.",
+    "acceptance": [
+      {
+        "id": "ROG-S3-A1",
+        "assertion": "Meet T3, D12 and BR-SCN-3 in docs/specs/run-only-gates.spec.md on both Hosts: for a non-resuming batch whose dirt is limited to .imm/audit, docs/plans, docs/specs and paths matching the union of the enrollable children's scope_hint, one commit with the D8 subject is created, the batch binds the post-commit HEAD, and the start is not rejected with working_tree_dirty. A clean tree creates no commit and a resuming batch creates no commit.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "ROG-S3-A2",
+        "assertion": "Meet D13, BR-X2 and BR-SCN-4: with an additional dirty file outside every child scope, that file is byte-identical in the index and the worktree afterwards, the start is rejected once with working_tree_dirty whose reason lists that path, and the recovery action does not ask the user to commit a path inside the committable set. The resume-time rejections working_tree_unstaged, working_tree_out_of_scope and authorized_scope_underivable are unchanged, and the packaged Claude bundle matches its source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/unattended-batch-commit.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/run-only-gates-s3-batch-autocommit.md",
+      "docs/adr/0023-silent-precondition-commit.md",
+      "docs/plans/run-only-gates-s3-batch-autocommit.intent.json",
+      "docs/specs/run-only-gates.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/unattended-batch-commit.test.ts",
+      "tests/unattended-batch-run.test.ts"
+    ],
+    "risk": "material",
+    "revision": 3,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/run-only-gates-s3-batch-autocommit.intent.json",
+    "content_hash": "sha256:f19f00485279eb4e6ab0a8204f62468e6eacc0ddd95b81c5e74df947aa41d1fa"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:ff1e64eaeab2155efd129f40a5b52897e4bd70b1c47cecba9129453dd288a63c",
+  "git_base_head": "4141fe2d06b90c752d24d8590a1ac42a216ce688",
+  "attestations": [
+    {
+      "id": "approval-qa-942d1752",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ff1e64eaeab2155efd129f40a5b52897e4bd70b1c47cecba9129453dd288a63c",
+      "diff_hash": "sha256:da1c3d9dbae3c2d8c0f7f0dd6b88ebb2bf3c5cbdaf922282f1120576cc4602f0",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:5e2d4f0523e85be3b9621639f6a78e22265e5ce346756e97776c75786ae96ffa",
+      "acceptance_results": [
+        {
+          "acceptance_id": "ROG-S3-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:5e2d4f0523e85be3b9621639f6a78e22265e5ce346756e97776c75786ae96ffa"
+        },
+        {
+          "acceptance_id": "ROG-S3-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:5e2d4f0523e85be3b9621639f6a78e22265e5ce346756e97776c75786ae96ffa"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-34ec37c5",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:d779ed9d21e896b67769bacb01da4b683ff5c614da85e029e482578c484741a2",
+      "diff_hash": "sha256:82d1f2a03ba953108fec7403c172efc61fdf447227a545408441f4f2a62674cf",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:fec744016d0bb2367a92f3acec59e21c91397271f24023f1371c2b430975bfe1",
+      "acceptance_results": [
+        {
+          "acceptance_id": "ROG-S3-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:fec744016d0bb2367a92f3acec59e21c91397271f24023f1371c2b430975bfe1"
+        },
+        {
+          "acceptance_id": "ROG-S3-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:fec744016d0bb2367a92f3acec59e21c91397271f24023f1371c2b430975bfe1"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-2048648c",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:f19f00485279eb4e6ab0a8204f62468e6eacc0ddd95b81c5e74df947aa41d1fa",
+      "diff_hash": "sha256:8342dfbe33f9e9b8a21a03aa73a73374c57c959e3c28c1266a5139e9a9f08cba",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:06134e573d7f1ebccdd74dc427a41fd603c7d6eb3d2164ef59b3b743962d1673",
+      "acceptance_results": [
+        {
+          "acceptance_id": "ROG-S3-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:06134e573d7f1ebccdd74dc427a41fd603c7d6eb3d2164ef59b3b743962d1673"
+        },
+        {
+          "acceptance_id": "ROG-S3-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:06134e573d7f1ebccdd74dc427a41fd603c7d6eb3d2164ef59b3b743962d1673"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-72a01850",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:f19f00485279eb4e6ab0a8204f62468e6eacc0ddd95b81c5e74df947aa41d1fa",
+      "diff_hash": "sha256:8342dfbe33f9e9b8a21a03aa73a73374c57c959e3c28c1266a5139e9a9f08cba",
+      "actor_id": "parent-mediated-review",
+      "summary": "已验证 manifest、snapshot digest、commit 唯一 parent、tree 和全部 11 个变更路径，完整检查各文件 diff 并追踪两种 Host、共享提交模块及恢复路径；结合 Kernel 已通过的 acceptance outcomes，未发现阻断问题。未重跑验证命令；index-only 且 worktree 等于 HEAD 的变化按既有 ADR 边界保留。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "4141fe2d06b90c752d24d8590a1ac42a216ce688",
+        "review_commit": "de5102651747d3fd3a0521b350bda6e34482e1d0",
+        "review_tree": "a9d351e310db06222afc73fbe291be106c967c90",
+        "manifest_digest": "sha256:ae902e9af36d621bf006d5de63eb4911ae5f6c66027ab266c95ab8cff1344c5c"
+      },
+      "reviewer_verdict_sha256": "sha256:a69d503fd2bbd7089507e86717b3de947b09fcee255b450633d64c6a96d61983"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-b5b9ed2f2c47-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "ROG-S3-A2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "ROG-S3-A2 的负向场景未在约定 seam 中验证。tests/claude-batch-authority.test.ts:490 新增了范围外文件保留及拒绝测试，但 A2 的 verification descriptor 不执行该文件；tests/unattended-batch-run.test.ts:2305 仅断言 reason table 文本。请将现有负向测试移至约定的 tests/unattended-batch-run.test.ts 或 tests/unattended-batch-commit.test.ts，覆盖提交后范围外文件的 index/worktree 保留、working_tree_dirty 路径诊断和 recovery action，无需新增重复测试或修改验收文本。",
+      "anchor": "sha256:8cd9b52e0703c384fc94d32bf47de645c870b547c1eb0126744b5ef28837c17f",
+      "evidence": {
+        "trigger": "新批次同时存在可提交的 workflow/child-scope dirt，以及 outside.txt 的 staged 内容和不同的 worktree 内容。实际场景测试位于 tests/claude-batch-authority.test.ts:490–539，而 manifest 中 ROG-S3-A2 的 descriptor 仅执行 tests/unattended-batch-run.test.ts、tests/unattended-batch-commit.test.ts 和 tests/claude-host-package.test.ts。不可变 docs/specs/run-only-gates.spec.md 因 A2 直接引用而读取，其 Verification and acceptance mapping 将 A2 seam 指定为前两个测试文件；其中没有调用 prepareBatchPreflight 的该场景测试。不可变 tests/unattended-batch-commit.test.ts 因属于该约定 seam 而读取，其现有脏树测试调用的是未改变的 runBatchGitPreflight，无法验证新增的提交后诊断与 recovery action。Kernel QA 的 passed 结果已接受，但不能补足缺失的约定 seam 场景断言。",
+        "caller_chain": [
+          "tests/unattended-batch-run.test.ts",
+          "plugins/immune-brain/runtime/unattended/batch_preflight.ts::prepareBatchPreflight",
+          "plugins/immune-brain/runtime/unattended/batch_preflight.ts::projectBatchPreflight",
+          "plugins/immune-brain/runtime/unattended/batch_reasons.ts::batchReason"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "ROG-S3-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "qa-ROG-S3-A1-fb91e47c-c8984d",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "ROG-S3-A1",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=31495B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "qa-ROG-S3-A1-07b2a0c8-68cc39",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "ROG-S3-A1",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1, timed out) stdout=246B stderr=18673B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "review-acdb330950e3-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "ROG-S3-A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "Fresh preparation discovers children through a Git-tracking precondition that its own commit is supposed to satisfy. At batch_preflight.ts:568–569, a batch containing only valid untracked child TaskIntents is rejected before any commit. With tracked and untracked children together, the workflow commit can make the latter enrollable while omitting their dirty source paths from the scope union, so the subsequent preflight rejects those in-scope paths as working_tree_dirty. Validate fresh child intents without requiring prior Git tracking before deriving the complete committable set, retain normal tracking and resume checks, and add all-untracked and mixed-child regression cases at the agreed Host seams.",
+      "anchor": "sha256:466aa55ed2f52ef261a7f858901f8c7646a13638e1eaefe6c5a2b1abc6c14719",
+      "evidence": {
+        "trigger": "A non-resuming Initiative has valid, non-critical child intents with complete Spec bindings, but docs/plans/<child>.intent.json is untracked. Dirt consists only of workflow paths and source files inside those children's scopes. projectPreflight calls projectBatchPlan before commitWorkflowPaths. The unchanged batch_plan.ts:183 calls observeTaskIntent; the unchanged intent.ts:693–706 rejects an untracked sidecar. These unchanged paths were inspected because they directly implement child discovery used by the changed preparation entry. With no tracked children, preparation returns empty_enrollable_set without committing. With another tracked independent child, the commit tracks the new sidecar but leaves its source dirt behind because its scope was absent from recovery_children.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.startPreparedBatch",
+          "plugins/immune-brain/runtime/unattended/batch_preflight.ts:prepareBatchPreflight",
+          "plugins/immune-brain/runtime/unattended/batch_preflight.ts:projectPlanSurface",
+          "plugins/immune-brain/runtime/unattended/batch_plan.ts:projectBatchPlan",
+          "plugins/immune-brain/runtime/kernel/intent.ts:observeTaskIntent",
+          "plugins/immune-brain/runtime/kernel/intent.ts:readTaskIntentSource"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "ROG-S3-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-acdb330950e3-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "ROG-S3-A2",
+      "source": "review",
+      "review_round": 2,
+      "summary": "Automatic-commit failures reintroduce the manual commit demand for committable paths. batch_preflight.ts:608 maps a failed precondition commit to batch_run_rejected, whose recovery_action at batch_reasons.ts:174 says to 'commit working changes'. A failing pre-commit hook on docs/specs/draft.md therefore asks the user to perform the same in-scope commit this task removes. Give preparation failures a recovery action that reports the concrete Git error and directs repair and retry without requesting a manual commit; assert that recovery behavior in the existing dual-Host hook-refusal test.",
+      "anchor": "sha256:af3d51ab6847950b76b818a38feddcbdeb6f4781b823470a91dc63ca612e9e13",
+      "evidence": {
+        "trigger": "A fresh batch has valid tracked child intents, an untracked docs/specs/draft.md, and a pre-commit hook that exits 1. commitWorkflowPaths throws, prepareBatchPreflight catches the error and resolves batch_run_rejected. Both Hosts return the recovery action 'delete or rename the conflicting branch, or commit working changes and retry in the current Host', despite the dirty path being inside the D12 committable set. tests/claude-batch-authority.test.ts:458–486 exercises this trigger on both Hosts but does not assert the recovery action.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.startPreparedBatch",
+          "plugins/immune-brain/runtime/unattended/batch_preflight.ts:prepareBatchPreflight",
+          "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts:commitWorkflowPaths",
+          "plugins/immune-brain/runtime/unattended/batch_preflight.ts:reject",
+          "plugins/immune-brain/runtime/unattended/batch_reasons.ts:BATCH_REASONS.batch_run_rejected"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "ROG-S3-A2"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:run-only-gates-s3-batch-autocommit:2026-10-13T06:11:38.722Z",
+      "at": "2026-10-13T06:11:38.722Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/run-only-gates-s3-batch-autocommit.intent.json"
+    },
+    {
+      "id": "record_approval:run-only-gates-s3-batch-autocommit:2026-10-13T06:15:22.306Z",
+      "at": "2026-10-13T06:15:22.306Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-942d1752\naction_v2_sha256:26a473f4f3aefa19d8925616a632d0f0f605e6e62b24b02920e9ccf0201fd87f",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-bc9ad90b62e8b22c",
+        "issued_at": "2026-10-13T06:15:22.306Z"
+      }
+    },
+    {
+      "id": "request_rework:run-only-gates-s3-batch-autocommit:2026-10-13T06:19:33.821Z",
+      "at": "2026-10-13T06:19:33.821Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:477a86461375022e0dbbe8ac2a32fec195d09643fc3e6a81e984072053d914f1",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-f20444cfbbf6d6f6",
+        "issued_at": "2026-10-13T06:19:33.821Z"
+      }
+    },
+    {
+      "id": "resolve_finding:run-only-gates-s3-batch-autocommit:2026-10-13T06:22:14.281Z",
+      "at": "2026-10-13T06:22:14.281Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-b5b9ed2f2c47-1-review-1\naction_v2_sha256:c4b64017a6f916638d9a3f87808bea734f18f2968d34ee03dc8baa73d2638999"
+    },
+    {
+      "id": "freeze_artifacts:run-only-gates-s3-batch-autocommit:2026-10-13T06:22:24.566Z",
+      "at": "2026-10-13T06:22:24.566Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/run-only-gates-s3-batch-autocommit.intent.json"
+    },
+    {
+      "id": "request_rework:run-only-gates-s3-batch-autocommit:2026-10-13T06:27:21.125Z",
+      "at": "2026-10-13T06:27:21.125Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:2ceea15ba015e78dd5d45930462ed772d221856cc4ccf7ce41e78c88b481986b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d2361f87b89b6758",
+        "issued_at": "2026-10-13T06:27:21.125Z"
+      }
+    },
+    {
+      "id": "resolve_finding:run-only-gates-s3-batch-autocommit:2026-10-13T06:38:28.136Z",
+      "at": "2026-10-13T06:38:28.136Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-ROG-S3-A1-fb91e47c-c8984d\naction_v2_sha256:52d84b6d11f7e1316472c2359e66f5ed4f206f462bc62766cece720dfe0720b3"
+    },
+    {
+      "id": "freeze_artifacts:run-only-gates-s3-batch-autocommit:2026-10-13T06:38:40.762Z",
+      "at": "2026-10-13T06:38:40.762Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/run-only-gates-s3-batch-autocommit.intent.json"
+    },
+    {
+      "id": "request_rework:run-only-gates-s3-batch-autocommit:2026-10-13T06:44:14.383Z",
+      "at": "2026-10-13T06:44:14.383Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:05df5cf60d9eb3318c4c1b8017e22d67e68c84aa3ed51cfa4f0d4dca0c3c7eab",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-8a892ef86ddd7953",
+        "issued_at": "2026-10-13T06:44:14.384Z"
+      }
+    },
+    {
+      "id": "revise_intent:run-only-gates-s3-batch-autocommit:2026-10-13T06:47:50.065Z",
+      "at": "2026-10-13T06:47:50.065Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:d67d769aab6fe858330007b470e3e5044618e04888164d6f00f6a53421210d4a"
+    },
+    {
+      "id": "resolve_finding:run-only-gates-s3-batch-autocommit:2026-10-13T06:48:40.749Z",
+      "at": "2026-10-13T06:48:40.749Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-ROG-S3-A1-07b2a0c8-68cc39\naction_v2_sha256:9c75f4a405f21c790bfee5aa70f31de210700fff4c77a3bd8be3bea5dfbdd53e"
+    },
+    {
+      "id": "freeze_artifacts:run-only-gates-s3-batch-autocommit:2026-10-13T06:48:54.123Z",
+      "at": "2026-10-13T06:48:54.123Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/run-only-gates-s3-batch-autocommit.intent.json"
+    },
+    {
+      "id": "record_approval:run-only-gates-s3-batch-autocommit:2026-10-13T06:53:04.401Z",
+      "at": "2026-10-13T06:53:04.401Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-34ec37c5\naction_v2_sha256:56f2dbf4ded727255e1cc5ac85f47b06b6b2964658b7de29ce7ed345efe88723",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-1fe9035351e718f4",
+        "issued_at": "2026-10-13T06:53:04.401Z"
+      }
+    },
+    {
+      "id": "request_rework:run-only-gates-s3-batch-autocommit:2026-10-13T06:58:48.217Z",
+      "at": "2026-10-13T06:58:48.217Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:ccda7545ec7fe73596582f82a10529313646bd09b0289f4eba615fe22feecd1f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-e188ef06fefbcc5a",
+        "issued_at": "2026-10-13T06:58:48.217Z"
+      }
+    },
+    {
+      "id": "revise_intent:run-only-gates-s3-batch-autocommit:2026-10-13T07:03:27.296Z",
+      "at": "2026-10-13T07:03:27.296Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\nscope_added:plugins/immune-brain/runtime/unattended/batch_plan.ts\naction_v2_sha256:e8867a31a6f7594f138f8724f8393d647b1aecf532e7c0a2cf55cc74694b815a"
+    },
+    {
+      "id": "resolve_finding:run-only-gates-s3-batch-autocommit:2026-10-13T07:10:26.531Z",
+      "at": "2026-10-13T07:10:26.531Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-acdb330950e3-1-review-1\naction_v2_sha256:78d12a0be1094bc6256ec4201eeec50c24fdd0b64d837d3529ac5b21fa34dbf9"
+    },
+    {
+      "id": "resolve_finding:run-only-gates-s3-batch-autocommit:2026-10-13T07:10:36.140Z",
+      "at": "2026-10-13T07:10:36.140Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-acdb330950e3-2-review-2\naction_v2_sha256:8ade4724e80c7faed2b3e209dfa71c90ebf2aed4136d2b6db7fc6f2e8d9021d2"
+    },
+    {
+      "id": "freeze_artifacts:run-only-gates-s3-batch-autocommit:2026-10-13T07:10:50.929Z",
+      "at": "2026-10-13T07:10:50.929Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/run-only-gates-s3-batch-autocommit.intent.json"
+    },
+    {
+      "id": "record_approval:run-only-gates-s3-batch-autocommit:2026-10-13T07:15:02.992Z",
+      "at": "2026-10-13T07:15:02.992Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2048648c\naction_v2_sha256:babdf6a1fb7f0c251a9ba98e9cfbf5e939458e19eaef12272375451c94b54267",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-4f64204264edaf75",
+        "issued_at": "2026-10-13T07:15:02.992Z"
+      }
+    },
+    {
+      "id": "record_approval:run-only-gates-s3-batch-autocommit:2026-10-13T07:20:10.842Z",
+      "at": "2026-10-13T07:20:10.842Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-72a01850\naction_v2_sha256:1be2048991281d6c3a995af239b97731baa0227b34dee9ee907ba18a833093db",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-df2d0f6598ee69c7",
+        "issued_at": "2026-10-13T07:20:10.842Z"
+      }
+    },
+    {
+      "id": "complete:run-only-gates-s3-batch-autocommit:2026-10-13T07:20:12.433Z",
+      "at": "2026-10-13T07:20:12.433Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:9134175369dfbd96ac8b6a6be79574e571ffd740e9b4874bf9ddc22eae5b8ae0"
+    }
+  ]
+}

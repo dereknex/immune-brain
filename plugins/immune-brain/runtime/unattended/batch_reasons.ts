@@ -34,6 +34,7 @@ export type BatchReasonKey =
 	| "repository_became_unreadable"
 	| "head_moved"
 	| "cancelled_before_execution"
+	| "precondition_commit_failed"
 	| "batch_run_rejected"
 	| "stale_batch_absent"
 	| "stale_batch_in_flight";
@@ -83,8 +84,8 @@ export const BATCH_REASONS: Readonly<Record<BatchReasonKey, BatchReasonSpec>> = 
 	},
 	working_tree_dirty: {
 		state: "rejected",
-		reason: "branch preflight failed: working tree is dirty",
-		recovery_action: "delete or rename the conflicting branch, or commit working changes in the current Host",
+		reason: (detail: string) => `branch preflight failed: working tree is dirty${detail ? `: ${detail}` : ""}`,
+		recovery_action: "resolve the listed remaining paths outside the batch committable set, then retry in the current Host",
 	},
 	authorized_scope_underivable: {
 		state: "rejected",
@@ -167,6 +168,11 @@ export const BATCH_REASONS: Readonly<Record<BatchReasonKey, BatchReasonSpec>> = 
 		reason: "user cancelled before batch execution",
 		recovery_action: "wait for a fresh literal-user request",
 	},
+	precondition_commit_failed: {
+		state: "rejected",
+		reason: (detail: string) => `batch precondition commit failed: ${detail}`,
+		recovery_action: "repair the reported Git precondition failure and retry the batch in the current Host",
+	},
 	batch_run_rejected: {
 		state: "rejected",
 		// The runner owns the specific reason; the fallback is this entry's own text.
@@ -181,7 +187,7 @@ export const BATCH_REASONS: Readonly<Record<BatchReasonKey, BatchReasonSpec>> = 
 	stale_batch_in_flight: {
 		state: "blocked",
 		reason: (detail: string) => `a batch child is still mid-flight, so the record cannot be disposed: ${detail}`,
-		recovery_action: "settle or stop the in-flight child through its own task, then dispose the batch in the current Host",
+		recovery_action: "settle or stop the in-flight child through its own task, then dispose the batch in the current Host; a child whose Kernel run already ended no longer blocks the disposition",
 	},
 });
 

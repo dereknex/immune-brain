@@ -117,6 +117,53 @@ function author(
 	return { stdout: result.stdout, stderr: result.stderr, returncode: result.status ?? -1 };
 }
 
+for (const refused of [false, true]) {
+	it(`intent author ${refused ? "reports a hook refusal" : "commits a pending migration and continues"} while preserving unrelated dirt`, () => {
+		withRepo((root) => {
+			activateRetiredPolicy(root);
+			mkdirSync(join(root, ".imm/audit/legacy-v3"), { recursive: true });
+			const evidence = ".imm/audit/legacy-v3/MEMORY.md";
+			writeFileSync(join(root, evidence), "baseline evidence\n");
+			writeFileSync(join(root, "notes.txt"), "baseline notes\n");
+			git(root, ["add", "-f", "--", evidence]);
+			git(root, ["add", "--", "notes.txt"]);
+			git(root, ["commit", "-qm", "author migration baseline"]);
+			const inspectGit = (...args: string[]) => {
+				const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+				expect(result.status).toBe(0);
+				return result.stdout;
+			};
+			const before = inspectGit("rev-parse", "HEAD").trim();
+			writeFileSync(join(root, evidence), "pending historical evidence\n");
+			writeFileSync(join(root, "notes.txt"), "staged notes\n");
+			git(root, ["add", "--", "notes.txt"]);
+			writeFileSync(join(root, "notes.txt"), "working notes\n");
+			const entry = inspectGit("ls-files", "--stage", "--", "notes.txt");
+			if (refused) {
+				git(root, ["config", "core.hooksPath", ".git/hooks"]);
+				writeFileSync(join(root, ".git/hooks/pre-commit"), "#!/bin/sh\necho author-migration-refused >&2\nexit 1\n", { mode: 0o755 });
+			}
+			const destination = "docs/plans/task-001-intent-author.intent.json";
+			const result = author(root, destination, candidate());
+			expect(inspectGit("ls-files", "--stage", "--", "notes.txt")).toBe(entry);
+			expect(readFileSync(join(root, "notes.txt"), "utf8")).toBe("working notes\n");
+			if (refused) {
+				expect(result.returncode).toBe(1);
+				expect(result.stdout).toContain("author-migration-refused");
+				expect(inspectGit("rev-parse", "HEAD").trim()).toBe(before);
+				expect(existsSync(join(root, destination))).toBe(false);
+			} else {
+				expect(result.returncode).toBe(0);
+				expect(existsSync(join(root, destination))).toBe(true);
+				expect(inspectGit("rev-list", "--count", `${before}..HEAD`).trim()).toBe("1");
+				expect(inspectGit("log", "-1", "--format=%s").trim()).toBe("chore(imm): commit storage-layout migration");
+				expect(inspectGit("diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").trim()).toBe(evidence);
+				expect(inspectGit("show", `HEAD:${evidence}`)).toBe("pending historical evidence\n");
+			}
+		});
+	});
+}
+
 afterEach(() => {
 	for (const root of roots.splice(0))
 		rmSync(root, { recursive: true, force: true });

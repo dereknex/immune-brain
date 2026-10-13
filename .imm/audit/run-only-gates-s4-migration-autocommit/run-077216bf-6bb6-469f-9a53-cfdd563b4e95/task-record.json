@@ -1,0 +1,662 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "run-only-gates-s4-migration-autocommit",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "run-only-gates-s4-migration-autocommit",
+    "goal": "The storage-layout migration never asks the user to commit: migrate --storage-layout commits its affected paths itself, and Enrollment and intent author commit a migration_uncommitted diff and continue instead of stopping.",
+    "acceptance": [
+      {
+        "id": "ROG-S4-A1",
+        "assertion": "Meet T4 and D14 in docs/specs/run-only-gates.spec.md: imm-kernel migrate --storage-layout ends in the ready state with every affected diff automatically committed under the D8 subject. A cleanup-only pending diff produces exactly one commit; a full legacy import commits preserved evidence before retiring sources and commits the resulting cleanup separately, retaining the existing data-protection order. Every commit contains only its affected paths, unrelated dirt is byte-identical afterwards, no next-action text asks the user to commit, and recovery_required and migration_blocked_active still fail closed.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-storage-layout-migration.test.ts\",\n      \"tests/kernel-migrate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "ROG-S4-A2",
+        "assertion": "Meet D14, D15 and BR-3: on a migration_uncommitted layout, intent author and Enrollment commit the affected paths and continue to their normal result. A migration_required layout is still not converted implicitly by intent author, and the Planner contract tells the Planner to run imm-kernel migrate --storage-layout itself and retry without interrupting the user. The packaged Claude bundle matches its source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-intent-authoring.test.ts\",\n      \"tests/pi-canary-enroll-extension.test.ts\",\n      \"tests/imm-planner-kernel-intent-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/run-only-gates-s4-migration-autocommit.md",
+      "docs/adr/0023-silent-precondition-commit.md",
+      "docs/plans/run-only-gates-s4-migration-autocommit.intent.json",
+      "docs/specs/run-only-gates.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts",
+      "plugins/immune-brain/runtime/commands/kernel.ts",
+      "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts",
+      "plugins/immune-brain/runtime/kernel/storage_paths.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/fixtures/workflow-decision-closure-evidence.json",
+      "tests/imm-planner-kernel-intent-contract.test.ts",
+      "tests/kernel-intent-authoring.test.ts",
+      "tests/kernel-migrate.test.ts",
+      "tests/kernel-storage-layout-migration.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts"
+    ],
+    "risk": "material",
+    "revision": 3,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/run-only-gates-s4-migration-autocommit.intent.json",
+    "content_hash": "sha256:44dc9cdb5806f0d6cf6abd5deb84e168cfc61e272d395acea6438cb2fb0dbd6e"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:3f6ee54004e3a73f29649d8e2136878738b8a677604e644efc011a2a1cf66a31",
+  "git_base_head": "5f67e99dd271e5e1985e65d9d42b5738ad3f488c",
+  "attestations": [
+    {
+      "id": "approval-qa-c8de5bc0",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:44dc9cdb5806f0d6cf6abd5deb84e168cfc61e272d395acea6438cb2fb0dbd6e",
+      "diff_hash": "sha256:a6b510fc24664ea46a7d71b5aa41e3f80e872124e4ae315defb42abd7d1a1318",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:282dcb9a6c0e2da54a58af57e454c6cd019c73273d411dc7b72a6944e0cb1a07",
+      "acceptance_results": [
+        {
+          "acceptance_id": "ROG-S4-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:282dcb9a6c0e2da54a58af57e454c6cd019c73273d411dc7b72a6944e0cb1a07"
+        },
+        {
+          "acceptance_id": "ROG-S4-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:282dcb9a6c0e2da54a58af57e454c6cd019c73273d411dc7b72a6944e0cb1a07"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-f6b47461",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:44dc9cdb5806f0d6cf6abd5deb84e168cfc61e272d395acea6438cb2fb0dbd6e",
+      "diff_hash": "sha256:cfecc72065594b5b3c4f3b6088e1ce3c8e28f2b65a13a71ac8aec844ae769955",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:cea1ac190eae6c04c4d86855a5917103a663e529ffd97bbc291a24a0e3796693",
+      "acceptance_results": [
+        {
+          "acceptance_id": "ROG-S4-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:cea1ac190eae6c04c4d86855a5917103a663e529ffd97bbc291a24a0e3796693"
+        },
+        {
+          "acceptance_id": "ROG-S4-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:cea1ac190eae6c04c4d86855a5917103a663e529ffd97bbc291a24a0e3796693"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-8c5988c1",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:44dc9cdb5806f0d6cf6abd5deb84e168cfc61e272d395acea6438cb2fb0dbd6e",
+      "diff_hash": "sha256:31a59092e45238093574a5e1bce1340c85eb2a7f8eeaa0e8f216d07ef3a49747",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:908941b6c398075dfcdb98c92224b87317811af92447a71cb05d494229968f61",
+      "acceptance_results": [
+        {
+          "acceptance_id": "ROG-S4-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:908941b6c398075dfcdb98c92224b87317811af92447a71cb05d494229968f61"
+        },
+        {
+          "acceptance_id": "ROG-S4-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:908941b6c398075dfcdb98c92224b87317811af92447a71cb05d494229968f61"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-1503b049",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:44dc9cdb5806f0d6cf6abd5deb84e168cfc61e272d395acea6438cb2fb0dbd6e",
+      "diff_hash": "sha256:0fa9ace9b9086919dcd5e4162b157f91c840f27b84d786c2e5f616d771917cea",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:9313917beb97c4dcea7eb5e211f9d7563042d3898c1db66ce9fa2ec250401c42",
+      "acceptance_results": [
+        {
+          "acceptance_id": "ROG-S4-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:9313917beb97c4dcea7eb5e211f9d7563042d3898c1db66ce9fa2ec250401c42"
+        },
+        {
+          "acceptance_id": "ROG-S4-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:9313917beb97c4dcea7eb5e211f9d7563042d3898c1db66ce9fa2ec250401c42"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-937669c8",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:44dc9cdb5806f0d6cf6abd5deb84e168cfc61e272d395acea6438cb2fb0dbd6e",
+      "diff_hash": "sha256:2f116d547c009b23bed784b4f5d5b64ef2aea87c8986713db2bc5735832eac5a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:9d3a6f1c6b664852b882f8df1ba6b9f3080ae6996cd66357f7c4fa9521867049",
+      "acceptance_results": [
+        {
+          "acceptance_id": "ROG-S4-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:9d3a6f1c6b664852b882f8df1ba6b9f3080ae6996cd66357f7c4fa9521867049"
+        },
+        {
+          "acceptance_id": "ROG-S4-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:9d3a6f1c6b664852b882f8df1ba6b9f3080ae6996cd66357f7c4fa9521867049"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-5fabecad",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:44dc9cdb5806f0d6cf6abd5deb84e168cfc61e272d395acea6438cb2fb0dbd6e",
+      "diff_hash": "sha256:01c7b1711be4b82613bb2b38e5469774c3384d717f98cb663c79914e234c53af",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:4a16c8b95b4c84fd2a16f07597ca57054b789ee9479aaec4177b4b810d250fde",
+      "acceptance_results": [
+        {
+          "acceptance_id": "ROG-S4-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:4a16c8b95b4c84fd2a16f07597ca57054b789ee9479aaec4177b4b810d250fde"
+        },
+        {
+          "acceptance_id": "ROG-S4-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:4a16c8b95b4c84fd2a16f07597ca57054b789ee9479aaec4177b4b810d250fde"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-86f5f11a",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:44dc9cdb5806f0d6cf6abd5deb84e168cfc61e272d395acea6438cb2fb0dbd6e",
+      "diff_hash": "sha256:01c7b1711be4b82613bb2b38e5469774c3384d717f98cb663c79914e234c53af",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 manifest digest、唯一 parent、tree 和全部变更路径，检查完整 diff、迁移提交顺序、失败重试、消费者及打包边界；结合 Kernel QA 的通过证据，未发现阻断问题。未重新执行验证命令。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "5f67e99dd271e5e1985e65d9d42b5738ad3f488c",
+        "review_commit": "b294e259cb9421fa290478ec1b468a639f6b9b4a",
+        "review_tree": "359649bd2a63aafe563ae05cf785005c7d15bd5e",
+        "manifest_digest": "sha256:f62722dfe467366c76b209ce657935f642b1e18314f1b1250225b8f51382328a"
+      },
+      "reviewer_verdict_sha256": "sha256:8fe5beac0f3014645bc1760e24e634ac00c52332e75de161a3bcebf206ccb76b"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-30087b346397-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "ROG-S4-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "[P1] 恢复已发布导入时会提交无关 audit 改动。storage_layout_migration.ts:205 无条件纳入 migration.affected_paths，而 finishPublishedImport 在第 86 行把迁移前的全部 dirty_affected_paths 作为该集合返回。应让恢复路径返回实际迁移拥有的路径，并在现有 CLI 恢复测试中加入具有不同 index/worktree 内容的无关 audit 文件，断言提交不包含它且 index/worktree 均保持原样。",
+      "anchor": "sha256:297b1646df685a3529358d4adb5e26b5ccb5af26242c4e6887e7ac1e9ecf06ec",
+      "evidence": {
+        "trigger": "提交路径归属隔离类的覆盖缺口：已有有效 SQLite store、migration receipt 和已提交的历史 evidence，但一个历史任务的旧源仍存在，另有 .imm/audit/unrelated/note.md 的 staged 内容与 worktree 内容不同。inspectStorageLayout 报 invalid，并将该 note 放入 dirty_affected_paths；migrateLegacyLayout 的 finishPublishedImport 完成旧源清理后，在 storage_layout_migration.ts:79-87 原样返回这个 dirty 集合。第 205 行只过滤新读取的 dirty 参数，未过滤 migration.affected_paths，因此正常导入路径采用的 audit 排除不能覆盖恢复分支。note 被交给 commitWorkflowPaths，提交其 worktree 内容并改变其 index 条目。读取未改动的 runtime/assurance/workflow_autocommit.ts 是为了核对该 changed caller 所调用的提交边界；其 commitWithPathGuard 使用 git commit --only，按调用方列出的路径提交 worktree 内容。现有 tests/kernel-storage-layout-migration.test.ts:843-864 的恢复测试未加入此负例。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/commands/kernel.ts::runStorageLayoutMigration",
+          "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts::migrateAndCommitLegacyLayout",
+          "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts::migrateLegacyLayout.finishPublishedImport",
+          "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts::migrateAndCommitLegacyLayout.commit",
+          "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts::commitWorkflowPaths"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "ROG-S4-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-30087b346397-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "ROG-S4-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "[P2] 完整导入漏提交已跟踪的 .imm/state/ 旧源删除，却报告 ready。storage_layout_migration.ts:203-209 使用 gitDirtyAffected 收集 cleanup，但 storage_paths.ts:540-547 的集合不包含 .imm/state/tasks/ 或 .imm/state/workspace.json。应精确收集 importer 实际退休且已跟踪的旧源路径，并扩展现有 v4 CLI 测试，断言这些删除进入单独的 cleanup commit、HEAD 不再包含旧源，重试不再提交。",
+      "anchor": "sha256:1d5c04c2cd2322b79487a0218a6c67ea4e8dd57b9585d62ead4dc6ffc44c6783",
+      "evidence": {
+        "trigger": "提交路径覆盖完整性类的缺口：HEAD 已跟踪 .imm/state/tasks/<task>.json 和对应 audit terminal proof；这正是 tests/kernel-storage-layout-migration.test.ts:740-765 的 fixture，writeLegacyV4Pair 写入旧源，commit helper 在第 299-301 行用 git add -A 提交它。导入先提交新增 audit record，然后删除 .imm/state/tasks/<task>.json。migrateLegacyLayout 返回的 affected_paths 仅包含 audit 路径；gitDirtyAffected 的前缀集合又排除 .imm/state/，因此第 205 行找不到这个源删除，不产生 cleanup commit。SQLite store 发布后，inspectStorageLayout 在 storage_paths.ts:800-807 返回 ready，不检查这些剩余 Git 删除，于是 wrapper 返回成功，旧源仍保留在 HEAD。正常旧 .imm/tasks/ 导入的 cleanup 收集不能覆盖这个已支持的 v4 文件布局。读取未改动的 runtime/kernel/sqlite_migration.ts 是为了核对同一迁移状态机的 cleanup 所有者：removeRetiredAuthority 在第 620-637 行删除 task.sources 和 FILE_STORE_WORKSPACE_RELATIVE，证明这些是本次导入的实际旧源删除。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/commands/kernel.ts::runStorageLayoutMigration",
+          "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts::migrateAndCommitLegacyLayout",
+          "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts::migrateLegacyLayout",
+          "plugins/immune-brain/runtime/kernel/sqlite_migration.ts::importLegacyWorkspace",
+          "plugins/immune-brain/runtime/kernel/sqlite_migration.ts::removeRetiredAuthority",
+          "plugins/immune-brain/runtime/kernel/storage_paths.ts::gitDirtyAffected",
+          "plugins/immune-brain/runtime/kernel/storage_paths.ts::inspectStorageLayout"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "ROG-S4-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-abb29284245a-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "ROG-S4-A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts:196 的路径快照会丢失上次调用已删除但尚未提交的 cleanup 路径，导致修复 Git 错误后的重试错误报告 ready。应保留可恢复且准确限定的迁移 cleanup 路径，直到对应提交成功，并在 tests/kernel-storage-layout-migration.test.ts 增加仅拒绝 cleanup 提交、修复后重试的 CLI 测试，验证删除全部提交且无关 dirt 保持原样。",
+      "anchor": "sha256:fcfd78f38b220aeb1bbe64f747e99c97319080c02105a8309defe51214dfb03b",
+      "evidence": {
+        "trigger": "不变量类别：迁移 cleanup 在失败及重试之间必须保持完整路径覆盖。从已提交的 legacy terminal task 开始，pre-commit hook 允许 evidence 提交，但在第二次 cleanup 提交时拒绝。importer 已发布 SQLite 并删除 legacy sources，首次调用正确返回失败。然而修复 hook 后重试时，storage_layout_migration.ts:196-198 排除了所有已经不存在的 source 路径；同文件 :79-86 的 finishPublishedImport 返回空 affected_paths，因此 :207-208 不会提交先前留下的删除。storage_paths.ts:800 的 SQLite 分支仍返回 ready，commands/kernel.ts:1413-1420 最终报告 migration_completed，HEAD 却仍包含已退休 sources。当前快照修复只覆盖本次调用中新发生的删除，不能覆盖先前调用留下的同类 cleanup diff。读取未修改的 plugins/immune-brain/runtime/kernel/sqlite_migration.ts 是为了追踪同一迁移状态机的发布、source 删除和 published-import 重试：该 importer 在 Git cleanup 提交之前完成删除，重试不会恢复已删除 sources。已有 CLI hook-refusal 测试只拒绝第一阶段，未覆盖此状态。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/commands/kernel.ts::runStorageLayoutMigration",
+          "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts::migrateAndCommitLegacyLayout",
+          "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts::migrateLegacyLayout",
+          "plugins/immune-brain/runtime/kernel/sqlite_migration.ts::importLegacyWorkspace",
+          "plugins/immune-brain/runtime/kernel/storage_paths.ts::inspectStorageLayout"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "ROG-S4-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-3b2414433cc1-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "ROG-S4-A1",
+      "source": "review",
+      "review_round": 3,
+      "summary": "P2：迁移前已有修改的 tracked 源文件会漏掉清理提交。plugins/immune-brain/runtime/kernel/storage_layout_migration.ts:192 要求源文件的旧 HEAD blob 等于新 evidence blob；两者不同时，它排除实际退休的源路径。随后 :232-235 仍返回成功，因为 storage_paths.ts:800-806 在 SQLite store 存在时直接报告 ready，不检查遗留删除 diff。此次直接读取未修改的 sqlite_migration.ts:484、:892、:923-924，是为追踪同一迁移状态机：importer 保存当前源字节，确认 evidence 已提交，再删除源文件。因此此路径可返回 ready，却留下未提交的 tracked 删除，违反“every affected diff automatically committed”。应在退休前确定并保留实际受影响的源删除集合，或先提交这些源修改；在 tests/kernel-storage-layout-migration.test.ts 的 CLI seam 补充 tracked 源文件修改后迁移及重试的断言。",
+      "anchor": "sha256:3eaa54901b0f70699677f79bebbb4636fc39c48f13f5f20becc9b0bd999d3816",
+      "evidence": {
+        "trigger": "HEAD 中 .imm/memory/MEMORY.md 的内容为 old，worktree 将其修改为 new；layout 为 owner-free migration_required，audit evidence 尚不存在，Git hooks 正常通过。运行 migrate --storage-layout 后，importer 将 new 保存并提交到 .imm/audit/legacy-v3/MEMORY.md，发布 SQLite store 并删除源文件。pendingCleanupPaths 比较 HEAD 的源 blob(old) 与 evidence blob(new)，排除源删除；命令返回 ready，但 HEAD 仍包含旧源文件，worktree 留有未提交删除。此项属于“清理删除集完整性”不变量的覆盖缺口：当前 HEAD 等值匹配修复只覆盖源字节与迁移前 HEAD 一致的情况，不能覆盖迁移前源文件已有修改的同类路径。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/commands/kernel.ts:runStorageLayoutMigration",
+          "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts:migrateAndCommitLegacyLayout",
+          "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts:migrateLegacyLayout",
+          "plugins/immune-brain/runtime/kernel/sqlite_migration.ts:importLegacyWorkspace",
+          "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts:pendingCleanupPaths",
+          "plugins/immune-brain/runtime/kernel/storage_paths.ts:inspectStorageLayout"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "ROG-S4-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-1e9ccae9389f-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "ROG-S4-A1",
+      "source": "review",
+      "review_round": 4,
+      "summary": "完整退休提交覆盖存在缺口：storage_layout_migration.ts:195 只接受 source 与 evidence 的 HEAD blob 相等的清理路径。如果 source 已修改，而对应 evidence 已提交为这些新字节，迁移会退休 source，却漏交其删除，并在 :242 报告 ready。应在退休前独立处理经验证的 tracked source dirt，使清理路径及失败重试不依赖 evidence 尚未提交；在 tests/kernel-storage-layout-migration.test.ts 增加 evidence 已提交的 CLI 用例，并验证删除提交、hook 拒绝后的重试及无关 dirt 保持不变。",
+      "anchor": "sha256:980957528b9b5361aa40e2fa81f0cc28f17caa7e2cb1a8c7cc8ca2e3236150cb",
+      "evidence": {
+        "trigger": "不变量类别：所有经验证并退休的 tracked source 都必须进入可重试的 cleanup commit。具体输入：无 SQLite store、无活跃 owner；HEAD:.imm/memory/MEMORY.md 为 old\\n，HEAD:.imm/audit/legacy-v3/MEMORY.md 为 new\\n，worktree 的两个文件均为 new\\n。执行 migrate --storage-layout。当前为 modified tracked sources 增补的修复仅在 storage_layout_migration.ts:228-234 的 migration_uncommitted 分支提交 sources；此例 evidence 已在 HEAD，因此该修复不覆盖此类别的这一状态。直接调用的未变更状态所有者 plugins/immune-brain/runtime/kernel/sqlite_migration.ts 已读取，用于核对 preservation/publication/retirement 顺序：:438-445 接受相同字节的现有 evidence，:892-898 因 evidence 已提交而继续发布，随后退休 source。pendingCleanupPaths 在 :195 比较 old 与 new 的 HEAD blob，排除 source；零任务导入的 migration.affected_paths 为空，所以 :239 不提交任何路径。storage_paths.ts:800-806 在有效 store 存在时报告 ready，CLI 成功返回 affected_paths: []，但 HEAD 仍含旧 source，worktree 留下其未提交删除；再次运行仍会漏交该路径。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/commands/kernel.ts:runStorageLayoutMigration",
+          "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts:migrateAndCommitLegacyLayout",
+          "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts:pendingCleanupPaths"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "ROG-S4-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-ae10f5f548f9-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "ROG-S4-A1",
+      "source": "review",
+      "review_round": 5,
+      "summary": "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts:198 根据 HEAD 中的 workspace owner 判断清理路径，会漏掉已在工作树解除 owner、随后被 importer 删除的 tracked workspace.json；命令仍报告 ready，但迁移产生的删除没有提交。应依据 importer 实际验证并退休的路径确定清理集合，并增加 HEAD owner 非空、工作树 owner 为 null 的 CLI 回归测试，覆盖首次执行和清理提交被拒后的重试。",
+      "anchor": "sha256:f4b674f11a38cb75f2b27a377553fc49a33cd0ce85db81f9ed4eb205925c8659",
+      "evidence": {
+        "trigger": "不变量类别：迁移退休 diff 的完整提交。HEAD 跟踪 .imm/state/workspace.json，内容为 {\"contract\":\"assurance_kernel/workspace/v1\",\"current_working\":\"old-task\"}；工作树中的同一文件已变为合法的 current_working:null，且没有其他 live owner。运行 migrate --storage-layout。现有按 committed evidence 识别退休路径的修复不能覆盖此类 workspace：它没有 evidence 映射，而 pendingCleanupPaths 在第 198 行要求 HEAD 中的 owner 已经为 null。直接检查同一迁移状态机的 unchanged plugins/immune-brain/runtime/kernel/sqlite_migration.ts:675-685 和 :630-634，是为了确认 importer 依据当前工作树判定 owner-free 并删除 workspace；因此此输入会被接受并退休。清理集合随后排除该删除，而 plugins/immune-brain/runtime/kernel/storage_paths.ts:778-807 在有效 SQLite store 存在时返回 ready，不校验这个剩余 diff。结果是 CLI 成功、affected_paths 遗漏 workspace，HEAD 仍保留旧 workspace，工作树留下未提交删除；再次执行也不会补提交。现有测试只覆盖 HEAD 中 workspace owner 已为 null 的情况。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/commands/kernel.ts::runStorageLayoutMigration",
+          "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts::migrateAndCommitLegacyLayout",
+          "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts::migrateLegacyLayout",
+          "plugins/immune-brain/runtime/kernel/sqlite_migration.ts::importLegacyWorkspaceLocked",
+          "plugins/immune-brain/runtime/kernel/sqlite_migration.ts::removeRetiredAuthority",
+          "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts::pendingCleanupPaths",
+          "plugins/immune-brain/runtime/kernel/storage_paths.ts::inspectStorageLayout"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "ROG-S4-A1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:run-only-gates-s4-migration-autocommit:2026-10-13T07:25:34.622Z",
+      "at": "2026-10-13T07:25:34.622Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:2d3736a25ac289e340a4c1280dffc89b1d33ff70f14167b07bd9c77a5306e54f",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-25d7e48f4fd5eb4c",
+        "issued_at": "2026-10-13T07:25:34.951Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:run-only-gates-s4-migration-autocommit:2026-10-13T07:29:54.148Z",
+      "at": "2026-10-13T07:29:54.148Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\naction_v2_sha256:1b9de448f7d80bb4dc48deea873f321e68ad341560fe3043a2569cb16a39d415",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-27597ea67c013a26",
+        "issued_at": "2026-10-13T07:29:54.626Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:run-only-gates-s4-migration-autocommit:2026-10-13T07:52:24.304Z",
+      "at": "2026-10-13T07:52:24.304Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/run-only-gates-s4-migration-autocommit.intent.json"
+    },
+    {
+      "id": "record_approval:run-only-gates-s4-migration-autocommit:2026-10-13T07:53:05.577Z",
+      "at": "2026-10-13T07:53:05.577Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-c8de5bc0\naction_v2_sha256:d29fe7d67bd4601b9caa558b59271bac6081c62ef8da11ca4ce9c9ac451ab4a0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-fe9b3da460658246",
+        "issued_at": "2026-10-13T07:53:05.577Z"
+      }
+    },
+    {
+      "id": "request_rework:run-only-gates-s4-migration-autocommit:2026-10-13T08:00:08.868Z",
+      "at": "2026-10-13T08:00:08.868Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:b0d53fd19f6d4c6176e54f1b0fc7c71cdce5816de24533c0c98f7d7682b1c742",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-a089063afd9e9491",
+        "issued_at": "2026-10-13T08:00:08.868Z"
+      }
+    },
+    {
+      "id": "resolve_finding:run-only-gates-s4-migration-autocommit:2026-10-13T08:04:57.310Z",
+      "at": "2026-10-13T08:04:57.310Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-30087b346397-1-review-1\naction_v2_sha256:db06d9262896e2f546172a83ed9afe97287f01106330dac4a5404bd50480485d"
+    },
+    {
+      "id": "resolve_finding:run-only-gates-s4-migration-autocommit:2026-10-13T08:06:17.026Z",
+      "at": "2026-10-13T08:06:17.026Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-30087b346397-2-review-2\naction_v2_sha256:012a8700d4cd4f757c035a679d61a61ada306a613e7cd9b812434a5437a928b2"
+    },
+    {
+      "id": "freeze_artifacts:run-only-gates-s4-migration-autocommit:2026-10-13T08:07:48.247Z",
+      "at": "2026-10-13T08:07:48.247Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/run-only-gates-s4-migration-autocommit.intent.json"
+    },
+    {
+      "id": "record_approval:run-only-gates-s4-migration-autocommit:2026-10-13T08:08:41.640Z",
+      "at": "2026-10-13T08:08:41.640Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-f6b47461\naction_v2_sha256:9ee268efa9258496f7bf0e98cae674b2588cec8e574721fce88bbdab976e2563",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-886c5aec657dd15b",
+        "issued_at": "2026-10-13T08:08:41.641Z"
+      }
+    },
+    {
+      "id": "request_rework:run-only-gates-s4-migration-autocommit:2026-10-13T08:14:16.651Z",
+      "at": "2026-10-13T08:14:16.651Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:edc0c58c9f470803fb9032cd82441ad44d01b042fc9a65b75403e1c86f0088d3",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-7adbc827081b065c",
+        "issued_at": "2026-10-13T08:14:16.651Z"
+      }
+    },
+    {
+      "id": "resolve_finding:run-only-gates-s4-migration-autocommit:2026-10-13T08:18:59.789Z",
+      "at": "2026-10-13T08:18:59.789Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-abb29284245a-1-review-1\naction_v2_sha256:c2a094384cffacc3fbe94178bab175287570b496d48f695a1a73e86025cd2cd2"
+    },
+    {
+      "id": "freeze_artifacts:run-only-gates-s4-migration-autocommit:2026-10-13T08:19:11.060Z",
+      "at": "2026-10-13T08:19:11.060Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/run-only-gates-s4-migration-autocommit.intent.json"
+    },
+    {
+      "id": "record_approval:run-only-gates-s4-migration-autocommit:2026-10-13T08:20:01.310Z",
+      "at": "2026-10-13T08:20:01.310Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-8c5988c1\naction_v2_sha256:a97c78f80ce488d33d9f1c4b10b106d934252e0f716e5e1f35d36c026d1869c3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-fef3391c5db9c45e",
+        "issued_at": "2026-10-13T08:20:01.310Z"
+      }
+    },
+    {
+      "id": "request_rework:run-only-gates-s4-migration-autocommit:2026-10-13T08:24:24.360Z",
+      "at": "2026-10-13T08:24:24.360Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_3\naction_v2_sha256:309d18ac152f61a28826596d621304bed9c151a9bf239ff6016016d8303971dd",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-6391e935bb2639fa",
+        "issued_at": "2026-10-13T08:24:24.361Z"
+      }
+    },
+    {
+      "id": "resolve_finding:run-only-gates-s4-migration-autocommit:2026-10-13T08:28:17.595Z",
+      "at": "2026-10-13T08:28:17.595Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-3b2414433cc1-1-review-1\naction_v2_sha256:a3ae9868666f16cf5721e6ac9b4abf749efa5278091752418ad9aed0485a9b7a"
+    },
+    {
+      "id": "freeze_artifacts:run-only-gates-s4-migration-autocommit:2026-10-13T08:28:27.078Z",
+      "at": "2026-10-13T08:28:27.078Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/run-only-gates-s4-migration-autocommit.intent.json"
+    },
+    {
+      "id": "record_approval:run-only-gates-s4-migration-autocommit:2026-10-13T08:29:23.121Z",
+      "at": "2026-10-13T08:29:23.121Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-1503b049\naction_v2_sha256:3592df07838125343047b5d956ae1b8c86bc93506d49b15075fc1a5f5138d623",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-3ba9683ba99e6ffd",
+        "issued_at": "2026-10-13T08:29:23.121Z"
+      }
+    },
+    {
+      "id": "request_rework:run-only-gates-s4-migration-autocommit:2026-10-13T08:33:25.050Z",
+      "at": "2026-10-13T08:33:25.050Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_4\naction_v2_sha256:28ef9ba5633e5ba0eceabd123353ade4d586ea7b793c0bbb25622aee0b109ca7",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-50cad04c567e2048",
+        "issued_at": "2026-10-13T08:33:25.050Z"
+      }
+    },
+    {
+      "id": "resolve_finding:run-only-gates-s4-migration-autocommit:2026-10-13T08:35:30.447Z",
+      "at": "2026-10-13T08:35:30.447Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-1e9ccae9389f-1-review-1\naction_v2_sha256:83b2bbc29bc111fbab8a108dab16da79610c92763a452005d7e9f08e9f361c30"
+    },
+    {
+      "id": "freeze_artifacts:run-only-gates-s4-migration-autocommit:2026-10-13T08:35:41.738Z",
+      "at": "2026-10-13T08:35:41.738Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/run-only-gates-s4-migration-autocommit.intent.json"
+    },
+    {
+      "id": "record_approval:run-only-gates-s4-migration-autocommit:2026-10-13T08:36:19.029Z",
+      "at": "2026-10-13T08:36:19.029Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-937669c8\naction_v2_sha256:6e3f26f18855ac46cc6c222c9bf671073c04c05cb296bcab27e6405f7333d18d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-6858f4154ddfa243",
+        "issued_at": "2026-10-13T08:36:19.029Z"
+      }
+    },
+    {
+      "id": "request_rework:run-only-gates-s4-migration-autocommit:2026-10-13T08:40:34.467Z",
+      "at": "2026-10-13T08:40:34.467Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_5\naction_v2_sha256:94abbc2d8a39a1d68ec5c52d2ceb144ffd1bec5c23c011ef78626f1f6173ae36",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-0eb69a9ec6062551",
+        "issued_at": "2026-10-13T08:40:34.467Z"
+      }
+    },
+    {
+      "id": "resolve_finding:run-only-gates-s4-migration-autocommit:2026-10-13T08:45:07.909Z",
+      "at": "2026-10-13T08:45:07.909Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-ae10f5f548f9-1-review-1\naction_v2_sha256:b8261819bb02e029548b71559f35563d90d2cd4ca1cad16591db561a0eebf32f"
+    },
+    {
+      "id": "freeze_artifacts:run-only-gates-s4-migration-autocommit:2026-10-13T08:45:16.866Z",
+      "at": "2026-10-13T08:45:16.866Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/run-only-gates-s4-migration-autocommit.intent.json"
+    },
+    {
+      "id": "record_approval:run-only-gates-s4-migration-autocommit:2026-10-13T08:46:21.106Z",
+      "at": "2026-10-13T08:46:21.106Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5fabecad\naction_v2_sha256:f2123a4a02a30062509c18720e97808c3307bca2584d00941956b12c44ccb76d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d54fa4a75d1ab0a1",
+        "issued_at": "2026-10-13T08:46:21.106Z"
+      }
+    },
+    {
+      "id": "record_approval:run-only-gates-s4-migration-autocommit:2026-10-13T08:50:12.031Z",
+      "at": "2026-10-13T08:50:12.031Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-86f5f11a\naction_v2_sha256:0a46c7732a67e19bd24ce0ea3d891233f2dba0eb0410af51a1dea2cff9ca3ded",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-63bad91605b268a2",
+        "issued_at": "2026-10-13T08:50:12.031Z"
+      }
+    },
+    {
+      "id": "complete:run-only-gates-s4-migration-autocommit:2026-10-13T08:50:13.873Z",
+      "at": "2026-10-13T08:50:13.873Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:ca15fdb487007541034e70747af83837046998dd36d3309bf808d2576f6e01e4"
+    }
+  ]
+}

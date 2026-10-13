@@ -20,10 +20,10 @@
 // open. No Batch Authorization capability is minted, because retiring a record
 // consumes no child and enrolls nothing — the capability exists to authorize
 // child consumption, and minting one here would be ceremony without a property.
-import { readSecureProjectBytes } from "../kernel/storage";
+import { readSecureProjectBytes, readSettledRunEvidence } from "../kernel/storage";
 import { batchStatePath } from "../kernel/storage_paths";
 import { batchReason, type BatchReason } from "./batch_reasons";
-import { findExistingActiveBatch, findSettledBatchRecord, type BatchGateDecision } from "./batch_preflight";
+import { findExistingActiveBatch, findSettledBatchRecord, readActiveClaimTaskId, type BatchGateDecision } from "./batch_preflight";
 import {
 	isTerminalBatchState,
 	replaceAnyBatchRunState,
@@ -34,7 +34,12 @@ import {
 	type BatchRunState,
 } from "./batch_state";
 
-/** Child states whose Kernel run is still live; a live run settles on its own. */
+/**
+ * Child states the batch runner has not finished absorbing. Such a child is
+ * mid-flight unless the Kernel store proves its run already ended outside the
+ * batch (see `kernelLifecycleOf`): the record alone cannot tell a live run from
+ * one a manual imm-run settled while the drifted batch could no longer resume.
+ */
 const SERIAL_IN_FLIGHT: ReadonlySet<string> = new Set(["enrolled", "settled"]);
 const LANE_IN_FLIGHT: ReadonlySet<string> = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
 
@@ -45,6 +50,8 @@ export interface StaleBatchChildEvidence {
 	state: string;
 	commit: string | null;
 	lane_branch: string | null;
+	/** The Kernel store's terminal lifecycle for this task; null while live or unknown. */
+	kernel_lifecycle: "done" | "stopped" | null;
 }
 
 /** The exact record identity the literal user is asked to retire. */
@@ -74,10 +81,27 @@ const RETIRE_REASON =
 	"Recorded child commits, child states and the batch branch are preserved as evidence. " +
 	"Children this batch never executed carry no commit, no batch trailer and no approval; nothing infers their delivery from this record.";
 
+const RETIRE_REASON_ENDED_OUTSIDE =
+	" A child this record still holds mid-flight had already ended in the Kernel store when the record was retired; its own TaskRecord, not this record, is the evidence of that run.";
+
 const RETIRE_NEXT_ACTION =
 	"The Initiative has no active batch. Run each remaining child with imm-run under its own authorization, or start a new batch for this Initiative after checking out its batch branch.";
 
-function childEvidenceOf(record: AnyBatchRunStateRecord): StaleBatchChildEvidence[] {
+/**
+ * The terminal lifecycle the coordinator's Kernel store holds for a task, or
+ * null. Fail closed: no run, a live run, a task that still owns the workspace
+ * claim, or an unreadable store all read as null, so the child stays mid-flight.
+ */
+function kernelLifecycleOf(root: string, taskId: string): "done" | "stopped" | null {
+	try {
+		if (readActiveClaimTaskId(root) === taskId) return null;
+		return readSettledRunEvidence(root, taskId)?.lifecycle ?? null;
+	} catch {
+		return null;
+	}
+}
+
+function childEvidenceOf(root: string, record: AnyBatchRunStateRecord): StaleBatchChildEvidence[] {
 	if (record.contract === "assurance_kernel/batch_run_state/v2")
 		return record.children.map((child) => ({
 			task_id: child.task_id,
@@ -85,6 +109,7 @@ function childEvidenceOf(record: AnyBatchRunStateRecord): StaleBatchChildEvidenc
 			state: child.state,
 			commit: child.commit,
 			lane_branch: child.lane?.branch ?? null,
+			kernel_lifecycle: kernelLifecycleOf(root, child.task_id),
 		}));
 	return record.children.map((child) => ({
 		task_id: child.task_id,
@@ -92,12 +117,13 @@ function childEvidenceOf(record: AnyBatchRunStateRecord): StaleBatchChildEvidenc
 		state: child.state,
 		commit: child.commit,
 		lane_branch: null,
+		kernel_lifecycle: kernelLifecycleOf(root, child.task_id),
 	}));
 }
 
-function inFlightChildOf(record: AnyBatchRunStateRecord): { task_id: string } | null {
+function inFlightChildOf(root: string, record: AnyBatchRunStateRecord): { task_id: string } | null {
 	const inFlight = record.contract === "assurance_kernel/batch_run_state/v2" ? LANE_IN_FLIGHT : SERIAL_IN_FLIGHT;
-	return record.children.find((child) => inFlight.has(child.state)) ?? null;
+	return record.children.find((child) => inFlight.has(child.state) && kernelLifecycleOf(root, child.task_id) === null) ?? null;
 }
 
 /**
@@ -114,7 +140,7 @@ export function readStaleBatchLookup(root: string, initiativeSlug: string): Stal
 	if (found.corrupt) return { kind: "corrupt", path: found.path };
 	const record = found.record;
 	if (isTerminalBatchState(record.batch_state)) return { kind: "terminal", batch_id: record.batch_id };
-	const inFlight = inFlightChildOf(record);
+	const inFlight = inFlightChildOf(root, record);
 	if (inFlight) return { kind: "in_flight", batch_id: record.batch_id, task_id: inFlight.task_id };
 	return {
 		kind: "retirable",
@@ -128,7 +154,7 @@ export function readStaleBatchLookup(root: string, initiativeSlug: string): Stal
 			base_head: record.base_head,
 			confirmation_time: record.confirmation_time,
 			recorded_commits: [...record.commits],
-			children: childEvidenceOf(record),
+			children: childEvidenceOf(root, record),
 		},
 	};
 }
@@ -188,6 +214,10 @@ export async function retireStaleBatch<HostRejection>(options: {
 	// Children, commits and branch are carried over untouched: the disposition
 	// records what the batch did and did not do, and invents neither.
 	const retired: AnyBatchRunStateRecord = { ...record, batch_state: "superseded" };
+	const inFlightStates = record.contract === "assurance_kernel/batch_run_state/v2" ? LANE_IN_FLIGHT : SERIAL_IN_FLIGHT;
+	const reason = record.children.some((child) => inFlightStates.has(child.state))
+		? RETIRE_REASON + RETIRE_REASON_ENDED_OUTSIDE
+		: RETIRE_REASON;
 	const stored = replaceAnyBatchRunState(root, expected, retired, () => {
 		if (!readSecureProjectBytes(root, batchStatePath(record.batch_id)).equals(expected))
 			throw new Error("batch state changed before the disposition was applied");
@@ -202,7 +232,7 @@ export async function retireStaleBatch<HostRejection>(options: {
 					max_parallel: stored.max_parallel,
 					children: stored.children,
 					commits: stored.commits,
-					reason: RETIRE_REASON,
+					reason,
 					handoffs: [],
 					next_action: RETIRE_NEXT_ACTION,
 					created_at: now,
@@ -214,7 +244,7 @@ export async function retireStaleBatch<HostRejection>(options: {
 					batch_state: stored.batch_state,
 					children: stored.children,
 					commits: stored.commits,
-					reason: RETIRE_REASON,
+					reason,
 					next_action: RETIRE_NEXT_ACTION,
 					created_at: now,
 				} satisfies BatchRunReport);

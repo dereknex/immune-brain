@@ -104,7 +104,7 @@ export interface NativeConfirmationInput {
 		batch_branch: string;
 		plan_digest: string;
 		recorded_commits: number;
-		children: Array<{ task_id: string; slice_id: string; state: string; commit: string | null; lane_branch: string | null }>;
+		children: Array<{ task_id: string; slice_id: string; state: string; commit: string | null; lane_branch: string | null; kernel_lifecycle: "done" | "stopped" | null }>;
 	};
 	signal?: AbortSignal;
 }

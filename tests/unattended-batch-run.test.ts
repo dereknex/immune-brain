@@ -27,6 +27,7 @@ import type { AssuranceProjectionResult } from "../plugins/immune-brain/runtime/
 import type { EnrollmentAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import {
 	projectBatchPreflight,
+	prepareBatchPreflight,
 	projectBatchDrift,
 	findExistingActiveBatch,
 	findSettledBatchRecord,
@@ -2169,6 +2170,41 @@ describe("shared batch preflight projection", () => {
 		return files;
 	}
 
+	it("S3: commits the allowed set and preserves mixed index/worktree dirt outside it", async () => {
+		const root = fixture();
+		const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" });
+		try {
+			writeFileSync(join(root, "outside.txt"), "base");
+			git("add", "outside.txt"); git("commit", "-qm", "outside baseline");
+			const before = headOf(root);
+			mkdirSync(join(root, "src")); mkdirSync(join(root, "docs/specs"), { recursive: true });
+			mkdirSync(join(root, ".imm/audit"), { recursive: true });
+			writeFileSync(join(root, "src/task.ts"), "export const task = true;\n");
+			writeFileSync(join(root, ".imm/audit/precondition.txt"), "evidence");
+			writeFileSync(join(root, "docs/specs/draft.md"), "draft");
+			writeFileSync(join(root, "docs/plans/draft.md"), "plan");
+			writeFileSync(join(root, "outside.txt"), "staged"); git("add", "outside.txt");
+			writeFileSync(join(root, "outside.txt"), "worktree");
+			const index = git("ls-files", "--stage", "--", "outside.txt");
+			const staged = git("show", ":outside.txt"); const worktree = readFileSync(join(root, "outside.txt"));
+			const outcome = await prepareBatchPreflight({ root, initiative_slug: SLUG, now: NOW, readInitiative: readNextInitiative });
+			expect(outcome.ok).toBe(false);
+			if (outcome.ok) throw new Error("remaining paths must reject a fresh batch");
+			expect(outcome.reason).toBe("branch preflight failed: working tree is dirty: outside.txt");
+			expect(outcome.recovery_action).not.toContain("commit working");
+			expect(outcome.precondition_commit).toBe(headOf(root));
+			expect(git("rev-list", "--count", `${before}..HEAD`).trim()).toBe("1");
+			expect(git("show", "-s", "--format=%s", "HEAD").trim()).toBe(`chore(imm): commit batch preconditions for ${SLUG}`);
+			expect(git("diff", "--name-only", before, "HEAD").trim().split("\n").sort()).toEqual([
+				".imm/audit/precondition.txt", "docs/plans/draft.md", "docs/specs/draft.md", "src/task.ts",
+			]);
+			expect(git("ls-files", "--stage", "--", "outside.txt")).toBe(index);
+			expect(git("show", ":outside.txt")).toBe(staged);
+			expect(readFileSync(join(root, "outside.txt"))).toEqual(worktree);
+			expect(readdirSync(join(root, ".imm/state/batches"))).toEqual([]);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
 	it("projects a resume from the record and writes nothing", async () => {
 		const root = fixture();
 		try {
@@ -2302,7 +2338,7 @@ describe("shared batch preflight projection", () => {
 			git_head_unreadable: ["<detail>", "commit working changes and ensure a committed Git HEAD exists in the current Host"],
 			branch_already_exists: ["branch preflight failed: branch refs/heads/<detail> already exists", "delete or rename the conflicting branch, or commit working changes in the current Host"],
 			git_status_unreadable: ["branch preflight failed: git status is unreadable", "check the repository integrity and retry in the current Host"],
-			working_tree_dirty: ["branch preflight failed: working tree is dirty", "delete or rename the conflicting branch, or commit working changes in the current Host"],
+			working_tree_dirty: ["branch preflight failed: working tree is dirty: <detail>", "resolve the listed remaining paths outside the batch committable set, then retry in the current Host"],
 			authorized_scope_underivable: ["branch preflight failed: cannot derive the in-flight child's authorized scope", "resolve the child's intent record, then retry in the current Host"],
 			working_tree_unstaged: ["branch preflight failed: working tree has unstaged or untracked changes (not restored: <detail>)", "establish where each unstaged or untracked change came from before staging anything; move changes that are not the active child's verified work out of the working tree, then retry in the current Host"],
 			working_tree_out_of_scope: ["branch preflight failed: working tree has changes outside the authorized child scope", "commit or unstage changes outside the active task scope, then retry in the current Host"],
@@ -2319,9 +2355,10 @@ describe("shared batch preflight projection", () => {
 			repository_became_unreadable: ["Git repository became unreadable after native confirmation", "review the current workspace and retry through a fresh native gate in the current Host"],
 			head_moved: ["Git HEAD moved after native confirmation", "review the current workspace and retry through a fresh native gate in the current Host"],
 			cancelled_before_execution: ["user cancelled before batch execution", "wait for a fresh literal-user request"],
+			precondition_commit_failed: ["batch precondition commit failed: <detail>", "repair the reported Git precondition failure and retry the batch in the current Host"],
 			batch_run_rejected: ["<detail>", "delete or rename the conflicting branch, or commit working changes and retry in the current Host"],
 			stale_batch_absent: ["no retirable batch record to dispose: <detail>", "start a batch for this Initiative, or inspect the batch records under .imm/state/batches in the current Host"],
-			stale_batch_in_flight: ["a batch child is still mid-flight, so the record cannot be disposed: <detail>", "settle or stop the in-flight child through its own task, then dispose the batch in the current Host"],
+			stale_batch_in_flight: ["a batch child is still mid-flight, so the record cannot be disposed: <detail>", "settle or stop the in-flight child through its own task, then dispose the batch in the current Host; a child whose Kernel run already ended no longer blocks the disposition"],
 		};
 		expect(Object.keys(BATCH_REASONS).sort()).toEqual(Object.keys(expected).sort());
 		for (const [key, [reason, recoveryAction]] of Object.entries(expected)) {

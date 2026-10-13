@@ -1,0 +1,60 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "run-only-gates-s1-entry-guards",
+  "owner": "user",
+  "goal": "Make imm-run the only phase that stops the user at entry: a model Skill call for imm-planner or imm-brainstorm no longer revokes the session's run entry, and the revision_owner_required edit guard is deleted on Claude Code and Pi together with its source, tests and contract text.",
+  "acceptance": [
+    {
+      "id": "ROG-S1-A1",
+      "assertion": "Meet T1, D2 and invariants I1 and I2 in docs/specs/run-only-gates.spec.md: PhaseEntryState carries run_live only; the imm-planner and imm-brainstorm Skills are admitted for a fresh, live and unreadable state; the imm-run Skill, enroll and start_unattended_batch are refused without a live literal-user run entry; a literal plan entry revokes and a later literal run entry restores; legacy log lines still reduce and a malformed line is unreadable.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/phase-entry.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "ROG-S1-A2",
+      "assertion": "Meet D1 and BR-SCN-1 on Claude Code: after a literal run entry, a model Skill call for imm-planner or imm-brainstorm returns no decision and leaves the phase-entry store byte-identical, with or without an active claim, and enroll is then admitted without a fresh /imm-run. Without a run entry enroll is still denied run_entry_required, and a literal /imm-planner prompt still revokes the run entry.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-phase-entry-skill-gate.test.ts\",\n      \"tests/claude-phase-entry-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "ROG-S1-A3",
+      "assertion": "Meet D3, I3 and BR-SCN-5 on both Hosts: with a plan entry as the session's latest entry and an active Managed claim, a file-edit tool call inside the active scope is allowed on Claude Code and on Pi, and no code path emits revision_owner_required. The Lane guard still denies an edit outside a batch Lane and the Pi tool gate for enroll and start_unattended_batch is unchanged.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/pi-phase-entry-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "ROG-S1-A4",
+      "assertion": "Meet D3, D4 and BR-7: runtime/assurance/revision_owner.ts, tests/revision-owner-guard.test.ts and tests/revision-owner-contract.test.ts are deleted; the BASELINE, Planner and Loop contracts no longer say that a model-entered Planner ends the run entry or that a plan-entry session may not edit in-scope files; the three BASELINE copies are identical; ADR 0022 records the decision and what it supersedes; the packaged Claude bundle matches its source.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/explicit-phase-entry-planner-contract.test.ts\",\n      \"tests/explicit-phase-entry-run-contract.test.ts\",\n      \"tests/baseline-packaging-contract.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/run-only-gates-s1-entry-guards.md",
+    "docs/adr/0022-run-only-entry-guards.md",
+    "docs/plans/run-only-gates-s1-entry-guards.intent.json",
+    "docs/specs/run-only-gates.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/BASELINE.md",
+    "plugins/immune-brain/dist/BASELINE.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/dist/imm-run.md",
+    "plugins/immune-brain/hooks/hooks.json",
+    "plugins/immune-brain/runtime/assurance/phase_entry.ts",
+    "plugins/immune-brain/runtime/assurance/revision_owner.ts",
+    "plugins/immune-brain/runtime/claude/lane_guard.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/skills/BASELINE.md",
+    "tests/baseline-packaging-contract.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/claude-phase-entry-gate.test.ts",
+    "tests/claude-phase-entry-skill-gate.test.ts",
+    "tests/dist-docs-sync-contract.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/explicit-phase-entry-planner-contract.test.ts",
+    "tests/explicit-phase-entry-run-contract.test.ts",
+    "tests/phase-entry.test.ts",
+    "tests/pi-phase-entry-gate.test.ts",
+    "tests/revision-owner-contract.test.ts",
+    "tests/revision-owner-guard.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

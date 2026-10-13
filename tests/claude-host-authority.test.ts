@@ -335,7 +335,7 @@ describe("claude host authority", () => {
 	// The migrated Claude enroll path awaits the single Enrollment entry inside
 	// its try/catch, so a rehearsal rejection still carries the empty-initial-
 	// commit diagnostic the synchronous predecessor appended.
-	test("an enrollment rehearsal rejection keeps the empty initial commit diagnostic", async () => {
+	test("a refused precondition commit keeps the empty initial commit diagnostic", async () => {
 		const root = mkdtempSync(join(tmpdir(), "claude-unborn-enroll-"));
 		const taskId = "unborn-enroll-diagnostic";
 		const intent = {
@@ -354,9 +354,13 @@ describe("claude host authority", () => {
 		writeFileSync(join(root, "docs", "plans", `${taskId}.intent.json`), `${JSON.stringify(intent, null, 2)}\n`);
 		writeFileSync(join(root, "src", "task.ts"), "export const value = 1;\n");
 		// An unborn repository with the in-scope file already staged: the entry's
-		// empty initial commit makes that file dirty relative to the base, so
-		// the rehearsal refuses.
+		// empty initial commit makes that file dirty relative to the base, and
+		// Enrollment commits it. Here a Git hook refuses that commit, so
+		// Enrollment fails after the initial commit already exists.
+		// tests/enrollment-git-base.test.ts owns the path where it succeeds.
 		execFileSync("git", ["init", "-q", "-b", "main"], { cwd: root, stdio: "ignore" });
+		execFileSync("git", ["config", "core.hooksPath", ".git/hooks"], { cwd: root, stdio: "ignore" });
+		writeFileSync(join(root, ".git", "hooks", "pre-commit"), "#!/bin/sh\necho 'policy says no' >&2\nexit 1\n", { mode: 0o755 });
 		execFileSync("git", ["add", "-A"], { cwd: root, stdio: "ignore" });
 		const runtime = new ClaudeRuntime({
 			cwd: root,
@@ -374,7 +378,8 @@ describe("claude host authority", () => {
 			permissionMode: "manual",
 		}).then(() => null, (cause: unknown) => cause as Error);
 		expect(error).toBeInstanceOf(Error);
-		expect((error as Error).message).toMatch(/; empty initial commit [0-9a-f]{7,40} remains/);
+		expect((error as Error).message).toMatch(/policy says no[\s\S]*; empty initial commit [0-9a-f]{7,40} remains/);
+		expect((error as Error).message).not.toContain("Enrollment precondition commit");
 		// The refusal leaves no Kernel authority behind.
 		expect(existsSync(join(root, ".imm", "state", "workspace.json"))).toBe(false);
 	});

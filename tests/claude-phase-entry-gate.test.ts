@@ -137,7 +137,7 @@ describe("Claude phase entry gate: enroll", () => {
 		expect(s.gateCalls()).toBe(0);
 	});
 
-	test("a later plan entry revokes the run entry", async () => {
+	test("a later literal plan entry revokes the run entry", async () => {
 		const s = await session(["gate-a"]);
 		s.prompt("/imm-run gate-a");
 		s.prompt("/imm-planner something else");

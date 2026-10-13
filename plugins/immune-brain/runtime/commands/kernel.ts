@@ -44,7 +44,7 @@ import {
 import { inspectRoutingPolicy } from "../managed_task_routing_policy"
 import { projectLegacyAudit } from "../kernel/legacy_audit";
 import { inspectStorageLayout } from "../kernel/storage_paths";
-import { migrateLegacyLayout } from "../kernel/storage_layout_migration";
+import { commitPendingMigrationDiff, migrateAndCommitLegacyLayout } from "../kernel/storage_layout_migration";
 import { readBackendClaim } from "../kernel/backend_claim";
 import { inspectEnrollmentGitBase, type EnrollmentGitBase } from "../assurance/enrollment_git_base";
 import { probeKernelStore } from "../kernel";
@@ -462,31 +462,16 @@ function runIntentAuthor(args: string[], root: string): KernelExecution {
 		};
 	}
 
-	// Storage-layout gate (BR-REQ-005/006): a stateful mutation recovers or
-	// migrates first and then STOPS without authoring. Kernel transaction
-	// markers recover under the store lock; the one-release migrator replays
-	// its frozen manifest under both locks. The original authoring is retried
-	// only after the affected migration diff is committed.
-	try {
-		probeKernelStore(root);
-	} catch (error) {
-		return {
-			result: errorResult(
-				"layout_recovery_failed",
-				`Kernel transaction recovery failed before authoring: ${error instanceof Error ? error.message : String(error)}`,
-				1,
-			),
-			journal: journalFor(
-				"intent",
-				null,
-				"rejected",
-				"source_invalid",
-				null,
-				"Resolve the pending Kernel transaction marker before retrying.",
-			),
-		};
+	// Pending diffs may be committed; conversion stays on the explicit command.
+	let layout = inspectStorageLayout(root);
+	if (layout.layout === "migration_uncommitted") {
+		try {
+			commitPendingMigrationDiff(root);
+			layout = inspectStorageLayout(root);
+		} catch (error) {
+			return sourceFailure("intent", error);
+		}
 	}
-	const layout = inspectStorageLayout(root);
 	if (layout.layout === "migration_blocked_active") {
 		return {
 			result: errorResult(
@@ -520,7 +505,7 @@ function runIntentAuthor(args: string[], root: string): KernelExecution {
 				"rejected",
 				"source_invalid",
 				null,
-				"Run imm-kernel migrate --storage-layout, commit the affected paths, then retry intent author.",
+				"Run imm-kernel migrate --storage-layout, then retry intent author.",
 			),
 		};
 	}
@@ -537,9 +522,15 @@ function runIntentAuthor(args: string[], root: string): KernelExecution {
 				"rejected",
 				"source_invalid",
 				null,
-				"Commit the migration diff or resolve the layout condition before authoring.",
+				"Resolve the reported layout condition before retrying authoring.",
 			),
 		};
+	}
+
+	try {
+		probeKernelStore(root);
+	} catch (error) {
+		return sourceFailure("intent", error);
 	}
 
 	// Existing managed ownership rejects before opening the destination.
@@ -1319,7 +1310,7 @@ function executeKernelCommand(args: string[], root: string): KernelExecution {
 						reason: layout.reason,
 						next_action:
 							layout.layout === "migration_required"
-								? "run the one-release migration through the next stateful mutation and commit the affected diff"
+								? "run imm-kernel migrate --storage-layout, then retry legacy audit"
 								: "resolve the reported layout condition before legacy audit",
 					},
 				}),
@@ -1406,58 +1397,17 @@ function runStorageLayoutMigration(root: string): KernelExecution {
 				"Resolve the reported layout condition, then rerun imm-kernel migrate --storage-layout.",
 			),
 		};
-	const migration = migrateLegacyLayout(root);
-	if (migration.outcome === "migrated")
+	const migration = migrateAndCommitLegacyLayout(root);
+	if (migration.outcome === "migrated" || migration.outcome === "already_migrated")
 		return {
 			result: jsonResult({
 				contract: "assurance_kernel/migration_completed/v1",
 				operation: "storage layout migration",
+				layout: "ready",
 				affected_paths: migration.affected_paths,
-				next_action: "commit the affected migration paths, then retry the original command",
-			}),
-			journal: journalFor(
-				"migrate",
-				null,
-				"escalated",
-				"migration_ambiguous",
-				null,
-				"Commit the affected migration paths, then retry the original command.",
-			),
-		};
-	if (migration.outcome === "migration_uncommitted")
-		return {
-			result: jsonResult({
-				contract: "assurance_kernel/migration_pending_commit/v1",
-				operation: "storage layout migration",
-				affected_paths: migration.affected_paths,
-				reason: migration.reason,
-				next_action: "commit the preserved audit evidence, then rerun imm-kernel migrate --storage-layout",
-			}),
-			journal: journalFor(
-				"migrate",
-				null,
-				"escalated",
-				"migration_ambiguous",
-				null,
-				"Commit the preserved audit evidence, then rerun imm-kernel migrate --storage-layout.",
-			),
-		};
-	if (migration.outcome === "already_migrated")
-		return {
-			result: jsonResult({
-				contract: "assurance_kernel/migration_completed/v1",
-				operation: "storage layout migration",
-				affected_paths: [],
 				next_action: "retry the original command",
 			}),
-			journal: journalFor(
-				"migrate",
-				null,
-				"ok",
-				"command_ok",
-				null,
-				"Retry the original command.",
-			),
+			journal: journalFor("migrate", null, "ok", "command_ok", null, "Retry the original command."),
 		};
 	return {
 		result: errorResult(
