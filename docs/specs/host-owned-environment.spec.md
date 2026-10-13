@@ -1,6 +1,6 @@
 # Leave the development environment to the user
 
-**Status**: Candidate; not enrolled.
+**Status**: Implemented by S1R and S2–S5; the original S1 was stopped and superseded by S1R.
 **Design risk**: High — S1 changes where deterministic QA executes and removes the delivery materialization, S4 changes how the risk floor that forces Review is computed, and S3 changes what the Enrollment gate lets a task own.
 **Execution posture**: characterization-first for S3 (pin today's read-only projection and Enrollment refusal before changing them) and S4 (pin the hash of an already-floored intent before moving the floor); test-first elsewhere.
 **Document language**: English, following the Planner document-language default.
@@ -161,7 +161,7 @@ One reader loads `.imm/risk-floor.json` from the project root and returns `{ mat
 
 ### Compatibility, interruption, rollback
 
-- Compatibility: descriptors and stored records are unchanged in format. After S1, a task whose working directory carries out-of-scope tracked edits fails QA until they are committed, stashed or reverted. After S4, a consumer repository has no floor until it adds a declaration.
+- Compatibility: descriptors and stored records are unchanged in format. After S1R, task QA compares only in-scope tracked content with the frozen snapshot; out-of-scope content remains the user's environment. After S4, a consumer repository has no floor until it adds a declaration.
 - Interruption: S1 removes a cleanup step and adds no state. S3 changes what one Enrollment transaction writes; an interrupted Enrollment is recovered as today.
 - Rollback: each Slice is one commit. Reverting S4 restores the compiled lists; tasks enrolled meanwhile keep their recorded risk. Reverting S3 restores the refusal; tasks that claimed dirt keep it.
 
@@ -169,12 +169,12 @@ One reader loads `.imm/risk-floor.json` from the project root and returns `{ mat
 
 | Acceptance | Slice | Agreed seam | Controls |
 |---|---|---|---|
-| HE-S1-A1 QA runs in place under the equality check | S1 | `tests/shared-deterministic-qa.test.ts` through `runDeterministicQa` on a real temporary repository | positive: a check reads a file from an ignored directory and passes; negative: a tracked out-of-scope edit refuses before any command runs, and a check that rewrites a tracked file fails as drift; bound: a non-delivery path may differ, untracked output is allowed, no directory is created outside the repository |
-| HE-S1-A2 the Hosts and the coordinator agree | S1 | `tests/pi-canary-assurance-authority.test.ts`, `tests/pi-canary-verification-descriptor.test.ts`, `tests/host-neutral-assurance-coordinator.test.ts` | positive: both Hosts pass a run with no materialization; negative: the differing paths are absent from the stored record and from diagnostics; bound: abort during a command still cleans up |
-| HE-S1-A3 contracts, ADR and bundle | S1 | `tests/workflow-verification-invariants.test.ts`, `tests/claude-host-package.test.ts` | positive: in-place sentences present; negative: "disposable delivery" absent from `dist/imm-run.md` and `dist/imm-planner.md`; bundle in sync |
+| HE-S1-A1 QA runs in place under the equality check | S1R | `tests/shared-deterministic-qa.test.ts` through `runDeterministicQa` on a real temporary repository | positive: a check reads a file from an ignored directory and passes; negative: an in-scope tracked edit refuses before any command runs, and a check that rewrites an in-scope tracked file fails as drift; bound: an out-of-scope or non-delivery path may differ, untracked output is allowed, no directory is created outside the repository |
+| HE-S1-A2 the Hosts and the coordinator agree | S1R | `tests/pi-canary-assurance-authority.test.ts`, `tests/pi-canary-verification-descriptor.test.ts`, `tests/host-neutral-assurance-coordinator.test.ts` | positive: both Hosts pass a run with no materialization; negative: the differing paths are absent from the stored record and from diagnostics; bound: abort during a command still cleans up |
+| HE-S1-A3 contracts, ADR and bundle | S1R | `tests/workflow-verification-invariants.test.ts`, `tests/claude-host-package.test.ts` | positive: in-place sentences present; negative: "disposable delivery" absent from `dist/imm-run.md` and `dist/imm-planner.md`; bundle in sync |
 | HE-S2-A1 any host tool resolves and stays pinned | S2 | `tests/pi-canary-verification-descriptor.test.ts` with real children | positive: a tool whose `#!` names another script, and one using `env -S`, run; negative: an entry replaced during the run fails identity; bound: timeout removes the whole process group |
 | HE-S2-A2 compound commands and contract | S2 | `tests/pi-canary-verification-descriptor.test.ts`, `tests/kernel-verification-descriptor.test.ts`, `tests/workflow-verification-invariants.test.ts`, `tests/claude-host-package.test.ts` | positive: `sh -c "true && exit 3"` yields exit 3; negative: descriptor bounds still reject an over-long argv; contract sentence present; bundle in sync |
-| HE-S3-A1 status is read-only | S3 | `tests/dual-host-assurance-conformance.test.ts`, `tests/host-neutral-assurance-coordinator.test.ts` | positive: projection plus warning with an unstaged in-scope file; negative: `advance_assurance` on the same state still refuses; bound: an index-flagged path still refuses a snapshot |
+| HE-S3-A1 status is read-only | S3 | `tests/dual-host-assurance-conformance.test.ts`, `tests/host-neutral-assurance-coordinator.test.ts`, `tests/managed-task-snapshot-isolation.test.ts` | positive: projection plus warning with an unstaged in-scope file; negative: `advance_assurance` on the same state still refuses; bound: an index-flagged path still refuses a snapshot, including combined `assume-unchanged` and `skip-worktree` flags |
 | HE-S3-A2 Enrollment claims listed dirt | S3 | `tests/enrollment-dirty-scope.test.ts`, `tests/pi-canary-enroll-extension.test.ts`, `tests/claude-host-authority.test.ts` | positive: listed paths appear in the first snapshot; negative: a path dirtied after the gate text was built is not claimed; bound: out-of-scope dirt stays in the baseline |
 | HE-S3-A3 narrowing is compatible | S3 | `tests/kernel-intent-v2.test.ts` | positive: strict subset; negative: subset plus one added entry, subset plus a changed goal; bound: empty next scope |
 | HE-S3-A4 contract and bundle | S3 | `tests/explicit-phase-entry-run-contract.test.ts`, `tests/claude-host-package.test.ts` | sentences present; bundle in sync |
@@ -193,4 +193,4 @@ One reader loads `.imm/risk-floor.json` from the project root and returns `{ mat
 
 ## Delivery boundary
 
-One Initiative, five serial Slices, each regenerating the same bundle. S1 is blocked by `ceremony-trim-r647` S4 (the last Slice of that Initiative), because both edit `qa.ts`, `coordinator.ts` and the two contracts. S2 follows S1 (`verification.ts`, `qa.ts`). S3 follows S2 and needs `ceremony-trim-r647` S2's classifier in place. S4 follows S3 (`kernel/intent.ts`, `kernel/enrollment.ts`). S5 follows S4 only for the bundle.
+Five effective serial Slices, S1R then S2–S5, each regenerating the same bundle. The original S1 (#222) was stopped and is retained as historical evidence; S1R (#228) replaces it and keeps the Lane batch integration copy. The `ceremony-trim-r647` prerequisite is complete. S2 follows S1R (`verification.ts`, `qa.ts`). S3 follows S2 and uses `ceremony-trim-r647` S2's classifier. S4 follows S3 (`kernel/intent.ts`, `kernel/enrollment.ts`). S5 follows S4 only for the bundle.

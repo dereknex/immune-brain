@@ -369,11 +369,15 @@ describe("status identity tolerates what a frozen snapshot refuses", () => {
 		}
 	});
 
-	for (const [flag, label] of [["--skip-worktree", "skip-worktree"], ["--assume-unchanged", "assume-unchanged"]] as const) {
-		test(`an in-scope ${label} path refuses the status identity and the snapshot alike`, () => {
+	for (const [flags, label] of [
+		[["--skip-worktree"], "skip-worktree"],
+		[["--assume-unchanged"], "assume-unchanged"],
+		[["--assume-unchanged", "--skip-worktree"], "skip-worktree"],
+	] as const) {
+		test(`in-scope ${flags.join(" + ")} refuses the status identity and the snapshot alike`, () => {
 			const root = repo();
 			try {
-				git(root, ["update-index", flag, "task.ts"]);
+				for (const flag of flags) git(root, ["update-index", flag, "task.ts"]);
 				writeFileSync(join(root, "task.ts"), "export const task = 'hidden';\n");
 				const refusal = new RegExp(`contains unsupported index flags: task\\.ts \\(${label}\\)`);
 				for (const record of records(root)) {

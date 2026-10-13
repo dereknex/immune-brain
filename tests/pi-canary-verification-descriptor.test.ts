@@ -156,7 +156,8 @@ describe("project command verification", () => {
 				'writeFileSync("detached.pid", String(child.pid)); child.unref();',
 			].join("\n"));
 			const started = performance.now();
-			const result = await run(root, { argv: ["run", script], timeout_ms: 80 });
+			// A cold Bun launch must reach the descendant spawn before the deadline.
+			const result = await run(root, { argv: ["run", script], timeout_ms: 4000 });
 			expect(result.timed_out).toBe(true);
 			expect(performance.now() - started).toBeLessThan(6000);
 			const pid = Number(readFileSync(join(root, "detached.pid"), "utf8"));
@@ -164,7 +165,7 @@ describe("project command verification", () => {
 			// is needed before the descendant is proven gone.
 			expect(() => process.kill(pid, 0)).toThrow();
 		} finally { remove(root); }
-	});
+	}, 15000);
 	test("successful checks clean detached descendants with closed pipes", async () => {
 		const root = temp();
 		try {

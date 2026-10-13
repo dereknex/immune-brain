@@ -289,7 +289,7 @@ function decodeIndexFlaggedPaths(bytes: Buffer, label: string): Array<{ path: st
 		const record = bytes.subarray(start, index);
 		if (record.length < 3 || record[1] !== 0x20) throw new Error(`${label} contains a malformed entry`);
 		const tag = String.fromCharCode(record[0]);
-		if (tag === "h" || tag === "S") {
+		if (tag === "h" || tag === "S" || tag === "s") {
 			flagged.push({
 				path: decodeCanonicalGitPath(record.subarray(2), label),
 				flag: tag === "h" ? "assume-unchanged" : "skip-worktree",
