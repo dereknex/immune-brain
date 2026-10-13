@@ -1,0 +1,212 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "run-only-gates-s1-entry-guards",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "run-only-gates-s1-entry-guards",
+    "goal": "Make imm-run the only phase that stops the user at entry: a model Skill call for imm-planner or imm-brainstorm no longer revokes the session's run entry, and the revision_owner_required edit guard is deleted on Claude Code and Pi together with its source, tests and contract text.",
+    "acceptance": [
+      {
+        "id": "ROG-S1-A1",
+        "assertion": "Meet T1, D2 and invariants I1 and I2 in docs/specs/run-only-gates.spec.md: PhaseEntryState carries run_live only; the imm-planner and imm-brainstorm Skills are admitted for a fresh, live and unreadable state; the imm-run Skill, enroll and start_unattended_batch are refused without a live literal-user run entry; a literal plan entry revokes and a later literal run entry restores; legacy log lines still reduce and a malformed line is unreadable.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/phase-entry.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "ROG-S1-A2",
+        "assertion": "Meet D1 and BR-SCN-1 on Claude Code: after a literal run entry, a model Skill call for imm-planner or imm-brainstorm returns no decision and leaves the phase-entry store byte-identical, with or without an active claim, and enroll is then admitted without a fresh /imm-run. Without a run entry enroll is still denied run_entry_required, and a literal /imm-planner prompt still revokes the run entry.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-phase-entry-skill-gate.test.ts\",\n      \"tests/claude-phase-entry-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "ROG-S1-A3",
+        "assertion": "Meet D3, I3 and BR-SCN-5 on both Hosts: with a plan entry as the session's latest entry and an active Managed claim, a file-edit tool call inside the active scope is allowed on Claude Code and on Pi, and no code path emits revision_owner_required. The Lane guard still denies an edit outside a batch Lane and the Pi tool gate for enroll and start_unattended_batch is unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/pi-phase-entry-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "ROG-S1-A4",
+        "assertion": "Meet D3, D4 and BR-7: runtime/assurance/revision_owner.ts, tests/revision-owner-guard.test.ts and tests/revision-owner-contract.test.ts are deleted; the BASELINE, Planner and Loop contracts no longer say that a model-entered Planner ends the run entry or that a plan-entry session may not edit in-scope files; the three BASELINE copies are identical; ADR 0022 records the decision and what it supersedes; the packaged Claude bundle matches its source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/explicit-phase-entry-planner-contract.test.ts\",\n      \"tests/explicit-phase-entry-run-contract.test.ts\",\n      \"tests/baseline-packaging-contract.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/run-only-gates-s1-entry-guards.md",
+      "docs/adr/0022-run-only-entry-guards.md",
+      "docs/plans/run-only-gates-s1-entry-guards.intent.json",
+      "docs/specs/run-only-gates.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/BASELINE.md",
+      "plugins/immune-brain/dist/BASELINE.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/hooks/hooks.json",
+      "plugins/immune-brain/runtime/assurance/phase_entry.ts",
+      "plugins/immune-brain/runtime/assurance/revision_owner.ts",
+      "plugins/immune-brain/runtime/claude/lane_guard.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/skills/BASELINE.md",
+      "tests/baseline-packaging-contract.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/claude-phase-entry-gate.test.ts",
+      "tests/claude-phase-entry-skill-gate.test.ts",
+      "tests/dist-docs-sync-contract.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/explicit-phase-entry-planner-contract.test.ts",
+      "tests/explicit-phase-entry-run-contract.test.ts",
+      "tests/phase-entry.test.ts",
+      "tests/pi-phase-entry-gate.test.ts",
+      "tests/revision-owner-contract.test.ts",
+      "tests/revision-owner-guard.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/run-only-gates-s1-entry-guards.intent.json",
+    "content_hash": "sha256:e264a8085667bf45ba829a3214644a3dfaf0056b217e4b95b7304ae4fd6f539c"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:e264a8085667bf45ba829a3214644a3dfaf0056b217e4b95b7304ae4fd6f539c",
+  "git_base_head": "2e4702a075b0bb74d8c7058ce3d5f9ce6b1467cc",
+  "attestations": [
+    {
+      "id": "approval-qa-49ed3278",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e264a8085667bf45ba829a3214644a3dfaf0056b217e4b95b7304ae4fd6f539c",
+      "diff_hash": "sha256:2f229c512517a582425c97370a3adf54c3f7b695c3e93898011cd4e83af5c4ab",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:39c398812b2c48ba345cb5ce6480aee7c124387c6e8ec7a16e122bac8660e2e3",
+      "acceptance_results": [
+        {
+          "acceptance_id": "ROG-S1-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:39c398812b2c48ba345cb5ce6480aee7c124387c6e8ec7a16e122bac8660e2e3"
+        },
+        {
+          "acceptance_id": "ROG-S1-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:39c398812b2c48ba345cb5ce6480aee7c124387c6e8ec7a16e122bac8660e2e3"
+        },
+        {
+          "acceptance_id": "ROG-S1-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:39c398812b2c48ba345cb5ce6480aee7c124387c6e8ec7a16e122bac8660e2e3"
+        },
+        {
+          "acceptance_id": "ROG-S1-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:39c398812b2c48ba345cb5ce6480aee7c124387c6e8ec7a16e122bac8660e2e3"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-a09cf530",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e264a8085667bf45ba829a3214644a3dfaf0056b217e4b95b7304ae4fd6f539c",
+      "diff_hash": "sha256:2f229c512517a582425c97370a3adf54c3f7b695c3e93898011cd4e83af5c4ab",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (base, single parent, tree, manifest digest recomputed); all 19 per-file diffs read; model Planner/Brainstorm Skill call is a pure pass-through, PhaseEntryState is run_live only, the revision-owner guard is deleted from source, both Host adapters, tests, contracts and the bundle, and the three BASELINE copies share one blob.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "2e4702a075b0bb74d8c7058ce3d5f9ce6b1467cc",
+        "review_commit": "1a4d7275b483c2992fe9d9660b068938ec618305",
+        "review_tree": "220ff67ef4357232e1bde17e4ac2669d4de3ae44",
+        "manifest_digest": "sha256:608a9455b4eb33c50ab34125b31c107c42b3f624a06731b3161a0744a2981f47"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-d8a60c3347fc-1-review-1",
+          "acceptance_id": "ROG-S1-A4",
+          "summary": "Two ROG-S1-A4 controls the Spec maps to its seam (contract sentences removed, ADR 0022 present) are asserted by no test: the five A4 seam files are unchanged, so the A4 descriptor would also pass on the base commit. I confirmed both facts directly from the review tree (no revision_owner, plan_latest or 'ends the run entry' text left in plugins or tests; ADR 0022 present, accepted, names what it supersedes), so this is a regression-pinning gap, not a defect.",
+          "anchor": "sha256:ffbc47fb17c07ca69d3f6c9b3b7bd24b23954146188400c40e926ad71da45d6a",
+          "evidence": {
+            "trigger": "Re-adding 'A model-entered Planner ... ends the session's run entry' to BASELINE.md or dist/imm-planner.md, or deleting docs/adr/0022-run-only-entry-guards.md, leaves every test named by the ROG-S1-A4 verification descriptor green; the deleted tests/revision-owner-contract.test.ts was the only file pinning this contract text.",
+            "caller_chain": [
+              "docs/specs/run-only-gates.spec.md#Verification and acceptance mapping (ROG-S1-A4 row; read because the acceptance cites this Spec)",
+              "tests/explicit-phase-entry-planner-contract.test.ts (unchanged; read as the named A4 seam)",
+              "tests/explicit-phase-entry-run-contract.test.ts (unchanged; read as the named A4 seam)",
+              "plugins/immune-brain/dist/imm-planner.md",
+              "plugins/immune-brain/BASELINE.md",
+              "docs/adr/0022-run-only-entry-guards.md"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "ROG-S1-A4"
+            }
+          }
+        },
+        {
+          "id": "review-d8a60c3347fc-2-review-2",
+          "acceptance_id": "ROG-S1-A2",
+          "summary": "Store byte-identity is asserted only without an active claim; the with-claim test (SCN-5) asserts that the run entry stays live and enroll is admitted, not that the store bytes are unchanged. The code returns before any store or claim read, so both cases take one path and the behaviour holds; only the with-claim half of 'byte-identical, with or without an active claim' lacks a direct assertion.",
+          "anchor": "sha256:4255b0dcb007e5c3e08b42d3a134314250963ef1a2d7e95d33a84d98f07a72ee",
+          "evidence": {
+            "trigger": "Literal run entry, then claimWorkspace(cwd, 'task-a'), then a model Skill call for imm-planner: the test compares no storeBytes snapshot in this case, so a future claim-dependent write to the entry store that keeps run_live true would not be caught.",
+            "caller_chain": [
+              "tests/claude-phase-entry-skill-gate.test.ts:'with an active claim a model Planner call leaves the run entry live (SCN-5)'",
+              "plugins/immune-brain/runtime/claude/lane_guard.ts:phaseEntryGateHookOutput"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "ROG-S1-A2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:8253c7749e3f6f582105d6f43ea466198d2e53642b66c8ef332810eb3f8f42b9"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:run-only-gates-s1-entry-guards:2026-10-13T01:42:36.532Z",
+      "at": "2026-10-13T01:42:36.532Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/run-only-gates-s1-entry-guards.intent.json"
+    },
+    {
+      "id": "record_approval:run-only-gates-s1-entry-guards:2026-10-13T01:44:10.303Z",
+      "at": "2026-10-13T01:44:10.303Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-49ed3278\naction_v2_sha256:bd39734676bd2b5cda506936370e10b4fbbb0556b22eb0c3a8977b87ca0aee66",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-13T01:44:10.303Z"
+      }
+    },
+    {
+      "id": "record_approval:run-only-gates-s1-entry-guards:2026-10-13T01:46:52.626Z",
+      "at": "2026-10-13T01:46:52.626Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-a09cf530\naction_v2_sha256:94972f5439c2c66b45f4f61ce3cf76394a6f5c6879eedaf5b2ab715598351e86",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-13T01:46:52.626Z"
+      }
+    },
+    {
+      "id": "complete:run-only-gates-s1-entry-guards:2026-10-13T01:46:55.083Z",
+      "at": "2026-10-13T01:46:55.083Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:645bd8d3ccaa87761528ac360ad1811a71a0c18d0ac27d5228e8421b1ca13217"
+    }
+  ]
+}

@@ -93,13 +93,13 @@ describe("phase entry recognition", () => {
 
 describe("phase entry state", () => {
 	test("a run entry stays live across later prompts", () => {
-		expect(after("run", null, null)).toEqual({ run_live: true, plan_latest: false });
+		expect(after("run", null, null)).toEqual({ run_live: true });
 	});
 
 	test("a later plan entry revokes the run entry; a later run entry restores it", () => {
-		expect(after("run", null, "plan")).toEqual({ run_live: false, plan_latest: true });
-		expect(after("run", "plan", null)).toEqual({ run_live: false, plan_latest: true });
-		expect(after("run", "plan", "run")).toEqual({ run_live: true, plan_latest: false });
+		expect(after("run", null, "plan")).toEqual({ run_live: false });
+		expect(after("run", "plan", null)).toEqual({ run_live: false });
+		expect(after("run", "plan", "run")).toEqual({ run_live: true });
 	});
 
 	test("the log folds to the same state and any malformed line is unreadable", () => {
@@ -111,21 +111,22 @@ describe("phase entry state", () => {
 		expect(reducePhaseEntryLog(`${JSON.stringify({ v: 1, entry: "execute" })}\n`)).toBeNull();
 		expect(reducePhaseEntryLog(`${JSON.stringify({ v: 1 })}\n`)).toBeNull();
 		expect(reducePhaseEntryLog("null\n")).toBeNull();
+		// A line written before the state lost its plan flag still reduces.
+		expect(reducePhaseEntryLog(`${JSON.stringify({ v: 1, entry: "plan" })}\n${JSON.stringify({ v: 1, entry: "run" })}\n`)).toEqual({ run_live: true });
 	});
 });
 
 describe("phase entry admission", () => {
-	const noClaim = { activeClaim: false };
 	const enroll = { kind: "tool", name: "enroll" } as const;
 	const batch = { kind: "tool", name: "start_unattended_batch" } as const;
 	const skill = (name: "imm-run" | "imm-planner" | "imm-brainstorm") => ({ kind: "skill", skill: name }) as const;
 
 	test("enroll and batch start need a live run entry", () => {
 		for (const operation of [enroll, batch]) {
-			expect(admitPhaseOperation(operation, after("run"), noClaim)).toEqual({ ok: true });
-			expect(admitPhaseOperation(operation, after("run", null, null), noClaim)).toEqual({ ok: true });
+			expect(admitPhaseOperation(operation, after("run"))).toEqual({ ok: true });
+			expect(admitPhaseOperation(operation, after("run", null, null))).toEqual({ ok: true });
 			for (const state of [NO_PHASE_ENTRY, after(null), after("plan"), after("run", "plan"), null]) {
-				expect(admitPhaseOperation(operation, state, { activeClaim: true })).toMatchObject({
+				expect(admitPhaseOperation(operation, state)).toMatchObject({
 					ok: false,
 					reason_code: RUN_ENTRY_REQUIRED,
 					recovery_action: "ask the user to enter imm-run in the current Host",
@@ -135,29 +136,25 @@ describe("phase entry admission", () => {
 	});
 
 	test("the imm-run Skill is admitted on a live run entry, including after later prompts", () => {
-		expect(admitPhaseOperation(skill("imm-run"), after("run"), noClaim)).toEqual({ ok: true });
-		expect(admitPhaseOperation(skill("imm-run"), after("run", null, null), noClaim)).toEqual({ ok: true });
-		expect(admitPhaseOperation(skill("imm-run"), after("run", "plan", "run", null), noClaim)).toEqual({ ok: true });
+		expect(admitPhaseOperation(skill("imm-run"), after("run"))).toEqual({ ok: true });
+		expect(admitPhaseOperation(skill("imm-run"), after("run", null, null))).toEqual({ ok: true });
+		expect(admitPhaseOperation(skill("imm-run"), after("run", "plan", "run", null))).toEqual({ ok: true });
 	});
 
-	test("the imm-run Skill is refused without a live run entry, whatever the claim", () => {
+	test("the imm-run Skill is refused without a live run entry", () => {
 		for (const state of [NO_PHASE_ENTRY, after(null), after("plan"), after("run", "plan"), after("run", null, "plan"), null]) {
-			for (const context of [noClaim, { activeClaim: true }]) {
-				expect(admitPhaseOperation(skill("imm-run"), state, context)).toMatchObject({
-					ok: false,
-					reason_code: PHASE_ENTRY_REQUIRED,
-					recovery_action: "ask the user to enter the Skill themselves in the current Host",
-				});
-			}
+			expect(admitPhaseOperation(skill("imm-run"), state)).toMatchObject({
+				ok: false,
+				reason_code: PHASE_ENTRY_REQUIRED,
+				recovery_action: "ask the user to enter the Skill themselves in the current Host",
+			});
 		}
 	});
 
 	test("the Planner and Brainstorm Skills are never refused, for a fresh, a live, a revoked and an unreadable state", () => {
 		for (const name of ["imm-planner", "imm-brainstorm"] as const) {
 			for (const state of [NO_PHASE_ENTRY, after("run"), after("run", null, null), after("run", "plan"), after("plan"), null]) {
-				for (const context of [noClaim, { activeClaim: true }]) {
-					expect(admitPhaseOperation(skill(name), state, context)).toEqual({ ok: true });
-				}
+				expect(admitPhaseOperation(skill(name), state)).toEqual({ ok: true });
 			}
 		}
 	});

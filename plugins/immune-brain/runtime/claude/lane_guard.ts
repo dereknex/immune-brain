@@ -4,15 +4,11 @@
 // intercepted. Outside a Lane the hook answers nothing and the tool runs as
 // configured.
 //
-// Revision-owner guard: the same file-edit tools are denied inside the active
-// claim's scope in a session whose latest entry is a plan entry.
-//
 // Phase entry gate: UserPromptSubmit records which literal prompt entered
 // planning or execution; PreToolUse denies `enroll`, `start_unattended_batch`
 // and the `imm-run` Skill without a live run entry, and otherwise leaves an
 // admission the tool handler consumes by tool-use id. A model Skill call for
-// `imm-planner` or `imm-brainstorm` is never denied; with no active claim it
-// revokes the run entry.
+// `imm-planner` or `imm-brainstorm` is never denied and changes no entry state.
 import { lstatSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -34,8 +30,6 @@ import {
 	type PhaseEntryState,
 	type PhaseOperation,
 } from "../assurance/phase_entry";
-import { revisionOwnerEditRefusal } from "../assurance/revision_owner";
-import { readActiveClaimTaskId } from "../unattended/batch_preflight";
 import { appendPrivate, cacheDir, ensurePrivateDir, ownedByUs, readPrivate, sessionHash } from "./review_host";
 
 const FILE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
@@ -170,41 +164,17 @@ function gatedOperation(payload: Record<string, unknown>): PhaseOperation | null
 }
 
 /**
- * PreToolUse revision-owner guard: a file-edit tool call inside the active
- * claim's scope is denied when this session's latest entry is a plan entry.
- * An unreadable entry store denies nothing; the guard is not an authority
- * boundary (Spec ceremony-trim-r647 D7). Shell commands are not intercepted.
- */
-export function revisionOwnerHookOutput(payload: Record<string, unknown>, locations: PhaseEntryLocations = {}): string | null {
-	if (payload.hook_event_name !== "PreToolUse" || !FILE_TOOLS.has(String(payload.tool_name))) return null;
-	const sessionId = sessionIdOf(payload);
-	if (!sessionId) return null;
-	let state: PhaseEntryState | null = null;
-	try { state = readPhaseEntryState(sessionId, locations.root ?? tmpdir(), locations.read); } catch { return null; }
-	const input = (payload.tool_input ?? {}) as { file_path?: unknown; notebook_path?: unknown };
-	const refusal = revisionOwnerEditRefusal(cwdOf(payload), input.file_path ?? input.notebook_path, state);
-	return refusal ? denyPreToolUse(refusal) : null;
-}
-
-/**
  * PreToolUse for a gated tool: deny without a live run entry; for the two MCP
  * tools, otherwise write the admission the handler consumes. A Planner or
- * Brainstorm Skill call is never denied; with no active claim it records a plan
- * entry first, which revokes the run entry. Any other tool answers null and
- * runs as configured.
+ * Brainstorm Skill call is never denied and leaves the entry store untouched.
+ * Any other tool answers null and runs as configured.
  */
 export function phaseEntryGateHookOutput(payload: Record<string, unknown>, locations: PhaseEntryLocations = {}): string | null {
 	if (payload.hook_event_name !== "PreToolUse") return null;
 	const operation = gatedOperation(payload);
 	if (!operation) return null;
+	if (operation.kind === "skill" && operation.skill !== "imm-run") return null;
 	const root = locations.root ?? tmpdir();
-	if (operation.kind === "skill" && operation.skill !== "imm-run") {
-		let activeClaim = false;
-		try { activeClaim = readActiveClaimTaskId(cwdOf(payload)) !== null; } catch { /* unreadable authority is no claim */ }
-		const sessionId = sessionIdOf(payload);
-		if (!activeClaim && sessionId) appendPhaseEntry(sessionId, "plan", root, locations);
-		return null;
-	}
 	let state: PhaseEntryState | null = null;
 	try { state = readPhaseEntryState(sessionIdOf(payload), root, locations.read); } catch { /* an unreadable store refuses */ }
 	const admission = admitPhaseOperation(operation, state);

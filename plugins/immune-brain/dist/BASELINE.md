@@ -59,7 +59,7 @@ routing. A new Managed workflow starts only from explicit `imm-brainstorm`,
 the user's request for that planning or clarification, by slash command or in
 natural language, is such an entry; a request that asks for neither stays
 host-native. `imm-run` starts only from a literal-user entry. A model-entered
-Planner outside an enrolled task ends the session's run entry.
+Planner or Brainstorm leaves the session's run entry unchanged.
 
 1. **Continue an existing Managed owner explicitly**: an active Assurance
    projection, TaskIntent, TaskRecord, reviewer `follow_up`, or other nonterminal
