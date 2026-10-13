@@ -187,7 +187,7 @@ export const BATCH_REASONS: Readonly<Record<BatchReasonKey, BatchReasonSpec>> = 
 	stale_batch_in_flight: {
 		state: "blocked",
 		reason: (detail: string) => `a batch child is still mid-flight, so the record cannot be disposed: ${detail}`,
-		recovery_action: "settle or stop the in-flight child through its own task, then dispose the batch in the current Host",
+		recovery_action: "settle or stop the in-flight child through its own task, then dispose the batch in the current Host; a child whose Kernel run already ended no longer blocks the disposition",
 	},
 });
 

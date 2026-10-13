@@ -462,7 +462,7 @@ export function elicitationParams(input: NativeConfirmationInput) {
 				? `Children (${d.children.length}):\n${d.children
 						.map(
 							(child) =>
-								`  - ${child.task_id} (${child.slice_id}) [state: ${child.state}]${child.commit ? ` [commit: ${child.commit}]` : " [no commit]"}${child.lane_branch ? ` [lane: ${child.lane_branch}]` : ""}`,
+								`  - ${child.task_id} (${child.slice_id}) [state: ${child.state}]${child.commit ? ` [commit: ${child.commit}]` : " [no commit]"}${child.lane_branch ? ` [lane: ${child.lane_branch}]` : ""}${child.kernel_lifecycle ? ` [Kernel run: ${child.kernel_lifecycle}]` : ""}`,
 						)
 						.join("\n")}`
 				: null,

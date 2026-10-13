@@ -6401,7 +6401,7 @@ function validateRecordShape(value, batchId) {
     if (child.state === "committed" && child.commit !== null && !record.commits.includes(child.commit))
       throw new Error(`batch run state ${batchId} child ${child.task_id} commit is missing from commits`);
   }
-  if ((record.batch_state === "budget_stopped" || record.batch_state === "failed" || record.batch_state === "rejected" || record.batch_state === "superseded") && record.children.some((child) => child.state === "enrolled" || child.state === "settled"))
+  if ((record.batch_state === "budget_stopped" || record.batch_state === "failed" || record.batch_state === "rejected") && record.children.some((child) => child.state === "enrolled" || child.state === "settled"))
     throw new Error(`batch run state ${batchId} is ${String(record.batch_state)} but a child is still mid-flight`);
   if (record.batch_state === "completed" && record.children.some((child) => child.state !== "committed"))
     throw new Error(`batch run state ${batchId} is completed but a child is not committed`);
@@ -6646,7 +6646,7 @@ function validateLaneRecordShape(value, batchId) {
       throw new Error(`batch run state ${batchId} child ${child.task_id} commit is missing from commits`);
   }
   const inFlight = (child) => child.state === "lane_admitted" || child.state === "enrolled" || child.state === "settled" || child.state === "lane_committed";
-  if ((record.batch_state === "budget_stopped" || record.batch_state === "failed" || record.batch_state === "rejected" || record.batch_state === "superseded") && record.children.some(inFlight))
+  if ((record.batch_state === "budget_stopped" || record.batch_state === "failed" || record.batch_state === "rejected") && record.children.some(inFlight))
     throw new Error(`batch run state ${batchId} is ${String(record.batch_state)} but a child is still mid-flight`);
   if (record.batch_state === "completed" && record.children.some((child) => child.state !== "integrated" && child.state !== "released"))
     throw new Error(`batch run state ${batchId} is completed but a child is not integrated`);
@@ -8686,7 +8686,7 @@ var BATCH_REASONS = Object.freeze({
   stale_batch_in_flight: {
     state: "blocked",
     reason: (detail) => `a batch child is still mid-flight, so the record cannot be disposed: ${detail}`,
-    recovery_action: "settle or stop the in-flight child through its own task, then dispose the batch in the current Host"
+    recovery_action: "settle or stop the in-flight child through its own task, then dispose the batch in the current Host; a child whose Kernel run already ended no longer blocks the disposition"
   }
 });
 function batchReason(key, detail = "") {
@@ -9280,7 +9280,7 @@ async function projectPreflight(options, allowNewDirt) {
     try {
       reconfirmation = await captureBatchReconfirmation(root, activeRecord, planSurface.surface.recovery_children);
     } catch {
-      return reject("plan_projection_failed", activeRecord.commits.length ? `batch plan changed after ${activeRecord.commits.length} recorded child commit(s). The old authorization cannot execute the revised plan. Preserve the batch record, report, commit evidence and audit; inspect each remaining child's Kernel run before an explicit imm-run handoff. Do not re-enroll settled children or manufacture batch trailers. To close the parked record explicitly, dispose it with the retire_stale_batch Tool for this Initiative; a child that is still mid-flight must settle first. This rejection neither terminates the old batch nor authorizes the revised plan.` : "batch plan reconfirmation is not eligible");
+      return reject("plan_projection_failed", activeRecord.commits.length ? `batch plan changed after ${activeRecord.commits.length} recorded child commit(s). The old authorization cannot execute the revised plan. Preserve the batch record, report, commit evidence and audit; inspect each remaining child's Kernel run before an explicit imm-run handoff. Do not re-enroll settled children or manufacture batch trailers. To close the parked record explicitly, dispose it with the retire_stale_batch Tool for this Initiative; a child whose Kernel run is still live must settle first, while one that already ended outside the batch does not block the disposition. This rejection neither terminates the old batch nor authorizes the revised plan.` : "batch plan reconfirmation is not eligible");
     }
   }
   const projection = {
@@ -16120,27 +16120,39 @@ function createBatchKernelPort(input) {
 var SERIAL_IN_FLIGHT = new Set(["enrolled", "settled"]);
 var LANE_IN_FLIGHT = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
 var RETIRE_REASON = "Retired by an explicit literal-user disposition: the batch plan moved past this record, so its authorization could neither reconfirm nor continue. " + "Recorded child commits, child states and the batch branch are preserved as evidence. " + "Children this batch never executed carry no commit, no batch trailer and no approval; nothing infers their delivery from this record.";
+var RETIRE_REASON_ENDED_OUTSIDE = " A child this record still holds mid-flight had already ended in the Kernel store when the record was retired; its own TaskRecord, not this record, is the evidence of that run.";
 var RETIRE_NEXT_ACTION = "The Initiative has no active batch. Run each remaining child with imm-run under its own authorization, or start a new batch for this Initiative after checking out its batch branch.";
-function childEvidenceOf(record) {
+function kernelLifecycleOf(root, taskId) {
+  try {
+    if (readActiveClaimTaskId(root) === taskId)
+      return null;
+    return readSettledRunEvidence(root, taskId)?.lifecycle ?? null;
+  } catch {
+    return null;
+  }
+}
+function childEvidenceOf(root, record) {
   if (record.contract === "assurance_kernel/batch_run_state/v2")
     return record.children.map((child) => ({
       task_id: child.task_id,
       slice_id: child.slice_id,
       state: child.state,
       commit: child.commit,
-      lane_branch: child.lane?.branch ?? null
+      lane_branch: child.lane?.branch ?? null,
+      kernel_lifecycle: kernelLifecycleOf(root, child.task_id)
     }));
   return record.children.map((child) => ({
     task_id: child.task_id,
     slice_id: child.slice_id,
     state: child.state,
     commit: child.commit,
-    lane_branch: null
+    lane_branch: null,
+    kernel_lifecycle: kernelLifecycleOf(root, child.task_id)
   }));
 }
-function inFlightChildOf(record) {
+function inFlightChildOf(root, record) {
   const inFlight = record.contract === "assurance_kernel/batch_run_state/v2" ? LANE_IN_FLIGHT : SERIAL_IN_FLIGHT;
-  return record.children.find((child) => inFlight.has(child.state)) ?? null;
+  return record.children.find((child) => inFlight.has(child.state) && kernelLifecycleOf(root, child.task_id) === null) ?? null;
 }
 function readStaleBatchLookup(root, initiativeSlug) {
   const found = findExistingActiveBatch(root, initiativeSlug);
@@ -16155,7 +16167,7 @@ function readStaleBatchLookup(root, initiativeSlug) {
   const record = found.record;
   if (isTerminalBatchState(record.batch_state))
     return { kind: "terminal", batch_id: record.batch_id };
-  const inFlight = inFlightChildOf(record);
+  const inFlight = inFlightChildOf(root, record);
   if (inFlight)
     return { kind: "in_flight", batch_id: record.batch_id, task_id: inFlight.task_id };
   return {
@@ -16170,7 +16182,7 @@ function readStaleBatchLookup(root, initiativeSlug) {
       base_head: record.base_head,
       confirmation_time: record.confirmation_time,
       recorded_commits: [...record.commits],
-      children: childEvidenceOf(record)
+      children: childEvidenceOf(root, record)
     }
   };
 }
@@ -16199,6 +16211,8 @@ async function retireStaleBatch(options) {
   if (!readSecureProjectBytes(root, batchStatePath(record.batch_id)).equals(expected))
     return { outcome: "rejected", rejection: batchReason("plan_changed", record.batch_id) };
   const retired = { ...record, batch_state: "superseded" };
+  const inFlightStates = record.contract === "assurance_kernel/batch_run_state/v2" ? LANE_IN_FLIGHT : SERIAL_IN_FLIGHT;
+  const reason = record.children.some((child) => inFlightStates.has(child.state)) ? RETIRE_REASON + RETIRE_REASON_ENDED_OUTSIDE : RETIRE_REASON;
   const stored = replaceAnyBatchRunState(root, expected, retired, () => {
     if (!readSecureProjectBytes(root, batchStatePath(record.batch_id)).equals(expected))
       throw new Error("batch state changed before the disposition was applied");
@@ -16211,7 +16225,7 @@ async function retireStaleBatch(options) {
     max_parallel: stored.max_parallel,
     children: stored.children,
     commits: stored.commits,
-    reason: RETIRE_REASON,
+    reason,
     handoffs: [],
     next_action: RETIRE_NEXT_ACTION,
     created_at: now
@@ -16222,7 +16236,7 @@ async function retireStaleBatch(options) {
     batch_state: stored.batch_state,
     children: stored.children,
     commits: stored.commits,
-    reason: RETIRE_REASON,
+    reason,
     next_action: RETIRE_NEXT_ACTION,
     created_at: now
   });
@@ -17039,7 +17053,8 @@ class ClaudeRuntime {
                 slice_id: child.slice_id,
                 state: child.state,
                 commit: child.commit,
-                lane_branch: child.lane_branch
+                lane_branch: child.lane_branch,
+                kernel_lifecycle: child.kernel_lifecycle
               }))
             },
             signal: meta.signal
@@ -17481,7 +17496,7 @@ function elicitationParams(input) {
       d ? `Plan digest: ${d.plan_digest}` : null,
       d ? `Recorded child commits: ${d.recorded_commits}` : null,
       d ? `Children (${d.children.length}):
-${d.children.map((child) => `  - ${child.task_id} (${child.slice_id}) [state: ${child.state}]${child.commit ? ` [commit: ${child.commit}]` : " [no commit]"}${child.lane_branch ? ` [lane: ${child.lane_branch}]` : ""}`).join(`
+${d.children.map((child) => `  - ${child.task_id} (${child.slice_id}) [state: ${child.state}]${child.commit ? ` [commit: ${child.commit}]` : " [no commit]"}${child.lane_branch ? ` [lane: ${child.lane_branch}]` : ""}${child.kernel_lifecycle ? ` [Kernel run: ${child.kernel_lifecycle}]` : ""}`).join(`
 `)}` : null,
       "Retiring writes this record to the terminal superseded state. Child states, recorded commits and the batch branch are preserved as evidence; nothing is deleted and no batch trailer or approval is manufactured.",
       "A child without a commit was never executed by this batch: it carries no delivery evidence, and the retired authorization is never reused for a revised plan.",

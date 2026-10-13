@@ -1067,6 +1067,7 @@ export class ClaudeRuntime {
 								state: child.state,
 								commit: child.commit,
 								lane_branch: child.lane_branch,
+								kernel_lifecycle: child.kernel_lifecycle,
 							})),
 						},
 						signal: meta.signal,

@@ -14,7 +14,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { batchStatePath } from "../plugins/immune-brain/runtime/kernel/storage_paths";
+import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 import { batchReason } from "../plugins/immune-brain/runtime/unattended/batch_reasons";
 import {
 	readStaleBatchLookup,
@@ -86,6 +88,37 @@ function repo(): Repo {
 		second: git(root, "rev-parse", "HEAD"),
 		cleanup: () => rmSync(root, { recursive: true, force: true }),
 	};
+}
+
+/** Seed the coordinator's Kernel run for a child: live, or already ended. */
+function seedKernelRun(root: string, taskId: string, lifecycle: "active" | "done" | "stopped"): void {
+	const intent = {
+		contract: "assurance_kernel/task_intent/v1",
+		task_id: taskId,
+		goal: "disposition fixture",
+		acceptance: [{ id: "A1", assertion: "a1", verification: "bun test tests/x.test.ts" }],
+		scope_hint: ["docs/plans"],
+		risk: "routine" as const,
+		revision: 1,
+		owner: "user",
+	};
+	seedKernelRunForTest(root, {
+		task_id: taskId,
+		record: {
+			contract: "assurance_kernel/task_record/v4",
+			task_id: taskId,
+			intent_snapshot: intent,
+			intent_ref: { path: `docs/plans/${taskId}.intent.json`, content_hash: canonicalIntentHash(parseTaskIntentV1(intent)) },
+			lifecycle,
+			artifact_state: lifecycle === "active" ? "active" : "frozen",
+			baseline: `sha256:${"a".repeat(64)}`,
+			git_base_head: "a".repeat(40),
+			attestations: [],
+			findings: [],
+			history: [],
+		},
+		...(lifecycle === "active" ? {} : { terminal: { lifecycle } }),
+	});
 }
 
 function realpath(path: string): string {
@@ -199,11 +232,11 @@ describe("stale batch disposition", () => {
 			confirmation_time: CONFIRMED_AT,
 			recorded_commits: [r.first, r.second],
 			children: [
-				{ task_id: "parallel-batch-lanes-s1", slice_id: "S1", state: "committed", commit: r.first, lane_branch: null },
-				{ task_id: "parallel-batch-lanes-s2", slice_id: "S2", state: "committed", commit: r.second, lane_branch: null },
-				{ task_id: "parallel-batch-lanes-s3", slice_id: "S3", state: "pending", commit: null, lane_branch: null },
-				{ task_id: "parallel-batch-lanes-s4", slice_id: "S4", state: "pending", commit: null, lane_branch: null },
-				{ task_id: "parallel-batch-lanes-s5", slice_id: "S5", state: "pending", commit: null, lane_branch: null },
+				{ task_id: "parallel-batch-lanes-s1", slice_id: "S1", state: "committed", commit: r.first, lane_branch: null, kernel_lifecycle: null },
+				{ task_id: "parallel-batch-lanes-s2", slice_id: "S2", state: "committed", commit: r.second, lane_branch: null, kernel_lifecycle: null },
+				{ task_id: "parallel-batch-lanes-s3", slice_id: "S3", state: "pending", commit: null, lane_branch: null, kernel_lifecycle: null },
+				{ task_id: "parallel-batch-lanes-s4", slice_id: "S4", state: "pending", commit: null, lane_branch: null, kernel_lifecycle: null },
+				{ task_id: "parallel-batch-lanes-s5", slice_id: "S5", state: "pending", commit: null, lane_branch: null, kernel_lifecycle: null },
 			],
 		});
 	});
@@ -311,6 +344,49 @@ describe("stale batch disposition", () => {
 		expect(bytes(r).equals(before)).toBe(true);
 	});
 
+	it("still refuses a mid-flight child whose Kernel run is live", async () => {
+		const r = repo();
+		const record = serialRecord(r, {
+			children: serialRecord(r).children.map((child, index) => (index === 2 ? { ...child, state: "enrolled" as const } : child)),
+		});
+		write(r, record);
+		seedKernelRun(r.root, record.children[2]!.task_id, "active");
+		const g = gate();
+		const outcome = await retireStaleBatch({ root: r.root, initiative_slug: SLUG, now: NOW, gate: g.run });
+		expect(outcome.outcome).toBe("rejected");
+		if (outcome.outcome !== "rejected") throw new Error("expected rejected");
+		expect(outcome.rejection.reason).toContain("still mid-flight");
+		expect(g.calls).toHaveLength(0);
+	});
+
+	it("retires a record whose mid-flight child already ended in the Kernel outside the batch", async () => {
+		for (const lifecycle of ["done", "stopped"] as const) {
+			const r = repo();
+			const record = serialRecord(r, {
+				children: serialRecord(r).children.map((child, index) => (index === 2 ? { ...child, state: "enrolled" as const } : child)),
+			});
+			write(r, record);
+			const stuck = record.children[2]!.task_id;
+			seedKernelRun(r.root, stuck, lifecycle);
+			const g = gate();
+			const outcome = await retireStaleBatch({ root: r.root, initiative_slug: SLUG, now: NOW, gate: g.run });
+			// The gate shows both facts: the record's state and the Kernel's lifecycle.
+			expect(g.calls).toHaveLength(1);
+			const shown = g.calls[0]!.children.find((child) => child.task_id === stuck)!;
+			expect(shown.state).toBe("enrolled");
+			expect(shown.kernel_lifecycle).toBe(lifecycle);
+			expect(outcome.outcome).toBe("retired");
+			if (outcome.outcome !== "retired") throw new Error("expected retired");
+			// The child is carried over untouched: no invented settlement or commit.
+			const stored = readBatchRunState(r.root, BATCH_ID)!;
+			expect(stored.batch_state).toBe("superseded");
+			expect(stored.children).toEqual(record.children);
+			expect(stored.commits).toEqual(record.commits);
+			expect(String(outcome.report.reason)).toContain("had already ended in the Kernel store");
+			expect(findExistingActiveBatch(r.root, SLUG)).toBeNull();
+		}
+	});
+
 	it("refuses a lane child admitted to a lane worktree", async () => {
 		const r = repo();
 		const record = laneRecord(r);
@@ -409,13 +485,12 @@ describe("stale batch disposition", () => {
 		expect(readBatchRunState(r.root, BATCH_ID)!.batch_state).toBe("failed");
 	});
 
-	it("a superseded record with a mid-flight child is invalid state, so the writer refuses it", () => {
+	it("only a superseded record may carry a mid-flight child; other terminal states still refuse it", () => {
 		const r = repo();
-		const record = serialRecord(r, {
-			batch_state: "superseded",
-			children: serialRecord(r).children.map((child, index) => (index === 2 ? { ...child, state: "enrolled" as const } : child)),
-		});
-		expect(() => writeBatchRunState(r.root, record)).toThrow("still mid-flight");
+		const children = serialRecord(r).children.map((child, index) => (index === 2 ? { ...child, state: "enrolled" as const } : child));
+		for (const batch_state of ["failed", "rejected", "budget_stopped"] as const)
+			expect(() => writeBatchRunState(r.root, serialRecord(r, { batch_state, children }))).toThrow("still mid-flight");
+		expect(() => writeBatchRunState(r.root, serialRecord(r, { batch_state: "superseded", children }))).not.toThrow();
 	});
 
 	it("a superseded record keeps the retired clock fields out of the written bytes", async () => {

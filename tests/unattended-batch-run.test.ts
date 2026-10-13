@@ -2358,7 +2358,7 @@ describe("shared batch preflight projection", () => {
 			precondition_commit_failed: ["batch precondition commit failed: <detail>", "repair the reported Git precondition failure and retry the batch in the current Host"],
 			batch_run_rejected: ["<detail>", "delete or rename the conflicting branch, or commit working changes and retry in the current Host"],
 			stale_batch_absent: ["no retirable batch record to dispose: <detail>", "start a batch for this Initiative, or inspect the batch records under .imm/state/batches in the current Host"],
-			stale_batch_in_flight: ["a batch child is still mid-flight, so the record cannot be disposed: <detail>", "settle or stop the in-flight child through its own task, then dispose the batch in the current Host"],
+			stale_batch_in_flight: ["a batch child is still mid-flight, so the record cannot be disposed: <detail>", "settle or stop the in-flight child through its own task, then dispose the batch in the current Host; a child whose Kernel run already ended no longer blocks the disposition"],
 		};
 		expect(Object.keys(BATCH_REASONS).sort()).toEqual(Object.keys(expected).sort());
 		for (const [key, [reason, recoveryAction]] of Object.entries(expected)) {

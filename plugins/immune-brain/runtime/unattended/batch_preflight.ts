@@ -726,7 +726,7 @@ async function projectPreflight(
 	if (activeRecord && !isLaneBatchRecord(activeRecord) && activeRecord.plan_digest !== planSurface.surface.plan_digest) {
 		try { reconfirmation = await captureBatchReconfirmation(root, activeRecord, planSurface.surface.recovery_children); }
 		catch { return reject("plan_projection_failed", activeRecord.commits.length
-			? `batch plan changed after ${activeRecord.commits.length} recorded child commit(s). The old authorization cannot execute the revised plan. Preserve the batch record, report, commit evidence and audit; inspect each remaining child's Kernel run before an explicit imm-run handoff. Do not re-enroll settled children or manufacture batch trailers. To close the parked record explicitly, dispose it with the retire_stale_batch Tool for this Initiative; a child that is still mid-flight must settle first. This rejection neither terminates the old batch nor authorizes the revised plan.`
+			? `batch plan changed after ${activeRecord.commits.length} recorded child commit(s). The old authorization cannot execute the revised plan. Preserve the batch record, report, commit evidence and audit; inspect each remaining child's Kernel run before an explicit imm-run handoff. Do not re-enroll settled children or manufacture batch trailers. To close the parked record explicitly, dispose it with the retire_stale_batch Tool for this Initiative; a child whose Kernel run is still live must settle first, while one that already ended outside the batch does not block the disposition. This rejection neither terminates the old batch nor authorizes the revised plan.`
 			: "batch plan reconfirmation is not eligible"); }
 	}
 

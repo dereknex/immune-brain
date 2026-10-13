@@ -379,7 +379,7 @@ function retireConfirmationDetails(facts: StaleBatchFacts): {
 		details: `Children (${facts.children.length}):\n${facts.children
 			.map(
 				(child) =>
-					`  - ${child.task_id} (${child.slice_id}) [state: ${child.state}]${child.commit ? ` [commit: ${child.commit}]` : " [no commit]"}${child.lane_branch ? ` [lane: ${child.lane_branch}]` : ""}`,
+					`  - ${child.task_id} (${child.slice_id}) [state: ${child.state}]${child.commit ? ` [commit: ${child.commit}]` : " [no commit]"}${child.lane_branch ? ` [lane: ${child.lane_branch}]` : ""}${child.kernel_lifecycle ? ` [Kernel run: ${child.kernel_lifecycle}]` : ""}`,
 			)
 			.join("\n")}\n\nRetiring writes this record to the terminal superseded state. Child states, recorded commits and the batch branch are preserved as evidence; nothing is deleted and no batch trailer or approval is manufactured.\n\nA child without a commit was never executed by this batch: it carries no delivery evidence, and the retired authorization is never reused for a revised plan.\n\nAfter retiring, run each remaining child with imm-run under its own authorization, or start a new batch for this Initiative.`,
 	};
