@@ -15,8 +15,6 @@ export interface ExecutableIdentity {
 }
 export interface FrozenCommand {
 	entry: ExecutableIdentity;
-	interpreter: ExecutableIdentity | null;
-	interpreter_args: string[];
 }
 export interface VerificationResult {
 	exit_code: number;
@@ -92,35 +90,12 @@ export function resolveVerificationCommand(root: string, command: VerificationCo
 	insideVerificationRoot(root, resolve(root, command.cwd));
 	const entry = identity(command.executable.startsWith("./")
 		? insideVerificationRoot(root, resolve(root, command.executable)) : toolPath(command.executable, path));
-	const prefix = readFileSync(entry.path).subarray(0, 512).toString("utf8");
-	let interpreter: ExecutableIdentity | null = null;
-	let interpreter_args: string[] = [];
-	if (prefix.startsWith("#!")) {
-		const lineEnd = prefix.indexOf("\n");
-		if (lineEnd < 0) throw new VerificationDescriptorError("verification interpreter declaration is unbounded");
-		const parts = prefix.slice(2, lineEnd).trim().split(/\s+/);
-		const name = parts.shift()!;
-		if (!isAbsolute(name)) throw new VerificationDescriptorError("verification interpreter must be absolute");
-		if (name === "/usr/bin/env" || name === "/bin/env") {
-			if (parts.length !== 1 || !/^[A-Za-z0-9_][A-Za-z0-9_.+-]*$/.test(parts[0]!))
-				throw new VerificationDescriptorError("verification interpreter resolution is ambiguous; use a direct interpreter command");
-			interpreter = identity(toolPath(parts[0]!, path));
-		} else {
-			if (parts.length > 1) throw new VerificationDescriptorError("verification interpreter arguments are ambiguous");
-			interpreter = identity(name);
-			interpreter_args = parts;
-		}
-		if (readFileSync(interpreter.path).subarray(0, 2).toString() === "#!")
-			throw new VerificationDescriptorError("verification interpreter is itself a script; resolve the host tool explicitly");
-	}
-	return { entry, interpreter, interpreter_args };
+	return { entry };
 }
 
 export function assertCommandIdentity(frozen: FrozenCommand): void {
-	for (const item of [frozen.entry, frozen.interpreter]) {
-		if (item && JSON.stringify(identity(item.invocation_path)) !== JSON.stringify(item))
-			throw new VerificationDescriptorError("verification executable identity changed");
-	}
+	if (JSON.stringify(identity(frozen.entry.invocation_path)) !== JSON.stringify(frozen.entry))
+		throw new VerificationDescriptorError("verification executable identity changed");
 }
 
 export async function runFixedVerification(
@@ -144,9 +119,7 @@ export async function runFixedVerification(
 		let stdout = Buffer.alloc(0), stderr = Buffer.alloc(0), captured = 0;
 		let aborted = false, timed_out = false, output_limited = false, settled = false;
 		const processToken = randomBytes(24).toString("hex");
-		const args = frozen.interpreter
-			? [...frozen.interpreter_args, frozen.entry.path, ...command.argv] : command.argv;
-		const child = spawn(frozen.interpreter?.invocation_path ?? frozen.entry.invocation_path, args, {
+		const child = spawn(frozen.entry.invocation_path, command.argv, {
 			cwd, shell: false, detached: true,
 			env: verificationEnvironment(options.path, processToken),
 			stdio: ["ignore", "pipe", "pipe"],

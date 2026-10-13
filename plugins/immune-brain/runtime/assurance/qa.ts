@@ -3,8 +3,6 @@ import { snapshotDigest, QaPreparationError, qaPrepareObservation, type Assuranc
 export { QaPreparationError, type QaCheckDiagnostic, type QaPreparationReason, type QaVerificationProgressInput } from "./coordinator";
 import { assertDeliveryClean, materializeDeliveryWorkspace, writeDeliveryTree } from "./delivery_workspace";
 import { runFixedVerification, resolveVerificationCommand, assertCommandIdentity, verificationPath, VerificationAbortedError, VerificationCleanupError, VerificationLaunchError, type FrozenCommand, type VerificationDescriptor, type VerificationCommand } from "./verification";
-import { realpathSync } from "node:fs";
-import { sep } from "node:path";
 import { qaFindingId } from "./qa_findings";
 import { captureGitTaskRevisionSnapshot, inScopeTrackedDrift } from "../workspace_scope";
 import { readTaskRecordRaw } from "../kernel/storage";
@@ -96,7 +94,6 @@ export async function runDeterministicQa(
 				throw new QaPreparationError("prepare", ids, reason, diagnostics("prepare", reason));
 			}
 		})();
-		const deliveryPrefix = `${realpathSync(delivery.root)}${sep}`;
 		const clean = () => {
 			let paths: string[] | undefined;
 			try {
@@ -128,17 +125,13 @@ export async function runDeterministicQa(
 			}
 			live(); clean();
 			groupCommands.push(frozen);
-			if (frozen?.entry) {
-				const identityDiagnostics = diagnostics("integrity", "command_identity_changed", affected, stage, Math.round(performance.now() - started), result);
-				if (!command.executable.startsWith("./")) allCommands.push({ frozen, diagnostics: identityDiagnostics });
-				else if (frozen.interpreter && !frozen.interpreter.path.startsWith(deliveryPrefix))
-					allCommands.push({ frozen: { entry: frozen.interpreter, interpreter: null, interpreter_args: [] }, diagnostics: identityDiagnostics });
-			}
+			if (frozen?.entry && !command.executable.startsWith("./"))
+				allCommands.push({ frozen, diagnostics: diagnostics("integrity", "command_identity_changed", affected, stage, Math.round(performance.now() - started), result) });
 			// Paths and process output are not persisted. Identity hashes describe
 			// observed entries, not a claim about every transitive dependency.
 			evidence.push({ stage, environment: createHash("sha256").update(environmentKey).digest("hex"),
 				command: createHash("sha256").update(JSON.stringify(command)).digest("hex"),
-				entry: frozen?.entry?.content_hash ?? null, interpreter: frozen?.interpreter?.content_hash ?? null,
+				entry: frozen?.entry?.content_hash ?? null,
 				exit_code: result.exit_code, timed_out: result.timed_out, output_limited: result.output_limited });
 			if (Buffer.byteLength(JSON.stringify(evidence)) > 16_384)
 				throw fail("prepare", "execution_metadata_limit_exceeded");

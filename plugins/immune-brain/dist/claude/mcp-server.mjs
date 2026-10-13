@@ -10652,38 +10652,11 @@ function identity(path) {
 function resolveVerificationCommand(root, command, path = verificationPath()) {
   insideVerificationRoot(root, resolve12(root, command.cwd));
   const entry = identity(command.executable.startsWith("./") ? insideVerificationRoot(root, resolve12(root, command.executable)) : toolPath(command.executable, path));
-  const prefix = readFileSync11(entry.path).subarray(0, 512).toString("utf8");
-  let interpreter = null;
-  let interpreter_args = [];
-  if (prefix.startsWith("#!")) {
-    const lineEnd = prefix.indexOf(`
-`);
-    if (lineEnd < 0)
-      throw new VerificationDescriptorError("verification interpreter declaration is unbounded");
-    const parts = prefix.slice(2, lineEnd).trim().split(/\s+/);
-    const name = parts.shift();
-    if (!isAbsolute6(name))
-      throw new VerificationDescriptorError("verification interpreter must be absolute");
-    if (name === "/usr/bin/env" || name === "/bin/env") {
-      if (parts.length !== 1 || !/^[A-Za-z0-9_][A-Za-z0-9_.+-]*$/.test(parts[0]))
-        throw new VerificationDescriptorError("verification interpreter resolution is ambiguous; use a direct interpreter command");
-      interpreter = identity(toolPath(parts[0], path));
-    } else {
-      if (parts.length > 1)
-        throw new VerificationDescriptorError("verification interpreter arguments are ambiguous");
-      interpreter = identity(name);
-      interpreter_args = parts;
-    }
-    if (readFileSync11(interpreter.path).subarray(0, 2).toString() === "#!")
-      throw new VerificationDescriptorError("verification interpreter is itself a script; resolve the host tool explicitly");
-  }
-  return { entry, interpreter, interpreter_args };
+  return { entry };
 }
 function assertCommandIdentity(frozen) {
-  for (const item of [frozen.entry, frozen.interpreter]) {
-    if (item && JSON.stringify(identity(item.invocation_path)) !== JSON.stringify(item))
-      throw new VerificationDescriptorError("verification executable identity changed");
-  }
+  if (JSON.stringify(identity(frozen.entry.invocation_path)) !== JSON.stringify(frozen.entry))
+    throw new VerificationDescriptorError("verification executable identity changed");
 }
 async function runFixedVerification(root, command, frozen, options) {
   if (options.signal?.aborted)
@@ -10699,8 +10672,7 @@ async function runFixedVerification(root, command, frozen, options) {
     let stdout = Buffer.alloc(0), stderr = Buffer.alloc(0), captured = 0;
     let aborted = false, timed_out = false, output_limited = false, settled = false;
     const processToken = randomBytes(24).toString("hex");
-    const args = frozen.interpreter ? [...frozen.interpreter_args, frozen.entry.path, ...command.argv] : command.argv;
-    const child = spawn2(frozen.interpreter?.invocation_path ?? frozen.entry.invocation_path, args, {
+    const child = spawn2(frozen.entry.invocation_path, command.argv, {
       cwd,
       shell: false,
       detached: true,
@@ -13032,10 +13004,6 @@ function materializeDeliveryWorkspace(sourceRoot, tree) {
   }
 }
 
-// plugins/immune-brain/runtime/assurance/qa.ts
-import { realpathSync as realpathSync12 } from "node:fs";
-import { sep as sep9 } from "node:path";
-
 // plugins/immune-brain/runtime/assurance/qa_findings.ts
 import { randomUUID as randomUUID8 } from "node:crypto";
 function qaFindingId(acceptanceId, snapshotDigest) {
@@ -13120,7 +13088,6 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
         throw new QaPreparationError("prepare", ids, reason, diagnostics("prepare", reason));
       }
     })();
-    const deliveryPrefix = `${realpathSync12(delivery.root)}${sep9}`;
     const clean = () => {
       let paths;
       try {
@@ -13165,19 +13132,13 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
       live();
       clean();
       groupCommands.push(frozen);
-      if (frozen?.entry) {
-        const identityDiagnostics = diagnostics("integrity", "command_identity_changed", affected, stage, Math.round(performance.now() - started), result);
-        if (!command.executable.startsWith("./"))
-          allCommands.push({ frozen, diagnostics: identityDiagnostics });
-        else if (frozen.interpreter && !frozen.interpreter.path.startsWith(deliveryPrefix))
-          allCommands.push({ frozen: { entry: frozen.interpreter, interpreter: null, interpreter_args: [] }, diagnostics: identityDiagnostics });
-      }
+      if (frozen?.entry && !command.executable.startsWith("./"))
+        allCommands.push({ frozen, diagnostics: diagnostics("integrity", "command_identity_changed", affected, stage, Math.round(performance.now() - started), result) });
       evidence.push({
         stage,
         environment: createHash19("sha256").update(environmentKey).digest("hex"),
         command: createHash19("sha256").update(JSON.stringify(command)).digest("hex"),
         entry: frozen?.entry?.content_hash ?? null,
-        interpreter: frozen?.interpreter?.content_hash ?? null,
         exit_code: result.exit_code,
         timed_out: result.timed_out,
         output_limited: result.output_limited
@@ -13328,7 +13289,7 @@ import {
   lstatSync as lstatSync12,
   mkdirSync as mkdirSync8,
   openSync as openSync8,
-  realpathSync as realpathSync13,
+  realpathSync as realpathSync12,
   renameSync as renameSync5,
   rmSync as rmSync8,
   writeFileSync as writeFileSync8
@@ -13358,8 +13319,8 @@ function runBatchGitPreflight(input) {
   let realToplevel;
   let realRoot;
   try {
-    realToplevel = realpathSync13(toplevelResult.stdout.trim());
-    realRoot = realpathSync13(root);
+    realToplevel = realpathSync12(toplevelResult.stdout.trim());
+    realRoot = realpathSync12(root);
   } catch {
     return {
       ok: false,
@@ -13884,7 +13845,7 @@ function createDefaultBatchGitPort() {
 // plugins/immune-brain/runtime/unattended/batch_lanes.ts
 import { spawnSync as spawnSync14 } from "node:child_process";
 import { createHash as createHash21 } from "node:crypto";
-import { existsSync as existsSync12, realpathSync as realpathSync14 } from "node:fs";
+import { existsSync as existsSync12, realpathSync as realpathSync13 } from "node:fs";
 import { isAbsolute as isAbsolute8, join as join20 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/runtime_contracts.ts
@@ -14441,14 +14402,14 @@ function commonDir(root) {
   if (result.status !== 0 || !result.stdout)
     return null;
   try {
-    return realpathSync14(result.stdout);
+    return realpathSync13(result.stdout);
   } catch {
     return null;
   }
 }
 function resolveRealPath(path) {
   try {
-    return realpathSync14(path);
+    return realpathSync13(path);
   } catch {
     return null;
   }

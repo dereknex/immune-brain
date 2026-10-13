@@ -53,16 +53,63 @@ describe("project command verification", () => {
 		for (const timeout_ms of [0, -1, 1.5, 600001]) expect(() => good({ timeout_ms })).toThrow();
 		for (const max_output_bytes of [0, 262145]) expect(() => good({ max_output_bytes })).toThrow();
 	});
-	test("unknown project executable is bound by bytes and its interpreter", async () => {
+	test("unknown project executable is bound by bytes and the operating system resolves its interpreter", async () => {
 		const root = temp();
 		try {
 			const file = join(root, "unheard-of-tool"); writeFileSync(file, "#!/bin/sh\nprintf unknown-tool\n"); chmodSync(file, 0o755);
 			const c = good({ executable: "./unheard-of-tool", argv: [] }).command;
 			const frozen = resolveVerificationCommand(root, c);
-			expect(frozen.entry.content_hash).toMatch(/^sha256:/); expect(frozen.interpreter).not.toBeNull();
+			expect(Object.keys(frozen)).toEqual(["entry"]); expect(frozen.entry.content_hash).toMatch(/^sha256:/);
 			const result = await runFixedVerification(root, c, frozen, { path: verificationPath() });
 			expect(result.stdout).toBe("unknown-tool"); expect(result.exit_code).toBe(0);
 			writeFileSync(file, "#!/bin/sh\nexit 1\n"); expect(() => assertCommandIdentity(frozen)).toThrow("identity changed");
+		} finally { remove(root); }
+	});
+	test("a host tool behind a shim script, or one using env -S, runs with its literal arguments", async () => {
+		const root = temp();
+		try {
+			// A version-manager shim: the tool's '#!' line names another script. It goes
+			// through env because Darwin refuses a script as a direct '#!' interpreter.
+			const launcher = join(root, "launcher"); writeFileSync(launcher, '#!/bin/sh\nexec /bin/sh "$@"\n'); chmodSync(launcher, 0o755);
+			writeFileSync(join(root, "shimmed-tool"), "#!/usr/bin/env launcher\nprintf 'shim:%s' \"$1\"\n"); chmodSync(join(root, "shimmed-tool"), 0o755);
+			writeFileSync(join(root, "split-tool"), "#!/usr/bin/env -S sh -e\nprintf 'split:%s' \"$1\"\n"); chmodSync(join(root, "split-tool"), 0o755);
+			const path = `${root}${delimiter}${verificationPath()}`;
+			for (const [executable, expected] of [["shimmed-tool", "shim:a b"], ["split-tool", "split:a b"]] as const) {
+				const c = good({ executable, argv: ["a b"] }).command;
+				const result = await runFixedVerification(root, c, resolveVerificationCommand(root, c, path), { path });
+				expect(result.exit_code).toBe(0); expect(result.stdout).toBe(expected);
+			}
+		} finally { remove(root); }
+	});
+	test("an entry file replaced during the run fails the identity check", async () => {
+		const root = temp();
+		try {
+			const file = join(root, "self-replacing"); writeFileSync(file, '#!/bin/sh\nprintf \'#!/bin/sh\\nexit 0\\n\' > "$0.next" && chmod +x "$0.next" && mv "$0.next" "$0"\n'); chmodSync(file, 0o755);
+			const c = good({ executable: "./self-replacing", argv: [] }).command;
+			const frozen = resolveVerificationCommand(root, c);
+			await expect(runFixedVerification(root, c, frozen, { path: verificationPath() })).rejects.toThrow("identity changed");
+		} finally { remove(root); }
+	});
+	test("a timeout removes every process of a run started through a shim", async () => {
+		const root = temp();
+		try {
+			const launcher = join(root, "launcher"); writeFileSync(launcher, '#!/bin/sh\nexec /bin/sh "$@"\n'); chmodSync(launcher, 0o755);
+			const marker = join(root, "child.pid");
+			writeFileSync(join(root, "shimmed-sleeper"), `#!/usr/bin/env launcher\nsleep 30 &\necho $! > ${JSON.stringify(marker)}\nwait\n`); chmodSync(join(root, "shimmed-sleeper"), 0o755);
+			const path = `${root}${delimiter}${verificationPath()}`;
+			// The first launch of two fresh scripts can take over half a second on Darwin.
+			const c = good({ executable: "shimmed-sleeper", argv: [], timeout_ms: 4000 }).command;
+			const result = await runFixedVerification(root, c, resolveVerificationCommand(root, c, path), { path });
+			expect(result.timed_out).toBe(true);
+			const pid = Number(readFileSync(marker, "utf8").trim());
+			expect(() => process.kill(pid, 0)).toThrow();
+		} finally { remove(root); }
+	}, 15000);
+	test("a compound command written as sh -c decides the result by its exit status", async () => {
+		const root = temp();
+		try {
+			const result = await run(root, { executable: "sh", argv: ["-c", "true && exit 3"] });
+			expect(result.exit_code).toBe(3); expect(result.timed_out).toBe(false);
 		} finally { remove(root); }
 	});
 	test("resolved host tools retain their invocation path while binding real bytes", () => {

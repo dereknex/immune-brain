@@ -379,8 +379,9 @@ the strict no-amendment default is unchanged.
 Every acceptance verification descriptor must be a focused, deterministic,
 project-owned check that exercises only its acceptance assertion. Use
 `assurance_kernel/verification_descriptor/v2` and reuse an existing project
-script or host tool through its literal `command`; do not infer a language,
-package manager, or runner. Add `environment.prepare` only when the check needs
+script or host tool through its literal `command`. Write a compound command as
+`executable: "sh"` with `argv: ["-c", "<line>"]`; the exit status of that line
+decides the result. Add `environment.prepare` only when the check needs
 explicit setup, and declare only the generated directories it needs in
 `environment.writable_paths`. Never hide package installation inside an
 acceptance command. For every descriptor, identify whether its executable is
