@@ -385,10 +385,11 @@ explicit setup, and declare only the generated directories it needs in
 `environment.writable_paths`. Never hide package installation inside an
 acceptance command. For every descriptor, identify whether its executable is
 provided by the QA host or by tracked delivery content, where every dependency
-comes from in the disposable delivery, what explicit setup is required, and
-which declared writable paths that setup or check creates. A dependency found
-only in the Planner's live worktree, including an absolute local `node_modules`
-path, is not delivery provenance. Prefer the highest existing observable behavioral test seam
+comes from, and what explicit setup is required. QA runs in the task's working
+directory after an equality check with the frozen snapshot, so a dependency
+already present in that working directory, such as an installed `node_modules`,
+is valid provenance. `environment.writable_paths` is still parsed and no longer
+restricts where a command may write. Prefer the highest existing observable behavioral test seam
 and the fewest sufficient seams; never use the full test suite, a build, network
 access, or redundant heavyweight checks as acceptance. Cite relevant test prior
 art and explain how the selected seam catches the intended regression. This is

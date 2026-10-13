@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "host-owned-environment-s1-task-qa-in-place",
-  "owner": "user",
   "goal": "Task deterministic QA runs prepare and every check in the task's own working directory instead of a disposable copy: before the first command and after each command the in-scope tracked content of the working directory must equal the frozen snapshot tree, a difference fails as protected_input_or_output_drift with the differing paths returned to the caller and never stored, task QA no longer materializes or cleans a delivery copy while the Lane batch integration recheck keeps it, and the run and Planner contracts plus ADR 0022 state the in-place rule (Spec host-owned-environment S1; D1-D5, I1, I2, U7, U8).",
   "acceptance": [
     {
@@ -38,6 +37,7 @@
     "plugins/immune-brain/runtime/workspace_scope.ts",
     "tests/dual-host-assurance-conformance.test.ts",
     "tests/host-neutral-assurance-coordinator.test.ts",
+    "tests/managed-authority-failure-contract.test.ts",
     "tests/pi-batch-acceptance-integration.test.ts",
     "tests/pi-canary-assurance-authority.test.ts",
     "tests/pi-canary-verification-descriptor.test.ts",
@@ -51,5 +51,6 @@
     "tests/workflow-verification-invariants.test.ts"
   ],
   "risk": "critical",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

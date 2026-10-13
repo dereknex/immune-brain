@@ -6,17 +6,19 @@ import { runFixedVerification, resolveVerificationCommand, assertCommandIdentity
 import { realpathSync } from "node:fs";
 import { sep } from "node:path";
 import { qaFindingId } from "./qa_findings";
-import { captureGitTaskRevisionSnapshot } from "../workspace_scope";
+import { captureGitTaskRevisionSnapshot, inScopeTrackedDrift } from "../workspace_scope";
 import { readTaskRecordRaw } from "../kernel/storage";
 
-function deliveryTreeForSnapshot(
-	snapshot: SnapshotDescriptor,
-	writeTree: typeof writeDeliveryTree,
-): string {
-	if (snapshot.review_revision?.review_tree) return snapshot.review_revision.review_tree;
+function recordForSnapshot(snapshot: SnapshotDescriptor) {
 	const record = readTaskRecordRaw(snapshot.root, snapshot.task_id).record;
 	if (!record || record.contract !== "assurance_kernel/task_record/v4" || !record.git_base_head)
 		throw new Error("QA delivery requires a TaskRecord v4 git_base_head");
+	return record;
+}
+
+function deliveryTreeForSnapshot(snapshot: SnapshotDescriptor): string {
+	if (snapshot.review_revision?.review_tree) return snapshot.review_revision.review_tree;
+	const record = recordForSnapshot(snapshot);
 	const captured = captureGitTaskRevisionSnapshot(
 		snapshot.root,
 		record.intent_snapshot.scope_hint,
@@ -35,11 +37,18 @@ export async function runDeterministicQa(
 	options: {
 		signal?: AbortSignal;
 		onProgress?: (progress: QaVerificationProgressInput) => void;
-		// Coordination tests inject a fake executor without creating a real delivery.
+		/**
+		 * Task QA runs in the task's working directory. Only the Lane batch
+		 * integration recheck asks for a copy: its merge candidate is never
+		 * checked out, so there is no working directory to run in.
+		 */
+		delivery?: "materialized";
+		// Coordination tests inject a fake executor without a real repository.
 		_runFixedVerification?: typeof runFixedVerification;
 		_resolveVerificationCommand?: typeof resolveVerificationCommand;
 		_materializeDeliveryWorkspace?: typeof materializeDeliveryWorkspace;
-		_writeDeliveryTree?: typeof writeDeliveryTree;
+		/** Replaces the frozen tree and, in place, the comparison with it. */
+		_frozenTree?: { tree: string; drift?: () => string[] };
 	} = {},
 ): Promise<AssuranceVerdict> {
 	if (snapshot.role !== "qa") throw new Error("deterministic QA requires qa role");
@@ -54,8 +63,11 @@ export async function runDeterministicQa(
 		group.push({ id: item.id, index, descriptor });
 		groups.set(key, group);
 	}
-	const tree = snapshot.review_revision?.review_tree
-		?? (options._writeDeliveryTree ? "tree" : deliveryTreeForSnapshot(snapshot, writeDeliveryTree));
+	const materialized = options.delivery === "materialized";
+	const tree = options._frozenTree?.tree ?? deliveryTreeForSnapshot(snapshot);
+	const drift = materialized ? null : options._frozenTree
+		? options._frozenTree.drift ?? (() => [])
+		: ((scope: unknown) => () => inScopeTrackedDrift(snapshot.root, tree, scope))(recordForSnapshot(snapshot).intent_snapshot.scope_hint);
 	const path = verificationPath();
 	const findings: NonNullable<AssuranceVerdict["findings"]> = [];
 	const evidence: unknown[] = [];
@@ -71,22 +83,31 @@ export async function runDeterministicQa(
 				descriptor_digest: `sha256:${createHash("sha256").update(JSON.stringify(item.descriptor)).digest("hex")}`,
 				stage, outcome, elapsed_ms: elapsed, exit_code: result?.exit_code ?? null,
 				stdout_bytes: result ? Buffer.byteLength(result.stdout) : null, stderr_bytes: result ? Buffer.byteLength(result.stderr) : null }));
-		const { delivery, deliveryPrefix } = (() => {
-			let delivery: ReturnType<typeof materializeDeliveryWorkspace> | undefined;
+		const delivery = (() => {
+			if (!materialized) return { root: snapshot.root, seal: undefined, cleanup: () => {} };
+			let copy: ReturnType<typeof materializeDeliveryWorkspace> | undefined;
 			try {
-				delivery = (options._materializeDeliveryWorkspace ?? materializeDeliveryWorkspace)(snapshot.root, tree);
-				return { delivery, deliveryPrefix: `${realpathSync(delivery.root)}${sep}` };
+				copy = (options._materializeDeliveryWorkspace ?? materializeDeliveryWorkspace)(snapshot.root, tree);
+				return { root: copy.root, seal: copy.seal as string | undefined, cleanup: copy.cleanup };
 			} catch {
 				let reason: QaPreparationReason = "delivery_unavailable";
-				try { delivery?.cleanup(); }
+				try { copy?.cleanup(); }
 				catch { reason = "delivery_cleanup_failed"; }
 				throw new QaPreparationError("prepare", ids, reason, diagnostics("prepare", reason));
 			}
 		})();
+		const deliveryPrefix = `${realpathSync(delivery.root)}${sep}`;
 		const clean = () => {
-			if (options._materializeDeliveryWorkspace) return;
-			try { assertDeliveryClean(delivery.root, tree, delivery.seal, environment.writable_paths); }
-			catch { throw new QaPreparationError("integrity", ids, "protected_input_or_output_drift", diagnostics("integrity", "protected_input_or_output_drift")); }
+			let paths: string[] | undefined;
+			try {
+				if (drift) { paths = drift(); if (!paths.length) return; }
+				else {
+					if (!options._materializeDeliveryWorkspace) assertDeliveryClean(delivery.root, tree, delivery.seal, environment.writable_paths);
+					return;
+				}
+			} catch { paths = undefined; }
+			throw new QaPreparationError("integrity", ids, "protected_input_or_output_drift", diagnostics("integrity", "protected_input_or_output_drift"),
+				paths ? qaPrepareObservation(0, "", "working_directory", paths) : undefined);
 		};
 		const groupCommands: FrozenCommand[] = [];
 		const execute = async (command: VerificationCommand, stage: "prepare" | "check", affected = group) => {
@@ -131,7 +152,7 @@ export async function runDeterministicQa(
 				if (result.exit_code !== 0 || result.timed_out || result.output_limited)
 					throw new QaPreparationError("prepare", ids, result.timed_out ? "timeout" : result.output_limited ? "output_limit" : "nonzero_exit",
 						diagnostics("prepare", result.timed_out ? "timeout" : result.output_limited ? "output_limit" : "nonzero_exit", group, "prepare", Math.round(performance.now() - prepareStarted), result),
-						qaPrepareObservation(environment.prepare.timeout_ms, result.stderr));
+						qaPrepareObservation(environment.prepare.timeout_ms, result.stderr, materialized ? "isolated_materialization" : "working_directory"));
 			}
 			for (const item of group) {
 				const started = performance.now();
@@ -146,7 +167,7 @@ export async function runDeterministicQa(
 				if (failed) findings.push({ id: qaFindingId(item.id, snapshotDigest(snapshot)), kind: "blocking", acceptance_id: item.id,
 					summary: `verification failed (exit ${result.exit_code}${result.timed_out ? ", timed out" : ""}${result.output_limited ? ", output limit" : ""}) stdout=${Buffer.byteLength(result.stdout)}B stderr=${Buffer.byteLength(result.stderr)}B`, findings_digest: "" });
 			}
-			// Recheck while project entries still exist; cleanup removes them.
+			// Recheck while a materialized copy still exists; its cleanup removes project entries.
 			try {
 				for (const frozen of groupCommands) if (frozen?.entry) assertCommandIdentity(frozen);
 			} catch { throw new QaPreparationError("integrity", ids, "command_identity_changed", diagnostics("integrity", "command_identity_changed")); }
@@ -156,7 +177,7 @@ export async function runDeterministicQa(
 		}
 	}
 	live();
-	// Host entries survive materialization cleanup and must still match before approval.
+	// Host entries must still match before approval.
 	for (const entry of allCommands) {
 		try { if (entry.frozen?.entry) assertCommandIdentity(entry.frozen); }
 		catch { throw new QaPreparationError("integrity", entry.diagnostics.map(item => item.acceptance_id), "command_identity_changed", entry.diagnostics); }

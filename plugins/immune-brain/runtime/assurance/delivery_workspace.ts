@@ -118,7 +118,8 @@ function assertNoEscapingSymlinks(root: string, dir = root): void {
 
 
 export function writeDeliveryTree(sourceRoot: string, snapshot: GitTaskRevisionSnapshot): string {
-	const indexDirectory = mkdtempSync(join(tmpdir(), "imm-delivery-index-"));
+	// Inside the Git directory: a task QA run creates nothing outside the repository.
+	const indexDirectory = mkdtempSync(join(git(sourceRoot, ["rev-parse", "--absolute-git-dir"]), "imm-delivery-index-"));
 	try {
 		git(sourceRoot, ["read-tree", snapshot.base_tree], {
 			GIT_INDEX_FILE: join(indexDirectory, "index"),

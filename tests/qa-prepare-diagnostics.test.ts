@@ -44,8 +44,7 @@ const PASS: Outcome = { exit_code: 0, timed_out: false, output_limited: false, s
 const fakeDelivery = () => { const root = temp(); return { root, tree: "tree", seal: "[]", cleanup: () => rmSync(root, { recursive: true, force: true }) }; };
 function qa(s: SnapshotDescriptor, withPrepare: boolean, run: (stage: "prepare" | "check") => Outcome) {
 	return runDeterministicQa(s, new Map([["A1", descriptor(withPrepare)]]), {
-		_materializeDeliveryWorkspace: fakeDelivery,
-		_writeDeliveryTree: () => "tree",
+		_frozenTree: { tree: "tree" },
 		_resolveVerificationCommand: () => ({}) as never,
 		_runFixedVerification: async (_root, command) => run(command.executable === prepare.executable ? "prepare" : "check"),
 	});
@@ -57,10 +56,18 @@ describe("QA prepare diagnostics", () => {
 		const error = await failure(qa(snapshot(), true, stage => stage === "prepare" ? outcomes[reason]("resolving\nerror: registry unreachable\n") : PASS));
 		expect(error).toBeInstanceOf(QaPreparationError);
 		expect(error).toMatchObject({ stage: "prepare", reason, prepare_observation: {
-			conditions: { delivery: "isolated_materialization", worktree_node_modules: "absent" },
+			conditions: { delivery: "working_directory" },
 			declared_timeout_ms: PREPARE_TIMEOUT_MS,
 			stderr_tail: "resolving\nerror: registry unreachable\n",
 		} });
+	});
+
+	test("the batch integration recheck reports the materialized copy as its conditions", async () => {
+		const error = await failure(runDeterministicQa(snapshot(), new Map([["A1", descriptor(true)]]), {
+			delivery: "materialized", _frozenTree: { tree: "tree" }, _materializeDeliveryWorkspace: fakeDelivery,
+			_resolveVerificationCommand: () => ({}) as never, _runFixedVerification: async () => outcomes.nonzero_exit("x"),
+		}));
+		expect(error?.prepare_observation?.conditions).toEqual({ delivery: "isolated_materialization", worktree_node_modules: "absent" });
 	});
 
 	test("a failing check returns neither the conditions nor any output text", async () => {
@@ -131,7 +138,7 @@ describe("QA prepare diagnostics through the coordinator", () => {
 	}
 	const real = (run: (stage: "prepare" | "check") => Outcome): AssuranceCoordinatorPorts["runQa"] => (s, d) =>
 		runDeterministicQa(s, d, {
-			_materializeDeliveryWorkspace: fakeDelivery, _writeDeliveryTree: () => "tree", _resolveVerificationCommand: () => ({}) as never,
+			_frozenTree: { tree: "tree" }, _resolveVerificationCommand: () => ({}) as never,
 			_runFixedVerification: async (_root, command) => run(command.executable === prepare.executable ? "prepare" : "check"),
 		});
 
@@ -141,8 +148,9 @@ describe("QA prepare diagnostics through the coordinator", () => {
 		const result = await h.coordinator.advance(TASK, { cwd: "/tmp/prepare-diagnostics" }) as unknown as Record<string, any>;
 		expect(result).toMatchObject({ state: "failed", environment_failure: true,
 			prepare_observation: { declared_timeout_ms: PREPARE_TIMEOUT_MS, stderr_tail: `log\n${secret}\n`,
-				conditions: { delivery: "isolated_materialization", worktree_node_modules: "absent" } } });
-		expect(result.reason).toContain("reproduction in the live worktree is not equivalent");
+				conditions: { delivery: "working_directory" } } });
+		// The run happened in the working directory, so a reproduction there is equivalent.
+		expect(result.reason).not.toContain("not equivalent");
 		expect(JSON.stringify(result.diagnostics)).not.toContain(secret);
 		expect(JSON.stringify(result.recovery)).not.toContain(secret);
 		expect(h.applied()).toBe(0);

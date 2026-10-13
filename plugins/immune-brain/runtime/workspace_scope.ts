@@ -220,13 +220,14 @@ export function setGitTaskSnapshotTestHook(hook: () => void): () => void {
 	};
 }
 
-function gitBytes(root: string, args: string[]): Buffer {
+function gitBytes(root: string, args: string[], env?: NodeJS.ProcessEnv): Buffer {
 	const diff = args[0] === "diff";
 	const command = diff ? ["diff", "--exit-code", ...args.slice(1)] : args;
 	const result = spawnSync("git", ["--no-optional-locks", "-c", "diff.autoRefreshIndex=false", "-C", root, ...command], {
 		encoding: null,
 		stdio: ["ignore", "pipe", "pipe"],
 		maxBuffer: 8 * 1024 * 1024,
+		...(env ? { env } : {}),
 	});
 	if ((result.status !== 0 && !(diff && result.status === 1)) || !Buffer.isBuffer(result.stdout)) {
 		throw new Error(`Git task snapshot command failed: git ${args.join(" ")}`);
@@ -988,4 +989,66 @@ export function assertChangedFilesWithinScope(
 			`Changed files outside the ${boundaryName}: ${outside.join(", ")}. Allowed: ${scopePaths.join(", ")}.`,
 		);
 	}
+}
+
+function gitBlobId(body: Buffer, length: number): string {
+	const hash = createHash(length === 64 ? "sha256" : "sha1");
+	hash.update(`blob ${body.length}\0`);
+	hash.update(body);
+	return hash.digest("hex");
+}
+
+/**
+ * In-scope tracked paths whose working-directory content differs from `tree`.
+ * Bytes are compared directly, never through the index stat cache, so a file a
+ * command rewrote with identical content is not a difference. Paths outside the
+ * scope are the user's environment and are not read.
+ */
+// A hosting process that carries one of these would compare another repository
+// or index instead of the task's working directory.
+const GIT_REPOSITORY_BINDINGS = [
+	"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_NAMESPACE", "GIT_PREFIX",
+];
+
+export function inScopeTrackedDrift(projectRoot: string, tree: string, scopeHint: unknown): string[] {
+	const root = resolve(projectRoot);
+	const env = { ...process.env };
+	for (const name of GIT_REPOSITORY_BINDINGS) delete env[name];
+	if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(tree)) throw new Error("frozen tree has invalid identity");
+	const scope = Array.isArray(scopeHint) ? scopeHint.filter((entry): entry is string => typeof entry === "string") : [];
+	const inScope = (path: string) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope);
+	const expected = new Map<string, { mode: string; oid: string }>();
+	for (const entry of gitBytes(root, ["ls-tree", "-r", "-z", tree], env).toString("utf8").split("\0")) {
+		const tab = entry.indexOf("\t");
+		if (tab < 0) continue;
+		const [mode, , oid] = entry.slice(0, tab).split(" ");
+		const path = entry.slice(tab + 1);
+		if (mode && oid && inScope(path)) expected.set(path, { mode, oid });
+	}
+	const tracked = splitNull(gitBytes(root, ["ls-files", "-z"], env).toString("utf8")).filter(inScope);
+	const regular: string[] = [];
+	const drift = new Set<string>();
+	for (const path of new Set([...expected.keys(), ...tracked])) {
+		const want = expected.get(path);
+		let stat;
+		try { stat = lstatSync(join(root, path)); } catch { stat = null; }
+		if (!want || !stat) { if (want || stat) drift.add(path); continue; }
+		// A submodule is pinned by the index, not by working-directory bytes.
+		if (want.mode === "160000") continue;
+		if (stat.isSymbolicLink()) {
+			if (want.mode !== "120000" || gitBlobId(Buffer.from(readlinkSync(join(root, path))), want.oid.length) !== want.oid) drift.add(path);
+		} else if (!stat.isFile() || want.mode === "120000" || (want.mode === "100755") !== ((stat.mode & 0o100) !== 0)) drift.add(path);
+		else regular.push(path);
+	}
+	if (regular.length) {
+		// `--stdin-paths` applies the same clean filters as `git add` would.
+		const hashed = spawnSync("git", ["--no-optional-locks", "-C", root, "hash-object", "--stdin-paths"], {
+			input: `${regular.join("\n")}\n`, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"], maxBuffer: 8 * 1024 * 1024, env,
+		});
+		const ids = hashed.status === 0 ? hashed.stdout.split("\n").filter(Boolean) : [];
+		if (ids.length !== regular.length) throw new Error("Git task snapshot command failed: git hash-object");
+		regular.forEach((path, index) => { if (ids[index] !== expected.get(path)!.oid) drift.add(path); });
+	}
+	return [...drift].sort(comparePaths);
 }

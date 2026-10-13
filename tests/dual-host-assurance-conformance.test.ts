@@ -1,6 +1,6 @@
 import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
 import { afterAll, describe, expect, mock, setDefaultTimeout, test } from "bun:test";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -584,7 +584,7 @@ function sharedKernel(
 	};
 }
 
-function projectVerificationFixture(taskId: string, mode: "pass" | "prepare-fail" | "sleep" | "v1"): string {
+function projectVerificationFixture(taskId: string, mode: "pass" | "prepare-fail" | "sleep" | "v1" | "drift"): string {
 	const root = mkdtempSync(join(tmpdir(), "imm-project-verification-"));
 	mkdirSync(join(root, ".imm/state"), { recursive: true });
 	mkdirSync(join(root, "docs/plans"), { recursive: true });
@@ -595,22 +595,24 @@ case "$1" in
   prepare) [ "$2" != "fail" ] || { echo "install failed: registry unreachable" >&2; exit 7; }; mkdir -p generated; printf ready > generated/ready ;;
   check) test -f generated/ready ;;
   sleep) sleep 10 ;;
+  drift) echo rewritten >> tools/notes.txt ;;
 esac
 `);
 	chmodSync(tool, 0o755);
+	writeFileSync(join(root, "tools/notes.txt"), "notes\n");
 	const command = (argv: string[]) => ({ executable: "./tools/future-pm", argv, cwd: ".", timeout_ms: 5_000, max_output_bytes: 8_192 });
 	const verification = mode === "v1"
 		? JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v1", runner_id: "bun", runner_version: "1.4.2", argv: ["test"], cwd: ".", timeout_ms: 5_000, max_output_bytes: 8_192 })
 		: JSON.stringify({
 			contract: "assurance_kernel/verification_descriptor/v2",
-			command: command([mode === "sleep" ? "sleep" : "check"]),
+			command: command([mode === "sleep" ? "sleep" : mode === "drift" ? "drift" : "check"]),
 			environment: { prepare: command(["prepare", ...(mode === "prepare-fail" ? ["fail"] : [])]), writable_paths: ["generated"] },
 		});
 	const intent = {
 		contract: "assurance_kernel/task_intent/v1", task_id: taskId, owner: "user",
 		goal: "exercise project-owned verification through the real host port",
 		acceptance: [{ id: "acc-1", assertion: "project command passes", verification }],
-		scope_hint: [`docs/plans/${taskId}.intent.json`, "tools/future-pm"], risk: "material", revision: 1,
+		scope_hint: [`docs/plans/${taskId}.intent.json`, "tools/future-pm", "tools/notes.txt"], risk: "material", revision: 1,
 	};
 	writeFileSync(join(root, "docs/plans", `${taskId}.intent.json`), `${JSON.stringify(intent, null, 2)}\n`);
 	execFileSync("git", ["init", "-q"], { cwd: root });
@@ -650,10 +652,34 @@ describe("project-owned-verification", () => {
 			const taskId = `project-command-${host}`, root = projectVerificationFixture(taskId, "pass");
 			try {
 				const driven = projectVerificationCoordinator(root, host);
+				const deliveries = () => readdirSync(tmpdir()).filter(name => name.startsWith("imm-delivery")).sort();
+				const before = deliveries();
 				const result = await driven.coordinator.advance(taskId, { cwd: root } as never);
 				expect(result.state).toBe("review_ready");
+				// In place: prepare wrote into the working directory and no delivery copy exists.
+				expect(readFileSync(join(root, "generated/ready"), "utf8")).toBe("ready");
+				expect(deliveries()).toEqual(before);
 				const record = await driven.ports.readTaskRecord(root, taskId);
 				expect(JSON.stringify(record)).toContain("execution=sha256:");
+				await driven.coordinator.onSessionShutdown();
+			} finally { rmSync(root, { recursive: true, force: true }); }
+		}
+	});
+
+	test("Pi and Claude return the paths a check rewrote and store none of them", async () => {
+		for (const host of ["pi", "claude"] as const) {
+			const taskId = `check-drift-${host}`, root = projectVerificationFixture(taskId, "drift");
+			try {
+				const driven = projectVerificationCoordinator(root, host);
+				const result = await driven.coordinator.advance(taskId, { cwd: root } as never) as any;
+				expect(result).toMatchObject({ state: "failed", operation: "qa" });
+				expect(result.reason).toContain("protected_input_or_output_drift");
+				expect(result.prepare_observation.drift_paths).toEqual(["tools/notes.txt"]);
+				expect(JSON.stringify(result.diagnostics ?? [])).not.toContain("drift_paths");
+				expect(JSON.stringify(await driven.ports.readTaskRecord(root, taskId))).not.toContain("drift_paths");
+				// Nothing under the task's state mentions the returned paths.
+				const stored = spawnSync("grep", ["-rl", "drift_paths", ".imm"], { cwd: root, encoding: "utf8" });
+				expect({ status: stored.status, files: stored.stdout }).toEqual({ status: 1, files: "" });
 				await driven.coordinator.onSessionShutdown();
 			} finally { rmSync(root, { recursive: true, force: true }); }
 		}
@@ -682,7 +708,7 @@ describe("project-owned-verification", () => {
 		expect(JSON.stringify(comparable[0])).toContain("QA prepare failed");
 		// Both Hosts return the same prepare observation, beside the diagnostics.
 		expect(comparable[0].prepare_observation).toEqual({
-			conditions: { delivery: "isolated_materialization", worktree_node_modules: "absent" },
+			conditions: { delivery: "working_directory" },
 			declared_timeout_ms: 5_000,
 			stderr_tail: "install failed: registry unreachable\n",
 		});

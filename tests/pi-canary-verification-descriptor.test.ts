@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync, spawn } from "node:child_process";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { assertDeliveryClean, DeliveryWorkspaceError, materializeDeliveryWorkspace, removeTaskOwnedTree, writeDeliveryTree } from "../plugins/immune-brain/runtime/assurance/delivery_workspace";
@@ -331,6 +331,16 @@ describe("delivery workspace materialization", () => {
 			try { writeFileSync(join(root, "ok.ts"), "changed"); expect(readFileSync(join(delivery.root, "ok.ts"), "utf8")).toBe("export const ok = 1;\n"); }
 			finally { delivery.cleanup(); }
 		} finally { remove(root); }
+	});
+	test("deriving the frozen tree needs no directory outside the repository", () => {
+		const root = gitRepo(), previous = process.env.TMPDIR;
+		try {
+			const base = git(root, ["rev-parse", "HEAD"]), snapshot = captureGitTaskRevisionSnapshot(root, ["ok.ts"], base);
+			// An unusable temporary directory: the derivation must not depend on one.
+			process.env.TMPDIR = join(root, "missing-temporary-directory");
+			expect(writeDeliveryTree(root, snapshot)).toMatch(/^[a-f0-9]{40,64}$/);
+			expect(readdirSync(join(root, ".git")).filter(name => name.startsWith("imm-delivery"))).toEqual([]);
+		} finally { if (previous === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = previous; remove(root); }
 	});
 	test("ignores caller GIT_DIR and refuses tracked symlink escapes", () => {
 		const root = gitRepo(), other = gitRepo(), previous = process.env.GIT_DIR;

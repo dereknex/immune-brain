@@ -171,7 +171,10 @@ describe("S4 verification by invariant and environment", () => {
 		// The pre-existing descriptor discipline is preserved.
 		expect(contract).toContain("environment.prepare");
 		expect(contract).toContain("environment.writable_paths");
-		expect(contract).toContain("A dependency found only in the Planner's live worktree");
+		// QA runs in place (ADR 0022): a dependency in the working directory is valid provenance.
+		expect(contract).toContain("QA runs in the task's working directory after an equality check with the frozen snapshot");
+		expect(contract).toContain("a dependency already present in that working directory");
+		expect(contract).not.toContain("disposable delivery");
 		expect(contract).toContain("must not weaken acceptance-specific focused verification descriptors or add a mandatory user confirmation");
 		// No new mandatory gate, scheduler, or user confirmation was added.
 		expect(contract).not.toContain("browser/simulator subsystem installation");

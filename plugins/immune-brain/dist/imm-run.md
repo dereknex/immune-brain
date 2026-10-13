@@ -94,8 +94,12 @@ Continue while the current projection has a valid action:
    result. The Kernel freezes the artifacts itself before QA: it binds Git
    content identity in place without relocating source paths. A simple task has
    TaskIntent only; a complex task may bind one active Spec. Deterministic QA
-   runs all descriptors in a disposable delivery materialization, never against
-   unchecked live worktree source. Do not dispatch a separate per-Step QA Agent.
+   runs all descriptors in the task's working directory. Before the first
+   command and after every command, the tracked content inside the task's scope
+   must equal the frozen snapshot; a difference fails as
+   `protected_input_or_output_drift`. Content outside the scope, and untracked
+   or ignored files, are the user's environment and are not compared. Do not
+   dispatch a separate per-Step QA Agent.
 3. On `review_ready`, invoke the returned `agent_params` as one exact foreground
    Agent call, then pass its structured verdict to `submit_review`. Do not
    replace this snapshot-bound reviewer with a generic role dispatch. The Parent
@@ -237,11 +241,16 @@ is recorded as a separate follow-up rather than resolved here.
   stdout/stderr, argv, environment values or arbitrary executor error text.
   The stage decides what else a failed result carries. A `prepare` stage ending
   in timeout, nonzero exit or output limit adds `prepare_observation` to the
-  direct Tool result only: the fixed execution conditions (isolated delivery,
-  no worktree `node_modules`), the declared timeout, and at most 2048 bytes of
+  direct Tool result only: the execution conditions (the task's working
+  directory), the declared timeout, and at most 2048 bytes of
   the end of stderr with control characters other than newline and tab removed. It is never persisted. A failing `check`
-  stage returns no output text at all. A reproduction in the live worktree is
-  not equivalent to the prepare conditions.
+  stage returns no output text at all. A `protected_input_or_output_drift`
+  failure adds `prepare_observation.drift_paths`, at most 64 in-scope paths that
+  differ from the frozen snapshot, to the direct Tool result only; restore or
+  stage those paths before a fresh attempt. The Lane batch integration recheck
+  is the one run that still uses an isolated copy with no worktree
+  `node_modules`, because its merge candidate is never checked out; a
+  reproduction in the live worktree is not equivalent to that run.
   A frozen child with `run_qa` pending returns to Parent; batch re-entry does not
   blindly retry an unchanged failure. Fix the environment before a fresh attempt.
   Scope/authority exceptions still use their existing native gates. A committed

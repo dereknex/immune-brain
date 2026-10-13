@@ -322,8 +322,7 @@ describe("canary assurance authority", () => {
 			execFileSync("git", ["commit", "--allow-empty", "-qm", "base"], { cwd: root });
 			const s = snapshot({ root, role: "qa", acceptance: [{ id: "A1", assertion: "passes", verification: "descriptor" }] });
 			const options = {
-				_writeDeliveryTree: () => "0".repeat(40),
-				_materializeDeliveryWorkspace: () => ({ root, tree: "0".repeat(40), seal: "[]", cleanup: () => undefined }),
+				_frozenTree: { tree: "0".repeat(40) },
 				_runFixedVerification: runFixedVerification,
 			} as const;
 			const passed = await runDeterministicQa(s, new Map([["A1", descriptor(["-e", "1"])]]), {
@@ -349,8 +348,7 @@ describe("canary assurance authority", () => {
 			execFileSync("git", ["config", "user.name", "Test"], { cwd: root });
 			execFileSync("git", ["commit", "--allow-empty", "-qm", "base"], { cwd: root });
 			const options = {
-				_writeDeliveryTree: () => "0".repeat(40),
-				_materializeDeliveryWorkspace: () => ({ root, tree: "0".repeat(40), seal: "[]", cleanup: () => undefined }),
+				_frozenTree: { tree: "0".repeat(40) },
 				_runFixedVerification: runFixedVerification,
 			} as const;
 			const s = snapshot({ root, role: "qa", acceptance: [{ id: "A1", assertion: "home", verification: "descriptor" }] });

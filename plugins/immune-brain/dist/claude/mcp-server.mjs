@@ -5447,13 +5447,14 @@ var portablePathCollator2 = new Intl.Collator("und", {
   ignorePunctuation: false
 });
 var gitTaskSnapshotTestHook;
-function gitBytes(root, args) {
+function gitBytes(root, args, env) {
   const diff = args[0] === "diff";
   const command = diff ? ["diff", "--exit-code", ...args.slice(1)] : args;
   const result = spawnSync5("git", ["--no-optional-locks", "-c", "diff.autoRefreshIndex=false", "-C", root, ...command], {
     encoding: null,
     stdio: ["ignore", "pipe", "pipe"],
-    maxBuffer: 8 * 1024 * 1024
+    maxBuffer: 8 * 1024 * 1024,
+    ...env ? { env } : {}
   });
   if (result.status !== 0 && !(diff && result.status === 1) || !Buffer.isBuffer(result.stdout)) {
     throw new Error(`Git task snapshot command failed: git ${args.join(" ")}`);
@@ -5849,6 +5850,88 @@ function pathMatchesScope(path, scopePath) {
     return globMatches(normalizedPath, normalizedScope);
   }
   return normalizedPath === normalizedScope || normalizedPath.startsWith(`${normalizedScope}/`);
+}
+function gitBlobId(body, length) {
+  const hash = createHash11(length === 64 ? "sha256" : "sha1");
+  hash.update(`blob ${body.length}\x00`);
+  hash.update(body);
+  return hash.digest("hex");
+}
+var GIT_REPOSITORY_BINDINGS = [
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_COMMON_DIR",
+  "GIT_NAMESPACE",
+  "GIT_PREFIX"
+];
+function inScopeTrackedDrift(projectRoot, tree, scopeHint) {
+  const root = resolve8(projectRoot);
+  const env = { ...process.env };
+  for (const name of GIT_REPOSITORY_BINDINGS)
+    delete env[name];
+  if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(tree))
+    throw new Error("frozen tree has invalid identity");
+  const scope = Array.isArray(scopeHint) ? scopeHint.filter((entry) => typeof entry === "string") : [];
+  const inScope = (path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope);
+  const expected = new Map;
+  for (const entry of gitBytes(root, ["ls-tree", "-r", "-z", tree], env).toString("utf8").split("\x00")) {
+    const tab = entry.indexOf("\t");
+    if (tab < 0)
+      continue;
+    const [mode, , oid] = entry.slice(0, tab).split(" ");
+    const path = entry.slice(tab + 1);
+    if (mode && oid && inScope(path))
+      expected.set(path, { mode, oid });
+  }
+  const tracked = splitNull(gitBytes(root, ["ls-files", "-z"], env).toString("utf8")).filter(inScope);
+  const regular = [];
+  const drift = new Set;
+  for (const path of new Set([...expected.keys(), ...tracked])) {
+    const want = expected.get(path);
+    let stat;
+    try {
+      stat = lstatSync7(join5(root, path));
+    } catch {
+      stat = null;
+    }
+    if (!want || !stat) {
+      if (want || stat)
+        drift.add(path);
+      continue;
+    }
+    if (want.mode === "160000")
+      continue;
+    if (stat.isSymbolicLink()) {
+      if (want.mode !== "120000" || gitBlobId(Buffer.from(readlinkSync(join5(root, path))), want.oid.length) !== want.oid)
+        drift.add(path);
+    } else if (!stat.isFile() || want.mode === "120000" || want.mode === "100755" !== ((stat.mode & 64) !== 0))
+      drift.add(path);
+    else
+      regular.push(path);
+  }
+  if (regular.length) {
+    const hashed = spawnSync5("git", ["--no-optional-locks", "-C", root, "hash-object", "--stdin-paths"], {
+      input: `${regular.join(`
+`)}
+`,
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+      maxBuffer: 8 * 1024 * 1024,
+      env
+    });
+    const ids = hashed.status === 0 ? hashed.stdout.split(`
+`).filter(Boolean) : [];
+    if (ids.length !== regular.length)
+      throw new Error("Git task snapshot command failed: git hash-object");
+    regular.forEach((path, index) => {
+      if (ids[index] !== expected.get(path).oid)
+        drift.add(path);
+    });
+  }
+  return [...drift].sort(comparePaths);
 }
 
 // plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts
@@ -10526,7 +10609,7 @@ function insideVerificationRoot(root, candidate) {
 function verificationPath() {
   return (process.env.PATH ?? "").split(delimiter).filter((path) => isAbsolute6(path)).join(delimiter);
 }
-var GIT_REPOSITORY_BINDINGS = new Set([
+var GIT_REPOSITORY_BINDINGS2 = new Set([
   "GIT_DIR",
   "GIT_WORK_TREE",
   "GIT_INDEX_FILE",
@@ -10539,7 +10622,7 @@ var GIT_REPOSITORY_BINDINGS = new Set([
 function verificationEnvironment(path, processToken) {
   const env = {};
   for (const [name, value] of Object.entries(process.env))
-    if (value !== undefined && !GIT_REPOSITORY_BINDINGS.has(name))
+    if (value !== undefined && !GIT_REPOSITORY_BINDINGS2.has(name))
       env[name] = value;
   return { ...env, PATH: path, IMM_VERIFICATION_PROCESS_TOKEN: processToken };
 }
@@ -11086,8 +11169,10 @@ function qaDiagnosticMetadata(d) {
     throw new QaPreparationError("prepare", [], "execution_metadata_limit_exceeded");
   return safe;
 }
+var QA_DRIFT_PATH_LIMIT = 64;
 var QA_PREPARE_STDERR_TAIL_BYTES = 2048;
-var QA_PREPARE_REPRODUCTION_NOTE = "a reproduction in the live worktree is not equivalent: QA runs prepare in an isolated delivery with no worktree node_modules";
+var QA_PREPARE_REPRODUCTION_NOTE = "a reproduction in the live worktree is not equivalent: this run used an isolated delivery with no worktree node_modules";
+var QA_DRIFT_NOTE = "in-scope tracked content of the working directory differs from the frozen snapshot; see prepare_observation.drift_paths";
 var QA_PREPARE_REASONS = ["timeout", "nonzero_exit", "output_limit"];
 var QA_TAIL_CONTROL = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g;
 function qaPrepareStderrTail(stderr) {
@@ -11097,17 +11182,19 @@ function qaPrepareStderrTail(stderr) {
     start++;
   return bytes.subarray(start).toString("utf8").replace(QA_TAIL_CONTROL, "");
 }
-function qaPrepareObservation(declaredTimeoutMs, stderr) {
+function qaPrepareObservation(declaredTimeoutMs, stderr, delivery = "working_directory", driftPaths) {
   return {
-    conditions: { delivery: "isolated_materialization", worktree_node_modules: "absent" },
+    conditions: delivery === "isolated_materialization" ? { delivery, worktree_node_modules: "absent" } : { delivery: "working_directory" },
     declared_timeout_ms: declaredTimeoutMs,
-    stderr_tail: qaPrepareStderrTail(stderr)
+    stderr_tail: qaPrepareStderrTail(stderr),
+    ...driftPaths ? { drift_paths: driftPaths.slice(0, QA_DRIFT_PATH_LIMIT).map((path) => path.replace(QA_TAIL_CONTROL, "").slice(0, 512)) } : {}
   };
 }
 function qaPrepareObservationMetadata(o) {
-  if (!Number.isSafeInteger(o.declared_timeout_ms) || o.declared_timeout_ms < 0 || typeof o.stderr_tail !== "string")
+  const delivery = o.conditions?.delivery;
+  if (!Number.isSafeInteger(o.declared_timeout_ms) || o.declared_timeout_ms < 0 || typeof o.stderr_tail !== "string" || delivery !== "working_directory" && delivery !== "isolated_materialization" || o.drift_paths !== undefined && (!Array.isArray(o.drift_paths) || o.drift_paths.some((path) => typeof path !== "string")))
     throw new Error("invalid QA prepare observation");
-  return qaPrepareObservation(o.declared_timeout_ms, o.stderr_tail);
+  return qaPrepareObservation(o.declared_timeout_ms, o.stderr_tail, delivery, o.drift_paths);
 }
 
 class QaPreparationError extends Error {
@@ -11128,7 +11215,7 @@ class QaPreparationError extends Error {
     this.reason = reason;
     this.diagnostics = diagnostics;
     this.diagnostics = safe;
-    if (prepareObservation && stage === "prepare" && QA_PREPARE_REASONS.includes(reason))
+    if (prepareObservation && (stage === "prepare" && QA_PREPARE_REASONS.includes(reason) || reason === "protected_input_or_output_drift" && prepareObservation.drift_paths))
       this.prepare_observation = qaPrepareObservationMetadata(prepareObservation);
     this.name = "QaPreparationError";
   }
@@ -11899,7 +11986,7 @@ class AssuranceCoordinator {
           state: "failed",
           operation: "qa",
           operation_id: operationId,
-          reason: error.prepare_observation ? `${error.message}; ${QA_PREPARE_REPRODUCTION_NOTE}` : error.message,
+          reason: error.prepare_observation?.drift_paths ? `${error.message}; ${QA_DRIFT_NOTE}` : error.prepare_observation?.conditions.delivery === "isolated_materialization" ? `${error.message}; ${QA_PREPARE_REPRODUCTION_NOTE}` : error.message,
           environment_failure: true,
           diagnostics: error.diagnostics.map(qaDiagnosticMetadata),
           ...error.prepare_observation ? { prepare_observation: qaPrepareObservationMetadata(error.prepare_observation) } : {}
@@ -12825,7 +12912,7 @@ function assertNoEscapingSymlinks(root, dir = root) {
   }
 }
 function writeDeliveryTree(sourceRoot, snapshot) {
-  const indexDirectory = mkdtempSync2(join15(tmpdir4(), "imm-delivery-index-"));
+  const indexDirectory = mkdtempSync2(join15(git5(sourceRoot, ["rev-parse", "--absolute-git-dir"]), "imm-delivery-index-"));
   try {
     git5(sourceRoot, ["read-tree", snapshot.base_tree], {
       GIT_INDEX_FILE: join15(indexDirectory, "index"),
@@ -12960,12 +13047,16 @@ function attemptRef(snapshotDigest) {
 }
 
 // plugins/immune-brain/runtime/assurance/qa.ts
-function deliveryTreeForSnapshot(snapshot, writeTree) {
-  if (snapshot.review_revision?.review_tree)
-    return snapshot.review_revision.review_tree;
+function recordForSnapshot(snapshot) {
   const record = readTaskRecordRaw(snapshot.root, snapshot.task_id).record;
   if (!record || record.contract !== "assurance_kernel/task_record/v4" || !record.git_base_head)
     throw new Error("QA delivery requires a TaskRecord v4 git_base_head");
+  return record;
+}
+function deliveryTreeForSnapshot(snapshot) {
+  if (snapshot.review_revision?.review_tree)
+    return snapshot.review_revision.review_tree;
+  const record = recordForSnapshot(snapshot);
   const captured = captureGitTaskRevisionSnapshot(snapshot.root, record.intent_snapshot.scope_hint, record.git_base_head, snapshot.task_id);
   const digest = `sha256:${createHash19("sha256").update(JSON.stringify(captured)).digest("hex")}`;
   if (digest !== snapshot.diff_hash)
@@ -12990,7 +13081,9 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
     group.push({ id: item.id, index, descriptor });
     groups.set(key, group);
   }
-  const tree = snapshot.review_revision?.review_tree ?? (options._writeDeliveryTree ? "tree" : deliveryTreeForSnapshot(snapshot, writeDeliveryTree));
+  const materialized = options.delivery === "materialized";
+  const tree = options._frozenTree?.tree ?? deliveryTreeForSnapshot(snapshot);
+  const drift = materialized ? null : options._frozenTree ? options._frozenTree.drift ?? (() => []) : ((scope) => () => inScopeTrackedDrift(snapshot.root, tree, scope))(recordForSnapshot(snapshot).intent_snapshot.scope_hint);
   const path = verificationPath();
   const findings = [];
   const evidence = [];
@@ -13010,29 +13103,40 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
       stdout_bytes: result ? Buffer.byteLength(result.stdout) : null,
       stderr_bytes: result ? Buffer.byteLength(result.stderr) : null
     }));
-    const { delivery, deliveryPrefix } = (() => {
-      let delivery;
+    const delivery = (() => {
+      if (!materialized)
+        return { root: snapshot.root, seal: undefined, cleanup: () => {} };
+      let copy;
       try {
-        delivery = (options._materializeDeliveryWorkspace ?? materializeDeliveryWorkspace)(snapshot.root, tree);
-        return { delivery, deliveryPrefix: `${realpathSync12(delivery.root)}${sep9}` };
+        copy = (options._materializeDeliveryWorkspace ?? materializeDeliveryWorkspace)(snapshot.root, tree);
+        return { root: copy.root, seal: copy.seal, cleanup: copy.cleanup };
       } catch {
         let reason = "delivery_unavailable";
         try {
-          delivery?.cleanup();
+          copy?.cleanup();
         } catch {
           reason = "delivery_cleanup_failed";
         }
         throw new QaPreparationError("prepare", ids, reason, diagnostics("prepare", reason));
       }
     })();
+    const deliveryPrefix = `${realpathSync12(delivery.root)}${sep9}`;
     const clean = () => {
-      if (options._materializeDeliveryWorkspace)
-        return;
+      let paths;
       try {
-        assertDeliveryClean(delivery.root, tree, delivery.seal, environment.writable_paths);
+        if (drift) {
+          paths = drift();
+          if (!paths.length)
+            return;
+        } else {
+          if (!options._materializeDeliveryWorkspace)
+            assertDeliveryClean(delivery.root, tree, delivery.seal, environment.writable_paths);
+          return;
+        }
       } catch {
-        throw new QaPreparationError("integrity", ids, "protected_input_or_output_drift", diagnostics("integrity", "protected_input_or_output_drift"));
+        paths = undefined;
       }
+      throw new QaPreparationError("integrity", ids, "protected_input_or_output_drift", diagnostics("integrity", "protected_input_or_output_drift"), paths ? qaPrepareObservation(0, "", "working_directory", paths) : undefined);
     };
     const groupCommands = [];
     const execute = async (command, stage, affected = group) => {
@@ -13088,7 +13192,7 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
         const prepareStarted = performance.now();
         const result = await execute(environment.prepare, "prepare");
         if (result.exit_code !== 0 || result.timed_out || result.output_limited)
-          throw new QaPreparationError("prepare", ids, result.timed_out ? "timeout" : result.output_limited ? "output_limit" : "nonzero_exit", diagnostics("prepare", result.timed_out ? "timeout" : result.output_limited ? "output_limit" : "nonzero_exit", group, "prepare", Math.round(performance.now() - prepareStarted), result), qaPrepareObservation(environment.prepare.timeout_ms, result.stderr));
+          throw new QaPreparationError("prepare", ids, result.timed_out ? "timeout" : result.output_limited ? "output_limit" : "nonzero_exit", diagnostics("prepare", result.timed_out ? "timeout" : result.output_limited ? "output_limit" : "nonzero_exit", group, "prepare", Math.round(performance.now() - prepareStarted), result), qaPrepareObservation(environment.prepare.timeout_ms, result.stderr, materialized ? "isolated_materialization" : "working_directory"));
       }
       for (const item of group) {
         const started = performance.now();
@@ -14162,7 +14266,7 @@ async function verifyCandidateDescriptors(input) {
   };
   let verdict;
   try {
-    verdict = await runDeterministicQa(snapshot, descriptors, { signal: input.signal });
+    verdict = await runDeterministicQa(snapshot, descriptors, { signal: input.signal, delivery: "materialized" });
   } catch (error) {
     if (error instanceof VerificationAbortedError)
       throw error;

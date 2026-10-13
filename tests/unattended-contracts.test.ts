@@ -574,6 +574,20 @@ describe("unattended batch contract text", () => {
 		expect(ADR).toContain("critical");
 	});
 
+	it("states that task QA runs in place against the frozen snapshot (ADR 0022)", () => {
+		const loop = LOOP_CONTRACT.replace(/\s+/g, " ");
+		expect(loop).toContain("Deterministic QA runs all descriptors in the task's working directory");
+		expect(loop).toContain("the tracked content inside the task's scope must equal the frozen snapshot");
+		expect(loop).toContain("`protected_input_or_output_drift`");
+		expect(loop).not.toContain("disposable delivery");
+		const adrPath = resolve(REPO_ROOT, "docs/adr/0022-deterministic-qa-runs-in-place.md");
+		expect(existsSync(adrPath)).toBe(true);
+		const adr = readFileSync(adrPath, "utf8").replace(/\s+/g, " ");
+		expect(adr).toContain("status: accepted");
+		expect(adr).toContain("Task QA runs in the task's working directory");
+		expect(adr).toContain("Only in-scope content is compared");
+	});
+
 	it("keeps default imm-run behavior byte-identical when the batch tool is not invoked", () => {
 		// The opt-in path is a Tool registration; the loop contract's execution
 		// sequence must not make a batch step mandatory or implicit.
