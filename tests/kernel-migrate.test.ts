@@ -132,6 +132,43 @@ describe("intent author never migrates implicitly", () => {
 	});
 });
 
+describe("storage-layout migration commits", () => {
+	it("commits one pending diff, preserves unrelated index/worktree bytes and retries without a second commit", () => {
+		const root = tempRoot();
+		rmSync(join(root, ".imm/memory"), { recursive: true });
+		execFileSync("git", ["-C", root, "init", "-q"]);
+		writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
+		writeFileSync(join(root, "notes.txt"), "baseline\n");
+		execFileSync("git", ["-C", root, "add", "--", ".gitignore", "notes.txt"]);
+		execFileSync("git", ["-C", root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "baseline"]);
+		const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" });
+		const before = git("rev-parse", "HEAD").trim();
+		writeFileSync(join(root, "notes.txt"), "staged\n");
+		git("add", "--", "notes.txt");
+		writeFileSync(join(root, "notes.txt"), "worktree\n");
+		writeFileSync(join(root, "draft.txt"), "untracked\n");
+		const entry = git("ls-files", "--stage", "--", "notes.txt");
+		mkdirSync(join(root, ".imm/audit/legacy-v3"), { recursive: true });
+		const path = ".imm/audit/legacy-v3/MEMORY.md";
+		writeFileSync(join(root, path), "preserved historical bytes\n");
+		const first = runKernelCommand(["migrate", "--storage-layout"], root);
+		expect(first.returncode).toBe(0);
+		expect(JSON.parse(first.stdout)).toMatchObject({ layout: "ready", affected_paths: [path] });
+		expect(first.stdout).not.toMatch(/commit.*(?:then|retry)|ask.*commit/i);
+		expect(git("rev-list", "--count", `${before}..HEAD`).trim()).toBe("1");
+		expect(git("log", "-1", "--format=%s").trim()).toBe("chore(imm): commit storage-layout migration");
+		expect(git("diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").trim()).toBe(path);
+		expect(git("ls-files", "--stage", "--", "notes.txt")).toBe(entry);
+		expect(git("show", ":notes.txt")).toBe("staged\n");
+		expect(readFileSync(join(root, "notes.txt"), "utf8")).toBe("worktree\n");
+		expect(readFileSync(join(root, "draft.txt"), "utf8")).toBe("untracked\n");
+		expect(git("ls-files", "--", "draft.txt")).toBe("");
+		const committed = git("rev-parse", "HEAD");
+		expect(runKernelCommand(["migrate", "--storage-layout"], root).returncode).toBe(0);
+		expect(git("rev-parse", "HEAD")).toBe(committed);
+	});
+});
+
 describe("execution state stays out of git", () => {
 	it("keeps execution state out of git", () => {
 		const gitignore = readFileSync(join(process.cwd(), ".gitignore"), "utf8");

@@ -87,6 +87,23 @@ chose not to follow that precedent here: the commit is silent.
    remains, without granting batch authority. A failed precondition commit
    reports the Git error and asks for repair and retry, never a manual commit.
 
+8. **Storage migration commits each required phase automatically.**
+   The explicit migration command preserves the importer's existing barrier:
+   historical audit copies must be in HEAD before sources are retired. It
+   commits those exact evidence paths, continues the import, then commits the
+   tracked source deletions separately. A cleanup-only pending diff makes one
+   commit. Tracked sources with pending changes join their evidence commit,
+   keeping the source and evidence bytes aligned before retirement. Cleanup
+   retry uses recognized retired paths and their committed evidence in HEAD;
+   the importer validates current source bytes before deletion. Thus a refused
+   commit cannot lose its deletion set or pick
+   up unrelated audit edits. Each subject is `chore(imm): commit storage-layout migration`.
+   Intent author and Pi Enrollment commit an existing `migration_uncommitted`
+   diff and continue. Authoring still requires the explicit command for a
+   `migration_required` layout; Planner runs it and retries itself. Recovery,
+   active-owner and invalid layouts retain their refusal. Hooks run normally;
+   a failed later phase reports the commits that remain.
+
 ## Consequences
 
 - **Accepted risk: unfinished user work inside the scope is committed.** A
@@ -100,5 +117,5 @@ chose not to follow that precedent here: the commit is silent.
 - Commit is no longer always a separately granted effect. BASELINE states the
   exception and its limits: no push, publication, history rewrite, or commit of
   a path outside the committable set.
-- The batch precondition now reuses the same module (Issue #232); storage
-  migration will reuse it in S4.
+- Batch preconditions (Issue #232) and storage migration (Issue #233) reuse
+  the same commit module.

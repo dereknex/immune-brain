@@ -156,7 +156,7 @@ Both Host `start_unattended_batch` handlers, for a non-resuming batch only, comp
 
 ### T4. Migration commit (S4; source BR-3, D14, D15)
 
-`migrate --storage-layout` and each `migration_uncommitted` consumer call `commitWorkflowPaths` with the reported `affected_paths` and continue. The journal's next action no longer says "commit". The Planner contract's Kernel TaskIntent Routing section says the Planner runs the migration itself when `intent author` reports `layout_migration_required`.
+`migrate --storage-layout` and each `migration_uncommitted` consumer call `commitWorkflowPaths` with the reported `affected_paths` and continue. A cleanup-only pending diff produces one commit. A full legacy import preserves the existing safety order: commit audit evidence before retiring the sources, then commit the cleanup separately; each commit uses the D8 subject and only its affected paths. The journal's next action no longer says "commit". The Planner contract's Kernel TaskIntent Routing section says the Planner runs the migration itself when `intent author` reports `layout_migration_required`.
 
 ### Alternatives rejected
 

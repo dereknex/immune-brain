@@ -289,6 +289,8 @@ describe("pi canary enroll extension", () => {
 
 	test("another worktree's terminal audit does not block enrollment before the intent check", async () => {
 		const root = makeRoot();
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-qm", "baseline"], { cwd: root });
 		const ui = makeFakeUI(true);
 		// Another worktree's run of the same logical task settled and its audit
 		// reached this worktree, which has no run of its own. That evidence is not
@@ -661,6 +663,52 @@ describe("pi canary enroll handler integration", () => {
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
+
+	for (const outcome of ["confirmed", "declined", "hook-refused"] as const) {
+		test(`pending migration commits before Enrollment ${outcome} and preserves unrelated dirt`, async () => {
+			const root = mkdtempSync(join(tmpdir(), "s4-enroll-migration-"));
+			try {
+				makeEligibleRepo(root, TASK);
+				const inspectGit = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" });
+				const before = inspectGit("rev-parse", "HEAD").trim();
+				const beforeAuthority = authoritySnapshot(root);
+				mkdirSync(join(root, ".imm/audit/legacy-v3"), { recursive: true });
+				const path = ".imm/audit/legacy-v3/MEMORY.md";
+				writeFileSync(join(root, path), "pending migration evidence\n");
+				writeFileSync(join(root, "notes.txt"), "staged notes\n");
+				git(root, ["add", "--", "notes.txt"]);
+				writeFileSync(join(root, "notes.txt"), "working notes\n");
+				const entry = inspectGit("ls-files", "--stage", "--", "notes.txt");
+				if (outcome === "hook-refused") {
+					git(root, ["config", "core.hooksPath", ".git/hooks"]);
+					writeFileSync(join(root, ".git/hooks/pre-commit"), "#!/bin/sh\necho enrollment-migration-refused >&2\nexit 1\n", { mode: 0o755 });
+				}
+				const ui = makeFakeUI(outcome === "confirmed");
+				if (outcome === "hook-refused") {
+					const failure = await capturedToolFailure(runTool(root, ui));
+					expect(failure.message).toContain("enrollment-migration-refused");
+					expect(inspectGit("rev-parse", "HEAD").trim()).toBe(before);
+					expect(ui.confirmCalls).toHaveLength(0);
+					expect(authoritySnapshot(root)).toBe(beforeAuthority);
+				} else {
+					const result = await runTool(root, ui);
+					expect(result.details.state).toBe(outcome === "confirmed" ? "completed" : "rejected");
+					expect(ui.confirmCalls).toHaveLength(1);
+					expect(inspectGit("rev-list", "--count", `${before}..HEAD`).trim()).toBe("1");
+					expect(inspectGit("log", "-1", "--format=%s").trim()).toBe("chore(imm): commit storage-layout migration");
+					expect(inspectGit("diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").trim()).toBe(path);
+					if (outcome === "declined") {
+						expect(result.details.summary).toContain(inspectGit("rev-parse", "HEAD").trim());
+						expect(authoritySnapshot(root)).toBe(beforeAuthority);
+					}
+				}
+				expect(inspectGit("ls-files", "--stage", "--", "notes.txt")).toBe(entry);
+				expect(readFileSync(join(root, "notes.txt"), "utf8")).toBe("working notes\n");
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+			}
+		});
+	}
 
 	test("material new retains the confirmation gate", async () => {
 		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));

@@ -13,7 +13,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { runKernelCommand } from "../plugins/immune-brain/runtime/commands/kernel";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import {
 	auditTaskRecordPath,
@@ -298,6 +299,167 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 	function commit(root: string, message: string): void {
 		execFileSync("git", ["-C", root, "add", "-A"]);
 		execFileSync("git", ["-C", root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", message]);
+	}
+
+	for (const condition of ["recovery_required", "migration_blocked_active"] as const) {
+		it(`CLI leaves ${condition} untouched without committing`, () => {
+			const root = tempRoot();
+			const path = condition === "recovery_required"
+				? ".imm/state/transactions/storage-layout-migration.json" : ".imm/tasks/.backend-claim.json";
+			if (condition === "recovery_required") {
+				mkdirSync(join(root, ".imm/state/transactions"), { recursive: true });
+				writeFileSync(join(root, path), "{\"contract\":\"assurance_kernel/storage_layout_migration/v1\"}\n");
+			} else writeLegacyClaim(root, "s4-live");
+			const bytes = readFileSync(join(root, path));
+			const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" });
+			const result = runKernelCommand(["migrate", "--storage-layout"], root);
+			expect(result.returncode).toBe(1);
+			expect(inspectStorageLayout(root).layout).toBe(condition);
+			expect(readFileSync(join(root, path))).toEqual(bytes);
+			expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" })).toBe(head);
+			expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(false);
+		});
+	}
+
+	it("CLI automatically commits evidence before retiring sources and commits cleanup separately", () => {
+		const root = tempRoot();
+		const task = "s4-preserved-task";
+		writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
+		writeLegacyTerminalPair(root, task);
+		const record = readFileSync(join(root, `.imm/tasks/${task}.json`));
+		const proof = readFileSync(join(root, `.imm/tasks/${task}.backend-claim.json`));
+		commit(root, "legacy baseline");
+		const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" });
+		const before = git("rev-parse", "HEAD").trim();
+		mkdirSync(join(root, ".imm/audit/unrelated"), { recursive: true });
+		writeFileSync(join(root, ".imm/audit/unrelated/note.md"), "staged audit note\n");
+		git("add", "--", ".imm/audit/unrelated/note.md");
+		writeFileSync(join(root, ".imm/audit/unrelated/note.md"), "local audit note\n");
+		const entry = git("ls-files", "--stage", "--", ".imm/audit/unrelated/note.md");
+		const result = runKernelCommand(["migrate", "--storage-layout"], root);
+		expect(result.returncode).toBe(0);
+		expect(JSON.parse(result.stdout).layout).toBe("ready");
+		const evidencePaths = [auditTaskRecordPath(task), auditTerminalProofPath(task)];
+		const retiredPaths = [`.imm/tasks/${task}.backend-claim.json`, `.imm/tasks/${task}.json`];
+		expect(git("rev-list", "--count", `${before}..HEAD`).trim()).toBe("2");
+		expect(git("log", "--format=%s", `${before}..HEAD`).trim().split("\n")).toEqual([
+			"chore(imm): commit storage-layout migration", "chore(imm): commit storage-layout migration",
+		]);
+		expect(git("diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD^").trim().split("\n")).toEqual(evidencePaths);
+		expect(git("diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").trim().split("\n")).toEqual(retiredPaths);
+		expect(JSON.parse(result.stdout).affected_paths).toEqual([...evidencePaths, ...retiredPaths].sort());
+		expect(readFileSync(join(root, auditTaskRecordPath(task)))).toEqual(record);
+		expect(readFileSync(join(root, auditTerminalProofPath(task)))).toEqual(proof);
+		expect(existsSync(join(root, `.imm/tasks/${task}.json`))).toBe(false);
+		expect(git("ls-files", "--stage", "--", ".imm/audit/unrelated/note.md")).toBe(entry);
+		expect(readFileSync(join(root, ".imm/audit/unrelated/note.md"), "utf8")).toBe("local audit note\n");
+		expect(inspectStorageLayout(root).layout).toBe("ready");
+	}, 30_000);
+
+	it("CLI hook refusal preserves the only historical sources and leaves HEAD unchanged", () => {
+		const root = tempRoot();
+		writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
+		writeLegacyTerminalPair(root, "s4-hook-refused");
+		commit(root, "legacy baseline");
+		const before = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" });
+		const record = readFileSync(join(root, ".imm/tasks/s4-hook-refused.json"));
+		execFileSync("git", ["config", "core.hooksPath", ".git/hooks"], { cwd: root });
+		const hook = join(root, ".git/hooks/pre-commit");
+		writeFileSync(hook, "#!/bin/sh\necho migration-policy-refused >&2\nexit 1\n");
+		execFileSync("chmod", ["+x", hook]);
+		const result = runKernelCommand(["migrate", "--storage-layout"], root);
+		expect(result.returncode).toBe(1);
+		expect(result.stdout).toContain("migration-policy-refused");
+		expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" })).toBe(before);
+		expect(readFileSync(join(root, ".imm/tasks/s4-hook-refused.json"))).toEqual(record);
+		expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(false);
+	});
+
+	for (const layout of ["legacy", "v4"] as const) {
+		it(`CLI retries a refused ${layout} cleanup commit without losing paths or unrelated dirt`, () => {
+			const root = tempRoot();
+			const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" });
+			const task = "s4-cleanup-retry";
+			const source = layout === "legacy" ? `.imm/tasks/${task}.json` : `.imm/state/tasks/${task}.json`;
+			if (layout === "legacy") writeLegacyTerminalPair(root, task);
+			else writeLegacyV4Pair(root, task, git("rev-parse", "HEAD").trim());
+			mkdirSync(join(root, ".imm/audit/unrelated"), { recursive: true });
+			writeFileSync(join(root, ".imm/audit/unrelated/note.md"), "baseline note\n");
+			writeFileSync(join(root, ".imm/audit/unrelated/deleted.md"), "unrelated deletion\n");
+			commit(root, "legacy and unrelated baseline");
+			const before = git("rev-parse", "HEAD").trim();
+			writeFileSync(join(root, ".imm/audit/unrelated/note.md"), "staged note\n");
+			git("add", "--", ".imm/audit/unrelated/note.md");
+			writeFileSync(join(root, ".imm/audit/unrelated/note.md"), "local note\n");
+			rmSync(join(root, ".imm/audit/unrelated/deleted.md"));
+			const entry = git("ls-files", "--stage", "--", ".imm/audit/unrelated");
+			git("config", "core.hooksPath", ".git/hooks");
+			const hook = join(root, ".git/hooks/pre-commit");
+			writeFileSync(hook, `#!/bin/sh\nif [ ! -f '${source}' ]; then echo cleanup-policy-refused >&2; exit 1; fi\n`);
+			execFileSync("chmod", ["+x", hook]);
+			const refused = runKernelCommand(["migrate", "--storage-layout"], root);
+			expect(refused.returncode).toBe(1);
+			expect(refused.stdout).toContain("cleanup-policy-refused");
+			expect(refused.stdout).toContain("precondition commit(s) remain");
+			expect(git("rev-list", "--count", `${before}..HEAD`).trim()).toBe("1");
+			expect(existsSync(join(root, source))).toBe(false);
+			expect(git("ls-tree", "HEAD", "--", source)).toContain(source);
+			rmSync(hook);
+			const recovered = runKernelCommand(["migrate", "--storage-layout"], root);
+			expect(recovered.returncode).toBe(0);
+			expect(JSON.parse(recovered.stdout).layout).toBe("ready");
+			expect(git("rev-list", "--count", `${before}..HEAD`).trim()).toBe("2");
+			expect(git("ls-tree", "HEAD", "--", source)).toBe("");
+			const retired = layout === "legacy" ? [`.imm/tasks/${task}.backend-claim.json`, source] : [source];
+			expect(git("diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").trim().split("\n")).toEqual(retired);
+			expect(git("ls-files", "--stage", "--", ".imm/audit/unrelated")).toBe(entry);
+			expect(readFileSync(join(root, ".imm/audit/unrelated/note.md"), "utf8")).toBe("local note\n");
+			expect(existsSync(join(root, ".imm/audit/unrelated/deleted.md"))).toBe(false);
+			const head = git("rev-parse", "HEAD");
+			expect(runKernelCommand(["migrate", "--storage-layout"], root).returncode).toBe(0);
+			expect(git("rev-parse", "HEAD")).toBe(head);
+		}, 30_000);
+	}
+
+	for (const evidenceCommitted of [false, true]) for (const refuseCleanup of [false, true]) {
+		it(`CLI commits modified tracked artifact sources with ${evidenceCommitted ? "committed" : "new"} evidence${refuseCleanup ? " and retries refusal" : ""}`, () => {
+			const root = tempRoot();
+			const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" });
+			mkdirSync(join(root, ".imm/memory"), { recursive: true });
+			writeFileSync(join(root, ".imm/memory/MEMORY.md"), "old\n");
+			commit(root, "old tracked artifact");
+			if (evidenceCommitted) {
+				mkdirSync(join(root, ".imm/audit/legacy-v3"), { recursive: true });
+				writeFileSync(join(root, ".imm/audit/legacy-v3/MEMORY.md"), "new\n");
+				commit(root, "evidence already preserved");
+			}
+			const before = git("rev-parse", "HEAD").trim();
+			writeFileSync(join(root, ".imm/memory/MEMORY.md"), "new\n");
+			const hook = join(root, ".git/hooks/pre-commit");
+			if (refuseCleanup) {
+				git("config", "core.hooksPath", ".git/hooks");
+				writeFileSync(hook, "#!/bin/sh\nif [ ! -f .imm/memory/MEMORY.md ]; then echo cleanup-refused >&2; exit 1; fi\n");
+				execFileSync("chmod", ["+x", hook]);
+			}
+			const first = runKernelCommand(["migrate", "--storage-layout"], root);
+			if (refuseCleanup) {
+				expect(first.returncode).toBe(1);
+				expect(first.stdout).toContain("cleanup-refused");
+				expect(git("show", "HEAD:.imm/memory/MEMORY.md")).toBe(evidenceCommitted ? "old\n" : "new\n");
+				rmSync(hook);
+				expect(runKernelCommand(["migrate", "--storage-layout"], root).returncode).toBe(0);
+			} else expect(first.returncode).toBe(0);
+			expect(git("rev-list", "--count", `${before}..HEAD`).trim()).toBe(evidenceCommitted ? "1" : "2");
+			if (!evidenceCommitted) expect(git("diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD^").trim().split("\n")).toEqual([
+				".imm/audit/legacy-v3/MEMORY.md", ".imm/memory/MEMORY.md",
+			]);
+			expect(git("diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").trim()).toBe(".imm/memory/MEMORY.md");
+			expect(git("ls-tree", "HEAD", "--", ".imm/memory/MEMORY.md")).toBe("");
+			expect(git("show", "HEAD:.imm/audit/legacy-v3/MEMORY.md")).toBe("new\n");
+			const head = git("rev-parse", "HEAD");
+			expect(runKernelCommand(["migrate", "--storage-layout"], root).returncode).toBe(0);
+			expect(git("rev-parse", "HEAD")).toBe(head);
+		}, 30_000);
 	}
 
 	it("imports an owner-free legacy terminal task and preserves its raw bytes as evidence", async () => {
@@ -666,7 +828,9 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 		const root = tempRoot();
 		const baseHead = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 		writeLegacyV4Pair(root, "2026-08-14-015-old-task", baseHead);
+		writeFileSync(join(root, ".imm/state/workspace.json"), `${JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null })}\n`);
 		commit(root, "v4 record");
+		const before = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 		// Every mutating path stays fail-closed until the layout is migrated.
 		const { probeKernelStore } = await import("../plugins/immune-brain/runtime/kernel/storage");
 		expect(() => probeKernelStore(root)).toThrow();
@@ -674,12 +838,17 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 		const first = await runKernelCli(["migrate", "--storage-layout"], root);
 		expect(first.returncode).toBe(0);
 		expect(JSON.parse(first.stdout)).toMatchObject({
-			contract: "assurance_kernel/migration_pending_commit/v1",
-			affected_paths: [".imm/audit/2026-08-14-015-old-task/task-record.json"],
+			contract: "assurance_kernel/migration_completed/v1",
+			layout: "ready",
+			affected_paths: [".imm/audit/2026-08-14-015-old-task/task-record.json", ".imm/state/tasks/2026-08-14-015-old-task.json", ".imm/state/workspace.json"],
 		});
-		commit(root, "preserve evidence");
+		expect(execFileSync("git", ["-C", root, "rev-list", "--count", `${before}..HEAD`], { encoding: "utf8" }).trim()).toBe("2");
+		expect(execFileSync("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"], { encoding: "utf8" }).trim().split("\n")).toEqual([".imm/state/tasks/2026-08-14-015-old-task.json", ".imm/state/workspace.json"]);
+		expect(execFileSync("git", ["-C", root, "ls-tree", "HEAD", "--", ".imm/state/tasks/2026-08-14-015-old-task.json", ".imm/state/workspace.json"], { encoding: "utf8" })).toBe("");
+		const after = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
 		const second = await runKernelCli(["migrate", "--storage-layout"], root);
 		expect(second.returncode).toBe(0);
+		expect(execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" })).toBe(after);
 		expect(JSON.parse(second.stdout)).toMatchObject({ contract: "assurance_kernel/migration_completed/v1" });
 		expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(true);
 		expect(inspectStorageLayout(root).layout).toBe("ready");
@@ -778,12 +947,28 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 		writeFileSync(join(root, ".imm/tasks/2026-08-14-019-old-task.json"), recordBytes);
 		writeFileSync(join(root, ".imm/tasks/2026-08-14-019-old-task.backend-claim.json"), proofBytes);
 		commit(root, "restore legacy source");
+		const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" });
+		const before = git("rev-parse", "HEAD").trim();
+		mkdirSync(join(root, ".imm/audit/unrelated"), { recursive: true });
+		writeFileSync(join(root, ".imm/audit/unrelated/note.md"), "staged note\n");
+		git("add", "--", ".imm/audit/unrelated/note.md");
+		writeFileSync(join(root, ".imm/audit/unrelated/note.md"), "local note\n");
+		const entry = git("ls-files", "--stage", "--", ".imm/audit/unrelated/note.md");
 
 		const { runKernelCli } = await import("../plugins/immune-brain/runtime/v4_runtime");
 		const recovered = await runKernelCli(["migrate", "--storage-layout"], root);
 		expect(recovered.returncode).toBe(0);
 		expect(JSON.parse(recovered.stdout)).toMatchObject({ contract: "assurance_kernel/migration_completed/v1" });
 		expect(existsSync(join(root, ".imm/tasks/2026-08-14-019-old-task.json"))).toBe(false);
+		expect(git("rev-list", "--count", `${before}..HEAD`).trim()).toBe("1");
+		expect(git("diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").trim().split("\n")).toEqual([
+			".imm/tasks/2026-08-14-019-old-task.backend-claim.json", ".imm/tasks/2026-08-14-019-old-task.json",
+		]);
+		expect(git("ls-files", "--stage", "--", ".imm/audit/unrelated/note.md")).toBe(entry);
+		expect(readFileSync(join(root, ".imm/audit/unrelated/note.md"), "utf8")).toBe("local note\n");
+		const head = git("rev-parse", "HEAD");
+		expect((await runKernelCli(["migrate", "--storage-layout"], root)).returncode).toBe(0);
+		expect(git("rev-parse", "HEAD")).toBe(head);
 	});
 
 	it("rebuilds an unfinished candidate instead of failing forever", async () => {
@@ -806,22 +991,41 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 		db!.close();
 	});
 
-	it("migrates a retired workspace that holds no task at all", async () => {
-		const root = tempRoot();
-		mkdirSync(join(root, ".imm/state"), { recursive: true });
-		writeFileSync(
-			join(root, ".imm/state/workspace.json"),
-			`${JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }, null, 2)}\n`,
-		);
-		commit(root, "owner-free retired workspace");
-		expect(inspectStorageLayout(root).layout).toBe("migration_required");
-		const outcome = await runMigration(root);
-		expect(outcome).toMatchObject({ outcome: "migrated" });
-		expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(false);
-		expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(true);
-		commit(root, "migrated");
-		expect(inspectStorageLayout(root).layout).toBe("ready");
-	});
+	for (const workspace of [".imm/state/workspace.json", ".imm/workspace.json"]) for (const refuseCleanup of [false, true]) {
+		it(`CLI retires cleared owner in ${workspace}${refuseCleanup ? " after refusal" : ""}`, () => {
+			const root = tempRoot();
+			const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" });
+			mkdirSync(dirname(join(root, workspace)), { recursive: true });
+			writeFileSync(join(root, workspace), JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: "old-task" }) + "\n");
+			commit(root, "old tracked owner");
+			const before = git("rev-parse", "HEAD").trim();
+			writeFileSync(join(root, workspace), JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }) + "\n");
+			expect(inspectStorageLayout(root).layout).toBe("migration_required");
+			const hook = join(root, ".git/hooks/pre-commit");
+			if (refuseCleanup) {
+				git("config", "core.hooksPath", ".git/hooks");
+				writeFileSync(hook, "#!/bin/sh\necho workspace-cleanup-refused >&2\nexit 1\n");
+				execFileSync("chmod", ["+x", hook]);
+			}
+			const result = runKernelCommand(["migrate", "--storage-layout"], root);
+			if (refuseCleanup) {
+				expect(result.returncode).toBe(1);
+				expect(result.stdout).toContain("workspace-cleanup-refused");
+				expect(git("rev-parse", "HEAD").trim()).toBe(before);
+				rmSync(hook);
+				expect(runKernelCommand(["migrate", "--storage-layout"], root).returncode).toBe(0);
+			} else expect(result.returncode).toBe(0);
+			expect(existsSync(join(root, workspace))).toBe(false);
+			expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(true);
+			expect(git("rev-list", "--count", `${before}..HEAD`).trim()).toBe("1");
+			expect(git("diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").trim()).toBe(workspace);
+			expect(git("ls-tree", "HEAD", "--", workspace)).toBe("");
+			const head = git("rev-parse", "HEAD");
+			expect(runKernelCommand(["migrate", "--storage-layout"], root).returncode).toBe(0);
+			expect(git("rev-parse", "HEAD")).toBe(head);
+			expect(inspectStorageLayout(root).layout).toBe("ready");
+		}, 30_000);
+	}
 
 	it("migrates an idle Ledger workspace with no task and keeps the ledger readable", async () => {
 		const root = tempRoot();

@@ -6,7 +6,7 @@
   "acceptance": [
     {
       "id": "ROG-S4-A1",
-      "assertion": "Meet T4 and D14 in docs/specs/run-only-gates.spec.md: imm-kernel migrate --storage-layout ends in the ready state with its affected paths in exactly one commit carrying the D8 subject, unrelated dirt is byte-identical afterwards, no next-action text asks the user to commit, and recovery_required and migration_blocked_active still fail closed.",
+      "assertion": "Meet T4 and D14 in docs/specs/run-only-gates.spec.md: imm-kernel migrate --storage-layout ends in the ready state with every affected diff automatically committed under the D8 subject. A cleanup-only pending diff produces exactly one commit; a full legacy import commits preserved evidence before retiring sources and commits the resulting cleanup separately, retaining the existing data-protection order. Every commit contains only its affected paths, unrelated dirt is byte-identical afterwards, no next-action text asks the user to commit, and recovery_required and migration_blocked_active still fail closed.",
       "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-storage-layout-migration.test.ts\",\n      \"tests/kernel-migrate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
     },
     {
@@ -32,8 +32,9 @@
     "tests/kernel-intent-authoring.test.ts",
     "tests/kernel-migrate.test.ts",
     "tests/kernel-storage-layout-migration.test.ts",
-    "tests/pi-canary-enroll-extension.test.ts"
+    "tests/pi-canary-enroll-extension.test.ts",
+    "tests/fixtures/workflow-decision-closure-evidence.json"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 3
 }

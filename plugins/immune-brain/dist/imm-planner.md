@@ -91,6 +91,13 @@ resolved wrapper and use the resolved `imm-kernel` wrapper for every Kernel
 command below. Do not assume either bare command is available on shell `PATH`.
 Then route deterministically:
 
+When `intent author` reports `layout_migration_required`, run the resolved
+`imm-kernel migrate --storage-layout` wrapper yourself and retry authoring after
+its `ready` result, without interrupting the user. A pending migration diff is
+committed automatically. On a Git failure, repair the reported precondition
+and retry; `recovery_required`, `migration_blocked_active` and `invalid` remain
+blocking layout conditions.
+
 - an active Kernel claim remains with `imm-run` for foreground Kernel Tool
   coordination, except a Loop-requested revision follows Enrolled Intent Revision
   below to prepare a non-authoritative proposal for that same owner;

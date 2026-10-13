@@ -30,6 +30,14 @@ describe("imm-planner kernel intent contract", () => {
 		}
 	});
 
+	test("Planner runs the explicit migration and retries authoring without interrupting the user", () => {
+		const contract = readFileSync(DIST_PATH, "utf8").replace(/\s+/g, " ");
+		expect(contract).toContain("`intent author` reports `layout_migration_required`");
+		expect(contract).toContain("`imm-kernel migrate --storage-layout` wrapper yourself");
+		expect(contract).toContain("retry authoring after its `ready` result, without interrupting the user");
+		expect(contract).toContain("`recovery_required`, `migration_blocked_active` and `invalid` remain blocking");
+	});
+
 	test("Planner keeps workflow facts on Kernel authority sources", () => {
 		for (const path of PLANNER_CONTRACTS) {
 			const contract = readFileSync(path, "utf8").replace(/\s+/g, " ");
