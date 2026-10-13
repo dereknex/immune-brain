@@ -4,6 +4,7 @@
 
 import { createHash } from "node:crypto";
 import { completionDecision } from "./completion";
+import { NO_RISK_FLOOR, type RiskFloor } from "./risk_floor";
 import { anchorForEvidence, isFreshPassingQaAttestation, refutationIdentity, refutationIsLive } from "./refutation";
 import {
 	REDUCED_MUTATION_BRAND,
@@ -221,6 +222,7 @@ export function reduceTask(
 	actionRaw: TaskAction,
 	authorityAudit: AuthorityAuditDescriptor | null = null,
 	changedPaths?: readonly string[],
+	floor: RiskFloor = NO_RISK_FLOOR,
 ): ReducedTaskMutation {
 	const previous = parseTaskRecord(recordRaw);
 	assertKernelInvariantsV3(previous.intent_snapshot, previous);
@@ -479,6 +481,7 @@ export function reduceTask(
 			const revisionClass = classifyIntentRevision(
 				record.intent_snapshot,
 				action.next_intent,
+				floor,
 			);
 			if (action.type === "revise_intent" && revisionClass !== "compatible")
 				throw new KernelInvariantError([
@@ -519,6 +522,7 @@ export function reduceTask(
 					? sameDirectoryScopeAdditions(
 						record.intent_snapshot.scope_hint,
 						action.next_intent.scope_hint,
+						floor,
 					) ?? []
 					: [];
 			record.intent_snapshot = { ...action.next_intent };
@@ -732,6 +736,7 @@ export function reduceTask(
 				diffHash,
 				record.intent_ref.content_hash,
 				changedPaths,
+				floor,
 			);
 			if (!decision.complete)
 				throw new KernelInvariantError([

@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "host-owned-environment-s4-project-risk-floor",
-  "owner": "user",
   "goal": "The paths that force a higher task risk come from the project: the floor leaves parseTaskIntentV1 and is applied where a risk is decided from a tracked declaration at .imm/risk-floor.json, a missing declaration means no floor, an unreadable or invalid one makes every task critical, the declaration's own path is always critical, this repository's declaration carries today's two prefix lists unchanged, and the canonical hash of an already enrolled intent does not change (Spec host-owned-environment S4; D12-D14, I7, I8).",
   "acceptance": [
     {
@@ -28,21 +27,43 @@
   "scope_hint": [
     ".changeset/host-owned-environment-s4-project-risk-floor.md",
     ".imm/risk-floor.json",
+    "docs/adr/0021-same-directory-scope-extension.md",
     "docs/adr/0023-project-declared-risk-floor.md",
     "docs/plans/host-owned-environment-s4-project-risk-floor.intent.json",
     "docs/reference/immune-brain-config.md",
     "docs/specs/host-owned-environment.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
     "plugins/immune-brain/dist/claude/mcp-server.mjs",
     "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+    "plugins/immune-brain/dist/imm-run.md",
+    "plugins/immune-brain/dist/role-prompts/executor.md",
+    "plugins/immune-brain/runtime/assurance/verdict_authority.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
     "plugins/immune-brain/runtime/commands/kernel.ts",
+    "plugins/immune-brain/runtime/kernel/application.ts",
+    "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+    "plugins/immune-brain/runtime/kernel/canary_application.ts",
+    "plugins/immune-brain/runtime/kernel/completion.ts",
     "plugins/immune-brain/runtime/kernel/enrollment.ts",
     "plugins/immune-brain/runtime/kernel/intent.ts",
+    "plugins/immune-brain/runtime/kernel/reducer.ts",
     "plugins/immune-brain/runtime/kernel/risk_floor.ts",
+    "plugins/immune-brain/runtime/prompts/executor.md",
+    "plugins/immune-brain/runtime/unattended/batch_delegation.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts",
+    "tests/breaking-intent-revision-gate.test.ts",
+    "tests/kernel-assurance-obligation.test.ts",
+    "tests/kernel-assurance-projection.test.ts",
+    "tests/kernel-inspect.test.ts",
     "tests/kernel-intent-v2.test.ts",
     "tests/kernel-intent-validation.test.ts",
+    "tests/pi-canary-work-extension.test.ts",
     "tests/risk-downgrade-guard.test.ts",
-    "tests/risk-tier-floor.test.ts"
+    "tests/risk-tier-floor.test.ts",
+    "tests/scope-revision-contract.test.ts"
   ],
   "risk": "critical",
-  "revision": 1
+  "revision": 3,
+  "owner": "user"
 }

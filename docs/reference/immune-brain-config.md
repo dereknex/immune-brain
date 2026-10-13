@@ -80,6 +80,46 @@ runner reads none of them. None has a built-in default.
 Lane-mode agents only create: they close no tab, stop no session and remove no
 Lane. The full contract is `plugins/immune-brain/dist/imm-run-batch.md#lane-preferences`.
 
+## Risk Floor
+
+The paths that force a higher task risk are declared by the project in one
+tracked file, `.imm/risk-floor.json`. It is not a preference an Agent reads: the
+Kernel enforces it, so it does not live in `AGENTS.md` or `CLAUDE.md`.
+
+```json
+{
+  "contract": "assurance_kernel/risk_floor/v1",
+  "material": { "paths": ["src/auth"], "changed_only": ["db/migrations"] },
+  "critical": { "paths": ["infra/prod"], "changed_only": [] }
+}
+```
+
+- `paths` raises a task whose `scope_hint` can reach the prefix, including
+  through a glob, or whose changed paths sit beneath it.
+- `changed_only` raises a task only through its changed paths, so a scope that
+  merely names the prefix keeps its declared risk.
+- Every entry is a literal, normalized, project-relative path prefix with
+  forward slashes and no wildcard. Both tiers and both lists are optional.
+- A declared risk is only ever raised, never lowered.
+
+The reader fails closed:
+
+- No file means no floor. Every task keeps the risk its TaskIntent declares.
+- A file that is not valid JSON, has an unknown field or a wrong type, is not a
+  regular file, exceeds 64 KiB, or cannot be read makes every task of the
+  project `critical`.
+- A file with staged, unstaged or untracked changes is treated the same way
+  until it is committed, so an edit made beside a task cannot lower that task's
+  floor.
+- `.imm/risk-floor.json` itself is always `critical`: a task whose scope can
+  reach it, or that changes it, is `critical` whatever the file says.
+
+`imm-kernel inspect --json` reports the prefixes in force as
+`risk.floor_prefixes` and the reason an untrusted declaration was refused as
+`risk.floor_invalid`. A TaskRecord keeps the risk it was enrolled with; changing
+the declaration does not re-grade a task that is already enrolled. ADR 0023
+records the decision.
+
 ## Other Preferences
 
 - Set reply-language preferences as ordinary `AGENTS.md` communication

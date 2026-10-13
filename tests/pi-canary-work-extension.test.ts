@@ -18,8 +18,9 @@ import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollm
 import { auditEvidencePaths } from "../plugins/immune-brain/runtime/kernel/storage_paths";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { createEnrollmentAuthorityRegistry, type EnrollmentCapabilityBinding } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
-import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
+import { canonicalIntentHash, parseTaskIntentV1 as parseDeclaredTaskIntent, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
+import { applyScopeRiskFloor, parseRiskFloor, RISK_FLOOR_DECLARATION_PATH } from "../plugins/immune-brain/runtime/kernel/risk_floor";
 import { createMutationAuthorityCapabilityForTest } from "./fixtures/mutation-authority-test-seam";
 import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
 import { PLUGIN_VERSION } from "../plugins/immune-brain/runtime/plugin_version";
@@ -47,6 +48,12 @@ const {
 
 afterAll(() => mock.restore());
 
+// This repository's risk-floor declaration, committed into each fixture
+// repository so its Kernel and Pi extension paths are floored there too.
+const FLOOR_TEXT = readFileSync(join(process.cwd(), RISK_FLOOR_DECLARATION_PATH), "utf8");
+const FLOOR = parseRiskFloor(JSON.parse(FLOOR_TEXT));
+// The intent as the fixture repository records it: the strict parse, then the floor.
+const parseTaskIntentV1 = (raw: unknown) => applyScopeRiskFloor(parseDeclaredTaskIntent(raw), FLOOR);
 const TASK = "canary-ext-task";
 const INTENT = {
 	contract: "assurance_kernel/task_intent/v1",
@@ -152,6 +159,7 @@ function makeEnrolledRoot(): string {
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	writeFileSync(join(root, "docs", "plans", `${TASK}.intent.json`), JSON.stringify(INTENT, null, 2) + "\n");
 	writeFileSync(join(root, "docs", "specs", "canary-ext-task.spec.md"), "# Canary extension task\n");
+	writeFileSync(join(root, RISK_FLOOR_DECLARATION_PATH), FLOOR_TEXT);
 	writeFileSync(join(root, "plugins", "immune-brain", ".pi-extension", "task.ts"), "export const task = 'baseline';\n");
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });

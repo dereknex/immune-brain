@@ -183,8 +183,8 @@ is recorded as a separate follow-up rather than resolved here.
   TaskIntent.
 - Exception to the bullet above, the Loop owner's own call: a same-directory
   addition. When the new entry is a concrete file in a directory where the scope
-  already names a concrete file, and it is not a risk-floor path (Kernel,
-  assurance, Claude Host authority, Pi extension), `docs/specs` or `docs/plans`,
+  already names a concrete file, and it is not a path the project's risk floor
+  names in `.imm/risk-floor.json`,
   submit `revise_intent` with the complete next intent. It classifies
   `compatible`, applies without a native gate, and the next Review prompt names
   the added paths as self-served (ADR 0021). A revision that only removes

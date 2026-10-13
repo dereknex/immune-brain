@@ -1,4 +1,5 @@
 import { classifyTaskRisk } from "./intent";
+import { NO_RISK_FLOOR, raiseRisk, scopeRiskFloor, type RiskFloor } from "./risk_floor";
 import { archivePath, boundSpecPath, inspectSpecBinding } from "./spec_binding";
 import type {
 	ApprovalKind,
@@ -48,13 +49,16 @@ export function asTaskDiffSnapshot(value: TaskDiffInput): {
 export function resolveProjectedRisk(
 	intent: TaskIntentV1,
 	changedPaths: readonly string[] = [],
+	floor: RiskFloor = NO_RISK_FLOOR,
 ): TaskIntentV1["risk"] {
+	const risk = raiseRisk(intent.risk, scopeRiskFloor(intent.scope_hint, floor));
 	// Invalid bindings have no trusted planning-path exclusions.
-	if (!inspectSpecBinding(intent).ok) return classifyTaskRisk(changedPaths, intent.risk);
+	if (!inspectSpecBinding(intent).ok) return classifyTaskRisk(changedPaths, risk, floor);
 	const excluded = ownSidecarPaths(intent);
 	return classifyTaskRisk(
 		changedPaths.filter((path) => !excluded.has(path)),
-		intent.risk,
+		risk,
+		floor,
 	);
 }
 
@@ -80,6 +84,7 @@ export function completionDecision(
 	currentDiffHash: string,
 	currentIntentContentHash: string,
 	changedPaths: readonly string[] = [],
+	floor: RiskFloor = NO_RISK_FLOOR,
 ): CompletionDecision {
 	assertKernelInvariantsV3(intent, record);
 	const freshAttestations = record.attestations.filter(
@@ -108,7 +113,7 @@ export function completionDecision(
 		)
 		.map((item) => item.id);
 
-	const requiredKinds = REQUIRED_ATTESTATIONS[resolveProjectedRisk(intent, changedPaths)];
+	const requiredKinds = REQUIRED_ATTESTATIONS[resolveProjectedRisk(intent, changedPaths, floor)];
 	const candidates = freshAttestations.filter((item) => requiredKinds.includes(item.kind));
 	const missingApprovalKinds = requiredKinds.filter(
 		(kind) => !candidates.some((attestation) => attestation.kind === kind),
@@ -160,6 +165,8 @@ export function completionDecision(
 
 	return {
 		complete:
+			// An invalid Spec binding is never complete, whatever the project's floor says.
+			inspectSpecBinding(intent).ok &&
 			missingAcceptanceIds.length === 0 &&
 			missingApprovalKinds.length === 0 &&
 			blockingFindingIds.length === 0 &&
@@ -183,6 +190,7 @@ export function projectTask(
 	currentDiffHash: string,
 	currentIntentContentHash: string,
 	changedPaths: readonly string[] = [],
+	floor: RiskFloor = NO_RISK_FLOOR,
 ): TaskProjectionV3 {
 	if (record.lifecycle === "active" && !inspectSpecBinding(intent).ok) {
 		assertKernelInvariantsV3(intent, record);
@@ -198,7 +206,7 @@ export function projectTask(
 			fresh_acceptance_ids: [],
 			missing_acceptance_ids: intent.acceptance.map((item) => item.id),
 			stale_attestation_ids: record.attestations.map((item) => item.id),
-			missing_approval_kinds: REQUIRED_ATTESTATIONS[resolveProjectedRisk(intent, changedPaths)],
+			missing_approval_kinds: REQUIRED_ATTESTATIONS[resolveProjectedRisk(intent, changedPaths, floor)],
 			blocking_finding_ids: record.findings.filter((item) => item.kind === "blocking" && item.status !== "resolved").map((item) => item.id),
 			unresolved_user_decision_ids: record.findings.filter((item) => item.kind === "unresolved_user_decision" && item.status === "open").map((item) => item.id),
 			replan_required_ids: record.findings.filter((item) => item.kind === "replan_required" && item.status === "open").map((item) => item.id),
@@ -211,6 +219,7 @@ export function projectTask(
 		currentDiffHash,
 		currentIntentContentHash,
 		changedPaths,
+		floor,
 	);
 	const blocked =
 		decision.blocking_finding_ids.length > 0 ||

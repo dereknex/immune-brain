@@ -1,0 +1,24 @@
+{
+  "contract": "assurance_kernel/risk_floor/v1",
+  "material": {
+    "paths": [
+      "plugins/immune-brain/runtime/kernel",
+      "plugins/immune-brain/runtime/authority_commit_receipts.ts",
+      "plugins/immune-brain/runtime/assurance",
+      "plugins/immune-brain/runtime/claude/interaction.ts",
+      "plugins/immune-brain/runtime/claude/capability.ts",
+      "plugins/immune-brain/runtime/claude/review_host.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/.pi-extension"
+    ],
+    "changed_only": [
+      "docs/specs",
+      "docs/plans"
+    ]
+  },
+  "critical": {
+    "paths": [],
+    "changed_only": []
+  }
+}

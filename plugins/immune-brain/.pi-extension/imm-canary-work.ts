@@ -104,6 +104,7 @@ import { migrateLegacyLayout } from "../runtime/kernel/storage_layout_migration"
 import {
 	assertScopeAdditionsAreFiles,
 	canonicalIntentHash,
+	parseProjectTaskIntent,
 	parseTaskIntentV1,
 	readTaskIntent,
 	type ReadTaskIntentResult,
@@ -870,7 +871,7 @@ export default function (
 		let nextIntentRef: { path: string; content_hash: string } | undefined;
 		if (operation === "approve-breaking-intent-revision") {
 			try {
-				nextIntent = await parseTaskIntentV1(nextIntentInput);
+				nextIntent = parseProjectTaskIntent(ctx.cwd, nextIntentInput);
 				if (nextIntent.task_id !== taskId)
 					throw new Error("next intent task_id must match the enrolled task");
 				nextIntentHash = await canonicalIntentHash(nextIntent);
@@ -1292,8 +1293,8 @@ export function buildUserDecisionOperation(record: {
  * as the Claude adapter's `readTaskIntentForRecord`.
  */
 export function readTaskIntentForRecord(root: string, taskId: string): ReadTaskIntentResult {
-	const currentPath = readTaskRecordRaw(root, taskId).record?.intent_ref.path;
-	return readTaskIntent(root, taskId, currentPath);
+	const record = readTaskRecordRaw(root, taskId).record;
+	return readTaskIntent(root, taskId, record?.intent_ref.path, record?.intent_snapshot);
 }
 
 /**
@@ -1557,7 +1558,7 @@ async function executeOrdinaryOperation(
 ): Promise<unknown> {
 	const { app } = await authorityPair();
 	const operation = input.operation.op === "revise_intent"
-		? { ...input.operation, next_intent: await parseTaskIntentV1(input.operation.next_intent) }
+		? { ...input.operation, next_intent: parseProjectTaskIntent(ctx.cwd, input.operation.next_intent) }
 		: input.operation;
 	const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
 	const nextScope = operation.op === "revise_intent"

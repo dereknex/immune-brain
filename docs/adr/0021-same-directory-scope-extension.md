@@ -25,7 +25,10 @@ user already authorized is not that.
    returns `compatible` for a scope that contains every previous entry and adds
    only entries that (a) are concrete files, with no `*` or `?`, (b) share a
    parent directory with a previous entry that is itself a concrete file, and
-   (c) touch no `RISK_FLOOR_SCOPE_PREFIXES` path, `docs/specs` or `docs/plans`.
+   (c) touch no path the project's risk floor names in `.imm/risk-floor.json`
+   (ADR 0023), in either tier and either list. In this repository that is the
+   Kernel, assurance, Claude Host authority and Pi extension prefixes plus
+   `docs/specs` and `docs/plans`.
    There is no count limit. Every other scope change stays `breaking`: a
    removed entry, a glob, a new directory, an entry that swallows a previous
    one, any floor path, or any combination with another breaking field.
@@ -64,9 +67,9 @@ does not widen `scope_hint`. It is unchanged:
   module directory so it stays that case.
 - The user gives up the per-file confirmation for these additions in exchange
   for Review-time disclosure. The paths the classifier already protects keep
-  the confirmation: the Kernel, assurance, Claude Host authority and Pi
-  extension prefixes in `RISK_FLOOR_SCOPE_PREFIXES`, plus `docs/specs` and
-  `docs/plans`. The floor names no migration, secret or security directory, so
+  the confirmation: the paths the project's risk floor names (ADR 0023), which
+  in this repository are the Kernel, assurance, Claude Host authority and Pi
+  extension prefixes plus `docs/specs` and `docs/plans`. The floor names no migration, secret or security directory, so
   a file there beside an owned file is a same-directory addition; the Planner
   keeps such scope exact and Review sees every added path.
 - A revision no longer fails merely because the worktree holds the files it

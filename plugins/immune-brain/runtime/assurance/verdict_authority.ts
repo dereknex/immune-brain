@@ -301,7 +301,7 @@ export function createVerdictAuthority(options: {
    recoverKernelStoreFollowUps(ctx.cwd, snapshot.task_id);
    const record = readTaskRecordRaw(ctx.cwd, snapshot.task_id).record;
    if (!record) throw new Error("TaskRecord disappeared before authority application");
-   const priorIntentToken = readTaskIntent(ctx.cwd, snapshot.task_id, record.intent_ref.path).token;
+   const priorIntentToken = readTaskIntent(ctx.cwd, snapshot.task_id, record.intent_ref.path, record.intent_snapshot).token;
    const now = new Date().toISOString();
    const findings = verdict.decision === "rework" ? reviewReworkFindings(verdict) : [];
    const advisories = verdict.decision === "pass" ? reviewAdvisoryRecords(verdict) : [];

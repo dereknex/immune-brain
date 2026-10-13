@@ -21,7 +21,7 @@ import { readTaskRecordRaw, recoverKernelStoreFollowUps } from "../kernel/storag
 import {
 	assertScopeAdditionsAreFiles,
 	canonicalIntentHash,
-	parseTaskIntentV1,
+	parseProjectTaskIntent,
 	readTaskIntent,
 	withNextScope,
 } from "../kernel/intent";
@@ -121,8 +121,8 @@ function nextScopeDiffProvider(nextScope: readonly string[]): typeof diffSnapsho
 function readTaskIntentForRecord(root: string, taskId: string) {
 	// Converge committed follow-ups first, then follow the record.
 	recoverKernelStoreFollowUps(root, taskId);
-	const currentPath = readTaskRecordRaw(root, taskId).record?.intent_ref?.path;
-	return readTaskIntent(root, taskId, currentPath);
+	const record = readTaskRecordRaw(root, taskId).record;
+	return readTaskIntent(root, taskId, record?.intent_ref.path, record?.intent_snapshot);
 }
 
 import {
@@ -585,7 +585,7 @@ export class ClaudeRuntime {
 		if (!isPrivilegedOperation(operation) && operation !== "request_authorization") throw new Error(`unsupported privileged operation ${operation}`);
 		let op: PrivilegedOperation | "request_authorization" | "resolve_user_decision" | "authorize_rework" = operation;
 		let decisionOp: { finding_id: string; resolution: string } | undefined;
-		const nextIntent = extra.next_intent ? await parseTaskIntentV1(extra.next_intent) : undefined;
+		const nextIntent = extra.next_intent ? parseProjectTaskIntent(this.cwd, extra.next_intent) : undefined;
 		// The whole operation is judged against the scope it asks for (D6).
 		const nextScope = nextIntent?.scope_hint;
 		const diffProvider = nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf;
@@ -734,7 +734,7 @@ export class ClaudeRuntime {
 	private async executeOrdinary(ctx: HostContext, input: { taskId: string; operation: { op: string; actor_id: string; next_intent?: unknown; finding_id?: string; attestation_id?: string } }) {
 		const { app } = await this.authority();
 		const operation = input.operation.op === "revise_intent"
-			? { ...input.operation, next_intent: await parseTaskIntentV1(input.operation.next_intent) }
+			? { ...input.operation, next_intent: parseProjectTaskIntent(ctx.cwd, input.operation.next_intent) }
 			: input.operation;
 		const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
 		const nextScope = operation.op === "revise_intent"

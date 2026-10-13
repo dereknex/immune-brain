@@ -16,7 +16,7 @@ describe("same-directory scope rule is stated where it is applied (ADR 0021)", (
 		const run = read(`${PLUGIN}/dist/imm-run.md`);
 		expect(run).toContain("a same-directory addition");
 		expect(run).toContain("`revise_intent`");
-		expect(run).toContain("`docs/specs` or `docs/plans`");
+		expect(run).toContain("path the project's risk floor names in `.imm/risk-floor.json`");
 		expect(run).toContain("self-served (ADR 0021)");
 		expect(run).toContain("Scope expansion returns to Planner's Enrolled Intent Revision route");
 	});
@@ -41,6 +41,6 @@ describe("same-directory scope rule is stated where it is applied (ADR 0021)", (
 		expect(adr).toContain("status: accepted");
 		expect(adr).toContain("## Relation to ADR 0018");
 		expect(adr).toContain("`classifyIntentRevision`");
-		expect(adr).toContain("`RISK_FLOOR_SCOPE_PREFIXES`");
+		expect(adr).toContain("`.imm/risk-floor.json`");
 	});
 });

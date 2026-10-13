@@ -216,7 +216,7 @@ export function createCanaryApplication(
 				throw new KernelInvariantError([`artifact freeze requires active lifecycle, got ${current.record.lifecycle}`]);
 			if (workspace.state.current_working !== input.task_id)
 				throw new KernelInvariantError([`workspace is not owned by task ${input.task_id}`]);
-			const fresh = readTaskIntent(input.root, input.task_id, current.record.intent_ref.path);
+			const fresh = readTaskIntent(input.root, input.task_id, current.record.intent_ref.path, current.record.intent_snapshot);
 			const pair = inspectIntentTokenPair(input.prior_intent_token, fresh.token);
 			if (
 				pair.prior.intent_content_hash !== current.record.intent_ref.content_hash

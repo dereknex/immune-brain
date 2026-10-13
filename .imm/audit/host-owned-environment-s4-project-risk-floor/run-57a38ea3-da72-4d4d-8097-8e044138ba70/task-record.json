@@ -1,0 +1,474 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "host-owned-environment-s4-project-risk-floor",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "host-owned-environment-s4-project-risk-floor",
+    "goal": "The paths that force a higher task risk come from the project: the floor leaves parseTaskIntentV1 and is applied where a risk is decided from a tracked declaration at .imm/risk-floor.json, a missing declaration means no floor, an unreadable or invalid one makes every task critical, the declaration's own path is always critical, this repository's declaration carries today's two prefix lists unchanged, and the canonical hash of an already enrolled intent does not change (Spec host-owned-environment S4; D12-D14, I7, I8).",
+    "acceptance": [
+      {
+        "id": "HE-S4-A1",
+        "assertion": "With this repository's declaration a routine task scoping a Kernel runtime path is raised to material as before; with no declaration the same scope and a docs/plans scope keep routine; glob scope entries match as before; seams: tests/risk-tier-floor.test.ts, tests/risk-downgrade-guard.test.ts (Spec SCN-9, SCN-10, D12, D13, I7).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/risk-tier-floor.test.ts\",\n      \"tests/risk-downgrade-guard.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "HE-S4-A2",
+        "assertion": "A task whose scope or changed paths include .imm/risk-floor.json is critical; a declaration that is invalid JSON, has wrong types, or cannot be read makes every task critical; an empty declaration behaves as no declaration; seam: tests/risk-tier-floor.test.ts (Spec SCN-11, D13, I7).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/risk-tier-floor.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "HE-S4-A3",
+        "assertion": "A characterization test written before the move pins the canonical intent hash of one enrolled intent whose risk the floor raised and one it did not, and both hashes are unchanged after the move; imm-kernel intent validate still reports the floored risk; seams: tests/kernel-intent-v2.test.ts, tests/kernel-intent-validation.test.ts (Spec D14, I8).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-intent-v2.test.ts\",\n      \"tests/kernel-intent-validation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "HE-S4-A4",
+        "assertion": "The configuration reference documents .imm/risk-floor.json and its fail-closed rule, its dist mirror is identical, ADR 0023 exists, and the generated Claude bundle matches the runtime source; seams: tests/dist-docs-sync-contract.test.ts, tests/claude-host-package.test.ts (Spec D12, D13).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dist-docs-sync-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/host-owned-environment-s4-project-risk-floor.md",
+      ".imm/risk-floor.json",
+      "docs/adr/0021-same-directory-scope-extension.md",
+      "docs/adr/0023-project-declared-risk-floor.md",
+      "docs/plans/host-owned-environment-s4-project-risk-floor.intent.json",
+      "docs/reference/immune-brain-config.md",
+      "docs/specs/host-owned-environment.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/dist/role-prompts/executor.md",
+      "plugins/immune-brain/runtime/assurance/verdict_authority.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/commands/kernel.ts",
+      "plugins/immune-brain/runtime/kernel/application.ts",
+      "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+      "plugins/immune-brain/runtime/kernel/canary_application.ts",
+      "plugins/immune-brain/runtime/kernel/completion.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment.ts",
+      "plugins/immune-brain/runtime/kernel/intent.ts",
+      "plugins/immune-brain/runtime/kernel/reducer.ts",
+      "plugins/immune-brain/runtime/kernel/risk_floor.ts",
+      "plugins/immune-brain/runtime/prompts/executor.md",
+      "plugins/immune-brain/runtime/unattended/batch_delegation.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts",
+      "tests/breaking-intent-revision-gate.test.ts",
+      "tests/kernel-assurance-obligation.test.ts",
+      "tests/kernel-assurance-projection.test.ts",
+      "tests/kernel-inspect.test.ts",
+      "tests/kernel-intent-v2.test.ts",
+      "tests/kernel-intent-validation.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/risk-downgrade-guard.test.ts",
+      "tests/risk-tier-floor.test.ts",
+      "tests/scope-revision-contract.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 3,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/host-owned-environment-s4-project-risk-floor.intent.json",
+    "content_hash": "sha256:3968c4ae42a29de54e4ab96cca06e3556a99fcd8c2ea026e4cc5d86dd33fa574"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:53bdac89ce133e743b79f249079cd0ce5692e8523f8bd04342e1aa8b1b98b4a9",
+  "git_base_head": "846fc2eac370d834b431001c2c165fe4a01d1873",
+  "attestations": [
+    {
+      "id": "approval-qa-85316a83",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:a6a8de597f50a27aa1fd3dbf5e692218e4d66273bda258210ef4984843d5179a",
+      "diff_hash": "sha256:060a29fd7d4d3bfdeb3a93f7a52afc3157bd6bf91a5b7ff24a323adf746b1616",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:b535cc7c3a6395f6141f64f7e5bf4f7ede8bc65c8e72a9951c84e5eed251a453",
+      "acceptance_results": [
+        {
+          "acceptance_id": "HE-S4-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:b535cc7c3a6395f6141f64f7e5bf4f7ede8bc65c8e72a9951c84e5eed251a453"
+        },
+        {
+          "acceptance_id": "HE-S4-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:b535cc7c3a6395f6141f64f7e5bf4f7ede8bc65c8e72a9951c84e5eed251a453"
+        },
+        {
+          "acceptance_id": "HE-S4-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:b535cc7c3a6395f6141f64f7e5bf4f7ede8bc65c8e72a9951c84e5eed251a453"
+        },
+        {
+          "acceptance_id": "HE-S4-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:b535cc7c3a6395f6141f64f7e5bf4f7ede8bc65c8e72a9951c84e5eed251a453"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-d5d3fe0b",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:3968c4ae42a29de54e4ab96cca06e3556a99fcd8c2ea026e4cc5d86dd33fa574",
+      "diff_hash": "sha256:bcc8ecd2c9873759af393f1aef6026d3ab01109dabbd02f6734a943e69448ff7",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:3ad0e303044267cdf4d339cce68db7bbcf8c81d8ebd72e0d10b3046ca6e505bd",
+      "acceptance_results": [
+        {
+          "acceptance_id": "HE-S4-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:3ad0e303044267cdf4d339cce68db7bbcf8c81d8ebd72e0d10b3046ca6e505bd"
+        },
+        {
+          "acceptance_id": "HE-S4-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:3ad0e303044267cdf4d339cce68db7bbcf8c81d8ebd72e0d10b3046ca6e505bd"
+        },
+        {
+          "acceptance_id": "HE-S4-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:3ad0e303044267cdf4d339cce68db7bbcf8c81d8ebd72e0d10b3046ca6e505bd"
+        },
+        {
+          "acceptance_id": "HE-S4-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:3ad0e303044267cdf4d339cce68db7bbcf8c81d8ebd72e0d10b3046ca6e505bd"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-09f86da6",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:3968c4ae42a29de54e4ab96cca06e3556a99fcd8c2ea026e4cc5d86dd33fa574",
+      "diff_hash": "sha256:361f8a367ead1907a1316b356a7be20133d556b58757c5ba6fac02090a1990f2",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:4626f0d29c6445caeeb982079169a2eb7bf7039f7205772a3b83e7971aef6761",
+      "acceptance_results": [
+        {
+          "acceptance_id": "HE-S4-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:4626f0d29c6445caeeb982079169a2eb7bf7039f7205772a3b83e7971aef6761"
+        },
+        {
+          "acceptance_id": "HE-S4-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:4626f0d29c6445caeeb982079169a2eb7bf7039f7205772a3b83e7971aef6761"
+        },
+        {
+          "acceptance_id": "HE-S4-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:4626f0d29c6445caeeb982079169a2eb7bf7039f7205772a3b83e7971aef6761"
+        },
+        {
+          "acceptance_id": "HE-S4-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:4626f0d29c6445caeeb982079169a2eb7bf7039f7205772a3b83e7971aef6761"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-c9de25bd",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:3968c4ae42a29de54e4ab96cca06e3556a99fcd8c2ea026e4cc5d86dd33fa574",
+      "diff_hash": "sha256:361f8a367ead1907a1316b356a7be20133d556b58757c5ba6fac02090a1990f2",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 manifest digest、revision 的单一 parent、tree 和全部 changed-path OID，并完整检查 34 个文件的 diff；项目 floor、fail-closed 行为、已 enrolled intent 的身份保持及两条 Host 的 gating 调用链符合验收，结合 Kernel QA 的四项通过证据，未发现阻断问题。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "846fc2eac370d834b431001c2c165fe4a01d1873",
+        "review_commit": "975336b7c4b79edf67efac6bbd5f3ace6a4f8a2f",
+        "review_tree": "9ea27631345f68a5fc643c2d478480d7ec2bf5d6",
+        "manifest_digest": "sha256:4fba7484d928c336ffeef446f31124ea3c835de0db05dd3848959bd78c765c11"
+      },
+      "reviewer_verdict_sha256": "sha256:00fcfb242713998fccbf5e4582429b1d721736ee5935b6483c977088ea819fdf"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-8447ea0862af-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "HE-S4-A2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "[P1] 声明信任边界存在缺口：risk_floor.ts:119-132 用空的 git status 输出证明 worktree 字节已经提交，但 assume-unchanged 或 skip-worktree 可以隐藏声明改动，使未提交的空声明取消风险提升。应校验实际读取的字节及文件类型与已提交 blob 一致，不能仅依赖 status；补充两个 index flag 的负向测试。",
+      "anchor": "sha256:87d962bdaeea24877137adbfedda82f343e59d123c7ea951dc97100073ded786",
+      "evidence": {
+        "trigger": "提交包含 Kernel material.paths 的 .imm/risk-floor.json，给该文件设置 assume-unchanged 或 skip-worktree，然后仅在 worktree 中替换成只有合法 contract 的空声明。git status 可返回空输出，readRiskFloor 因而接受空 floor；此时新 Enrollment 的 routine Kernel-scope intent 保持 routine，而非按未提交声明规则变为 critical。这属于“声明必须由已提交内容背书”的不变量覆盖缺口；当前普通未提交编辑测试不能覆盖 Git 隐藏改动的状态。为核实其他保护是否覆盖此状态，直接读取了同一快照状态机中的未改文件 plugins/immune-brain/runtime/workspace_scope.ts:303-307、455：index flag 拒绝只覆盖任务 scope，通常不包含声明文件；读取未改文件 plugins/immune-brain/runtime/kernel/enrollment.ts:229 是为了确认 Enrollment 使用此 secure reader。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/enrollment.ts::inspectEnrollmentPreconditions",
+          "plugins/immune-brain/runtime/kernel/intent.ts::readTaskIntent",
+          "plugins/immune-brain/runtime/kernel/intent.ts::parseProjectTaskIntent",
+          "plugins/immune-brain/runtime/kernel/risk_floor.ts::readRiskFloor"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "HE-S4-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-8447ea0862af-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "HE-S4-A3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "[P1] 已 Enrollment intent 的身份仍依赖当前声明：intent.ts:666 在每次读取 sidecar 时重新应用 floor，随后在 :676 重新计算 hash。升级或声明变化会让未修改的 intent 与已存 TaskRecord 不匹配，application.ts:148-156 因此拒绝后续操作，包括 stop。应将已 Enrollment intent 的 canonical identity 绑定到其记录风险，将当前 floor 的 gating 判断独立处理，并补充迁移及声明变化的回归测试。",
+      "anchor": "sha256:4e6f503edc2c32192c4046a5625f7d08ab868a43ad8fb813e6bb98a3b0e59eb2",
+      "evidence": {
+        "trigger": "在没有 .imm/risk-floor.json 的消费项目中，使用旧 runtime Enrollment 一个 sidecar 声明 routine、scope 指向 plugins/immune-brain/runtime/kernel/intent.ts 的任务。base revision 的 parser 将它记录为 material；升级到 review revision 后，同一 sidecar 经 parseProjectTaskIntent 得到 routine，canonical hash 随之改变，applyTaskAction 拒绝 token 与 committed record 的身份比较。同一不变量的另一种触发是：已 Enrollment 的 routine task 遇到后来变为 invalid 或未提交的声明，secure reader 将其重新哈希为 critical。tests/kernel-intent-v2.test.ts:442-465 始终复制当前有效声明，仅覆盖声明不变的读取，未覆盖已记录身份与当前 policy 分离。未改文件 docs/specs/host-owned-environment.spec.md:69 因 HE-S4-A3 引用的 D14 而读取，其明确要求保留已 Enrollment 风险及 canonical hash。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/application.ts::applyTaskAction",
+          "plugins/immune-brain/runtime/kernel/intent.ts::readTaskIntent",
+          "plugins/immune-brain/runtime/kernel/intent.ts::readTaskIntentSource",
+          "plugins/immune-brain/runtime/kernel/intent.ts::parseProjectTaskIntent",
+          "plugins/immune-brain/runtime/kernel/intent.ts::canonicalIntentHash"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "HE-S4-A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-8447ea0862af-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "HE-S4-A3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "[P2] 约定的 intent validate seam 未验证 floored risk：tests/kernel-intent-validation.test.ts 的风险断言只检查原本就声明为 material 的 fixture，没有声明文件和 routine Kernel scope。应在该文件通过公共 validate 命令断言 routine 被提升为 material，并保留无写入检查。",
+      "anchor": "sha256:8df2f2448b841ae807570ecbdcce9f936f6b897dcfea51ee02b4215ce71edadb",
+      "evidence": {
+        "trigger": "将 runIntentValidate 中的 parseProjectTaskIntent 错误替换回 parseTaskIntentV1，现有 tests/kernel-intent-validation.test.ts:29-39、48-72、89-108 仍会通过：fixture 没有 risk-floor 声明，输入已声明 material，输出断言也仅为 material。tests/kernel-intent-v2.test.ts 的新增 characterization 调用 readTaskIntent，未调用 validate，因此不能保护 HE-S4-A3 明确要求的 CLI observable result。未改文件 tests/kernel-intent-validation.test.ts 因它是该 acceptance 指定的 seam 而完整读取；Kernel attested pass 证明这些现有断言通过，但没有补足缺失的 floor 提升断言。",
+        "caller_chain": [
+          "tests/kernel-intent-validation.test.ts::validate",
+          "plugins/immune-brain/runtime/commands/kernel.ts::runIntentValidate",
+          "plugins/immune-brain/runtime/kernel/intent.ts::parseProjectTaskIntent"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "HE-S4-A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-3e92f5f40e69-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "HE-S4-A2",
+      "source": "review",
+      "review_round": 2,
+      "summary": "tests/risk-tier-floor.test.ts:246 的负例表缺少声明实际无法读取的测试。目录和 symlink 用例提前触发非 regular file 拒绝，其他用例覆盖格式或 Git 状态，均未验证读取失败仍使普通任务 critical。请扩展现有参数化测试，构造确定性的权限或读取错误，确认错误确实发生，并断言 floor.invalid 非空、普通 scope 和空 changed paths 均提升为 critical。",
+      "anchor": "sha256:9de89fed7bcac96414e516b4ad980b473f1a2b9aff7c5c9d2db5760edfcf7156",
+      "evidence": {
+        "trigger": "不变量类别：声明读取失败必须 fail closed。已提交且内容有效的 .imm/risk-floor.json 因权限或 I/O 错误无法读取，任务声明 routine、scope 为 src/feature.ts、changed paths 为空。现有负例全部未制造实际读取错误，因此没有保护 risk_floor.ts:113 或 :143 的读取失败分支。HE-S4-A2 明确要求该负例；另读取 unchanged docs/specs/host-owned-environment.spec.md，是为核对该 acceptance 引用的 D13/I7 及约定 seam，其验收映射也要求 unreadable file yields critical。Kernel QA 的通过记录证明现有测试通过，不能补足这个缺失控制。",
+        "caller_chain": [
+          "tests/risk-tier-floor.test.ts",
+          "plugins/immune-brain/runtime/kernel/risk_floor.ts::readRiskFloor",
+          "plugins/immune-brain/runtime/kernel/risk_floor.ts::applyScopeRiskFloor",
+          "plugins/immune-brain/runtime/kernel/intent.ts::classifyTaskRisk"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "HE-S4-A2"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:host-owned-environment-s4-project-risk-floor:2026-10-13T02:20:29.766Z",
+      "at": "2026-10-13T02:20:29.766Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:e7a26869241e08b1744a5abf3c5b3d008c96aaaec825e9c7bf15dddc4a4c64c4",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-b77ec91d91f7e177",
+        "issued_at": "2026-10-13T02:20:41.292Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:host-owned-environment-s4-project-risk-floor:2026-10-13T02:59:12.456Z",
+      "at": "2026-10-13T02:59:12.456Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/host-owned-environment-s4-project-risk-floor.intent.json"
+    },
+    {
+      "id": "record_approval:host-owned-environment-s4-project-risk-floor:2026-10-13T02:59:36.654Z",
+      "at": "2026-10-13T02:59:36.654Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-85316a83\naction_v2_sha256:0209b7d5b6d4d15998c97621860654df2c61efa1bac864c19ca79be7a459cd85",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-4c2468f309b55212",
+        "issued_at": "2026-10-13T02:59:36.654Z"
+      }
+    },
+    {
+      "id": "request_rework:host-owned-environment-s4-project-risk-floor:2026-10-13T03:07:01.165Z",
+      "at": "2026-10-13T03:07:01.165Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:6753dbe4254701ec466475d35b2cb880be05373571cbbdbd2ffc8babbb790254",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-3696d335f97f87bf",
+        "issued_at": "2026-10-13T03:07:01.165Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:host-owned-environment-s4-project-risk-floor:2026-10-13T03:11:12.616Z",
+      "at": "2026-10-13T03:11:12.616Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\naction_v2_sha256:afeba2266001da40fe5b75c0fe392f0ffdd676e472c4697c703e8a68e8941b31",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-b90e0f5358803ad8",
+        "issued_at": "2026-10-13T03:11:13.934Z"
+      }
+    },
+    {
+      "id": "resolve_finding:host-owned-environment-s4-project-risk-floor:2026-10-13T03:21:18.401Z",
+      "at": "2026-10-13T03:21:18.401Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-8447ea0862af-1-review-1\naction_v2_sha256:764f8a9d243c9a1dd48de42c14b7ec20c0c3bc0742fbe3041e9dde2dc8ae1747"
+    },
+    {
+      "id": "resolve_finding:host-owned-environment-s4-project-risk-floor:2026-10-13T03:21:23.621Z",
+      "at": "2026-10-13T03:21:23.621Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-8447ea0862af-2-review-2\naction_v2_sha256:135690cc3dfabb3be968a41abacf249a10357cd6d75326ef519300363806b643"
+    },
+    {
+      "id": "resolve_finding:host-owned-environment-s4-project-risk-floor:2026-10-13T03:21:28.508Z",
+      "at": "2026-10-13T03:21:28.508Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-8447ea0862af-3-review-3\naction_v2_sha256:d93765add2a77cb1addce5694534d29a74064c34a4df80e564ec4f4453909957"
+    },
+    {
+      "id": "freeze_artifacts:host-owned-environment-s4-project-risk-floor:2026-10-13T03:21:39.968Z",
+      "at": "2026-10-13T03:21:39.968Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/host-owned-environment-s4-project-risk-floor.intent.json"
+    },
+    {
+      "id": "record_approval:host-owned-environment-s4-project-risk-floor:2026-10-13T03:21:58.512Z",
+      "at": "2026-10-13T03:21:58.512Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-d5d3fe0b\naction_v2_sha256:ef26c8632d7746206d982b39209eda750738574272d1ebdc770ceb0358159899",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-c7be84d8fffdd61d",
+        "issued_at": "2026-10-13T03:21:58.513Z"
+      }
+    },
+    {
+      "id": "request_rework:host-owned-environment-s4-project-risk-floor:2026-10-13T03:27:15.218Z",
+      "at": "2026-10-13T03:27:15.218Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:93ff5118b9eb3fc607babf882381f645ae9d00167c464e1e39f2fcdb1e0a3169",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-b76c48fa54b384f2",
+        "issued_at": "2026-10-13T03:27:15.218Z"
+      }
+    },
+    {
+      "id": "resolve_finding:host-owned-environment-s4-project-risk-floor:2026-10-13T03:29:17.008Z",
+      "at": "2026-10-13T03:29:17.008Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-3e92f5f40e69-1-review-1\naction_v2_sha256:919e8e94d04f6a59b8803e628811dbedf85d55e8c4f73a9dfe57485afb606afc"
+    },
+    {
+      "id": "freeze_artifacts:host-owned-environment-s4-project-risk-floor:2026-10-13T03:29:34.517Z",
+      "at": "2026-10-13T03:29:34.517Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/host-owned-environment-s4-project-risk-floor.intent.json"
+    },
+    {
+      "id": "record_approval:host-owned-environment-s4-project-risk-floor:2026-10-13T03:29:54.603Z",
+      "at": "2026-10-13T03:29:54.603Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-09f86da6\naction_v2_sha256:3cb27c14b790dfa0082230b3b3427d2966203fb121a54e019011029e384867c3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-e17721dcb7067291",
+        "issued_at": "2026-10-13T03:29:54.604Z"
+      }
+    },
+    {
+      "id": "record_approval:host-owned-environment-s4-project-risk-floor:2026-10-13T03:35:36.701Z",
+      "at": "2026-10-13T03:35:36.701Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-c9de25bd\naction_v2_sha256:dbbe102e2730acb52bba568f87ab295a032d41468ce91f97dba136d27031f606",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-8c2feac6205f7a5c",
+        "issued_at": "2026-10-13T03:35:36.701Z"
+      }
+    },
+    {
+      "id": "complete:host-owned-environment-s4-project-risk-floor:2026-10-13T03:35:41.490Z",
+      "at": "2026-10-13T03:35:41.490Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:168397010eab00e432f7f441ffd98a64f59d0b6cfdaa55bcd8bc90fc2606d1f8"
+    }
+  ]
+}

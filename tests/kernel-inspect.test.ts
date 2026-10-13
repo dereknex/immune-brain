@@ -4,7 +4,8 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runKernelCommand } from "../plugins/immune-brain/runtime/commands/kernel";
-import { canonicalIntentHash, parseTaskIntentV1, RISK_FLOOR_SCOPE_PREFIXES } from "../plugins/immune-brain/runtime/kernel/intent";
+import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
+import { applyScopeRiskFloor, parseRiskFloor, RISK_FLOOR_DECLARATION_PATH } from "../plugins/immune-brain/runtime/kernel/risk_floor";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 
 const roots: string[] = [];
@@ -26,6 +27,7 @@ function writeClaimedTask(
 	scope_hint: string[],
 	risk: "routine" | "material" = "routine",
 	artifactState: "active" | "frozen" = "active",
+	declaration?: unknown,
 ) {
 	const intent = {
 		contract: "assurance_kernel/task_intent/v1",
@@ -37,7 +39,12 @@ function writeClaimedTask(
 		revision: 1,
 		owner: "user",
 	};
-	const parsed = parseTaskIntentV1(intent);
+	// A declared floor is committed with the intent; the recorded hash is the floored intent's.
+	if (declaration !== undefined)
+		writeFileSync(join(root, RISK_FLOOR_DECLARATION_PATH), `${JSON.stringify(declaration)}\n`);
+	const parsed = declaration === undefined
+		? parseTaskIntentV1(intent)
+		: applyScopeRiskFloor(parseTaskIntentV1(intent), parseRiskFloor(declaration));
 	const hash = canonicalIntentHash(parsed);
 	const intentPath = artifactState === "frozen"
 		? `docs/plans/archive/${taskId}.intent.json`
@@ -53,7 +60,7 @@ function writeClaimedTask(
 		record: {
 			contract: "assurance_kernel/task_record/v4",
 			task_id: taskId,
-			intent_snapshot: intent,
+			intent_snapshot: parsed,
 			intent_ref: { path: intentPath, content_hash: hash },
 			lifecycle: "active",
 			artifact_state: artifactState,
@@ -81,7 +88,9 @@ describe("imm-kernel inspect", () => {
 		expect(output.risk.resolved).toBeNull();
 		expect(output.risk.floor_applied).toBe(false);
 		expect(output.risk.matching_scope_entries).toEqual([]);
-		expect(output.risk.floor_prefixes).toEqual([...RISK_FLOOR_SCOPE_PREFIXES]);
+		// No declaration: only the declaration's own path is floored.
+		expect(output.risk.floor_prefixes).toEqual([RISK_FLOOR_DECLARATION_PATH]);
+		expect(output.risk.floor_invalid).toBeNull();
 		expect(output.unobservable).toEqual({
 			capability: "unobservable",
 			rehearsal: "unobservable",
@@ -111,7 +120,10 @@ describe("imm-kernel inspect", () => {
 
 	it("projects declared vs floored risk for a claimed kernel-scope task", () => {
 		const root = tempRoot();
-		writeClaimedTask(root, "inspect-floor-hit", ["plugins/immune-brain/runtime/kernel/intent.ts"]);
+		writeClaimedTask(root, "inspect-floor-hit", ["plugins/immune-brain/runtime/kernel/intent.ts"], "routine", "active", {
+			contract: "assurance_kernel/risk_floor/v1",
+			material: { paths: ["plugins/immune-brain/runtime/kernel"] },
+		});
 		const result = runKernelCommand(["inspect", "--json"], root);
 		expect(result.returncode).toBe(0);
 		const output = JSON.parse(result.stdout);
@@ -124,6 +136,7 @@ describe("imm-kernel inspect", () => {
 		expect(output.risk.resolved).toBe("material");
 		expect(output.risk.floor_applied).toBe(true);
 		expect(output.risk.matching_scope_entries).toEqual(["plugins/immune-brain/runtime/kernel/intent.ts"]);
+		expect(output.risk.floor_prefixes).toEqual([RISK_FLOOR_DECLARATION_PATH, "plugins/immune-brain/runtime/kernel"]);
 		expect(output.unobservable.capability).toBe("unobservable");
 	});
 
