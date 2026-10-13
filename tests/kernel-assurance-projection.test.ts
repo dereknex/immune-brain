@@ -7,7 +7,9 @@ import { deriveAssuranceAuthorization, projectAssurance } from "../plugins/immun
 import { completionDecision } from "../plugins/immune-brain/runtime/kernel/completion";
 import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import { createEnrollmentAuthorityRegistry, type EnrollmentCapabilityBinding } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
-import { canonicalIntentHash } from "../plugins/immune-brain/runtime/kernel/intent";
+import { canonicalIntentHash, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
+import { createCanaryApplication } from "../plugins/immune-brain/runtime/kernel/canary_application";
+import { createMutationAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/authority_port";
 import * as kernelIndex from "../plugins/immune-brain/runtime/kernel/index";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { anchorForEvidence } from "../plugins/immune-brain/runtime/kernel/refutation";
@@ -196,6 +198,40 @@ function terminalize(root: string, lifecycle: "done" | "stopped"): void {
 }
 
 describe("kernel assurance projection v3", () => {
+	test("policy changes preserve enrolled identity through freeze and mutation", async () => {
+		const root = makeEnrolledRoot();
+		try {
+			// Emulate an old parser's routine sidecar recorded as material.
+			const path = `docs/plans/${TASK}.intent.json`;
+			writeFileSync(join(root, path), `${JSON.stringify({ ...INTENT, risk: "routine" }, null, 2)}\n`);
+			mkdirSync(join(root, "docs/specs"), { recursive: true });
+			const spec = `docs/specs/${TASK}.spec.md`;
+			writeFileSync(join(root, spec), "# Bound Spec\n");
+			execFileSync("git", ["add", path, spec], { cwd: root });
+			const record = readTaskRecordRaw(root, TASK).record!;
+			const read = () => readTaskIntent(root, TASK, path, record.intent_snapshot);
+			expect(read().content_hash).toBe(record.intent_ref.content_hash);
+			const declaration = join(root, ".imm/risk-floor.json");
+			writeFileSync(join(root, ".git/info/exclude"), ".imm/risk-floor.json\n");
+			writeFileSync(declaration, "[]");
+			expect(read().content_hash).toBe(record.intent_ref.content_hash);
+			const projection = await projectAssurance(root, TASK);
+			expect(projection.error).toBeNull();
+			expect(projection.projection.risk).toBe("critical");
+			const app = createCanaryApplication(createMutationAuthorityRegistry());
+			const frozen = app.execute({ root, task_id: TASK, prior_intent_token: read().token,
+				operation: { op: "freeze_artifacts", actor_id: "executor" } });
+			expect(frozen.record.intent_ref.content_hash).toBe(record.intent_ref.content_hash);
+			const changed = app.execute({ root, task_id: TASK, prior_intent_token: read().token,
+				operation: { op: "record_finding", actor_id: "executor", finding: {
+					id: "policy-regression", kind: "advisory", acceptance_id: "A1", summary: "identity remains usable",
+				} } });
+			expect(changed.record.findings.some((finding) => finding.id === "policy-regression")).toBe(true);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	test("unowned task returns an empty correlated projection", async () => {
 		const root = mkdtempSync(join(tmpdir(), "assurance-projection-empty-"));
 		try {
@@ -498,6 +534,8 @@ describe("dynamic changed-path review gate", () => {
 		writeFileSync(join(root, "docs", "specs", `${TIER_TASK}.spec.md`), "# spec\n");
 		writeFileSync(join(root, "docs", "specs", "archive", `${TIER_TASK}.spec.md`), "# spec\n");
 		writeFileSync(join(root, "docs", "specs", "other.md"), "# other\n");
+		// The project declares the floor; a changed path under docs/specs raises the task.
+		writeFileSync(join(root, ".imm", "risk-floor.json"), readFileSync(join(process.cwd(), ".imm", "risk-floor.json"), "utf8"));
 		writeFileSync(join(root, "docs", "plans", `${TIER_TASK}.intent.json`), `${JSON.stringify(TIER_INTENT, null, 2)}\n`);
 		writeFileSync(join(root, "docs", "plans", "archive", `${TIER_TASK}.intent.json`), `${JSON.stringify(TIER_INTENT, null, 2)}\n`);
 		execFileSync("git", ["add", "-A"], { cwd: root });

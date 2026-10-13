@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "host-owned-environment-s3-staging-checks-at-freeze",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:host-owned-environment-s3-staging-checks-at-freeze:2026-10-13T01:45:32.651Z",
+  "final_record_hash": "sha256:df6639afde8cdb35de0620fb96647f4a972f744a0cf3b057cc0e5fd71dac9b33",
+  "terminalized_at": "2026-10-13T01:45:32.651Z"
+}

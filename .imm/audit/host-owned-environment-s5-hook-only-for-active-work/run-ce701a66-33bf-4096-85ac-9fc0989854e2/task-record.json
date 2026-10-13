@@ -1,0 +1,253 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "host-owned-environment-s5-hook-only-for-active-work",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "host-owned-environment-s5-hook-only-for-active-work",
+    "goal": "A session whose workspace has no active task and no active batch does not write Immune-Brain hook events: on PostToolUse, SubagentStart, SubagentStop and SessionEnd the Claude hook appends to the event log only for active work, while PreToolUse and UserPromptSubmit behave as before and hooks.json keeps its registrations (Spec host-owned-environment S5; D15, I9).",
+    "acceptance": [
+      {
+        "id": "HE-S5-A1",
+        "assertion": "Through the hook entry with a temporary state root: with an active task and with an active batch each of the four events appends to the event log; with neither, none of the four appends anything; UserPromptSubmit still records a phase entry when no task exists; seam: tests/claude-host-authority.test.ts (Spec SCN-12, SCN-13, D15, I9).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "HE-S5-A2",
+        "assertion": "The existing asynchronous Reviewer evidence tests pass unchanged and the generated Claude bundle matches the runtime source; seams: tests/claude-review-host-async-agent.test.ts, tests/claude-host-package.test.ts (Spec SCN-13, I9).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-review-host-async-agent.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/host-owned-environment-s5-hook-only-for-active-work.md",
+      "docs/plans/host-owned-environment-s5-hook-only-for-active-work.intent.json",
+      "docs/specs/host-owned-environment.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "tests/claude-host-authority.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/host-owned-environment-s5-hook-only-for-active-work.intent.json",
+    "content_hash": "sha256:848af379b448be175c7b8c94bb0c7084681f73c62f5a4bee7ff12ff04ad7af70"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:848af379b448be175c7b8c94bb0c7084681f73c62f5a4bee7ff12ff04ad7af70",
+  "git_base_head": "2b8e57505f21e9a31bee7faf919728f6ebf5813d",
+  "attestations": [
+    {
+      "id": "approval-qa-9491a1ef",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:848af379b448be175c7b8c94bb0c7084681f73c62f5a4bee7ff12ff04ad7af70",
+      "diff_hash": "sha256:221ff05df55b6baaaf520bbe2718ea3a17d80923a010b77b1a5c3a65ee3f7b6f",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:1c6c190fa726acbb5a588d78aca01d655772d6f7d57513bcc1e00043ba44c14e",
+      "acceptance_results": [
+        {
+          "acceptance_id": "HE-S5-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:1c6c190fa726acbb5a588d78aca01d655772d6f7d57513bcc1e00043ba44c14e"
+        },
+        {
+          "acceptance_id": "HE-S5-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:1c6c190fa726acbb5a588d78aca01d655772d6f7d57513bcc1e00043ba44c14e"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-e89d02f0",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:848af379b448be175c7b8c94bb0c7084681f73c62f5a4bee7ff12ff04ad7af70",
+      "diff_hash": "sha256:90eff9e7fde2f70ec1f078d443ee681b7daac50682b2ab64a13cede0d2ec06ba",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:32e171712c2fd2c052eb252871d0a05bcab9c427e78b9976b28ff863758110cb",
+      "acceptance_results": [
+        {
+          "acceptance_id": "HE-S5-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:32e171712c2fd2c052eb252871d0a05bcab9c427e78b9976b28ff863758110cb"
+        },
+        {
+          "acceptance_id": "HE-S5-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:32e171712c2fd2c052eb252871d0a05bcab9c427e78b9976b28ff863758110cb"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-a030ad83",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:848af379b448be175c7b8c94bb0c7084681f73c62f5a4bee7ff12ff04ad7af70",
+      "diff_hash": "sha256:90eff9e7fde2f70ec1f078d443ee681b7daac50682b2ab64a13cede0d2ec06ba",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 manifest digest、base、单一 parent、tree 和全部变更 diff；事件写入条件及验收 seam 覆盖符合要求，既有异步 Reviewer 测试和 hook registrations 未变，Kernel QA 结果均通过，未发现阻断问题；未重复执行验收命令。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "2b8e57505f21e9a31bee7faf919728f6ebf5813d",
+        "review_commit": "95394ac816ae4a599ba24ce5246439a40593a87c",
+        "review_tree": "5c4c4c39896041126bfec2a9e4ce7cb257bd3f47",
+        "manifest_digest": "sha256:739f97c14ed77567f5ad3fd94b37f67b720c5ea9c6892615ce37f0d7432ffe2e"
+      },
+      "reviewer_verdict_sha256": "sha256:c43108b47fa594e3eae29bf81f894baaa6a34eed5ad4ddc6ad4d743e8447eb2f"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-1ce665168917-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "HE-S5-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "[P1] plugins/immune-brain/runtime/claude/mcp_server.ts:777 将所有 .json 文件当作 batch state，包含正常生成的 .report.json。没有 active task 时，若旧 batch 的 report 先于当前 active batch 被遍历，readAnyBatchRunState 会因 report contract 不匹配而抛错，四种 observation event 均无法写入日志，违反 I9。直接依赖的未改动状态所有者 plugins/immune-brain/runtime/unattended/batch_state.ts:910 将 report 写在同一目录，:776 的 parser 只接受 state contract，因此读取该文件是核实新调用边界所必需。最小修复是在读取 state 前区分 report 与 state 文件，保留真实 state 错误的校验，并在 tests/claude-host-authority.test.ts 增加旧 terminal batch/report 与当前 active batch 共存的 hook-entry 回归测试；同步重新生成 bundle。",
+      "anchor": "sha256:31e8ed10000711221d3e802466f78ee3e5b6a94fe81aa4389d04707b281e48d2",
+      "evidence": {
+        "trigger": "workspace 没有 active task；.imm/state/batches 同时包含合法的 a-old.json（terminal state）、由 writeBatchRunReport 正常生成的 a-old.report.json（assurance_kernel/batch_run_report/v1）以及 z-live.json（prepared 或 running state）。任一种带 session_id 的 PostToolUse、SubagentStart、SubagentStop 或 SessionEnd payload 进入 runHook，目录遍历先遇到 a-old.report.json；它被转换为 batchId a-old.report，parser 抛出 unknown contract，尚未检查 z-live.json 就中断 append。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/mcp_server.ts::runHook",
+          "plugins/immune-brain/runtime/unattended/batch_state.ts::readAnyBatchRunState",
+          "plugins/immune-brain/runtime/unattended/batch_state.ts::parseAnyBatchRunState",
+          "plugins/immune-brain/runtime/unattended/batch_state.ts::parseBatchRunState",
+          "plugins/immune-brain/runtime/unattended/batch_state.ts::validateRecordShape"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "HE-S5-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-1ce665168917-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "HE-S5-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "[P2] tests/claude-host-authority.test.ts:1492 只验证无 task 时 UserPromptSubmit 的 phase entry，没有在约定 hook-entry seam 断言 active task 的 prompt notice。HE-S5-A1 引用的 docs/specs/host-owned-environment.spec.md 将 automated SCN-13 映射到该 acceptance，其 Then 要求 active task 的 notice 和 Reviewer events 保持原行为；新增 active-task 测试只覆盖四种 observation event，约定测试文件没有 active-task UserPromptSubmit 调用或 notice 断言。最小修复是复用 active-task fixture，经真实 --hook 入口提交 prompt，并断言返回的 active-task notice；无需修改 acceptance。",
+      "anchor": "sha256:91317f557d0f1583a34b2938867df005be957e70ba0207e2a6f996f2a6064027",
+      "evidence": {
+        "trigger": "已有 active task 时提交 UserPromptSubmit。当前 tests/claude-host-authority.test.ts 的 hook-entry 测试只在没有 task 的 fixture 上提交该事件并断言 stdout 为空，因此即使 active-task notice 被删除或丢失，HE-S5-A1 的约定 seam 仍不会检测 SCN-13 的这一 Then。",
+        "caller_chain": [
+          "tests/claude-host-authority.test.ts::hook",
+          "plugins/immune-brain/runtime/claude/mcp_server.ts::runHook",
+          "plugins/immune-brain/runtime/claude/mcp_server.ts::activeTaskHookOutput"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "HE-S5-A1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:host-owned-environment-s5-hook-only-for-active-work:2026-10-13T03:44:00.451Z",
+      "at": "2026-10-13T03:44:00.451Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/host-owned-environment-s5-hook-only-for-active-work.intent.json"
+    },
+    {
+      "id": "record_approval:host-owned-environment-s5-hook-only-for-active-work:2026-10-13T03:44:37.008Z",
+      "at": "2026-10-13T03:44:37.008Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-9491a1ef\naction_v2_sha256:a40dee31e5728f3c3a7939414d8e506c40a0bafda0d59713fc12b6d84aedba54",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-8236ae32a3615f90",
+        "issued_at": "2026-10-13T03:44:37.008Z"
+      }
+    },
+    {
+      "id": "request_rework:host-owned-environment-s5-hook-only-for-active-work:2026-10-13T03:48:23.938Z",
+      "at": "2026-10-13T03:48:23.938Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:1da79c79d44be191d554b4a14588b97affda2b9057e74d8bf39ce7746aa08d4c",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-0a872f016db39f18",
+        "issued_at": "2026-10-13T03:48:23.939Z"
+      }
+    },
+    {
+      "id": "resolve_finding:host-owned-environment-s5-hook-only-for-active-work:2026-10-13T03:50:14.412Z",
+      "at": "2026-10-13T03:50:14.412Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-1ce665168917-1-review-1\naction_v2_sha256:b41ca5b7d8c05fde50a217769e33dfb8b163164f8150bab52ae77b99cf0700ab"
+    },
+    {
+      "id": "resolve_finding:host-owned-environment-s5-hook-only-for-active-work:2026-10-13T03:50:21.942Z",
+      "at": "2026-10-13T03:50:21.942Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-1ce665168917-2-review-2\naction_v2_sha256:fda6b219ce4604b9fe2af47477124407a8afe4d823f1bf1b9962c91bf06326d1"
+    },
+    {
+      "id": "freeze_artifacts:host-owned-environment-s5-hook-only-for-active-work:2026-10-13T03:50:29.835Z",
+      "at": "2026-10-13T03:50:29.835Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/host-owned-environment-s5-hook-only-for-active-work.intent.json"
+    },
+    {
+      "id": "record_approval:host-owned-environment-s5-hook-only-for-active-work:2026-10-13T03:51:08.791Z",
+      "at": "2026-10-13T03:51:08.791Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e89d02f0\naction_v2_sha256:57330c60c303c7e82118b1bc9120c6ea291d3be76ed14672f50642265fd4d886",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-ec6efa4eedf6cb7a",
+        "issued_at": "2026-10-13T03:51:08.791Z"
+      }
+    },
+    {
+      "id": "record_approval:host-owned-environment-s5-hook-only-for-active-work:2026-10-13T03:53:57.569Z",
+      "at": "2026-10-13T03:53:57.569Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-a030ad83\naction_v2_sha256:d914593a4ab64af964153299df09558da2ae703c28170ebb094168a1179863cf",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-14057cf559a962c9",
+        "issued_at": "2026-10-13T03:53:57.569Z"
+      }
+    },
+    {
+      "id": "complete:host-owned-environment-s5-hook-only-for-active-work:2026-10-13T03:53:59.092Z",
+      "at": "2026-10-13T03:53:59.092Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:66703ba016778e3371550b72048d0369cfe345734d14ea06480a1aac902d43f3"
+    }
+  ]
+}

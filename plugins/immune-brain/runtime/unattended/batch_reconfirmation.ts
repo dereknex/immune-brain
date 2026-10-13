@@ -1,12 +1,13 @@
 // Read-only eligibility for a first, zero-commit plan reconfirmation.
 import { spawnSync } from "node:child_process";
 import { computeBatchPlanDigest, type BatchPlanChild as DigestChild } from "../kernel/batch_authority";
-import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../kernel/intent";
+import { canonicalIntentHash, parseProjectTaskIntent, readTaskIntent } from "../kernel/intent";
 import { projectAssurance } from "../kernel/assurance_projection";
 import { readAuditTaskPair, readSecureProjectBytes, readSettledRunEvidence, enrollmentEventIdFor, readWorkspaceStateRaw, type SettledRunEvidence } from "../kernel/storage";
 import { auditRunDirPath, auditRunRecordPath, auditRunTerminalProofPath, batchCommitEvidencePath, batchStatePath } from "../kernel/storage_paths";
 import { taskDeliveryIdentity, taskCommitRevisionIdentity, pathMatchesScope } from "../workspace_scope";
 import { projectTask } from "../kernel/completion";
+import { readRiskFloor } from "../kernel/risk_floor";
 import { isTerminalBatchState, type BatchRunStateRecord } from "./batch_state";
 import type { BatchPlanChild } from "./types";
 
@@ -54,7 +55,7 @@ export function ownUnpersistedBatchHead(root: string, record: BatchRunStateRecor
 		if (!paths.length || paths.some(path => !path.startsWith(`${auditRunDirPath(task, run)}/`) &&
 			!pair.record.intent_snapshot.scope_hint.some(s => pathMatchesScope(path, s)))) return false;
 		const identity = taskCommitRevisionIdentity(root, pair.record.intent_snapshot.scope_hint, pair.record.git_base_head, head);
-		if (!projectTask(pair.record.intent_snapshot, pair.record, identity.diff_hash, pair.record.intent_ref.content_hash, identity.changed_paths).complete) return false;
+		if (!projectTask(pair.record.intent_snapshot, pair.record, identity.diff_hash, pair.record.intent_ref.content_hash, identity.changed_paths, readRiskFloor(root)).complete) return false;
 		return git(root, ["rev-parse", "HEAD"]).trim() === head;
 	} catch { return false; }
 }
@@ -111,12 +112,12 @@ export async function captureBatchReconfirmation(root: string, record: BatchRunS
 		const previous = record.children[index]!;
 		if (!id.test(child.task_id) || child.task_id !== previous.task_id || child.slice_id !== previous.slice_id ||
 			JSON.stringify(child.blocked_by) !== JSON.stringify(previous.blocked_by) || child.intent_path !== `docs/plans/${child.task_id}.intent.json`) refuse();
-		const old = parseTaskIntentV1(JSON.parse(git(root, ["show", `${record.base_head}:${child.intent_path}`])));
+		const old = parseProjectTaskIntent(root, JSON.parse(git(root, ["show", `${record.base_head}:${child.intent_path}`])));
 		if (old.task_id !== child.task_id) refuse();
 		const oldHash = canonicalIntentHash(old);
 		oldChildren.push({ task_id: child.task_id, blocked_by: [...child.blocked_by], intent_path: child.intent_path, intent_revision: old.revision, intent_content_hash: oldHash });
 		const currentBytes = capture(child.intent_path);
-		const current = parseTaskIntentV1(JSON.parse(decode(currentBytes)));
+		const current = parseProjectTaskIntent(root, JSON.parse(decode(currentBytes)));
 		const currentHash = canonicalIntentHash(current);
 		const tracked = readTaskIntent(root, child.task_id, child.intent_path);
 		if (currentHash !== tracked.content_hash || currentHash !== child.intent_content_hash || current.revision !== child.intent_revision) refuse();

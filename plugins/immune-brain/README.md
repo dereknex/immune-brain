@@ -77,9 +77,10 @@ not select a language, package manager, or test framework. Projects may reuse
 their existing tracked scripts or host tools; adding an ecosystem does not
 require an Immune-Brain adapter.
 
-Preparation and checks run in a disposable workspace with an isolated HOME.
-Tracked delivery inputs are immutable, while generated output is allowed only
-under explicitly declared `writable_paths`. Missing tools and preparation or
+Preparation and checks run in the task's working directory with the host
+environment. Tracked content inside the task's scope must equal the frozen
+snapshot before and after every command; untracked and ignored output is the
+user's environment. Missing tools and preparation or
 integrity failures block QA separately from acceptance failures. Local process
 execution is not a malicious-code sandbox and does not prove that transitive
 tools or external services are reproducible.

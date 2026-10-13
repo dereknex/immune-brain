@@ -6,7 +6,9 @@ import { join } from "node:path";
 import {
 	captureGitTaskSnapshot,
 	setGitTaskSnapshotTestHook,
+	taskDeliveryIdentity,
 	taskDiffHash,
+	taskStatusIdentity,
 	writeEnrollmentBaseline,
 } from "../plugins/immune-brain/runtime/workspace_scope";
 
@@ -323,4 +325,68 @@ describe("managed task snapshot isolation", () => {
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
+});
+
+// Spec host-owned-environment D9, D11, I5: a status read tolerates unstaged and
+// untracked in-scope paths and reports them; freezing a snapshot does not, and
+// an index-flagged in-scope path refuses both.
+describe("status identity tolerates what a frozen snapshot refuses", () => {
+	const records = (root: string) => [
+		{ contract: "assurance_kernel/task_record/v4", task_id: "t", intent_snapshot: { scope_hint: ["new.ts", "task.ts"] }, git_base_head: git(root, ["rev-parse", "HEAD"]) },
+		{ contract: "assurance_kernel/task_record/v3", task_id: "t", intent_snapshot: { scope_hint: ["new.ts", "task.ts"] } },
+	];
+
+	test("a staged scope reads the same identity as the delivery selector and reports nothing", () => {
+		const root = repo();
+		try {
+			writeFileSync(join(root, "task.ts"), "export const task = 'staged';\n");
+			git(root, ["add", "task.ts"]);
+			for (const record of records(root)) {
+				expect(taskStatusIdentity(root, record)).toEqual({ ...taskDeliveryIdentity(root, record), unstaged_scope_paths: [] });
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("unstaged and untracked in-scope paths are reported beside the staged identity", () => {
+		const root = repo();
+		try {
+			writeFileSync(join(root, "task.ts"), "export const task = 'staged';\n");
+			git(root, ["add", "task.ts"]);
+			const staged = records(root).map((record) => taskDeliveryIdentity(root, record));
+			writeFileSync(join(root, "task.ts"), "export const task = 'unstaged';\n");
+			writeFileSync(join(root, "new.ts"), "export const added = true;\n");
+			writeFileSync(join(root, "outside.ts"), "export const outside = 'dirty';\n");
+			records(root).forEach((record, index) => {
+				expect(taskStatusIdentity(root, record)).toEqual({ ...staged[index], unstaged_scope_paths: ["new.ts", "task.ts"] });
+				expect(() => taskDeliveryIdentity(root, record)).toThrow(
+					/task scope contains unstaged or untracked changes: new\.ts, task\.ts/,
+				);
+			});
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	for (const [flags, label] of [
+		[["--skip-worktree"], "skip-worktree"],
+		[["--assume-unchanged"], "assume-unchanged"],
+		[["--assume-unchanged", "--skip-worktree"], "skip-worktree"],
+	] as const) {
+		test(`in-scope ${flags.join(" + ")} refuses the status identity and the snapshot alike`, () => {
+			const root = repo();
+			try {
+				for (const flag of flags) git(root, ["update-index", flag, "task.ts"]);
+				writeFileSync(join(root, "task.ts"), "export const task = 'hidden';\n");
+				const refusal = new RegExp(`contains unsupported index flags: task\\.ts \\(${label}\\)`);
+				for (const record of records(root)) {
+					expect(() => taskStatusIdentity(root, record)).toThrow(refusal);
+					expect(() => taskDeliveryIdentity(root, record)).toThrow(refusal);
+				}
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+			}
+		});
+	}
 });

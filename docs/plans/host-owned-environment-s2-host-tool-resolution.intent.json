@@ -1,0 +1,32 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "host-owned-environment-s2-host-tool-resolution",
+  "owner": "user",
+  "goal": "A deterministic QA command is whatever the absolute-entry PATH provides: command resolution stops interpreting '#!' lines, pins and executes the resolved entry file directly and lets the operating system resolve any interpreter, so a tool behind a version-manager shim runs instead of being refused; FrozenCommand loses its interpreter fields, and the Planner contract names sh -c as the way to write a compound command (Spec host-owned-environment S2; D6, D7, I3).",
+  "acceptance": [
+    {
+      "id": "HE-S2-A1",
+      "assertion": "Through resolveVerificationCommand and runFixedVerification with real child processes: a host tool whose '#!' line names another script runs, a tool using 'env -S' runs, an entry file replaced during the run fails the identity check, and a timeout removes every process of the run; seam: tests/pi-canary-verification-descriptor.test.ts (Spec SCN-5, D6, I3).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-verification-descriptor.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "HE-S2-A2",
+      "assertion": "A descriptor with executable sh and argv ['-c', 'true && exit 3'] yields exit status 3; descriptor bounds still reject an over-long argv and an executable with a path separator; dist/imm-planner.md names sh -c for compound commands; the generated Claude bundle matches the runtime source; seams: tests/pi-canary-verification-descriptor.test.ts, tests/kernel-verification-descriptor.test.ts, tests/workflow-verification-invariants.test.ts, tests/claude-host-package.test.ts (Spec SCN-4, D7).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-verification-descriptor.test.ts\",\n      \"tests/kernel-verification-descriptor.test.ts\",\n      \"tests/workflow-verification-invariants.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/host-owned-environment-s2-host-tool-resolution.md",
+    "docs/plans/host-owned-environment-s2-host-tool-resolution.intent.json",
+    "docs/specs/host-owned-environment.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/runtime/assurance/qa.ts",
+    "plugins/immune-brain/runtime/assurance/verification.ts",
+    "tests/kernel-verification-descriptor.test.ts",
+    "tests/pi-canary-verification-descriptor.test.ts",
+    "tests/workflow-verification-invariants.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

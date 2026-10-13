@@ -1,0 +1,428 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "host-owned-environment-s1-task-qa-in-place",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "host-owned-environment-s1-task-qa-in-place",
+    "goal": "Task deterministic QA runs prepare and every check in the task's own working directory instead of a disposable copy: before the first command and after each command the in-scope tracked content of the working directory must equal the frozen snapshot tree, a difference fails as protected_input_or_output_drift with the differing paths returned to the caller and never stored, task QA no longer materializes or cleans a delivery copy while the Lane batch integration recheck keeps it, and the run and Planner contracts plus ADR 0022 state the in-place rule (Spec host-owned-environment S1; D1-D5, I1, I2, U7, U8).",
+    "acceptance": [
+      {
+        "id": "HE-S1-A1",
+        "assertion": "Through runDeterministicQa on a real temporary Git repository: a check that reads a file from an ignored directory of the working directory passes; an in-scope tracked edit outside the frozen snapshot refuses before any command runs; a check that rewrites an in-scope tracked file fails as protected_input_or_output_drift; an out-of-scope or non-delivery path may differ, untracked output is allowed, and the run creates no directory outside the repository; seam: tests/shared-deterministic-qa.test.ts (Spec SCN-1, SCN-2, SCN-3, D1, D2, I1, I2, U8).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/shared-deterministic-qa.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "HE-S1-A2",
+        "assertion": "Both Hosts and the host-neutral coordinator complete a passing task QA run with no delivery materialization; the differing paths of a refused run are absent from the stored TaskRecord and from persisted diagnostics; aborting during a command still removes its processes; seams: tests/pi-canary-assurance-authority.test.ts, tests/pi-canary-verification-descriptor.test.ts, tests/host-neutral-assurance-coordinator.test.ts, tests/dual-host-assurance-conformance.test.ts (Spec D2, D4).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-assurance-authority.test.ts\",\n      \"tests/pi-canary-verification-descriptor.test.ts\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\",\n      \"tests/dual-host-assurance-conformance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "HE-S1-A3",
+        "assertion": "dist/imm-run.md and dist/imm-planner.md state that QA runs in the task's working directory after an equality check with the frozen snapshot and that a dependency already present there is valid provenance, neither describes task QA as running in a disposable delivery, ADR 0022 exists, and the generated Claude bundle matches the runtime source; seams: tests/workflow-verification-invariants.test.ts, tests/claude-host-package.test.ts, tests/unattended-contracts.test.ts (Spec D5).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-verification-invariants.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/unattended-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/host-owned-environment-s1-task-qa-in-place.md",
+      "docs/adr/0022-deterministic-qa-runs-in-place.md",
+      "docs/plans/host-owned-environment-s1-task-qa-in-place.intent.json",
+      "docs/specs/host-owned-environment.spec.md",
+      "plugins/immune-brain/.pi-extension/pi-canary-verification.ts",
+      "plugins/immune-brain/README.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/assurance/delivery_workspace.ts",
+      "plugins/immune-brain/runtime/assurance/qa.ts",
+      "plugins/immune-brain/runtime/assurance/verification.ts",
+      "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+      "plugins/immune-brain/runtime/workspace_scope.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/host-neutral-assurance-coordinator.test.ts",
+      "tests/managed-authority-failure-contract.test.ts",
+      "tests/pi-batch-acceptance-integration.test.ts",
+      "tests/pi-canary-assurance-authority.test.ts",
+      "tests/pi-canary-verification-descriptor.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/qa-prepare-diagnostics.test.ts",
+      "tests/shared-deterministic-qa.test.ts",
+      "tests/unattended-batch-integration.test.ts",
+      "tests/unattended-batch-lanes.test.ts",
+      "tests/unattended-contracts.test.ts",
+      "tests/v4-runtime-launchers.test.ts",
+      "tests/workflow-verification-invariants.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/host-owned-environment-s1-task-qa-in-place.intent.json",
+    "content_hash": "sha256:6b4f5c41504a08016c4b1bb00b34f39a525946641773ec29fb5af651ad2877d7"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:4b57f4f1693718054432da4f963a575da9bedbbf973358d37c4c38c8cda3a26c",
+  "git_base_head": "9e0a4b766fcfd8d426b45a783082dcfc25b6aba3",
+  "attestations": [
+    {
+      "id": "approval-qa-f79f7476",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6b4f5c41504a08016c4b1bb00b34f39a525946641773ec29fb5af651ad2877d7",
+      "diff_hash": "sha256:71f6c20196f9856d3ef01d30ede19c8bb699dc74d3e1f3842ec7f325c2a367a2",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:56d9df3ed1838e29e84b3dbf6511e4f4dc7d8d815391da6dd4d3de7524c00111",
+      "acceptance_results": [
+        {
+          "acceptance_id": "HE-S1-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:56d9df3ed1838e29e84b3dbf6511e4f4dc7d8d815391da6dd4d3de7524c00111"
+        },
+        {
+          "acceptance_id": "HE-S1-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:56d9df3ed1838e29e84b3dbf6511e4f4dc7d8d815391da6dd4d3de7524c00111"
+        },
+        {
+          "acceptance_id": "HE-S1-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:56d9df3ed1838e29e84b3dbf6511e4f4dc7d8d815391da6dd4d3de7524c00111"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-9c7cb4ee",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6b4f5c41504a08016c4b1bb00b34f39a525946641773ec29fb5af651ad2877d7",
+      "diff_hash": "sha256:3be4cfb2c65a53b8b2af8ba2ce596485ffeea714ea0f69dcb670f05818e89f4d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:1590311b257a06aea3f6489b6b3ba60db418aa969dc796976c99cf6f6ef068c7",
+      "acceptance_results": [
+        {
+          "acceptance_id": "HE-S1-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:1590311b257a06aea3f6489b6b3ba60db418aa969dc796976c99cf6f6ef068c7"
+        },
+        {
+          "acceptance_id": "HE-S1-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:1590311b257a06aea3f6489b6b3ba60db418aa969dc796976c99cf6f6ef068c7"
+        },
+        {
+          "acceptance_id": "HE-S1-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:1590311b257a06aea3f6489b6b3ba60db418aa969dc796976c99cf6f6ef068c7"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-17fc1bfc",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6b4f5c41504a08016c4b1bb00b34f39a525946641773ec29fb5af651ad2877d7",
+      "diff_hash": "sha256:3be4cfb2c65a53b8b2af8ba2ce596485ffeea714ea0f69dcb670f05818e89f4d",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (base, single parent, tree, manifest digest recomputed); all 21 per-file diffs read; in-place QA with the in-scope equality check before and after every command, non-persisted drift_paths, the materialized batch recheck, the contract texts, ADR 0022 and the regenerated Claude bundle match HE-S1-A1..A3; three non-blocking notes attached.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "9e0a4b766fcfd8d426b45a783082dcfc25b6aba3",
+        "review_commit": "eb70eee1fa9268f92030295c317f2ad4e2b27651",
+        "review_tree": "0d39d9869e469eae7110b8cd7c439847b29e0cf9",
+        "manifest_digest": "sha256:697b5c66feeb85f54daf95c6d66dd4c64c17f7082c38ea8b9287171a978f853c"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-ff5c56a92160-1-review-1",
+          "acceptance_id": "HE-S1-A1",
+          "summary": "inScopeTrackedDrift lists the whole frozen tree and the whole index through the 8 MiB gitBytes buffer, and clean() reports any failure of the comparison as protected_input_or_output_drift with no drift_paths, so a very large repository would be refused as drift rather than as a comparison failure.",
+          "anchor": "sha256:ebab488c7a9335d00f3284852b2eb33cc213b442d9e572065a7b1a59dbd9850d",
+          "evidence": {
+            "trigger": "A repository whose `git ls-tree -r -z <tree>` or `git ls-files -z` output exceeds 8 MiB (roughly 90k tracked files, regardless of how small the task scope is), or any other Git failure inside the comparison: gitBytes throws, the catch in clean() sets paths to undefined, and the run fails closed as protected_input_or_output_drift with no paths and no drift note. Read from the diff; not executed.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/assurance/qa.ts:runDeterministicQa",
+              "plugins/immune-brain/runtime/assurance/qa.ts:clean",
+              "plugins/immune-brain/runtime/workspace_scope.ts:inScopeTrackedDrift",
+              "plugins/immune-brain/runtime/workspace_scope.ts:gitBytes"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "HE-S1-A1"
+            }
+          }
+        },
+        {
+          "id": "review-ff5c56a92160-2-review-2",
+          "acceptance_id": "HE-S1-A1",
+          "summary": "A check that leaves untracked, non-ignored output inside the task scope passes the in-place run, but the unchanged snapshot capture still refuses untracked in-scope paths, so that output is now left where later identity captures see it; the seam test only pins ignored, out-of-scope output.",
+          "anchor": "sha256:f5be2134a1c91f1ef131b2de4045120a4383eba9d9f99a357c35c0554e94375b",
+          "evidence": {
+            "trigger": "scope_hint covers a directory (e.g. `src`) and a check or prepare writes a new file there that .gitignore does not cover. inScopeTrackedDrift compares tracked paths only, so runDeterministicQa passes; taskRevisionSnapshotOnce throws `task scope contains unstaged or untracked changes` on the next capture. Previously this output landed in the discarded copy. The capture refusal was read in the unchanged part of workspace_scope.ts (same state machine as the changed function); the post-QA settlement outcome was not executed. In tests/shared-deterministic-qa.test.ts the `untracked-output` file is gitignored and outside the test scope, so this case is unpinned. This follows Spec D3/I5 as written and is a note on that boundary.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/assurance/qa.ts:runDeterministicQa",
+              "plugins/immune-brain/runtime/workspace_scope.ts:inScopeTrackedDrift",
+              "plugins/immune-brain/runtime/workspace_scope.ts:captureGitTaskRevisionSnapshot",
+              "plugins/immune-brain/runtime/workspace_scope.ts:taskRevisionSnapshotOnce"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "HE-S1-A1"
+            }
+          }
+        },
+        {
+          "id": "review-ff5c56a92160-3-review-3",
+          "acceptance_id": "HE-S1-A3",
+          "summary": "The changeset declares `patch`, while Spec D16 assigns S1 a `major` bump because a check that relied on a pristine copy now sees the working directory and a check that rewrites an in-scope tracked file now fails.",
+          "anchor": "sha256:993367401821dc8e7011434a6006da580cc8b71787e3712c2982548873e87a87",
+          "evidence": {
+            "trigger": ".changeset/host-owned-environment-s1-task-qa-in-place.md front matter is `\"immune-brain\": patch`; docs/specs/host-owned-environment.spec.md D16 (read because the acceptances cite this Spec) says S1 ships `major`. No acceptance asserts the bump level, so this is for the owner to confirm, not rework.",
+            "caller_chain": [
+              ".changeset/host-owned-environment-s1-task-qa-in-place.md",
+              "docs/specs/host-owned-environment.spec.md:D16"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "HE-S1-A3"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:18cee2480883e41ccfea5171ce931fbd512edcb546c8373da3eccc144eb95489"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-fb51723b9fc0-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "HE-S1-A3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Three HE-S1-A3 clauses are asserted by no test at the named seams: that dist/imm-run.md states the in-place rule with the frozen-snapshot equality check, that dist/imm-run.md no longer describes a disposable delivery, and that ADR 0022 exists. The delivered text and ADR are correct in the revision; add the missing assertions (tests/unattended-contracts.test.ts already loads imm-run.md as LOOP_CONTRACT and is in scope) rather than changing the acceptance.",
+      "anchor": "sha256:24b20fab1acbfd4d1b8d98d3503883eac2cd0e510494dead0c2ba8caadbc4e94",
+      "evidence": {
+        "trigger": "Revert the imm-run.md step-2 hunk to 'runs all descriptors in a disposable delivery materialization', or delete docs/adr/0022-deterministic-qa-runs-in-place.md, then run the HE-S1-A3 descriptor (bun test tests/workflow-verification-invariants.test.ts tests/claude-host-package.test.ts tests/unattended-contracts.test.ts): it still passes. In the review revision the only in-place assertions are on the Planner contract (workflow-verification-invariants.test.ts:175-176, 'a dependency already present in that working directory' and not 'disposable delivery'); a grep of tests/ for \"task's working directory\", 'must equal the frozen', 'equality check' and 'adr/0022' matches nothing else. tests/unattended-contracts.test.ts and tests/claude-host-package.test.ts are unchanged, and every other ADR from 0018 to 0021 has an existence or content test while 0022 has none. The Planner sentence 'QA runs in the task's working directory after an equality check with the frozen snapshot' is likewise covered only through the dependency fragment.",
+        "caller_chain": [
+          "docs/plans/host-owned-environment-s1-task-qa-in-place.intent.json#HE-S1-A3",
+          "tests/workflow-verification-invariants.test.ts",
+          "tests/unattended-contracts.test.ts",
+          "tests/claude-host-package.test.ts",
+          "plugins/immune-brain/dist/imm-run.md",
+          "docs/adr/0022-deterministic-qa-runs-in-place.md"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "HE-S1-A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-fb51723b9fc0-2-review-2",
+      "kind": "advisory",
+      "status": "resolved",
+      "acceptance_id": "HE-S1-A2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "No host or coordinator seam asserts 'no delivery materialization' on a passing run, and the stored-nothing check greps only for the key name drift_paths. In-place execution is shown indirectly, by the drift test finding tools/notes.txt rewritten in the working directory; the unchanged host-neutral seam runs real runDeterministicQa only for a failing prepare.",
+      "anchor": "sha256:f129f09f6e383599a8cbed95b282b56f65204794e8fafbb36379016a37ccbd7a",
+      "evidence": {
+        "trigger": "tests/dual-host-assurance-conformance.test.ts 'Pi and Claude actual ports execute the same unknown project command' asserts state review_ready and an execution digest only; it would also pass if the commands ran in a copy, because prepare and check share whichever root they run in. It does not assert that generated/ready exists under the fixture root or that no imm-delivery-* directory was created. The refused-run test runs grep -rl drift_paths .imm, which would miss a path value persisted under another key.",
+        "caller_chain": [
+          "tests/dual-host-assurance-conformance.test.ts",
+          "tests/host-neutral-assurance-coordinator.test.ts",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.advance",
+          "plugins/immune-brain/runtime/assurance/qa.ts:runDeterministicQa"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "HE-S1-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-fb51723b9fc0-3-review-3",
+      "kind": "advisory",
+      "status": "resolved",
+      "acceptance_id": "HE-S1-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The 'creates no directory outside the repository' assertion bypasses the code that changed for it: the HE-S1-A1 tests inject _frozenTree, so writeDeliveryTree and its relocated temporary index directory never run, and the check only looks for the imm-delivery prefix in tmpdir.",
+      "anchor": "sha256:ea0b6d8da7cfb350d8b487e00c06bf96170594452134f550702084abd5e6c1c6",
+      "evidence": {
+        "trigger": "tests/shared-deterministic-qa.test.ts run() passes _frozenTree {tree, drift}, so deliveryTreeForSnapshot and writeDeliveryTree are skipped; reverting the delivery_workspace.ts change from the Git directory back to tmpdir() leaves the HE-S1-A1 test green. Only the dual-host and host-neutral tests reach the real derivation, and none of them asserts on directories outside the repository.",
+        "caller_chain": [
+          "tests/shared-deterministic-qa.test.ts",
+          "plugins/immune-brain/runtime/assurance/qa.ts:runDeterministicQa",
+          "plugins/immune-brain/runtime/assurance/qa.ts:deliveryTreeForSnapshot",
+          "plugins/immune-brain/runtime/assurance/delivery_workspace.ts:writeDeliveryTree"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "HE-S1-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-fb51723b9fc0-4-review-4",
+      "kind": "advisory",
+      "status": "resolved",
+      "acceptance_id": "HE-S1-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Spec T1 says the equality check runs Git with the repository bindings removed, but inScopeTrackedDrift runs git with the inherited environment. An inherited GIT_DIR or GIT_INDEX_FILE changes what ls-files and the hash-object clean filters see. A failure of ls-tree, or of ls-tree -r output over the 8 MB buffer on a very large repository, is reported as protected_input_or_output_drift with no paths.",
+      "anchor": "sha256:ebab488c7a9335d00f3284852b2eb33cc213b442d9e572065a7b1a59dbd9850d",
+      "evidence": {
+        "trigger": "Host process started with GIT_INDEX_FILE or GIT_DIR exported (for example from a Git hook): gitBytes and the direct spawnSync('git', [... 'hash-object', '--stdin-paths']) in inScopeTrackedDrift pass no env, so both inherit it. Tree paths are still checked by lstat and hash, so the common outcome is a fail-closed false drift, not a false pass; any thrown error inside drift() is swallowed by clean() and surfaces as drift without drift_paths. docs/specs/host-owned-environment.spec.md (unchanged) was read because HE-S1-A1 cites its D2, I1 and T1 design for this function.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/qa.ts:runDeterministicQa",
+          "plugins/immune-brain/runtime/assurance/qa.ts:clean",
+          "plugins/immune-brain/runtime/workspace_scope.ts:inScopeTrackedDrift",
+          "plugins/immune-brain/runtime/workspace_scope.ts:gitBytes"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "HE-S1-A1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:host-owned-environment-s1-task-qa-in-place:2026-10-12T17:23:48.166Z",
+      "at": "2026-10-12T17:23:48.166Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:cd00e7bb6bc7071b9492785222b9ffc2892b2ebdac09cfef2dd1a4e7a4c06af8",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-8e8517bd5ac96532",
+        "issued_at": "2026-10-12T23:22:14.386Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:host-owned-environment-s1-task-qa-in-place:2026-10-12T23:22:33.018Z",
+      "at": "2026-10-12T23:22:33.018Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/host-owned-environment-s1-task-qa-in-place.intent.json"
+    },
+    {
+      "id": "record_approval:host-owned-environment-s1-task-qa-in-place:2026-10-12T23:23:55.858Z",
+      "at": "2026-10-12T23:23:55.858Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-f79f7476\naction_v2_sha256:28d829e872893730711b4cc2984c988ab4963538f565a5bcff4754818e508e61",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-12T23:23:55.858Z"
+      }
+    },
+    {
+      "id": "request_rework:host-owned-environment-s1-task-qa-in-place:2026-10-12T23:28:22.188Z",
+      "at": "2026-10-12T23:28:22.188Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:f2d36d86c324f63d993e637d4dcfd92e6d83ce51a4ac62313b753c928e32cb0a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-12T23:28:22.188Z"
+      }
+    },
+    {
+      "id": "resolve_finding:host-owned-environment-s1-task-qa-in-place:2026-10-12T23:31:56.950Z",
+      "at": "2026-10-12T23:31:56.950Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-fb51723b9fc0-1-review-1\naction_v2_sha256:963e2ba8bb64243599b8e067d3bd7320614a291c746f03ec40faf93f948c103f"
+    },
+    {
+      "id": "resolve_finding:host-owned-environment-s1-task-qa-in-place:2026-10-12T23:32:01.164Z",
+      "at": "2026-10-12T23:32:01.164Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-fb51723b9fc0-2-review-2\naction_v2_sha256:6dc6e3edf20051a4ff154cc21e057c3d6f3a0baea9ebe4b8c41046b40847ba40"
+    },
+    {
+      "id": "resolve_finding:host-owned-environment-s1-task-qa-in-place:2026-10-12T23:32:05.382Z",
+      "at": "2026-10-12T23:32:05.382Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-fb51723b9fc0-3-review-3\naction_v2_sha256:3875e80584549e3034ef7b829d8860df8657d415786f59a7059f166248fc81eb"
+    },
+    {
+      "id": "resolve_finding:host-owned-environment-s1-task-qa-in-place:2026-10-12T23:32:06.818Z",
+      "at": "2026-10-12T23:32:06.818Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-fb51723b9fc0-4-review-4\naction_v2_sha256:0c35031709ab9c6ada5084f18ea165bd1dbba73c1d44433c9d90a20afe3b2a73"
+    },
+    {
+      "id": "freeze_artifacts:host-owned-environment-s1-task-qa-in-place:2026-10-12T23:32:08.924Z",
+      "at": "2026-10-12T23:32:08.924Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/host-owned-environment-s1-task-qa-in-place.intent.json"
+    },
+    {
+      "id": "record_approval:host-owned-environment-s1-task-qa-in-place:2026-10-12T23:33:32.114Z",
+      "at": "2026-10-12T23:33:32.114Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-9c7cb4ee\naction_v2_sha256:c5a3d5d9126f85737c84ed583627d885840f51b378bbdc2b838a4ac6552a1508",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-12T23:33:32.115Z"
+      }
+    },
+    {
+      "id": "record_approval:host-owned-environment-s1-task-qa-in-place:2026-10-12T23:38:22.344Z",
+      "at": "2026-10-12T23:38:22.344Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-17fc1bfc\naction_v2_sha256:42232834734baf26763e850996237ec9448fd4f658f6fbf822c28351469c9687",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-12T23:38:22.344Z"
+      }
+    },
+    {
+      "id": "complete:host-owned-environment-s1-task-qa-in-place:2026-10-12T23:38:24.273Z",
+      "at": "2026-10-12T23:38:24.273Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:4fbdd185f696d7fb098817c05ecf827cff4bc4bc54e5724fdc7b0e6ecb0289e4"
+    }
+  ]
+}

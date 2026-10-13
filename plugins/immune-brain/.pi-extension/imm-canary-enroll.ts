@@ -17,7 +17,7 @@ import { LITERAL_USER_ACTOR_ID } from "../runtime/kernel/actor_identity";
 import { createEnrollmentAuthorityRegistry } from "../runtime/kernel/enrollment_authority";
 import { preparePiCanary, revalidatePiCanary } from "../runtime/assurance/enrollment";
 import { evaluateCanaryEligibility } from "../runtime/kernel/canary_eligibility";
-import { enrollTask, EnrollmentRehearsalError } from "../runtime/kernel/enrollment";
+import { enrollmentScopeDisclosure, enrollTask, EnrollmentRehearsalError } from "../runtime/kernel/enrollment";
 import { reconcileKernelAuthority, withKernelStoreLock } from "../runtime/kernel/storage";
 import { inspectStorageLayout } from "../runtime/kernel/storage_paths";
 import { commitPendingMigrationDiff, migrateAndCommitLegacyLayout } from "../runtime/kernel/storage_layout_migration";
@@ -449,6 +449,9 @@ async function executeForegroundEnrollment(
 		// Enrollment binds authority to the validated intent. Acceptance descriptors
 		// execute only during post-implementation deterministic QA.
 		const confirmedContentHash = preparation.intent.content_hash;
+		// In-scope changes that already exist are shown in the gate and only the
+		// ones shown are claimed as task work on confirmation.
+		const disclosure = enrollmentScopeDisclosure(root, taskId);
 		{
 			const confirmationSummary = [
 				`Task: ${taskId}`,
@@ -457,6 +460,7 @@ async function executeForegroundEnrollment(
 				`Scope: ${taskIntent.intent.scope_hint.length > 0 ? taskIntent.intent.scope_hint.join(", ") : "(none)"}`,
 				`Acceptance: ${taskIntent.intent.acceptance.length} descriptor(s)`,
 				...(gitNotice ? [gitNotice] : []),
+				...(disclosure.notice ? [disclosure.notice] : []),
 			].join("\n");
 			const confirmationDetails = [
 				`Acceptance descriptors:`,
@@ -542,6 +546,7 @@ async function executeForegroundEnrollment(
 			// zero writes, and once it accepts, commit is no longer cancellable.
 			const outcome = await enrollTask(root, registry, {
 				binding,
+				disclosed_scope_paths: disclosure.paths,
 				now,
 				checkpoint: () => {
 					if (signal.aborted) return false;

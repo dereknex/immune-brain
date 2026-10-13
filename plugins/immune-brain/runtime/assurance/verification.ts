@@ -15,8 +15,6 @@ export interface ExecutableIdentity {
 }
 export interface FrozenCommand {
 	entry: ExecutableIdentity;
-	interpreter: ExecutableIdentity | null;
-	interpreter_args: string[];
 }
 export interface VerificationResult {
 	exit_code: number;
@@ -54,6 +52,21 @@ export function verificationPath(): string {
 	return (process.env.PATH ?? "").split(delimiter).filter(path => isAbsolute(path)).join(delimiter);
 }
 
+// A hosting process that carries one of these would point a command's Git calls
+// at its own repository instead of the delivery materialization. Every other
+// variable, including Git identity and transport settings, is user environment.
+const GIT_REPOSITORY_BINDINGS: ReadonlySet<string> = new Set([
+	"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_NAMESPACE", "GIT_PREFIX",
+]);
+
+function verificationEnvironment(path: string, processToken: string): Record<string, string> {
+	const env: Record<string, string> = {};
+	for (const [name, value] of Object.entries(process.env))
+		if (value !== undefined && !GIT_REPOSITORY_BINDINGS.has(name)) env[name] = value;
+	return { ...env, PATH: path, IMM_VERIFICATION_PROCESS_TOKEN: processToken };
+}
+
 function toolPath(name: string, path: string): string {
 	for (const dir of path.split(delimiter).filter(isAbsolute)) {
 		const candidate = join(dir, name);
@@ -77,42 +90,19 @@ export function resolveVerificationCommand(root: string, command: VerificationCo
 	insideVerificationRoot(root, resolve(root, command.cwd));
 	const entry = identity(command.executable.startsWith("./")
 		? insideVerificationRoot(root, resolve(root, command.executable)) : toolPath(command.executable, path));
-	const prefix = readFileSync(entry.path).subarray(0, 512).toString("utf8");
-	let interpreter: ExecutableIdentity | null = null;
-	let interpreter_args: string[] = [];
-	if (prefix.startsWith("#!")) {
-		const lineEnd = prefix.indexOf("\n");
-		if (lineEnd < 0) throw new VerificationDescriptorError("verification interpreter declaration is unbounded");
-		const parts = prefix.slice(2, lineEnd).trim().split(/\s+/);
-		const name = parts.shift()!;
-		if (!isAbsolute(name)) throw new VerificationDescriptorError("verification interpreter must be absolute");
-		if (name === "/usr/bin/env" || name === "/bin/env") {
-			if (parts.length !== 1 || !/^[A-Za-z0-9_][A-Za-z0-9_.+-]*$/.test(parts[0]!))
-				throw new VerificationDescriptorError("verification interpreter resolution is ambiguous; use a direct interpreter command");
-			interpreter = identity(toolPath(parts[0]!, path));
-		} else {
-			if (parts.length > 1) throw new VerificationDescriptorError("verification interpreter arguments are ambiguous");
-			interpreter = identity(name);
-			interpreter_args = parts;
-		}
-		if (readFileSync(interpreter.path).subarray(0, 2).toString() === "#!")
-			throw new VerificationDescriptorError("verification interpreter is itself a script; resolve the host tool explicitly");
-	}
-	return { entry, interpreter, interpreter_args };
+	return { entry };
 }
 
 export function assertCommandIdentity(frozen: FrozenCommand): void {
-	for (const item of [frozen.entry, frozen.interpreter]) {
-		if (item && JSON.stringify(identity(item.invocation_path)) !== JSON.stringify(item))
-			throw new VerificationDescriptorError("verification executable identity changed");
-	}
+	if (JSON.stringify(identity(frozen.entry.invocation_path)) !== JSON.stringify(frozen.entry))
+		throw new VerificationDescriptorError("verification executable identity changed");
 }
 
 export async function runFixedVerification(
 	root: string,
 	command: VerificationCommand,
 	frozen: FrozenCommand,
-	options: { signal?: AbortSignal; home: string; path: string; _processScanner?: string; _procRoot?: string } ,
+	options: { signal?: AbortSignal; path: string; _processScanner?: string; _procRoot?: string },
 ): Promise<VerificationResult> {
 	if (options.signal?.aborted) throw new VerificationAbortedError();
 	if (process.platform === "win32") throw new VerificationDescriptorError("fixed verification process-group isolation requires a POSIX host");
@@ -129,12 +119,9 @@ export async function runFixedVerification(
 		let stdout = Buffer.alloc(0), stderr = Buffer.alloc(0), captured = 0;
 		let aborted = false, timed_out = false, output_limited = false, settled = false;
 		const processToken = randomBytes(24).toString("hex");
-		const args = frozen.interpreter
-			? [...frozen.interpreter_args, frozen.entry.path, ...command.argv] : command.argv;
-		const child = spawn(frozen.interpreter?.invocation_path ?? frozen.entry.invocation_path, args, {
+		const child = spawn(frozen.entry.invocation_path, command.argv, {
 			cwd, shell: false, detached: true,
-			env: { PATH: options.path, HOME: options.home, TMPDIR: options.home, XDG_CACHE_HOME: options.home,
-				IMM_VERIFICATION_PROCESS_TOKEN: processToken },
+			env: verificationEnvironment(options.path, processToken),
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 		const killGroup = () => {

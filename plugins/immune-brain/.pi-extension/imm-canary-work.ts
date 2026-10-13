@@ -104,6 +104,7 @@ import { migrateLegacyLayout } from "../runtime/kernel/storage_layout_migration"
 import {
 	assertScopeAdditionsAreFiles,
 	canonicalIntentHash,
+	parseProjectTaskIntent,
 	parseTaskIntentV1,
 	readTaskIntent,
 	type ReadTaskIntentResult,
@@ -133,7 +134,7 @@ import {
 	runGithubTrackerOperation,
 	type GithubTrackerResult,
 } from "../runtime/github_issue_tracker";
-import { reviewReworkFindings } from "../runtime/assurance/coordinator";
+import { projectTaskStatus, reviewReworkFindings, type StatusProjectionResult } from "../runtime/assurance/coordinator";
 import { laneWriteRefusal } from "../runtime/unattended/lane_workspace";
 import { activeTaskNotice } from "../runtime/assurance/active_task_notice";
 import {
@@ -685,7 +686,11 @@ export default function (
 					}
 				}
 			}
-			const projection = await projectAssuranceForTask(ctx.cwd, taskId, requested);
+			// Status is a read: unstaged in-scope paths come back as a warning. Every
+			// other operation projects through the refusing delivery identity.
+			const projection: StatusProjectionResult = action.op === "status"
+				? await projectTaskStatus(ctx.cwd, taskId)
+				: await projectAssuranceForTask(ctx.cwd, taskId, requested);
 			if (projection.error) {
 				const nextAction = recoveryActionForAssuranceFailure(projection.error) ?? "inspect authority state";
 				const details = {
@@ -704,7 +709,8 @@ export default function (
 				const blockers = state.blocking_finding_ids.length
 					+ state.unresolved_user_decision_ids.length
 					+ state.replan_required_ids.length;
-				const status = { plugin_version: PLUGIN_VERSION, ...state };
+				const warnings = projection.warnings ?? [];
+				const status = { plugin_version: PLUGIN_VERSION, ...state, ...(warnings.length > 0 ? { warnings } : {}) };
 				const details = {
 					state: "status",
 					operation: "status",
@@ -712,7 +718,8 @@ export default function (
 					lifecycle: state.lifecycle,
 					artifact_state: state.artifact_state,
 					task_state: state,
-					result: `${fresh}/${total} acceptance items fresh; ${blockers} blocker${blockers === 1 ? "" : "s"}`,
+					...(warnings.length > 0 ? { warnings } : {}),
+					result: `${fresh}/${total} acceptance items fresh; ${blockers} blocker${blockers === 1 ? "" : "s"}${warnings.map((warning) => `; ${warning.message}`).join("")}`,
 					next_action: state.next_obligation,
 				};
 				presentTaskRailResult(ctx, taskId, details);
@@ -848,7 +855,7 @@ export default function (
 		let nextIntentRef: { path: string; content_hash: string } | undefined;
 		if (operation === "approve-breaking-intent-revision") {
 			try {
-				nextIntent = await parseTaskIntentV1(nextIntentInput);
+				nextIntent = parseProjectTaskIntent(ctx.cwd, nextIntentInput);
 				if (nextIntent.task_id !== taskId)
 					throw new Error("next intent task_id must match the enrolled task");
 				nextIntentHash = await canonicalIntentHash(nextIntent);
@@ -1270,8 +1277,8 @@ export function buildUserDecisionOperation(record: {
  * as the Claude adapter's `readTaskIntentForRecord`.
  */
 export function readTaskIntentForRecord(root: string, taskId: string): ReadTaskIntentResult {
-	const currentPath = readTaskRecordRaw(root, taskId).record?.intent_ref.path;
-	return readTaskIntent(root, taskId, currentPath);
+	const record = readTaskRecordRaw(root, taskId).record;
+	return readTaskIntent(root, taskId, record?.intent_ref.path, record?.intent_snapshot);
 }
 
 /**
@@ -1535,7 +1542,7 @@ async function executeOrdinaryOperation(
 ): Promise<unknown> {
 	const { app } = await authorityPair();
 	const operation = input.operation.op === "revise_intent"
-		? { ...input.operation, next_intent: await parseTaskIntentV1(input.operation.next_intent) }
+		? { ...input.operation, next_intent: parseProjectTaskIntent(ctx.cwd, input.operation.next_intent) }
 		: input.operation;
 	const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
 	const nextScope = operation.op === "revise_intent"

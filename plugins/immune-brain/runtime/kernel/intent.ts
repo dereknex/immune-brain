@@ -25,6 +25,15 @@ import {
 	type TaskRisk,
 } from "./types";
 import {
+	applyScopeRiskFloor,
+	changedPathRiskFloor,
+	NO_RISK_FLOOR,
+	raiseRisk,
+	readRiskFloor,
+	touchesChangedPathFloor,
+	type RiskFloor,
+} from "./risk_floor";
+import {
 	mintToken,
 	type TaskIntentIdentityToken,
 	type TokenIdentity,
@@ -32,91 +41,6 @@ import {
 
 export const INTENT_MAX_BYTES = 64 * 1024;
 export const INTENT_SIDECAR_RELATIVE_PREFIX = "docs/plans/";
-
-// Deterministic risk-tier floor: an intent whose scope_hint touches kernel or
-// authority runtime paths is forced to at least `material` regardless of the
-// tier the author declared, so self-graded `routine` can never buy weaker
-// gating over the paths where gating matters most. The floor is derived solely
-// from scope_hint, never from prose fields. The .pi-extension directory is the
-// human gate itself (enrollment confirmation, capability minting, and review
-// authorization), so a self-graded routine over it must not weaken gating over
-// the code that implements gating.
-export const RISK_FLOOR_SCOPE_PREFIXES = [
-	"plugins/immune-brain/runtime/kernel",
-	"plugins/immune-brain/runtime/authority_commit_receipts.ts",
-	"plugins/immune-brain/runtime/assurance",
-	"plugins/immune-brain/runtime/claude/interaction.ts",
-	"plugins/immune-brain/runtime/claude/capability.ts",
-	"plugins/immune-brain/runtime/claude/review_host.ts",
-	"plugins/immune-brain/runtime/claude/kernel_ports.ts",
-	"plugins/immune-brain/runtime/claude/mcp_server.ts",
-	"plugins/immune-brain/.pi-extension",
-] as const;
-
-// Concrete changed paths use a narrower, segment-safe prefix policy. Keep this
-// separate from the glob-aware scope_hint policy above: the two inputs have
-// different contracts and docs-only scope remains routine today.
-export const CHANGED_PATH_RISK_FLOOR_PREFIXES = [
-	...RISK_FLOOR_SCOPE_PREFIXES,
-	"docs/specs",
-	"docs/plans",
-] as const;
-
-function segmentMatches(e: string, s: string): boolean {
-	if (e === "*") return true;
-	if (!e.includes("*") && !e.includes("?")) return e === s;
-	const rx = new RegExp(
-		`^${e.split("*").map((p) => p.split("?").map((q) => q.replace(/[.\\+^${}()|[\]\\/]/g, "\\$&")).join(".")).join(".*")}$`,
-	);
-	return rx.test(s);
-}
-
-// Decide whether a scope entry can match the kernel/authority prefix itself,
-// any of its ancestor prefixes, or any descendant path beneath it. Glob `**`
-// spans zero or more segments, `*` matches one segment, `?` one character.
-// A match on any of those relations means the entry touches the floored path,
-// so a routine-declared intent cannot hide behind wildcard-leading patterns.
-function scopeEntryTouchesPrefixSegments(es: string[], ps: string[]): boolean {
-	const memo = new Map<string, boolean>();
-	const m = (pi: number, ei: number): boolean => {
-		const key = `${pi}:${ei}`;
-		const cached = memo.get(key);
-		if (cached !== undefined) return cached;
-		let result: boolean;
-		if (ei === es.length) {
-			result = true; // es matched a prefix of ps, ps itself, or a descendant
-		} else {
-			const e = es[ei];
-			if (e === "**") {
-				if (pi >= ps.length) result = true; // beyond ps, descendant always exists
-			else result = m(pi, ei + 1) || m(pi + 1, ei);
-			} else if (pi < ps.length && segmentMatches(e, ps[pi])) {
-				result = m(pi + 1, ei + 1);
-			} else if (pi >= ps.length) {
-				result = m(pi + 1, ei + 1); // remaining literal segments match descendant segments
-			} else {
-				result = false;
-			}
-		}
-		memo.set(key, result);
-		return result;
-	};
-	return m(0, 0);
-}
-
-function scopeEntryTouchesRiskFloorPaths(entry: string): boolean {
-	if (!entry) return false;
-	const es = entry.split("/");
-	return RISK_FLOOR_SCOPE_PREFIXES.some((prefix) =>
-		scopeEntryTouchesPrefixSegments(es, prefix.split("/")),
-	);
-}
-
-function riskFloorForScope(scopeHint: string[]): TaskRisk | null {
-	return scopeHint.some(scopeEntryTouchesRiskFloorPaths)
-		? "material"
-		: null;
-}
 
 const TASK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const portablePathCollator = new Intl.Collator("und", {
@@ -318,18 +242,16 @@ export function parseTaskIntentV1(raw: unknown): TaskIntentV1 {
 	const acceptance = (acceptanceRaw as unknown[]).map((item, index) =>
 		parseAcceptanceItemV1(item, index, []),
 	);
-	const declaredRisk = risk as TaskRisk;
-	const flooredRisk = riskFloorForScope(scopeHint);
+	// The declared risk is returned as written. The project's risk floor is
+	// applied where a risk is decided, by a caller that knows the project root
+	// (ADR 0023): `readTaskIntent`, `parseProjectTaskIntent`, `classifyTaskRisk`.
 	return {
 		contract: TASK_INTENT_CONTRACT_V1,
 		task_id: taskId,
 		goal,
 		acceptance,
 		scope_hint: scopeHint,
-		risk:
-			flooredRisk !== null && RISK_RANK[declaredRisk] < RISK_RANK[flooredRisk]
-				? flooredRisk
-				: declaredRisk,
+		risk: risk as TaskRisk,
 		revision,
 		owner: "user",
 	};
@@ -345,18 +267,27 @@ export function canonicalIntentHash(intent: unknown): string {
 
 const RISK_RANK: Record<TaskRisk, number> = { routine: 0, material: 1, critical: 2 };
 
+/**
+ * A candidate intent parsed for one project: the strict parse, then that
+ * project's scope floor. Every caller that turns candidate JSON into an intent
+ * the Kernel will hash or record uses this, so the recorded risk and the risk
+ * `readTaskIntent` later reads back agree.
+ */
+export function parseProjectTaskIntent(root: string, raw: unknown, recordedIntent?: TaskIntentV1): TaskIntentV1 {
+	const parsed = parseTaskIntentV1(raw);
+	// An enrolled revision keeps its recorded risk; today's policy only changes gating.
+	if (recordedIntent && parsed.revision === recordedIntent.revision &&
+		raiseRisk(recordedIntent.risk, parsed.risk) === recordedIntent.risk)
+		return { ...parsed, risk: recordedIntent.risk };
+	return applyScopeRiskFloor(parsed, readRiskFloor(root));
+}
+
 export function classifyTaskRisk(
 	changedPaths: readonly string[],
 	declaredRisk: TaskRisk,
+	floor: RiskFloor = NO_RISK_FLOOR,
 ): TaskRisk {
-	const pathFloor = changedPaths.some((path) =>
-		CHANGED_PATH_RISK_FLOOR_PREFIXES.some(
-			(prefix) => path === prefix || path.startsWith(`${prefix}/`),
-		),
-	)
-		? "material"
-		: "routine";
-	return RISK_RANK[declaredRisk] >= RISK_RANK[pathFloor] ? declaredRisk : pathFloor;
+	return raiseRisk(declaredRisk, changedPathRiskFloor(changedPaths, floor));
 }
 
 function contentHashWithoutRevision(intent: TaskIntentV1): string {
@@ -373,28 +304,20 @@ function scopeEntryParent(entry: string): string {
 	return slash < 0 ? "" : entry.slice(0, slash);
 }
 
-// A floor prefix, `docs/specs` or `docs/plans` is touched by an entry that
-// equals it, sits beneath it, or is an ancestor directory that would swallow it.
-function touchesChangedPathFloor(entry: string): boolean {
-	const segments = entry.split("/");
-	return CHANGED_PATH_RISK_FLOOR_PREFIXES.some((prefix) =>
-		scopeEntryTouchesPrefixSegments(segments, prefix.split("/")),
-	);
-}
-
 /**
  * The entries a same-directory additive scope revision adds, or null when the
  * delta is anything else (ADR 0021). Additive means the next scope contains
  * every previous entry; same-directory means each added entry is a concrete
  * path whose parent directory already holds a concrete previous entry, outside
- * every risk-floor prefix, `docs/specs` and `docs/plans`, and not an ancestor of
- * any previous entry. The check is purely textual: it cannot tell a file from a
+ * every path the project's risk floor names, and not an ancestor of any
+ * previous entry. The check is purely textual: it cannot tell a file from a
  * directory written without a trailing slash, so each Host also refuses a
  * directory in the worktree (see `assertScopeAdditionsAreFiles`).
  */
 export function sameDirectoryScopeAdditions(
 	previous: readonly string[],
 	next: readonly string[],
+	floor: RiskFloor = NO_RISK_FLOOR,
 ): string[] | null {
 	const prior = new Set(previous);
 	const retained = new Set(next);
@@ -402,7 +325,7 @@ export function sameDirectoryScopeAdditions(
 	const added = next.filter((entry) => !prior.has(entry));
 	const anchors = new Set(previous.filter(isConcreteScopeEntry).map(scopeEntryParent));
 	for (const entry of added) {
-		if (!isConcreteScopeEntry(entry) || touchesChangedPathFloor(entry)) return null;
+		if (!isConcreteScopeEntry(entry) || touchesChangedPathFloor(entry, floor)) return null;
 		if (!anchors.has(scopeEntryParent(entry))) return null;
 		if (previous.some((existing) => existing.startsWith(`${entry}/`))) return null;
 	}
@@ -444,19 +367,27 @@ export function scopeAdditionsFromHistory(
 export function classifyIntentRevision(
 	previous: TaskIntentV1,
 	next: TaskIntentV1,
+	floor: RiskFloor = NO_RISK_FLOOR,
 ): "unchanged" | "compatible" | "breaking" {
 	if (contentHashWithoutRevision(previous) === contentHashWithoutRevision(next))
 		return "unchanged";
 
 	const scopeChanged =
 		JSON.stringify(previous.scope_hint) !== JSON.stringify(next.scope_hint);
+	// Narrowing removes authority: a next scope made only of previous entries
+	// needs no confirmation. An empty scope is not a narrowing, and any added
+	// entry is classified by the same-directory rule below, as before.
+	const priorScope = new Set(previous.scope_hint);
+	const scopeNarrowed =
+		next.scope_hint.length > 0 && next.scope_hint.every((entry) => priorScope.has(entry));
 	const breaking =
 		previous.contract !== next.contract ||
 		previous.task_id !== next.task_id ||
 		previous.owner !== next.owner ||
 		previous.goal !== next.goal ||
 		(scopeChanged &&
-			sameDirectoryScopeAdditions(previous.scope_hint, next.scope_hint) === null) ||
+			!scopeNarrowed &&
+			sameDirectoryScopeAdditions(previous.scope_hint, next.scope_hint, floor) === null) ||
 		RISK_RANK[next.risk] < RISK_RANK[previous.risk] ||
 		previous.acceptance.some((prior) => {
 			const current = next.acceptance.find((item) => item.id === prior.id);
@@ -478,7 +409,7 @@ export function assertScopeAdditionsAreFiles(
 	previous: readonly string[],
 	next: readonly string[],
 ): void {
-	const added = sameDirectoryScopeAdditions(previous, next);
+	const added = sameDirectoryScopeAdditions(previous, next, readRiskFloor(root));
 	if (!added || added.length === 0) return;
 	for (const entry of [...added, ...scopeAdditionAnchors(previous, added)]) {
 		let isDirectory = false;
@@ -668,6 +599,7 @@ function readTaskIntentSource(
 	taskId: string,
 	requestedPath?: string,
 	requireTracked = true,
+	recordedIntent?: TaskIntentV1,
 ): TaskIntentReadSource {
 	validateTaskId(taskId);
 
@@ -738,7 +670,7 @@ function readTaskIntentSource(
 	const sourceBytesSha256 = sha256Hex(bytes);
 	let intent: TaskIntentV1;
 	try {
-		intent = parseTaskIntentV1(JSON.parse(bytes.toString("utf8")));
+		intent = parseProjectTaskIntent(canonicalRoot, JSON.parse(bytes.toString("utf8")), recordedIntent);
 	} catch (error) {
 		throw new TaskIntentObservationError(
 			"invalid",
@@ -784,8 +716,9 @@ export function observeTaskIntent(
 	root: string,
 	taskId: string,
 	requestedPath?: string,
+	recordedIntent?: TaskIntentV1,
 ): ObservedTaskIntent {
-	const { identity: _identity, ...observed } = readTaskIntentSource(root, taskId, requestedPath);
+	const { identity: _identity, ...observed } = readTaskIntentSource(root, taskId, requestedPath, true, recordedIntent);
 	return observed;
 }
 
@@ -793,7 +726,8 @@ export function readTaskIntent(
 	root: string,
 	taskId: string,
 	requestedPath?: string,
+	recordedIntent?: TaskIntentV1,
 ): ReadTaskIntentResult {
-	const { identity, ...observed } = readTaskIntentSource(root, taskId, requestedPath);
+	const { identity, ...observed } = readTaskIntentSource(root, taskId, requestedPath, true, recordedIntent);
 	return { ...observed, token: mintToken(identity) };
 }

@@ -54,7 +54,33 @@ export interface EnrollCanaryInput {
 	capability: object;
 	capability_binding: EnrollmentCapabilityBinding;
 	batch?: EnrollBatchContext;
+	/**
+	 * The in-scope paths the confirmed Enrollment gate listed as already staged,
+	 * modified or untracked. Only these are claimed as task work; absent means
+	 * the gate listed none, so any in-scope dirt refuses the Enrollment.
+	 */
+	disclosed_scope_paths?: readonly string[];
 	now: string;
+}
+
+/**
+ * What an Enrollment gate must show about a scope that is already dirty: the
+ * paths, and the one line both Hosts print for them. A scope that cannot be
+ * inspected discloses nothing, and the Enrollment itself reports why.
+ */
+export function enrollmentScopeDisclosure(root: string, taskId: string): { paths: string[]; notice: string | null } {
+	let paths: string[] = [];
+	try {
+		paths = dirtyScopePaths(root, readTaskIntent(root, taskId).intent.scope_hint, taskId);
+	} catch {
+		return { paths: [], notice: null };
+	}
+	return {
+		paths,
+		notice: paths.length === 0
+			? null
+			: `In-scope changes that already exist (${paths.length}) and become task work on confirmation: ${paths.join(", ")}`,
+	};
 }
 
 /**
@@ -80,6 +106,8 @@ export interface EnrollmentEntryRequest {
 	binding: EnrollmentCapabilityBinding;
 	/** Present only for a batch-derived child enrollment. */
 	batch?: EnrollBatchContext;
+	/** The in-scope paths the confirmed gate listed; see `EnrollCanaryInput`. */
+	disclosed_scope_paths?: readonly string[];
 	now: string;
 	/**
 	 * Optional caller checkpoint run after a ready rehearsal and before the
@@ -111,6 +139,8 @@ type EnrollmentPreconditionState = {
 	workspace: ReturnType<typeof readWorkspaceStateRaw> | null;
 	intent: Awaited<ReturnType<typeof readTaskIntent>> | null;
 	gitBaseHead: string | null;
+	/** In-scope dirt the confirmed gate listed; left out of the Enrollment baseline. */
+	claimedScopePaths: string[];
 };
 
 type EnrollmentPreconditionResult = EnrollmentPreconditionState & {
@@ -160,6 +190,7 @@ function runEnrollmentPreconditionChecks<T>(
 		let workspace: EnrollmentPreconditionState["workspace"] = null;
 		let intent: EnrollmentPreconditionState["intent"] = null;
 		let gitBaseHead: string | null = null;
+		let claimedScopePaths: string[] = [];
 		const fail = (report: string, error: unknown) => {
 			if (mode === "fail_fast")
 				throw error instanceof Error ? error : new Error(String(error));
@@ -210,16 +241,20 @@ function runEnrollmentPreconditionChecks<T>(
 		} catch (error) {
 			fail(`git base: ${error instanceof Error ? error.message : String(error)}`, error);
 		}
-		// In-scope dirt present now would be recorded in the Enrollment baseline as
-		// user dirt and withheld from every later task snapshot, so the task could
-		// never deliver it. Refuse before the capability is consumed.
+		// In-scope dirt the confirmed gate listed is claimed: it is left out of the
+		// Enrollment baseline and becomes task work. Any other in-scope dirt would
+		// be recorded there as user dirt and withheld from every later task
+		// snapshot, so the task could never deliver it. Refuse that before the
+		// capability is consumed; nothing is claimed that the gate did not show.
 		if (intent && gitBaseHead) {
 			try {
+				const disclosed = new Set(input.disclosed_scope_paths ?? []);
 				const dirty = dirtyScopePaths(root, intent.intent.scope_hint, input.task_id);
-				if (dirty.length > 0) {
-					const message = `task scope is already dirty before Enrollment: ${dirty.join(", ")}; these paths were not part of the Enrollment base, retry Enrollment from the Host`;
+				const unlisted = dirty.filter((path) => !disclosed.has(path));
+				if (unlisted.length > 0) {
+					const message = `task scope is already dirty before Enrollment: ${unlisted.join(", ")}; the confirmed Enrollment gate did not list these paths, so enroll again from the Host to review them`;
 					fail(message, new Error(message));
-				}
+				} else claimedScopePaths = dirty;
 			} catch (error) {
 				fail(`scope: ${error instanceof Error ? error.message : String(error)}`, error);
 			}
@@ -231,6 +266,7 @@ function runEnrollmentPreconditionChecks<T>(
 			workspace,
 			intent,
 			gitBaseHead,
+			claimedScopePaths,
 		};
 		return onReady ? onReady(state) : { ...state, blockers };
 	});
@@ -276,6 +312,8 @@ export function runEnrollmentRehearsal(
 		task_id: string;
 		outcome: "ready" | "not_ready";
 		blockers: string[];
+		/** In-scope dirt the gate listed, which this Enrollment would claim as task work. */
+		claimed_scope_paths: string[];
 		generated_at: string;
 	};
 } {
@@ -295,6 +333,7 @@ export function runEnrollmentRehearsal(
 			task_id: input.task_id,
 			outcome: preconditions.blockers.length === 0 ? "ready" : "not_ready",
 			blockers: preconditions.blockers,
+			claimed_scope_paths: preconditions.claimedScopePaths,
 			generated_at: input.now,
 		},
 	};
@@ -357,7 +396,7 @@ export async function enrollTask(
 	registry: EnrollmentAuthorityRegistry,
 	request: EnrollmentEntryRequest,
 ): Promise<EnrollCanaryResult | EnrollmentEntryOutcome> {
-	const { binding, batch, now, checkpoint } = request;
+	const { binding, batch, now, checkpoint, disclosed_scope_paths } = request;
 	// (1) Issue the capability for the supplied binding.
 	const capability = registry.issue(binding);
 	const input: EnrollCanaryInput = {
@@ -368,6 +407,7 @@ export async function enrollTask(
 		capability,
 		capability_binding: binding,
 		...(batch ? { batch } : {}),
+		...(disclosed_scope_paths ? { disclosed_scope_paths } : {}),
 		now,
 	};
 	// Replay of a lost Enrollment: the exact request already committed here, so
@@ -554,7 +594,7 @@ export function enrollCanaryTask(
 				claim as unknown as Record<string, unknown>,
 				digest,
 			);
-			writeEnrollmentBaseline(root);
+			writeEnrollmentBaseline(root, checks.claimedScopePaths);
 			return {
 				record: mutation.record,
 				backend_claim: claim,

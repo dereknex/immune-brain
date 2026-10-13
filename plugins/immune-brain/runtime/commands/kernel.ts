@@ -24,9 +24,14 @@ import {
 import {
 	INTENT_MAX_BYTES,
 	canonicalIntentHash,
+	parseProjectTaskIntent,
 	parseTaskIntentV1,
-	RISK_FLOOR_SCOPE_PREFIXES,
 } from "../kernel/intent";
+import {
+	floorMatchingScopeEntries,
+	floorScopePrefixes,
+	readRiskFloor,
+} from "../kernel/risk_floor";
 import { inspectSpecBinding } from "../kernel/spec_binding";
 import { projectTask, resolveProjectedRisk } from "../kernel/completion";
 import { deriveAssuranceAuthorization } from "../kernel/assurance_projection";
@@ -158,26 +163,6 @@ const RISK_ORDER: Record<TaskRisk, number> = {
 	critical: 2,
 };
 
-function matchingFloorEntries(intent: TaskIntentV1): string[] {
-	return intent.scope_hint.filter((entry) => {
-		try {
-			const trial = parseTaskIntentV1({
-				contract: intent.contract,
-				task_id: intent.task_id,
-				goal: intent.goal,
-				acceptance: intent.acceptance,
-				scope_hint: [entry],
-				risk: "routine",
-				revision: intent.revision,
-				owner: "user",
-			});
-			return trial.risk !== "routine";
-		} catch {
-			return false;
-		}
-	});
-}
-
 function readWorkspaceOwner(root: string): string | null {
 	try {
 		return readWorkspaceStateRaw(root).state.current_working;
@@ -204,10 +189,12 @@ function runInspect(root: string): KernelExecution {
 				: null,
 			workspace: { current_working: workspace },
 		};
+		const floor = readRiskFloor(root);
 		const idleRisk = {
 			declared: null as TaskRisk | null,
 			resolved: null as TaskRisk | null,
-			floor_prefixes: [...RISK_FLOOR_SCOPE_PREFIXES],
+			floor_prefixes: floorScopePrefixes(floor),
+			floor_invalid: floor.invalid,
 			floor_applied: false,
 			matching_scope_entries: [] as string[],
 		};
@@ -265,7 +252,7 @@ function runInspect(root: string): KernelExecution {
 			if (raw.risk !== "routine" && raw.risk !== "material" && raw.risk !== "critical")
 				throw new Error(`intent.risk is unreadable for ${claim.task_id}`);
 			declared = raw.risk;
-			intent = parseTaskIntentV1(raw);
+			intent = parseProjectTaskIntent(root, raw, record.intent_snapshot);
 			if (canonicalIntentHash(intent) !== record.intent_ref.content_hash)
 				throw new Error("TaskIntent sidecar does not match TaskRecord content hash");
 		} catch (error) {
@@ -280,11 +267,11 @@ function runInspect(root: string): KernelExecution {
 		}
 		const diffHash = identity.diff_hash;
 		const changedPaths = identity.changed_paths;
-		const decision = projectTask(intent, record, diffHash, record.intent_ref.content_hash, changedPaths);
+		const decision = projectTask(intent, record, diffHash, record.intent_ref.content_hash, changedPaths, floor);
 		const openUserDecisionCount = record.findings.filter(
 			(finding) => finding.kind === "unresolved_user_decision" && finding.status === "open",
 		).length;
-		const resolved = resolveProjectedRisk(intent, changedPaths);
+		const resolved = resolveProjectedRisk(intent, changedPaths, floor);
 		return {
 			result: jsonResult({
 				contract: "assurance_kernel/inspect/v1",
@@ -303,7 +290,7 @@ function runInspect(root: string): KernelExecution {
 						diff_hash: diffHash,
 						lifecycle: record.lifecycle,
 						artifact_state: record.artifact_state,
-						risk: resolveProjectedRisk(intent, changedPaths),
+						risk: resolved,
 						next_obligation: decision.next_obligation,
 						fresh_acceptance_ids: decision.fresh_acceptance_ids,
 						missing_acceptance_ids: decision.missing_acceptance_ids,
@@ -325,9 +312,10 @@ function runInspect(root: string): KernelExecution {
 				risk: {
 					declared,
 					resolved,
-					floor_prefixes: [...RISK_FLOOR_SCOPE_PREFIXES],
+					floor_prefixes: floorScopePrefixes(floor),
+					floor_invalid: floor.invalid,
 					floor_applied: RISK_ORDER[resolved] > RISK_ORDER[declared],
-					matching_scope_entries: matchingFloorEntries(intent),
+					matching_scope_entries: floorMatchingScopeEntries(intent.scope_hint, floor),
 				},
 				unobservable: UNOBSERVABLE,
 			}),
@@ -623,7 +611,7 @@ function runIntentAuthor(args: string[], root: string): KernelExecution {
 	}
 	let intent: ReturnType<typeof parseTaskIntentV1>;
 	try {
-		intent = parseTaskIntentV1(parsed);
+		intent = parseProjectTaskIntent(root, parsed);
 	} catch (error) {
 		return {
 			result: errorResult(
@@ -1077,7 +1065,7 @@ function runIntentValidate(args: string[], root: string): KernelExecution {
 	// Strict parse + verification eligibility per acceptance item.
 	let intent: ReturnType<typeof parseTaskIntentV1>;
 	try {
-		intent = parseTaskIntentV1(parsed);
+		intent = parseProjectTaskIntent(root, parsed);
 	} catch (error) {
 		return {
 			result: jsonResult(

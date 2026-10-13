@@ -42,6 +42,6 @@
 
 - Initiative carrier default: github
 - Lane max parallel: 4                 
-- Lane Executor Host: pi
-- Lane Executor model: group/auto-medium
-- Lane Executor effort: max
+- Lane Executor Host: claude-code
+- Lane Executor model: claude-sonnet-5-5
+- Lane Executor effort: high

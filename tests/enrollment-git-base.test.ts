@@ -45,7 +45,8 @@ const TASK_PATHS = [intentPath, specPath, "src/new.ts", "src/task.ts"];
  * The state a Planner leaves behind (BR-SCN-2): a Spec and TaskIntent that are
  * not committed, edits inside the scope, and staged, unstaged and untracked
  * dirt outside it. An unborn HEAD keeps the TaskIntent staged, which is what
- * the empty-base initialization requires.
+ * the empty-base initialization requires; the in-scope edits there are
+ * committed by the precondition commit, because the gate could not list them.
  */
 function scopedFixture(base: "committed" | "unborn" = "committed", candidateId = taskId) {
 	const intentPath = `docs/plans/${candidateId}.intent.json`;
@@ -70,12 +71,12 @@ function scopedFixture(base: "committed" | "unborn" = "committed", candidateId =
 	writeFileSync(join(root, specPath), "# Fixture Spec\n");
 	writeFileSync(join(root, "src/task.ts"), "export const value = 2;\n");
 	writeFileSync(join(root, "src/new.ts"), "export const added = true;\n");
-	if (base === "unborn") git(root, "add", "--", intentPath);
 	writeFileSync(join(root, "other/staged.txt"), "staged 1\n");
 	git(root, "add", "--", "other/staged.txt");
 	writeFileSync(join(root, "other/staged.txt"), "staged 2\n");
 	writeFileSync(join(root, "other/loose.txt"), "loose 1\n");
 	writeFileSync(join(root, "other/scratch.txt"), "scratch\n");
+	if (base === "unborn") git(root, "add", "--", intentPath);
 	return root;
 }
 /** Everything observable about the paths outside the task scope. */
@@ -180,7 +181,7 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 		expect(readTaskRecordRaw(root, taskId).record).toBeNull();
 		if (drift !== "head") expect(spawnSync("git", ["rev-parse", "--verify", "HEAD"], { cwd: root }).status).not.toBe(0);
 	});
-	test("uncommitted Spec, TaskIntent and in-scope edits are committed once and the confirmation binds that HEAD (BR-SCN-2)", async () => {
+	test("uncommitted Spec and TaskIntent are committed once, in-scope edits are claimed, and the confirmation binds that HEAD (BR-SCN-2)", async () => {
 		const root = scopedFixture();
 		const base = git(root, "rev-parse", "HEAD");
 		const outside = outsideScope(root);
@@ -190,10 +191,15 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 		const head = git(root, "rev-parse", "HEAD");
 		expect(git(root, "rev-parse", "HEAD~1")).toBe(base);
 		expect(git(root, "log", "-1", "--format=%s")).toBe(PRECONDITION_SUBJECT);
-		expect(committedPaths(root)).toEqual(TASK_PATHS);
+		expect(committedPaths(root)).toEqual([intentPath, specPath]);
 		// One native confirmation, shown after the commit and silent about it.
 		expect(result.prompts).toHaveLength(1);
 		expect(result.prompts[0]).not.toMatch(/precondition|commit Enrollment/i);
+		// The gate lists the in-scope edits and confirmation claims them as task work.
+		expect(result.prompts[0]).toContain("src/new.ts");
+		const baseline = JSON.parse(readFileSync(join(root, ".imm/state/enrollment-baseline.json"), "utf8"));
+		expect(Object.keys(baseline.dirty_files)).not.toContain("src/new.ts");
+		expect(Object.keys(baseline.dirty_files)).not.toContain("src/task.ts");
 		expect(headAtConfirmation).toBe(head);
 		expect(readTaskRecordRaw(root, taskId).record?.git_base_head).toBe(head);
 		// Dirt outside the scope neither blocks nor moves.
@@ -210,7 +216,7 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 		expect(result.prompts).toHaveLength(1);
 		expect(git(root, "rev-parse", "HEAD~1")).toBe(base);
 		expect(git(root, "log", "-1", "--format=%s")).toBe(`chore(imm): commit Enrollment preconditions for ${candidateId}`);
-		expect(committedPaths(root)).toEqual([`docs/plans/${candidateId}.intent.json`, `docs/specs/${candidateId}.spec.md`, "src/new.ts", "src/task.ts"]);
+		expect(committedPaths(root)).toEqual([`docs/plans/${candidateId}.intent.json`, `docs/specs/${candidateId}.spec.md`]);
 		expect(readTaskRecordRaw(root, candidateId).record?.git_base_head).toBe(confirmedHead);
 		expect(outsideScope(root)).toEqual(outside);
 	});
@@ -294,7 +300,7 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 		const message = result.error || terminal?.details.summary;
 		expect(message).toMatch(/changed|aborted/i);
 		expect(message).toContain(`Enrollment precondition commit ${preconditionHead} remains`);
-		expect(committedPaths(root, preconditionHead)).toEqual(TASK_PATHS);
+		expect(committedPaths(root, preconditionHead)).toEqual([intentPath, specPath]);
 		expect(readTaskRecordRaw(root, taskId).record).toBeNull();
 	});
 	test("Enrollment preserves a staged TaskIntent restored to HEAD in the worktree", async () => {
@@ -311,8 +317,11 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 		const result = await enroll(root, "accept");
 		expect(result.error).toBe("");
 		expect(readTaskRecordRaw(root, taskId).record?.lifecycle).toBe("active");
-		expect(git(root, "rev-parse", "HEAD~1")).toBe(head);
-		expect(committedPaths(root)).toEqual(["src/task.ts"]);
+		// A staged TaskIntent over tracked artifacts fails no precondition: no
+		// commit is made and the in-scope edit is claimed through the gate.
+		expect(git(root, "rev-parse", "HEAD")).toBe(head);
+		const baseline = JSON.parse(readFileSync(join(root, ".imm/state/enrollment-baseline.json"), "utf8"));
+		expect(Object.keys(baseline.dirty_files)).not.toContain("src/task.ts");
 		expect(git(root, "ls-files", "--stage", "--", intentPath)).toBe(entry);
 		expect(readFileSync(join(root, intentPath), "utf8")).toBe(bytes);
 	});

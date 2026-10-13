@@ -18,8 +18,9 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { createEnrollmentAuthorityRegistry, type EnrollmentCapabilityBinding } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
-import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
+import { canonicalIntentHash, parseTaskIntentV1 as parseDeclaredTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
+import { applyScopeRiskFloor, parseRiskFloor, RISK_FLOOR_DECLARATION_PATH } from "../plugins/immune-brain/runtime/kernel/risk_floor";
 import { taskDiffHash } from "../plugins/immune-brain/runtime/workspace_scope";
 import {
 	readRunRowByTask,
@@ -29,6 +30,12 @@ import {
 } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 
 const TASK = "canary-breaking-task";
+// This repository's risk-floor declaration, committed into each fixture
+// repository so its Kernel and Pi extension paths are floored there too.
+const FLOOR_TEXT = readFileSync(join(process.cwd(), RISK_FLOOR_DECLARATION_PATH), "utf8");
+const FLOOR = parseRiskFloor(JSON.parse(FLOOR_TEXT));
+// The intent as the fixture repository records it: the strict parse, then the floor.
+const parseTaskIntentV1 = (raw: unknown) => applyScopeRiskFloor(parseDeclaredTaskIntent(raw), FLOOR);
 const INTENT = {
 	contract: "assurance_kernel/task_intent/v1",
 	task_id: TASK,
@@ -106,6 +113,7 @@ function makeEnrolledRoot(): string {
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	writeFileSync(join(root, "docs", "plans", `${TASK}.intent.json`), JSON.stringify(INTENT, null, 2) + "\n");
 	writeFileSync(join(root, "docs", "specs", `${TASK}.spec.md`), "# Breaking revision fixture\n");
+	writeFileSync(join(root, RISK_FLOOR_DECLARATION_PATH), FLOOR_TEXT);
 	writeFileSync(join(root, "plugins", "immune-brain", ".pi-extension", "task.ts"), "export const task = 'baseline';\n");
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });

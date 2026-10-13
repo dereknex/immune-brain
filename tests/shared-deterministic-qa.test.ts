@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runDeterministicQa, QaPreparationError, type QaVerificationProgressInput } from "../plugins/immune-brain/runtime/assurance/qa";
 import { snapshotDigest, type SnapshotDescriptor } from "../plugins/immune-brain/runtime/assurance/coordinator";
 import { VerificationAbortedError, VerificationCleanupError, VerificationLaunchError } from "../plugins/immune-brain/runtime/assurance/verification";
 import { parseVerificationDescriptor } from "../plugins/immune-brain/runtime/verification_descriptor";
+import { inScopeTrackedDrift } from "../plugins/immune-brain/runtime/workspace_scope";
 
 const roots: string[] = [];
 const temp = () => { const root = mkdtempSync(join(tmpdir(), "imm-shared-qa-")); roots.push(root); return root; };
@@ -33,10 +35,12 @@ const fakeDelivery = (_root: string) => {
 };
 const injection = (options = {}) => ({
 	...options,
-	_materializeDeliveryWorkspace: (_root: string) => fakeDelivery(_root),
-	_writeDeliveryTree: (root: string) => "tree",
+	_frozenTree: { tree: "tree" },
 	_resolveVerificationCommand: () => fakeRunner,
 });
+// The Lane batch integration recheck is the only caller that still runs in a copy.
+const copied = (options = {}) => ({ ...injection(options), delivery: "materialized" as const,
+	_materializeDeliveryWorkspace: (_root: string) => fakeDelivery(_root) });
 
 describe("shared deterministic QA", () => {
 	test("runs every descriptor once, aggregates failures and reports ordered progress without exposing output", async () => {
@@ -73,7 +77,7 @@ describe("shared deterministic QA", () => {
 	test.each(["materialize", "resolve", "execute", "cleanup"] as const)("%s failure exposes classified metadata, not arbitrary argument/environment error text", async (phase) => {
 		const secret = "credential-error-canary-S2", items = [{ id: "A1", argv: [secret] }], s = snapshot("safe-errors", items);
 		const fail = () => { throw new Error(`SECRET_ENV=${secret}; argv=${secret}`); };
-		const options = { ...injection(), _runFixedVerification: async () => ({ exit_code: 0, timed_out: false, output_limited: false, stdout: "", stderr: "" }) };
+		const options = { ...copied(), _runFixedVerification: async () => ({ exit_code: 0, timed_out: false, output_limited: false, stdout: "", stderr: "" }) };
 		if (phase === "materialize") options._materializeDeliveryWorkspace = fail;
 		if (phase === "resolve") options._resolveVerificationCommand = fail;
 		if (phase === "execute") options._runFixedVerification = async () => fail();
@@ -106,7 +110,7 @@ describe("shared deterministic QA", () => {
 		await expect(runDeterministicQa({ ...s, role: "review" }, descriptors(s, items), injection())).rejects.toThrow("requires qa role");
 		await expect(runDeterministicQa(s, new Map(), injection())).rejects.toThrow("descriptor missing for A1");
 	});
-	test("prepare runs once for identical environments and isolates distinct environments", async () => {
+	test("prepare runs once per distinct environment, in the working directory", async () => {
 		const prepareScript = join(temp(), "toolbox"); writeFileSync(prepareScript, "#!/bin/sh\nmkdir -p built\necho prepared >> built/prepare.log\n"); chmodSync(prepareScript, 0o755);
 		const prepare = { executable: "./toolbox", argv: ["prepare"], cwd: ".", timeout_ms: 1000, max_output_bytes: 8192 };
 		const environment = { prepare, writable_paths: ["built"] };
@@ -119,24 +123,20 @@ describe("shared deterministic QA", () => {
 				if (command.argv[0] === "prepare") {
 					prepared.push(root);
 					mkdirSync(join(root, "built"), { recursive: true });
-					if (prepared.length === 2) {
-						const dirs = prepared.slice(0, 2);
-						expect(dirs[1]).not.toBe(dirs[0]);
-					}
 					return { exit_code: 0, timed_out: false, output_limited: false, stdout: "", stderr: "" };
 				}
 				return { exit_code: 0, timed_out: false, output_limited: false, stdout: "", stderr: "" };
 			},
 		}));
 		expect(runs).toEqual(["prepare", "A1", "A2", "prepare", "B1"]);
-		expect(prepared).toHaveLength(2); expect(prepared[1]).not.toBe(prepared[0]);
+		expect(prepared).toEqual([s.root, s.root]);
 		expect(verdict.decision).toBe("pass");
 	});
 	test("a failed prepared check is a normal finding while prepare failure is an operation error", async () => {
 		const prepare = { executable: "missing-prepare-tool-2099", argv: [], cwd: ".", timeout_ms: 1000, max_output_bytes: 1024 };
 		const items = [{ id: "A1", environment: { prepare, writable_paths: [] } }], s = snapshot("prep-failure", items);
 		await expect(runDeterministicQa(s, descriptors(s, items), {
-			_materializeDeliveryWorkspace: () => fakeDelivery(s.root), _writeDeliveryTree: () => "tree",
+			_frozenTree: { tree: "tree" },
 			_resolveVerificationCommand: () => { throw new Error("unavailable"); },
 		})).rejects.toMatchObject({ name: "QaPreparationError", acceptance_ids: ["A1"] });
 		const failing = [{ id: "A1" }], snapshot2 = snapshot("check-failure", failing);
@@ -161,11 +161,88 @@ describe("shared deterministic QA", () => {
 		const prepareCommand = { ...check, executable: "./prepare", timeout_ms: 20000 };
 		const parsed = parseVerificationDescriptor(JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v2", command: check,
 			environment: { prepare: prepareCommand, writable_paths: ["generated"] } }));
-		const s = snapshot("prepared-interpreter", [{ id: "A1" }]);
-		const verdict = await runDeterministicQa(s, new Map([["A1", parsed]]), {
-			_materializeDeliveryWorkspace: () => ({ root, tree: "tree", seal: "[]", cleanup: () => {} }),
-			_writeDeliveryTree: () => "tree",
-		});
+		const s = { ...snapshot("prepared-interpreter", [{ id: "A1" }]), root };
+		const verdict = await runDeterministicQa(s, new Map([["A1", parsed]]), { _frozenTree: { tree: "tree" } });
 		expect(verdict.decision).toBe("pass");
+	});
+	test("the batch integration recheck still runs in a materialized copy, not the working directory", async () => {
+		const items = [{ id: "A1" }], s = snapshot("copied", items); const ran: string[] = [];
+		const verdict = await runDeterministicQa(s, descriptors(s, items), copied({
+			_runFixedVerification: async (root: string) => { ran.push(root); return { exit_code: 0, timed_out: false, output_limited: false, stdout: "", stderr: "" }; },
+		}));
+		expect(verdict.decision).toBe("pass");
+		expect(ran).toEqual([deliveryRoots.at(-1)!]); expect(ran[0]).not.toBe(s.root);
+	});
+});
+
+describe("task QA in the working directory", () => {
+	const git = (root: string, ...args: string[]) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8" }).trim();
+	const scope = ["src", "check.sh", "rewrite.sh"];
+	// A real repository whose index is the frozen delivery: tracked in-scope and
+	// out-of-scope files, plus an ignored directory holding an installed dependency.
+	function repository() {
+		const root = temp();
+		git(root, "init", "-q"); git(root, "config", "user.email", "qa@example.invalid"); git(root, "config", "user.name", "qa");
+		mkdirSync(join(root, "src")); mkdirSync(join(root, "deps"));
+		writeFileSync(join(root, "src/a.txt"), "frozen\n"); writeFileSync(join(root, "notes.txt"), "outside\n");
+		writeFileSync(join(root, ".gitignore"), "deps/\nuntracked-output\n"); writeFileSync(join(root, "deps/installed"), "dependency\n");
+		writeFileSync(join(root, "check.sh"), "#!/bin/sh\ngrep -q dependency deps/installed && echo ran > untracked-output\n");
+		writeFileSync(join(root, "rewrite.sh"), "#!/bin/sh\necho changed > src/a.txt\n");
+		chmodSync(join(root, "check.sh"), 0o755); chmodSync(join(root, "rewrite.sh"), 0o755);
+		git(root, "add", "-A"); git(root, "commit", "-q", "-m", "base");
+		return { root, tree: git(root, "rev-parse", "HEAD^{tree}") };
+	}
+	const run = (root: string, tree: string, executable: string) => {
+		const parsed = parseVerificationDescriptor(JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v2",
+			command: { executable, argv: [], cwd: ".", timeout_ms: 20000, max_output_bytes: 8192 } }));
+		const s = { ...snapshot("in-place", [{ id: "A1" }]), root };
+		return runDeterministicQa(s, new Map([["A1", parsed]]), { _frozenTree: { tree, drift: () => inScopeTrackedDrift(root, tree, scope) } });
+	};
+	const outside = () => readdirSync(tmpdir()).filter(name => name.startsWith("imm-delivery")).sort();
+
+	test("a check uses a dependency from an ignored directory, may write output, and nothing is created outside the repository", async () => {
+		const { root, tree } = repository(); const before = outside();
+		// Out-of-scope tracked content is the user's environment and is not compared.
+		writeFileSync(join(root, "notes.txt"), "edited outside the scope\n");
+		expect((await run(root, tree, "./check.sh")).decision).toBe("pass");
+		expect(readdirSync(root)).toContain("untracked-output");
+		expect(outside()).toEqual(before);
+	});
+	test("an in-scope tracked edit outside the frozen snapshot refuses before any command runs", async () => {
+		const { root, tree } = repository();
+		writeFileSync(join(root, "src/a.txt"), "edited after the freeze\n");
+		const error = await run(root, tree, "./check.sh").then(() => null, error => error);
+		expect(error).toMatchObject({ name: "QaPreparationError", stage: "integrity", reason: "protected_input_or_output_drift" });
+		expect(error.prepare_observation).toMatchObject({ conditions: { delivery: "working_directory" }, drift_paths: ["src/a.txt"] });
+		expect(JSON.stringify({ message: error.message, diagnostics: error.diagnostics })).not.toContain("src/a.txt");
+		expect(readdirSync(root)).not.toContain("untracked-output");
+	});
+	test("a check that rewrites an in-scope tracked file fails as drift", async () => {
+		const { root, tree } = repository();
+		const error = await run(root, tree, "./rewrite.sh").then(() => null, error => error);
+		expect(error).toMatchObject({ name: "QaPreparationError", reason: "protected_input_or_output_drift" });
+		expect(error.prepare_observation.drift_paths).toEqual(["src/a.txt"]);
+	});
+	test("the comparison ignores Git repository bindings inherited from the hosting process", () => {
+		const { root, tree } = repository(), other = temp();
+		git(other, "init", "-q");
+		const saved = { dir: process.env.GIT_DIR, index: process.env.GIT_INDEX_FILE };
+		process.env.GIT_DIR = join(other, ".git"); process.env.GIT_INDEX_FILE = join(other, ".git/index");
+		try {
+			expect(inScopeTrackedDrift(root, tree, scope)).toEqual([]);
+			writeFileSync(join(root, "src/a.txt"), "edited\n");
+			expect(inScopeTrackedDrift(root, tree, scope)).toEqual(["src/a.txt"]);
+		} finally {
+			if (saved.dir === undefined) delete process.env.GIT_DIR; else process.env.GIT_DIR = saved.dir;
+			if (saved.index === undefined) delete process.env.GIT_INDEX_FILE; else process.env.GIT_INDEX_FILE = saved.index;
+		}
+	});
+	test("the comparison reads bytes: a deleted, added or mode-changed in-scope file differs, an identical rewrite does not", () => {
+		const { root, tree } = repository();
+		writeFileSync(join(root, "src/a.txt"), "frozen\n");
+		expect(inScopeTrackedDrift(root, tree, scope)).toEqual([]);
+		chmodSync(join(root, "src/a.txt"), 0o755); writeFileSync(join(root, "src/b.txt"), "new\n"); git(root, "add", "src/b.txt");
+		rmSync(join(root, "check.sh"));
+		expect(inScopeTrackedDrift(root, tree, scope)).toEqual(["check.sh", "src/a.txt", "src/b.txt"]);
 	});
 });

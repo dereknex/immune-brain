@@ -211,9 +211,11 @@ describe("S2 exact effects and outbound research", () => {
 			"It runs Git hooks normally and grants no push, publication, history rewrite, or commit of any other path",
 			"A model never makes this commit itself and never asks the user to make it",
 			// Host Confirmation Boundary
-			"the Host commits the Enrollment committable set when a dirty file inside the task `scope_hint` or an untracked TaskIntent would otherwise fail it",
-			"The set is those paths plus the task's own TaskIntent and the Spec its binding names",
+			"the Host commits the Enrollment committable set when an untracked TaskIntent would otherwise fail it",
+			"The set is the task's own TaskIntent and the Spec its binding names",
+			"In-scope changes that already exist are not committed: the Enrollment gate lists them and only the listed paths become task work on confirmation",
 			"The commit is silent, needs no separate confirmation, and the native confirmation binds the HEAD that results",
+			"When no precondition fails, no commit is made",
 			"Dirty paths outside the set are left as they are and do not block Enrollment",
 			"With an unborn HEAD the empty root commit comes first and this commit follows it",
 			"A commit Git refuses fails Enrollment with Git's message and is never retried with hooks bypassed",
@@ -235,7 +237,7 @@ describe("S2 exact effects and outbound research", () => {
 			"The commit precedes the binding",
 			"`--no-verify`, `--amend`, `-a`, `git add -A` and `git add .` are never used",
 			"The Kernel refusal stays",
-			"Accepted risk: unfinished user work inside the scope is committed",
+			"In-scope work is claimed, not committed",
 			"no push, publication, history rewrite, or commit of a path outside the committable set",
 		]) {
 			expect(adr).toContain(fragment);

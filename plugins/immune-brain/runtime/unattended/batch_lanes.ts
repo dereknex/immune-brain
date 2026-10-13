@@ -12,6 +12,7 @@ import { isAbsolute, join } from "node:path";
 import { computeBatchPlanDigest } from "../kernel/batch_authority";
 import { readTaskRecordRaw } from "../kernel/storage";
 import { readTaskIntent } from "../kernel/intent";
+import { applyScopeRiskFloor, readRiskFloor } from "../kernel/risk_floor";
 import { readTaskTombstone } from "../kernel/backend_claim";
 import {
 	readRuntimeContracts,
@@ -958,14 +959,17 @@ export async function runLaneBatch(
 				const authorized = readTaskIntent(input.root, request.task_id, planChild?.intent_path ?? undefined).intent;
 				const current = readTaskRecordRaw(child.lane.path, request.task_id).record?.intent_snapshot;
 				if (!current) throw new Error(`the Lane has no TaskRecord for ${request.task_id}`);
-				const outOfBounds = delegatedRevisionRefusal(authorized, current, request.next_intent);
+				// The Lane's own declaration decides the floor of the revision it applies.
+				const floor = readRiskFloor(child.lane.path);
+				const nextIntent = applyScopeRiskFloor(request.next_intent, floor);
+				const outOfBounds = delegatedRevisionRefusal(authorized, current, nextIntent, floor);
 				if (outOfBounds) refuseRevision(outOfBounds);
 				else {
 					const confirmationRef = delegatedConfirmationRef(record.batch_id, grant);
 					const applied = await applyDelegatedIntentRevision({
 						lane_root: child.lane.path,
 						task_id: request.task_id,
-						next_intent: request.next_intent,
+						next_intent: nextIntent,
 						confirmation_ref: confirmationRef,
 						now: input.now,
 					});

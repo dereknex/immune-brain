@@ -11,6 +11,11 @@ the dirty-scope invariant stays, and the Host now satisfies it instead of
 handing it to the user. It narrows one BASELINE rule, that commit always needs
 its own grant, for the single case described here.
 
+Amended on 2026-10-13 when this Initiative merged with #234 (host-owned-
+environment D8): in-scope dirt at Enrollment is no longer committed. The
+confirmed Enrollment gate lists it and claims it as task work, so the
+Enrollment committable set is the TaskIntent and its bound Spec alone.
+
 ## Context
 
 Enrollment refused a task whose scope held staged, modified or untracked paths,
@@ -42,15 +47,18 @@ chose not to follow that precedent here: the commit is silent.
    shrink that set. The temporary hook directory is removed after each attempt;
    repository and global Git config are untouched. Git 2.29 or newer is required
    for this guard; older Git fails before the precondition commit.
-2. **A commit is made only when a precondition would otherwise fail.** Two
-   states fail Enrollment: a dirty path inside the task `scope_hint`, and an
-   untracked TaskIntent. A TaskIntent that is staged over a clean scope fails
-   nothing, so it produces no commit and no empty commit. The Planner still
-   stages its artifacts and never commits.
-3. **The Enrollment committable set**, when one of those states holds, is the
-   dirty paths inside `scope_hint` plus the task's own TaskIntent and the Spec
-   its binding names, each only when dirty. Dirt outside the set is not
-   committed and does not block Enrollment.
+2. **A commit is made only when a precondition would otherwise fail.** One
+   state fails Enrollment here: an untracked TaskIntent. A dirty path inside
+   the task `scope_hint` no longer fails Enrollment at all — the confirmed
+   gate claims it as task work (host-owned-environment D8) — and a TaskIntent
+   that is staged over a clean scope fails nothing, so it produces no commit
+   and no empty commit. The Planner still stages its artifacts and never
+   commits.
+3. **The Enrollment committable set**, when the untracked-TaskIntent state
+   holds, is the task's own TaskIntent and the Spec its binding names, each
+   only when dirty. In-scope dirt is claimed through the confirmed gate and
+   never enters this set; dirt outside the set is not committed and does not
+   block Enrollment.
 4. **The commit precedes the binding.** Both Hosts commit before preparing the
    Enrollment binding, so the native confirmation binds the resulting HEAD.
    With an unborn HEAD the empty root commit is created first, after the
@@ -67,8 +75,9 @@ chose not to follow that precedent here: the commit is silent.
    config write. The module refuses an unmerged index, a listed path flagged
    assume-unchanged or skip-worktree, and a path that leaves the repository.
 6. **The Kernel refusal stays.** `enrollWithPreconditions` still refuses a
-   dirty scope. It is the last line of defence, reachable when a path changed
-   after the commit, and its text no longer tells the user to commit.
+   dirty scope. It is the last line of defence, reachable when a path was
+   dirtied after the gate listed the scope, and its text no longer tells the
+   user to commit.
 
 7. **A fresh batch commits its own preconditions before binding.** Both Hosts
    use the same preparation entry: validate the plan and owner, then under the
@@ -106,11 +115,11 @@ chose not to follow that precedent here: the commit is silent.
 
 ## Consequences
 
-- **Accepted risk: unfinished user work inside the scope is committed.** A
-  half-written file the user left inside `scope_hint` lands in a commit
-  subject-lined `chore(imm): commit Enrollment preconditions for <task-id>`
-  without being shown first. The user must split or revert it afterwards. The
-  repository owner accepted this in exchange for never being asked.
+- **In-scope work is claimed, not committed.** A half-written file the user
+  left inside `scope_hint` is listed in the Enrollment gate and becomes task
+  work on confirmation; it never enters the precondition commit. The
+  repository owner accepted the gate claim (host-owned-environment D8) in
+  exchange for never being asked to commit by hand.
 - A commit made before a declined, cancelled or failed Enrollment remains in
   history. The result names it. A retry finds a clean set and makes no second
   commit.

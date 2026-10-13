@@ -19,7 +19,8 @@ import type { ReviewBundle, ReviewManifestV5 } from "./review_evidence";
 import { createVerdictAuthority, type VerdictAuthority } from "./verdict_authority";
 import type { ConfirmationReferenceSource } from "./host_port";
 import { buildRoleDelegationPacket, STATIC_REVIEW_RULES } from "../role_prompt_bridge";
-import type { AssuranceProjectionResult } from "../kernel/assurance_projection";
+import { projectAssurance, type AssuranceProjectionResult } from "../kernel/assurance_projection";
+import { taskStatusIdentity } from "../workspace_scope";
 import type { TaskIntentIdentityToken } from "../kernel/intent_token_registry";
 import { scopeAdditionsFromHistory } from "../kernel/intent";
 import type { AssuranceHostPort, HostReviewReservation } from "./host_port";
@@ -264,22 +265,25 @@ export function qaDiagnosticMetadata(d: QaCheckDiagnostic): QaCheckDiagnostic {
 }
 
 /**
- * What a failed `prepare` stage ran under, plus the end of its stderr. It
- * travels only in the direct Assurance Tool result: it is not part of
- * `QaCheckDiagnostic` and is never persisted (no TaskRecord, finding, audit
- * evidence, batch state or tracker projection).
+ * What a failed `prepare` stage ran under, plus the end of its stderr; for an
+ * in-place run that found the working directory different from the frozen
+ * tree, the differing in-scope paths. It travels only in the direct Assurance
+ * Tool result: it is not part of `QaCheckDiagnostic` and is never persisted
+ * (no TaskRecord, finding, audit evidence, batch state or tracker projection).
  */
+export type QaDeliveryConditions =
+	| { delivery: "working_directory" }
+	| { delivery: "isolated_materialization"; worktree_node_modules: "absent" };
 export interface QaPrepareObservation {
-	conditions: {
-		delivery: "isolated_materialization";
-		home_and_cache: "fresh_per_run";
-		worktree_node_modules: "absent";
-	};
+	conditions: QaDeliveryConditions;
 	declared_timeout_ms: number;
 	stderr_tail: string;
+	drift_paths?: string[];
 }
+export const QA_DRIFT_PATH_LIMIT = 64;
 export const QA_PREPARE_STDERR_TAIL_BYTES = 2048;
-export const QA_PREPARE_REPRODUCTION_NOTE = "a reproduction in the live worktree is not equivalent: QA runs prepare in an isolated delivery with a fresh home and cache and no worktree node_modules";
+export const QA_PREPARE_REPRODUCTION_NOTE = "a reproduction in the live worktree is not equivalent: this run used an isolated delivery with no worktree node_modules";
+export const QA_DRIFT_NOTE = "in-scope tracked content of the working directory differs from the frozen snapshot; see prepare_observation.drift_paths";
 const QA_PREPARE_REASONS: QaPreparationReason[] = ["timeout", "nonzero_exit", "output_limit"];
 // Control characters other than newline and tab: C0, DEL and C1.
 const QA_TAIL_CONTROL = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g;
@@ -291,18 +295,23 @@ export function qaPrepareStderrTail(stderr: string): string {
 	while (start < bytes.length && (bytes[start]! & 0xc0) === 0x80) start++;
 	return bytes.subarray(start).toString("utf8").replace(QA_TAIL_CONTROL, "");
 }
-export function qaPrepareObservation(declaredTimeoutMs: number, stderr: string): QaPrepareObservation {
+export function qaPrepareObservation(declaredTimeoutMs: number, stderr: string,
+	delivery: QaDeliveryConditions["delivery"] = "working_directory", driftPaths?: string[]): QaPrepareObservation {
 	return {
-		conditions: { delivery: "isolated_materialization", home_and_cache: "fresh_per_run", worktree_node_modules: "absent" },
+		conditions: delivery === "isolated_materialization" ? { delivery, worktree_node_modules: "absent" } : { delivery: "working_directory" },
 		declared_timeout_ms: declaredTimeoutMs,
 		stderr_tail: qaPrepareStderrTail(stderr),
+		...(driftPaths ? { drift_paths: driftPaths.slice(0, QA_DRIFT_PATH_LIMIT).map(path => path.replace(QA_TAIL_CONTROL, "").slice(0, 512)) } : {}),
 	};
 }
 /** The Tool boundary never spreads arbitrary executor fields. */
 export function qaPrepareObservationMetadata(o: QaPrepareObservation): QaPrepareObservation {
-	if (!Number.isSafeInteger(o.declared_timeout_ms) || o.declared_timeout_ms < 0 || typeof o.stderr_tail !== "string")
+	const delivery = o.conditions?.delivery;
+	if (!Number.isSafeInteger(o.declared_timeout_ms) || o.declared_timeout_ms < 0 || typeof o.stderr_tail !== "string"
+		|| (delivery !== "working_directory" && delivery !== "isolated_materialization")
+		|| (o.drift_paths !== undefined && (!Array.isArray(o.drift_paths) || o.drift_paths.some(path => typeof path !== "string"))))
 		throw new Error("invalid QA prepare observation");
-	return qaPrepareObservation(o.declared_timeout_ms, o.stderr_tail);
+	return qaPrepareObservation(o.declared_timeout_ms, o.stderr_tail, delivery, o.drift_paths);
 }
 
 export interface QaVerificationProgressInput {
@@ -315,7 +324,7 @@ export interface QaVerificationProgressInput {
 }
 
 export class QaPreparationError extends Error {
-	/** Present only for a `prepare` stage ending in timeout, nonzero exit or output limit. */
+	/** Present for a `prepare` stage ending in timeout, nonzero exit or output limit, and for in-place drift. */
 	public readonly prepare_observation?: QaPrepareObservation;
 	constructor(public readonly stage: QaCheckDiagnostic["stage"], public readonly acceptance_ids: string[], public readonly reason: QaPreparationReason,
 		public readonly diagnostics: QaCheckDiagnostic[] = [], prepareObservation?: QaPrepareObservation) {
@@ -324,7 +333,8 @@ export class QaPreparationError extends Error {
 		if (Buffer.byteLength(JSON.stringify(safe)) > 16_384) throw new QaPreparationError("prepare", [], "execution_metadata_limit_exceeded");
 		super(`QA ${stage} failed (${reason}); affected checks=${acceptance_ids.length}`);
 		this.diagnostics = safe;
-		if (prepareObservation && stage === "prepare" && QA_PREPARE_REASONS.includes(reason))
+		if (prepareObservation && ((stage === "prepare" && QA_PREPARE_REASONS.includes(reason))
+			|| (reason === "protected_input_or_output_drift" && prepareObservation.drift_paths)))
 			this.prepare_observation = qaPrepareObservationMetadata(prepareObservation);
 		this.name = "QaPreparationError";
 	}
@@ -341,6 +351,33 @@ export interface AssuranceRecovery {
 	acceptance_ids: string[];
 	finding_ids: string[];
 	next_action: string;
+}
+
+export interface StatusProjectionWarning {
+	code: "unstaged_scope_paths";
+	paths: string[];
+	message: string;
+}
+export type StatusProjectionResult = AssuranceProjectionResult & { warnings?: StatusProjectionWarning[] };
+/**
+ * The read-only status projection both Hosts return from their status Tool.
+ * Unstaged or untracked in-scope paths come back as a warning beside the
+ * projection instead of replacing it. Every path that freezes a snapshot or
+ * binds authority keeps projecting through the refusing delivery identity.
+ */
+export async function projectTaskStatus(root: string, taskId: string): Promise<StatusProjectionResult> {
+	let unstaged: string[] = [];
+	const result = await projectAssurance(root, taskId, (dir, record) => {
+		const identity = taskStatusIdentity(dir, record);
+		unstaged = identity.unstaged_scope_paths;
+		return identity;
+	});
+	if (result.error || unstaged.length === 0) return result;
+	return { ...result, warnings: [{
+		code: "unstaged_scope_paths",
+		paths: unstaged,
+		message: `task scope contains unstaged or untracked changes: ${unstaged.join(", ")}; advance_assurance refuses until they are staged or removed`,
+	}] };
 }
 
 /** Observation only; fresh Kernel facts remain the sole owner of the obligation. */
@@ -1268,7 +1305,8 @@ export class AssuranceCoordinator {
 					recovery_error: "fresh_kernel_projection_unavailable" };
 			if (error instanceof QaPreparationError && !authorityCommitted && !authorityBoundaryStarted && !aborted())
 				return { state: "failed", operation: "qa", operation_id: operationId,
-					reason: error.prepare_observation ? `${error.message}; ${QA_PREPARE_REPRODUCTION_NOTE}` : error.message,
+					reason: error.prepare_observation?.drift_paths ? `${error.message}; ${QA_DRIFT_NOTE}`
+						: error.prepare_observation?.conditions.delivery === "isolated_materialization" ? `${error.message}; ${QA_PREPARE_REPRODUCTION_NOTE}` : error.message,
 					environment_failure: true, diagnostics: error.diagnostics.map(qaDiagnosticMetadata),
 					...(error.prepare_observation ? { prepare_observation: qaPrepareObservationMetadata(error.prepare_observation) } : {}) };
 			if (phase === "verifying" && !authorityCommitted && !authorityBoundaryStarted && !aborted() && !(error instanceof VerificationAbortedError))

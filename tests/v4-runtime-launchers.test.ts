@@ -19,8 +19,7 @@ function runMise(task: string): { stdout: string; stderr: string } {
 		stdout: "pipe",
 		stderr: "pipe",
 		// Never install the pinned toolchain inside a verification run: a machine
-		// that has not provisioned it must use the bun already on PATH. Kernels QA
-		// materializes a dependency-free, sanitized-HOME delivery tree.
+		// that has not provisioned it must use the bun already on PATH.
 		env: { ...process.env, MISE_TASK_RUN_AUTO_INSTALL: "false" },
 	});
 	const stdout = result.stdout.toString();

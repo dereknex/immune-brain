@@ -13,6 +13,7 @@ import { projectAssurance } from "../kernel/assurance_projection";
 import { createMutationAuthorityRegistry, digestOfAction, type CapabilityBindingV2 } from "../kernel/authority_port";
 import { capabilityActionFor, createCanaryApplication } from "../kernel/canary_application";
 import { canonicalIntentHash, classifyIntentRevision, parseTaskIntentV1, readTaskIntent } from "../kernel/intent";
+import type { RiskFloor } from "../kernel/risk_floor";
 import { boundSpecPath } from "../kernel/spec_binding";
 import { readTaskRecordRaw, recoverKernelStoreFollowUps } from "../kernel/storage";
 import type { TaskIntentV1 } from "../kernel/types";
@@ -69,8 +70,8 @@ export function parseLaneRevision(value: unknown): LaneRevisionRequest | undefin
  * TaskIntent as the batch authorized it; `current` is the Lane's enrolled one.
  * Null means covered.
  */
-export function delegatedRevisionRefusal(authorized: TaskIntentV1, current: TaskIntentV1, next: TaskIntentV1): string | null {
-	if (classifyIntentRevision(current, next) !== "breaking") return "only a breaking revision needs this approval; apply a compatible one with revise_intent";
+export function delegatedRevisionRefusal(authorized: TaskIntentV1, current: TaskIntentV1, next: TaskIntentV1, floor: RiskFloor): string | null {
+	if (classifyIntentRevision(current, next, floor) !== "breaking") return "only a breaking revision needs this approval; apply a compatible one with revise_intent";
 	if (next.revision <= current.revision) return "the revision number must increase";
 	if (next.goal !== authorized.goal || next.owner !== authorized.owner || next.task_id !== authorized.task_id)
 		return "goal, owner and task identity are outside the delegation";
@@ -99,7 +100,8 @@ export function applyDelegatedIntentRevision(input: {
 	return (async () => {
 		const { lane_root: root, task_id: taskId, next_intent: nextIntent, now } = input;
 		recoverKernelStoreFollowUps(root, taskId);
-		const prior = readTaskIntent(root, taskId, readTaskRecordRaw(root, taskId).record?.intent_ref.path);
+		const record = readTaskRecordRaw(root, taskId).record;
+		const prior = readTaskIntent(root, taskId, record?.intent_ref.path, record?.intent_snapshot);
 		const before = await projectAssurance(root, taskId, taskDeliveryIdentity);
 		if (before.error || before.claim?.task_id !== taskId || before.projection.lifecycle !== "active")
 			throw new Error(`the Lane does not hold an active run of ${taskId}`);

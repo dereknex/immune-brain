@@ -39,22 +39,27 @@ export function enrollmentPreconditionSubject(taskId: string): string {
 
 /**
  * The paths Enrollment commits for `taskId`, empty when no precondition would
- * fail. Two states fail Enrollment: a dirty file inside `scope_hint` and an
- * untracked TaskIntent. When either holds, the set is those paths plus the
- * task's own TaskIntent and the Spec its binding names; a staged TaskIntent
- * over a clean scope fails nothing and yields no commit. The TaskIntent is
- * read from the worktree file, tracked or not. Returns null when no set can
- * be derived (no sidecar, an invalid one, an unborn HEAD); the ordinary
- * Enrollment checks then report that condition themselves.
+ * fail. On a committed HEAD an untracked TaskIntent is the one failing state:
+ * the set is then the task's own TaskIntent and the Spec its binding names.
+ * In-scope dirt is not committed on a committed HEAD — the confirmed
+ * Enrollment gate claims it as task work (host-owned-environment D8), and a
+ * staged TaskIntent over a clean scope fails nothing and yields no commit. The
+ * `unbornScope` form is the exception: there the empty root commit is what
+ * makes the Planner's staged and untracked in-scope edits dirty, and the
+ * disclosure could not list them because no HEAD existed to compare against,
+ * so the commit carries them. The TaskIntent is read from the worktree file,
+ * tracked or not. Returns null when no set can be derived (no sidecar, an
+ * invalid one, an unborn HEAD); the ordinary Enrollment checks then report
+ * that condition themselves.
  */
-export function enrollmentCommittablePaths(root: string, taskId: string): string[] | null {
+export function enrollmentCommittablePaths(root: string, taskId: string, unbornScope = false): string[] | null {
 	const intentPath = `docs/plans/${taskId}.intent.json`;
 	try {
 		if (inspectEnrollmentGitBase(root).state !== "committed") return null;
 		const { intent } = observeEnrollmentTaskIntent(root, taskId);
 		const binding = inspectSpecBinding(intent);
 		if (!binding.ok) return null;
-		const dirtyScope = dirtyScopePaths(root, intent.scope_hint, taskId);
+		const dirtyScope = unbornScope ? dirtyScopePaths(root, intent.scope_hint, taskId) : [];
 		const untrackedIntent = spawnSync("git", ["ls-files", "--error-unmatch", "--", intentPath], { cwd: root }).status === 1;
 		if (dirtyScope.length === 0 && !untrackedIntent) return [];
 		return [...new Set([intentPath, ...(binding.binding ? [binding.binding.active] : []), ...dirtyScope])];
@@ -88,9 +93,9 @@ function freshEnrollmentAdmitted(root: string, taskId: string): boolean {
  * an owned workspace keeps its owner's undelivered work uncommitted. A refused
  * commit throws with Git's message.
  */
-export function commitEnrollmentPreconditions(root: string, taskId: string, signal?: AbortSignal): WorkflowCommitResult {
+export function commitEnrollmentPreconditions(root: string, taskId: string, signal?: AbortSignal, unbornScope = false): WorkflowCommitResult {
 	return withKernelStoreLock(root, () => {
-		const paths = enrollmentCommittablePaths(root, taskId);
+		const paths = enrollmentCommittablePaths(root, taskId, unbornScope);
 		if (!paths || paths.length === 0 || !freshEnrollmentAdmitted(root, taskId)) return { committed: false };
 		return commitWorkflowPaths(root, { paths, subject: enrollmentPreconditionSubject(taskId), signal });
 	});
@@ -102,14 +107,15 @@ const withoutGit = ({ digest, git_base_head, git_error, ...owners }: PiCanaryPre
 /**
  * Unborn-HEAD path only, called after `initializeEnrollmentGitBase`: the scope
  * could not be compared with an unborn HEAD, so commit it now that a base
- * exists. The re-preparation must equal the confirmed one in everything but
- * the Git base, exactly as the empty base commit requires; a TaskIntent or
- * owner changed while the commit ran is refused, not enrolled.
+ * exists, in-scope edits included. The re-preparation must equal the confirmed
+ * one in everything but the Git base, exactly as the empty base commit
+ * requires; a TaskIntent or owner changed while the commit ran is refused, not
+ * enrolled.
  */
 export function commitUnbornEnrollmentPreconditions(
 	root: string, input: PiCanaryPrepareInput, confirmed: PiCanaryPreparation, signal?: AbortSignal,
 ): { result: WorkflowCommitResult; preparation: PiCanaryPreparation } {
-	const result = commitEnrollmentPreconditions(root, input.task_id, signal);
+	const result = commitEnrollmentPreconditions(root, input.task_id, signal, true);
 	if (!result.committed) return { result, preparation: confirmed };
 	const current = preparePiCanary(root, input);
 	if (current.git_base_head !== result.commit || JSON.stringify(withoutGit(current)) !== JSON.stringify(withoutGit(confirmed)))

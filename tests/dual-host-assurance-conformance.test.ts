@@ -1,6 +1,6 @@
 import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
 import { afterAll, describe, expect, mock, setDefaultTimeout, test } from "bun:test";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -347,9 +347,8 @@ function releaseWorkspaceForTest(root: string): void {
 // Every test here drives a real host runtime and temporary Git repositories, so
 // the per-test bound must clear bun's 5s default even under the Kernel QA
 // minimal environment (which is slower than an interactive session).
-// Deterministic QA runs these files in the Kernel's minimal environment (no
-// node_modules, HOME/TMPDIR reset), which is roughly 1.5x slower than an
-// interactive session. The three end-to-end integration tests below drive real
+// Deterministic QA runs these files in a dependency-free delivery checkout (no
+// node_modules), which is roughly 1.5x slower than an interactive session. The three end-to-end integration tests below drive real
 // QA and Review through the shared coordinator and already exceed 25s here, so
 // 60s leaves no headroom for a slower machine and turns a slow pass into a
 // timeout failure.
@@ -584,7 +583,7 @@ function sharedKernel(
 	};
 }
 
-function projectVerificationFixture(taskId: string, mode: "pass" | "prepare-fail" | "sleep" | "v1"): string {
+function projectVerificationFixture(taskId: string, mode: "pass" | "prepare-fail" | "sleep" | "v1" | "drift"): string {
 	const root = mkdtempSync(join(tmpdir(), "imm-project-verification-"));
 	mkdirSync(join(root, ".imm/state"), { recursive: true });
 	mkdirSync(join(root, "docs/plans"), { recursive: true });
@@ -595,22 +594,24 @@ case "$1" in
   prepare) [ "$2" != "fail" ] || { echo "install failed: registry unreachable" >&2; exit 7; }; mkdir -p generated; printf ready > generated/ready ;;
   check) test -f generated/ready ;;
   sleep) sleep 10 ;;
+  drift) echo rewritten >> tools/notes.txt ;;
 esac
 `);
 	chmodSync(tool, 0o755);
+	writeFileSync(join(root, "tools/notes.txt"), "notes\n");
 	const command = (argv: string[]) => ({ executable: "./tools/future-pm", argv, cwd: ".", timeout_ms: 5_000, max_output_bytes: 8_192 });
 	const verification = mode === "v1"
 		? JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v1", runner_id: "bun", runner_version: "1.4.2", argv: ["test"], cwd: ".", timeout_ms: 5_000, max_output_bytes: 8_192 })
 		: JSON.stringify({
 			contract: "assurance_kernel/verification_descriptor/v2",
-			command: command([mode === "sleep" ? "sleep" : "check"]),
+			command: command([mode === "sleep" ? "sleep" : mode === "drift" ? "drift" : "check"]),
 			environment: { prepare: command(["prepare", ...(mode === "prepare-fail" ? ["fail"] : [])]), writable_paths: ["generated"] },
 		});
 	const intent = {
 		contract: "assurance_kernel/task_intent/v1", task_id: taskId, owner: "user",
 		goal: "exercise project-owned verification through the real host port",
 		acceptance: [{ id: "acc-1", assertion: "project command passes", verification }],
-		scope_hint: [`docs/plans/${taskId}.intent.json`, "tools/future-pm"], risk: "material", revision: 1,
+		scope_hint: [`docs/plans/${taskId}.intent.json`, "tools/future-pm", "tools/notes.txt"], risk: "material", revision: 1,
 	};
 	writeFileSync(join(root, "docs/plans", `${taskId}.intent.json`), `${JSON.stringify(intent, null, 2)}\n`);
 	execFileSync("git", ["init", "-q"], { cwd: root });
@@ -650,10 +651,34 @@ describe("project-owned-verification", () => {
 			const taskId = `project-command-${host}`, root = projectVerificationFixture(taskId, "pass");
 			try {
 				const driven = projectVerificationCoordinator(root, host);
+				const deliveries = () => readdirSync(tmpdir()).filter(name => name.startsWith("imm-delivery")).sort();
+				const before = deliveries();
 				const result = await driven.coordinator.advance(taskId, { cwd: root } as never);
 				expect(result.state).toBe("review_ready");
+				// In place: prepare wrote into the working directory and no delivery copy exists.
+				expect(readFileSync(join(root, "generated/ready"), "utf8")).toBe("ready");
+				expect(deliveries()).toEqual(before);
 				const record = await driven.ports.readTaskRecord(root, taskId);
 				expect(JSON.stringify(record)).toContain("execution=sha256:");
+				await driven.coordinator.onSessionShutdown();
+			} finally { rmSync(root, { recursive: true, force: true }); }
+		}
+	});
+
+	test("Pi and Claude return the paths a check rewrote and store none of them", async () => {
+		for (const host of ["pi", "claude"] as const) {
+			const taskId = `check-drift-${host}`, root = projectVerificationFixture(taskId, "drift");
+			try {
+				const driven = projectVerificationCoordinator(root, host);
+				const result = await driven.coordinator.advance(taskId, { cwd: root } as never) as any;
+				expect(result).toMatchObject({ state: "failed", operation: "qa" });
+				expect(result.reason).toContain("protected_input_or_output_drift");
+				expect(result.prepare_observation.drift_paths).toEqual(["tools/notes.txt"]);
+				expect(JSON.stringify(result.diagnostics ?? [])).not.toContain("drift_paths");
+				expect(JSON.stringify(await driven.ports.readTaskRecord(root, taskId))).not.toContain("drift_paths");
+				// Nothing under the task's state mentions the returned paths.
+				const stored = spawnSync("grep", ["-rl", "drift_paths", ".imm"], { cwd: root, encoding: "utf8" });
+				expect({ status: stored.status, files: stored.stdout }).toEqual({ status: 1, files: "" });
 				await driven.coordinator.onSessionShutdown();
 			} finally { rmSync(root, { recursive: true, force: true }); }
 		}
@@ -682,7 +707,7 @@ describe("project-owned-verification", () => {
 		expect(JSON.stringify(comparable[0])).toContain("QA prepare failed");
 		// Both Hosts return the same prepare observation, beside the diagnostics.
 		expect(comparable[0].prepare_observation).toEqual({
-			conditions: { delivery: "isolated_materialization", home_and_cache: "fresh_per_run", worktree_node_modules: "absent" },
+			conditions: { delivery: "working_directory" },
 			declared_timeout_ms: 5_000,
 			stderr_tail: "install failed: registry unreachable\n",
 		});
@@ -3096,6 +3121,64 @@ describe("dual-host assurance conformance", () => {
 			}
 		} finally {
 			rmSync(root, { recursive: true, force: true });
+		}
+	});
+});
+
+// Spec host-owned-environment D9 / SCN-6: a status read is not a freeze. With
+// an unstaged file inside the scope of an active task, both Hosts return the
+// task projection plus one warning naming the path, and both still refuse to
+// advance assurance on the same state.
+describe("status stays readable with unstaged scope paths on both Hosts", () => {
+	test("status returns the projection and a warning; advance_assurance still refuses", async () => {
+		const taskId = "status-unstaged-scope";
+		const claudeRoot = enrolledHostFixture(taskId, ["src/impl.ts"]);
+		const piRoot = enrolledHostFixture(taskId, ["src/impl.ts"]);
+		try {
+			for (const root of [claudeRoot, piRoot]) writeFileSync(join(root, "src/impl.ts"), "export const impl = 2; // unstaged\n");
+			const warning = {
+				code: "unstaged_scope_paths",
+				paths: ["src/impl.ts"],
+				message: "task scope contains unstaged or untracked changes: src/impl.ts; advance_assurance refuses until they are staged or removed",
+			};
+
+			const claude = createMcpRuntime({ cwd: claudeRoot, env: HOST_ENV });
+			const claudeStatus = await claude.callTool("status", { task_id: taskId }, { toolCallId: "toolu-status" }) as Record<string, any>;
+			const pi = piCanaryTool({});
+			const piStatus = (await pi.execute("status", { task_id: taskId, action: { op: "status" } }, undefined, undefined, piCanaryCtx(piRoot)) as { details: Record<string, any> }).details;
+
+			expect(claudeStatus.error).toBeNull();
+			expect(claudeStatus.warnings).toEqual([warning]);
+			expect(claudeStatus.projection).toMatchObject({ lifecycle: "active", artifact_state: "active", next_obligation: "submit_assurance" });
+			expect(piStatus.state).toBe("status");
+			expect(piStatus.warnings).toEqual([warning]);
+			expect(piStatus.task_state).toMatchObject({ lifecycle: "active", artifact_state: "active", next_obligation: "submit_assurance" });
+			expect(piStatus.result).toContain(warning.message);
+
+			const refused = /task scope contains unstaged or untracked changes: src\/impl\.ts/;
+			// The MCP wire needs a negotiated Host version for a mutation, so the
+			// Claude advance is driven through the runtime the Tool dispatches to.
+			const claudeRuntime = new ClaudeRuntime({
+				cwd: claudeRoot,
+				env: HOST_ENV,
+				host: new ClaudeReviewHost(),
+				interactive: true,
+				permissionMode: "manual",
+				requestConfirmation: async () => ({ decision: "accept", requestId: "r-status" }),
+			});
+			const claudeAdvance = await claudeRuntime.advance(taskId).then(
+				(value: unknown) => JSON.stringify(value),
+				(error: unknown) => (error instanceof Error ? error.message : String(error)),
+			);
+			const piAdvance = await pi.execute("advance", { task_id: taskId, action: { op: "advance_assurance" } }, undefined, undefined, piCanaryCtx(piRoot)).then(
+				(value: unknown) => JSON.stringify(value),
+				(error: unknown) => (error instanceof Error ? error.message : String(error)),
+			);
+			expect(claudeAdvance).toMatch(refused);
+			expect(piAdvance).toMatch(refused);
+		} finally {
+			rmSync(claudeRoot, { recursive: true, force: true });
+			rmSync(piRoot, { recursive: true, force: true });
 		}
 	});
 });

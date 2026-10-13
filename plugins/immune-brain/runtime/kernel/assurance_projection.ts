@@ -21,6 +21,7 @@ import {
 	reconcileKernelAuthority,
 } from "./storage";
 import { projectTask, resolveProjectedRisk } from "./completion";
+import { readRiskFloor, type RiskFloor } from "./risk_floor";
 import { inspectSpecBinding } from "./spec_binding";
 import { taskDeliveryIdentity } from "../workspace_scope";
 import type { AssuranceObligation, TaskIntentV1, TaskRecord, TaskRecordV3 } from "./types";
@@ -201,6 +202,7 @@ function projectFromRecord(
 	recordRevision: string,
 	workspaceRevision: string,
 	snapshot: TaskDiffSnapshot,
+	floor: RiskFloor,
 ): AssuranceProjection {
 	const intent: TaskIntentV1 = record.intent_snapshot;
 	const decision = projectTask(
@@ -209,6 +211,7 @@ function projectFromRecord(
 		snapshot.diff_hash,
 		record.intent_ref.content_hash,
 		snapshot.changed_paths,
+		floor,
 	);
 	const approvalKinds = freshApprovalKinds(record, record.intent_ref.content_hash, snapshot.diff_hash);
 	const openUserDecisionCount = record.findings.filter(
@@ -224,7 +227,7 @@ function projectFromRecord(
 		diff_hash: snapshot.diff_hash,
 		lifecycle: record.lifecycle,
 		artifact_state: record.artifact_state,
-		risk: resolveProjectedRisk(intent, snapshot.changed_paths),
+		risk: resolveProjectedRisk(intent, snapshot.changed_paths, floor),
 		next_obligation: decision.next_obligation,
 		fresh_acceptance_ids: decision.fresh_acceptance_ids,
 		missing_acceptance_ids: decision.missing_acceptance_ids,
@@ -334,6 +337,7 @@ export async function projectAssurance(
 							committed.revision,
 							workspace.revision,
 							diffProvider(root, committed.record),
+							readRiskFloor(root),
 						),
 						run_id: committedRunId,
 					},
@@ -366,7 +370,7 @@ export async function projectAssurance(
 				task_id: taskId,
 				error: null,
 				claim: null,
-				projection: projectFromRecord(auditPair.record, auditPair.recordRevision, workspace.revision, diffProvider(root, auditPair.record)),
+				projection: projectFromRecord(auditPair.record, auditPair.recordRevision, workspace.revision, diffProvider(root, auditPair.record), readRiskFloor(root)),
 			};
 		}
 		if (read.record.task_id !== taskId)
@@ -381,7 +385,7 @@ export async function projectAssurance(
 			error: null,
 			claim,
 			projection: {
-				...projectFromRecord(read.record, read.revision, workspace.revision, snapshot),
+				...projectFromRecord(read.record, read.revision, workspace.revision, snapshot, readRiskFloor(root)),
 				run_id: reconcileKernelAuthority(root, taskId).owner_run_id,
 			},
 		};

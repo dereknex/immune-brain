@@ -1,0 +1,69 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "host-owned-environment-s4-project-risk-floor",
+  "goal": "The paths that force a higher task risk come from the project: the floor leaves parseTaskIntentV1 and is applied where a risk is decided from a tracked declaration at .imm/risk-floor.json, a missing declaration means no floor, an unreadable or invalid one makes every task critical, the declaration's own path is always critical, this repository's declaration carries today's two prefix lists unchanged, and the canonical hash of an already enrolled intent does not change (Spec host-owned-environment S4; D12-D14, I7, I8).",
+  "acceptance": [
+    {
+      "id": "HE-S4-A1",
+      "assertion": "With this repository's declaration a routine task scoping a Kernel runtime path is raised to material as before; with no declaration the same scope and a docs/plans scope keep routine; glob scope entries match as before; seams: tests/risk-tier-floor.test.ts, tests/risk-downgrade-guard.test.ts (Spec SCN-9, SCN-10, D12, D13, I7).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/risk-tier-floor.test.ts\",\n      \"tests/risk-downgrade-guard.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "HE-S4-A2",
+      "assertion": "A task whose scope or changed paths include .imm/risk-floor.json is critical; a declaration that is invalid JSON, has wrong types, or cannot be read makes every task critical; an empty declaration behaves as no declaration; seam: tests/risk-tier-floor.test.ts (Spec SCN-11, D13, I7).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/risk-tier-floor.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "HE-S4-A3",
+      "assertion": "A characterization test written before the move pins the canonical intent hash of one enrolled intent whose risk the floor raised and one it did not, and both hashes are unchanged after the move; imm-kernel intent validate still reports the floored risk; seams: tests/kernel-intent-v2.test.ts, tests/kernel-intent-validation.test.ts (Spec D14, I8).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-intent-v2.test.ts\",\n      \"tests/kernel-intent-validation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "HE-S4-A4",
+      "assertion": "The configuration reference documents .imm/risk-floor.json and its fail-closed rule, its dist mirror is identical, ADR 0023 exists, and the generated Claude bundle matches the runtime source; seams: tests/dist-docs-sync-contract.test.ts, tests/claude-host-package.test.ts (Spec D12, D13).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dist-docs-sync-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/host-owned-environment-s4-project-risk-floor.md",
+    ".imm/risk-floor.json",
+    "docs/adr/0021-same-directory-scope-extension.md",
+    "docs/adr/0023-project-declared-risk-floor.md",
+    "docs/plans/host-owned-environment-s4-project-risk-floor.intent.json",
+    "docs/reference/immune-brain-config.md",
+    "docs/specs/host-owned-environment.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+    "plugins/immune-brain/dist/imm-run.md",
+    "plugins/immune-brain/dist/role-prompts/executor.md",
+    "plugins/immune-brain/runtime/assurance/verdict_authority.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/commands/kernel.ts",
+    "plugins/immune-brain/runtime/kernel/application.ts",
+    "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+    "plugins/immune-brain/runtime/kernel/canary_application.ts",
+    "plugins/immune-brain/runtime/kernel/completion.ts",
+    "plugins/immune-brain/runtime/kernel/enrollment.ts",
+    "plugins/immune-brain/runtime/kernel/intent.ts",
+    "plugins/immune-brain/runtime/kernel/reducer.ts",
+    "plugins/immune-brain/runtime/kernel/risk_floor.ts",
+    "plugins/immune-brain/runtime/prompts/executor.md",
+    "plugins/immune-brain/runtime/unattended/batch_delegation.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts",
+    "tests/breaking-intent-revision-gate.test.ts",
+    "tests/kernel-assurance-obligation.test.ts",
+    "tests/kernel-assurance-projection.test.ts",
+    "tests/kernel-inspect.test.ts",
+    "tests/kernel-intent-v2.test.ts",
+    "tests/kernel-intent-validation.test.ts",
+    "tests/pi-canary-work-extension.test.ts",
+    "tests/risk-downgrade-guard.test.ts",
+    "tests/risk-tier-floor.test.ts",
+    "tests/scope-revision-contract.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 3,
+  "owner": "user"
+}

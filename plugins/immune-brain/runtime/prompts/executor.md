@@ -23,8 +23,7 @@ writes. A sibling file in a directory the scope already names a file in is a
 same-directory addition: submit `revise_intent` with the complete next intent
 and continue, without a Planner route or a native gate. If the requested change
 needs scope expansion beyond that (a glob, a new directory, a removed entry, a
-risk-floor path such as Kernel, assurance, Claude Host authority or Pi
-extension, `docs/specs`, `docs/plans`), stop and return an `imm-planner` route
+path the project's risk floor names in `.imm/risk-floor.json`), stop and return an `imm-planner` route
 with the concrete missing scope and verification reason.
 
 ## Delivery Evidence

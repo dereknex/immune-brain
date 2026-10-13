@@ -31,6 +31,18 @@ candidate and reports its stable reason plus exactly one same-Host recovery
 action; never recommend another Host, worktree, Direct Path, unmanaged
 implementation, or automatic retry.
 
+The Enrollment gate lists every in-scope path that is already staged, modified
+or untracked. Confirming the gate claims exactly the listed paths as task work,
+so a task may start from work the user already began; no clean scope is
+required. An in-scope path that changed after the gate text was built was not
+shown, so it refuses the Enrollment: enroll again to review it. Changes outside
+the scope stay the user's and are never claimed.
+
+`status` is a read, not a freeze. It stays readable while the scope holds
+unstaged or untracked paths and returns them as a `warnings` entry beside the
+projection. Freezing a snapshot still refuses those paths, and an in-scope path
+carrying a skip-worktree or assume-unchanged index flag still refuses both.
+
 Before the first Enrollment of a candidate TaskIntent, confirm the Planner
 returned `tracker_associated` — but only when the candidate belongs to an
 identified GitHub-carried Initiative. Standalone TaskIntents and Local
@@ -95,8 +107,12 @@ Continue while the current projection has a valid action:
    result. The Kernel freezes the artifacts itself before QA: it binds Git
    content identity in place without relocating source paths. A simple task has
    TaskIntent only; a complex task may bind one active Spec. Deterministic QA
-   runs all descriptors in a disposable delivery materialization, never against
-   unchecked live worktree source. Do not dispatch a separate per-Step QA Agent.
+   runs all descriptors in the task's working directory. Before the first
+   command and after every command, the tracked content inside the task's scope
+   must equal the frozen snapshot; a difference fails as
+   `protected_input_or_output_drift`. Content outside the scope, and untracked
+   or ignored files, are the user's environment and are not compared. Do not
+   dispatch a separate per-Step QA Agent.
 3. On `review_ready`, invoke the returned `agent_params` as one exact foreground
    Agent call, then pass its structured verdict to `submit_review`. Do not
    replace this snapshot-bound reviewer with a generic role dispatch. The Parent
@@ -168,12 +184,15 @@ is recorded as a separate follow-up rather than resolved here.
   TaskIntent.
 - Exception to the bullet above, the Loop owner's own call: a same-directory
   addition. When the new entry is a concrete file in a directory where the scope
-  already names a concrete file, and it is not a risk-floor path (Kernel,
-  assurance, Claude Host authority, Pi extension), `docs/specs` or `docs/plans`,
+  already names a concrete file, and it is not a path the project's risk floor
+  names in `.imm/risk-floor.json`,
   submit `revise_intent` with the complete next intent. It classifies
   `compatible`, applies without a native gate, and the next Review prompt names
-  the added paths as self-served (ADR 0021). A glob, removed entry, new
-  directory or floor path is breaking; a directory written without a trailing
+  the added paths as self-served (ADR 0021). A revision that only removes
+  entries is `compatible` as well: narrowing removes authority, so it applies
+  through `revise_intent` without a gate, provided at least one entry remains.
+  A glob, new directory or floor path is breaking, and so is an addition
+  combined with a removed entry; a directory written without a trailing
   slash is refused by the Host before submission, so name concrete files or
   widen with a glob entry through `approve_breaking_intent_revision`. The envelope check for a revision is judged against the next
   scope, so a worktree that already holds the added files no longer blocks it.
@@ -190,14 +209,16 @@ is recorded as a separate follow-up rather than resolved here.
 - Text instructions are contracts, not a hard bash sandbox. They guide and are
   reviewed; the Kernel authority gates remain the real boundary.
 - In a Lane whose batch confirmation delegated in-envelope revisions
-  (ADR 0018), the Executor does not open the gate for a revision that only
-  changes acceptance or narrows `scope_hint`: it stops and returns the complete
-  next intent to the Parent, which submits it as `lane_revision` on
-  `start_unattended_batch`. The runner applies it as a delegated approval
+  (ADR 0018), the Executor does not open the gate for a breaking revision that
+  changes acceptance, alone or with a narrowed `scope_hint`: it stops and
+  returns the complete next intent to the Parent, which submits it as
+  `lane_revision` on `start_unattended_batch`. The runner applies it as a delegated approval
   (actor `batch-coordinator`, confirmation `delegated-batch:<batch_id>@<time>`)
   or refuses it with `batch_delegation_refused` and a `fallback`; on refusal the
   Executor uses its own native gate below. Widening scope, changing risk, goal
-  or the bound Spec is never delegated, and nobody answers a dialog in a tab.
+  or the bound Spec is never delegated, and nobody answers a dialog in a tab. A
+  revision that only narrows `scope_hint` is compatible and is not delegated:
+  the Executor applies it with `revise_intent`.
 - Invoke `approve_breaking_intent_revision` with the complete next intent
   directly; the native Host gate is the single user decision. Do not overwrite
   enrolled intent sidecars or ask for chat pre-confirmation. A breaking revision
@@ -235,12 +256,16 @@ is recorded as a separate follow-up rather than resolved here.
   stdout/stderr, argv, environment values or arbitrary executor error text.
   The stage decides what else a failed result carries. A `prepare` stage ending
   in timeout, nonzero exit or output limit adds `prepare_observation` to the
-  direct Tool result only: the fixed execution conditions (isolated delivery,
-  fresh home and cache directories, no worktree `node_modules`), the declared
-  timeout, and at most 2048 bytes of the end of stderr with control characters
-  other than newline and tab removed. It is never persisted. A failing `check`
-  stage returns no output text at all. A reproduction in the live worktree is
-  not equivalent to the prepare conditions.
+  direct Tool result only: the execution conditions (the task's working
+  directory), the declared timeout, and at most 2048 bytes of
+  the end of stderr with control characters other than newline and tab removed. It is never persisted. A failing `check`
+  stage returns no output text at all. A `protected_input_or_output_drift`
+  failure adds `prepare_observation.drift_paths`, at most 64 in-scope paths that
+  differ from the frozen snapshot, to the direct Tool result only; restore or
+  stage those paths before a fresh attempt. The Lane batch integration recheck
+  is the one run that still uses an isolated copy with no worktree
+  `node_modules`, because its merge candidate is never checked out; a
+  reproduction in the live worktree is not equivalent to that run.
   A frozen child with `run_qa` pending returns to Parent; batch re-entry does not
   blindly retry an unchanged failure. Fix the environment before a fresh attempt.
   Scope/authority exceptions still use their existing native gates. A committed

@@ -1,0 +1,53 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "host-owned-environment-s3-staging-checks-at-freeze",
+  "goal": "The staging area is inspected when a snapshot is frozen and not before: the read-only status projection of an active task is returned with a warning when its scope holds unstaged or untracked paths, the Enrollment gate on both Hosts lists in-scope paths that are already staged, modified or untracked and on confirmation leaves them out of the Enrollment baseline so they are task work, and a scope revision whose entries are all previous entries is compatible. Freezing a snapshot and the index-flag refusal are unchanged (Spec host-owned-environment S3; D8-D11, I4-I6).",
+  "acceptance": [
+    {
+      "id": "HE-S3-A1",
+      "assertion": "With an unstaged file inside the scope of an active task, the status Tool on both Hosts returns the task projection plus a warning naming the path; advance_assurance on the same state still refuses, and an index-flagged in-scope path still refuses a snapshot; seams: tests/dual-host-assurance-conformance.test.ts, tests/host-neutral-assurance-coordinator.test.ts, tests/managed-task-snapshot-isolation.test.ts (Spec SCN-6, D9, D11, I5).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\",\n      \"tests/managed-task-snapshot-isolation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "HE-S3-A2",
+      "assertion": "Enrollment over a scope that already holds staged, modified or untracked paths succeeds when the confirmed gate text listed them, and those paths appear in the first snapshot; a path dirtied after the gate text was built is not claimed; out-of-scope dirt stays in the Enrollment baseline; seams: tests/enrollment-dirty-scope.test.ts, tests/pi-canary-enroll-extension.test.ts, tests/claude-host-authority.test.ts (Spec SCN-7, D8, I4).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/enrollment-dirty-scope.test.ts\",\n      \"tests/pi-canary-enroll-extension.test.ts\",\n      \"tests/claude-host-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "HE-S3-A3",
+      "assertion": "classifyIntentRevision returns compatible for a next scope that is a strict subset of the previous scope, and keeps its previous result for a subset plus one added entry, for a subset with a changed goal, and for an empty next scope; seam: tests/kernel-intent-v2.test.ts (Spec SCN-8, D10, I6).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-intent-v2.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "HE-S3-A4",
+      "assertion": "dist/imm-run.md states that Enrollment discloses and claims listed in-scope changes and that status stays readable with unstaged scope paths; the generated Claude bundle matches the runtime source; seams: tests/explicit-phase-entry-run-contract.test.ts, tests/claude-host-package.test.ts (Spec D8, D9).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/explicit-phase-entry-run-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/host-owned-environment-s3-staging-checks-at-freeze.md",
+    "docs/plans/host-owned-environment-s3-staging-checks-at-freeze.intent.json",
+    "docs/specs/host-owned-environment.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-run.md",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/kernel/enrollment.ts",
+    "plugins/immune-brain/runtime/kernel/intent.ts",
+    "plugins/immune-brain/runtime/workspace_scope.ts",
+    "tests/claude-host-authority.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/enrollment-dirty-scope.test.ts",
+    "tests/explicit-phase-entry-run-contract.test.ts",
+    "tests/host-neutral-assurance-coordinator.test.ts",
+    "tests/kernel-intent-v2.test.ts",
+    "tests/managed-task-snapshot-isolation.test.ts",
+    "tests/pi-canary-enroll-extension.test.ts",
+    "tests/pi-canary-work-extension.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 3,
+  "owner": "user"
+}

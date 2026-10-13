@@ -62,9 +62,15 @@ function enrollmentBaselinePath(root: string): string {
 	return join(root, ".imm/state/enrollment-baseline.json");
 }
 
-export function writeEnrollmentBaseline(root: string): void {
+/**
+ * Records the dirt that predates the task. `claimedPaths` are the in-scope
+ * paths the confirmed Enrollment gate listed: they are left out, so later
+ * snapshots treat them as task work instead of withholding them.
+ */
+export function writeEnrollmentBaseline(root: string, claimedPaths: readonly string[] = []): void {
 	const snapshot = captureGitWorkspaceSnapshot(root);
 	if (!snapshot) return;
+	for (const path of claimedPaths) delete snapshot.dirty_files[path];
 	const path = enrollmentBaselinePath(root);
 	mkdirSync(dirname(path), { recursive: true });
 	writeFileSync(path, `${JSON.stringify(snapshot)}\n`);
@@ -220,13 +226,14 @@ export function setGitTaskSnapshotTestHook(hook: () => void): () => void {
 	};
 }
 
-function gitBytes(root: string, args: string[]): Buffer {
+function gitBytes(root: string, args: string[], env?: NodeJS.ProcessEnv): Buffer {
 	const diff = args[0] === "diff";
 	const command = diff ? ["diff", "--exit-code", ...args.slice(1)] : args;
 	const result = spawnSync("git", ["--no-optional-locks", "-c", "diff.autoRefreshIndex=false", "-C", root, ...command], {
 		encoding: null,
 		stdio: ["ignore", "pipe", "pipe"],
 		maxBuffer: 8 * 1024 * 1024,
+		...(env ? { env } : {}),
 	});
 	if ((result.status !== 0 && !(diff && result.status === 1)) || !Buffer.isBuffer(result.stdout)) {
 		throw new Error(`Git task snapshot command failed: git ${args.join(" ")}`);
@@ -282,7 +289,7 @@ function decodeIndexFlaggedPaths(bytes: Buffer, label: string): Array<{ path: st
 		const record = bytes.subarray(start, index);
 		if (record.length < 3 || record[1] !== 0x20) throw new Error(`${label} contains a malformed entry`);
 		const tag = String.fromCharCode(record[0]);
-		if (tag === "h" || tag === "S") {
+		if (tag === "h" || tag === "S" || tag === "s") {
 			flagged.push({
 				path: decodeCanonicalGitPath(record.subarray(2), label),
 				flag: tag === "h" ? "assume-unchanged" : "skip-worktree",
@@ -394,9 +401,10 @@ function taskPathMatchesScope(path: string, scope: string[]): boolean {
 
 /**
  * A staged in-scope path that still equals the Enrollment baseline predates the
- * task. Dropping it silently let QA attest workspace bytes that the Review
- * revision did not carry, so it is a hard stop instead: reverting and reapplying
- * yields the same bytes, and only a fresh Enrollment from a clean scope recovers.
+ * task and was not listed by the confirmed Enrollment gate. Dropping it silently
+ * let QA attest workspace bytes that the Review revision did not carry, so it is
+ * a hard stop instead: reverting and reapplying yields the same bytes, and only
+ * a fresh Enrollment that lists the path, or starts from a clean scope, recovers.
  * The task's own planning sidecar is exempt, as it is in dirtyScopePaths:
  * Enrollment requires it tracked, so it is routinely staged in the baseline.
  */
@@ -411,14 +419,15 @@ function assertNoPreEnrollmentScopeChanges(root: string, scopedStagedPaths: read
 		.sort(comparePaths);
 	if (withheld.length > 0)
 		throw new Error(
-			`task scope contains staged changes that predate Enrollment and cannot become task work: ${withheld.join(", ")}; stop the task and re-enroll from a clean scope`,
+			`task scope contains staged changes that predate Enrollment and cannot become task work: ${withheld.join(", ")}; stop the task and enroll again so the Enrollment gate lists them, or from a clean scope`,
 		);
 }
 
 /**
  * In-scope paths that are already staged, modified or untracked relative to
- * HEAD. Enrollment refuses these: the baseline would record them as user dirt
- * and they could never be delivered by the task.
+ * HEAD. The Enrollment gate lists them; the ones it listed are claimed as task
+ * work, and any other one refuses Enrollment, because the baseline would record
+ * it as user dirt and the task could never deliver it.
  */
 export function dirtyScopePaths(projectRoot: string, scopeHint: unknown, taskId?: string): string[] {
 	const root = realpathSync(resolve(projectRoot));
@@ -430,7 +439,7 @@ export function dirtyScopePaths(projectRoot: string, scopeHint: unknown, taskId?
 	);
 }
 
-function taskSnapshotOnce(root: string, scope: string[], taskId?: string): GitTaskSnapshot {
+function taskSnapshotOnce(root: string, scope: string[], taskId?: string, tolerated?: string[]): GitTaskSnapshot {
 	const repositoryRoot = git(root, ["rev-parse", "--show-toplevel"])?.trim();
 	const head = git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
 	if (!repositoryRoot || !head || !GIT_OBJECT_ID.test(head))
@@ -462,8 +471,10 @@ function taskSnapshotOnce(root: string, scope: string[], taskId?: string): GitTa
 	const uncommittedInScope = [...new Set([...unstagedPaths, ...untrackedPaths])]
 		.filter((path) => taskPathMatchesScope(path, scope))
 		.sort(comparePaths);
-	if (uncommittedInScope.length > 0)
-		throw new Error(`task scope contains unstaged or untracked changes: ${uncommittedInScope.join(", ")}`);
+	if (uncommittedInScope.length > 0) {
+		if (!tolerated) throw new Error(`task scope contains unstaged or untracked changes: ${uncommittedInScope.join(", ")}`);
+		tolerated.splice(0, tolerated.length, ...uncommittedInScope);
+	}
 
 	const taskPaths = [...new Set(stagedPaths)]
 		.filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope))
@@ -495,6 +506,7 @@ export function captureGitTaskSnapshot(
 	projectRoot: string,
 	scopeHint: unknown,
 	taskId?: string,
+	tolerated?: string[],
 ): GitTaskSnapshot {
 	const requestedRoot = resolve(projectRoot);
 	const requestedStat = lstatSync(requestedRoot);
@@ -502,9 +514,9 @@ export function captureGitTaskSnapshot(
 		throw new Error("task snapshot root must be a real directory");
 	const root = realpathSync(requestedRoot);
 	const scope = assertCanonicalTaskScope(scopeHint);
-	const before = taskSnapshotOnce(root, scope, taskId);
+	const before = taskSnapshotOnce(root, scope, taskId, tolerated);
 	gitTaskSnapshotTestHook?.();
-	const after = taskSnapshotOnce(root, scope, taskId);
+	const after = taskSnapshotOnce(root, scope, taskId, tolerated);
 	if (JSON.stringify(after) !== JSON.stringify(before))
 		throw new Error("Git task snapshot changed while being captured");
 	return before;
@@ -561,6 +573,7 @@ function taskRevisionSnapshotOnce(
 	scope: string[],
 	baseHead: string,
 	taskId?: string,
+	tolerated?: string[],
 ): GitTaskRevisionSnapshot {
 	const repositoryRoot = git(root, ["rev-parse", "--show-toplevel"])?.trim();
 	const head = git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
@@ -606,8 +619,10 @@ function taskRevisionSnapshotOnce(
 		"Git task revision paths",
 	);
 	const drift = [...new Set([...scopedUnstagedPaths, ...scopedUntrackedPaths])].sort(comparePaths);
-	if (drift.length > 0)
-		throw new Error(`task scope contains unstaged or untracked changes: ${drift.join(", ")}`);
+	if (drift.length > 0) {
+		if (!tolerated) throw new Error(`task scope contains unstaged or untracked changes: ${drift.join(", ")}`);
+		tolerated.splice(0, tolerated.length, ...drift);
+	}
 
 	const changed = [...new Set(scopedStagedPaths)].sort(comparePaths);
 	const changedPaths: Record<string, GitTaskIndexEntry> = {};
@@ -640,6 +655,7 @@ export function captureGitTaskRevisionSnapshot(
 	scopeHint: unknown,
 	baseHead: unknown,
 	taskId?: string,
+	tolerated?: string[],
 ): GitTaskRevisionSnapshot {
 	const requestedRoot = resolve(projectRoot);
 	const requestedStat = lstatSync(requestedRoot);
@@ -650,9 +666,9 @@ export function captureGitTaskRevisionSnapshot(
 		throw new Error("task revision base must be a Git commit id");
 	const scope = assertCanonicalTaskScope(scopeHint);
 	const normalizedBase = baseHead.toLowerCase();
-	const before = taskRevisionSnapshotOnce(root, scope, normalizedBase, taskId);
+	const before = taskRevisionSnapshotOnce(root, scope, normalizedBase, taskId, tolerated);
 	gitTaskSnapshotTestHook?.();
-	const after = taskRevisionSnapshotOnce(root, scope, normalizedBase, taskId);
+	const after = taskRevisionSnapshotOnce(root, scope, normalizedBase, taskId, tolerated);
 	if (JSON.stringify(after) !== JSON.stringify(before))
 		throw new Error("Git task revision changed while being captured");
 	return before;
@@ -703,6 +719,36 @@ export function taskDeliveryIdentity(
 		);
 	}
 	return taskDiffIdentity(projectRoot, record.intent_snapshot.scope_hint, record.task_id);
+}
+
+/**
+ * The delivery identity for a read-only status projection. Unstaged or
+ * untracked in-scope paths do not refuse it: the identity is the staged one and
+ * the paths are returned for a warning. Nothing may be frozen from this value;
+ * every snapshot that is frozen goes through `taskDeliveryIdentity`, which
+ * still refuses those paths.
+ */
+export function taskStatusIdentity(
+	projectRoot: string,
+	record: TaskDeliveryRecord,
+): GitTaskDiffIdentity & { unstaged_scope_paths: string[] } {
+	const unstaged: string[] = [];
+	const scope = record.intent_snapshot.scope_hint;
+	if (record.contract === "assurance_kernel/task_record/v4") {
+		if (!record.git_base_head) throw new Error("TaskRecord v4 is missing git_base_head");
+		const snapshot = captureGitTaskRevisionSnapshot(projectRoot, scope, record.git_base_head, record.task_id, unstaged);
+		return {
+			diff_hash: hashTaskSnapshot(snapshot),
+			changed_paths: Object.keys(snapshot.changed_paths).sort(comparePaths),
+			unstaged_scope_paths: unstaged,
+		};
+	}
+	const snapshot = captureGitTaskSnapshot(projectRoot, scope, record.task_id, unstaged);
+	return {
+		diff_hash: hashTaskSnapshot(snapshot),
+		changed_paths: Object.keys(snapshot.staged_files).sort(comparePaths),
+		unstaged_scope_paths: unstaged,
+	};
 }
 
 /** The same v4 identity for an immutable delivered commit, without touching the index. */
@@ -988,4 +1034,66 @@ export function assertChangedFilesWithinScope(
 			`Changed files outside the ${boundaryName}: ${outside.join(", ")}. Allowed: ${scopePaths.join(", ")}.`,
 		);
 	}
+}
+
+function gitBlobId(body: Buffer, length: number): string {
+	const hash = createHash(length === 64 ? "sha256" : "sha1");
+	hash.update(`blob ${body.length}\0`);
+	hash.update(body);
+	return hash.digest("hex");
+}
+
+/**
+ * In-scope tracked paths whose working-directory content differs from `tree`.
+ * Bytes are compared directly, never through the index stat cache, so a file a
+ * command rewrote with identical content is not a difference. Paths outside the
+ * scope are the user's environment and are not read.
+ */
+// A hosting process that carries one of these would compare another repository
+// or index instead of the task's working directory.
+const GIT_REPOSITORY_BINDINGS = [
+	"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_NAMESPACE", "GIT_PREFIX",
+];
+
+export function inScopeTrackedDrift(projectRoot: string, tree: string, scopeHint: unknown): string[] {
+	const root = resolve(projectRoot);
+	const env = { ...process.env };
+	for (const name of GIT_REPOSITORY_BINDINGS) delete env[name];
+	if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(tree)) throw new Error("frozen tree has invalid identity");
+	const scope = Array.isArray(scopeHint) ? scopeHint.filter((entry): entry is string => typeof entry === "string") : [];
+	const inScope = (path: string) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope);
+	const expected = new Map<string, { mode: string; oid: string }>();
+	for (const entry of gitBytes(root, ["ls-tree", "-r", "-z", tree], env).toString("utf8").split("\0")) {
+		const tab = entry.indexOf("\t");
+		if (tab < 0) continue;
+		const [mode, , oid] = entry.slice(0, tab).split(" ");
+		const path = entry.slice(tab + 1);
+		if (mode && oid && inScope(path)) expected.set(path, { mode, oid });
+	}
+	const tracked = splitNull(gitBytes(root, ["ls-files", "-z"], env).toString("utf8")).filter(inScope);
+	const regular: string[] = [];
+	const drift = new Set<string>();
+	for (const path of new Set([...expected.keys(), ...tracked])) {
+		const want = expected.get(path);
+		let stat;
+		try { stat = lstatSync(join(root, path)); } catch { stat = null; }
+		if (!want || !stat) { if (want || stat) drift.add(path); continue; }
+		// A submodule is pinned by the index, not by working-directory bytes.
+		if (want.mode === "160000") continue;
+		if (stat.isSymbolicLink()) {
+			if (want.mode !== "120000" || gitBlobId(Buffer.from(readlinkSync(join(root, path))), want.oid.length) !== want.oid) drift.add(path);
+		} else if (!stat.isFile() || want.mode === "120000" || (want.mode === "100755") !== ((stat.mode & 0o100) !== 0)) drift.add(path);
+		else regular.push(path);
+	}
+	if (regular.length) {
+		// `--stdin-paths` applies the same clean filters as `git add` would.
+		const hashed = spawnSync("git", ["--no-optional-locks", "-C", root, "hash-object", "--stdin-paths"], {
+			input: `${regular.join("\n")}\n`, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"], maxBuffer: 8 * 1024 * 1024, env,
+		});
+		const ids = hashed.status === 0 ? hashed.stdout.split("\n").filter(Boolean) : [];
+		if (ids.length !== regular.length) throw new Error("Git task snapshot command failed: git hash-object");
+		regular.forEach((path, index) => { if (ids[index] !== expected.get(path)!.oid) drift.add(path); });
+	}
+	return [...drift].sort(comparePaths);
 }
