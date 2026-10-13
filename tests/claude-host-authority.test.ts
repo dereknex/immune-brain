@@ -1,5 +1,6 @@
 import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
+import { prepareBatchRunState, prepareBatchLaneRunState, writeBatchRunReport, type BatchRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { PassThrough } from "node:stream";
@@ -1411,6 +1412,131 @@ async function resolveFindingRuntime(root: string) {
 	}, mcp);
 	return mcp;
 }
+
+describe("hook entry writes only for active work", () => {
+	const events = ["PostToolUse", "SubagentStart", "SubagentStop", "SessionEnd"];
+	const entry = resolve("plugins/immune-brain/runtime/claude/mcp_server.ts");
+
+	function fixture() {
+		const root = mkdtempSync(join(tmpdir(), "imm-hook-work-"));
+		resolveRoots.push(root);
+		return root;
+	}
+
+	function hook(root: string, store: string, hook_event_name: string, extra: Record<string, unknown> = {}) {
+		return spawnSync(process.execPath, [entry, "--hook"], {
+			// Deliberately different from payload.cwd: the event's workspace owns the decision.
+			cwd: store,
+			env: { ...process.env, TMPDIR: store, TMP: store, TEMP: store },
+			input: JSON.stringify({ hook_event_name, cwd: root, session_id: "hook-work-session", ...extra }),
+			encoding: "utf8",
+			timeout: 10_000,
+		});
+	}
+
+	function expectEvents(root: string, active: boolean) {
+		const store = fixture();
+		for (const event of events) {
+			const result = hook(root, store, event, { agent_type: REVIEWER_AGENT, agent_id: "reviewer", tool_name: "Agent", tool_response: "review" });
+			expect(result.stderr).toBe("");
+			expect(result.status).toBe(0);
+			expect(result.stdout).toBe("");
+		}
+		const path = hookEventPath("hook-work-session", store);
+		if (active) {
+			expect(new FileHookEventLog(store).list("hook-work-session").map((event) => event.type)).toEqual(events);
+		} else {
+			expect(existsSync(path)).toBe(false);
+			expect(readdirSync(store)).toEqual([]);
+		}
+	}
+
+	test("an idle workspace writes nothing for any observation event", () => {
+		const root = fixture();
+		expectEvents(root, false);
+		expect(readdirSync(root)).toEqual([]);
+	});
+
+	test("an active task preserves all four events", () => {
+		expectEvents(makeResolveFindingRoot(false), true);
+	});
+
+	for (const batch_state of ["prepared", "running", "needs_human", "completed", "budget_stopped", "failed", "rejected", "superseded"] satisfies BatchRunState[]) {
+		for (const mode of ["serial", "lane"] as const) {
+			test(`${mode} batch ${batch_state} ${["prepared", "running", "needs_human"].includes(batch_state) ? "preserves" : "suppresses"} observation events`, () => {
+				const root = fixture();
+				const input = {
+					batch_id: "hook-batch", initiative_slug: "hook-work",
+					children: [{ task_id: "hook-child", slice_id: "S1", blocked_by: [], status: "enrollable" as const, reason: null, intent_path: null, intent_revision: null, intent_content_hash: null }],
+					plan_digest: "sha256:plan", base_head: "a".repeat(40),
+					confirmation_time: RESOLVE_NOW, now: RESOLVE_NOW,
+					budget: { max_children: 1, qa_failure_limit: 1 },
+				};
+				const record = mode === "serial" ? prepareBatchRunState(input) : prepareBatchLaneRunState({ ...input, max_parallel: 2 });
+				record.batch_state = batch_state;
+				if (batch_state === "completed") {
+					record.children[0]!.state = mode === "serial" ? "committed" : "released";
+					record.children[0]!.commit = "b".repeat(40);
+					record.commits = ["b".repeat(40)];
+					const child = record.children[0]!;
+					if ("lane" in child) child.lane = { path: root, branch: "imm/hook-child", base_head: "a".repeat(40), lane_commit: "b".repeat(40) };
+				}
+				const dir = join(root, ".imm", "state", "batches");
+				mkdirSync(dir, { recursive: true });
+				writeFileSync(join(dir, "hook-batch.json"), `${JSON.stringify(record, null, 2)}\n`);
+				expectEvents(root, ["prepared", "running", "needs_human"].includes(batch_state));
+			});
+		}
+	}
+
+	test("terminal batch reports do not mask a live batch or create idle writes", () => {
+		const root = fixture();
+		const dir = join(root, ".imm", "state", "batches");
+		mkdirSync(dir, { recursive: true });
+		const input = {
+			batch_id: "a-old", initiative_slug: "hook-work",
+			children: [{ task_id: "hook-child", slice_id: "S1", blocked_by: [], status: "enrollable" as const, reason: null, intent_path: null, intent_revision: null, intent_content_hash: null }],
+			plan_digest: "sha256:plan", base_head: "a".repeat(40),
+			confirmation_time: RESOLVE_NOW, now: RESOLVE_NOW,
+			budget: { max_children: 1, qa_failure_limit: 1 },
+		};
+		const old = prepareBatchRunState(input);
+		old.batch_state = "superseded";
+		writeFileSync(join(dir, "a-old.json"), `${JSON.stringify(old, null, 2)}\n`);
+		writeBatchRunReport(root, { contract: "assurance_kernel/batch_run_report/v1", batch_id: "a-old", batch_state: "superseded" });
+		expectEvents(root, false);
+		const live = prepareBatchRunState({ ...input, batch_id: "z-live" });
+		writeFileSync(join(dir, "z-live.json"), `${JSON.stringify(live, null, 2)}\n`);
+		expectEvents(root, true);
+	});
+
+	test("UserPromptSubmit retains the active task notice", () => {
+		const root = makeResolveFindingRoot(false);
+		const store = fixture();
+		const result = hook(root, store, "UserPromptSubmit", { prompt: "continue" });
+		expect(result.status).toBe(0);
+		expect(result.stderr).toBe("");
+		const output = JSON.parse(result.stdout).hookSpecificOutput;
+		expect(output.hookEventName).toBe("UserPromptSubmit");
+		expect(output.additionalContext).toContain(`Managed task ${RESOLVE_TASK} is active`);
+		expect(output.additionalContext).toContain("src/worked.ts");
+		expect(existsSync(hookEventPath("hook-work-session", store))).toBe(false);
+	});
+
+	test("UserPromptSubmit records run entry before a task exists", () => {
+		const root = fixture();
+		const store = fixture();
+		const result = hook(root, store, "UserPromptSubmit", { prompt: "/imm-run" });
+		expect(result.status).toBe(0);
+		expect(result.stdout).toBe("");
+		expect(result.stderr).toBe("");
+		expect(phaseEntryGateHookOutput({
+			hook_event_name: "PreToolUse", cwd: root, session_id: "hook-work-session",
+			tool_name: "mcp__plugin_immune-brain_immune-brain__enroll", tool_use_id: "hook-entry-admission",
+		}, { root: store })).toBeNull();
+		expect(consumePhaseAdmission("hook-entry-admission", "enroll", store)).toBe(true);
+	});
+});
 
 /** Replace the stored record through a revision-checked store write. */
 function writeStoredRecordForTest(root: string, record: Record<string, unknown>): void {

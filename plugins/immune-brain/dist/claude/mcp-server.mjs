@@ -1,885 +1,41 @@
 // plugins/immune-brain/runtime/claude/mcp_server.ts
 import { randomUUID as randomUUID10 } from "node:crypto";
-import { createInterface } from "node:readline";
-import { stdin, stdout } from "node:process";
+import { existsSync as existsSync15, readdirSync as readdirSync7 } from "node:fs";
+import { join as join24 } from "node:path";
 
-// plugins/immune-brain/runtime/claude/capability.ts
-var MIN_CLAUDE_CODE_VERSION = "2.1.236";
-var HOST_ID = "claude-code";
-var CORE_CONTRACT = "assurance_kernel/host_adapter/claude-code/v1";
-function parseSemver(value) {
-  const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(value.trim());
-  if (!match)
-    return null;
-  return [Number(match[1]), Number(match[2]), Number(match[3])];
-}
-function compareSemver(left, right) {
-  const a = parseSemver(left);
-  const b = parseSemver(right);
-  if (!a || !b)
-    throw new Error(`invalid semver: ${!a ? left : right}`);
-  return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
-}
-function probeHost(env = process.env, platform = process.platform, hostVersion) {
-  const version = hostVersion ?? env.CLAUDE_CODE_VERSION ?? env.CLAUDE_CLI_VERSION;
-  if (!version)
-    return { ok: false, reason: "Claude Code version is unavailable" };
-  if (!parseSemver(version))
-    return { ok: false, reason: `Claude Code version is invalid: ${version}` };
-  if (compareSemver(version, MIN_CLAUDE_CODE_VERSION) < 0) {
-    return {
-      ok: false,
-      reason: `Claude Code ${version} is below the minimum supported ${MIN_CLAUDE_CODE_VERSION}`
-    };
-  }
-  if (platform !== "darwin" && platform !== "linux") {
-    return { ok: false, reason: `unsupported platform ${platform}; native Windows is out of scope` };
-  }
-  return { ok: true, version, platform };
-}
+// plugins/immune-brain/runtime/unattended/batch_preflight.ts
+import { existsSync as existsSync7, readdirSync as readdirSync3, readFileSync as readFileSync10 } from "node:fs";
+import { randomUUID as randomUUID4 } from "node:crypto";
+import { join as join7 } from "node:path";
+import { spawnSync as spawnSync7 } from "node:child_process";
 
-// plugins/immune-brain/runtime/plugin_version.ts
-var PLUGIN_VERSION = "5.3.0";
-
-// plugins/immune-brain/runtime/claude/interaction.ts
-import { createHash, randomUUID } from "node:crypto";
-
-// plugins/immune-brain/runtime/assurance/phase_entry.ts
-var RUN_ENTRY_REQUIRED = "run_entry_required";
-var PHASE_ENTRY_REQUIRED = "phase_entry_required";
-var PHASE_ENTRY_RECOVERY = {
-  [RUN_ENTRY_REQUIRED]: "ask the user to enter imm-run in the current Host",
-  [PHASE_ENTRY_REQUIRED]: "ask the user to enter the Skill themselves in the current Host"
-};
-var PACKAGED = {
-  "imm-planner": "plan",
-  "imm-brainstorm": "plan",
-  "imm-run": "run"
-};
-var ALIAS_TARGETS = { ...PACKAGED, "imm-loop": "run" };
-var PREFIXES = ["immune-brain:", "skill:"];
-var ALIAS_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
-var SKILL_MENTION = /(?<![A-Za-z0-9_-])imm-(?:planner|brainstorm|run|loop)(?![A-Za-z0-9_-])/g;
-var EXPANDED = /^<command-message>[^<]*<\/command-message>\s*<command-name>\/([^\s<]+)<\/command-name>/;
-var RAW = /^\/(\S+)/;
-function stripPrefix(name) {
-  for (const prefix of PREFIXES)
-    if (name.startsWith(prefix))
-      return name.slice(prefix.length);
-  return name;
+// plugins/immune-brain/runtime/kernel/actor_identity.ts
+var LITERAL_USER_ACTOR_ID = "literal-user";
+var LITERAL_USER_SPELLINGS = new Set([LITERAL_USER_ACTOR_ID, "user"]);
+function isLiteralUserActor(actorId) {
+  return LITERAL_USER_SPELLINGS.has(actorId);
 }
-function packagedPhaseSkill(name) {
-  const trimmed = name.trim();
-  const bare = stripPrefix(trimmed.startsWith("/") ? trimmed.slice(1) : trimmed);
-  return Object.hasOwn(PACKAGED, bare) ? bare : null;
+function canonicalActorId(actorId) {
+  return actorId === "user" ? LITERAL_USER_ACTOR_ID : actorId;
 }
-function recognizePhaseEntry(text, readAlias) {
-  const command = (RAW.exec(text) ?? EXPANDED.exec(text))?.[1];
-  if (!command)
-    return null;
-  const packaged = packagedPhaseSkill(command);
-  if (packaged)
-    return PACKAGED[packaged];
-  if (!ALIAS_NAME.test(command))
-    return null;
-  let body;
-  try {
-    body = readAlias(command);
-  } catch {
-    return null;
-  }
-  if (!body)
-    return null;
-  const targets = new Set(body.match(SKILL_MENTION) ?? []);
-  if (targets.size !== 1)
-    return null;
-  return ALIAS_TARGETS[[...targets][0]] ?? null;
-}
-var NO_PHASE_ENTRY = { run_live: false, plan_latest: false };
-function applyPrompt(state, entry) {
-  if (entry === "run")
-    return { run_live: true, plan_latest: false };
-  if (entry === "plan")
-    return { run_live: false, plan_latest: true };
-  return state;
-}
-function phaseEntryLogLine(entry) {
-  return `${JSON.stringify({ v: 1, entry })}
-`;
-}
-function reducePhaseEntryLog(text) {
-  let state = NO_PHASE_ENTRY;
-  for (const line of text.split(`
-`)) {
-    if (!line)
-      continue;
-    let record;
-    try {
-      record = JSON.parse(line);
-    } catch {
-      return null;
-    }
-    if (!record || typeof record !== "object")
-      return null;
-    const { v, entry } = record;
-    if (v !== 1 || entry !== null && entry !== "plan" && entry !== "run")
-      return null;
-    state = applyPrompt(state, entry);
-  }
-  return state;
-}
-function refuse(reason_code, detail) {
-  return { ok: false, reason_code, detail, recovery_action: PHASE_ENTRY_RECOVERY[reason_code] };
-}
-function admitPhaseOperation(operation, state, context) {
-  if (operation.kind === "tool") {
-    if (state?.run_live)
-      return { ok: true };
-    return refuse(RUN_ENTRY_REQUIRED, `${operation.name} needs a literal-user imm-run entry in this session`);
-  }
-  if (operation.skill !== "imm-run")
-    return { ok: true };
-  if (state?.run_live)
-    return { ok: true };
-  return refuse(PHASE_ENTRY_REQUIRED, "imm-run is entered by the user, not by a model Skill call");
-}
-function phaseRefusalMessage(refusal) {
-  return `${refusal.reason_code}: ${refusal.detail}; recovery: ${refusal.recovery_action}`;
-}
-
-// plugins/immune-brain/runtime/claude/interaction.ts
-var PRIVILEGED_OPERATIONS = [
-  "enroll",
-  "request_authorization",
-  "approve_breaking_intent_revision",
-  "stop",
-  "start_unattended_batch",
-  "retire_stale_batch"
-];
-var RECOVERY_ACTIONS = {
-  interaction_not_opened: "retry through a fresh native gate in the current Host",
-  user_denied: "wait for a fresh literal-user request",
-  user_cancelled: "wait for a fresh literal-user request",
-  correlation_missing: "retry through a fresh native gate in the current Host",
-  unsupported_host: "upgrade to a supported Claude Code version and retry in the current Host",
-  workspace_changed: "review the current workspace and retry through a fresh native gate",
-  ...PHASE_ENTRY_RECOVERY
-};
-
-class NativeAuthorityError extends Error {
-  reasonCode;
-  recoveryAction;
-  constructor(reasonCode, detail, recoveryAction = RECOVERY_ACTIONS[reasonCode]) {
-    super(`${reasonCode}: ${detail}; recovery: ${recoveryAction}`);
-    this.reasonCode = reasonCode;
-    this.recoveryAction = recoveryAction;
-    this.name = "NativeAuthorityError";
-  }
-}
-function isPrivilegedOperation(operation) {
-  return PRIVILEGED_OPERATIONS.includes(operation);
-}
-function privilegedAnnotations() {
-  return { destructiveHint: true };
-}
-function evaluateNativeGate(input) {
-  if (!isPrivilegedOperation(input.operation))
-    return { ok: true };
-  if (!input.interactive)
-    return { ok: false, error: new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable") };
-  if (input.decision === "decline")
-    return { ok: false, error: new NativeAuthorityError("user_denied", "native interaction declined") };
-  if (input.decision === "cancel")
-    return { ok: false, error: new NativeAuthorityError("user_cancelled", "native interaction cancelled") };
-  if (input.decision !== "accept")
-    return { ok: false, error: new NativeAuthorityError("interaction_not_opened", "native interaction returned no decision") };
-  return { ok: true };
-}
-function confirmationRef(input) {
-  return `claude-confirm-${createHash("sha256").update(`${input.connectionId}\x00${input.toolCallId}\x00${input.requestId}\x00${input.operation}\x00${input.taskId ?? ""}\x00${input.initiativeSlug ?? ""}\x00${input.intentRevision ?? ""}\x00${input.intentContentHash ?? ""}\x00${input.bindingDigest ?? ""}\x00${input.planDigest ?? ""}`).digest("hex").slice(0, 16)}`;
-}
-function enrollmentNonce() {
-  return randomUUID();
-}
-
-// plugins/immune-brain/runtime/claude/review_host.ts
-import { createHash as createHash2 } from "node:crypto";
-import { constants, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readSync, realpathSync, rmSync, writeSync, closeSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { tmpdir } from "node:os";
-var REVIEWER_AGENT = "immune-brain-reviewer";
-var CLAUDE_REVIEWER_AGENT = "immune-brain:immune-brain-reviewer";
-var AGENT_TOOL = "Agent";
-
-class MemoryHookEventLog {
-  events = [];
-  append(event) {
-    this.events.push(event);
-    return true;
-  }
-  list(sessionId) {
-    return sessionId ? this.events.filter((event) => event.sessionId === sessionId) : [...this.events];
-  }
-  sessions() {
-    return [...new Set(this.events.map((event) => event.sessionId))];
-  }
-  clear(sessionId) {
-    if (!sessionId) {
-      this.events.length = 0;
-      return;
-    }
-    for (let i = this.events.length - 1;i >= 0; i--) {
-      if (this.events[i].sessionId === sessionId)
-        this.events.splice(i, 1);
-    }
-  }
-}
-var CACHE_DIR = "immune-brain-claude";
-function sessionHash(sessionId) {
-  return createHash2("sha256").update(sessionId).digest("hex");
-}
-function cacheDir(root) {
-  return join(root, CACHE_DIR);
-}
-function ownedByUs(stat) {
-  if (stat.isSymbolicLink())
-    return false;
-  const uid = process.getuid?.();
-  return uid === undefined || stat.uid === uid;
-}
-function ensurePrivateDir(dir) {
-  try {
-    const existing = lstatSync(dir);
-    return existing.isDirectory() && ownedByUs(existing) && (existing.mode & 511) === 448;
-  } catch (error) {
-    if (error.code !== "ENOENT")
-      return false;
-  }
-  try {
-    mkdirSync(dir, { mode: 448 });
-  } catch {
-    return false;
-  }
-  try {
-    const created = lstatSync(dir);
-    return created.isDirectory() && ownedByUs(created) && (created.mode & 511) === 448;
-  } catch {
-    return false;
-  }
-}
-function appendPrivate(path, dir, line) {
-  if (!ensurePrivateDir(dir))
-    return false;
-  const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW | constants.O_NONBLOCK;
-  let fd;
-  try {
-    fd = openSync(path, flags, 384);
-  } catch {
-    return false;
-  }
-  try {
-    const stat = fstatSync(fd);
-    if (!stat.isFile() || !ownedByUs(stat) || (stat.mode & 511) !== 384)
-      return false;
-    return writeSync(fd, line) === Buffer.byteLength(line);
-  } catch {
-    return false;
-  } finally {
-    closeSync(fd);
-  }
-}
-function readPrivate(path, maxBytes = Number.POSITIVE_INFINITY) {
-  let fd;
-  try {
-    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-  } catch {
-    return;
-  }
-  try {
-    const stat = fstatSync(fd);
-    if (!stat.isFile() || !ownedByUs(stat) || (stat.mode & 511) !== 384)
-      return;
-    if (stat.size > maxBytes)
-      return;
-    const buf = Buffer.alloc(stat.size);
-    readSync(fd, buf, 0, stat.size, 0);
-    return buf.toString("utf8");
-  } finally {
-    closeSync(fd);
-  }
-}
-var MAX_TRANSCRIPT_BYTES = 32 * 1024 * 1024;
-function parseAsyncAgentLaunch(result) {
-  let payload;
-  try {
-    payload = JSON.parse(result);
-  } catch {
-    return null;
-  }
-  if (!payload || typeof payload !== "object")
-    return null;
-  const obj = payload;
-  if (obj.isAsync !== true && obj.status !== "async_launched")
-    return null;
-  const agentId = typeof obj.agentId === "string" ? obj.agentId : "";
-  const outputFile = typeof obj.outputFile === "string" ? obj.outputFile : "";
-  if (!agentId || !outputFile)
-    return null;
-  return { agentId, outputFile };
-}
-var HANDBACK_TOOL = "SubagentHandback";
-function readAgentTranscriptResult(transcript, agentId) {
-  let last = null;
-  for (const line of transcript.split(`
-`)) {
-    if (!line.trim())
-      continue;
-    let row;
-    try {
-      row = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (row.type !== "assistant" || row.agentId !== agentId)
-      continue;
-    const message = row.message;
-    if (!message || typeof message !== "object")
-      continue;
-    const content = message.content;
-    if (!Array.isArray(content))
-      continue;
-    let text = "";
-    for (const block of content) {
-      if (!block || typeof block !== "object")
-        continue;
-      const part = block;
-      if (part.type === "text" && typeof part.text === "string")
-        text += part.text;
-      if (part.type === "tool_use" && part.name === HANDBACK_TOOL && part.input && typeof part.input === "object") {
-        const report = part.input.message;
-        if (typeof report === "string" && report.trim()) {
-          last = report;
-          text = "";
-        }
-      }
-    }
-    if (text.trim())
-      last = text;
-  }
-  return last;
-}
-function readAgentTranscript(path) {
-  let resolved;
-  try {
-    resolved = realpathSync(path);
-  } catch {
-    return;
-  }
-  return readPrivate(resolved, MAX_TRANSCRIPT_BYTES);
-}
-function hookEventPath(sessionId, root = tmpdir()) {
-  return join(cacheDir(root), `${sessionHash(sessionId)}.jsonl`);
-}
-
-class FileHookEventLog {
-  root;
-  constructor(root = tmpdir()) {
-    this.root = root;
-  }
-  append(event) {
-    const path = hookEventPath(event.sessionId, this.root);
-    return appendPrivate(path, dirname(path), `${JSON.stringify(event)}
-`);
-  }
-  list(sessionId) {
-    if (sessionId)
-      return this.readSession(sessionId);
-    const dir = cacheDir(this.root);
-    if (!ensurePrivateDir(dir))
-      return [];
-    try {
-      return readdirSync(dir).filter((name) => name.endsWith(".jsonl")).flatMap((name) => this.readFile(join(dir, name)));
-    } catch {
-      return [];
-    }
-  }
-  sessions() {
-    const ids = new Set;
-    for (const event of this.list())
-      if (event.sessionId)
-        ids.add(event.sessionId);
-    return [...ids];
-  }
-  readFile(path) {
-    const text = readPrivate(path);
-    if (!text)
-      return [];
-    try {
-      return text.split(`
-`).filter(Boolean).map((line) => JSON.parse(line));
-    } catch {
-      return [];
-    }
-  }
-  readSession(sessionId) {
-    if (!ensurePrivateDir(cacheDir(this.root)))
-      return [];
-    return this.readFile(hookEventPath(sessionId, this.root));
-  }
-  clear(sessionId) {
-    if (!sessionId || !ensurePrivateDir(cacheDir(this.root)))
-      return;
-    const path = hookEventPath(sessionId, this.root);
-    try {
-      const stat = lstatSync(path);
-      if (!ownedByUs(stat) || stat.isSymbolicLink() || !stat.isFile() || (stat.mode & 511) !== 384)
-        return;
-      rmSync(path, { force: true });
-    } catch {}
-  }
-}
-function reservedDispatchPrompt(request) {
-  return `<!-- immune-brain:operation_id=${request.operationId} task_id=${request.taskId} -->
-${request.snapshotPrompt}`;
-}
-function bindsPrompt(prompt, pending) {
-  return prompt === undefined || prompt === pending.dispatchPrompt;
-}
-function bindsStart(event, pending) {
-  if (event.taskId && event.taskId !== pending.request.taskId)
-    return false;
-  if (!bindsPrompt(event.prompt, pending))
-    return false;
-  if (event.operationId)
-    return event.operationId === pending.request.operationId;
-  return event.prompt !== undefined;
-}
-
-class ClaudeReviewHost {
-  log;
-  host = "claude-code";
-  pending = new Map;
-  appliedBySession = new Map;
-  constructor(log = new MemoryHookEventLog) {
-    this.log = log;
-  }
-  prepareReview(request) {
-    this.drain();
-    const initialCursors = new Map;
-    const sessionCursors = new Map;
-    for (const sessionId of this.log.sessions()) {
-      const len = this.log.list(sessionId).length;
-      initialCursors.set(sessionId, len);
-      sessionCursors.set(sessionId, len);
-    }
-    this.pending.set(request.operationId, {
-      request,
-      dispatchPrompt: reservedDispatchPrompt(request),
-      initialCursors,
-      sessionCursors,
-      consumed: false
-    });
-    return {
-      id: request.operationId,
-      dispatch: {
-        name: CLAUDE_REVIEWER_AGENT,
-        prompt: reservedDispatchPrompt(request)
-      }
-    };
-  }
-  observe(event) {
-    this.log.append(event);
-  }
-  drain() {
-    for (const sessionId of this.log.sessions()) {
-      const events = this.log.list(sessionId);
-      let start = this.appliedBySession.get(sessionId) ?? 0;
-      if (start > events.length)
-        start = 0;
-      let ended = false;
-      for (let i = start;i < events.length; i++) {
-        const event = events[i];
-        if (event.type === "SessionEnd") {
-          for (const [id, state] of this.pending) {
-            if (state.startEvent?.sessionId === event.sessionId || state.postEvent?.sessionId === event.sessionId || state.stopEvent?.sessionId === event.sessionId) {
-              this.pending.delete(id);
-            }
-          }
-          for (const state of this.pending.values()) {
-            const current = state.initialCursors.get(sessionId) ?? 0;
-            if (i + 1 > current)
-              state.initialCursors.set(sessionId, i + 1);
-          }
-          if (i === events.length - 1) {
-            this.log.clear(event.sessionId);
-            ended = true;
-            this.appliedBySession.delete(event.sessionId);
-            break;
-          }
-          continue;
-        }
-        for (const state of this.pending.values()) {
-          if (state.consumed || state.error || i < (state.initialCursors.get(sessionId) ?? 0))
-            continue;
-          this.applyReviewEvent(event, state);
-        }
-      }
-      if (ended) {
-        this.appliedBySession.delete(sessionId);
-        for (const state of this.pending.values())
-          state.sessionCursors.delete(sessionId);
-      } else {
-        this.appliedBySession.set(sessionId, events.length);
-        for (const state of this.pending.values())
-          state.sessionCursors.set(sessionId, events.length);
-        for (const state of this.pending.values()) {
-          if (state.consumed || state.error || !state.postEvent || state.postEvent.sessionId !== sessionId)
-            continue;
-          if (!state.startEvent || !state.stopEvent) {
-            const from = state.initialCursors.get(sessionId) ?? 0;
-            for (let j = from;j < events.length; j++) {
-              this.applyReviewEvent(events[j], state);
-              if (state.error)
-                break;
-            }
-          }
-        }
-      }
-    }
-  }
-  applyReviewEvent(event, state) {
-    if (state.error)
-      return;
-    if (event.type === "SubagentStart") {
-      if (event.agent !== REVIEWER_AGENT && event.agent !== CLAUDE_REVIEWER_AGENT)
-        return;
-      if (event.operationId || event.prompt !== undefined) {
-        if (!bindsStart(event, state))
-          return;
-      }
-      if (state.postEvent) {
-        if (event.sessionId !== state.postEvent.sessionId || event.agentId !== state.postEvent.agentId)
-          return;
-      }
-      if (state.stopEvent) {
-        if (event.sessionId !== state.stopEvent.sessionId || event.agentId !== state.stopEvent.agentId)
-          return;
-      }
-      if (!event.operationId && event.prompt === undefined && !state.postEvent && !state.stopEvent) {
-        return;
-      }
-      if (state.startEvent) {
-        if (state.startEvent === event)
-          return;
-        state.error = "reserved Review already has a native tool call";
-        return;
-      }
-      state.startEvent = event;
-      return;
-    }
-    if (event.type === "PostToolUse") {
-      if (event.toolName !== AGENT_TOOL)
-        return;
-      if (!event.agentId || !event.operationId || event.operationId !== state.request.operationId)
-        return;
-      if ("taskId" in event && event.taskId && event.taskId !== state.request.taskId)
-        return;
-      if (!bindsPrompt(event.prompt, state))
-        return;
-      if (state.startEvent && event.sessionId !== state.startEvent.sessionId)
-        return;
-      if (state.startEvent && event.agentId !== state.startEvent.agentId)
-        return;
-      if (state.stopEvent && event.sessionId !== state.stopEvent.sessionId)
-        return;
-      if (state.stopEvent && event.agentId !== state.stopEvent.agentId)
-        return;
-      if (state.postEvent !== undefined) {
-        if (state.postEvent === event)
-          return;
-        state.error = "duplicate PostToolUse result observed for review reservation";
-        return;
-      }
-      state.postEvent = event;
-      return;
-    }
-    if (event.type === "SubagentStop") {
-      if (event.agent !== REVIEWER_AGENT && event.agent !== CLAUDE_REVIEWER_AGENT)
-        return;
-      if (!event.agentId)
-        return;
-      if ("operationId" in event && event.operationId && event.operationId !== state.request.operationId)
-        return;
-      if ("taskId" in event && event.taskId && event.taskId !== state.request.taskId)
-        return;
-      if (state.startEvent && (event.sessionId !== state.startEvent.sessionId || event.agentId !== state.startEvent.agentId))
-        return;
-      if (state.postEvent && (event.sessionId !== state.postEvent.sessionId || event.agentId !== state.postEvent.agentId))
-        return;
-      if (!event.operationId && !state.startEvent && !state.postEvent) {
-        return;
-      }
-      if (state.stopEvent) {
-        if (state.stopEvent === event)
-          return;
-        state.error = "duplicate SubagentStop observed for review reservation: a reviewer was continued after it finished; a reviewer cannot be continued and a fresh reviewer must be dispatched";
-        return;
-      }
-      state.stopEvent = event;
-    }
-  }
-  inspectReview(reservation) {
-    this.drain();
-    const state = this.pending.get(reservation.id);
-    if (!state)
-      return { ok: false, reason: "reserved foreground Agent was not observed", release: false };
-    if (state.consumed)
-      return { ok: false, reason: "review receipt already consumed", release: true };
-    if (state.error)
-      return { ok: false, reason: state.error, release: true };
-    if (!state.startEvent)
-      return { ok: false, reason: "reserved foreground Agent was not observed", release: false };
-    if (!state.stopEvent || !state.postEvent?.result?.trim()) {
-      return { ok: false, reason: "foreground Agent terminal event order is incomplete", release: false };
-    }
-    if (state.startEvent.sessionId !== state.postEvent.sessionId || state.startEvent.sessionId !== state.stopEvent.sessionId || state.startEvent.agentId !== state.postEvent.agentId || state.startEvent.agentId !== state.stopEvent.agentId) {
-      return { ok: false, reason: "foreground Agent terminal event correlation mismatch", release: true };
-    }
-    const actorId = `claude:${state.startEvent.agentId ?? reservation.id}`;
-    const launch = parseAsyncAgentLaunch(state.postEvent.result);
-    if (!launch) {
-      return { ok: true, receipt: { actorId, result: state.postEvent.result } };
-    }
-    if (launch.agentId !== state.postEvent.agentId) {
-      return { ok: false, reason: "async Agent launch envelope names a different agent", release: true };
-    }
-    const transcript = readAgentTranscript(launch.outputFile);
-    if (transcript === undefined) {
-      return { ok: false, reason: "async Agent transcript is not readable", release: false };
-    }
-    const verdict = readAgentTranscriptResult(transcript, launch.agentId);
-    if (!verdict?.trim()) {
-      return { ok: false, reason: "async Agent transcript carries no reviewer result", release: false };
-    }
-    return { ok: true, receipt: { actorId, result: verdict } };
-  }
-  consumeReview(reservation) {
-    const result = this.inspectReview(reservation);
-    if (result.ok) {
-      const pending = this.pending.get(reservation.id);
-      if (pending)
-        pending.consumed = true;
-    }
-    return result;
-  }
-  inspectReviewForTask(taskId) {
-    this.drain();
-    const entry = [...this.pending.entries()].find(([, state]) => state.request.taskId === taskId);
-    if (!entry)
-      return { ok: false, reason: "reserved foreground Agent was not observed", release: false };
-    return this.inspectReview({ id: entry[0], dispatch: entry[1].request });
-  }
-  releaseReview(reservation) {
-    this.pending.delete(reservation.id);
-  }
-}
-function parseHookStdin(raw) {
-  let payload;
-  try {
-    payload = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-  const hookType = String(payload.hook_event_name ?? payload.type ?? "");
-  const sessionId = String(payload.session_id ?? payload.sessionId ?? process.env.CLAUDE_SESSION_ID ?? "");
-  if (!sessionId)
-    return null;
-  const agent = String(payload.agent_type ?? payload.agent ?? payload.subagent_type ?? "");
-  const agentId = String(payload.agent_id ?? payload.agentId ?? "");
-  const taskId = typeof payload.task_id === "string" ? payload.task_id : undefined;
-  const operationId = typeof payload.operation_id === "string" ? payload.operation_id : undefined;
-  let prompt = typeof payload.prompt === "string" ? payload.prompt : undefined;
-  if (!prompt && typeof payload.input === "object" && payload.input !== null) {
-    const inputObj = payload.input;
-    if (typeof inputObj.prompt === "string")
-      prompt = inputObj.prompt;
-  }
-  if (!prompt && typeof payload.tool_input === "object" && payload.tool_input !== null) {
-    const toolInputObj = payload.tool_input;
-    if (typeof toolInputObj.prompt === "string")
-      prompt = toolInputObj.prompt;
-  }
-  if (!prompt && typeof payload.tool_response === "object" && payload.tool_response !== null) {
-    const toolResponseObj = payload.tool_response;
-    if (typeof toolResponseObj.prompt === "string")
-      prompt = toolResponseObj.prompt;
-  }
-  let extractedOpId = operationId;
-  let extractedTaskId = taskId;
-  for (const candidate of [payload.input, payload.tool_input, payload.tool_response, payload.toolResponse, payload.response, payload.result]) {
-    if (candidate && typeof candidate === "object" && candidate !== null) {
-      const obj = candidate;
-      const nestedOp = typeof obj.operation_id === "string" ? obj.operation_id : typeof obj.operationId === "string" ? obj.operationId : undefined;
-      const nestedTask = typeof obj.task_id === "string" ? obj.task_id : typeof obj.taskId === "string" ? obj.taskId : undefined;
-      if (nestedOp) {
-        if (extractedOpId && extractedOpId !== nestedOp)
-          return null;
-        extractedOpId = nestedOp;
-      }
-      if (nestedTask) {
-        if (extractedTaskId && extractedTaskId !== nestedTask)
-          return null;
-        extractedTaskId = nestedTask;
-      }
-    }
-  }
-  if (prompt) {
-    const match = /<!-- immune-brain:operation_id=([^\s]+)\s+task_id=([^\s]+)\s+-->/.exec(prompt);
-    if (match) {
-      if (extractedOpId && extractedOpId !== match[1])
-        return null;
-      if (extractedTaskId && extractedTaskId !== match[2])
-        return null;
-      extractedOpId = match[1];
-      extractedTaskId = match[2];
-    }
-  }
-  if (hookType === "SubagentStart" || hookType === "SubagentStop") {
-    return {
-      type: hookType,
-      sessionId,
-      agent,
-      agentId,
-      taskId: extractedTaskId,
-      operationId: extractedOpId,
-      ...hookType === "SubagentStart" ? { prompt } : {}
-    };
-  }
-  if (hookType === "PostToolUse") {
-    const toolName = String(payload.tool_name ?? payload.toolName ?? payload.tool ?? "");
-    const response = payload.tool_response ?? payload.toolResponse ?? payload.response ?? payload.result;
-    let result = typeof response === "string" ? response : JSON.stringify(response ?? "");
-    let extractedAgentId = agentId;
-    if (response && typeof response === "object" && response !== null) {
-      const respObj = response;
-      if (typeof respObj.agentId === "string" && respObj.agentId) {
-        if (extractedAgentId && extractedAgentId !== respObj.agentId)
-          return null;
-        extractedAgentId = respObj.agentId;
-      }
-      if (Array.isArray(respObj.content)) {
-        const textItem = respObj.content.find((c) => typeof c === "object" && c !== null && c.type === "text");
-        if (textItem && typeof textItem.text === "string") {
-          result = textItem.text;
-        }
-      }
-    }
-    return {
-      type: "PostToolUse",
-      sessionId,
-      agentId: extractedAgentId,
-      toolName,
-      result,
-      taskId: extractedTaskId,
-      operationId: extractedOpId,
-      prompt
-    };
-  }
-  if (hookType === "SessionEnd")
-    return { type: "SessionEnd", sessionId };
-  return null;
-}
-
-// plugins/immune-brain/runtime/claude/lane_guard.ts
-import { lstatSync as lstatSync11, rmSync as rmSync5 } from "node:fs";
-import { homedir, tmpdir as tmpdir2 } from "node:os";
-import { join as join11 } from "node:path";
-
-// plugins/immune-brain/runtime/unattended/lane_workspace.ts
-import { spawnSync } from "node:child_process";
-import { realpathSync as realpathSync2 } from "node:fs";
-import { basename, dirname as dirname2, isAbsolute, join as join2, relative, resolve, sep } from "node:path";
-var LANE_BRANCH = /^imm-lane\/[^/]+\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})$/;
-function laneTaskOfWorkspace(root) {
-  const branch = spawnSync("git", ["-C", root, "symbolic-ref", "--quiet", "--short", "HEAD"], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"]
-  });
-  if (branch.status !== 0)
-    return null;
-  return LANE_BRANCH.exec((branch.stdout ?? "").trim())?.[1] ?? null;
-}
-function isLaneWorkspaceForTask(root, taskId) {
-  return laneTaskOfWorkspace(root) === taskId;
-}
-function realpathOfNearest(path) {
-  let current = path;
-  const suffix = [];
-  for (;; ) {
-    try {
-      return join2(realpathSync2(current), ...suffix.reverse());
-    } catch {
-      const parent = dirname2(current);
-      if (parent === current)
-        return path;
-      suffix.push(basename(current));
-      current = parent;
-    }
-  }
-}
-function laneWriteRefusal(cwd, target) {
-  if (typeof target !== "string" || !target)
-    return null;
-  if (laneTaskOfWorkspace(cwd) === null)
-    return null;
-  const top = spawnSync("git", ["-C", cwd, "rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
-  if (top.status !== 0)
-    return null;
-  const laneRoot = realpathOfNearest((top.stdout ?? "").trim());
-  const resolved = realpathOfNearest(isAbsolute(target) ? target : resolve(cwd, target));
-  const inside = relative(laneRoot, resolved);
-  if (inside === "" || inside !== ".." && !inside.startsWith(`..${sep}`) && !isAbsolute(inside))
-    return null;
-  return `Lane write refused: ${resolved} is outside this Lane. In a batch Lane every edit and write stays under ${laneRoot}; use the same repository-relative path inside the Lane.`;
-}
-
-// plugins/immune-brain/runtime/kernel/storage.ts
-import { createHash as createHash8 } from "node:crypto";
-import {
-  constants as constants3,
-  closeSync as closeSync5,
-  existsSync as existsSync2,
-  fstatSync as fstatSync4,
-  fsyncSync as fsyncSync2,
-  lstatSync as lstatSync7,
-  mkdirSync as mkdirSync3,
-  openSync as openSync5,
-  readFileSync as readFileSync6,
-  readdirSync as readdirSync3,
-  realpathSync as realpathSync7,
-  renameSync as renameSync2,
-  rmSync as rmSync3,
-  writeFileSync as writeFileSync2
-} from "node:fs";
-import { dirname as dirname4, isAbsolute as isAbsolute3, relative as relative3, resolve as resolve6, sep as sep4 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/backend_claim.ts
-import { lstatSync as lstatSync4, readFileSync as readFileSync3 } from "node:fs";
-import { join as join3, resolve as resolve4 } from "node:path";
+import { lstatSync as lstatSync3, readFileSync as readFileSync3 } from "node:fs";
+import { join, resolve as resolve3 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/storage_paths.ts
-import { createHash as createHash3 } from "node:crypto";
+import { createHash } from "node:crypto";
 import {
   constants as FS_CONSTANTS,
-  lstatSync as lstatSync2,
-  openSync as openSync2,
+  lstatSync,
+  openSync,
   readFileSync,
-  realpathSync as realpathSync3,
-  readdirSync as readdirSync2,
-  closeSync as closeSync2,
-  fstatSync as fstatSync2
+  realpathSync,
+  readdirSync,
+  closeSync,
+  fstatSync
 } from "node:fs";
-import { resolve as resolve2 } from "node:path";
+import { resolve } from "node:path";
 var STATE_RELATIVE = ".imm/state";
 var AUDIT_RELATIVE = ".imm/audit";
 var KERNEL_DB_RELATIVE = ".imm/state/kernel.sqlite";
@@ -893,7 +49,7 @@ function stateDatabasePath() {
   return KERNEL_DB_RELATIVE;
 }
 function kernelStoreBindingDigest(canonicalRoot, workspaceId) {
-  return createHash3("sha256").update(`${canonicalRoot}\x00${workspaceId}`).digest("hex");
+  return createHash("sha256").update(`${canonicalRoot}\x00${workspaceId}`).digest("hex");
 }
 function validateTaskId(taskId) {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(taskId))
@@ -946,10 +102,10 @@ function batchCommitEvidencePath(batchId, taskId) {
   return `${BATCH_STATE_RELATIVE}/commits/${batchId}-${taskId}.json`;
 }
 function entryStatus(root, relativePath) {
-  const candidate = resolve2(root, relativePath);
+  const candidate = resolve(root, relativePath);
   let stat;
   try {
-    stat = lstatSync2(candidate);
+    stat = lstatSync(candidate);
   } catch (error) {
     const code = error.code;
     if (code === "ENOENT" || code === "ENOTDIR")
@@ -965,24 +121,24 @@ function entryStatus(root, relativePath) {
   return "other";
 }
 function listEntries(root, relativePath) {
-  const candidate = resolve2(root, relativePath);
+  const candidate = resolve(root, relativePath);
   try {
-    return readdirSync2(candidate).sort();
+    return readdirSync(candidate).sort();
   } catch {
     return null;
   }
 }
 function readSmallFile(root, relativePath) {
-  const candidate = resolve2(root, relativePath);
+  const candidate = resolve(root, relativePath);
   try {
-    const fd = openSync2(candidate, FS_CONSTANTS.O_RDONLY | (FS_CONSTANTS.O_NOFOLLOW ?? 0));
+    const fd = openSync(candidate, FS_CONSTANTS.O_RDONLY | (FS_CONSTANTS.O_NOFOLLOW ?? 0));
     try {
-      const stat = fstatSync2(fd);
+      const stat = fstatSync(fd);
       if (stat.size > 4 * 1024 * 1024)
         throw new Error("file exceeds the inspection read bound");
       return readFileSync(fd, "utf8");
     } finally {
-      closeSync2(fd);
+      closeSync(fd);
     }
   } catch {
     return null;
@@ -1012,25 +168,25 @@ function inspectRetiredStateResidue(root) {
 }
 
 // plugins/immune-brain/runtime/kernel/sqlite_store.ts
-import { randomUUID as randomUUID2 } from "node:crypto";
-import { spawnSync as spawnSync2 } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import {
-  constants as constants2,
-  closeSync as closeSync3,
+  constants,
+  closeSync as closeSync2,
   copyFileSync,
   existsSync,
   fsyncSync,
-  lstatSync as lstatSync3,
-  mkdirSync as mkdirSync2,
-  openSync as openSync3,
+  lstatSync as lstatSync2,
+  mkdirSync,
+  openSync as openSync2,
   readFileSync as readFileSync2,
-  realpathSync as realpathSync4,
+  realpathSync as realpathSync2,
   statSync,
   renameSync,
-  rmSync as rmSync2,
+  rmSync,
   writeFileSync
 } from "node:fs";
-import { dirname as dirname3, isAbsolute as isAbsolute2, relative as relative2, resolve as resolve3, sep as sep2 } from "node:path";
+import { dirname, isAbsolute, relative, resolve as resolve2, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 var DEFAULT_BUSY_TIMEOUT_MS = 5000;
 
@@ -1066,7 +222,7 @@ function runStoreFault() {
 }
 function canonicalRoot(root) {
   try {
-    return realpathSync4(root);
+    return realpathSync2(root);
   } catch {
     throw new KernelStoreSecurityError("project root is unavailable");
   }
@@ -1076,11 +232,11 @@ function storeKey(root) {
 }
 function assertSafeSegments(canonical, candidate) {
   let current = canonical;
-  for (const segment of relative2(canonical, candidate).split(sep2).filter(Boolean)) {
-    current = resolve3(current, segment);
+  for (const segment of relative(canonical, candidate).split(sep).filter(Boolean)) {
+    current = resolve2(current, segment);
     let stat;
     try {
-      stat = lstatSync3(current);
+      stat = lstatSync2(current);
     } catch (error) {
       const code = error.code;
       if (code === "ENOENT" || code === "ENOTDIR")
@@ -1088,15 +244,15 @@ function assertSafeSegments(canonical, candidate) {
       throw error;
     }
     if (stat.isSymbolicLink())
-      throw new KernelStoreSecurityError(`symlink storage segment is forbidden: ${relative2(canonical, current)}`);
+      throw new KernelStoreSecurityError(`symlink storage segment is forbidden: ${relative(canonical, current)}`);
   }
 }
 function assertSafeStoreTarget(canonical, target) {
   assertSafeSegments(canonical, target);
   try {
-    const stat = lstatSync3(target);
+    const stat = lstatSync2(target);
     if (stat.isSymbolicLink())
-      throw new KernelStoreSecurityError(`symlink storage segment is forbidden: ${relative2(canonical, target)}`);
+      throw new KernelStoreSecurityError(`symlink storage segment is forbidden: ${relative(canonical, target)}`);
     if (!stat.isFile())
       throw new KernelStoreSecurityError("kernel store is not a regular file");
   } catch (error) {
@@ -1105,15 +261,15 @@ function assertSafeStoreTarget(canonical, target) {
   }
 }
 function ensureStoreDirectory(canonical) {
-  const target = resolve3(canonical, KERNEL_DB_RELATIVE);
-  const directory = dirname3(target);
+  const target = resolve2(canonical, KERNEL_DB_RELATIVE);
+  const directory = dirname(target);
   assertSafeSegments(canonical, directory);
   let current = canonical;
-  for (const segment of relative2(canonical, directory).split(sep2).filter(Boolean)) {
-    current = resolve3(current, segment);
+  for (const segment of relative(canonical, directory).split(sep).filter(Boolean)) {
+    current = resolve2(current, segment);
     let stat;
     try {
-      stat = lstatSync3(current);
+      stat = lstatSync2(current);
     } catch (error) {
       const code = error.code;
       if (code !== "ENOENT" && code !== "ENOTDIR")
@@ -1121,13 +277,13 @@ function ensureStoreDirectory(canonical) {
       stat = null;
     }
     if (!stat) {
-      mkdirSync2(current);
+      mkdirSync(current);
       continue;
     }
     if (stat.isSymbolicLink())
-      throw new KernelStoreSecurityError(`symlink storage segment is forbidden: ${relative2(canonical, current)}`);
+      throw new KernelStoreSecurityError(`symlink storage segment is forbidden: ${relative(canonical, current)}`);
     if (!stat.isDirectory())
-      throw new KernelStoreSecurityError(`storage segment is not a directory: ${relative2(canonical, current)}`);
+      throw new KernelStoreSecurityError(`storage segment is not a directory: ${relative(canonical, current)}`);
   }
   assertSafeStoreTarget(canonical, target);
 }
@@ -1181,7 +337,7 @@ function workspaceBinding(root, workspaceId) {
   return kernelStoreBindingDigest(root, workspaceId);
 }
 function gitCommonDir(root) {
-  const result = spawnSync2("git", ["-C", root, "rev-parse", "--git-common-dir"], {
+  const result = spawnSync("git", ["-C", root, "rev-parse", "--git-common-dir"], {
     encoding: "utf8"
   });
   if (result.status !== 0)
@@ -1189,7 +345,7 @@ function gitCommonDir(root) {
   const value = result.stdout.trim();
   if (!value)
     return null;
-  return isAbsolute2(value) ? value : resolve3(root, value);
+  return isAbsolute(value) ? value : resolve2(root, value);
 }
 function readMeta(db, key) {
   const row = db.prepare("SELECT value FROM store_meta WHERE key = ?").get(key);
@@ -1210,7 +366,7 @@ function assertSchema(db, root) {
   const rows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all();
   const tables = new Set(rows.map((row) => String(row.name)));
   if (tables.size === 0) {
-    if (existsSync(resolve3(root, kernelStoreIdentityPath())))
+    if (existsSync(resolve2(root, kernelStoreIdentityPath())))
       throw new KernelStoreSecurityError("kernel store exists but carries no schema; restore .imm/state/kernel.sqlite from backup or remove the state directory deliberately to start a new worktree identity");
     return;
   }
@@ -1229,29 +385,29 @@ function assertSchema(db, root) {
     throw new KernelStoreSecurityError("kernel store belongs to a different worktree; restore it into its binding worktree or run the supported rebinding");
 }
 function writeStoreIdentity(root) {
-  const path = resolve3(root, kernelStoreIdentityPath());
+  const path = resolve2(root, kernelStoreIdentityPath());
   if (existsSync(path))
     return;
-  const fd = openSync3(path, constants2.O_WRONLY | constants2.O_CREAT | constants2.O_EXCL);
+  const fd = openSync2(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL);
   try {
     writeFileSync(fd, `${JSON.stringify({ contract: "assurance_kernel/store_identity/v1", created_at: new Date().toISOString() }, null, 2)}
 `);
     fsyncSync(fd);
   } finally {
-    closeSync3(fd);
+    closeSync2(fd);
   }
-  const directory = openSync3(dirname3(path), constants2.O_RDONLY);
+  const directory = openSync2(dirname(path), constants.O_RDONLY);
   try {
     fsyncSync(directory);
   } finally {
-    closeSync3(directory);
+    closeSync2(directory);
   }
 }
 function initializeSchema(db, root, now) {
   db.exec("BEGIN IMMEDIATE");
   try {
     db.exec(SCHEMA_SQL);
-    const workspaceId = readMeta(db, "workspace_id") ?? randomUUID2();
+    const workspaceId = readMeta(db, "workspace_id") ?? randomUUID();
     writeMeta(db, "workspace_id", workspaceId);
     writeMeta(db, "schema_version", String(KERNEL_STORE_SCHEMA_VERSION));
     writeMeta(db, "workspace_binding", workspaceBinding(root, workspaceId));
@@ -1270,7 +426,7 @@ function initializeSchema(db, root, now) {
 }
 function openKernelStore(root, options = {}) {
   const canonical = canonicalRoot(root);
-  const path = resolve3(canonical, KERNEL_DB_RELATIVE);
+  const path = resolve2(canonical, KERNEL_DB_RELATIVE);
   const create = options.create ?? true;
   if (!existsSync(path) && !create)
     return null;
@@ -1543,7 +699,7 @@ function validateTaskId2(taskId) {
 }
 function readJsonOrNull(path) {
   try {
-    const stat = lstatSync4(path);
+    const stat = lstatSync3(path);
     if (stat.isSymbolicLink())
       throw new KernelBackendClaimError("owner file must not be a symlink");
     if (!stat.isFile())
@@ -1638,7 +794,7 @@ function readTaskTombstone(root, taskId) {
   validateTaskId2(taskId);
   const localRun = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
   const proofPath = localRun ? auditRunTerminalProofPath(taskId, localRun.run_id) : auditEvidencePaths(root, taskId).proof;
-  const raw = readJsonOrNull(join3(resolve4(root), proofPath));
+  const raw = readJsonOrNull(join(resolve3(root), proofPath));
   if (!raw)
     return null;
   const tombstone = parseTaskTombstone(raw);
@@ -1652,23 +808,72 @@ function serializeTaskTombstone(tombstone) {
 `;
 }
 
-// plugins/immune-brain/runtime/kernel/reducer.ts
-import { createHash as createHash6 } from "node:crypto";
+// plugins/immune-brain/runtime/kernel/batch_authority.ts
+import { createHash as createHash8 } from "node:crypto";
+import { spawnSync as spawnSync3 } from "node:child_process";
+
+// plugins/immune-brain/runtime/kernel/capability_registry.ts
+function createCapabilityRegistry(capabilityBrand, hooks, domainLabel) {
+  const states = new WeakMap;
+  const brand = Symbol(`${domainLabel}-registry`);
+  function isCapability(value) {
+    return !!value && typeof value === "object" && value[capabilityBrand] === true && value[brand] === true;
+  }
+  function stateOf(capability) {
+    const state = states.get(capability);
+    if (!state)
+      throw new Error(`${domainLabel} capability is not recognized by this registry`);
+    return state;
+  }
+  return {
+    brand,
+    issue(binding, issuedAt = new Date().toISOString()) {
+      hooks.validateBinding(binding);
+      const capability = Object.freeze(Object.defineProperties({}, {
+        [capabilityBrand]: { value: true, enumerable: false, writable: false, configurable: false },
+        [brand]: { value: true, enumerable: false, writable: false, configurable: false }
+      }));
+      states.set(capability, { binding: { ...binding }, issued_at: issuedAt, consumed: false });
+      return capability;
+    },
+    inspect(capability, expected) {
+      if (!isCapability(capability))
+        throw new Error(`${domainLabel} capability is not recognized by this registry`);
+      const state = stateOf(capability);
+      if (state.consumed)
+        throw new Error(`${domainLabel} capability already consumed`);
+      return hooks.validateAndProject({ ...state.binding, issued_at: state.issued_at }, expected);
+    },
+    consume(capability, expected) {
+      const validated = this.inspect(capability, expected);
+      stateOf(capability).consumed = true;
+      return validated;
+    },
+    isConsumed(capability) {
+      return stateOf(capability).consumed;
+    }
+  };
+}
+
+// plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts
+import { createHash as createHash7 } from "node:crypto";
+import { spawnSync as spawnSync2 } from "node:child_process";
+import { resolve as resolve6 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/intent.ts
-import { createHash as createHash4 } from "node:crypto";
+import { createHash as createHash2 } from "node:crypto";
 import {
-  closeSync as closeSync4,
+  closeSync as closeSync3,
   constants as fsConstants,
-  fstatSync as fstatSync3,
-  lstatSync as lstatSync6,
-  openSync as openSync4,
+  fstatSync as fstatSync2,
+  lstatSync as lstatSync5,
+  openSync as openSync3,
   readFileSync as readFileSync5,
-  realpathSync as realpathSync6,
+  realpathSync as realpathSync4,
   statSync as statSync2
 } from "node:fs";
 import { execFileSync as execFileSync2 } from "node:child_process";
-import { join as join5, resolve as resolve5, sep as sep3 } from "node:path";
+import { join as join3, resolve as resolve4, sep as sep2 } from "node:path";
 
 // plugins/immune-brain/runtime/canonical_json.ts
 function stableStringify(value) {
@@ -1698,8 +903,8 @@ var MUTATION_AUTHORITY_CAPABILITY_BRAND = Symbol("assurance-kernel-mutation-auth
 
 // plugins/immune-brain/runtime/kernel/risk_floor.ts
 import { execFileSync } from "node:child_process";
-import { lstatSync as lstatSync5, readFileSync as readFileSync4, realpathSync as realpathSync5 } from "node:fs";
-import { join as join4 } from "node:path";
+import { lstatSync as lstatSync4, readFileSync as readFileSync4, realpathSync as realpathSync3 } from "node:fs";
+import { join as join2 } from "node:path";
 var RISK_FLOOR_DECLARATION_PATH = ".imm/risk-floor.json";
 var RISK_FLOOR_CONTRACT = "assurance_kernel/risk_floor/v1";
 var RISK_FLOOR_MAX_BYTES = 64 * 1024;
@@ -1757,14 +962,14 @@ function parseRiskFloor(raw) {
 function readRiskFloor(root) {
   let canonicalRoot;
   try {
-    canonicalRoot = realpathSync5(root);
+    canonicalRoot = realpathSync3(root);
   } catch {
     return NO_RISK_FLOOR;
   }
-  const target = join4(canonicalRoot, RISK_FLOOR_DECLARATION_PATH);
+  const target = join2(canonicalRoot, RISK_FLOOR_DECLARATION_PATH);
   let present = false;
   try {
-    const stat = lstatSync5(target);
+    const stat = lstatSync4(target);
     if (!stat.isFile())
       return invalidFloor(`${RISK_FLOOR_DECLARATION_PATH} is not a regular file`);
     if (stat.size > RISK_FLOOR_MAX_BYTES)
@@ -1970,7 +1175,7 @@ var portablePathCollator = new Intl.Collator("und", {
   ignorePunctuation: false
 });
 function sha256Hex(bytes) {
-  return createHash4("sha256").update(bytes).digest("hex");
+  return createHash2("sha256").update(bytes).digest("hex");
 }
 function objectAt(value, path, violations) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -2177,7 +1382,7 @@ function assertScopeAdditionsAreFiles(root, previous, next) {
   for (const entry of [...added, ...scopeAdditionAnchors(previous, added)]) {
     let isDirectory = false;
     try {
-      isDirectory = statSync2(join5(root, entry)).isDirectory();
+      isDirectory = statSync2(join3(root, entry)).isDirectory();
     } catch {}
     if (isDirectory)
       throw new Error(`scope entry ${entry} is a directory, so adding it is not a same-directory file addition; name concrete files, or widen with a glob entry such as ${entry}/** through approve_breaking_intent_revision`);
@@ -2219,11 +1424,11 @@ function assertSameIdentity(before, after, what) {
     throw new Error(`${what} changed while being read`);
 }
 function resolveCanonicalRoot(root) {
-  const resolved = resolve5(root);
-  const rootStat = lstatSync6(resolved);
+  const resolved = resolve4(root);
+  const rootStat = lstatSync5(resolved);
   if (rootStat.isSymbolicLink() || !rootStat.isDirectory())
     throw new Error("project root must be a real directory, not a symlink");
-  return realpathSync6(resolved);
+  return realpathSync4(resolved);
 }
 function resolveSidecarPath(canonicalRoot, activePath, archivedPath) {
   if (sidecarPresent(canonicalRoot, activePath))
@@ -2234,7 +1439,7 @@ function resolveSidecarPath(canonicalRoot, activePath, archivedPath) {
 }
 function sidecarPresent(canonicalRoot, relativePath) {
   try {
-    lstatSync6(join5(canonicalRoot, relativePath));
+    lstatSync5(join3(canonicalRoot, relativePath));
     return true;
   } catch {
     return false;
@@ -2244,8 +1449,8 @@ function collectPathIdentities(canonicalRoot, relativePath) {
   const identities = [];
   let current = canonicalRoot;
   for (const part of relativePath.split("/")) {
-    current = join5(current, part);
-    const stat = lstatSync6(current);
+    current = join3(current, part);
+    const stat = lstatSync5(current);
     if (stat.isSymbolicLink())
       throw new Error("intent sidecar path contains a symlink");
     identities.push({ dev: stat.dev, ino: stat.ino });
@@ -2256,8 +1461,8 @@ function assertIdentitiesUnchanged(expected, canonicalRoot, relativePath) {
   let current = canonicalRoot;
   const parts = relativePath.split("/");
   for (let index = 0;index < parts.length; index += 1) {
-    current = join5(current, parts[index]);
-    const stat = lstatSync6(current);
+    current = join3(current, parts[index]);
+    const stat = lstatSync5(current);
     if (stat.dev !== expected[index].dev || stat.ino !== expected[index].ino)
       throw new Error(`path component changed while being read: ${parts.slice(0, index + 1).join("/")}`);
   }
@@ -2270,8 +1475,8 @@ function readTaskIntentSource(root, taskId, requestedPath, recordedIntent) {
   const sidecarPath = requestedPath ?? resolveSidecarPath(canonicalRoot, activePath, archivedPath);
   if (sidecarPath !== activePath && sidecarPath !== archivedPath)
     throw new Error("intent sidecar path is not the active or archived task path");
-  const target = join5(canonicalRoot, sidecarPath);
-  if (!target.startsWith(canonicalRoot + sep3))
+  const target = join3(canonicalRoot, sidecarPath);
+  if (!target.startsWith(canonicalRoot + sep2))
     throw new Error("intent sidecar escapes project root");
   if (!sidecarPresent(canonicalRoot, sidecarPath))
     throw new TaskIntentObservationError("missing", `TaskIntent sidecar is missing at ${sidecarPath}`);
@@ -2284,28 +1489,28 @@ function readTaskIntentSource(root, taskId, requestedPath, recordedIntent) {
       throw new TaskIntentObservationError("invalid", "TaskIntent sidecar is not Git-tracked");
     throw error;
   }
-  const before = lstatSync6(target);
+  const before = lstatSync5(target);
   if (!before.isFile() || before.size > INTENT_MAX_BYTES)
     throw new TaskIntentObservationError("invalid", "TaskIntent sidecar must be a regular file no larger than 64 KiB");
-  const fd = openSync4(target, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+  const fd = openSync3(target, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
   let bytes;
   try {
-    const fdStat = fstatSync3(fd);
+    const fdStat = fstatSync2(fd);
     assertSameIdentity(statIdentity(before), fdStat, "intent sidecar descriptor");
     intentReaderTestHook?.onBeforeDescriptorRead?.();
     bytes = readFileSync5(fd);
   } finally {
-    closeSync4(fd);
+    closeSync3(fd);
   }
   if (bytes.byteLength > INTENT_MAX_BYTES)
     throw new TaskIntentObservationError("invalid", "TaskIntent sidecar exceeds 64 KiB");
-  const after = lstatSync6(target);
+  const after = lstatSync5(target);
   assertSameIdentity(statIdentity(before), after, "intent sidecar");
   assertIdentitiesUnchanged(pathIdentities, canonicalRoot, sidecarPath);
-  const canonicalAgain = realpathSync6(root);
+  const canonicalAgain = realpathSync4(root);
   if (canonicalAgain !== canonicalRoot)
     throw new Error("canonical project root drifted while being read");
-  if (lstatSync6(canonicalAgain).isSymbolicLink())
+  if (lstatSync5(canonicalAgain).isSymbolicLink())
     throw new Error("canonical project root became a symlink while being read");
   const sourceBytesSha256 = sha256Hex(bytes);
   let intent;
@@ -2348,8 +1553,31 @@ function readTaskIntent(root, taskId, requestedPath, recordedIntent) {
   return { ...observed, token: mintToken(identity) };
 }
 
+// plugins/immune-brain/runtime/kernel/storage.ts
+import { createHash as createHash6 } from "node:crypto";
+import {
+  constants as constants2,
+  closeSync as closeSync4,
+  existsSync as existsSync2,
+  fstatSync as fstatSync3,
+  fsyncSync as fsyncSync2,
+  lstatSync as lstatSync6,
+  mkdirSync as mkdirSync2,
+  openSync as openSync4,
+  readFileSync as readFileSync6,
+  readdirSync as readdirSync2,
+  realpathSync as realpathSync5,
+  renameSync as renameSync2,
+  rmSync as rmSync2,
+  writeFileSync as writeFileSync2
+} from "node:fs";
+import { dirname as dirname2, isAbsolute as isAbsolute2, relative as relative2, resolve as resolve5, sep as sep3 } from "node:path";
+
+// plugins/immune-brain/runtime/kernel/reducer.ts
+import { createHash as createHash4 } from "node:crypto";
+
 // plugins/immune-brain/runtime/kernel/refutation.ts
-import { createHash as createHash5 } from "node:crypto";
+import { createHash as createHash3 } from "node:crypto";
 function refutationIdentity(record, diffHash) {
   return {
     intent_revision: record.intent_snapshot.revision,
@@ -2358,7 +1586,7 @@ function refutationIdentity(record, diffHash) {
   };
 }
 function anchorForEvidence(evidence) {
-  return `sha256:${createHash5("sha256").update(stableStringify({
+  return `sha256:${createHash3("sha256").update(stableStringify({
     violated: evidence.violated,
     caller_chain: evidence.caller_chain
   })).digest("hex")}`;
@@ -3289,13 +2517,13 @@ function stableJson(value) {
   return primitive === undefined ? "null" : primitive;
 }
 function canonicalRecordHash(record) {
-  return `sha256:${createHash6("sha256").update(`${JSON.stringify(record, null, 2)}
+  return `sha256:${createHash4("sha256").update(`${JSON.stringify(record, null, 2)}
 `).digest("hex")}`;
 }
 function actionFingerprint(action, intentRevision, intentContentHash, audit) {
   const { expected_record_hash: _r, expected_workspace_hash: _w, diff_hash: _d, ...payload } = action;
   const base = audit ? { action: payload, intentRevision, intentContentHash, audit } : { action: payload, intentRevision, intentContentHash };
-  return createHash6("sha256").update(stableJson(base)).digest("hex");
+  return createHash4("sha256").update(stableJson(base)).digest("hex");
 }
 function historyReason(action, intentRevision, intentContentHash, audit, detail) {
   const fingerprint = `action_v2_sha256:${actionFingerprint(action, intentRevision, intentContentHash, audit)}`;
@@ -3356,7 +2584,7 @@ function findingsDigestV2(findings) {
     ...finding.anchor !== undefined ? { anchor: finding.anchor ?? null } : {},
     ...finding.evidence !== undefined ? { evidence: finding.evidence ?? null } : {}
   }));
-  return `sha256:${createHash6("sha256").update(stableJson(normalized)).digest("hex")}`;
+  return `sha256:${createHash4("sha256").update(stableJson(normalized)).digest("hex")}`;
 }
 var REVIEW_REWORK_ROUND_BUDGET = 5;
 function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths, floor = NO_RISK_FLOOR) {
@@ -3927,9 +3155,9 @@ function parseTaskRecordV3(raw) {
 }
 
 // plugins/immune-brain/runtime/kernel/run_identity.ts
-import { createHash as createHash7, randomUUID as randomUUID3 } from "node:crypto";
+import { createHash as createHash5, randomUUID as randomUUID2 } from "node:crypto";
 function mintRunId() {
-  return `run-${randomUUID3()}`;
+  return `run-${randomUUID2()}`;
 }
 function runIdentity(db, row) {
   return { workspace_id: workspaceIdentity(db), task_id: row.task_id, run_id: row.run_id };
@@ -3953,7 +3181,7 @@ function enrollmentRequestDigest(request) {
     confirmation_ref: request.confirmation_ref,
     nonce: request.nonce
   });
-  return `sha256:${createHash7("sha256").update(canonical).digest("hex")}`;
+  return `sha256:${createHash5("sha256").update(canonical).digest("hex")}`;
 }
 function drainOperationId(taskId, updatedAt) {
   return `drain:${taskId}:${updatedAt}`;
@@ -3966,7 +3194,7 @@ function terminalRequestDigest(action) {
     actor_id: action.actor_id,
     reason: typeof action.reason === "string" ? action.reason : null
   });
-  return `sha256:${createHash7("sha256").update(canonical).digest("hex")}`;
+  return `sha256:${createHash5("sha256").update(canonical).digest("hex")}`;
 }
 function terminalOperationId(taskId, eventId) {
   return `terminal:${taskId}:${eventId}`;
@@ -3976,7 +3204,7 @@ function terminalOperationId(taskId, eventId) {
 var MISSING_REVISION = "missing";
 var INITIAL_WORKSPACE_REVISION = recordRevision(0);
 function revisionFor(content) {
-  return `sha256:${createHash8("sha256").update(content).digest("hex")}`;
+  return `sha256:${createHash6("sha256").update(content).digest("hex")}`;
 }
 function revisionForContent(content) {
   return revisionFor(content);
@@ -3993,7 +3221,7 @@ function validateTaskId4(taskId) {
 }
 function canonicalRoot2(root) {
   try {
-    return realpathSync7(root);
+    return realpathSync5(root);
   } catch {
     throw new KernelStoreSecurityError("project root is unavailable");
   }
@@ -4001,11 +3229,11 @@ function canonicalRoot2(root) {
 function retireSupersededRetiredFiles(root, db, taskId) {
   const canonical = canonicalRoot2(root);
   for (const path of [FILE_STORE_CLAIM_RELATIVE, FILE_STORE_WORKSPACE_RELATIVE]) {
-    const full = resolve6(canonical, path);
+    const full = resolve5(canonical, path);
     if (!existsSync2(full))
       continue;
     if (isRetiredFileProvablySuperseded(full, db, taskId))
-      rmSync3(full, { force: true });
+      rmSync2(full, { force: true });
   }
 }
 function isRetiredFileProvablySuperseded(path, db, taskId) {
@@ -4047,7 +3275,7 @@ function assertNoRetiredFileStore(root, db, taskId) {
     ...residue.task_entries.length > 0 ? [[".imm/state/tasks", "task records"]] : []
   ];
   for (const [path, label] of retired) {
-    if (existsSync2(resolve6(canonical, path)))
+    if (existsSync2(resolve5(canonical, path)))
       throw new KernelStoreSecurityError(`retired file-store authority is present (${label}: ${path}); import it with the supported migration before mutating this worktree`);
   }
   const derived = [
@@ -4055,7 +3283,7 @@ function assertNoRetiredFileStore(root, db, taskId) {
     [FILE_STORE_WORKSPACE_RELATIVE, "workspace owner"]
   ];
   for (const [path, label] of derived) {
-    const full = resolve6(canonical, path);
+    const full = resolve5(canonical, path);
     if (path === FILE_STORE_WORKSPACE_RELATIVE && residue.workspace_owner === null)
       continue;
     if (!existsSync2(full))
@@ -4065,8 +3293,8 @@ function assertNoRetiredFileStore(root, db, taskId) {
     if (!isRetiredFileProvablySuperseded(full, db, taskId))
       throw new KernelStoreSecurityError(`retired file-store authority is present (${label}: ${path}) and does not belong to this task; import it with the supported migration before mutating this worktree`);
   }
-  if (existsSync2(resolve6(canonical, FILE_STORE_TRANSACTIONS_RELATIVE))) {
-    const entries = readdirNames(resolve6(canonical, FILE_STORE_TRANSACTIONS_RELATIVE));
+  if (existsSync2(resolve5(canonical, FILE_STORE_TRANSACTIONS_RELATIVE))) {
+    const entries = readdirNames(resolve5(canonical, FILE_STORE_TRANSACTIONS_RELATIVE));
     const pending = entries.filter((entry) => entry.endsWith(".json") && entry !== "storage-layout-migration.json");
     if (pending.length > 0)
       throw new KernelStoreSecurityError(`retired file-store transaction marker is present (${pending[0]}); settle it with the runtime that wrote it before mutating this worktree`);
@@ -4086,7 +3314,7 @@ function retiredFileStoreConflict(root, db, taskId) {
     ...residue.task_entries.length > 0 ? [[".imm/state/tasks", "task records"]] : []
   ];
   for (const [path, label] of authority)
-    if (existsSync2(resolve6(canonical, path)))
+    if (existsSync2(resolve5(canonical, path)))
       return `retired file-store authority is present (${label}: ${path}); import it with the supported migration before mutating this worktree`;
   const storeHasTask = db !== null && taskId !== null && readRunRowByTask(db, taskId) !== null;
   if (!storeHasTask) {
@@ -4095,10 +3323,10 @@ function retiredFileStoreConflict(root, db, taskId) {
       [FILE_STORE_WORKSPACE_RELATIVE, "workspace owner"]
     ];
     for (const [path, label] of derived)
-      if ((path !== FILE_STORE_WORKSPACE_RELATIVE || residue.workspace_owner !== null) && existsSync2(resolve6(canonical, path)))
+      if ((path !== FILE_STORE_WORKSPACE_RELATIVE || residue.workspace_owner !== null) && existsSync2(resolve5(canonical, path)))
         return `retired file-store authority is present (${label}: ${path}); import it with the supported migration before mutating this worktree`;
   }
-  const transactions = resolve6(canonical, FILE_STORE_TRANSACTIONS_RELATIVE);
+  const transactions = resolve5(canonical, FILE_STORE_TRANSACTIONS_RELATIVE);
   if (existsSync2(transactions)) {
     const pending = readdirNames(transactions).filter((entry) => entry.endsWith(".json") && entry !== "storage-layout-migration.json");
     if (pending.length > 0)
@@ -4108,7 +3336,7 @@ function retiredFileStoreConflict(root, db, taskId) {
 }
 function readdirNames(path) {
   try {
-    return readdirSync3(path);
+    return readdirSync2(path);
   } catch (error) {
     const code = error.code;
     if (code === "ENOENT" || code === "ENOTDIR")
@@ -4117,21 +3345,21 @@ function readdirNames(path) {
   }
 }
 function withinRoot(root, candidate) {
-  const rel = relative3(root, candidate);
-  return rel === "" || !isAbsolute3(rel) && rel !== ".." && !rel.startsWith(`..${sep4}`);
+  const rel = relative2(root, candidate);
+  return rel === "" || !isAbsolute2(rel) && rel !== ".." && !rel.startsWith(`..${sep3}`);
 }
 function safeCandidate(root, relativePath) {
-  if (!relativePath || relativePath.includes("\x00") || isAbsolute3(relativePath) || relativePath.includes("\\"))
+  if (!relativePath || relativePath.includes("\x00") || isAbsolute2(relativePath) || relativePath.includes("\\"))
     throw new KernelStoreSecurityError("project-relative path is invalid");
   const canonical = canonicalRoot2(root);
-  const candidate = resolve6(canonical, relativePath);
+  const candidate = resolve5(canonical, relativePath);
   if (!withinRoot(canonical, candidate))
     throw new KernelStoreSecurityError("path escapes the project root");
   return { root: canonical, path: candidate };
 }
 function pathStatOrNull(path) {
   try {
-    return lstatSync7(path);
+    return lstatSync6(path);
   } catch (error) {
     const code = error.code;
     if (code === "ENOENT" || code === "ENOTDIR")
@@ -4140,53 +3368,53 @@ function pathStatOrNull(path) {
   }
 }
 function assertNoSymlinkSegments(root, candidate) {
-  const rel = relative3(root, candidate);
+  const rel = relative2(root, candidate);
   let current = root;
-  for (const segment of rel.split(sep4).filter(Boolean)) {
-    current = resolve6(current, segment);
+  for (const segment of rel.split(sep3).filter(Boolean)) {
+    current = resolve5(current, segment);
     const stat = pathStatOrNull(current);
     if (!stat)
       continue;
     if (stat.isSymbolicLink())
-      throw new KernelStoreSecurityError(`symlink storage segment is forbidden: ${relative3(root, current)}`);
+      throw new KernelStoreSecurityError(`symlink storage segment is forbidden: ${relative2(root, current)}`);
   }
 }
 function capturePathIdentities(root, candidate) {
   const paths = [root];
   let current = root;
-  for (const segment of relative3(root, candidate).split(sep4).filter(Boolean)) {
-    current = resolve6(current, segment);
+  for (const segment of relative2(root, candidate).split(sep3).filter(Boolean)) {
+    current = resolve5(current, segment);
     paths.push(current);
   }
   return paths.map((path) => {
-    const stat = lstatSync7(path);
+    const stat = lstatSync6(path);
     if (stat.isSymbolicLink())
-      throw new KernelStoreSecurityError(`symlink storage segment is forbidden: ${relative3(root, path)}`);
+      throw new KernelStoreSecurityError(`symlink storage segment is forbidden: ${relative2(root, path)}`);
     return { path, dev: stat.dev, ino: stat.ino };
   });
 }
 function assertPathIdentitiesUnchanged(before) {
   for (const identity of before) {
-    const after = lstatSync7(identity.path);
+    const after = lstatSync6(identity.path);
     if (after.isSymbolicLink() || after.dev !== identity.dev || after.ino !== identity.ino)
       throw new KernelStoreSecurityError(`path identity changed during access: ${identity.path}`);
   }
 }
 function ensureSecureDirectory(root, relativePath) {
   const target = safeCandidate(root, relativePath);
-  const rel = relative3(target.root, target.path);
+  const rel = relative2(target.root, target.path);
   let current = target.root;
-  for (const segment of rel.split(sep4).filter(Boolean)) {
-    current = resolve6(current, segment);
+  for (const segment of rel.split(sep3).filter(Boolean)) {
+    current = resolve5(current, segment);
     const stat = pathStatOrNull(current);
     if (stat) {
       if (stat.isSymbolicLink())
-        throw new KernelStoreSecurityError(`symlink storage segment is forbidden: ${relative3(target.root, current)}`);
+        throw new KernelStoreSecurityError(`symlink storage segment is forbidden: ${relative2(target.root, current)}`);
       if (!stat.isDirectory())
-        throw new KernelStoreSecurityError(`storage segment is not a directory: ${relative3(target.root, current)}`);
+        throw new KernelStoreSecurityError(`storage segment is not a directory: ${relative2(target.root, current)}`);
       continue;
     }
-    mkdirSync3(current);
+    mkdirSync2(current);
   }
   return target.path;
 }
@@ -4202,22 +3430,22 @@ function readSecureProjectBytes(root, relativePath) {
   const identities = capturePathIdentities(candidate.root, candidate.path);
   if (!before.isFile())
     throw new KernelStoreSecurityError(`source is not a regular file: ${relativePath}`);
-  const noFollow = constants3.O_NOFOLLOW ?? 0;
+  const noFollow = constants2.O_NOFOLLOW ?? 0;
   let fd = null;
   try {
-    fd = openSync5(candidate.path, constants3.O_RDONLY | noFollow);
-    const opened = fstatSync4(fd);
+    fd = openSync4(candidate.path, constants2.O_RDONLY | noFollow);
+    const opened = fstatSync3(fd);
     if (opened.dev !== before.dev || opened.ino !== before.ino)
       throw new KernelStoreSecurityError(`source identity changed: ${relativePath}`);
     const content = readFileSync6(fd);
-    const after = lstatSync7(candidate.path);
+    const after = lstatSync6(candidate.path);
     if (after.dev !== opened.dev || after.ino !== opened.ino)
       throw new KernelStoreSecurityError(`source identity changed: ${relativePath}`);
     assertPathIdentitiesUnchanged(identities);
     return content;
   } finally {
     if (fd !== null)
-      closeSync5(fd);
+      closeSync4(fd);
   }
 }
 function currentRevision(root, relativePath) {
@@ -4246,29 +3474,29 @@ function clearStaleLock(lockPath) {
   let stale = false;
   let fd = null;
   try {
-    fd = openSync5(lockPath, constants3.O_RDONLY | (constants3.O_NOFOLLOW ?? 0));
+    fd = openSync4(lockPath, constants2.O_RDONLY | (constants2.O_NOFOLLOW ?? 0));
     const raw = JSON.parse(readFileSync6(fd, "utf8"));
     stale = Number.isInteger(raw.pid) && Number(raw.pid) > 0 && !processIsAlive(Number(raw.pid));
   } catch {
     stale = Date.now() - Number(before.mtimeMs) > 30000;
   } finally {
     if (fd !== null)
-      closeSync5(fd);
+      closeSync4(fd);
   }
   if (!stale)
     return false;
-  const after = lstatSync7(lockPath);
+  const after = lstatSync6(lockPath);
   if (after.isSymbolicLink() || after.dev !== before.dev || after.ino !== before.ino)
     throw new KernelStoreSecurityError("kernel store lock identity changed during recovery");
-  rmSync3(lockPath);
+  rmSync2(lockPath);
   return true;
 }
 function withExclusiveLock(lockPath, operation) {
-  const noFollow = constants3.O_NOFOLLOW ?? 0;
+  const noFollow = constants2.O_NOFOLLOW ?? 0;
   let fd = null;
   for (let attempt = 0;attempt < 2; attempt += 1) {
     try {
-      fd = openSync5(lockPath, constants3.O_WRONLY | constants3.O_CREAT | constants3.O_EXCL | noFollow, 384);
+      fd = openSync4(lockPath, constants2.O_WRONLY | constants2.O_CREAT | constants2.O_EXCL | noFollow, 384);
       break;
     } catch (error) {
       if (attempt === 0 && error.code === "EEXIST" && clearStaleLock(lockPath))
@@ -4278,30 +3506,30 @@ function withExclusiveLock(lockPath, operation) {
   }
   if (fd === null)
     throw new KernelStoreConflictError("kernel store lock could not be acquired");
-  const identity = fstatSync4(fd);
+  const identity = fstatSync3(fd);
   try {
     writeFileSync2(fd, `${JSON.stringify({ pid: process.pid, started_at: nowIso() })}
 `, "utf8");
     fsyncSync2(fd);
     return operation();
   } finally {
-    closeSync5(fd);
+    closeSync4(fd);
     const current = pathStatOrNull(lockPath);
     if (current && !current.isSymbolicLink() && current.dev === identity.dev && current.ino === identity.ino)
-      rmSync3(lockPath);
+      rmSync2(lockPath);
   }
 }
 function fsyncDirectory(path) {
-  const fd = openSync5(path, constants3.O_RDONLY);
+  const fd = openSync4(path, constants2.O_RDONLY);
   try {
     fsyncSync2(fd);
   } finally {
-    closeSync5(fd);
+    closeSync4(fd);
   }
 }
 function atomicCasWrite(root, relativePath, content, expectedRevision) {
   const candidate = safeCandidate(root, relativePath);
-  const parentRelative = relative3(candidate.root, dirname4(candidate.path));
+  const parentRelative = relative2(candidate.root, dirname2(candidate.path));
   ensureSecureDirectory(root, parentRelative);
   assertNoSymlinkSegments(candidate.root, candidate.path);
   return withExclusiveLock(`${candidate.path}.lock`, () => {
@@ -4311,18 +3539,18 @@ function atomicCasWrite(root, relativePath, content, expectedRevision) {
     const tempPath = `${candidate.path}.${process.pid}.tmp`;
     let fd = null;
     try {
-      fd = openSync5(tempPath, constants3.O_WRONLY | constants3.O_CREAT | constants3.O_EXCL, 384);
+      fd = openSync4(tempPath, constants2.O_WRONLY | constants2.O_CREAT | constants2.O_EXCL, 384);
       writeFileSync2(fd, content, "utf8");
       fsyncSync2(fd);
-      closeSync5(fd);
+      closeSync4(fd);
       fd = null;
       assertNoSymlinkSegments(candidate.root, candidate.path);
       renameSync2(tempPath, candidate.path);
-      fsyncDirectory(dirname4(candidate.path));
+      fsyncDirectory(dirname2(candidate.path));
     } finally {
       if (fd !== null)
-        closeSync5(fd);
-      rmSync3(tempPath, { force: true });
+        closeSync4(fd);
+      rmSync2(tempPath, { force: true });
     }
     return revisionFor(content);
   });
@@ -4356,13 +3584,13 @@ function convergeArtifactRelocation(root, relocation) {
     throw new KernelStoreConflictError(`artifact relocation conflict for ${relocation.from_path} -> ${relocation.to_path}`);
   const from = safeCandidate(root, relocation.from_path);
   const to = safeCandidate(root, relocation.to_path);
-  ensureSecureDirectory(root, relative3(to.root, dirname4(to.path)));
+  ensureSecureDirectory(root, relative2(to.root, dirname2(to.path)));
   assertNoSymlinkSegments(from.root, from.path);
   assertNoSymlinkSegments(to.root, to.path);
   renameSync2(from.path, to.path);
-  fsyncDirectory(dirname4(from.path));
-  if (dirname4(from.path) !== dirname4(to.path))
-    fsyncDirectory(dirname4(to.path));
+  fsyncDirectory(dirname2(from.path));
+  if (dirname2(from.path) !== dirname2(to.path))
+    fsyncDirectory(dirname2(to.path));
 }
 var auditExportFaultForTest = null;
 function runAuditExportFault() {
@@ -5071,77 +4299,11 @@ function repairKernelAuthority(root, taskId, expectedProjectionRevision, _at = n
   });
 }
 
-// plugins/immune-brain/runtime/unattended/batch_preflight.ts
-import { existsSync as existsSync7, readdirSync as readdirSync4, readFileSync as readFileSync10 } from "node:fs";
-import { randomUUID as randomUUID5 } from "node:crypto";
-import { join as join9 } from "node:path";
-import { spawnSync as spawnSync8 } from "node:child_process";
-
-// plugins/immune-brain/runtime/kernel/actor_identity.ts
-var LITERAL_USER_ACTOR_ID = "literal-user";
-var LITERAL_USER_SPELLINGS = new Set([LITERAL_USER_ACTOR_ID, "user"]);
-function isLiteralUserActor(actorId) {
-  return LITERAL_USER_SPELLINGS.has(actorId);
-}
-function canonicalActorId(actorId) {
-  return actorId === "user" ? LITERAL_USER_ACTOR_ID : actorId;
-}
-
-// plugins/immune-brain/runtime/kernel/batch_authority.ts
-import { createHash as createHash10 } from "node:crypto";
-import { spawnSync as spawnSync4 } from "node:child_process";
-
-// plugins/immune-brain/runtime/kernel/capability_registry.ts
-function createCapabilityRegistry(capabilityBrand, hooks, domainLabel) {
-  const states = new WeakMap;
-  const brand = Symbol(`${domainLabel}-registry`);
-  function isCapability(value) {
-    return !!value && typeof value === "object" && value[capabilityBrand] === true && value[brand] === true;
-  }
-  function stateOf(capability) {
-    const state = states.get(capability);
-    if (!state)
-      throw new Error(`${domainLabel} capability is not recognized by this registry`);
-    return state;
-  }
-  return {
-    brand,
-    issue(binding, issuedAt = new Date().toISOString()) {
-      hooks.validateBinding(binding);
-      const capability = Object.freeze(Object.defineProperties({}, {
-        [capabilityBrand]: { value: true, enumerable: false, writable: false, configurable: false },
-        [brand]: { value: true, enumerable: false, writable: false, configurable: false }
-      }));
-      states.set(capability, { binding: { ...binding }, issued_at: issuedAt, consumed: false });
-      return capability;
-    },
-    inspect(capability, expected) {
-      if (!isCapability(capability))
-        throw new Error(`${domainLabel} capability is not recognized by this registry`);
-      const state = stateOf(capability);
-      if (state.consumed)
-        throw new Error(`${domainLabel} capability already consumed`);
-      return hooks.validateAndProject({ ...state.binding, issued_at: state.issued_at }, expected);
-    },
-    consume(capability, expected) {
-      const validated = this.inspect(capability, expected);
-      stateOf(capability).consumed = true;
-      return validated;
-    },
-    isConsumed(capability) {
-      return stateOf(capability).consumed;
-    }
-  };
-}
-
 // plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts
-import { createHash as createHash9 } from "node:crypto";
-import { spawnSync as spawnSync3 } from "node:child_process";
-import { resolve as resolve7 } from "node:path";
 var SOURCE_PATH = stateDatabasePath();
 var GIT_OBJECT_ID2 = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 function readGitHead(root) {
-  const result = spawnSync3("git", ["-C", root, "rev-parse", "--verify", "HEAD^{commit}"], {
+  const result = spawnSync2("git", ["-C", root, "rev-parse", "--verify", "HEAD^{commit}"], {
     encoding: "utf8"
   });
   const head = typeof result.stdout === "string" ? result.stdout.trim() : "";
@@ -5150,7 +4312,7 @@ function readGitHead(root) {
   return head.toLowerCase();
 }
 function sha256Hex2(bytes) {
-  return createHash9("sha256").update(bytes).digest("hex");
+  return createHash7("sha256").update(bytes).digest("hex");
 }
 function stableStringify2(value) {
   if (value === null || typeof value !== "object")
@@ -5163,8 +4325,8 @@ function stableStringify2(value) {
 function preparePiCanary(root, input) {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(input.task_id))
     throw new Error("task id must match [A-Za-z0-9][A-Za-z0-9._-]{0,127}");
-  const canonicalRoot = resolve7(root);
-  const statePath = resolve7(canonicalRoot, SOURCE_PATH);
+  const canonicalRoot = resolve6(root);
+  const statePath = resolve6(canonicalRoot, SOURCE_PATH);
   let intent = null;
   try {
     const read = readTaskIntent(canonicalRoot, input.task_id);
@@ -5239,7 +4401,7 @@ function revalidatePiCanary(root, input, previous) {
 var BATCH_AUTHORITY_CAPABILITY_BRAND = Symbol.for("assurance-kernel.batch-authority-capability-brand");
 var GIT_COMMIT_ID = /^[a-f0-9]{40}$/;
 function sha256Hex3(bytes) {
-  return createHash10("sha256").update(bytes).digest("hex");
+  return createHash8("sha256").update(bytes).digest("hex");
 }
 function stableStringify3(value) {
   if (value === null || typeof value !== "object")
@@ -5425,7 +4587,7 @@ function createBatchAuthorityRegistry() {
 function assertBatchLineageOrigin(root, baseHead, expectedHead) {
   if (expectedHead === baseHead)
     return;
-  const descends = spawnSync4("git", ["-C", root, "merge-base", "--is-ancestor", baseHead, expectedHead], {
+  const descends = spawnSync3("git", ["-C", root, "merge-base", "--is-ancestor", baseHead, expectedHead], {
     stdio: ["ignore", "ignore", "ignore"]
   }).status === 0;
   if (!descends)
@@ -5468,22 +4630,22 @@ function deriveChildEnrollment(root, registry, input) {
 }
 
 // plugins/immune-brain/runtime/workspace_scope.ts
-import { spawnSync as spawnSync5 } from "node:child_process";
-import { createHash as createHash11 } from "node:crypto";
+import { spawnSync as spawnSync4 } from "node:child_process";
+import { createHash as createHash9 } from "node:crypto";
 import {
   existsSync as existsSync3,
-  lstatSync as lstatSync8,
-  mkdirSync as mkdirSync4,
+  lstatSync as lstatSync7,
+  mkdirSync as mkdirSync3,
   readFileSync as readFileSync7,
   readlinkSync,
-  realpathSync as realpathSync8,
+  realpathSync as realpathSync6,
   writeFileSync as writeFileSync3
 } from "node:fs";
-import { dirname as dirname5, join as join6, resolve as resolve8 } from "node:path";
+import { dirname as dirname3, join as join4, resolve as resolve7 } from "node:path";
 function git(root, args) {
   const diff = args[0] === "diff";
   const command = diff ? ["diff", "--exit-code", ...args.slice(1)] : args;
-  const result = spawnSync5("git", ["--no-optional-locks", "-c", "diff.autoRefreshIndex=false", "-C", root, ...command], {
+  const result = spawnSync4("git", ["--no-optional-locks", "-c", "diff.autoRefreshIndex=false", "-C", root, ...command], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -5515,7 +4677,7 @@ function isPlanningNoise(path, taskId) {
   return path.startsWith("docs/plans/") && !isOtherTaskSidecar(path, taskId) && !isOwnPlanningSidecar(path, taskId);
 }
 function enrollmentBaselinePath(root) {
-  return join6(root, ".imm/state/enrollment-baseline.json");
+  return join4(root, ".imm/state/enrollment-baseline.json");
 }
 function writeEnrollmentBaseline(root, claimedPaths = []) {
   const snapshot = captureGitWorkspaceSnapshot(root);
@@ -5524,7 +4686,7 @@ function writeEnrollmentBaseline(root, claimedPaths = []) {
   for (const path of claimedPaths)
     delete snapshot.dirty_files[path];
   const path = enrollmentBaselinePath(root);
-  mkdirSync4(dirname5(path), { recursive: true });
+  mkdirSync3(dirname3(path), { recursive: true });
   writeFileSync3(path, `${JSON.stringify(snapshot)}
 `);
 }
@@ -5558,15 +4720,15 @@ function isRuntimeAuthorityPath(path) {
   return path === ".imm/workspace.json" || path.startsWith(".imm/tasks/") || path.startsWith(".imm/memory/") || path.startsWith(".imm/state/") || path.startsWith(".imm/authority/") || path.startsWith(".imm/journal") || path === "HANDOFF.md";
 }
 function fileFingerprint(root, relativePath) {
-  const absolutePath = resolve8(root, relativePath);
+  const absolutePath = resolve7(root, relativePath);
   if (!existsSync3(absolutePath))
     return "missing";
-  const stat = lstatSync8(absolutePath);
+  const stat = lstatSync7(absolutePath);
   if (stat.isSymbolicLink())
     return `symlink:${readlinkSync(absolutePath)}`;
   if (!stat.isFile())
     return `other:${stat.mode}:${stat.size}`;
-  return `file:${stat.mode}:${createHash11("sha256").update(readFileSync7(absolutePath)).digest("hex")}`;
+  return `file:${stat.mode}:${createHash9("sha256").update(readFileSync7(absolutePath)).digest("hex")}`;
 }
 function dirtyPaths(root) {
   const tracked = git(root, ["diff", "--name-only", "--no-renames", "-z", "HEAD", "--"]);
@@ -5582,10 +4744,10 @@ function dirtyPaths(root) {
   return [...new Set([...splitNull(tracked), ...splitNull(untracked)])].filter((path) => !isRuntimeAuthorityPath(path)).sort(comparePaths);
 }
 function captureGitWorkspaceSnapshot(projectRoot) {
-  const root = realpathSync8(resolve8(projectRoot));
+  const root = realpathSync6(resolve7(projectRoot));
   const repositoryRoot = git(root, ["rev-parse", "--show-toplevel"])?.trim();
   const head = git(root, ["rev-parse", "HEAD"])?.trim();
-  if (!repositoryRoot || !head || realpathSync8(resolve8(repositoryRoot)) !== root)
+  if (!repositoryRoot || !head || realpathSync6(resolve7(repositoryRoot)) !== root)
     return null;
   const paths = dirtyPaths(root);
   if (!paths)
@@ -5610,7 +4772,7 @@ var gitTaskSnapshotTestHook;
 function gitBytes(root, args, env) {
   const diff = args[0] === "diff";
   const command = diff ? ["diff", "--exit-code", ...args.slice(1)] : args;
-  const result = spawnSync5("git", ["--no-optional-locks", "-c", "diff.autoRefreshIndex=false", "-C", root, ...command], {
+  const result = spawnSync4("git", ["--no-optional-locks", "-c", "diff.autoRefreshIndex=false", "-C", root, ...command], {
     encoding: null,
     stdio: ["ignore", "pipe", "pipe"],
     maxBuffer: 8 * 1024 * 1024,
@@ -5757,7 +4919,7 @@ function assertNoPreEnrollmentScopeChanges(root, scopedStagedPaths, taskId) {
     throw new Error(`task scope contains staged changes that predate Enrollment and cannot become task work: ${withheld.join(", ")}; stop the task and enroll again so the Enrollment gate lists them, or from a clean scope`);
 }
 function dirtyScopePaths(projectRoot, scopeHint, taskId) {
-  const root = realpathSync8(resolve8(projectRoot));
+  const root = realpathSync6(resolve7(projectRoot));
   const scope = assertCanonicalTaskScope(scopeHint);
   const paths = dirtyPaths(root);
   if (!paths)
@@ -5769,7 +4931,7 @@ function taskSnapshotOnce(root, scope, taskId, tolerated) {
   const head = git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
   if (!repositoryRoot || !head || !GIT_OBJECT_ID3.test(head))
     throw new Error("cannot derive task snapshot outside a committed Git workspace");
-  if (realpathSync8(resolve8(repositoryRoot)) !== root)
+  if (realpathSync6(resolve7(repositoryRoot)) !== root)
     throw new Error("task snapshot repository root does not match the project root");
   const sparseCheckout = git(root, ["config", "--bool", "core.sparseCheckout"])?.trim();
   const sparseIndex = git(root, ["config", "--bool", "index.sparse"])?.trim();
@@ -5814,11 +4976,11 @@ function taskSnapshotOnce(root, scope, taskId, tolerated) {
   };
 }
 function captureGitTaskSnapshot(projectRoot, scopeHint, taskId, tolerated) {
-  const requestedRoot = resolve8(projectRoot);
-  const requestedStat = lstatSync8(requestedRoot);
+  const requestedRoot = resolve7(projectRoot);
+  const requestedStat = lstatSync7(requestedRoot);
   if (requestedStat.isSymbolicLink() || !requestedStat.isDirectory())
     throw new Error("task snapshot root must be a real directory");
-  const root = realpathSync8(requestedRoot);
+  const root = realpathSync6(requestedRoot);
   const scope = assertCanonicalTaskScope(scopeHint);
   const before = taskSnapshotOnce(root, scope, taskId, tolerated);
   gitTaskSnapshotTestHook?.();
@@ -5828,7 +4990,7 @@ function captureGitTaskSnapshot(projectRoot, scopeHint, taskId, tolerated) {
   return before;
 }
 function hashTaskSnapshot(snapshot) {
-  return `sha256:${createHash11("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
+  return `sha256:${createHash9("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
 }
 function taskDiffIdentity(projectRoot, scopeHint, taskId) {
   const snapshot = captureGitTaskSnapshot(projectRoot, scopeHint, taskId);
@@ -5851,7 +5013,7 @@ function taskRevisionSnapshotOnce(root, scope, baseHead, taskId, tolerated) {
   const head = git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
   if (!repositoryRoot || !head || !GIT_OBJECT_ID3.test(head))
     throw new Error("cannot derive a task revision outside a committed Git workspace");
-  if (realpathSync8(resolve8(repositoryRoot)) !== root)
+  if (realpathSync6(resolve7(repositoryRoot)) !== root)
     throw new Error("task revision repository root does not match the project root");
   if (gitRequired(root, ["cat-file", "-t", baseHead], `task revision base is unreadable: ${baseHead}`) !== "commit")
     throw new Error(`task revision base is not a commit: ${baseHead}`);
@@ -5909,11 +5071,11 @@ function taskRevisionSnapshotOnce(root, scope, baseHead, taskId, tolerated) {
   };
 }
 function captureGitTaskRevisionSnapshot(projectRoot, scopeHint, baseHead, taskId, tolerated) {
-  const requestedRoot = resolve8(projectRoot);
-  const requestedStat = lstatSync8(requestedRoot);
+  const requestedRoot = resolve7(projectRoot);
+  const requestedStat = lstatSync7(requestedRoot);
   if (requestedStat.isSymbolicLink() || !requestedStat.isDirectory())
     throw new Error("task revision root must be a real directory");
-  const root = realpathSync8(requestedRoot);
+  const root = realpathSync6(requestedRoot);
   if (typeof baseHead !== "string" || !GIT_OBJECT_ID3.test(baseHead.toLowerCase()))
     throw new Error("task revision base must be a Git commit id");
   const scope = assertCanonicalTaskScope(scopeHint);
@@ -5961,10 +5123,10 @@ function taskStatusIdentity(projectRoot, record) {
   };
 }
 function taskCommitRevisionIdentity(projectRoot, scopeHint, baseHead, commit) {
-  const requested = resolve8(projectRoot);
-  if (lstatSync8(requested).isSymbolicLink())
+  const requested = resolve7(projectRoot);
+  if (lstatSync7(requested).isSymbolicLink())
     throw new Error("task commit root must be a real directory");
-  const root = realpathSync8(requested), scope = assertCanonicalTaskScope(scopeHint);
+  const root = realpathSync6(requested), scope = assertCanonicalTaskScope(scopeHint);
   if (!GIT_OBJECT_ID3.test(baseHead) || !GIT_OBJECT_ID3.test(commit))
     throw new Error("invalid task commit identity");
   if (gitRequired(root, ["cat-file", "-t", baseHead], "unreadable task base") !== "commit" || gitRequired(root, ["cat-file", "-t", commit], "unreadable task commit") !== "commit" || git(root, ["merge-base", "--is-ancestor", baseHead, commit]) === null)
@@ -6038,7 +5200,7 @@ function pathMatchesScope(path, scopePath) {
   return normalizedPath === normalizedScope || normalizedPath.startsWith(`${normalizedScope}/`);
 }
 function gitBlobId(body, length) {
-  const hash = createHash11(length === 64 ? "sha256" : "sha1");
+  const hash = createHash9(length === 64 ? "sha256" : "sha1");
   hash.update(`blob ${body.length}\x00`);
   hash.update(body);
   return hash.digest("hex");
@@ -6054,7 +5216,7 @@ var GIT_REPOSITORY_BINDINGS = [
   "GIT_PREFIX"
 ];
 function inScopeTrackedDrift(projectRoot, tree, scopeHint) {
-  const root = resolve8(projectRoot);
+  const root = resolve7(projectRoot);
   const env = { ...process.env };
   for (const name of GIT_REPOSITORY_BINDINGS)
     delete env[name];
@@ -6079,7 +5241,7 @@ function inScopeTrackedDrift(projectRoot, tree, scopeHint) {
     const want = expected.get(path);
     let stat;
     try {
-      stat = lstatSync8(join6(root, path));
+      stat = lstatSync7(join4(root, path));
     } catch {
       stat = null;
     }
@@ -6091,7 +5253,7 @@ function inScopeTrackedDrift(projectRoot, tree, scopeHint) {
     if (want.mode === "160000")
       continue;
     if (stat.isSymbolicLink()) {
-      if (want.mode !== "120000" || gitBlobId(Buffer.from(readlinkSync(join6(root, path))), want.oid.length) !== want.oid)
+      if (want.mode !== "120000" || gitBlobId(Buffer.from(readlinkSync(join4(root, path))), want.oid.length) !== want.oid)
         drift.add(path);
     } else if (!stat.isFile() || want.mode === "120000" || want.mode === "100755" !== ((stat.mode & 64) !== 0))
       drift.add(path);
@@ -6099,7 +5261,7 @@ function inScopeTrackedDrift(projectRoot, tree, scopeHint) {
       regular.push(path);
   }
   if (regular.length) {
-    const hashed = spawnSync5("git", ["--no-optional-locks", "-C", root, "hash-object", "--stdin-paths"], {
+    const hashed = spawnSync4("git", ["--no-optional-locks", "-C", root, "hash-object", "--stdin-paths"], {
       input: `${regular.join(`
 `)}
 `,
@@ -6121,7 +5283,7 @@ function inScopeTrackedDrift(projectRoot, tree, scopeHint) {
 }
 
 // plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts
-import { spawnSync as spawnSync6 } from "node:child_process";
+import { spawnSync as spawnSync5 } from "node:child_process";
 
 // plugins/immune-brain/runtime/kernel/assurance_projection.ts
 function deriveAssuranceAuthorization(input) {
@@ -6351,9 +5513,9 @@ async function projectAssurance(root, taskId, diffProvider = taskDeliveryIdentit
 }
 
 // plugins/immune-brain/runtime/unattended/batch_state.ts
-import { existsSync as existsSync4, mkdirSync as mkdirSync5, openSync as openSync6, closeSync as closeSync6, writeFileSync as writeFileSync4, renameSync as renameSync3, lstatSync as lstatSync9, constants as constants4, rmSync as rmSync4 } from "node:fs";
-import { randomUUID as randomUUID4 } from "node:crypto";
-import { dirname as dirname6, join as join7 } from "node:path";
+import { existsSync as existsSync4, mkdirSync as mkdirSync4, openSync as openSync5, closeSync as closeSync5, writeFileSync as writeFileSync4, renameSync as renameSync3, lstatSync as lstatSync8, constants as constants3, rmSync as rmSync3 } from "node:fs";
+import { randomUUID as randomUUID3 } from "node:crypto";
+import { dirname as dirname4, join as join5 } from "node:path";
 function isLaneBatchRecord(record) {
   return record.contract === "assurance_kernel/batch_run_state/v2";
 }
@@ -6389,7 +5551,7 @@ function validateBatchId(batchId) {
 }
 function statePath(batchId) {
   validateBatchId(batchId);
-  return join7(".imm", "state", "batches", `${batchId}.json`);
+  return join5(".imm", "state", "batches", `${batchId}.json`);
 }
 function withoutRetiredClock(record) {
   const { authorization_expires_at: _expiry, ...rest } = record;
@@ -6495,44 +5657,44 @@ function parseBatchRunState(raw, batchId) {
 }
 function readBatchRunState(root, batchId) {
   const path = statePath(batchId);
-  if (!existsSync4(join7(root, path)))
+  if (!existsSync4(join5(root, path)))
     return null;
   return parseBatchRunState(readSecureProjectFile(root, path), batchId);
 }
 function ensureSecureDirectory2(root, relative) {
-  const target = join7(root, relative);
-  const parent = dirname6(target);
+  const target = join5(root, relative);
+  const parent = dirname4(target);
   if (!existsSync4(parent))
-    mkdirSync5(parent, { recursive: true });
+    mkdirSync4(parent, { recursive: true });
   if (existsSync4(target)) {
-    const stats = lstatSync9(target);
+    const stats = lstatSync8(target);
     if (!stats.isDirectory())
       throw new Error(`${relative} exists but is not a directory`);
   } else {
-    mkdirSync5(target);
+    mkdirSync4(target);
   }
   return target;
 }
 function writeFileAtomically(root, relative, bytes) {
-  const target = join7(root, relative);
-  const targetDir = dirname6(target);
-  const stats = lstatSync9(targetDir);
+  const target = join5(root, relative);
+  const targetDir = dirname4(target);
+  const stats = lstatSync8(targetDir);
   if (!stats.isDirectory())
-    throw new Error(`${dirname6(relative)} is not a directory`);
-  const tempPath = `${target}.${randomUUID4()}.tmp`;
+    throw new Error(`${dirname4(relative)} is not a directory`);
+  const tempPath = `${target}.${randomUUID3()}.tmp`;
   let fd = null;
   try {
-    fd = openSync6(tempPath, constants4.O_WRONLY | constants4.O_CREAT | constants4.O_EXCL, 384);
+    fd = openSync5(tempPath, constants3.O_WRONLY | constants3.O_CREAT | constants3.O_EXCL, 384);
     writeFileSync4(fd, bytes, "utf8");
-    closeSync6(fd);
+    closeSync5(fd);
     fd = null;
     renameSync3(tempPath, target);
   } finally {
     if (fd !== null)
-      closeSync6(fd);
+      closeSync5(fd);
     if (existsSync4(tempPath)) {
       try {
-        rmSync4(tempPath);
+        rmSync3(tempPath);
       } catch {}
     }
   }
@@ -6568,14 +5730,14 @@ function writeBatchRunState(root, record) {
   const path = statePath(record.batch_id);
   validateRecordShape(record, record.batch_id);
   return withKernelStoreLock(root, () => {
-    const existing = existsSync4(join7(root, path)) ? readSecureProjectFile(root, path) : null;
+    const existing = existsSync4(join5(root, path)) ? readSecureProjectFile(root, path) : null;
     if (existing !== null && existing === canonicalBytes(record))
       return record;
     const stored = withoutRetiredClock({
       ...record,
       updated_at: new Date().toISOString()
     });
-    ensureSecureDirectory2(root, join7(".imm", "state", "batches"));
+    ensureSecureDirectory2(root, join5(".imm", "state", "batches"));
     writeFileAtomically(root, path, canonicalBytes(stored));
     return stored;
   });
@@ -6751,7 +5913,7 @@ function parseAnyBatchRunState(raw, batchId) {
 }
 function readAnyBatchRunState(root, batchId) {
   const path = statePath(batchId);
-  if (!existsSync4(join7(root, path)))
+  if (!existsSync4(join5(root, path)))
     return null;
   return parseAnyBatchRunState(readSecureProjectFile(root, path), batchId);
 }
@@ -6759,23 +5921,23 @@ function writeBatchLaneRunState(root, record) {
   const path = statePath(record.batch_id);
   validateLaneRecordShape(record, record.batch_id);
   return withKernelStoreLock(root, () => {
-    const existing = existsSync4(join7(root, path)) ? readSecureProjectFile(root, path) : null;
+    const existing = existsSync4(join5(root, path)) ? readSecureProjectFile(root, path) : null;
     if (existing !== null && existing === canonicalBytes(record))
       return record;
     const stored = withoutRetiredClock({ ...record, updated_at: new Date().toISOString() });
-    ensureSecureDirectory2(root, join7(".imm", "state", "batches"));
+    ensureSecureDirectory2(root, join5(".imm", "state", "batches"));
     writeFileAtomically(root, path, canonicalBytes(stored));
     return stored;
   });
 }
 function reportPath(batchId) {
   validateBatchId(batchId);
-  return join7(".imm", "state", "batches", `${batchId}.report.json`);
+  return join5(".imm", "state", "batches", `${batchId}.report.json`);
 }
 function writeBatchRunReport(root, report) {
   const relative = reportPath(report.batch_id);
   return withKernelStoreLock(root, () => {
-    const path = join7(root, relative);
+    const path = join5(root, relative);
     if (existsSync4(path)) {
       const original = JSON.parse(readSecureProjectFile(root, relative));
       if (typeof original !== "object" || original === null || original.contract !== "assurance_kernel/batch_run_report/v1")
@@ -6786,7 +5948,7 @@ function writeBatchRunReport(root, report) {
       if (prior.batch_state !== "needs_human")
         return prior;
     }
-    ensureSecureDirectory2(root, join7(".imm", "state", "batches"));
+    ensureSecureDirectory2(root, join5(".imm", "state", "batches"));
     writeFileAtomically(root, relative, canonicalReportBytes(report));
     return report;
   });
@@ -6804,16 +5966,16 @@ var oid = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 var id = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var batchAuthor = process.env.GIT_AUTHOR_NAME || "Immune-Brain Batch";
 var decode = (bytes) => new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-function refuse2() {
+function refuse() {
   throw new Error("plan_digest mismatch: batch plan reconfirmation is not eligible");
 }
 function matchesLocalProof(localJson, exported) {
   return localJson !== null && JSON.stringify(Object.entries(JSON.parse(localJson)).sort()) === JSON.stringify(Object.entries(exported).sort());
 }
 function git2(root, args) {
-  const r = spawnSync6("git", ["-C", root, ...args], { encoding: "buffer", maxBuffer: 262144, env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } });
+  const r = spawnSync5("git", ["-C", root, ...args], { encoding: "buffer", maxBuffer: 262144, env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } });
   if (r.status !== 0)
-    refuse2();
+    refuse();
   return decode(r.stdout);
 }
 function ownUnpersistedBatchHead(root, record, head) {
@@ -6864,23 +6026,23 @@ function ownUnpersistedBatchHead(root, record, head) {
 var confirmations = new Map;
 function retainReconfirmation(nonce, snapshot) {
   if (confirmations.has(nonce))
-    refuse2();
+    refuse();
   confirmations.set(nonce, snapshot);
 }
 function takeReconfirmation(nonce) {
   const found = confirmations.get(nonce);
   confirmations.delete(nonce);
   if (!found)
-    refuse2();
+    refuse();
   return found;
 }
 async function captureBatchReconfirmation(root, record, children) {
   if (!id.test(record.batch_id) || !oid.test(record.base_head) || isTerminalBatchState(record.batch_state) || record.commits.length || record.children.some((c) => c.commit !== null || c.state === "committed") || record.children.length !== children.length || !children.length)
-    refuse2();
+    refuse();
   const assertNoCommitEvidence = () => {
     for (const child of record.children) {
       if (!id.test(child.task_id))
-        refuse2();
+        refuse();
       const path = batchCommitEvidencePath(record.batch_id, child.task_id);
       let missing = false;
       try {
@@ -6889,17 +6051,17 @@ async function captureBatchReconfirmation(root, record, children) {
         if (error instanceof Error && error.message === `source_missing: ${path}`)
           missing = true;
         else
-          refuse2();
+          refuse();
       }
       if (!missing)
-        refuse2();
+        refuse();
     }
   };
   assertNoCommitEvidence();
   const statePath = batchStatePath(record.batch_id);
   const stateBytes = readSecureProjectBytes(root, statePath);
   if (JSON.stringify(JSON.parse(decode(stateBytes))) !== JSON.stringify(record))
-    refuse2();
+    refuse();
   const files = new Map;
   const capture = (path) => {
     const bytes = readSecureProjectBytes(root, path);
@@ -6911,14 +6073,14 @@ async function captureBatchReconfirmation(root, record, children) {
   let scope = null;
   const workspace = readWorkspaceStateRaw(root);
   if (workspace.state.current_working !== null)
-    refuse2();
+    refuse();
   for (const [index, child] of children.entries()) {
     const previous = record.children[index];
     if (!id.test(child.task_id) || child.task_id !== previous.task_id || child.slice_id !== previous.slice_id || JSON.stringify(child.blocked_by) !== JSON.stringify(previous.blocked_by) || child.intent_path !== `docs/plans/${child.task_id}.intent.json`)
-      refuse2();
+      refuse();
     const old = parseProjectTaskIntent(root, JSON.parse(git2(root, ["show", `${record.base_head}:${child.intent_path}`])));
     if (old.task_id !== child.task_id)
-      refuse2();
+      refuse();
     const oldHash = canonicalIntentHash(old);
     oldChildren.push({ task_id: child.task_id, blocked_by: [...child.blocked_by], intent_path: child.intent_path, intent_revision: old.revision, intent_content_hash: oldHash });
     const currentBytes = capture(child.intent_path);
@@ -6926,46 +6088,46 @@ async function captureBatchReconfirmation(root, record, children) {
     const currentHash = canonicalIntentHash(current);
     const tracked = readTaskIntent(root, child.task_id, child.intent_path);
     if (currentHash !== tracked.content_hash || currentHash !== child.intent_content_hash || current.revision !== child.intent_revision)
-      refuse2();
+      refuse();
     if (currentHash === oldHash)
       continue;
     if (scope !== null || previous.state === "pending" || previous.state === "skipped_blocked" || current.revision <= old.revision || current.goal !== old.goal || current.owner !== old.owner)
-      refuse2();
+      refuse();
     const settled = readSettledRunEvidence(root, child.task_id);
     if (!settled || settled.lifecycle !== "done")
-      refuse2();
+      refuse();
     const run = settled.run_id;
     if (!id.test(run) || settled.enrollment_event_id !== enrollmentEventIdFor(child.task_id, settled.created_at) || Date.parse(settled.created_at) > Date.parse(record.updated_at))
-      refuse2();
+      refuse();
     const pair = readAuditTaskPair(root, child.task_id, run);
     if (!pair || pair.record.contract !== "assurance_kernel/task_record/v4")
-      refuse2();
+      refuse();
     const r = pair.record;
     if (r.lifecycle !== "done" || r.intent_ref.content_hash !== currentHash || canonicalIntentHash(r.intent_snapshot) !== currentHash || r.git_base_head !== record.base_head || pair.proof.terminal_lifecycle !== "done")
-      refuse2();
+      refuse();
     const terminal = r.history.at(-1);
     if (terminal?.type !== "complete" || terminal.from_state !== "active:frozen" || terminal.to_state !== "done:frozen" || terminal.id !== pair.proof.terminal_event_id)
-      refuse2();
+      refuse();
     const recordPath = auditRunRecordPath(child.task_id, run);
     const proofPath = auditRunTerminalProofPath(child.task_id, run);
     if (!capture(recordPath).equals(Buffer.from(settled.record_json)))
-      refuse2();
+      refuse();
     const capturedProof = JSON.parse(decode(capture(proofPath)));
     if (!matchesLocalProof(settled.proof_json, capturedProof) || !matchesLocalProof(settled.proof_json, pair.proof))
-      refuse2();
+      refuse();
     const identity = taskDeliveryIdentity(root, r);
     const projection = await projectAssurance(root, child.task_id, (cwd, task) => {
       if (task.contract !== "assurance_kernel/task_record/v4" || !task.git_base_head)
-        refuse2();
+        refuse();
       return taskDeliveryIdentity(cwd, task);
     });
     if (projection.error || projection.claim || projection.projection.run_id !== run || projection.projection.lifecycle !== "done" || !projection.projection.completion_ready || projection.projection.intent_content_hash !== currentHash || projection.projection.diff_hash !== identity.diff_hash || !projection.projection.fresh_approval_kinds.includes("qa") || projection.projection.risk !== "routine" && !projection.projection.fresh_approval_kinds.includes("review"))
-      refuse2();
+      refuse();
     scope = r.intent_snapshot.scope_hint;
     changed.push({ task: child.task_id, run, identity: JSON.stringify(identity), settled: JSON.stringify(settled) });
   }
   if (computeBatchPlanDigest(oldChildren) !== record.plan_digest || changed.length !== 1 || scope === null)
-    refuse2();
+    refuse();
   const confirmedScope = scope;
   const owner = changed[0];
   const status = () => git2(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none"]);
@@ -6974,42 +6136,42 @@ async function captureBatchReconfirmation(root, record, children) {
   for (const entry of entries) {
     const code = entry.slice(0, 2), path = entry.slice(3);
     if (code[1] !== " " || !["A", "M", "D"].includes(code[0]) || !path.startsWith(`${auditRunDirPath(owner.task, owner.run)}/`) && !confirmedScope.some((s) => pathMatchesScope(path, s)))
-      refuse2();
+      refuse();
   }
   const flagsBytes = git2(root, ["ls-files", "-v"]);
   const flags = flagsBytes.split(`
 `).filter(Boolean);
   if (flags.some((line) => line[0] === "S" || line[0] !== line[0]?.toUpperCase()))
-    refuse2();
+    refuse();
   const head = () => git2(root, ["rev-parse", "HEAD"]).trim();
   const branch = () => git2(root, ["symbolic-ref", "--short", "HEAD"]).trim();
   if (head() !== record.base_head || branch() !== record.branch)
-    refuse2();
+    refuse();
   const assertDeliveryUnchanged = () => {
     for (const c of changed) {
       let settled;
       try {
         settled = readSettledRunEvidence(root, c.task);
       } catch {
-        refuse2();
+        refuse();
       }
       if (!settled || settled.run_id !== c.run || JSON.stringify(settled) !== c.settled)
-        refuse2();
+        refuse();
       const pair = readAuditTaskPair(root, c.task, c.run);
       if (!pair || pair.record.contract !== "assurance_kernel/task_record/v4" || !pair.record.git_base_head)
-        refuse2();
+        refuse();
       const diff = taskDeliveryIdentity(root, pair.record);
       if (JSON.stringify(diff) !== c.identity)
-        refuse2();
+        refuse();
     }
   };
   const assertUnchanged = () => {
     assertNoCommitEvidence();
     if (!readSecureProjectBytes(root, statePath).equals(stateBytes) || head() !== record.base_head || branch() !== record.branch || status() !== statusBytes || git2(root, ["ls-files", "-v"]) !== flagsBytes || readWorkspaceStateRaw(root).revision !== workspace.revision)
-      refuse2();
+      refuse();
     for (const [path, bytes] of files)
       if (!readSecureProjectBytes(root, path).equals(bytes))
-        refuse2();
+        refuse();
     assertDeliveryUnchanged();
   };
   assertUnchanged();
@@ -7022,12 +6184,12 @@ async function captureBatchReconfirmation(root, record, children) {
 }
 
 // plugins/immune-brain/runtime/unattended/batch_plan.ts
-import { createHash as createHash12 } from "node:crypto";
+import { createHash as createHash10 } from "node:crypto";
 
 // plugins/immune-brain/runtime/github_issue_tracker.ts
 import { spawn } from "node:child_process";
 import { existsSync as existsSync5, readFileSync as readFileSync8 } from "node:fs";
-import { basename as basename2, relative as relative4, resolve as resolve9, sep as sep5 } from "node:path";
+import { basename, relative as relative3, resolve as resolve8, sep as sep4 } from "node:path";
 var CONTRACT = "immune_brain/github_issue_tracker_result/v1";
 var PROTOCOL_MARKER = "<!-- immune-brain-tracker:v1 -->";
 var KIND_INITIATIVE_MARKER = "<!-- immune-brain:kind=initiative -->";
@@ -7482,7 +6644,7 @@ async function readBlockedByIds(root, gh, operation, repository, childNumber) {
 }
 async function observeGithubInitiative(root, initiativeId, gh = createGhTransport()) {
   const id = identifier(initiativeId, "initiative_id");
-  const source = await snapshot(resolve9(root), gh, "create-initiative");
+  const source = await snapshot(resolve8(root), gh, "create-initiative");
   if ("contract" in source)
     throw new Error(source.message);
   const parent = initiativeLookup(source.issues, source.repository.id, id);
@@ -7571,7 +6733,7 @@ async function attachBlockedBy(root, gh, operation, repository, childNumber, blo
   return confirmed;
 }
 function carrierConflict(root, operation, initiativeId) {
-  if (!existsSync5(resolve9(root, "docs", "initiatives", `${initiativeId}.md`)))
+  if (!existsSync5(resolve8(root, "docs", "initiatives", `${initiativeId}.md`)))
     return null;
   return result(operation, "permanent_failure", `Initiative carrier conflict: docs/initiatives/${initiativeId}.md already owns this slug locally; remove the duplicate carrier before using the GitHub projection`);
 }
@@ -8193,7 +7355,7 @@ async function runGithubTrackerOperation(root, input, gh = createGhTransport()) 
   } catch (error) {
     return result(input.op, "permanent_failure", error instanceof Error ? error.message : String(error));
   }
-  const absoluteRoot = resolve9(root);
+  const absoluteRoot = resolve8(root);
   if (operation.op !== "mark-terminal") {
     const conflict = carrierConflict(absoluteRoot, operation.op, operation.initiative_id);
     if (conflict)
@@ -8213,8 +7375,8 @@ async function runGithubTrackerOperation(root, input, gh = createGhTransport()) 
 }
 
 // plugins/immune-brain/runtime/local_initiative.ts
-import { lstatSync as lstatSync10, readFileSync as readFileSync9 } from "node:fs";
-import { resolve as resolve10 } from "node:path";
+import { lstatSync as lstatSync9, readFileSync as readFileSync9 } from "node:fs";
+import { resolve as resolve9 } from "node:path";
 var ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var SLICE_HEADING = /^##\s+([^\s:]+)\s*:/;
 var BLOCKED_BY = /^blocked by\s*:(.*)$/i;
@@ -8224,7 +7386,7 @@ function localInitiativePath(initiativeSlug) {
   return `docs/initiatives/${initiativeSlug}.md`;
 }
 function hasLocalInitiative(root, initiativeSlug) {
-  const stat = lstatSync10(resolve10(root, localInitiativePath(initiativeSlug)), { throwIfNoEntry: false });
+  const stat = lstatSync9(resolve9(root, localInitiativePath(initiativeSlug)), { throwIfNoEntry: false });
   if (!stat)
     return false;
   if (!stat.isFile())
@@ -8243,7 +7405,7 @@ function observeLocalInitiative(root, initiativeSlug) {
   const slices = [];
   let inTasks = false;
   let fence = false;
-  for (const raw of readFileSync9(resolve10(root, path), "utf8").split(/\r?\n/)) {
+  for (const raw of readFileSync9(resolve9(root, path), "utf8").split(/\r?\n/)) {
     const line = raw.trim();
     if (line.startsWith("```")) {
       fence = !fence;
@@ -8582,7 +7744,7 @@ async function projectBatchPlan(root, initiativeSlug, input, readInitiative = ob
   }));
   if (!enrollable.length)
     throw new Error("batch plan has no enrollable children; nothing to confirm");
-  const planDigest = `sha256:${createHash12("sha256").update(stableStringify(enrollable)).digest("hex")}`;
+  const planDigest = `sha256:${createHash10("sha256").update(stableStringify(enrollable)).digest("hex")}`;
   return {
     contract: "assurance_kernel/batch_plan/v1",
     initiative_slug: initiativeSlug,
@@ -8748,11 +7910,11 @@ function batchReason(key, detail = "") {
 }
 
 // plugins/immune-brain/runtime/unattended/batch_leak_restore.ts
-import { spawnSync as spawnSync7 } from "node:child_process";
-import { copyFileSync as copyFileSync2, existsSync as existsSync6, mkdirSync as mkdirSync6, renameSync as renameSync4, writeFileSync as writeFileSync5 } from "node:fs";
-import { dirname as dirname7, join as join8 } from "node:path";
+import { spawnSync as spawnSync6 } from "node:child_process";
+import { copyFileSync as copyFileSync2, existsSync as existsSync6, mkdirSync as mkdirSync5, renameSync as renameSync4, writeFileSync as writeFileSync5 } from "node:fs";
+import { dirname as dirname5, join as join6 } from "node:path";
 function git3(root, args) {
-  const result = spawnSync7("git", ["-C", root, ...args], {
+  const result = spawnSync6("git", ["-C", root, ...args], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" }
@@ -8774,7 +7936,7 @@ function laneOrigin(root, record, path, blob) {
       continue;
     if (blobAt(root, lane.base_head, path) === blob)
       continue;
-    if (existsSync6(join8(lane.path, path)) && blobOfFile(lane.path, join8(lane.path, path)) === blob)
+    if (existsSync6(join6(lane.path, path)) && blobOfFile(lane.path, join6(lane.path, path)) === blob)
       return child.task_id;
     const commits = git3(root, ["rev-list", `${lane.base_head}..${lane.branch}`]);
     if (commits.status !== 0)
@@ -8796,7 +7958,7 @@ function planLaneLeakRestore(root, record, entries) {
     const kind = code === "??" ? "untracked" : code === " M" ? "modified" : null;
     if (!kind)
       return { kind: "unprovable", path, detail: `status ${code.trim() || code} is not a Lane write` };
-    const blob = blobOfFile(root, join8(root, path));
+    const blob = blobOfFile(root, join6(root, path));
     if (!blob)
       return { kind: "unprovable", path, detail: "its bytes cannot be read" };
     const origin = laneOrigin(root, record, path, blob);
@@ -8812,28 +7974,28 @@ function restoreProvableLaneLeaks(root, record, entries, now) {
     return plan;
   const planned = plan.paths;
   const stamp = now.replace(/[^0-9TZ]/g, "");
-  const backup = join8(".imm", "state", "batches", "restores", record.batch_id, stamp);
-  const backupRoot = join8(root, backup);
-  mkdirSync6(join8(backupRoot, "files"), { recursive: true });
+  const backup = join6(".imm", "state", "batches", "restores", record.batch_id, stamp);
+  const backupRoot = join6(root, backup);
+  mkdirSync5(join6(backupRoot, "files"), { recursive: true });
   const tracked = planned.filter((p) => p.kind === "modified").map((p) => p.path);
   if (tracked.length > 0) {
     const diff = git3(root, ["diff", "--binary", "HEAD", "--", ...tracked]);
-    writeFileSync5(join8(backupRoot, "restore.patch"), diff.stdout);
+    writeFileSync5(join6(backupRoot, "restore.patch"), diff.stdout);
   }
   for (const { path, kind } of planned) {
-    mkdirSync6(dirname7(join8(backupRoot, "files", path)), { recursive: true });
+    mkdirSync5(dirname5(join6(backupRoot, "files", path)), { recursive: true });
     if (kind === "modified")
-      copyFileSync2(join8(root, path), join8(backupRoot, "files", path));
+      copyFileSync2(join6(root, path), join6(backupRoot, "files", path));
   }
   const restore = { at: now, backup, paths: planned };
-  writeFileSync5(join8(backupRoot, "restore.json"), `${JSON.stringify({
+  writeFileSync5(join6(backupRoot, "restore.json"), `${JSON.stringify({
     ...restore,
     undo: "copy each file under files/ back to the same repository path"
   }, null, 2)}
 `);
   for (const { path, kind } of planned) {
     if (kind === "untracked") {
-      renameSync4(join8(root, path), join8(backupRoot, "files", path));
+      renameSync4(join6(root, path), join6(backupRoot, "files", path));
       continue;
     }
     const restored = git3(root, ["restore", "--source=HEAD", "--worktree", "--", path]);
@@ -8862,14 +8024,14 @@ function readActiveClaimTaskId(root) {
   return workspace.state.current_working || (claim?.lifecycle_status === "active" ? claim.task_id : null);
 }
 function findResumableBatchSlugForTask(root, taskId) {
-  const batchesDir = join9(root, ".imm", "state", "batches");
+  const batchesDir = join7(root, ".imm", "state", "batches");
   if (!existsSync7(batchesDir))
     return null;
-  for (const file of readdirSync4(batchesDir)) {
+  for (const file of readdirSync3(batchesDir)) {
     if (!file.endsWith(".json"))
       continue;
     try {
-      const record = JSON.parse(readFileSync10(join9(batchesDir, file), "utf8"));
+      const record = JSON.parse(readFileSync10(join7(batchesDir, file), "utf8"));
       if (record?.contract !== "assurance_kernel/batch_run_state/v1" && record?.contract !== "assurance_kernel/batch_run_state/v2")
         continue;
       if (record.batch_state !== "running" && record.batch_state !== "needs_human")
@@ -8883,15 +8045,15 @@ function findResumableBatchSlugForTask(root, taskId) {
   return null;
 }
 function findExistingActiveBatch(root, initiativeSlug) {
-  const batchesDir = join9(root, ".imm", "state", "batches");
+  const batchesDir = join7(root, ".imm", "state", "batches");
   if (!existsSync7(batchesDir))
     return null;
-  for (const file of readdirSync4(batchesDir)) {
+  for (const file of readdirSync3(batchesDir)) {
     if (!file.endsWith(".json"))
       continue;
     let record;
     try {
-      record = JSON.parse(readFileSync10(join9(batchesDir, file), "utf8"));
+      record = JSON.parse(readFileSync10(join7(batchesDir, file), "utf8"));
     } catch {
       return { corrupt: true, path: file };
     }
@@ -8916,16 +8078,16 @@ function findExistingActiveBatch(root, initiativeSlug) {
   return null;
 }
 function findSettledBatchRecord(root, initiativeSlug) {
-  const batchesDir = join9(root, ".imm", "state", "batches");
+  const batchesDir = join7(root, ".imm", "state", "batches");
   if (!existsSync7(batchesDir))
     return null;
   let newest = null;
-  for (const file of readdirSync4(batchesDir).sort()) {
+  for (const file of readdirSync3(batchesDir).sort()) {
     if (!file.endsWith(".json"))
       continue;
     let record;
     try {
-      record = JSON.parse(readFileSync10(join9(batchesDir, file), "utf8"));
+      record = JSON.parse(readFileSync10(join7(batchesDir, file), "utf8"));
     } catch {
       continue;
     }
@@ -8947,7 +8109,7 @@ function findSettledBatchRecord(root, initiativeSlug) {
 }
 function classifyBatchLineage(input) {
   const { root, branch, expectedHead, childCommits } = input;
-  const run = (args) => spawnSync8("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const run = (args) => spawnSync7("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   const broken = (reason) => ({
     kind: "broken",
     message: `batch_head_lineage_broken: ${reason}`
@@ -9003,7 +8165,7 @@ function isOwnBatchClaim(root, existingBatch, taskId, batchBranch) {
   const currentTaskId = workspaceOwner || (claim?.lifecycle_status === "active" ? claim?.task_id : null);
   if (currentTaskId !== taskId || !claim)
     return false;
-  const branch = spawnSync8("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" }).stdout.trim();
+  const branch = spawnSync7("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" }).stdout.trim();
   if (branch !== batchBranch)
     return false;
   const childInBatch = existingBatch.children.find((c) => c.task_id === taskId);
@@ -9058,7 +8220,7 @@ function authorizedScopeOf(root, taskId, state) {
   return scope;
 }
 function porcelainEntries(root) {
-  const statusProc = spawnSync8("git", ["-C", root, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all", "--ignore-submodules=none"], { encoding: "utf8", env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } });
+  const statusProc = spawnSync7("git", ["-C", root, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all", "--ignore-submodules=none"], { encoding: "utf8", env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } });
   if (statusProc.status !== 0)
     return null;
   const entries = [];
@@ -9203,7 +8365,7 @@ async function projectBatchPreflight(options) {
   } catch (err) {
     return reject("git_head_unreadable", err instanceof Error ? err.message : String(err));
   }
-  const branchExists = spawnSync8("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${batchBranch}`]);
+  const branchExists = spawnSync7("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${batchBranch}`]);
   if (branchExists.status === 0 && !existingBatch)
     return reject("branch_already_exists", batchBranch);
   let statusEntries = porcelainEntries(root);
@@ -9324,7 +8486,7 @@ async function authorizeBatch(options) {
     is_resuming: isResuming
   } = projection;
   const existingBatch = projection.existing_batch;
-  const branchBefore = spawnSync8("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
+  const branchBefore = spawnSync7("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
   if (branchBefore.status !== 0)
     return { outcome: "rejected", rejection: batchRejection("repository_became_unreadable") };
   const ownsUnpersistedHead = isResuming && existingBatch !== null && !isLaneBatchRecord(existingBatch) && existingBatch.plan_digest === planDigest && expectedBatchHead(existingBatch) !== baseHead && ownUnpersistedBatchHead(root, existingBatch, baseHead);
@@ -9349,7 +8511,7 @@ async function authorizeBatch(options) {
       reuseBlockers.push("batch_head_lineage_moved");
   }
   const reuseAuthorization = isResuming && reuseBlockers.length === 0;
-  const batchId = isResuming && existingBatch ? existingBatch.batch_id : `batch-${initiativeSlug}-${randomUUID5()}`;
+  const batchId = isResuming && existingBatch ? existingBatch.batch_id : `batch-${initiativeSlug}-${randomUUID4()}`;
   const facts = {
     initiative_slug: initiativeSlug,
     batch_branch: batchBranch,
@@ -9400,7 +8562,7 @@ async function authorizeBatch(options) {
     if (!current || current.corrupt || JSON.stringify(current.record) !== JSON.stringify(existingBatch))
       return { outcome: "rejected", rejection: batchRejection("plan_changed") };
   }
-  const branchAfter = spawnSync8("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
+  const branchAfter = spawnSync7("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
   if (branchAfter.status !== 0 || branchAfter.stdout !== branchBefore.stdout)
     return { outcome: "rejected", rejection: batchRejection("confirmation_failed", "Git branch moved after native confirmation") };
   if (projection.reconfirmation) {
@@ -9431,6 +8593,850 @@ async function authorizeBatch(options) {
     binding,
     ...revisionDelegation !== undefined ? { revision_delegation: revisionDelegation } : {}
   };
+}
+
+// plugins/immune-brain/runtime/claude/mcp_server.ts
+import { createInterface } from "node:readline";
+import { stdin, stdout } from "node:process";
+
+// plugins/immune-brain/runtime/claude/capability.ts
+var MIN_CLAUDE_CODE_VERSION = "2.1.236";
+var HOST_ID = "claude-code";
+var CORE_CONTRACT = "assurance_kernel/host_adapter/claude-code/v1";
+function parseSemver(value) {
+  const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(value.trim());
+  if (!match)
+    return null;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+function compareSemver(left, right) {
+  const a = parseSemver(left);
+  const b = parseSemver(right);
+  if (!a || !b)
+    throw new Error(`invalid semver: ${!a ? left : right}`);
+  return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+}
+function probeHost(env = process.env, platform = process.platform, hostVersion) {
+  const version = hostVersion ?? env.CLAUDE_CODE_VERSION ?? env.CLAUDE_CLI_VERSION;
+  if (!version)
+    return { ok: false, reason: "Claude Code version is unavailable" };
+  if (!parseSemver(version))
+    return { ok: false, reason: `Claude Code version is invalid: ${version}` };
+  if (compareSemver(version, MIN_CLAUDE_CODE_VERSION) < 0) {
+    return {
+      ok: false,
+      reason: `Claude Code ${version} is below the minimum supported ${MIN_CLAUDE_CODE_VERSION}`
+    };
+  }
+  if (platform !== "darwin" && platform !== "linux") {
+    return { ok: false, reason: `unsupported platform ${platform}; native Windows is out of scope` };
+  }
+  return { ok: true, version, platform };
+}
+
+// plugins/immune-brain/runtime/plugin_version.ts
+var PLUGIN_VERSION = "5.3.0";
+
+// plugins/immune-brain/runtime/claude/interaction.ts
+import { createHash as createHash11, randomUUID as randomUUID5 } from "node:crypto";
+
+// plugins/immune-brain/runtime/assurance/phase_entry.ts
+var RUN_ENTRY_REQUIRED = "run_entry_required";
+var PHASE_ENTRY_REQUIRED = "phase_entry_required";
+var PHASE_ENTRY_RECOVERY = {
+  [RUN_ENTRY_REQUIRED]: "ask the user to enter imm-run in the current Host",
+  [PHASE_ENTRY_REQUIRED]: "ask the user to enter the Skill themselves in the current Host"
+};
+var PACKAGED = {
+  "imm-planner": "plan",
+  "imm-brainstorm": "plan",
+  "imm-run": "run"
+};
+var ALIAS_TARGETS = { ...PACKAGED, "imm-loop": "run" };
+var PREFIXES = ["immune-brain:", "skill:"];
+var ALIAS_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+var SKILL_MENTION = /(?<![A-Za-z0-9_-])imm-(?:planner|brainstorm|run|loop)(?![A-Za-z0-9_-])/g;
+var EXPANDED = /^<command-message>[^<]*<\/command-message>\s*<command-name>\/([^\s<]+)<\/command-name>/;
+var RAW = /^\/(\S+)/;
+function stripPrefix(name) {
+  for (const prefix of PREFIXES)
+    if (name.startsWith(prefix))
+      return name.slice(prefix.length);
+  return name;
+}
+function packagedPhaseSkill(name) {
+  const trimmed = name.trim();
+  const bare = stripPrefix(trimmed.startsWith("/") ? trimmed.slice(1) : trimmed);
+  return Object.hasOwn(PACKAGED, bare) ? bare : null;
+}
+function recognizePhaseEntry(text, readAlias) {
+  const command = (RAW.exec(text) ?? EXPANDED.exec(text))?.[1];
+  if (!command)
+    return null;
+  const packaged = packagedPhaseSkill(command);
+  if (packaged)
+    return PACKAGED[packaged];
+  if (!ALIAS_NAME.test(command))
+    return null;
+  let body;
+  try {
+    body = readAlias(command);
+  } catch {
+    return null;
+  }
+  if (!body)
+    return null;
+  const targets = new Set(body.match(SKILL_MENTION) ?? []);
+  if (targets.size !== 1)
+    return null;
+  return ALIAS_TARGETS[[...targets][0]] ?? null;
+}
+var NO_PHASE_ENTRY = { run_live: false, plan_latest: false };
+function applyPrompt(state, entry) {
+  if (entry === "run")
+    return { run_live: true, plan_latest: false };
+  if (entry === "plan")
+    return { run_live: false, plan_latest: true };
+  return state;
+}
+function phaseEntryLogLine(entry) {
+  return `${JSON.stringify({ v: 1, entry })}
+`;
+}
+function reducePhaseEntryLog(text) {
+  let state = NO_PHASE_ENTRY;
+  for (const line of text.split(`
+`)) {
+    if (!line)
+      continue;
+    let record;
+    try {
+      record = JSON.parse(line);
+    } catch {
+      return null;
+    }
+    if (!record || typeof record !== "object")
+      return null;
+    const { v, entry } = record;
+    if (v !== 1 || entry !== null && entry !== "plan" && entry !== "run")
+      return null;
+    state = applyPrompt(state, entry);
+  }
+  return state;
+}
+function refuse2(reason_code, detail) {
+  return { ok: false, reason_code, detail, recovery_action: PHASE_ENTRY_RECOVERY[reason_code] };
+}
+function admitPhaseOperation(operation, state, context) {
+  if (operation.kind === "tool") {
+    if (state?.run_live)
+      return { ok: true };
+    return refuse2(RUN_ENTRY_REQUIRED, `${operation.name} needs a literal-user imm-run entry in this session`);
+  }
+  if (operation.skill !== "imm-run")
+    return { ok: true };
+  if (state?.run_live)
+    return { ok: true };
+  return refuse2(PHASE_ENTRY_REQUIRED, "imm-run is entered by the user, not by a model Skill call");
+}
+function phaseRefusalMessage(refusal) {
+  return `${refusal.reason_code}: ${refusal.detail}; recovery: ${refusal.recovery_action}`;
+}
+
+// plugins/immune-brain/runtime/claude/interaction.ts
+var PRIVILEGED_OPERATIONS = [
+  "enroll",
+  "request_authorization",
+  "approve_breaking_intent_revision",
+  "stop",
+  "start_unattended_batch",
+  "retire_stale_batch"
+];
+var RECOVERY_ACTIONS = {
+  interaction_not_opened: "retry through a fresh native gate in the current Host",
+  user_denied: "wait for a fresh literal-user request",
+  user_cancelled: "wait for a fresh literal-user request",
+  correlation_missing: "retry through a fresh native gate in the current Host",
+  unsupported_host: "upgrade to a supported Claude Code version and retry in the current Host",
+  workspace_changed: "review the current workspace and retry through a fresh native gate",
+  ...PHASE_ENTRY_RECOVERY
+};
+
+class NativeAuthorityError extends Error {
+  reasonCode;
+  recoveryAction;
+  constructor(reasonCode, detail, recoveryAction = RECOVERY_ACTIONS[reasonCode]) {
+    super(`${reasonCode}: ${detail}; recovery: ${recoveryAction}`);
+    this.reasonCode = reasonCode;
+    this.recoveryAction = recoveryAction;
+    this.name = "NativeAuthorityError";
+  }
+}
+function isPrivilegedOperation(operation) {
+  return PRIVILEGED_OPERATIONS.includes(operation);
+}
+function privilegedAnnotations() {
+  return { destructiveHint: true };
+}
+function evaluateNativeGate(input) {
+  if (!isPrivilegedOperation(input.operation))
+    return { ok: true };
+  if (!input.interactive)
+    return { ok: false, error: new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable") };
+  if (input.decision === "decline")
+    return { ok: false, error: new NativeAuthorityError("user_denied", "native interaction declined") };
+  if (input.decision === "cancel")
+    return { ok: false, error: new NativeAuthorityError("user_cancelled", "native interaction cancelled") };
+  if (input.decision !== "accept")
+    return { ok: false, error: new NativeAuthorityError("interaction_not_opened", "native interaction returned no decision") };
+  return { ok: true };
+}
+function confirmationRef(input) {
+  return `claude-confirm-${createHash11("sha256").update(`${input.connectionId}\x00${input.toolCallId}\x00${input.requestId}\x00${input.operation}\x00${input.taskId ?? ""}\x00${input.initiativeSlug ?? ""}\x00${input.intentRevision ?? ""}\x00${input.intentContentHash ?? ""}\x00${input.bindingDigest ?? ""}\x00${input.planDigest ?? ""}`).digest("hex").slice(0, 16)}`;
+}
+function enrollmentNonce() {
+  return randomUUID5();
+}
+
+// plugins/immune-brain/runtime/claude/review_host.ts
+import { createHash as createHash12 } from "node:crypto";
+import { constants as constants4, fstatSync as fstatSync4, lstatSync as lstatSync10, mkdirSync as mkdirSync6, openSync as openSync6, readdirSync as readdirSync4, readSync, realpathSync as realpathSync7, rmSync as rmSync4, writeSync, closeSync as closeSync6 } from "node:fs";
+import { dirname as dirname6, join as join8 } from "node:path";
+import { tmpdir } from "node:os";
+var REVIEWER_AGENT = "immune-brain-reviewer";
+var CLAUDE_REVIEWER_AGENT = "immune-brain:immune-brain-reviewer";
+var AGENT_TOOL = "Agent";
+
+class MemoryHookEventLog {
+  events = [];
+  append(event) {
+    this.events.push(event);
+    return true;
+  }
+  list(sessionId) {
+    return sessionId ? this.events.filter((event) => event.sessionId === sessionId) : [...this.events];
+  }
+  sessions() {
+    return [...new Set(this.events.map((event) => event.sessionId))];
+  }
+  clear(sessionId) {
+    if (!sessionId) {
+      this.events.length = 0;
+      return;
+    }
+    for (let i = this.events.length - 1;i >= 0; i--) {
+      if (this.events[i].sessionId === sessionId)
+        this.events.splice(i, 1);
+    }
+  }
+}
+var CACHE_DIR = "immune-brain-claude";
+function sessionHash(sessionId) {
+  return createHash12("sha256").update(sessionId).digest("hex");
+}
+function cacheDir(root) {
+  return join8(root, CACHE_DIR);
+}
+function ownedByUs(stat) {
+  if (stat.isSymbolicLink())
+    return false;
+  const uid = process.getuid?.();
+  return uid === undefined || stat.uid === uid;
+}
+function ensurePrivateDir(dir) {
+  try {
+    const existing = lstatSync10(dir);
+    return existing.isDirectory() && ownedByUs(existing) && (existing.mode & 511) === 448;
+  } catch (error) {
+    if (error.code !== "ENOENT")
+      return false;
+  }
+  try {
+    mkdirSync6(dir, { mode: 448 });
+  } catch {
+    return false;
+  }
+  try {
+    const created = lstatSync10(dir);
+    return created.isDirectory() && ownedByUs(created) && (created.mode & 511) === 448;
+  } catch {
+    return false;
+  }
+}
+function appendPrivate(path, dir, line) {
+  if (!ensurePrivateDir(dir))
+    return false;
+  const flags = constants4.O_WRONLY | constants4.O_CREAT | constants4.O_APPEND | constants4.O_NOFOLLOW | constants4.O_NONBLOCK;
+  let fd;
+  try {
+    fd = openSync6(path, flags, 384);
+  } catch {
+    return false;
+  }
+  try {
+    const stat = fstatSync4(fd);
+    if (!stat.isFile() || !ownedByUs(stat) || (stat.mode & 511) !== 384)
+      return false;
+    return writeSync(fd, line) === Buffer.byteLength(line);
+  } catch {
+    return false;
+  } finally {
+    closeSync6(fd);
+  }
+}
+function readPrivate(path, maxBytes = Number.POSITIVE_INFINITY) {
+  let fd;
+  try {
+    fd = openSync6(path, constants4.O_RDONLY | constants4.O_NOFOLLOW | constants4.O_NONBLOCK);
+  } catch {
+    return;
+  }
+  try {
+    const stat = fstatSync4(fd);
+    if (!stat.isFile() || !ownedByUs(stat) || (stat.mode & 511) !== 384)
+      return;
+    if (stat.size > maxBytes)
+      return;
+    const buf = Buffer.alloc(stat.size);
+    readSync(fd, buf, 0, stat.size, 0);
+    return buf.toString("utf8");
+  } finally {
+    closeSync6(fd);
+  }
+}
+var MAX_TRANSCRIPT_BYTES = 32 * 1024 * 1024;
+function parseAsyncAgentLaunch(result) {
+  let payload;
+  try {
+    payload = JSON.parse(result);
+  } catch {
+    return null;
+  }
+  if (!payload || typeof payload !== "object")
+    return null;
+  const obj = payload;
+  if (obj.isAsync !== true && obj.status !== "async_launched")
+    return null;
+  const agentId = typeof obj.agentId === "string" ? obj.agentId : "";
+  const outputFile = typeof obj.outputFile === "string" ? obj.outputFile : "";
+  if (!agentId || !outputFile)
+    return null;
+  return { agentId, outputFile };
+}
+var HANDBACK_TOOL = "SubagentHandback";
+function readAgentTranscriptResult(transcript, agentId) {
+  let last = null;
+  for (const line of transcript.split(`
+`)) {
+    if (!line.trim())
+      continue;
+    let row;
+    try {
+      row = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (row.type !== "assistant" || row.agentId !== agentId)
+      continue;
+    const message = row.message;
+    if (!message || typeof message !== "object")
+      continue;
+    const content = message.content;
+    if (!Array.isArray(content))
+      continue;
+    let text = "";
+    for (const block of content) {
+      if (!block || typeof block !== "object")
+        continue;
+      const part = block;
+      if (part.type === "text" && typeof part.text === "string")
+        text += part.text;
+      if (part.type === "tool_use" && part.name === HANDBACK_TOOL && part.input && typeof part.input === "object") {
+        const report = part.input.message;
+        if (typeof report === "string" && report.trim()) {
+          last = report;
+          text = "";
+        }
+      }
+    }
+    if (text.trim())
+      last = text;
+  }
+  return last;
+}
+function readAgentTranscript(path) {
+  let resolved;
+  try {
+    resolved = realpathSync7(path);
+  } catch {
+    return;
+  }
+  return readPrivate(resolved, MAX_TRANSCRIPT_BYTES);
+}
+function hookEventPath(sessionId, root = tmpdir()) {
+  return join8(cacheDir(root), `${sessionHash(sessionId)}.jsonl`);
+}
+
+class FileHookEventLog {
+  root;
+  constructor(root = tmpdir()) {
+    this.root = root;
+  }
+  append(event) {
+    const path = hookEventPath(event.sessionId, this.root);
+    return appendPrivate(path, dirname6(path), `${JSON.stringify(event)}
+`);
+  }
+  list(sessionId) {
+    if (sessionId)
+      return this.readSession(sessionId);
+    const dir = cacheDir(this.root);
+    if (!ensurePrivateDir(dir))
+      return [];
+    try {
+      return readdirSync4(dir).filter((name) => name.endsWith(".jsonl")).flatMap((name) => this.readFile(join8(dir, name)));
+    } catch {
+      return [];
+    }
+  }
+  sessions() {
+    const ids = new Set;
+    for (const event of this.list())
+      if (event.sessionId)
+        ids.add(event.sessionId);
+    return [...ids];
+  }
+  readFile(path) {
+    const text = readPrivate(path);
+    if (!text)
+      return [];
+    try {
+      return text.split(`
+`).filter(Boolean).map((line) => JSON.parse(line));
+    } catch {
+      return [];
+    }
+  }
+  readSession(sessionId) {
+    if (!ensurePrivateDir(cacheDir(this.root)))
+      return [];
+    return this.readFile(hookEventPath(sessionId, this.root));
+  }
+  clear(sessionId) {
+    if (!sessionId || !ensurePrivateDir(cacheDir(this.root)))
+      return;
+    const path = hookEventPath(sessionId, this.root);
+    try {
+      const stat = lstatSync10(path);
+      if (!ownedByUs(stat) || stat.isSymbolicLink() || !stat.isFile() || (stat.mode & 511) !== 384)
+        return;
+      rmSync4(path, { force: true });
+    } catch {}
+  }
+}
+function reservedDispatchPrompt(request) {
+  return `<!-- immune-brain:operation_id=${request.operationId} task_id=${request.taskId} -->
+${request.snapshotPrompt}`;
+}
+function bindsPrompt(prompt, pending) {
+  return prompt === undefined || prompt === pending.dispatchPrompt;
+}
+function bindsStart(event, pending) {
+  if (event.taskId && event.taskId !== pending.request.taskId)
+    return false;
+  if (!bindsPrompt(event.prompt, pending))
+    return false;
+  if (event.operationId)
+    return event.operationId === pending.request.operationId;
+  return event.prompt !== undefined;
+}
+
+class ClaudeReviewHost {
+  log;
+  host = "claude-code";
+  pending = new Map;
+  appliedBySession = new Map;
+  constructor(log = new MemoryHookEventLog) {
+    this.log = log;
+  }
+  prepareReview(request) {
+    this.drain();
+    const initialCursors = new Map;
+    const sessionCursors = new Map;
+    for (const sessionId of this.log.sessions()) {
+      const len = this.log.list(sessionId).length;
+      initialCursors.set(sessionId, len);
+      sessionCursors.set(sessionId, len);
+    }
+    this.pending.set(request.operationId, {
+      request,
+      dispatchPrompt: reservedDispatchPrompt(request),
+      initialCursors,
+      sessionCursors,
+      consumed: false
+    });
+    return {
+      id: request.operationId,
+      dispatch: {
+        name: CLAUDE_REVIEWER_AGENT,
+        prompt: reservedDispatchPrompt(request)
+      }
+    };
+  }
+  observe(event) {
+    this.log.append(event);
+  }
+  drain() {
+    for (const sessionId of this.log.sessions()) {
+      const events = this.log.list(sessionId);
+      let start = this.appliedBySession.get(sessionId) ?? 0;
+      if (start > events.length)
+        start = 0;
+      let ended = false;
+      for (let i = start;i < events.length; i++) {
+        const event = events[i];
+        if (event.type === "SessionEnd") {
+          for (const [id, state] of this.pending) {
+            if (state.startEvent?.sessionId === event.sessionId || state.postEvent?.sessionId === event.sessionId || state.stopEvent?.sessionId === event.sessionId) {
+              this.pending.delete(id);
+            }
+          }
+          for (const state of this.pending.values()) {
+            const current = state.initialCursors.get(sessionId) ?? 0;
+            if (i + 1 > current)
+              state.initialCursors.set(sessionId, i + 1);
+          }
+          if (i === events.length - 1) {
+            this.log.clear(event.sessionId);
+            ended = true;
+            this.appliedBySession.delete(event.sessionId);
+            break;
+          }
+          continue;
+        }
+        for (const state of this.pending.values()) {
+          if (state.consumed || state.error || i < (state.initialCursors.get(sessionId) ?? 0))
+            continue;
+          this.applyReviewEvent(event, state);
+        }
+      }
+      if (ended) {
+        this.appliedBySession.delete(sessionId);
+        for (const state of this.pending.values())
+          state.sessionCursors.delete(sessionId);
+      } else {
+        this.appliedBySession.set(sessionId, events.length);
+        for (const state of this.pending.values())
+          state.sessionCursors.set(sessionId, events.length);
+        for (const state of this.pending.values()) {
+          if (state.consumed || state.error || !state.postEvent || state.postEvent.sessionId !== sessionId)
+            continue;
+          if (!state.startEvent || !state.stopEvent) {
+            const from = state.initialCursors.get(sessionId) ?? 0;
+            for (let j = from;j < events.length; j++) {
+              this.applyReviewEvent(events[j], state);
+              if (state.error)
+                break;
+            }
+          }
+        }
+      }
+    }
+  }
+  applyReviewEvent(event, state) {
+    if (state.error)
+      return;
+    if (event.type === "SubagentStart") {
+      if (event.agent !== REVIEWER_AGENT && event.agent !== CLAUDE_REVIEWER_AGENT)
+        return;
+      if (event.operationId || event.prompt !== undefined) {
+        if (!bindsStart(event, state))
+          return;
+      }
+      if (state.postEvent) {
+        if (event.sessionId !== state.postEvent.sessionId || event.agentId !== state.postEvent.agentId)
+          return;
+      }
+      if (state.stopEvent) {
+        if (event.sessionId !== state.stopEvent.sessionId || event.agentId !== state.stopEvent.agentId)
+          return;
+      }
+      if (!event.operationId && event.prompt === undefined && !state.postEvent && !state.stopEvent) {
+        return;
+      }
+      if (state.startEvent) {
+        if (state.startEvent === event)
+          return;
+        state.error = "reserved Review already has a native tool call";
+        return;
+      }
+      state.startEvent = event;
+      return;
+    }
+    if (event.type === "PostToolUse") {
+      if (event.toolName !== AGENT_TOOL)
+        return;
+      if (!event.agentId || !event.operationId || event.operationId !== state.request.operationId)
+        return;
+      if ("taskId" in event && event.taskId && event.taskId !== state.request.taskId)
+        return;
+      if (!bindsPrompt(event.prompt, state))
+        return;
+      if (state.startEvent && event.sessionId !== state.startEvent.sessionId)
+        return;
+      if (state.startEvent && event.agentId !== state.startEvent.agentId)
+        return;
+      if (state.stopEvent && event.sessionId !== state.stopEvent.sessionId)
+        return;
+      if (state.stopEvent && event.agentId !== state.stopEvent.agentId)
+        return;
+      if (state.postEvent !== undefined) {
+        if (state.postEvent === event)
+          return;
+        state.error = "duplicate PostToolUse result observed for review reservation";
+        return;
+      }
+      state.postEvent = event;
+      return;
+    }
+    if (event.type === "SubagentStop") {
+      if (event.agent !== REVIEWER_AGENT && event.agent !== CLAUDE_REVIEWER_AGENT)
+        return;
+      if (!event.agentId)
+        return;
+      if ("operationId" in event && event.operationId && event.operationId !== state.request.operationId)
+        return;
+      if ("taskId" in event && event.taskId && event.taskId !== state.request.taskId)
+        return;
+      if (state.startEvent && (event.sessionId !== state.startEvent.sessionId || event.agentId !== state.startEvent.agentId))
+        return;
+      if (state.postEvent && (event.sessionId !== state.postEvent.sessionId || event.agentId !== state.postEvent.agentId))
+        return;
+      if (!event.operationId && !state.startEvent && !state.postEvent) {
+        return;
+      }
+      if (state.stopEvent) {
+        if (state.stopEvent === event)
+          return;
+        state.error = "duplicate SubagentStop observed for review reservation: a reviewer was continued after it finished; a reviewer cannot be continued and a fresh reviewer must be dispatched";
+        return;
+      }
+      state.stopEvent = event;
+    }
+  }
+  inspectReview(reservation) {
+    this.drain();
+    const state = this.pending.get(reservation.id);
+    if (!state)
+      return { ok: false, reason: "reserved foreground Agent was not observed", release: false };
+    if (state.consumed)
+      return { ok: false, reason: "review receipt already consumed", release: true };
+    if (state.error)
+      return { ok: false, reason: state.error, release: true };
+    if (!state.startEvent)
+      return { ok: false, reason: "reserved foreground Agent was not observed", release: false };
+    if (!state.stopEvent || !state.postEvent?.result?.trim()) {
+      return { ok: false, reason: "foreground Agent terminal event order is incomplete", release: false };
+    }
+    if (state.startEvent.sessionId !== state.postEvent.sessionId || state.startEvent.sessionId !== state.stopEvent.sessionId || state.startEvent.agentId !== state.postEvent.agentId || state.startEvent.agentId !== state.stopEvent.agentId) {
+      return { ok: false, reason: "foreground Agent terminal event correlation mismatch", release: true };
+    }
+    const actorId = `claude:${state.startEvent.agentId ?? reservation.id}`;
+    const launch = parseAsyncAgentLaunch(state.postEvent.result);
+    if (!launch) {
+      return { ok: true, receipt: { actorId, result: state.postEvent.result } };
+    }
+    if (launch.agentId !== state.postEvent.agentId) {
+      return { ok: false, reason: "async Agent launch envelope names a different agent", release: true };
+    }
+    const transcript = readAgentTranscript(launch.outputFile);
+    if (transcript === undefined) {
+      return { ok: false, reason: "async Agent transcript is not readable", release: false };
+    }
+    const verdict = readAgentTranscriptResult(transcript, launch.agentId);
+    if (!verdict?.trim()) {
+      return { ok: false, reason: "async Agent transcript carries no reviewer result", release: false };
+    }
+    return { ok: true, receipt: { actorId, result: verdict } };
+  }
+  consumeReview(reservation) {
+    const result = this.inspectReview(reservation);
+    if (result.ok) {
+      const pending = this.pending.get(reservation.id);
+      if (pending)
+        pending.consumed = true;
+    }
+    return result;
+  }
+  inspectReviewForTask(taskId) {
+    this.drain();
+    const entry = [...this.pending.entries()].find(([, state]) => state.request.taskId === taskId);
+    if (!entry)
+      return { ok: false, reason: "reserved foreground Agent was not observed", release: false };
+    return this.inspectReview({ id: entry[0], dispatch: entry[1].request });
+  }
+  releaseReview(reservation) {
+    this.pending.delete(reservation.id);
+  }
+}
+function parseHookStdin(raw) {
+  let payload;
+  try {
+    payload = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  const hookType = String(payload.hook_event_name ?? payload.type ?? "");
+  const sessionId = String(payload.session_id ?? payload.sessionId ?? process.env.CLAUDE_SESSION_ID ?? "");
+  if (!sessionId)
+    return null;
+  const agent = String(payload.agent_type ?? payload.agent ?? payload.subagent_type ?? "");
+  const agentId = String(payload.agent_id ?? payload.agentId ?? "");
+  const taskId = typeof payload.task_id === "string" ? payload.task_id : undefined;
+  const operationId = typeof payload.operation_id === "string" ? payload.operation_id : undefined;
+  let prompt = typeof payload.prompt === "string" ? payload.prompt : undefined;
+  if (!prompt && typeof payload.input === "object" && payload.input !== null) {
+    const inputObj = payload.input;
+    if (typeof inputObj.prompt === "string")
+      prompt = inputObj.prompt;
+  }
+  if (!prompt && typeof payload.tool_input === "object" && payload.tool_input !== null) {
+    const toolInputObj = payload.tool_input;
+    if (typeof toolInputObj.prompt === "string")
+      prompt = toolInputObj.prompt;
+  }
+  if (!prompt && typeof payload.tool_response === "object" && payload.tool_response !== null) {
+    const toolResponseObj = payload.tool_response;
+    if (typeof toolResponseObj.prompt === "string")
+      prompt = toolResponseObj.prompt;
+  }
+  let extractedOpId = operationId;
+  let extractedTaskId = taskId;
+  for (const candidate of [payload.input, payload.tool_input, payload.tool_response, payload.toolResponse, payload.response, payload.result]) {
+    if (candidate && typeof candidate === "object" && candidate !== null) {
+      const obj = candidate;
+      const nestedOp = typeof obj.operation_id === "string" ? obj.operation_id : typeof obj.operationId === "string" ? obj.operationId : undefined;
+      const nestedTask = typeof obj.task_id === "string" ? obj.task_id : typeof obj.taskId === "string" ? obj.taskId : undefined;
+      if (nestedOp) {
+        if (extractedOpId && extractedOpId !== nestedOp)
+          return null;
+        extractedOpId = nestedOp;
+      }
+      if (nestedTask) {
+        if (extractedTaskId && extractedTaskId !== nestedTask)
+          return null;
+        extractedTaskId = nestedTask;
+      }
+    }
+  }
+  if (prompt) {
+    const match = /<!-- immune-brain:operation_id=([^\s]+)\s+task_id=([^\s]+)\s+-->/.exec(prompt);
+    if (match) {
+      if (extractedOpId && extractedOpId !== match[1])
+        return null;
+      if (extractedTaskId && extractedTaskId !== match[2])
+        return null;
+      extractedOpId = match[1];
+      extractedTaskId = match[2];
+    }
+  }
+  if (hookType === "SubagentStart" || hookType === "SubagentStop") {
+    return {
+      type: hookType,
+      sessionId,
+      agent,
+      agentId,
+      taskId: extractedTaskId,
+      operationId: extractedOpId,
+      ...hookType === "SubagentStart" ? { prompt } : {}
+    };
+  }
+  if (hookType === "PostToolUse") {
+    const toolName = String(payload.tool_name ?? payload.toolName ?? payload.tool ?? "");
+    const response = payload.tool_response ?? payload.toolResponse ?? payload.response ?? payload.result;
+    let result = typeof response === "string" ? response : JSON.stringify(response ?? "");
+    let extractedAgentId = agentId;
+    if (response && typeof response === "object" && response !== null) {
+      const respObj = response;
+      if (typeof respObj.agentId === "string" && respObj.agentId) {
+        if (extractedAgentId && extractedAgentId !== respObj.agentId)
+          return null;
+        extractedAgentId = respObj.agentId;
+      }
+      if (Array.isArray(respObj.content)) {
+        const textItem = respObj.content.find((c) => typeof c === "object" && c !== null && c.type === "text");
+        if (textItem && typeof textItem.text === "string") {
+          result = textItem.text;
+        }
+      }
+    }
+    return {
+      type: "PostToolUse",
+      sessionId,
+      agentId: extractedAgentId,
+      toolName,
+      result,
+      taskId: extractedTaskId,
+      operationId: extractedOpId,
+      prompt
+    };
+  }
+  if (hookType === "SessionEnd")
+    return { type: "SessionEnd", sessionId };
+  return null;
+}
+
+// plugins/immune-brain/runtime/claude/lane_guard.ts
+import { lstatSync as lstatSync11, rmSync as rmSync5 } from "node:fs";
+import { homedir, tmpdir as tmpdir2 } from "node:os";
+import { join as join11 } from "node:path";
+
+// plugins/immune-brain/runtime/unattended/lane_workspace.ts
+import { spawnSync as spawnSync8 } from "node:child_process";
+import { realpathSync as realpathSync8 } from "node:fs";
+import { basename as basename2, dirname as dirname7, isAbsolute as isAbsolute3, join as join9, relative as relative4, resolve as resolve10, sep as sep5 } from "node:path";
+var LANE_BRANCH = /^imm-lane\/[^/]+\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})$/;
+function laneTaskOfWorkspace(root) {
+  const branch = spawnSync8("git", ["-C", root, "symbolic-ref", "--quiet", "--short", "HEAD"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+  if (branch.status !== 0)
+    return null;
+  return LANE_BRANCH.exec((branch.stdout ?? "").trim())?.[1] ?? null;
+}
+function isLaneWorkspaceForTask(root, taskId) {
+  return laneTaskOfWorkspace(root) === taskId;
+}
+function realpathOfNearest(path) {
+  let current = path;
+  const suffix = [];
+  for (;; ) {
+    try {
+      return join9(realpathSync8(current), ...suffix.reverse());
+    } catch {
+      const parent = dirname7(current);
+      if (parent === current)
+        return path;
+      suffix.push(basename2(current));
+      current = parent;
+    }
+  }
+}
+function laneWriteRefusal(cwd, target) {
+  if (typeof target !== "string" || !target)
+    return null;
+  if (laneTaskOfWorkspace(cwd) === null)
+    return null;
+  const top = spawnSync8("git", ["-C", cwd, "rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  if (top.status !== 0)
+    return null;
+  const laneRoot = realpathOfNearest((top.stdout ?? "").trim());
+  const resolved = realpathOfNearest(isAbsolute3(target) ? target : resolve10(cwd, target));
+  const inside = relative4(laneRoot, resolved);
+  if (inside === "" || inside !== ".." && !inside.startsWith(`..${sep5}`) && !isAbsolute3(inside))
+    return null;
+  return `Lane write refused: ${resolved} is outside this Lane. In a batch Lane every edit and write stays under ${laneRoot}; use the same repository-relative path inside the Lane.`;
 }
 
 // plugins/immune-brain/runtime/assurance/active_task_notice.ts
@@ -17838,6 +17844,18 @@ async function runHook() {
   const event = parseHookStdin(raw);
   if (!event)
     return;
+  const cwd = typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
+  if (!readActiveClaimTaskId(cwd)) {
+    const batchesDir = join24(cwd, ".imm", "state", "batches");
+    const activeBatch = existsSync15(batchesDir) && readdirSync7(batchesDir).some((file) => {
+      if (!file.endsWith(".json") || file.endsWith(".report.json"))
+        return false;
+      const batch = readAnyBatchRunState(cwd, file.slice(0, -5));
+      return batch !== null && !isTerminalBatchState(batch.batch_state);
+    });
+    if (!activeBatch)
+      return;
+  }
   new FileHookEventLog().append(event);
 }
 var entry = process.argv[1] ?? "";

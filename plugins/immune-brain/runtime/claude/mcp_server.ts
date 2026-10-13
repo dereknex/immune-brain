@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import { readActiveClaimTaskId } from "../unattended/batch_preflight";
+import { isTerminalBatchState, readAnyBatchRunState } from "../unattended/batch_state";
 import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
 import type { Readable, Writable } from "node:stream";
@@ -766,6 +770,16 @@ async function runHook(): Promise<void> {
 	}
 	const event = parseHookStdin(raw);
 	if (!event) return;
+	const cwd = typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
+	if (!readActiveClaimTaskId(cwd)) {
+		const batchesDir = join(cwd, ".imm", "state", "batches");
+		const activeBatch = existsSync(batchesDir) && readdirSync(batchesDir).some((file) => {
+			if (!file.endsWith(".json") || file.endsWith(".report.json")) return false;
+			const batch = readAnyBatchRunState(cwd, file.slice(0, -5));
+			return batch !== null && !isTerminalBatchState(batch.batch_state);
+		});
+		if (!activeBatch) return;
+	}
 	new FileHookEventLog().append(event);
 }
 
