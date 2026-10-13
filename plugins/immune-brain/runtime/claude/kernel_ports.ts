@@ -54,7 +54,7 @@ import { runGithubTrackerOperation } from "../github_issue_tracker";
 import { readTaskTombstone } from "../kernel/backend_claim";
 import {
 	authorizeBatch,
-	projectBatchPreflight,
+	prepareBatchPreflight,
 	findResumableBatchSlugForTask,
 } from "../unattended/batch_preflight";
 import {
@@ -784,6 +784,22 @@ export class ClaudeRuntime {
 		meta: ToolMeta,
 		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest; lane_revision?: LaneRevisionRequest } = {},
 	): Promise<ClaudeBatchStartResult> {
+		let commit: string | undefined;
+		try {
+			const result = await this.startPreparedBatch(initiativeSlug, meta, options, (value) => { commit = value; });
+			if (commit && "reason" in result) result.reason += `; batch precondition commit ${commit} remains`;
+			return result;
+		} catch (error) {
+			if (commit && error instanceof Error) error.message += `; batch precondition commit ${commit} remains`;
+			throw error;
+		}
+	}
+
+	private async startPreparedBatch(
+		initiativeSlug: string, meta: ToolMeta,
+		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest; lane_revision?: LaneRevisionRequest },
+		onCommit: (commit: string | undefined) => void,
+	): Promise<ClaudeBatchStartResult> {
 		throwIfCancelled(meta.signal);
 		const reuseOnly = options.reuseOnly === true;
 		const probe = probeHost(this.env, process.platform, this.hostVersion);
@@ -801,12 +817,14 @@ export class ClaudeRuntime {
 		// recovery children, plan digest, and base HEAD are one shared projection,
 		// so neither Host re-implements a batch decision.
 		let now = new Date().toISOString();
-		const preflight = await projectBatchPreflight({
+		const preflight = await prepareBatchPreflight({
 			root: this.cwd,
 			initiative_slug: initiativeSlug,
 			now,
 			readInitiative: this.readInitiative ?? observeInitiative,
+			signal: meta.signal, reuseOnly,
 		});
+		onCommit(preflight.precondition_commit);
 		if (!preflight.ok) {
 			return {
 				state: preflight.state,

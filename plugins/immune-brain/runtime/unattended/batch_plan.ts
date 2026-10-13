@@ -5,6 +5,7 @@ import { hasLocalInitiative, observeLocalInitiative } from "../local_initiative"
 import { readTaskTombstone } from "../kernel/backend_claim";
 import {
 	observeTaskIntent,
+	observeEnrollmentTaskIntent,
 	TaskIntentObservationError,
 } from "../kernel/intent";
 import { readTaskRecordRaw } from "../kernel/storage";
@@ -155,6 +156,7 @@ export async function projectBatchPlan(
 	initiativeSlug: string,
 	input: ProjectBatchPlanInput,
 	readInitiative: InitiativeObservationReader = observeInitiative,
+	preparing = false,
 ): Promise<BatchPlan> {
 	if (!ID_PATTERN.test(initiativeSlug)) throw new Error("initiative_slug is invalid");
 	if (!input || typeof input !== "object") throw new Error("batch plan input is required");
@@ -180,7 +182,9 @@ export async function projectBatchPlan(
 		}
 		const intentPath = `docs/plans/${task.task_id}.intent.json`;
 		try {
-			const read = observeTaskIntent(root, task.task_id, intentPath);
+			const read = preparing
+				? observeEnrollmentTaskIntent(root, task.task_id)
+				: observeTaskIntent(root, task.task_id, intentPath);
 			if (read.intent.risk === "critical") {
 				children.push({
 					...child,

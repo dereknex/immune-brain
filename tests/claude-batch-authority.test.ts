@@ -453,6 +453,101 @@ for (const host of ["Pi", "Claude"] as const) {
 	});
 }
 
+describe("S3 batch precondition commits", () => {
+	for (const host of ["claude", "pi"] as const) {
+		for (const scenario of ["clean", "decline", "cancel", "hook-refusal"] as const) it(`${host}: ${scenario} preserves the batch authority boundary`, async () => {
+			const slug = `s3-${host}-${scenario}`;
+			const fixture = createBatchFixture(slug);
+			const git = (...args: string[]) => execFileSync("git", args, { cwd: fixture.root, encoding: "utf8" });
+			try {
+				const before = git("rev-parse", "HEAD").trim();
+				if (scenario !== "clean") { mkdirSync(join(fixture.root, "docs/specs"), { recursive: true }); writeFileSync(join(fixture.root, "docs/specs/draft.md"), "draft"); }
+				if (scenario === "hook-refusal") {
+					git("config", "core.hooksPath", ".git/hooks");
+					const hook = join(fixture.root, ".git/hooks/pre-commit"); writeFileSync(hook, "#!/bin/sh\nexit 1\n");
+					execFileSync("chmod", ["+x", hook]);
+				}
+				let gates = 0;
+				const decision = scenario === "clean" ? "accept" : scenario === "cancel" ? "cancel" : "decline";
+				const client = createMcpRuntimeOnce({ ...withRunEntry(), cwd: fixture.root, env: ENV, interactive: true,
+					readInitiative: async () => fixture.observation,
+					requestConfirmation: async () => { gates++; return { decision, requestId: "s3-boundary" }; },
+				});
+				client.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
+				const result: any = host === "claude" ? await client.callTool("start_unattended_batch", { initiative_slug: slug })
+					: await executePiBatchOnce({ root: fixture.root, initiativeSlug: slug, readInitiative: async () => fixture.observation,
+						confirmBatch: async () => { gates++; return decision; } });
+				const after = git("rev-parse", "HEAD").trim();
+				if (scenario === "clean") { expect(result.state).toBe("started"); expect(after).toBe(before); }
+				else {
+					expect(result.state).toBe(scenario === "cancel" ? "cancelled" : "rejected");
+					expect(existsSync(join(fixture.root, ".imm/state/batches"))).toBe(false);
+					if (scenario === "hook-refusal") {
+						expect(gates).toBe(0); expect(after).toBe(before);
+						expect(result.reason).toContain("batch precondition commit failed");
+						expect(result.recovery_action).toBe("repair the reported Git precondition failure and retry the batch in the current Host");
+						expect(result.recovery_action).not.toMatch(/commit working changes|manual.*commit/i);
+					}
+					else { expect(gates).toBe(1); expect(after).not.toBe(before); expect(result.reason).toContain(after); }
+				}
+			} finally { rmSync(fixture.root, { recursive: true, force: true }); }
+		});
+		for (const tracking of ["tracked", "all-untracked", "mixed"] as const) it(`${host}: commits ${tracking} workflow/scope dirt before binding`, async () => {
+			const slug = `s3-${host}-${tracking}`;
+			const fixture = createBatchFixture(slug);
+			const git = (...args: string[]) => execFileSync("git", args, { cwd: fixture.root, encoding: "utf8" });
+			try {
+				const intentPath = `docs/plans/${slug}-c1.intent.json`;
+				const intent = JSON.parse(readFileSync(join(fixture.root, intentPath), "utf8"));
+				intent.scope_hint.push("src/");
+				writeFileSync(join(fixture.root, intentPath), `${JSON.stringify(intent, null, 2)}\n`);
+				const secondPath = `docs/plans/${slug}-c2.intent.json`;
+				const second = JSON.parse(readFileSync(join(fixture.root, secondPath), "utf8"));
+				second.scope_hint.push("lib/");
+				writeFileSync(join(fixture.root, secondPath), `${JSON.stringify(second, null, 2)}\n`);
+				writeFileSync(join(fixture.root, "outside.txt"), "base");
+				git("add", intentPath, secondPath, "outside.txt"); git("commit", "-qm", "fixture scope");
+				const untrackedIntents = tracking === "all-untracked" ? [intentPath, secondPath] : tracking === "mixed" ? [secondPath] : [];
+				if (untrackedIntents.length) { git("rm", "--cached", ...untrackedIntents); git("commit", "-qm", "untracked fixture intents"); }
+				const before = git("rev-parse", "HEAD").trim();
+				mkdirSync(join(fixture.root, "src"));
+				mkdirSync(join(fixture.root, "lib"));
+				mkdirSync(join(fixture.root, ".imm/audit"), { recursive: true });
+				mkdirSync(join(fixture.root, "docs/specs"), { recursive: true });
+				writeFileSync(join(fixture.root, "src/task.ts"), "export const task = true;\n");
+				writeFileSync(join(fixture.root, "lib/second.ts"), "export const second = true;\n");
+				writeFileSync(join(fixture.root, ".imm/audit/precondition.txt"), "evidence");
+				writeFileSync(join(fixture.root, "docs/specs/draft.md"), "draft");
+				const indexBefore = git("ls-files", "--stage", "--", "outside.txt");
+				let gates = 0;
+				let boundHead = "";
+				const client = createMcpRuntimeOnce({ ...withRunEntry(), cwd: fixture.root, env: ENV, interactive: true,
+					readInitiative: async () => fixture.observation,
+					requestConfirmation: async () => { gates++; boundHead = git("rev-parse", "HEAD").trim(); return { decision: "accept", requestId: "s3" }; },
+				});
+				client.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
+				const start = async (): Promise<any> => host === "claude"
+					? client.callTool("start_unattended_batch", { initiative_slug: slug })
+					: executePiBatchOnce({ root: fixture.root, initiativeSlug: slug, readInitiative: async () => fixture.observation,
+						confirmBatch: async () => { gates++; boundHead = git("rev-parse", "HEAD").trim(); return "accept"; } });
+				const result = await start();
+				const after = git("rev-parse", "HEAD").trim();
+				expect(git("rev-list", "--count", `${before}..${after}`).trim()).toBe("1");
+				expect(git("show", "-s", "--format=%s", "HEAD").trim()).toBe(`chore(imm): commit batch preconditions for ${slug}`);
+				expect(git("diff", "--name-only", before, after).trim().split("\n").sort()).toEqual([".imm/audit/precondition.txt", "docs/specs/draft.md", "lib/second.ts", "src/task.ts", ...untrackedIntents].sort());
+				expect(git("ls-files", "--stage", "--", "outside.txt")).toBe(indexBefore);
+				expect(readFileSync(join(fixture.root, "outside.txt"), "utf8")).toBe("base");
+					expect(result.state).toBe("started"); expect(gates).toBe(1); expect(boundHead).toBe(after);
+					const record = JSON.parse(readFileSync(join(fixture.root, `.imm/state/batches/${result.batch_id}.json`), "utf8"));
+					expect(record.base_head).toBe(after);
+					expect(record.children.map((child: any) => child.task_id)).toEqual([`${slug}-c1`, `${slug}-c2`]);
+					const resumed = await start(); expect(resumed.state).toBe("started");
+					expect(git("rev-parse", "HEAD").trim()).toBe(after); expect(gates).toBe(1);
+			} finally { rmSync(fixture.root, { recursive: true, force: true }); }
+		});
+	}
+});
+
 describe("batch foreground Executor integration", () => {
 	for (const host of ["claude", "pi"] as const) it(`${host}: implements two children, runs real QA and Review, then commits each once`, async () => {
 		const slug = `foreground-${host}`;

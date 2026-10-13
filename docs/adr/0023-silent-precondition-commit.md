@@ -70,6 +70,23 @@ chose not to follow that precedent here: the commit is silent.
    dirty scope. It is the last line of defence, reachable when a path changed
    after the commit, and its text no longer tells the user to commit.
 
+7. **A fresh batch commits its own preconditions before binding.** Both Hosts
+   use the same preparation entry: validate the plan and owner, then under the
+   Kernel transaction recheck owner, HEAD and child intent hashes. Fresh child
+   discovery uses the safe Enrollment reader before requiring Git tracking,
+   so newly drafted intents contribute their scopes to that first commit;
+   the normal plan and resume readers keep their tracking checks. The set is
+   dirty files under `.imm/audit/`, `docs/plans/`, `docs/specs/`, and the union
+   of enrollable child scopes. Re-read the normal preflight afterwards so the
+   gate and binding use the post-commit HEAD. Remaining paths stay unchanged
+   in index and worktree and are listed once in the rejection. Clean trees,
+   active owners, reuse-only continuation and resuming batches make no
+   precondition commit; resume-time scope/staging refusals retain their behavior.
+   The subject is `chore(imm): commit batch preconditions for <initiative-slug>`.
+   A declined, cancelled or failed start reports any precondition commit that
+   remains, without granting batch authority. A failed precondition commit
+   reports the Git error and asks for repair and retry, never a manual commit.
+
 ## Consequences
 
 - **Accepted risk: unfinished user work inside the scope is committed.** A
@@ -83,6 +100,5 @@ chose not to follow that precedent here: the commit is silent.
 - Commit is no longer always a separately granted effect. BASELINE states the
   exception and its limits: no push, publication, history rewrite, or commit of
   a path outside the committable set.
-- The batch and storage-migration preconditions reuse the same module in later
-  Slices of the same Initiative; this ADR is amended only if their behaviour
-  differs from the rules above.
+- The batch precondition now reuses the same module (Issue #232); storage
+  migration will reuse it in S4.
