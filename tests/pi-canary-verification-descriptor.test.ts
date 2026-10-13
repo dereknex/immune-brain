@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync, spawn } from "node:child_process";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { assertDeliveryClean, DeliveryWorkspaceError, materializeDeliveryWorkspace, removeTaskOwnedTree, writeDeliveryTree } from "../plugins/immune-brain/runtime/assurance/delivery_workspace";
 import { captureGitTaskRevisionSnapshot } from "../plugins/immune-brain/runtime/workspace_scope";
 import { parseVerificationDescriptor, canonicalDescriptorBytes, resolveVerificationCommand, assertCommandIdentity, runFixedVerification, findingsDigest } from "../plugins/immune-brain/.pi-extension/pi-canary-verification";
@@ -20,7 +20,7 @@ function gitRepo() {
 function tree(root: string) { return git(root, ["rev-parse", "HEAD^{tree}"]); }
 async function run(root: string, overrides = {}, signal?: AbortSignal) {
 	const c = good(overrides).command, path = verificationPath();
-	return runFixedVerification(root, c, resolveVerificationCommand(root, c, path), { home: root, path, signal });
+	return runFixedVerification(root, c, resolveVerificationCommand(root, c, path), { path, signal });
 }
 
 describe("project command verification", () => {
@@ -53,16 +53,63 @@ describe("project command verification", () => {
 		for (const timeout_ms of [0, -1, 1.5, 600001]) expect(() => good({ timeout_ms })).toThrow();
 		for (const max_output_bytes of [0, 262145]) expect(() => good({ max_output_bytes })).toThrow();
 	});
-	test("unknown project executable is bound by bytes and its interpreter", async () => {
+	test("unknown project executable is bound by bytes and the operating system resolves its interpreter", async () => {
 		const root = temp();
 		try {
 			const file = join(root, "unheard-of-tool"); writeFileSync(file, "#!/bin/sh\nprintf unknown-tool\n"); chmodSync(file, 0o755);
 			const c = good({ executable: "./unheard-of-tool", argv: [] }).command;
 			const frozen = resolveVerificationCommand(root, c);
-			expect(frozen.entry.content_hash).toMatch(/^sha256:/); expect(frozen.interpreter).not.toBeNull();
-			const result = await runFixedVerification(root, c, frozen, { home: root, path: verificationPath() });
+			expect(Object.keys(frozen)).toEqual(["entry"]); expect(frozen.entry.content_hash).toMatch(/^sha256:/);
+			const result = await runFixedVerification(root, c, frozen, { path: verificationPath() });
 			expect(result.stdout).toBe("unknown-tool"); expect(result.exit_code).toBe(0);
 			writeFileSync(file, "#!/bin/sh\nexit 1\n"); expect(() => assertCommandIdentity(frozen)).toThrow("identity changed");
+		} finally { remove(root); }
+	});
+	test("a host tool behind a shim script, or one using env -S, runs with its literal arguments", async () => {
+		const root = temp();
+		try {
+			// A version-manager shim: the tool's '#!' line names another script. It goes
+			// through env because Darwin refuses a script as a direct '#!' interpreter.
+			const launcher = join(root, "launcher"); writeFileSync(launcher, '#!/bin/sh\nexec /bin/sh "$@"\n'); chmodSync(launcher, 0o755);
+			writeFileSync(join(root, "shimmed-tool"), "#!/usr/bin/env launcher\nprintf 'shim:%s' \"$1\"\n"); chmodSync(join(root, "shimmed-tool"), 0o755);
+			writeFileSync(join(root, "split-tool"), "#!/usr/bin/env -S sh -e\nprintf 'split:%s' \"$1\"\n"); chmodSync(join(root, "split-tool"), 0o755);
+			const path = `${root}${delimiter}${verificationPath()}`;
+			for (const [executable, expected] of [["shimmed-tool", "shim:a b"], ["split-tool", "split:a b"]] as const) {
+				const c = good({ executable, argv: ["a b"] }).command;
+				const result = await runFixedVerification(root, c, resolveVerificationCommand(root, c, path), { path });
+				expect(result.exit_code).toBe(0); expect(result.stdout).toBe(expected);
+			}
+		} finally { remove(root); }
+	});
+	test("an entry file replaced during the run fails the identity check", async () => {
+		const root = temp();
+		try {
+			const file = join(root, "self-replacing"); writeFileSync(file, '#!/bin/sh\nprintf \'#!/bin/sh\\nexit 0\\n\' > "$0.next" && chmod +x "$0.next" && mv "$0.next" "$0"\n'); chmodSync(file, 0o755);
+			const c = good({ executable: "./self-replacing", argv: [] }).command;
+			const frozen = resolveVerificationCommand(root, c);
+			await expect(runFixedVerification(root, c, frozen, { path: verificationPath() })).rejects.toThrow("identity changed");
+		} finally { remove(root); }
+	});
+	test("a timeout removes every process of a run started through a shim", async () => {
+		const root = temp();
+		try {
+			const launcher = join(root, "launcher"); writeFileSync(launcher, '#!/bin/sh\nexec /bin/sh "$@"\n'); chmodSync(launcher, 0o755);
+			const marker = join(root, "child.pid");
+			writeFileSync(join(root, "shimmed-sleeper"), `#!/usr/bin/env launcher\nsleep 30 &\necho $! > ${JSON.stringify(marker)}\nwait\n`); chmodSync(join(root, "shimmed-sleeper"), 0o755);
+			const path = `${root}${delimiter}${verificationPath()}`;
+			// The first launch of two fresh scripts can take over half a second on Darwin.
+			const c = good({ executable: "shimmed-sleeper", argv: [], timeout_ms: 4000 }).command;
+			const result = await runFixedVerification(root, c, resolveVerificationCommand(root, c, path), { path });
+			expect(result.timed_out).toBe(true);
+			const pid = Number(readFileSync(marker, "utf8").trim());
+			expect(() => process.kill(pid, 0)).toThrow();
+		} finally { remove(root); }
+	}, 15000);
+	test("a compound command written as sh -c decides the result by its exit status", async () => {
+		const root = temp();
+		try {
+			const result = await run(root, { executable: "sh", argv: ["-c", "true && exit 3"] });
+			expect(result.exit_code).toBe(3); expect(result.timed_out).toBe(false);
 		} finally { remove(root); }
 	});
 	test("resolved host tools retain their invocation path while binding real bytes", () => {
@@ -109,7 +156,8 @@ describe("project command verification", () => {
 				'writeFileSync("detached.pid", String(child.pid)); child.unref();',
 			].join("\n"));
 			const started = performance.now();
-			const result = await run(root, { argv: ["run", script], timeout_ms: 80 });
+			// A cold Bun launch must reach the descendant spawn before the deadline.
+			const result = await run(root, { argv: ["run", script], timeout_ms: 4000 });
 			expect(result.timed_out).toBe(true);
 			expect(performance.now() - started).toBeLessThan(6000);
 			const pid = Number(readFileSync(join(root, "detached.pid"), "utf8"));
@@ -117,7 +165,7 @@ describe("project command verification", () => {
 			// is needed before the descendant is proven gone.
 			expect(() => process.kill(pid, 0)).toThrow();
 		} finally { remove(root); }
-	});
+	}, 15000);
 	test("successful checks clean detached descendants with closed pipes", async () => {
 		const root = temp();
 		try {
@@ -150,7 +198,7 @@ describe("project command verification", () => {
 			writeFileSync(scanner, "#!/bin/sh\nexit 1\n"); chmodSync(scanner, 0o755);
 			const c = good({ argv: ["run", script] }).command, path = verificationPath();
 			await expect(runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
-				home: root, path, _processScanner: scanner,
+				path, _processScanner: scanner,
 			})).rejects.toBeInstanceOf(VerificationCleanupError);
 			pid = Number(readFileSync(join(root, "detached-scanner-failure.pid"), "utf8"));
 		} finally {
@@ -172,7 +220,7 @@ describe("project command verification", () => {
 			// Discovery is broken while the check is still running: the known child is
 			// killed anyway, and the unproven cleanup outranks the timeout outcome.
 			await expect(runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
-				home: root, path, _processScanner: scanner,
+				path, _processScanner: scanner,
 			})).rejects.toBeInstanceOf(VerificationCleanupError);
 			const pid = Number(readFileSync(join(root, "scanner-failure-running.pid"), "utf8"));
 			expect(() => process.kill(pid, 0)).toThrow();
@@ -202,7 +250,7 @@ describe("project command verification", () => {
 			].join("\n"));
 			const c = good({ argv: ["run", script, proc, String(inSession.pid), String(unrelated.pid)] }).command, path = verificationPath();
 			expect((await runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
-				home: root, path, _procRoot: proc,
+				path, _procRoot: proc,
 			})).exit_code).toBe(0);
 			expect(() => process.kill(inSession.pid!, 0)).toThrow();
 			expect(() => process.kill(unrelated.pid!, 0)).not.toThrow();
@@ -239,7 +287,7 @@ describe("project command verification", () => {
 			writeFileSync(join(proc, "999991", "stat"), "999991 (kthreadd) S 0 0 0 0");
 			const c = good({ argv: ["-e", "1"] }).command, path = verificationPath();
 			expect((await runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
-				home: root, path, _procRoot: proc,
+				path, _procRoot: proc,
 			})).exit_code).toBe(0);
 			for (const bystander of bystanders) expect(() => process.kill(bystander.pid!, 0)).not.toThrow();
 		} finally {
@@ -262,7 +310,7 @@ describe("project command verification", () => {
 			// Neither platform can prove anything about the table here, so the run must
 			// fail closed while the directly known child is still terminated first.
 			await expect(runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
-				home: root, path, _procRoot: join(root, "missing-proc"), _processScanner: scanner,
+				path, _procRoot: join(root, "missing-proc"), _processScanner: scanner,
 			})).rejects.toBeInstanceOf(VerificationCleanupError);
 			expect(() => process.kill(Number(readFileSync(join(root, "unreadable-table.pid"), "utf8")), 0)).toThrow();
 		} finally { remove(root); }
@@ -297,13 +345,13 @@ describe("project command verification", () => {
 			].join("\n"));
 			const c = good({ argv: ["run", script, proc] }).command, path = verificationPath();
 			expect((await runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
-				home: root, path, _procRoot: proc,
+				path, _procRoot: proc,
 			})).exit_code).toBe(0);
 			carrierPid = Number(readFileSync(join(root, "procfs-carrier.pid"), "utf8"));
 			expect(carrierPid).not.toBe(0);
 			expect(() => process.kill(carrierPid, 0)).toThrow();
 			await expect(runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
-				home: root, path, _procRoot: join(root, "absent-proc"),
+				path, _procRoot: join(root, "absent-proc"),
 			})).rejects.toBeInstanceOf(VerificationCleanupError);
 			carrierPid = Number(readFileSync(join(root, "procfs-carrier.pid"), "utf8"));
 		} finally {
@@ -331,6 +379,16 @@ describe("delivery workspace materialization", () => {
 			try { writeFileSync(join(root, "ok.ts"), "changed"); expect(readFileSync(join(delivery.root, "ok.ts"), "utf8")).toBe("export const ok = 1;\n"); }
 			finally { delivery.cleanup(); }
 		} finally { remove(root); }
+	});
+	test("deriving the frozen tree needs no directory outside the repository", () => {
+		const root = gitRepo(), previous = process.env.TMPDIR;
+		try {
+			const base = git(root, ["rev-parse", "HEAD"]), snapshot = captureGitTaskRevisionSnapshot(root, ["ok.ts"], base);
+			// An unusable temporary directory: the derivation must not depend on one.
+			process.env.TMPDIR = join(root, "missing-temporary-directory");
+			expect(writeDeliveryTree(root, snapshot)).toMatch(/^[a-f0-9]{40,64}$/);
+			expect(readdirSync(join(root, ".git")).filter(name => name.startsWith("imm-delivery"))).toEqual([]);
+		} finally { if (previous === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = previous; remove(root); }
 	});
 	test("ignores caller GIT_DIR and refuses tracked symlink escapes", () => {
 		const root = gitRepo(), other = gitRepo(), previous = process.env.GIT_DIR;
@@ -459,5 +517,44 @@ describe("delivery workspace materialization", () => {
 			expect(existsSync(root)).toBe(false);
 			expect(lstatSync(outside).mode & 0o7777).toBe(0o500);
 		} finally { chmodSync(outside, 0o700); remove(root); remove(outside); }
+	});
+	describe("child environment", () => {
+		const BINDINGS = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_NAMESPACE", "GIT_PREFIX"];
+		// Reports the child's own environment; the test process owns restoration.
+		async function childEnv(env: Record<string, string | undefined>, withPath?: (hostPath: string, path: string) => string) {
+			const saved = new Map(Object.keys(env).concat("PATH").map(key => [key, process.env[key]] as const));
+			const root = temp(), path = verificationPath();
+			try {
+				for (const [key, value] of Object.entries(env)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+				if (withPath) process.env.PATH = withPath(process.env.PATH ?? "", path);
+				const c = good({ argv: ["-e", "console.log(JSON.stringify(process.env))"] }).command;
+				const result = await runFixedVerification(root, c, resolveVerificationCommand(root, c, path), { path });
+				return { path, env: JSON.parse(result.stdout) as Record<string, string | undefined> };
+			} finally {
+				for (const [key, value] of saved) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+				remove(root);
+			}
+		}
+		test("a command sees the host environment and the per-run process token", async () => {
+			const { env } = await childEnv({ HOME: "/imm-host-home", IMM_QA_HOST_MARKER: "kept" });
+			expect(env.HOME).toBe("/imm-host-home");
+			expect(env.IMM_QA_HOST_MARKER).toBe("kept");
+			expect(env.TMPDIR).toBe(process.env.TMPDIR);
+			expect(env.IMM_VERIFICATION_PROCESS_TOKEN).toMatch(/^[0-9a-f]{48}$/);
+		});
+		test("Git repository-binding variables stay out while other GIT_ variables arrive", async () => {
+			const { env } = await childEnv({ ...Object.fromEntries(BINDINGS.map(name => [name, "/imm-host-repository"])), GIT_AUTHOR_NAME: "Host User" });
+			for (const name of BINDINGS) expect(env[name]).toBeUndefined();
+			expect(env.GIT_AUTHOR_NAME).toBe("Host User");
+		});
+		test("PATH is the supplied absolute-entry path, not the host PATH", async () => {
+			const { env, path } = await childEnv({}, (hostPath, absolute) => `relative-bin${delimiter}${absolute}${delimiter}${hostPath}`);
+			expect(env.PATH).toBe(path);
+			expect(env.PATH).not.toContain("relative-bin");
+		});
+		test("a host without HOME yields a child without HOME", async () => {
+			const { env } = await childEnv({ HOME: undefined });
+			expect("HOME" in env).toBe(false);
+		});
 	});
 });

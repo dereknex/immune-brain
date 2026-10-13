@@ -18,8 +18,9 @@ import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollm
 import { auditEvidencePaths } from "../plugins/immune-brain/runtime/kernel/storage_paths";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { createEnrollmentAuthorityRegistry, type EnrollmentCapabilityBinding } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
-import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
+import { canonicalIntentHash, parseTaskIntentV1 as parseDeclaredTaskIntent, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
+import { applyScopeRiskFloor, parseRiskFloor, RISK_FLOOR_DECLARATION_PATH } from "../plugins/immune-brain/runtime/kernel/risk_floor";
 import { createMutationAuthorityCapabilityForTest } from "./fixtures/mutation-authority-test-seam";
 import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
 import { PLUGIN_VERSION } from "../plugins/immune-brain/runtime/plugin_version";
@@ -47,6 +48,12 @@ const {
 
 afterAll(() => mock.restore());
 
+// This repository's risk-floor declaration, committed into each fixture
+// repository so its Kernel and Pi extension paths are floored there too.
+const FLOOR_TEXT = readFileSync(join(process.cwd(), RISK_FLOOR_DECLARATION_PATH), "utf8");
+const FLOOR = parseRiskFloor(JSON.parse(FLOOR_TEXT));
+// The intent as the fixture repository records it: the strict parse, then the floor.
+const parseTaskIntentV1 = (raw: unknown) => applyScopeRiskFloor(parseDeclaredTaskIntent(raw), FLOOR);
 const TASK = "canary-ext-task";
 const INTENT = {
 	contract: "assurance_kernel/task_intent/v1",
@@ -152,6 +159,7 @@ function makeEnrolledRoot(): string {
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	writeFileSync(join(root, "docs", "plans", `${TASK}.intent.json`), JSON.stringify(INTENT, null, 2) + "\n");
 	writeFileSync(join(root, "docs", "specs", "canary-ext-task.spec.md"), "# Canary extension task\n");
+	writeFileSync(join(root, RISK_FLOOR_DECLARATION_PATH), FLOOR_TEXT);
 	writeFileSync(join(root, "plugins", "immune-brain", ".pi-extension", "task.ts"), "export const task = 'baseline';\n");
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
@@ -1305,15 +1313,28 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		const resolutionRoots = resolutionReasons.map(() => makeEnrolledRoot());
 		try {
 			writeFileSync(join(unstagedRoot, "plugins", "immune-brain", ".pi-extension", "task.ts"), "export const task = 'changed';\n");
-			const unstaged = await capturedToolFailure(loadSurface().tools[0].execute(
+			// Status stays readable with an unstaged in-scope path; the refusal and
+			// its recovery action belong to the operation that freezes a snapshot.
+			const status = await loadSurface().tools[0].execute(
 				"status",
 				{ task_id: TASK, action: { op: "status" } },
 				undefined,
 				undefined,
 				makeCtx(unstagedRoot, makeUI()),
+			);
+			expect(JSON.parse(status.content[0].text).warnings).toMatchObject([{
+				code: "unstaged_scope_paths",
+				paths: ["plugins/immune-brain/.pi-extension/task.ts"],
+			}]);
+			const unstaged = await capturedToolFailure(loadSurface().tools[0].execute(
+				"advance",
+				{ task_id: TASK, action: { op: "advance_assurance" } },
+				undefined,
+				undefined,
+				makeCtx(unstagedRoot, makeUI()),
 			));
 			expect(unstaged).toMatchObject({
-				code: "projection_unavailable",
+				code: "assurance_blocked",
 				next_action: "stage only the listed task-owned paths, then retry the blocked operation",
 			});
 
@@ -1344,7 +1365,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		const root = makeEnrolledRoot();
 		const secret = "pi-prepare-tail-canary-S1";
 		const observation = {
-			conditions: { delivery: "isolated_materialization", home_and_cache: "fresh_per_run", worktree_node_modules: "absent" },
+			conditions: { delivery: "isolated_materialization", worktree_node_modules: "absent" },
 			declared_timeout_ms: 4321,
 			stderr_tail: `resolving\n${secret}\n`,
 		} as const;

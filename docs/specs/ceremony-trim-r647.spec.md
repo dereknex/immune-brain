@@ -30,7 +30,7 @@ Four changes that remove ceremony which cost time without protecting anything, a
 
 | ID | Mode | Scenario | Acceptance |
 |---|---|---|---|
-| SCN-1 | automated | Given an enrolled task whose `prepare` command times out in QA, when the Executor reads the `advance_assurance` result, then it shows that `prepare` ran in an isolated delivery with a fresh home and no worktree `node_modules`, the declared timeout, and the last lines of the error output. | CT-S1-A1 |
+| SCN-1 | automated | Given an enrolled task whose `prepare` command times out in QA, when the Executor reads the `advance_assurance` result, then it shows that `prepare` ran in an isolated delivery with no worktree `node_modules`, the declared timeout, and the last lines of the error output. | CT-S1-A1 |
 | SCN-2 | automated | Given an enrolled task whose scope lists `src/events/a.ts`, when the Executor needs `src/events/index.ts` and submits the revision, then it applies without a confirmation dialog. | CT-S2-A2 |
 | SCN-3 | automated | Given the same task, when the revision adds a file under a Kernel path, a new directory, or a glob, then it is refused as not compatible and the native confirmation remains the only way to apply it. | CT-S2-A2 |
 | SCN-4 | automated | Given a workspace with an active task and a session that entered the Planner, when that session edits a file inside the active task's scope, then the edit is denied with the reason `revision_owner_required` and one recovery action. | CT-S3-A1 |

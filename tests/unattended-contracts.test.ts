@@ -322,10 +322,10 @@ if (!unreachable.error || !unreachable.error.includes("lacks evidence")) {
  *
  * 1. The child is a disposable one-shot process that runs only this script, so a
  *    process-level `mock.module` entry cannot leak into another test.
- * 2. Attempting the real import stalls: under the deterministic QA environment
- *    (no node_modules, HOME/TMPDIR/XDG_CACHE_HOME reset, network reachable) Bun
- *    auto-installs on demand and fetching `@earendil-works/pi-coding-agent` costs
- *    ~24s, which exceeds the 20s timeout this test gives its own child.
+ * 2. Attempting the real import stalls: under deterministic QA (a delivery
+ *    checkout with no node_modules, network reachable) Bun auto-installs on
+ *    demand and fetching `@earendil-works/pi-coding-agent` costs ~24s, which
+ *    exceeds the 20s timeout this test gives its own child.
  *
  * Only the extension module's import-time bindings are stubbed; the drive itself
  * never renders a TUI or builds a tool schema, so the stubs are never called.
@@ -572,6 +572,20 @@ describe("unattended batch contract text", () => {
 		expect(ADR).toContain("TaskRecord v4");
 		for (const deferred of ["cron", "CI", "worktree"]) expect(ADR).toContain(deferred);
 		expect(ADR).toContain("critical");
+	});
+
+	it("states that task QA runs in place against the frozen snapshot (ADR 0022)", () => {
+		const loop = LOOP_CONTRACT.replace(/\s+/g, " ");
+		expect(loop).toContain("Deterministic QA runs all descriptors in the task's working directory");
+		expect(loop).toContain("the tracked content inside the task's scope must equal the frozen snapshot");
+		expect(loop).toContain("`protected_input_or_output_drift`");
+		expect(loop).not.toContain("disposable delivery");
+		const adrPath = resolve(REPO_ROOT, "docs/adr/0022-deterministic-qa-runs-in-place.md");
+		expect(existsSync(adrPath)).toBe(true);
+		const adr = readFileSync(adrPath, "utf8").replace(/\s+/g, " ");
+		expect(adr).toContain("status: accepted");
+		expect(adr).toContain("Task QA runs in the task's working directory");
+		expect(adr).toContain("Only in-scope content is compared");
 	});
 
 	it("keeps default imm-run behavior byte-identical when the batch tool is not invoked", () => {

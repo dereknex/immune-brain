@@ -11,6 +11,7 @@ import {
 import { asTaskDiffSnapshot } from "./completion";
 import { taskDeliveryIdentity } from "../workspace_scope";
 import { canonicalIntentHash, readTaskIntent } from "./intent";
+import { readRiskFloor } from "./risk_floor";
 import {
 	inspectIntentTokenPair,
 	consumeIntentToken,
@@ -98,7 +99,7 @@ export function applyTaskAction(
 			]);
 
 		// Fresh secure reread of the sidecar inside the same lock.
-		const freshRead = readTaskIntent(root, task_id, current.record.intent_ref.path);
+		const freshRead = readTaskIntent(root, task_id, current.record.intent_ref.path, current.record.intent_snapshot);
 		const { prior: priorIdentity, current: currentIdentity } =
 			inspectIntentTokenPair(prior_intent_token, freshRead.token);
 		if (
@@ -201,6 +202,7 @@ export function applyTaskAction(
 			action,
 			inspectedAudit ? (inspectedAudit.audit as AuthorityAuditDescriptor) : null,
 			trustedDiff.changed_paths,
+			readRiskFloor(root),
 		);
 		if (!isReducedMutation(mutation))
 			throw new KernelInvariantError(["reducer returned an invalid mutation"]);

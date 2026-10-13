@@ -318,7 +318,8 @@ export async function verifyCandidateDescriptors(input: {
 	};
 	let verdict;
 	try {
-		verdict = await runDeterministicQa(snapshot, descriptors, { signal: input.signal });
+		// The candidate is a merge-tree commit that is never checked out.
+		verdict = await runDeterministicQa(snapshot, descriptors, { signal: input.signal, delivery: "materialized" });
 	} catch (error) {
 		if (error instanceof VerificationAbortedError) throw error;
 		throw new BatchIntegrationError(

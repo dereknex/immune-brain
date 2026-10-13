@@ -101,7 +101,7 @@ describe("Managed native authority failure contract", () => {
 		expect(loop).toContain("Do not hand routine task-owned staging to the user");
 		expect(planner).toContain("stage only the exact Planner-produced Spec and TaskIntent paths before validation and handoff");
 		expect(planner).toContain("whether its executable is provided by the QA host or by tracked delivery content");
-		expect(planner).toContain("A dependency found only in the Planner's live worktree");
+		expect(planner).toContain("a dependency already present in that working directory, such as an installed `node_modules`, is valid provenance");
 		expect(planner).toContain("only a completed deterministic QA result proves that a descriptor executed and passed");
 	});
 

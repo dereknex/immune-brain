@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { projectTask } from "../plugins/immune-brain/runtime/kernel/completion";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { canonicalRecordHash, reduceTask } from "../plugins/immune-brain/runtime/kernel/reducer";
+import { parseRiskFloor } from "../plugins/immune-brain/runtime/kernel/risk_floor";
 import type { TaskAction, TaskIntentV1, TaskRecordV4 } from "../plugins/immune-brain/runtime/kernel/types";
 import { parseTaskRecordV4 } from "../plugins/immune-brain/runtime/kernel/validation";
 
@@ -63,6 +64,13 @@ function fixture(
 	}];
 }
 
+// A project-declared floor shaped like this repository's: Kernel paths raise a
+// task through scope or changed paths, docs/specs through changed paths only.
+const FLOOR = parseRiskFloor({
+	contract: "assurance_kernel/risk_floor/v1",
+	material: { paths: ["plugins/immune-brain/runtime/kernel"], changed_only: ["docs/specs", "docs/plans"] },
+});
+
 describe("Kernel assurance obligations", () => {
 	test.each([
 		["routine", ["qa"], "complete"],
@@ -101,6 +109,7 @@ describe("Kernel assurance obligations", () => {
 				DIFF,
 				record.intent_ref.content_hash,
 				["plugins/immune-brain/runtime/kernel/completion.ts"],
+				FLOOR,
 			).next_obligation,
 		).toBe("run_review");
 	});
@@ -121,6 +130,7 @@ describe("Kernel assurance obligations", () => {
 				DIFF,
 				record.intent_ref.content_hash,
 				["docs/specs/other.spec.md"],
+				FLOOR,
 			).next_obligation,
 		).toBe("run_review");
 	});
@@ -134,7 +144,7 @@ describe("Kernel assurance obligations", () => {
 		];
 		const [intent, record] = fixture("routine", ["qa"], scope);
 		expect(
-			projectTask(intent, record, DIFF, record.intent_ref.content_hash, [...scope, "docs/specs/other.spec.md"])
+			projectTask(intent, record, DIFF, record.intent_ref.content_hash, [...scope, "docs/specs/other.spec.md"], FLOOR)
 				.next_obligation,
 		).toBe("run_review");
 	});
@@ -151,6 +161,7 @@ describe("Kernel assurance obligations", () => {
 				DIFF,
 				record.intent_ref.content_hash,
 				["src/app.ts", "plugins/immune-brain/runtime/kernel/completion.ts"],
+				FLOOR,
 			).next_obligation,
 		).toBe("run_review");
 	});
@@ -190,7 +201,7 @@ describe("Kernel assurance obligations", () => {
 		} as TaskAction;
 		expect(() => reduceTask(record, action)).toThrow(/complete requires trusted changed paths/);
 		expect(() =>
-			reduceTask(record, action, null, ["plugins/immune-brain/runtime/kernel/completion.ts"]),
+			reduceTask(record, action, null, ["plugins/immune-brain/runtime/kernel/completion.ts"], FLOOR),
 		).toThrow(/not eligible for completion/);
 		expect(reduceTask(record, action, null, ["src/app.ts"]).record.lifecycle).toBe("done");
 	});

@@ -1,0 +1,134 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "host-owned-environment-s2-host-tool-resolution",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "host-owned-environment-s2-host-tool-resolution",
+    "goal": "A deterministic QA command is whatever the absolute-entry PATH provides: command resolution stops interpreting '#!' lines, pins and executes the resolved entry file directly and lets the operating system resolve any interpreter, so a tool behind a version-manager shim runs instead of being refused; FrozenCommand loses its interpreter fields, and the Planner contract names sh -c as the way to write a compound command (Spec host-owned-environment S2; D6, D7, I3).",
+    "acceptance": [
+      {
+        "id": "HE-S2-A1",
+        "assertion": "Through resolveVerificationCommand and runFixedVerification with real child processes: a host tool whose '#!' line names another script runs, a tool using 'env -S' runs, an entry file replaced during the run fails the identity check, and a timeout removes every process of the run; seam: tests/pi-canary-verification-descriptor.test.ts (Spec SCN-5, D6, I3).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-verification-descriptor.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "HE-S2-A2",
+        "assertion": "A descriptor with executable sh and argv ['-c', 'true && exit 3'] yields exit status 3; descriptor bounds still reject an over-long argv and an executable with a path separator; dist/imm-planner.md names sh -c for compound commands; the generated Claude bundle matches the runtime source; seams: tests/pi-canary-verification-descriptor.test.ts, tests/kernel-verification-descriptor.test.ts, tests/workflow-verification-invariants.test.ts, tests/claude-host-package.test.ts (Spec SCN-4, D7).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-verification-descriptor.test.ts\",\n      \"tests/kernel-verification-descriptor.test.ts\",\n      \"tests/workflow-verification-invariants.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/host-owned-environment-s2-host-tool-resolution.md",
+      "docs/plans/host-owned-environment-s2-host-tool-resolution.intent.json",
+      "docs/specs/host-owned-environment.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/runtime/assurance/qa.ts",
+      "plugins/immune-brain/runtime/assurance/verification.ts",
+      "tests/kernel-verification-descriptor.test.ts",
+      "tests/pi-canary-verification-descriptor.test.ts",
+      "tests/workflow-verification-invariants.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/host-owned-environment-s2-host-tool-resolution.intent.json",
+    "content_hash": "sha256:b87c45a306bb00b678d701fde4019f7d01df4568f7155cd56256e125c3bbf077"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:b87c45a306bb00b678d701fde4019f7d01df4568f7155cd56256e125c3bbf077",
+  "git_base_head": "c2e3dd4b1300fb386d0c357e76148120bd65dc43",
+  "attestations": [
+    {
+      "id": "approval-qa-24e3505a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:b87c45a306bb00b678d701fde4019f7d01df4568f7155cd56256e125c3bbf077",
+      "diff_hash": "sha256:2fe2d32883acdda4a903959feaa6ecddabf775f8019079b732ffaaa6ebba81bf",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:0ec36ae59d0425dd74e34c9172d9462c93aaa8b61fc07ef05d3e57c64a8bb83b",
+      "acceptance_results": [
+        {
+          "acceptance_id": "HE-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:0ec36ae59d0425dd74e34c9172d9462c93aaa8b61fc07ef05d3e57c64a8bb83b"
+        },
+        {
+          "acceptance_id": "HE-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:0ec36ae59d0425dd74e34c9172d9462c93aaa8b61fc07ef05d3e57c64a8bb83b"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-ce581e75",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:b87c45a306bb00b678d701fde4019f7d01df4568f7155cd56256e125c3bbf077",
+      "diff_hash": "sha256:2fe2d32883acdda4a903959feaa6ecddabf775f8019079b732ffaaa6ebba81bf",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (single parent c2e3dd4, tree 293db2e, manifest digest recomputed); '#!' interpretation is removed per D6 with the entry still identity-pinned and re-checked after cleanup in runFixedVerification and at the end of runDeterministicQa, the generated bundle mirrors the runtime diff, and real-process tests at the named seams cover shim, env -S, mid-run entry replacement, timeout cleanup, sh -c exit status 3, and the Planner contract text.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "c2e3dd4b1300fb386d0c357e76148120bd65dc43",
+        "review_commit": "d0a6c70fbc0a45ea6f9622021625c98f9002977a",
+        "review_tree": "293db2e419431d0065ce1bfdfcf3597068bf8536",
+        "manifest_digest": "sha256:d6efc4ca628b48731f00a6db8b15611e4fd5bfd4a68ed1f4ce3572cb808a4b5b"
+      },
+      "reviewer_verdict_sha256": "sha256:2bd8432513c0e3f0ddd44af6778c0427bb6b5bf6c508cd56c1cb5964136d02eb"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:host-owned-environment-s2-host-tool-resolution:2026-10-13T00:49:55.601Z",
+      "at": "2026-10-13T00:49:55.601Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/host-owned-environment-s2-host-tool-resolution.intent.json"
+    },
+    {
+      "id": "record_approval:host-owned-environment-s2-host-tool-resolution:2026-10-13T00:50:48.441Z",
+      "at": "2026-10-13T00:50:48.441Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-24e3505a\naction_v2_sha256:8944b5fb6429ff1013cdbb50e50c87805ca0434d4c827f24b6f63c8de786219d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-13T00:50:48.441Z"
+      }
+    },
+    {
+      "id": "record_approval:host-owned-environment-s2-host-tool-resolution:2026-10-13T00:52:12.508Z",
+      "at": "2026-10-13T00:52:12.508Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-ce581e75\naction_v2_sha256:d155c20ec18c230cd2f846309b3fac1a731223fcdf89216f36c082631127a4fb",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-13T00:52:12.508Z"
+      }
+    },
+    {
+      "id": "complete:host-owned-environment-s2-host-tool-resolution:2026-10-13T00:52:15.126Z",
+      "at": "2026-10-13T00:52:15.126Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:71a0e7ba6800a80b52959d78a1420c8fa9349333b4187e41c08601c3cd8ff4e2"
+    }
+  ]
+}

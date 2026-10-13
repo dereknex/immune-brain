@@ -108,6 +108,30 @@ describe("imm-kernel intent validate", () => {
 		});
 	});
 
+	it("applies the project floor to a routine Kernel draft without writes", () => {
+		withRepo((root) => {
+			const path = "docs/plans/task-002-intent-validate.intent.json";
+			writeFileSync(join(root, path), intentBytes("task-002-intent-validate", {
+				risk: "routine", scope_hint: ["plugins/immune-brain/runtime/kernel/intent.ts"],
+			}));
+			expect(JSON.parse(validate(root, path).stdout).risk).toBe("routine");
+			mkdirSync(join(root, ".imm"), { recursive: true });
+			writeFileSync(join(root, ".imm/risk-floor.json"), JSON.stringify({
+				contract: "assurance_kernel/risk_floor/v1",
+				material: { paths: ["plugins/immune-brain/runtime/kernel"] },
+			}));
+			git(root, ["add", "-f", ".imm/risk-floor.json"]);
+			git(root, ["commit", "-qm", "project floor"]);
+			const index = readFileSync(join(root, ".git/index"));
+			const result = validate(root, path);
+			expect(result.returncode).toBe(0);
+			expect(JSON.parse(result.stdout)).toMatchObject({ valid: true, risk: "material" });
+			expect(readFileSync(join(root, ".git/index"))).toEqual(index);
+			expect(existsSync(join(root, ".imm/state"))).toBe(false);
+			expect(existsSync(join(root, ".imm/journal.jsonl"))).toBe(false);
+		});
+	});
+
 	it("reports enrollment_ready for a tracked fully eligible intent", () => {
 		withRepo((root) => {
 			const path = "docs/plans/task-002-intent-validate.intent.json";

@@ -1,0 +1,97 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "host-owned-environment-s1-qa-in-place",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "host-owned-environment-s1-qa-in-place",
+    "goal": "Deterministic QA runs prepare and every check in the task's own working directory instead of a disposable copy: before the first command and after each command the tracked content of the working directory must equal the frozen snapshot tree, a difference fails as protected_input_or_output_drift with the differing paths returned to the caller and never stored, the delivery materialization and its cleanup are removed, and the run and Planner contracts plus ADR 0022 state the in-place rule (Spec host-owned-environment S1; D1-D5, I1, I2).",
+    "acceptance": [
+      {
+        "id": "HE-S1-A1",
+        "assertion": "Through runDeterministicQa on a real temporary Git repository: a check that reads a file from an ignored directory of the working directory passes; a tracked edit outside the frozen snapshot refuses before any command runs; a check that rewrites a tracked file fails as protected_input_or_output_drift; a non-delivery path may differ, untracked output is allowed, and the run creates no directory outside the repository; seam: tests/shared-deterministic-qa.test.ts (Spec SCN-1, SCN-2, SCN-3, D1, D2, I1, I2).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/shared-deterministic-qa.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "HE-S1-A2",
+        "assertion": "Both Hosts and the host-neutral coordinator complete a passing QA run with no delivery materialization; the differing paths of a refused run are absent from the stored TaskRecord and from persisted diagnostics; aborting during a command still removes its processes; seams: tests/pi-canary-assurance-authority.test.ts, tests/pi-canary-verification-descriptor.test.ts, tests/host-neutral-assurance-coordinator.test.ts, tests/dual-host-assurance-conformance.test.ts (Spec D2, D4).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-assurance-authority.test.ts\",\n      \"tests/pi-canary-verification-descriptor.test.ts\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\",\n      \"tests/dual-host-assurance-conformance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "HE-S1-A3",
+        "assertion": "dist/imm-run.md and dist/imm-planner.md state that QA runs in the task's working directory after an equality check with the frozen snapshot and that a dependency already present there is valid provenance, neither contains 'disposable delivery', ADR 0022 exists, and the generated Claude bundle matches the runtime source; seams: tests/workflow-verification-invariants.test.ts, tests/claude-host-package.test.ts, tests/unattended-contracts.test.ts (Spec D5).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-verification-invariants.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/unattended-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/host-owned-environment-s1-qa-in-place.md",
+      "docs/adr/0022-deterministic-qa-runs-in-place.md",
+      "docs/plans/host-owned-environment-s1-qa-in-place.intent.json",
+      "docs/specs/host-owned-environment.spec.md",
+      "plugins/immune-brain/.pi-extension/pi-canary-verification.ts",
+      "plugins/immune-brain/README.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/assurance/delivery_workspace.ts",
+      "plugins/immune-brain/runtime/assurance/qa.ts",
+      "plugins/immune-brain/runtime/assurance/verification.ts",
+      "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+      "plugins/immune-brain/runtime/workspace_scope.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/host-neutral-assurance-coordinator.test.ts",
+      "tests/pi-batch-acceptance-integration.test.ts",
+      "tests/pi-canary-assurance-authority.test.ts",
+      "tests/pi-canary-verification-descriptor.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/qa-prepare-diagnostics.test.ts",
+      "tests/shared-deterministic-qa.test.ts",
+      "tests/unattended-contracts.test.ts",
+      "tests/v4-runtime-launchers.test.ts",
+      "tests/workflow-verification-invariants.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/host-owned-environment-s1-qa-in-place.intent.json",
+    "content_hash": "sha256:7f6c4bff44c9c7991e59196e49053fc6624b0fc4ab076628a8e3085175d94df1"
+  },
+  "lifecycle": "stopped",
+  "artifact_state": "frozen",
+  "baseline": "sha256:bf163253047622af161f9dbfe40828516649499c199573fe932c2790f4b46270",
+  "git_base_head": "09a183e61136303e852cec5e4ac3fe3bda7f0f37",
+  "attestations": [],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:host-owned-environment-s1-qa-in-place:2026-10-12T16:44:33.314Z",
+      "at": "2026-10-12T16:44:33.314Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:4faf2eaeee7ad83ba4639a87830e5c01d93f87c5db24353af2838c19204d38dc",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-8789a0d7fb6af7e4",
+        "issued_at": "2026-10-12T16:44:36.639Z"
+      }
+    },
+    {
+      "id": "stop:host-owned-environment-s1-qa-in-place:2026-10-12T16:50:19.503Z",
+      "at": "2026-10-12T16:50:19.503Z",
+      "type": "stop",
+      "from_state": "active:active",
+      "to_state": "stopped:frozen",
+      "reason": "User chose to stop and replace: the enrolled goal (remove the delivery materialization, compare all tracked content) conflicts with the user's decisions U7 (keep the copy for the Lane batch integration recheck) and U8 (compare in-scope content only), and a revision cannot change the goal. No implementation was written.\naction_v2_sha256:6977d7186c103e93d9933107244fcb429f9d2acbe80290a55c37abef74cc931d",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-5d71dbe88b6eca73",
+        "issued_at": "2026-10-12T16:50:21.462Z"
+      }
+    }
+  ]
+}

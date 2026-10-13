@@ -3,6 +3,7 @@ import {
 	execFileSync,
 } from "node:child_process";
 import {
+	existsSync,
 	lstatSync,
 	mkdirSync,
 	mkdtempSync,
@@ -16,12 +17,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	canonicalIntentHash,
-	CHANGED_PATH_RISK_FLOOR_PREFIXES,
 	classifyIntentRevision,
 	observeTaskIntent,
+	parseProjectTaskIntent,
 	parseTaskIntentV1,
 	readTaskIntent,
 } from "../plugins/immune-brain/runtime/kernel/intent";
+import { parseRiskFloor, readRiskFloor } from "../plugins/immune-brain/runtime/kernel/risk_floor";
+import { resolveProjectedRisk } from "../plugins/immune-brain/runtime/kernel/completion";
 
 function git(root: string, args: string[]): void {
 	execFileSync("git", args, { cwd: root, stdio: "pipe" });
@@ -228,7 +231,6 @@ describe("classifyIntentRevision: same-directory scope additions", () => {
 	});
 
 	test.each([
-		["a removed entry", ["src/mod/a.ts"]],
 		["a glob entry", ["src/mod/a.ts", "src/mod/sub/d.ts", "src/mod/*.ts"]],
 		["a new directory", ["src/mod/a.ts", "src/mod/sub/d.ts", "src/other/c.ts"]],
 		["an entry that swallows a previous one", ["src/mod/a.ts", "src/mod/sub/d.ts", "src/mod/sub"]],
@@ -237,15 +239,48 @@ describe("classifyIntentRevision: same-directory scope additions", () => {
 		expect(classifyIntentRevision(base, revised(scope))).toBe("breaking");
 	});
 
+	// Spec host-owned-environment D10: narrowing removes authority, so a next
+	// scope made only of previous entries needs no confirmation. Replaces the
+	// former "breaking: a removed entry" case.
+	test("compatible: a strict subset of the previous scope", () => {
+		expect(classifyIntentRevision(base, revised(["src/mod/a.ts"]))).toBe("compatible");
+		expect(classifyIntentRevision(base, revised(["src/mod/sub/d.ts"]))).toBe("compatible");
+	});
+
+	test("a subset keeps its previous result once anything else changes", () => {
+		// One added entry is still judged by the same-directory rule (I6).
+		expect(classifyIntentRevision(base, revised(["src/mod/a.ts", "src/other/c.ts"]))).toBe("breaking");
+		expect(classifyIntentRevision(base, revised(["src/mod/a.ts", "src/mod/b.ts"]))).toBe("breaking");
+		expect(classifyIntentRevision(base, revised(["src/mod/a.ts"], { goal: "A different goal" }))).toBe("breaking");
+		// An empty scope is not a narrowing.
+		expect(classifyIntentRevision(base, { ...base, scope_hint: [], revision: 3 })).toBe("breaking");
+		// A subset without a revision bump is not a revision.
+		expect(classifyIntentRevision(base, scoped(["src/mod/a.ts"], { revision: 2 }))).toBe("breaking");
+	});
+
 	test("breaking: a glob previous entry does not anchor a sibling", () => {
 		const globbed = scoped(["src/mod/*.ts"], { revision: 2 });
 		expect(classifyIntentRevision(globbed, revised(["src/mod/*.ts", "src/mod/b.ts"]))).toBe("breaking");
 	});
 
-	test.each([...CHANGED_PATH_RISK_FLOOR_PREFIXES])("breaking: a sibling under the %s floor prefix", (prefix) => {
+	// The same-directory rule never self-serves an addition on a path the
+	// project's risk floor names (ADR 0021, ADR 0023).
+	const REPOSITORY_FLOOR = parseRiskFloor(JSON.parse(readFileSync(join(process.cwd(), ".imm/risk-floor.json"), "utf8")));
+	test.each([...REPOSITORY_FLOOR.material.paths, ...REPOSITORY_FLOOR.material.changed_only])("breaking: a sibling under the %s floor prefix", (prefix) => {
 		const floor = { risk: "critical" };
 		const previous = scoped([`${prefix}/a.ts`], { revision: 2, ...floor });
-		expect(classifyIntentRevision(previous, revised([`${prefix}/a.ts`, `${prefix}/b.ts`], floor))).toBe("breaking");
+		const next = revised([`${prefix}/a.ts`, `${prefix}/b.ts`], floor);
+		expect(classifyIntentRevision(previous, next, REPOSITORY_FLOOR)).toBe("breaking");
+		// A project that declares no floor has no such path.
+		expect(classifyIntentRevision(previous, next)).toBe("compatible");
+	});
+
+	test("breaking: adding the declaration file beside an anchored sibling, declared or not", () => {
+		const floor = { risk: "critical" };
+		const previous = scoped([".imm/notes.md"], { revision: 2, ...floor });
+		const next = revised([".imm/notes.md", ".imm/risk-floor.json"], floor);
+		expect(classifyIntentRevision(previous, next)).toBe("breaking");
+		expect(classifyIntentRevision(previous, next, REPOSITORY_FLOOR)).toBe("breaking");
 	});
 
 	test("breaking: a compatible scope addition combined with any other breaking field", () => {
@@ -400,5 +435,69 @@ describe("readTaskIntent secure reader", () => {
 		for (const name of sidecars) {
 			expect(() => parseTaskIntentV1(JSON.parse(readFileSync(join(plans, name), "utf8")))).not.toThrow();
 		}
+	});
+});
+
+// Characterization, written before the floor left parseTaskIntentV1 (Spec
+// host-owned-environment D14, I8): the canonical hash of an enrolled intent is
+// the hash the secure reader returns, under this repository's declaration.
+describe("enrolled intent hash across the risk-floor move", () => {
+	const DECLARATION = ".imm/risk-floor.json";
+	const enrolled = (taskId: string, scope: string) => {
+		const files: Record<string, string> = {
+			[`docs/plans/${taskId}.intent.json`]: intentJson({ ...INTENT_V1, task_id: taskId, scope_hint: [scope] }),
+		};
+		const declaration = join(process.cwd(), DECLARATION);
+		if (existsSync(declaration)) files[DECLARATION] = readFileSync(declaration, "utf8");
+		const root = makeRepo(files);
+		git(root, ["commit", "-q", "-m", "fixture"]);
+		return readTaskIntent(root, taskId);
+	};
+
+	test("an intent the floor raised keeps its hash and its floored risk", () => {
+		const read = enrolled("floored-intent", "plugins/immune-brain/runtime/kernel/intent.ts");
+		expect(read.intent.risk).toBe("material");
+		expect(read.content_hash).toBe("sha256:8da4ac58eebf0629cda9d21dc7bfe74ca458920f0e8b703b864700a8ed6bdaf0");
+	});
+
+	test.each(["material", "routine"] as const)("recorded %s identity survives policy changes", (risk) => {
+		const taskId = `recorded-${risk}`;
+		const path = `docs/plans/${taskId}.intent.json`;
+		const raw = { ...INTENT_V1, task_id: taskId, scope_hint: ["plugins/immune-brain/runtime/kernel/intent.ts"] };
+		const recorded = parseTaskIntentV1({ ...raw, risk });
+		const hash = canonicalIntentHash(recorded);
+		const root = makeRepo({ [path]: intentJson(raw) });
+		git(root, ["commit", "-qm", "legacy enrolled sidecar"]);
+		try {
+			const read = () => readTaskIntent(root, taskId, path, recorded);
+			expect(read().content_hash).toBe(hash);
+			mkdirSync(join(root, ".imm"), { recursive: true });
+			writeFileSync(join(root, DECLARATION), JSON.stringify({
+				contract: "assurance_kernel/risk_floor/v1", material: { paths: ["plugins/immune-brain/runtime/kernel"] },
+			}));
+			git(root, ["add", DECLARATION]);
+			git(root, ["commit", "-qm", "new project policy"]);
+			expect(read().content_hash).toBe(hash);
+			expect(resolveProjectedRisk(read().intent, [], readRiskFloor(root))).toBe("material");
+			writeFileSync(join(root, DECLARATION), "[]");
+			expect(read().content_hash).toBe(hash);
+			expect(read().intent.risk).toBe(risk);
+			expect(resolveProjectedRisk(read().intent, [], readRiskFloor(root))).toBe("critical");
+			// Candidate and new revisions still use the current fail-closed policy.
+			expect(parseProjectTaskIntent(root, raw).risk).toBe("critical");
+			expect(parseProjectTaskIntent(root, { ...raw, revision: 2 }, recorded).risk).toBe("critical");
+			writeFileSync(join(root, path), intentJson({ ...raw, goal: "Changed goal" }));
+			expect(read().content_hash).not.toBe(hash);
+			writeFileSync(join(root, path), intentJson({ ...raw, risk: "critical" }));
+			expect(read().content_hash).not.toBe(hash);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("an intent the floor did not raise keeps its hash and its declared risk", () => {
+		const read = enrolled("unfloored-intent", "src/feature.ts");
+		expect(read.intent.risk).toBe("routine");
+		expect(read.content_hash).toBe("sha256:5a7b125533b3dbb036e1211800c80c5ba00bd30559361db70b143a3cb762685d");
 	});
 });
