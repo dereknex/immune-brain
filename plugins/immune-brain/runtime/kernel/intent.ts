@@ -667,6 +667,7 @@ function readTaskIntentSource(
 	root: string,
 	taskId: string,
 	requestedPath?: string,
+	requireTracked = true,
 ): TaskIntentReadSource {
 	validateTaskId(taskId);
 
@@ -690,7 +691,7 @@ function readTaskIntentSource(
 	const fileIdentity = pathIdentities[pathIdentities.length - 1];
 
 	// Git tracking is an ownership convention, not user authentication.
-	try {
+	if (requireTracked) try {
 		execFileSync(
 			"git",
 			["ls-files", "--error-unmatch", "--", sidecarPath],
@@ -769,6 +770,14 @@ function readTaskIntentSource(
 			intent_content_hash: contentHash,
 		},
 	};
+}
+
+/** Validate the active sidecar before Enrollment can commit its untracked preconditions. */
+export function observeEnrollmentTaskIntent(root: string, taskId: string): ObservedTaskIntent {
+	const { identity: _identity, ...observed } = readTaskIntentSource(
+		root, taskId, `${INTENT_SIDECAR_RELATIVE_PREFIX}${taskId}.intent.json`, false,
+	);
+	return observed;
 }
 
 export function observeTaskIntent(

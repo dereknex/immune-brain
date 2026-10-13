@@ -1,0 +1,1159 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "run-only-gates-s2-enrollment-autocommit",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "run-only-gates-s2-enrollment-autocommit",
+    "goal": "Enrollment never asks the user to commit by hand: a host-neutral module commits, silently and with an explicit pathspec, the dirty files inside the task scope plus the task's own TaskIntent and Spec before the Enrollment binding is prepared, on Claude Code and Pi.",
+    "acceptance": [
+      {
+        "id": "ROG-S2-A1",
+        "assertion": "Meet T2, D5-D8 and invariants I4-I8 in docs/specs/run-only-gates.spec.md against real temporary repositories: listed untracked, modified and staged paths land in exactly one commit with the D8 subject; unrelated staged and unstaged paths are byte-identical in the index and the worktree afterwards; an empty or all-clean list creates no commit; a failing pre-commit hook throws with Git's message and commits nothing; an unmerged index, an assume-unchanged or skip-worktree flag on a listed path, and a path escaping the repository are refused; no push, amend, --no-verify, branch switch or Git config write occurs.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-autocommit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "ROG-S2-A2",
+        "assertion": "Meet D9-D11, I9, I10 and BR-SCN-2 on both Hosts: with an untracked Spec and TaskIntent and a modified file inside scope_hint, Enrollment succeeds, HEAD advances by one commit containing exactly those paths, and the native confirmation is bound to the new HEAD. Dirt outside the scope is untouched and does not block. An unborn HEAD still receives its empty root commit first. A dirty scope reaching the Kernel directly is still refused, and the refusal text does not tell the user to commit.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/enrollment-dirty-scope.test.ts\",\n      \"tests/enrollment-git-base.test.ts\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/pi-canary-enroll-extension.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "ROG-S2-A3",
+        "assertion": "Meet BR-7 for the commit boundary: BASELINE Shared Guards and Host Confirmation Boundary and the imm-run staging rule state that the runtime may commit a precondition's committable set without a separate confirmation and that this grants no push, publication, history rewrite or commit of other paths; the three BASELINE copies are identical; ADR 0023 records the decision and the accepted risk; the packaged Claude bundle matches its source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-effect-boundaries.test.ts\",\n      \"tests/baseline-packaging-contract.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/run-only-gates-s2-enrollment-autocommit.md",
+      "docs/adr/0023-silent-precondition-commit.md",
+      "docs/plans/run-only-gates-s2-enrollment-autocommit.intent.json",
+      "docs/specs/run-only-gates.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+      "plugins/immune-brain/BASELINE.md",
+      "plugins/immune-brain/dist/BASELINE.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts",
+      "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment.ts",
+      "plugins/immune-brain/runtime/kernel/intent.ts",
+      "plugins/immune-brain/runtime/workspace_scope.ts",
+      "plugins/immune-brain/skills/BASELINE.md",
+      "tests/baseline-packaging-contract.test.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/dist-docs-sync-contract.test.ts",
+      "tests/enrollment-dirty-scope.test.ts",
+      "tests/enrollment-git-base.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/workflow-autocommit.test.ts",
+      "tests/workflow-effect-boundaries.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/run-only-gates-s2-enrollment-autocommit.intent.json",
+    "content_hash": "sha256:6d9e8d932772e6bae96e6fd4890e090f8496d2c20f1cb9102ba8e12ad68f1ae9"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:8416501a937f3c9d3672b35adebc644cb2d8dc9020c9ce553854918d8d2e3fd3",
+  "git_base_head": "963998429fa2055462bb9a43ec87602bec7bf55e",
+  "attestations": [
+    {
+      "id": "approval-qa-6c2ad985",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8416501a937f3c9d3672b35adebc644cb2d8dc9020c9ce553854918d8d2e3fd3",
+      "diff_hash": "sha256:0daffc54ad4f0ead887318d339f9da58aa18e6aa0febe1a413e5fbd691e5a278",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:9c412191882a9b6fd68bcbc2a244091ca6cd10d3f13b8748ccaf2bd608cd7914",
+      "acceptance_results": [
+        {
+          "acceptance_id": "ROG-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:9c412191882a9b6fd68bcbc2a244091ca6cd10d3f13b8748ccaf2bd608cd7914"
+        },
+        {
+          "acceptance_id": "ROG-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:9c412191882a9b6fd68bcbc2a244091ca6cd10d3f13b8748ccaf2bd608cd7914"
+        },
+        {
+          "acceptance_id": "ROG-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:9c412191882a9b6fd68bcbc2a244091ca6cd10d3f13b8748ccaf2bd608cd7914"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-e5e3330d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8416501a937f3c9d3672b35adebc644cb2d8dc9020c9ce553854918d8d2e3fd3",
+      "diff_hash": "sha256:7288078b0fa657114f0ea22e1efb0484c9aaa4a1bd49c6c59cdc151d256b7f10",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:47158df94b8707f3bb7ab88df0cf49a345e2c47dd57ca5e4909b9960bf335205",
+      "acceptance_results": [
+        {
+          "acceptance_id": "ROG-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:47158df94b8707f3bb7ab88df0cf49a345e2c47dd57ca5e4909b9960bf335205"
+        },
+        {
+          "acceptance_id": "ROG-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:47158df94b8707f3bb7ab88df0cf49a345e2c47dd57ca5e4909b9960bf335205"
+        },
+        {
+          "acceptance_id": "ROG-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:47158df94b8707f3bb7ab88df0cf49a345e2c47dd57ca5e4909b9960bf335205"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-1fa2212d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6d9e8d932772e6bae96e6fd4890e090f8496d2c20f1cb9102ba8e12ad68f1ae9",
+      "diff_hash": "sha256:7f8de3ac13194ae14149f28776cedae5c76440559931d2d47bf4e75f454935aa",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:972371aab690c97f2696f6be09a64c7a958e6999808d6a33fe4580bba4ba6593",
+      "acceptance_results": [
+        {
+          "acceptance_id": "ROG-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:972371aab690c97f2696f6be09a64c7a958e6999808d6a33fe4580bba4ba6593"
+        },
+        {
+          "acceptance_id": "ROG-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:972371aab690c97f2696f6be09a64c7a958e6999808d6a33fe4580bba4ba6593"
+        },
+        {
+          "acceptance_id": "ROG-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:972371aab690c97f2696f6be09a64c7a958e6999808d6a33fe4580bba4ba6593"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-dbd0e9a1",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6d9e8d932772e6bae96e6fd4890e090f8496d2c20f1cb9102ba8e12ad68f1ae9",
+      "diff_hash": "sha256:f2406a5cb426180d1e9576b58bcd146ace00a2a5eb7ab4017f7c6da3da198caf",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:0c889dd1dab36f19fee32d03d00e320915641f52212f3d8726e7ce0e0ad5bb20",
+      "acceptance_results": [
+        {
+          "acceptance_id": "ROG-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:0c889dd1dab36f19fee32d03d00e320915641f52212f3d8726e7ce0e0ad5bb20"
+        },
+        {
+          "acceptance_id": "ROG-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:0c889dd1dab36f19fee32d03d00e320915641f52212f3d8726e7ce0e0ad5bb20"
+        },
+        {
+          "acceptance_id": "ROG-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:0c889dd1dab36f19fee32d03d00e320915641f52212f3d8726e7ce0e0ad5bb20"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-0717d17a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6d9e8d932772e6bae96e6fd4890e090f8496d2c20f1cb9102ba8e12ad68f1ae9",
+      "diff_hash": "sha256:7880d45effa3eca86199fe183be3469e81765c5ce906e72df93363d64562e528",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:9f349c520af51b54bb434ee86296b8c4f50308361aca3149f9ed978d981a8c5e",
+      "acceptance_results": [
+        {
+          "acceptance_id": "ROG-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:9f349c520af51b54bb434ee86296b8c4f50308361aca3149f9ed978d981a8c5e"
+        },
+        {
+          "acceptance_id": "ROG-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:9f349c520af51b54bb434ee86296b8c4f50308361aca3149f9ed978d981a8c5e"
+        },
+        {
+          "acceptance_id": "ROG-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:9f349c520af51b54bb434ee86296b8c4f50308361aca3149f9ed978d981a8c5e"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-766b86b6",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6d9e8d932772e6bae96e6fd4890e090f8496d2c20f1cb9102ba8e12ad68f1ae9",
+      "diff_hash": "sha256:9b889f065d3b5511a648025df2a138608950e908ddba86098ca05875689b2ecc",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:d8ac6150f26b417491e490cae439ccd856010b75166f9c84ae4cd7ad9221f5a8",
+      "acceptance_results": [
+        {
+          "acceptance_id": "ROG-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:d8ac6150f26b417491e490cae439ccd856010b75166f9c84ae4cd7ad9221f5a8"
+        },
+        {
+          "acceptance_id": "ROG-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:d8ac6150f26b417491e490cae439ccd856010b75166f9c84ae4cd7ad9221f5a8"
+        },
+        {
+          "acceptance_id": "ROG-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:d8ac6150f26b417491e490cae439ccd856010b75166f9c84ae4cd7ad9221f5a8"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-05c534e7",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6d9e8d932772e6bae96e6fd4890e090f8496d2c20f1cb9102ba8e12ad68f1ae9",
+      "diff_hash": "sha256:25739c68785cea2d6631b2ce8ccada477191a7d4f629d56146f628b63c6e4599",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:9d0739d0d613591f7f025a5c4d7bdb6a2e0b937fb8441a27dd4575d7b7e32af4",
+      "acceptance_results": [
+        {
+          "acceptance_id": "ROG-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:9d0739d0d613591f7f025a5c4d7bdb6a2e0b937fb8441a27dd4575d7b7e32af4"
+        },
+        {
+          "acceptance_id": "ROG-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:9d0739d0d613591f7f025a5c4d7bdb6a2e0b937fb8441a27dd4575d7b7e32af4"
+        },
+        {
+          "acceptance_id": "ROG-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:9d0739d0d613591f7f025a5c4d7bdb6a2e0b937fb8441a27dd4575d7b7e32af4"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-8d21ee3b",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6d9e8d932772e6bae96e6fd4890e090f8496d2c20f1cb9102ba8e12ad68f1ae9",
+      "diff_hash": "sha256:8a5b7fdb0150dd56fc9501b4cf5769ab60077dfeb0a5c86fcee54f7314861c53",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:64e61c586f12627df57601e98a6cbe8095fa4eb44a396658c19af614596e600a",
+      "acceptance_results": [
+        {
+          "acceptance_id": "ROG-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:64e61c586f12627df57601e98a6cbe8095fa4eb44a396658c19af614596e600a"
+        },
+        {
+          "acceptance_id": "ROG-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:64e61c586f12627df57601e98a6cbe8095fa4eb44a396658c19af614596e600a"
+        },
+        {
+          "acceptance_id": "ROG-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:64e61c586f12627df57601e98a6cbe8095fa4eb44a396658c19af614596e600a"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-c992dc8a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6d9e8d932772e6bae96e6fd4890e090f8496d2c20f1cb9102ba8e12ad68f1ae9",
+      "diff_hash": "sha256:426c2072cdb3f8e4876ce2c887c563f9f668989d0285de2b2baa07c5f6a9b88e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:33ab570d9be4ab8dd4f3f04a36e5300bfaa7550cc7fa78f94eae382e9047ecd4",
+      "acceptance_results": [
+        {
+          "acceptance_id": "ROG-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:33ab570d9be4ab8dd4f3f04a36e5300bfaa7550cc7fa78f94eae382e9047ecd4"
+        },
+        {
+          "acceptance_id": "ROG-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:33ab570d9be4ab8dd4f3f04a36e5300bfaa7550cc7fa78f94eae382e9047ecd4"
+        },
+        {
+          "acceptance_id": "ROG-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:33ab570d9be4ab8dd4f3f04a36e5300bfaa7550cc7fa78f94eae382e9047ecd4"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-95b1095b",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6d9e8d932772e6bae96e6fd4890e090f8496d2c20f1cb9102ba8e12ad68f1ae9",
+      "diff_hash": "sha256:426c2072cdb3f8e4876ce2c887c563f9f668989d0285de2b2baa07c5f6a9b88e",
+      "actor_id": "parent-mediated-review",
+      "summary": "已验证 manifest digest、review commit 的单一父提交与 tree，并检查全部 19 个变更路径的完整 diff、相关调用链及验收测试；结合 Kernel 已通过的 QA evidence，未发现阻断性缺陷。本角色未重新执行测试。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "963998429fa2055462bb9a43ec87602bec7bf55e",
+        "review_commit": "4efc532bd7b8ca3f41324e6763c2096fecc8ace9",
+        "review_tree": "1683de6158a7ebb5f5d504ba1afd14ded38c1760",
+        "manifest_digest": "sha256:afd299d71eb6e0d072bd0425c625483b132f33f3872d9c81d2407925f9e75022"
+      },
+      "reviewer_verdict_sha256": "sha256:ebbf415e22bc667e893f23820f6e54c718e236a9342c4d073327887f0a5e2396"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-3c8e9969f271-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "ROG-S2-A2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Both Host enroll handlers run the precondition commit before any ownership or authority check, so an enroll call that can never succeed (workspace already owned by an active task, terminal task, authority conflict) still commits every dirty in-scope path, including the active task's undelivered Executor work. This breaks D6 (commit only when a precondition would otherwise fail) and the BASELINE limit that the grant covers no other commit. Fix: derive and commit the set only after the owner checks admit a fresh Enrollment, and add a test per Host pinning that enroll against an owned workspace leaves HEAD and the index unchanged.",
+      "anchor": "sha256:3331a5521806d6c889ff35742669aebb009204833336c5b2ed66addd0889fcc2",
+      "evidence": {
+        "trigger": "Task A is enrolled and active with uncommitted Executor edits inside its scope_hint (dirtyScopePaths compares against HEAD only and does not consult the Enrollment baseline). The model calls enroll again for A, or for a task B whose scope_hint overlaps those paths. Claude: ClaudeRuntime.enroll calls commitEnrollmentPreconditions as its first statement, before preparePiCanary, the native gate and enrollTask's owner refusal. Pi: executeForegroundEnrollment calls it immediately after recoverLayout and before reconcileKernelAuthority's active_owner / repairable_stale_claim / authority_conflict / terminal_owner returns and before the 'already owned by the Kernel backend' and 'Workspace is owned by' checks. Result: a commit 'chore(imm): commit Enrollment preconditions for <task>' containing the active task's in-progress work, followed by route_incumbent or a refusal. No delivered test covers enroll on an owned workspace with dirty scope. Unchanged path read for this finding: plugins/immune-brain/runtime/workspace_scope.ts (dirtyScopePaths/dirtyPaths), because the changed caller enrollmentCommittablePaths derives its commit set from it.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.enroll",
+          "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts:executeForegroundEnrollment",
+          "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts:commitEnrollmentPreconditions",
+          "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts:enrollmentCommittablePaths",
+          "plugins/immune-brain/runtime/workspace_scope.ts:dirtyScopePaths",
+          "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts:commitWorkflowPaths"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "ROG-S2-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-3c8e9969f271-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "ROG-S2-A2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "On the unborn-HEAD path the late precondition commit is followed by a bare preparePiCanary whose result replaces the confirmed preparation with no comparison to it. D9 requires re-preparing 'the same way that function already does': initializeEnrollmentGitBase rejects any difference outside digest/git_base_head/git_error, the late re-prepare does not. The window spans a full git commit including user hooks, so a TaskIntent or owner state changed in that window is enrolled with an intent_content_hash and preparation_digest the user never confirmed (I9 binding). Fix: compare the re-prepared owners with the confirmed preparation (same withoutGit equality, expected git_base_head equal to the new commit) and fail with the remaining-commit note otherwise; add a test that changes the TaskIntent during the late commit (for example from a pre-commit hook) and expects refusal with no TaskRecord.",
+      "anchor": "sha256:2455cf6af36d726ead878938f8b887deb2ee16d12df08236866a18157a631b00",
+      "evidence": {
+        "trigger": "Unborn HEAD, TaskIntent staged, dirty files inside scope_hint (the scopedFixture('unborn') shape). User accepts the native confirmation; revalidatePiCanary and initializeEnrollmentGitBase pass; commitEnrollmentPreconditions then runs git commit with hooks. During that commit docs/plans/<task>.intent.json is rewritten in the worktree (a pre-commit hook, or any concurrent writer, changing scope_hint or acceptance). late.committed is true, preparation = preparePiCanary(...) reads the changed sidecar, and the EnrollmentCapabilityBinding is built from the new intent revision/content_hash/digest and passed to enrollTask, which validates the binding against current state only. In Pi the confirmedContentHash checks run before this point and are not repeated. Delivered unborn tests assert only the happy path.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.enroll",
+          "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts:executeForegroundEnrollment",
+          "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts:initializeEnrollmentGitBase",
+          "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts:commitEnrollmentPreconditions",
+          "plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts:preparePiCanary",
+          "plugins/immune-brain/runtime/kernel/enrollment.ts:enrollTask"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "ROG-S2-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-3c8e9969f271-3-review-3",
+      "kind": "advisory",
+      "status": "open",
+      "acceptance_id": "ROG-S2-A2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The Spec's seam table names tests/pi-canary-enroll-extension.test.ts for ROG-S2-A2, but that file is unchanged; the Pi-side BR-SCN-2 Then is asserted in tests/enrollment-git-base.test.ts, which parameterizes over Pi and Claude and is also a named seam. Coverage exists, noted only so the seam list is not read as fully exercised.",
+      "anchor": "sha256:7ccac27b1501d64661f47a7873a2ff34fda5338844adaa10be43cbee6ab9e60c",
+      "evidence": {
+        "trigger": "git diff 9639984..77d92ff shows no change to tests/pi-canary-enroll-extension.test.ts; the BR-SCN-2 test lives in the `for (const host of [\"Pi\", \"Claude\"])` block of tests/enrollment-git-base.test.ts.",
+        "caller_chain": [
+          "tests/enrollment-git-base.test.ts",
+          "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts:executeForegroundEnrollment"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "ROG-S2-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-01f185e19fa6-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "ROG-S2-A2",
+      "source": "review",
+      "review_round": 2,
+      "summary": "P1：自动提交在 TaskIntent 文件边界校验之前发生。enrollment_git_base.ts:57 使用 readFileSync 跟随最终组件的 symlink，且 :80–81 的 owner 检查允许 preparation.intent 为 null；因此一个正式 Enrollment reader 会拒绝的外部 TaskIntent 仍可决定提交哪些用户文件。应在产生 Git 副作用之前执行现有 descriptor 的路径、regular-file、大小和身份校验，同时允许合法的未跟踪 TaskIntent，并增加两个 Host 的拒绝测试，断言 HEAD 和 index 不变。",
+      "anchor": "sha256:5a2255201dbfcc33e69ee7695a24a764c2f2dd62a3437dae0e0dd047e57ced68",
+      "evidence": {
+        "trigger": "在已有 HEAD、无 Kernel owner 的仓库中，docs/plans/demo-task.intent.json 是指向仓库外合法 JSON 的 symlink；该 JSON 的 task_id 为 demo-task、scope_hint 包含 src，且 src/task.ts 已修改。enrollmentCommittablePaths 在 :57 跟随链接并取得 scope；preparePiCanary 会把安全读取失败转换为 intent:null，但 freshEnrollmentAdmitted 在 :81 只检查 owner，因此仍允许 commitWorkflowPaths 提交 symlink 和 src/task.ts。随后 Host 的正式 TaskIntent 读取才拒绝 symlink。未变更的 plugins/immune-brain/runtime/kernel/intent.ts:635–645、689、711–727 因其直接拥有 TaskIntent descriptor 安全边界而被读取；它要求路径无 symlink、文件为 regular file 且不超过 64 KiB。未变更的 kernel/pi_canary_prepare.ts 和 kernel/storage.ts 因其直接拥有这里使用的 preparation 和 authority 状态而被读取，确认 intent:null 并不代表存在 owner。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts:commitEnrollmentPreconditions",
+          "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts:enrollmentCommittablePaths",
+          "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts:freshEnrollmentAdmitted",
+          "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts:commitWorkflowPaths"
+        ],
+        "violated": {
+          "kind": "security_boundary",
+          "ref": "TaskIntent descriptor validation before precondition Git effects"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-01f185e19fa6-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "ROG-S2-A2",
+      "source": "review",
+      "review_round": 2,
+      "summary": "P2：enrollment_git_base.ts:53 将自动提交限定为小写字母、数字和连字符，缩小了现有 Enrollment 的合法 task_id 集合。合法的 Demo_Task.1 等任务遇到未跟踪 TaskIntent 或 dirty scope 时会跳过自动提交并继续被拒绝。应沿用 Enrollment 的 task_id 校验，并在已有双 Host 测试中覆盖包含大写、下划线和点的合法 ID，断言准确的一次提交及成功 Enrollment。",
+      "anchor": "sha256:b569ae701538aff1145a4c8466ec50ccce1e1fb8e888a5eb4dee605ffae89939",
+      "evidence": {
+        "trigger": "任务 ID 为 Demo_Task.1，仓库已有 HEAD 且无 owner，docs/plans/Demo_Task.1.intent.json 和绑定的 Spec 未跟踪，scope_hint 内还有修改的 src/task.ts。两个 Host 都能接受该 task_id，但 enrollmentCommittablePaths:53 直接返回 null，commitEnrollmentPreconditions:96 返回 committed:false，随后正式读取因 TaskIntent 未跟踪而拒绝；若 TaskIntent 已 staged，则 Kernel 的 dirty-scope 检查仍拒绝。未变更的 plugins/immune-brain/runtime/kernel/intent.ts:121、validateTaskId 和 kernel/pi_canary_prepare.ts:preparePiCanary 因其直接定义下游 Enrollment 输入契约而被读取，均允许 [A-Za-z0-9][A-Za-z0-9._-]{0,127}；变更的 Pi adapter 也使用同一范围。现有新测试仅使用 unborn-enrollment，未覆盖此合法输入类别。",
+        "caller_chain": [
+          "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts:executeForegroundEnrollment",
+          "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts:commitEnrollmentPreconditions",
+          "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts:enrollmentCommittablePaths"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "ROG-S2-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-a90266de6048-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "ROG-S2-A2",
+      "source": "review",
+      "review_round": 3,
+      "summary": "owner admission 与提交之间存在竞态。plugins/immune-brain/runtime/assurance/enrollment_git_base.ts:90 在无锁状态下检查 owner，随后调用 commitWorkflowPaths；另一个 session 可以在这两步之间完成 Enrollment 并产生 Executor 改动，旧调用仍会提交这些改动。当前 owner guard 只保护检查时已经存在的 owner。应通过现有 Kernel transaction 同步 owner 检查与 Git 提交，并增加双 session 交错测试。只读追踪 plugins/immune-brain/runtime/kernel/storage.ts:1328 是因为它拥有同一 workspace 的 transaction；Enrollment 的 owner 检查和写入使用这个 transaction。",
+      "anchor": "sha256:04112894439010fd83fc48fbe221a87ae244822a29b95451efd2d1bca3a351e0",
+      "evidence": {
+        "trigger": "不变量类：owner admission 必须覆盖实际提交。Session A 对 task X 的 freshEnrollmentAdmitted 返回 true 后暂停；Session B 完成 X 的 precondition commit、native confirmation 和 Enrollment，随后修改 A 原先列出的 src/task.ts；A 恢复后，commitWorkflowPaths 从当前状态重新收集 dirty paths 并提交 B 的 Executor 改动。之后的 owner refusal 无法撤销已发生的 Git effect。现有 active-owner 测试只覆盖 owner 在初始检查前就存在的情况，未覆盖此检查与提交之间的窗口。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.enroll",
+          "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts:commitEnrollmentPreconditions",
+          "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts:freshEnrollmentAdmitted",
+          "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts:commitWorkflowPaths",
+          "plugins/immune-brain/runtime/kernel/enrollment.ts:enrollCanaryTask",
+          "plugins/immune-brain/runtime/kernel/storage.ts:withKernelStoreLock"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "ROG-S2-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-a90266de6048-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "ROG-S2-A3",
+      "source": "review",
+      "review_round": 3,
+      "summary": "无效 Spec binding 仍获得 silent commit。plugins/immune-brain/runtime/assurance/enrollment_git_base.ts:58 已取得 binding.ok=false，却继续返回 TaskIntent 和 dirtyScope，导致两个 active Spec 或仅有 archive Spec 的候选先被提交，随后才被 Kernel 拒绝。这超出了 BASELINE 将免确认提交限定为仅受未提交路径阻碍的 precondition。应在 binding 无效时停止生成 committable set，并增加两 Host 的零 Git effect 测试。只读检查 plugins/immune-brain/runtime/kernel/spec_binding.ts:84 是为了确认该调用返回的 binding_ambiguous/binding_incomplete 契约。",
+      "anchor": "sha256:040845ea23f15280aef03a7694bd722b52067aa431d25e5b19950270ca34ed22",
+      "evidence": {
+        "trigger": "不变量类：候选验证必须先于免确认 Git effect。在 committed、unowned repository 中提供 schema-valid 的 TaskIntent，其 scope_hint 为 src、docs/specs/a.spec.md、docs/specs/b.spec.md，并留下 src/task.ts 的修改。inspectSpecBinding 返回 binding_ambiguous，但 enrollmentCommittablePaths 仍返回 intentPath 与 dirtyScope，freshEnrollmentAdmitted 通过，Host 自动提交这些路径；runEnrollmentPreconditionChecks 随后因同一无效 binding 拒绝 Enrollment。现有 invalid-TaskIntent 测试覆盖文件安全和 schema 校验，没有覆盖独立的 Spec binding 校验。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.enroll",
+          "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts:enrollmentCommittablePaths",
+          "plugins/immune-brain/runtime/kernel/spec_binding.ts:inspectSpecBinding",
+          "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts:commitWorkflowPaths",
+          "plugins/immune-brain/runtime/kernel/enrollment.ts:runEnrollmentPreconditionChecks"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "ROG-S2-A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-a90266de6048-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "ROG-S2-A2",
+      "source": "review",
+      "review_round": 3,
+      "summary": "Pi 的提前返回遗漏已留下的 precondition commit。plugins/immune-brain/.pi-extension/imm-canary-enroll.ts:392 保存 gitBaseNote，但 confirmation 后的 Intent drift 和 workspace drift 分支在 :532、:543、:549 直接返回 terminal，未附加该提示。用户因此收到 Enrollment aborted，却不知道此前的 silent commit 已留在 history，违反 Spec 的 interruption/recovery 契约及新增 BASELINE。应统一为提交后的失败 terminal 附加 commit note，并在现有 Host seam 增加 confirmation-time drift 测试。",
+      "anchor": "sha256:15084d59c2798130700eb5ac5ca060eb930f64a17a3956cc548fa1eeb14c26e0",
+      "evidence": {
+        "trigger": "不变量类：每个提交后的失败出口都必须报告剩余 commit。使用 committed-head BR-SCN-2 fixture，让 Pi 完成 precondition commit；在 native confirmation 打开期间修改 TaskIntent.goal，然后接受确认。liveEarly 与 confirmedContentHash 不同，:532 的 blocked terminal 直接返回，summary 不含 Enrollment precondition commit <sha> remains，而 HEAD 已推进。当前 decline/cancel 与 thrown-error 分支的提示修复不覆盖这些提前返回的 blocked outcome。",
+        "caller_chain": [
+          "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts:executeForegroundEnrollment",
+          "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts:commitEnrollmentPreconditions",
+          "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts:requestEnrollmentConfirmation",
+          "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts:liveEarly confirmation revalidation",
+          "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts:terminal"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "ROG-S2-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-b614f0a78364-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "ROG-S2-A1",
+      "source": "review",
+      "review_round": 4,
+      "summary": "P1：plugins/immune-brain/runtime/assurance/workflow_autocommit.ts:127 的 git commit --only 不能保证 hooks 执行后的提交范围。pre-commit hook 可以将未列出的路径加入 Git 提供的临时 index，随后该路径会进入自动提交；第 136 行仍返回成功及原来的 dirty 列表。需要在 HEAD 前进之前校验 hook 执行后的候选提交没有越出允许集合，并在 tests/workflow-autocommit.test.ts 增加 hook 暂存范围外文件的回归测试，同时保留正常 hook 执行。",
+      "anchor": "sha256:93f86d4b24629382d3d09ffb99139b08cb339d852e3143bd9e39d7e44f2bff63",
+      "evidence": {
+        "trigger": "在已有 committed HEAD 的仓库中，src/a.ts 被修改，other/staged.ts 的 index 和 worktree 分别持有不同于 HEAD 的用户内容。调用 commitWorkflowPaths(root, { paths: ['src/a.ts'], subject: 'chore(imm): commit Enrollment preconditions for demo-task' })，并配置正常返回成功的 pre-commit hook，使其执行 git add -- other/staged.ts。git commit --only 为 hook 提供可写的临时 GIT_INDEX_FILE；hook 将 other/staged.ts 的 worktree 内容写入该 index，Git 随后据此创建同时包含两个路径的提交。此问题属于 I4 的提交集合隔离缺口：显式 pathspec 约束初始集合，却没有约束 hook 执行后的集合。现有 unrelated-dirt 测试没有运行会暂存文件的 hook，successful-hook 测试只创建 marker，因此都没有覆盖这个触发条件。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+          "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts",
+          "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "ROG-S2-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-50f583f7e8f4-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "ROG-S2-A1",
+      "source": "review",
+      "review_round": 5,
+      "summary": "P1 — plugins/immune-brain/runtime/assurance/workflow_autocommit.ts:95–104 会覆盖已有的 guard.cjs：转发 hook 目录时先创建同名 symlink，随后 writeFileSync 跟随该链接并截断用户文件。将生成的 guard 放在独立的私有临时目录，避免与原 hook 文件共享命名空间，并在 tests/workflow-autocommit.test.ts 增加成功及 hook 拒绝两种情况下原文件字节不变的回归测试。",
+      "anchor": "sha256:83c28fdd995175a70fa756db8bd5a71d596b6b9b05938d9b53c0a53f8e589b63",
+      "evidence": {
+        "trigger": "不变量类：committable set 外的文件必须保持原样。一个已有 committed HEAD 的仓库配置 core.hooksPath=custom-hooks，目录内已有包含用户代码的 tracked custom-hooks/guard.cjs；仅 src/a.ts 有待提交改动，调用 commitWorkflowPaths(root, {paths: ['src/a.ts'], subject: 合法单行主题})。第 95–96 行将 custom-hooks/guard.cjs 链接到临时 hooks/guard.cjs，第 103–104 行写入生成代码时跟随 symlink，永久覆盖 scope 外的 custom-hooks/guard.cjs。finally 仅移除临时链接，无法恢复原内容，即使后续 pre-commit 拒绝也已造成数据丢失。当前 final-tree guard 只校验提交路径、parent 和 subject，不能覆盖这个发生在提交前的文件写入；已有测试未包含同名 hook 辅助文件。相同代码也存在于 packaged Claude bundle 的第 12630–12644 行。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.enroll",
+          "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts:commitEnrollmentPreconditions",
+          "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts:commitWorkflowPaths",
+          "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts:commitWithPathGuard"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "ROG-S2-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-c8e954fc7df4-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "ROG-S2-A1",
+      "source": "review",
+      "review_round": 6,
+      "summary": "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts:97–99 将原 hooks 作为 symlink 放入临时目录，改变了脚本收到的 $0，导致依赖自身位置加载父目录 helper 的 hook 失败或静默跳过检查，违反 D7 的 hooks 正常执行要求。最小修复是用 forwarding wrapper 执行原 hook 的绝对路径，保留参数、输入和退出状态；在 tests/workflow-autocommit.test.ts 增加通过 $0 加载父目录拒绝脚本的测试，断言提交被拒绝、HEAD 不变，并同步 Claude bundle。",
+      "anchor": "sha256:81967d4f7c9bc3bde4e8dd2e0f12b81f001b318cdc91e482fa4b6de019897652",
+      "evidence": {
+        "trigger": "Invariant class: hook invocation fidelity. 在已有 committed HEAD、存在 listed dirty path 的仓库中，core.hooksPath=.githooks/_；可执行 .githooks/_/pre-commit 根据 dirname \"$0\" 加载 ../pre-commit，helper 不存在时正常退出；.githooks/pre-commit 实际执行拒绝策略并 exit 1。普通 Git 提交会运行该策略并拒绝提交。本实现从临时 hooks/pre-commit symlink 启动脚本，使 helper 路径变成临时目录下的 pre-commit，脚本因此跳过策略；最终 commit 的路径、parent 和 subject 仍符合 reference-transaction guard，提交成功。当前 forwarding 保留了脚本内容，最终 tree guard 保护了提交路径集合，但二者都没有覆盖原 hook 调用位置这一类不变量；已有 helper 测试使用仓库根目录相对路径，未覆盖此情况。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts:commitEnrollmentPreconditions",
+          "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts:commitWorkflowPaths",
+          "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts:commitWithPathGuard"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "ROG-S2-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:54:17.451Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "kernel",
+      "review_round": 6,
+      "summary": "Review exhausted its 5-round rework budget; a durable replan is required."
+    },
+    {
+      "id": "review-d35eeb99a24a-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "ROG-S2-A1",
+      "source": "review",
+      "review_round": 7,
+      "summary": "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts:180-188 把所有 porcelain 状态路径作为最终提交的必需路径，但 :145 的 git commit --only 使用 worktree 内容。若某个列出的文件已暂存修改、随后 worktree 恢复为 HEAD 内容，它仍以 MM 出现在 status 中，却不会出现在最终提交树的 diff 中；:133 因路径数量不一致而拒绝正常提交，导致两端 Enrollment 在没有拒绝 hook 的情况下失败。应让预期提交路径集合与 --only 实际使用的候选内容一致，同时保留严格的最终提交树校验；在 tests/workflow-autocommit.test.ts 和两端 Enrollment 测试中覆盖这种 index/worktree 分歧。",
+      "anchor": "sha256:126513aef47b5806c18e6215b70695470e85d5223839e452a737ee7d06d7b23d",
+      "evidence": {
+        "trigger": "不变量类别：提交候选集合与最终提交树的一致性。仓库已有已提交的有效 TaskIntent；修改其 goal 并暂存，再将 worktree TaskIntent 恢复为 HEAD 内容，同时修改 scope_hint 内的 src/task.ts。enrollmentCommittablePaths 会因 src/task.ts 的修改返回 TaskIntent 和 src/task.ts；commitWorkflowPaths 的 status 将二者都计入 dirty，但 --only 生成的提交只改变 src/task.ts，reference-transaction guard 随即报 automatic commit refuses hook changes。现有 hook 路径边界修复检查的是提交树是否被 hooks 扩大或缩小，未覆盖执行任何 hook 之前就存在的 index/worktree 分歧；已交付测试也没有固定此情况。未变更的 plugins/immune-brain/runtime/workspace_scope.ts:139-153、423-430 因直接决定 Enrollment 候选集合而读取：dirtyScopePaths 使用 git diff HEAD，随后 enrollment_git_base.ts:60 仍会追加任务自己的 TaskIntent。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.enroll",
+          "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts:commitEnrollmentPreconditions",
+          "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts:enrollmentCommittablePaths",
+          "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts:commitWorkflowPaths",
+          "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts:commitWithPathGuard"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "ROG-S2-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:run-only-gates-s2-enrollment-autocommit:2026-10-13T04:04:03.654Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "kernel",
+      "review_round": 7,
+      "summary": "Review exhausted its 5-round rework budget; a durable replan is required."
+    },
+    {
+      "id": "review-a348a9fa7f36-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "ROG-S2-A1",
+      "source": "review",
+      "review_round": 8,
+      "summary": "[P1] Git hook 行为等价性仍有缺口。workflow_autocommit.ts:55 强制设置的 GIT_LITERAL_PATHSPECS=1 被 :106 和 :120 转发给原 hook，使使用 '*.ts' 等 pathspec 的检查看不到应检查的文件，可能放行普通 git commit 会拒绝的内容。另外，:94 和 :111 对合法的 core.hooksPath=/dev/null 抛出 ENOTDIR，使自动提交无法执行。最小修复是在调用原 hook 时恢复调用前的 pathspec 环境，并将禁用 hooks 的配置作为没有原 hook 处理，同时保留 runtime 的 reference-transaction guard；在 tests/workflow-autocommit.test.ts 添加这两个负向/边界用例并同步生成 bundle。",
+      "anchor": "sha256:09cd3cfc32a38e667136ef385a14fd676f8908418c85b1e8e8335172a131a516",
+      "evidence": {
+        "trigger": "Invariant class: Git hook behavioral equivalence. 第一种输入：调用环境未设置 GIT_LITERAL_PATHSPECS，listed paths 包含已修改的 src/a.ts，现有 pre-commit hook 使用 git diff --cached --name-only -- '*.ts' 选择需要检查或拒绝的文件。git() 为 commit 注入 GIT_LITERAL_PATHSPECS=1，转发 wrapper 和原 reference-transaction hook 均继承它，因此通配 pathspec 被当作字面文件名，选择结果为空，原策略可能被绕过。只读 immutable Git diff 对同一 revision 的验证确认了这一差异：普通 assurance/*.ts pathspec 返回两个 changed paths，设置该变量后返回零个。第二种输入：committed HEAD、非空 dirty listed paths、core.hooksPath=/dev/null；originalHooks 为 /dev/null，readdirSync 抛出 ENOTDIR，且 catch 仅容许 ENOENT；后续 reference-transaction 的 accessSync 同样未容许 ENOTDIR。现有 forwarding 修复保留了 hook 的调用路径，tree guard 保护了提交路径集合，但它们未覆盖 hook 继承的 Git 环境及合法禁用配置，所以这是同一 hook 等价性 invariant 的覆盖缺口。ROG-S2-A1 引用的 unchanged docs/specs/run-only-gates.spec.md 因其 D7 明确要求 hooks run normally 而被读取；交付测试覆盖了调用路径和 veto，但没有覆盖上述两个状态。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts:commitEnrollmentPreconditions",
+          "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts:commitWorkflowPaths",
+          "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts:commitWithPathGuard",
+          "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts:git"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "ROG-S2-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:run-only-gates-s2-enrollment-autocommit:2026-10-13T04:17:28.290Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "kernel",
+      "review_round": 8,
+      "summary": "Review exhausted its 5-round rework budget; a durable replan is required."
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:run-only-gates-s2-enrollment-autocommit:2026-10-13T02:15:29.584Z",
+      "at": "2026-10-13T02:15:29.584Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/run-only-gates-s2-enrollment-autocommit.intent.json"
+    },
+    {
+      "id": "record_approval:run-only-gates-s2-enrollment-autocommit:2026-10-13T02:16:54.362Z",
+      "at": "2026-10-13T02:16:54.362Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-6c2ad985\naction_v2_sha256:63a693cd5942e848f15aa75fd7317a4903de8f4091dc8096becafab43c72550f",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-13T02:16:54.362Z"
+      }
+    },
+    {
+      "id": "request_rework:run-only-gates-s2-enrollment-autocommit:2026-10-13T02:20:09.349Z",
+      "at": "2026-10-13T02:20:09.349Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:e227ebd6209fd7e15b75658b3dd73ee273c0fc3d0c5f1d6a436f6d89228bb4a8",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-13T02:20:09.350Z"
+      }
+    },
+    {
+      "id": "resolve_finding:run-only-gates-s2-enrollment-autocommit:2026-10-13T02:42:43.090Z",
+      "at": "2026-10-13T02:42:43.090Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-3c8e9969f271-1-review-1\naction_v2_sha256:486ef3a9e430dee2f3bbd2a6473e5d6b99b4675da3cb2f09e7577cad1fbff5d5"
+    },
+    {
+      "id": "resolve_finding:run-only-gates-s2-enrollment-autocommit:2026-10-13T02:42:47.064Z",
+      "at": "2026-10-13T02:42:47.064Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-3c8e9969f271-2-review-2\naction_v2_sha256:b6a3a3c4a51add03b2ff0de78f1a5728344c0cc16bd4a98b3b6bb3e7804b0d36"
+    },
+    {
+      "id": "freeze_artifacts:run-only-gates-s2-enrollment-autocommit:2026-10-13T02:42:52.353Z",
+      "at": "2026-10-13T02:42:52.353Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/run-only-gates-s2-enrollment-autocommit.intent.json"
+    },
+    {
+      "id": "record_approval:run-only-gates-s2-enrollment-autocommit:2026-10-13T02:44:14.952Z",
+      "at": "2026-10-13T02:44:14.952Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e5e3330d\naction_v2_sha256:6fd355cbc6c126fc247d2c51364e9e09c2ee7f4531616d3b992b85bbe3367a63",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-13T02:44:14.952Z"
+      }
+    },
+    {
+      "id": "request_rework:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:01:16.188Z",
+      "at": "2026-10-13T03:01:16.188Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:a9376a9362e9e613aea3eb54e84ccafbf7d22dde97c6c4575807ee93f9f2aecf",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-dc286ea7d4bcb11d",
+        "issued_at": "2026-10-13T03:01:16.189Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:04:18.561Z",
+      "at": "2026-10-13T03:04:18.561Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:65a5dd6eca41fd43586e8c58866fcd9cd8167650ebf85014f1fa7d413148be37",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-27afd58d27b3c979",
+        "issued_at": "2026-10-13T03:04:20.761Z"
+      }
+    },
+    {
+      "id": "resolve_finding:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:12:11.496Z",
+      "at": "2026-10-13T03:12:11.496Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-01f185e19fa6-1-review-1\naction_v2_sha256:3d43cfca6cf979488960bfb4b68213f85d989f01dabd369784d881048b1be164"
+    },
+    {
+      "id": "resolve_finding:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:12:20.814Z",
+      "at": "2026-10-13T03:12:20.814Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-01f185e19fa6-2-review-2\naction_v2_sha256:3be7dad43bf64a4b4859daa0e618865c9559b3aa8ee600c445fe0dbc3ca1f71f"
+    },
+    {
+      "id": "freeze_artifacts:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:12:30.066Z",
+      "at": "2026-10-13T03:12:30.066Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/run-only-gates-s2-enrollment-autocommit.intent.json"
+    },
+    {
+      "id": "record_approval:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:13:39.349Z",
+      "at": "2026-10-13T03:13:39.349Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-1fa2212d\naction_v2_sha256:a3576a53b8f188147d434f601f14813a6ba2c07c5fe8d18fa044b0eb7cd1cb88",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-bd6de1bb49af24e4",
+        "issued_at": "2026-10-13T03:13:39.350Z"
+      }
+    },
+    {
+      "id": "request_rework:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:19:54.717Z",
+      "at": "2026-10-13T03:19:54.717Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_3\naction_v2_sha256:94f77b84d4071ff33a73f247f8565fb11355aa735df52e652e52755bbcec292f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-01a08beb5da51ef4",
+        "issued_at": "2026-10-13T03:19:54.717Z"
+      }
+    },
+    {
+      "id": "resolve_finding:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:24:45.465Z",
+      "at": "2026-10-13T03:24:45.465Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a90266de6048-1-review-1\naction_v2_sha256:f20f3609724c8cc778d480d2e426ea2ac7917cc5db26f1e4bb2eb1a186acd8c8"
+    },
+    {
+      "id": "resolve_finding:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:24:48.662Z",
+      "at": "2026-10-13T03:24:48.662Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a90266de6048-2-review-2\naction_v2_sha256:eb779379673060ea1ce11638a0e12d82b9025899712372a7254e3c19c2e8fcf8"
+    },
+    {
+      "id": "resolve_finding:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:24:51.612Z",
+      "at": "2026-10-13T03:24:51.612Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a90266de6048-3-review-3\naction_v2_sha256:50347083fe3091dabe94b50f4b49eb3bedd737bc1ad67a887dc52ec4b01bf1c1"
+    },
+    {
+      "id": "freeze_artifacts:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:24:59.032Z",
+      "at": "2026-10-13T03:24:59.032Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/run-only-gates-s2-enrollment-autocommit.intent.json"
+    },
+    {
+      "id": "record_approval:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:26:05.953Z",
+      "at": "2026-10-13T03:26:05.953Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-dbd0e9a1\naction_v2_sha256:9665d9c57c74f73da3422bc538c6e9766274f69d3ac97384d4f7185d99382160",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-8076b43b25a06717",
+        "issued_at": "2026-10-13T03:26:05.953Z"
+      }
+    },
+    {
+      "id": "request_rework:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:32:12.587Z",
+      "at": "2026-10-13T03:32:12.587Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_4\naction_v2_sha256:a414f1c92ff9e2f92ff893617615bb7be612898991807acb420abc16ac785e88",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-d889e70598f6dafa",
+        "issued_at": "2026-10-13T03:32:12.588Z"
+      }
+    },
+    {
+      "id": "resolve_finding:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:39:37.459Z",
+      "at": "2026-10-13T03:39:37.459Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-b614f0a78364-1-review-1\naction_v2_sha256:b54292c5aa1321668b0d0cb4493d3657fb9f47ecaa1eeecf0543a0967c97840b"
+    },
+    {
+      "id": "freeze_artifacts:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:39:47.250Z",
+      "at": "2026-10-13T03:39:47.250Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/run-only-gates-s2-enrollment-autocommit.intent.json"
+    },
+    {
+      "id": "record_approval:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:41:48.917Z",
+      "at": "2026-10-13T03:41:48.917Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-0717d17a\naction_v2_sha256:f2f9e958ba28e93eb982264e032025d14ca07c6aa5627d372d906fff4f4b3bc6",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-a68004138ad6bb9d",
+        "issued_at": "2026-10-13T03:41:48.918Z"
+      }
+    },
+    {
+      "id": "request_rework:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:45:43.298Z",
+      "at": "2026-10-13T03:45:43.298Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_5\naction_v2_sha256:ceb874aadaefdeaa44be15d80ab5b7418e9151bbd590b1575a60f02b24eb3724",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-c591769e7aae340e",
+        "issued_at": "2026-10-13T03:45:43.298Z"
+      }
+    },
+    {
+      "id": "resolve_finding:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:47:30.017Z",
+      "at": "2026-10-13T03:47:30.017Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-50f583f7e8f4-1-review-1\naction_v2_sha256:4fea082e49e76d367ca51bdb827c816de29a0b3fe33700dfb76c57aa1c540d1a"
+    },
+    {
+      "id": "freeze_artifacts:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:47:39.257Z",
+      "at": "2026-10-13T03:47:39.257Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/run-only-gates-s2-enrollment-autocommit.intent.json"
+    },
+    {
+      "id": "record_approval:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:49:23.639Z",
+      "at": "2026-10-13T03:49:23.639Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-766b86b6\naction_v2_sha256:48b76014028482aba9586055b3c47c36ca8127d1fdef7e34e79be40294166922",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f5b411cb2449bbef",
+        "issued_at": "2026-10-13T03:49:23.640Z"
+      }
+    },
+    {
+      "id": "request_rework:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:54:17.451Z",
+      "at": "2026-10-13T03:54:17.451Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_6\naction_v2_sha256:4acce361dff194d68b7779f89aa3b725f4f2f3e1d3e59209071c33bb9f38a27c",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-9ee73bdc589f4780",
+        "issued_at": "2026-10-13T03:54:17.452Z"
+      }
+    },
+    {
+      "id": "authorize_rework:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:55:27.836Z",
+      "at": "2026-10-13T03:55:27.836Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:54:17.451Z:replan-required\naction_v2_sha256:3c5438b4096328da2aadb9b0aa8bf9f365837abe51146bd5e23b78091c8d2f64",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-84edfc95d2e37089",
+        "issued_at": "2026-10-13T03:55:27.836Z"
+      }
+    },
+    {
+      "id": "resolve_finding:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:57:24.807Z",
+      "at": "2026-10-13T03:57:24.807Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c8e954fc7df4-1-review-1\naction_v2_sha256:6065be1c462f90b4d8b5a9e3da855a6289ef748780ee2bf4b8aea30a7e048ba9"
+    },
+    {
+      "id": "freeze_artifacts:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:57:36.913Z",
+      "at": "2026-10-13T03:57:36.913Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/run-only-gates-s2-enrollment-autocommit.intent.json"
+    },
+    {
+      "id": "record_approval:run-only-gates-s2-enrollment-autocommit:2026-10-13T03:59:33.973Z",
+      "at": "2026-10-13T03:59:33.973Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-05c534e7\naction_v2_sha256:b5591eb66d86fb9bdda601927a41a994f18b52b720d92e68e715bd86f135c7bf",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-db5f9b93f944826e",
+        "issued_at": "2026-10-13T03:59:33.973Z"
+      }
+    },
+    {
+      "id": "request_rework:run-only-gates-s2-enrollment-autocommit:2026-10-13T04:04:03.654Z",
+      "at": "2026-10-13T04:04:03.654Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_7\naction_v2_sha256:357549fb21ae63c8ed44bda441d4be00aa31b9e7e14e6742a29a1c405f8716c9",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-05c6703172889b2c",
+        "issued_at": "2026-10-13T04:04:03.654Z"
+      }
+    },
+    {
+      "id": "authorize_rework:run-only-gates-s2-enrollment-autocommit:2026-10-13T04:05:01.431Z",
+      "at": "2026-10-13T04:05:01.431Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:run-only-gates-s2-enrollment-autocommit:2026-10-13T04:04:03.654Z:replan-required\naction_v2_sha256:f8e0fe9d7295f681ee30dc70b2d7bbc8711f7dc358d6afdf350aab8e0d039dd3",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-10a6362501c80c59",
+        "issued_at": "2026-10-13T04:05:01.431Z"
+      }
+    },
+    {
+      "id": "resolve_finding:run-only-gates-s2-enrollment-autocommit:2026-10-13T04:08:21.423Z",
+      "at": "2026-10-13T04:08:21.423Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-d35eeb99a24a-1-review-1\naction_v2_sha256:46d8e6faee71e72017121adf1ea5f31a12f3a8aad0d70e638b6296f2c91a06d8"
+    },
+    {
+      "id": "freeze_artifacts:run-only-gates-s2-enrollment-autocommit:2026-10-13T04:08:31.785Z",
+      "at": "2026-10-13T04:08:31.785Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/run-only-gates-s2-enrollment-autocommit.intent.json"
+    },
+    {
+      "id": "record_approval:run-only-gates-s2-enrollment-autocommit:2026-10-13T04:11:25.548Z",
+      "at": "2026-10-13T04:11:25.548Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-8d21ee3b\naction_v2_sha256:65d74a133d382e93405614902730ac1106cedcac81ec9e80ab7aa36582d5d49f",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-4e4b6869d39f9b3c",
+        "issued_at": "2026-10-13T04:11:25.548Z"
+      }
+    },
+    {
+      "id": "request_rework:run-only-gates-s2-enrollment-autocommit:2026-10-13T04:17:28.290Z",
+      "at": "2026-10-13T04:17:28.290Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_8\naction_v2_sha256:054573df81d0e8de01fee5f3f281a164550b3eec1a3100901488abb07326603a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-3e884166a36e7599",
+        "issued_at": "2026-10-13T04:17:28.290Z"
+      }
+    },
+    {
+      "id": "authorize_rework:run-only-gates-s2-enrollment-autocommit:2026-10-13T04:41:56.643Z",
+      "at": "2026-10-13T04:41:56.643Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:run-only-gates-s2-enrollment-autocommit:2026-10-13T04:17:28.290Z:replan-required\naction_v2_sha256:d6b397efca7a2bd1be5a3a0e8a87572635c57ed5a5497eeee79deb4e8123160e",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-7e8443b0c1df36c2",
+        "issued_at": "2026-10-13T04:41:56.643Z"
+      }
+    },
+    {
+      "id": "resolve_finding:run-only-gates-s2-enrollment-autocommit:2026-10-13T04:46:26.630Z",
+      "at": "2026-10-13T04:46:26.630Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a348a9fa7f36-1-review-1\naction_v2_sha256:33cc524fb9c3e650955816c27ea3cfc73139ff44a0f26e51f44a3f02d7ed1791"
+    },
+    {
+      "id": "freeze_artifacts:run-only-gates-s2-enrollment-autocommit:2026-10-13T04:46:35.417Z",
+      "at": "2026-10-13T04:46:35.417Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/run-only-gates-s2-enrollment-autocommit.intent.json"
+    },
+    {
+      "id": "record_approval:run-only-gates-s2-enrollment-autocommit:2026-10-13T04:48:57.263Z",
+      "at": "2026-10-13T04:48:57.263Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-c992dc8a\naction_v2_sha256:175c6a5b13beeabb61fb5c8e9e1d7ecab18a07acec158d5cfabe6c49e36d3815",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-863ee451665dbf86",
+        "issued_at": "2026-10-13T04:48:57.263Z"
+      }
+    },
+    {
+      "id": "record_approval:run-only-gates-s2-enrollment-autocommit:2026-10-13T04:52:58.383Z",
+      "at": "2026-10-13T04:52:58.383Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-95b1095b\naction_v2_sha256:a734e0b4ab66256de1afb56edb396771d88a4c120b2c427ba31835e7d519afed",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-ffb2cbb50c395c6b",
+        "issued_at": "2026-10-13T04:52:58.383Z"
+      }
+    },
+    {
+      "id": "complete:run-only-gates-s2-enrollment-autocommit:2026-10-13T04:53:00.305Z",
+      "at": "2026-10-13T04:53:00.305Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:dc59ba9d7034a9e15bfa379088361b9df8af9900355cf92920e46bfb86a6207b"
+    }
+  ]
+}

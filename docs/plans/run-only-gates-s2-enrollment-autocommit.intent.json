@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "run-only-gates-s2-enrollment-autocommit",
-  "owner": "user",
   "goal": "Enrollment never asks the user to commit by hand: a host-neutral module commits, silently and with an explicit pathspec, the dirty files inside the task scope plus the task's own TaskIntent and Spec before the Enrollment binding is prepared, on Claude Code and Pi.",
   "acceptance": [
     {
@@ -34,6 +33,7 @@
     "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts",
     "plugins/immune-brain/runtime/claude/kernel_ports.ts",
     "plugins/immune-brain/runtime/kernel/enrollment.ts",
+    "plugins/immune-brain/runtime/kernel/intent.ts",
     "plugins/immune-brain/runtime/workspace_scope.ts",
     "plugins/immune-brain/skills/BASELINE.md",
     "tests/baseline-packaging-contract.test.ts",
@@ -47,5 +47,6 @@
     "tests/workflow-effect-boundaries.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

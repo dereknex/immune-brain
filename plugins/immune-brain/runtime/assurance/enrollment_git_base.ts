@@ -1,7 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { parseTaskIntentV1 } from "../kernel/intent";
+import { observeEnrollmentTaskIntent } from "../kernel/intent";
 import { inspectSpecBinding } from "../kernel/spec_binding";
 import { dirtyScopePaths } from "../workspace_scope";
 import { commitWorkflowPaths, identityEnv, type WorkflowCommitResult } from "./workflow_autocommit";
@@ -50,17 +48,16 @@ export function enrollmentPreconditionSubject(taskId: string): string {
  * Enrollment checks then report that condition themselves.
  */
 export function enrollmentCommittablePaths(root: string, taskId: string): string[] | null {
-	if (!/^[a-z0-9][a-z0-9-]*$/.test(taskId)) return null;
 	const intentPath = `docs/plans/${taskId}.intent.json`;
 	try {
 		if (inspectEnrollmentGitBase(root).state !== "committed") return null;
-		const intent = parseTaskIntentV1(JSON.parse(readFileSync(join(root, intentPath), "utf8")));
-		if (intent.task_id !== taskId) return null;
+		const { intent } = observeEnrollmentTaskIntent(root, taskId);
+		const binding = inspectSpecBinding(intent);
+		if (!binding.ok) return null;
 		const dirtyScope = dirtyScopePaths(root, intent.scope_hint, taskId);
 		const untrackedIntent = spawnSync("git", ["ls-files", "--error-unmatch", "--", intentPath], { cwd: root }).status === 1;
 		if (dirtyScope.length === 0 && !untrackedIntent) return [];
-		const binding = inspectSpecBinding(intent);
-		return [...new Set([intentPath, ...(binding.ok && binding.binding ? [binding.binding.active] : []), ...dirtyScope])];
+		return [...new Set([intentPath, ...(binding.binding ? [binding.binding.active] : []), ...dirtyScope])];
 	} catch {
 		return null;
 	}
@@ -92,9 +89,11 @@ function freshEnrollmentAdmitted(root: string, taskId: string): boolean {
  * commit throws with Git's message.
  */
 export function commitEnrollmentPreconditions(root: string, taskId: string, signal?: AbortSignal): WorkflowCommitResult {
-	const paths = enrollmentCommittablePaths(root, taskId);
-	if (!paths || paths.length === 0 || !freshEnrollmentAdmitted(root, taskId)) return { committed: false };
-	return commitWorkflowPaths(root, { paths, subject: enrollmentPreconditionSubject(taskId), signal });
+	return withKernelStoreLock(root, () => {
+		const paths = enrollmentCommittablePaths(root, taskId);
+		if (!paths || paths.length === 0 || !freshEnrollmentAdmitted(root, taskId)) return { committed: false };
+		return commitWorkflowPaths(root, { paths, subject: enrollmentPreconditionSubject(taskId), signal });
+	});
 }
 
 /** A preparation's owner facts, without the fields a new Git base legitimately moves. */

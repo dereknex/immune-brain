@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import enrollExtension from "../plugins/immune-brain/.pi-extension/imm-canary-enroll";
 import { recordPiPhaseInput } from "../plugins/immune-brain/.pi-extension/imm-canary-work";
 import { ClaudeRuntime } from "../plugins/immune-brain/runtime/claude/kernel_ports";
@@ -47,7 +47,9 @@ const TASK_PATHS = [intentPath, specPath, "src/new.ts", "src/task.ts"];
  * dirt outside it. An unborn HEAD keeps the TaskIntent staged, which is what
  * the empty-base initialization requires.
  */
-function scopedFixture(base: "committed" | "unborn" = "committed") {
+function scopedFixture(base: "committed" | "unborn" = "committed", candidateId = taskId) {
+	const intentPath = `docs/plans/${candidateId}.intent.json`;
+	const specPath = `docs/specs/${candidateId}.spec.md`;
 	const root = mkdtempSync(join(tmpdir(), "imm-precondition-"));
 	roots.push(root);
 	git(root, "init", "-q", "-b", "main");
@@ -61,7 +63,7 @@ function scopedFixture(base: "committed" | "unborn" = "committed") {
 	writeFileSync(join(root, "other/staged.txt"), "staged 0\n");
 	if (base === "committed") { git(root, "add", "-A"); git(root, "commit", "-qm", "base"); }
 	writeFileSync(join(root, intentPath), JSON.stringify({
-		contract: "assurance_kernel/task_intent/v1", task_id: taskId, owner: "user", goal: "enroll over uncommitted planning artifacts",
+		contract: "assurance_kernel/task_intent/v1", task_id: candidateId, owner: "user", goal: "enroll over uncommitted planning artifacts",
 		risk: "routine", revision: 1, scope_hint: ["src", intentPath, specPath],
 		acceptance: [{ id: "A1", assertion: "fixture check", verification: "bun test tests/fixture.test.ts" }],
 	}));
@@ -86,7 +88,7 @@ const committedPaths = (root: string, rev = "HEAD") => git(root, "show", "--name
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollment`, () => {
-	async function enroll(root: string, decision: "accept" | "decline" | "cancel", beforeConfirm?: () => void, signal?: AbortSignal, afterInitialize?: () => void) {
+	async function enroll(root: string, decision: "accept" | "decline" | "cancel", beforeConfirm?: () => void, signal?: AbortSignal, afterInitialize?: () => void, candidateId = taskId) {
 		const prompts: string[] = [];
 		let result: unknown;
 		try {
@@ -94,11 +96,11 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 				const runtime = new ClaudeRuntime({ cwd: root, env: { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" }, requestConfirmation: async (input) => {
 					prompts.push(JSON.stringify(input)); beforeConfirm?.(); return { decision, requestId: "approval" };
 				} });
-				result = await runtime.enroll(taskId, { taskId, sessionId: "test", toolCallId: "enroll", signal });
+				result = await runtime.enroll(candidateId, { taskId: candidateId, sessionId: "test", toolCallId: "enroll", signal });
 			} else {
 				let tool: any;
 				enrollExtension({ registerTool: (value: unknown) => { tool = value; }, on: () => {}, events: { emit: () => {} } } as never);
-				result = await tool.execute("enroll", { action: "new", task_id: taskId }, signal, (update: any) => {
+				result = await tool.execute("enroll", { action: "new", task_id: candidateId }, signal, (update: any) => {
 					if (update.details.stage === "rehearsing") afterInitialize?.();
 				}, {
 					cwd: root, mode: "tui", hasUI: true, isIdle: () => true, sessionManager: RUN_ENTRY_SESSION,
@@ -197,6 +199,124 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 		// Dirt outside the scope neither blocks nor moves.
 		expect(outsideScope(root)).toEqual(outside);
 	});
+	test("legal mixed-case task IDs commit exactly the candidate paths and enroll", async () => {
+		const candidateId = "Demo_Task.1";
+		const root = scopedFixture("committed", candidateId);
+		const base = git(root, "rev-parse", "HEAD");
+		const outside = outsideScope(root);
+		let confirmedHead = "";
+		const result = await enroll(root, "accept", () => { confirmedHead = git(root, "rev-parse", "HEAD"); }, undefined, undefined, candidateId);
+		expect(result.error).toBe("");
+		expect(result.prompts).toHaveLength(1);
+		expect(git(root, "rev-parse", "HEAD~1")).toBe(base);
+		expect(git(root, "log", "-1", "--format=%s")).toBe(`chore(imm): commit Enrollment preconditions for ${candidateId}`);
+		expect(committedPaths(root)).toEqual([`docs/plans/${candidateId}.intent.json`, `docs/specs/${candidateId}.spec.md`, "src/new.ts", "src/task.ts"]);
+		expect(readTaskRecordRaw(root, candidateId).record?.git_base_head).toBe(confirmedHead);
+		expect(outsideScope(root)).toEqual(outside);
+	});
+	for (const invalid of ["file symlink", "parent symlink", "oversized", "directory", "wrong identity"] as const)
+		test(`invalid TaskIntent (${invalid}) is refused before Git effects on ${host}`, async () => {
+			const root = scopedFixture();
+			const path = join(root, intentPath);
+			const original = readFileSync(path);
+			if (invalid === "file symlink" || invalid === "parent symlink") {
+				const external = mkdtempSync(join(tmpdir(), "imm-external-intent-"));
+				roots.push(external);
+				writeFileSync(join(external, `${taskId}.intent.json`), original);
+				if (invalid === "file symlink") {
+					rmSync(path); symlinkSync(join(external, `${taskId}.intent.json`), path);
+				} else {
+					rmSync(join(root, "docs/plans"), { recursive: true }); symlinkSync(external, join(root, "docs/plans"));
+				}
+			} else if (invalid === "oversized") writeFileSync(path, original.toString() + " ".repeat(65536));
+			else if (invalid === "directory") { rmSync(path); mkdirSync(path); }
+			else writeFileSync(path, JSON.stringify({ ...JSON.parse(original.toString()), task_id: "different-task" }));
+			const head = git(root, "rev-parse", "HEAD");
+			const status = git(root, "status", "--porcelain=v1", "--untracked-files=all", "--", "src", "docs", "other");
+			const index = readFileSync(join(root, ".git/index"));
+			const result = await enroll(root, "accept");
+			const terminal = result.result as { details: { summary: string } } | undefined;
+			expect(result.error || terminal?.details.summary).toMatch(/symlink|64 KiB|regular file|does not match|Git-tracked TaskIntent|not Git-tracked/);
+			expect(result.prompts).toHaveLength(0);
+			expect(git(root, "rev-parse", "HEAD")).toBe(head);
+			expect(readFileSync(join(root, ".git/index"))).toEqual(index);
+			expect(git(root, "status", "--porcelain=v1", "--untracked-files=all", "--", "src", "docs", "other")).toBe(status);
+			expect(readTaskRecordRaw(root, taskId).record).toBeNull();
+		});
+	for (const binding of ["ambiguous", "archive only"] as const) test(`invalid ${binding} Spec binding causes no Git effects`, async () => {
+		const root = scopedFixture();
+		const intent = JSON.parse(readFileSync(join(root, intentPath), "utf8"));
+		intent.scope_hint = ["src", intentPath, ...(binding === "ambiguous"
+			? [specPath, "docs/specs/second.spec.md"] : [`docs/specs/archive/${taskId}.spec.md`])];
+		writeFileSync(join(root, intentPath), JSON.stringify(intent));
+		// Tracking isolates the Spec binding rejection from the sidecar tracking check.
+		git(root, "add", "--", intentPath);
+		const head = git(root, "rev-parse", "HEAD");
+		const status = git(root, "status", "--porcelain=v1", "--untracked-files=all", "--", "src", "docs", "other");
+		const index = readFileSync(join(root, ".git/index"));
+		const result = await enroll(root, "accept");
+		const terminal = result.result as { details: { summary: string } } | undefined;
+		expect(result.error || terminal?.details.summary).toMatch(/at most one scope-bound Spec|binding is incomplete/);
+		expect(git(root, "rev-parse", "HEAD")).toBe(head);
+		expect(readFileSync(join(root, ".git/index"))).toEqual(index);
+		expect(git(root, "status", "--porcelain=v1", "--untracked-files=all", "--", "src", "docs", "other")).toBe(status);
+		expect(readTaskRecordRaw(root, taskId).record).toBeNull();
+	});
+	test("a concurrent session cannot enter the Enrollment transaction during the Git commit", async () => {
+		const root = scopedFixture();
+		const probe = join(root, ".git/concurrent-enrollment.ts");
+		const marker = join(root, ".git/concurrent-result");
+		writeFileSync(probe, `import { withKernelTransaction } from ${JSON.stringify(resolve("plugins/immune-brain/runtime/kernel/sqlite_store.ts"))};\nimport { writeFileSync } from "node:fs";\ntry {\n  withKernelTransaction(${JSON.stringify(root)}, () => writeFileSync(${JSON.stringify(marker)}, "entered"), { busyTimeoutMs: 1 });\n} catch (error) {\n  if (!String(error).includes("another writer holds the store lock")) throw error;\n  writeFileSync(${JSON.stringify(marker)}, "blocked");\n}\n`);
+		const quote = (path: string) => `'${path.replaceAll("'", "'\\''")}'`;
+		const hook = join(root, ".git/hooks/pre-commit");
+		writeFileSync(hook, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(probe)}\n`);
+		chmodSync(hook, 0o755);
+		const result = await enroll(root, "accept");
+		expect(result.error).toBe("");
+		expect(readTaskRecordRaw(root, taskId).record?.lifecycle).toBe("active");
+		expect(readFileSync(marker, "utf8")).toBe("blocked");
+		// The same second-session transaction works after the first session releases the lock.
+		execFileSync(process.execPath, [probe], { cwd: root, stdio: "pipe" });
+		expect(readFileSync(marker, "utf8")).toBe("entered");
+	});
+	for (const drift of ["intent", "head"] as const) test(`confirmation-time ${drift} drift reports the precondition commit that remains`, async () => {
+		const root = scopedFixture();
+		let preconditionHead = "";
+		const result = await enroll(root, "accept", () => {
+			preconditionHead = git(root, "rev-parse", "HEAD");
+			if (drift === "head") git(root, "commit", "--allow-empty", "-qm", "concurrent commit");
+			else {
+				const intent = JSON.parse(readFileSync(join(root, intentPath), "utf8"));
+				writeFileSync(join(root, intentPath), JSON.stringify({ ...intent, goal: "changed during confirmation" }));
+			}
+		});
+		const terminal = result.result as { details: { summary: string } } | undefined;
+		const message = result.error || terminal?.details.summary;
+		expect(message).toMatch(/changed|aborted/i);
+		expect(message).toContain(`Enrollment precondition commit ${preconditionHead} remains`);
+		expect(committedPaths(root, preconditionHead)).toEqual(TASK_PATHS);
+		expect(readTaskRecordRaw(root, taskId).record).toBeNull();
+	});
+	test("Enrollment preserves a staged TaskIntent restored to HEAD in the worktree", async () => {
+		const root = scopedFixture();
+		git(root, "add", "--", ...TASK_PATHS);
+		git(root, "commit", "-qm", "planning artifacts");
+		const bytes = readFileSync(join(root, intentPath), "utf8");
+		writeFileSync(join(root, intentPath), JSON.stringify({ ...JSON.parse(bytes), goal: "staged user goal" }));
+		git(root, "add", "--", intentPath);
+		writeFileSync(join(root, intentPath), bytes);
+		writeFileSync(join(root, "src/task.ts"), "new executor candidate\n");
+		const head = git(root, "rev-parse", "HEAD");
+		const entry = git(root, "ls-files", "--stage", "--", intentPath);
+		const result = await enroll(root, "accept");
+		expect(result.error).toBe("");
+		expect(readTaskRecordRaw(root, taskId).record?.lifecycle).toBe("active");
+		expect(git(root, "rev-parse", "HEAD~1")).toBe(head);
+		expect(committedPaths(root)).toEqual(["src/task.ts"]);
+		expect(git(root, "ls-files", "--stage", "--", intentPath)).toBe(entry);
+		expect(readFileSync(join(root, intentPath), "utf8")).toBe(bytes);
+	});
+
 	test("a TaskIntent that is only staged over a clean scope makes no commit", async () => {
 		const root = scopedFixture();
 		git(root, "add", "--", ...TASK_PATHS); git(root, "commit", "-qm", "planning artifacts");

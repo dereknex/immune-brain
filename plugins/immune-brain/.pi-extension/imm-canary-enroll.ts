@@ -283,6 +283,8 @@ async function classifyCommitFailure(
 	);
 }
 
+const terminalWithoutCommitNote = terminal;
+
 async function executeForegroundEnrollment(
 	root: string,
 	action: EnrollmentAction,
@@ -296,6 +298,14 @@ async function executeForegroundEnrollment(
 ): Promise<EnrollmentTerminal> {
 	let stage = "preparing";
 	let gitBaseNote = "";
+	// Every unsuccessful exit reports the Git effects that preceded authority.
+	const terminal: typeof terminalWithoutCommitNote = (action, taskId, state, stage, summary, nextAction) => {
+		if (state !== "completed" && gitBaseNote) {
+			if (summary.endsWith(gitBaseNote)) summary = summary.slice(0, -gitBaseNote.length);
+			summary = `${summary.slice(0, 4_096 - gitBaseNote.length)}${gitBaseNote}`;
+		}
+		return terminalWithoutCommitNote(action, taskId, state, stage, summary, nextAction);
+	};
 	const progress = (nextStage: string, summary: string) => {
 		stage = nextStage;
 		const update = updateResult(action, taskId, nextStage, summary);

@@ -93,6 +93,21 @@ describe("commitWorkflowPaths", () => {
 		expect(git(root, "diff", "--cached", "--name-only")).toBe("other/staged.ts");
 	});
 
+	test("a listed staged change restored to HEAD in the worktree stays staged", () => {
+		const root = repo();
+		writeFileSync(join(root, "src/a.ts"), "staged user content\n");
+		git(root, "add", "--", "src/a.ts");
+		writeFileSync(join(root, "src/a.ts"), "a0\n");
+		const staged = observed(root, "src/a.ts");
+		const before = state(root);
+		expect(commitWorkflowPaths(root, { paths: ["src/a.ts"], subject: SUBJECT })).toEqual({ committed: false });
+		expect(state(root)).toEqual(before);
+		writeFileSync(join(root, "src/b.ts"), "b1\n");
+		expect(commitWorkflowPaths(root, { paths: ["src/a.ts", "src/b.ts"], subject: SUBJECT })).toMatchObject({ committed: true, paths: ["src/b.ts"] });
+		expect(committedPaths(root)).toEqual(["src/b.ts"]);
+		expect(observed(root, "src/a.ts")).toEqual(staged);
+	});
+
 	test("an empty or all-clean list creates no commit", () => {
 		const root = repo();
 		writeFileSync(join(root, "other/loose.ts"), "l1\n");
@@ -126,6 +141,141 @@ describe("commitWorkflowPaths", () => {
 		writeFileSync(join(root, "src/a.ts"), "a1\n");
 		expect(commitWorkflowPaths(root, { paths: ["src/a.ts"], subject: SUBJECT }).committed).toBe(true);
 		expect(readFileSync(join(root, ".git/hook-ran"), "utf8")).toBe("");
+	});
+
+	for (const name of ["pre-commit", "prepare-commit-msg", "commit-msg"]) test(`${name} cannot add an unrelated path to the final commit`, () => {
+		const root = repo();
+		writeFileSync(join(root, "other/staged.ts"), "s1\n");
+		git(root, "add", "--", "other/staged.ts");
+		writeFileSync(join(root, "other/staged.ts"), "s2\n");
+		writeFileSync(join(root, "src/a.ts"), "a1\n");
+		writeFileSync(join(root, "docs/new.md"), "new\n");
+		const before = state(root);
+		const unrelated = observed(root, "other/staged.ts");
+		const hook = join(root, `.git/hooks/${name}`);
+		writeFileSync(hook, "#!/bin/sh\ngit add -- other/staged.ts\n");
+		chmodSync(hook, 0o755);
+		if (name === "pre-commit") {
+			expect(() => commitWorkflowPaths(root, { paths: ["src/a.ts", "docs/new.md"], subject: SUBJECT })).toThrow(/automatic commit refuses hook changes/);
+			expect(state(root)).toEqual(before);
+		} else {
+			expect(commitWorkflowPaths(root, { paths: ["src/a.ts", "docs/new.md"], subject: SUBJECT }).committed).toBe(true);
+			expect(committedPaths(root)).toEqual(["docs/new.md", "src/a.ts"]);
+		}
+		expect(observed(root, "other/staged.ts")).toEqual(unrelated);
+	});
+	for (const alteration of ["remove path", "change subject"]) test(`hooks cannot ${alteration} in the final commit`, () => {
+		const root = repo();
+		writeFileSync(join(root, "src/a.ts"), "a1\n");
+		const before = state(root);
+		const hook = join(root, `.git/hooks/${alteration === "remove path" ? "pre-commit" : "commit-msg"}`);
+		writeFileSync(hook, alteration === "remove path"
+			? "#!/bin/sh\ngit reset -q HEAD -- src/a.ts\n"
+			: "#!/bin/sh\necho 'changed subject' > \"$1\"\n");
+		chmodSync(hook, 0o755);
+		expect(() => commitWorkflowPaths(root, { paths: ["src/a.ts"], subject: SUBJECT })).toThrow();
+		expect(state(root)).toEqual(before);
+	});
+	test("a configured reference-transaction hook keeps its input and phases", () => {
+		const root = repo();
+		mkdirSync(join(root, "custom-hooks"));
+		git(root, "config", "core.hooksPath", "custom-hooks");
+		const hook = join(root, "custom-hooks/reference-transaction");
+		writeFileSync(hook, "#!/bin/sh\necho \"$1\" >> .git/ref-phases\ncat >> .git/ref-input\n");
+		chmodSync(hook, 0o755);
+		writeFileSync(join(root, "src/a.ts"), "a1\n");
+		const config = readFileSync(join(root, ".git/config"), "utf8");
+		expect(commitWorkflowPaths(root, { paths: ["src/a.ts"], subject: SUBJECT }).committed).toBe(true);
+		const phases = readFileSync(join(root, ".git/ref-phases"), "utf8").trim().split("\n");
+		expect(phases).toContain("prepared");
+		expect(phases.at(-1)).toBe("committed");
+		expect(readFileSync(join(root, ".git/ref-input"), "utf8")).toContain(" refs/heads/main");
+		expect(readFileSync(join(root, ".git/config"), "utf8")).toBe(config);
+	});
+	for (const refusal of [false, true]) test(`a user guard.cjs stays byte-identical when hooks ${refusal ? "refuse" : "accept"}`, () => {
+		const root = repo();
+		mkdirSync(join(root, "custom-hooks"));
+		git(root, "config", "core.hooksPath", "custom-hooks");
+		writeFileSync(join(root, "custom-hooks/guard.cjs"), "// user-owned hook helper\n");
+		git(root, "add", "--", "custom-hooks/guard.cjs");
+		git(root, "commit", "-qm", "existing hook helper");
+		const helper = observed(root, "custom-hooks/guard.cjs");
+		const hook = join(root, "custom-hooks/pre-commit");
+		writeFileSync(hook, `#!/bin/sh\ncat custom-hooks/guard.cjs > .git/helper-used\nexit ${refusal ? 1 : 0}\n`);
+		chmodSync(hook, 0o755);
+		writeFileSync(join(root, "src/a.ts"), "a1\n");
+		const before = state(root);
+		if (refusal) {
+			expect(() => commitWorkflowPaths(root, { paths: ["src/a.ts"], subject: SUBJECT })).toThrow();
+			expect(state(root)).toEqual(before);
+		} else {
+			expect(commitWorkflowPaths(root, { paths: ["src/a.ts"], subject: SUBJECT }).committed).toBe(true);
+			expect(committedPaths(root)).toEqual(["src/a.ts"]);
+		}
+		expect(observed(root, "custom-hooks/guard.cjs")).toEqual(helper);
+		expect(readFileSync(join(root, ".git/helper-used"), "utf8")).toBe(helper.worktree);
+	});
+
+	test("hooks retain their invocation location when loading a parent-directory policy", () => {
+		const root = repo();
+		mkdirSync(join(root, ".githooks/_"), { recursive: true });
+		git(root, "config", "core.hooksPath", ".githooks/_");
+		writeFileSync(join(root, ".githooks/pre-commit"), "#!/bin/sh\necho 'parent-directory policy says no' >&2\nexit 1\n");
+		const hook = join(root, ".githooks/_/pre-commit");
+		writeFileSync(hook, '#!/bin/sh\nhelper="$(dirname "$0")/../pre-commit"\n[ "$(git config core.hooksPath)" = ".githooks/_" ] || exit 0\n[ -f "$helper" ] || exit 0\nexec sh "$helper" "$@"\n');
+		chmodSync(hook, 0o755);
+		writeFileSync(join(root, "src/a.ts"), "a1\n");
+		const before = state(root);
+		expect(() => git(root, "commit", "--only", "-m", SUBJECT, "--", "src/a.ts")).toThrow(/parent-directory policy says no/);
+		expect(() => commitWorkflowPaths(root, { paths: ["src/a.ts"], subject: SUBJECT })).toThrow(/parent-directory policy says no/);
+		expect(state(root)).toEqual(before);
+	});
+
+	for (const name of ["pre-commit", "reference-transaction"]) {
+		for (const glob of [undefined, "1"]) {
+			test(`${name} keeps the caller's wildcard pathspec policy (GIT_GLOB_PATHSPECS=${glob})`, () => {
+				const keys = ["GIT_LITERAL_PATHSPECS", "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_ICASE_PATHSPECS"];
+				const saved = keys.map((key) => process.env[key]);
+				try {
+					for (const key of keys) delete process.env[key];
+					if (glob !== undefined) process.env.GIT_GLOB_PATHSPECS = glob;
+					const root = repo();
+					const hook = join(root, ".git/hooks", name);
+					const check = name === "pre-commit"
+						? "selected=$(git diff --cached --name-only -- '**/*.ts')\n"
+						: '[ "$1" = "prepared" ] || exit 0\nread old next ref\nselected=$(git diff --name-only "$old" "$next" -- \'**/*.ts\')\n';
+					writeFileSync(hook, `#!/bin/sh\n${check}[ -z "$selected" ] && exit 0\necho 'wildcard policy says no' >&2\nexit 1\n`);
+					chmodSync(hook, 0o755);
+					writeFileSync(join(root, "src/a.ts"), "a1\n");
+					const before = state(root);
+					expect(() => git(root, "commit", "--only", "-m", SUBJECT, "--", "src/a.ts")).toThrow(/wildcard policy says no/);
+					expect(() => commitWorkflowPaths(root, { paths: ["src/a.ts"], subject: SUBJECT })).toThrow(/wildcard policy says no/);
+					expect(state(root)).toEqual(before);
+				} finally {
+					keys.forEach((key, index) => { if (saved[index] === undefined) delete process.env[key]; else process.env[key] = saved[index]; });
+				}
+			});
+		}
+	}
+
+	test("disabled hooks via /dev/null permit a guarded commit without changing configuration", () => {
+		const root = repo();
+		git(root, "config", "core.hooksPath", "/dev/null");
+		writeFileSync(join(root, "src/a.ts"), "a1\n");
+		expect(commitWorkflowPaths(root, { paths: ["src/a.ts"], subject: SUBJECT })).toMatchObject({ committed: true, paths: ["src/a.ts"] });
+		expect(committedPaths(root)).toEqual(["src/a.ts"]);
+		expect(git(root, "config", "core.hooksPath")).toBe("/dev/null");
+	});
+
+	test("a refusing reference-transaction hook still vetoes the commit", () => {
+		const root = repo();
+		const hook = join(root, ".git/hooks/reference-transaction");
+		writeFileSync(hook, "#!/bin/sh\nif [ \"$1\" = prepared ]; then echo 'ref policy says no' >&2; exit 1; fi\n");
+		chmodSync(hook, 0o755);
+		writeFileSync(join(root, "src/a.ts"), "a1\n");
+		const before = state(root);
+		expect(() => commitWorkflowPaths(root, { paths: ["src/a.ts"], subject: SUBJECT })).toThrow(/ref policy says no/);
+		expect(state(root)).toEqual(before);
 	});
 
 	test("an unmerged index is refused", () => {

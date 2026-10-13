@@ -32,7 +32,16 @@ chose not to follow that precedent here: the commit is silent.
    A caller passes an explicit path list and a subject; the module derives no
    paths. It commits with `git commit --only -- <paths>` after `git add --` of
    the untracked ones, so index content outside the list is neither committed
-   nor unstaged. Pathspecs are literal.
+   nor unstaged. Pathspecs are literal. Candidate content comes from the
+   worktree, as `--only` requires: a listed index-only change whose worktree
+   already equals HEAD stays staged and makes no commit by itself. A
+   command-local `core.hooksPath`
+   forwards the existing hooks and adds a `reference-transaction` guard: before
+   HEAD advances, the final commit must have exactly the listed dirty paths,
+   the original parent and the caller's subject. Hook changes cannot widen or
+   shrink that set. The temporary hook directory is removed after each attempt;
+   repository and global Git config are untouched. Git 2.29 or newer is required
+   for this guard; older Git fails before the precondition commit.
 2. **A commit is made only when a precondition would otherwise fail.** Two
    states fail Enrollment: a dirty path inside the task `scope_hint`, and an
    untracked TaskIntent. A TaskIntent that is staged over a clean scope fails
