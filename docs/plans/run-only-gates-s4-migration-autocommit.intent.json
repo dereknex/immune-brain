@@ -1,0 +1,39 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "run-only-gates-s4-migration-autocommit",
+  "owner": "user",
+  "goal": "The storage-layout migration never asks the user to commit: migrate --storage-layout commits its affected paths itself, and Enrollment and intent author commit a migration_uncommitted diff and continue instead of stopping.",
+  "acceptance": [
+    {
+      "id": "ROG-S4-A1",
+      "assertion": "Meet T4 and D14 in docs/specs/run-only-gates.spec.md: imm-kernel migrate --storage-layout ends in the ready state with its affected paths in exactly one commit carrying the D8 subject, unrelated dirt is byte-identical afterwards, no next-action text asks the user to commit, and recovery_required and migration_blocked_active still fail closed.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-storage-layout-migration.test.ts\",\n      \"tests/kernel-migrate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "ROG-S4-A2",
+      "assertion": "Meet D14, D15 and BR-3: on a migration_uncommitted layout, intent author and Enrollment commit the affected paths and continue to their normal result. A migration_required layout is still not converted implicitly by intent author, and the Planner contract tells the Planner to run imm-kernel migrate --storage-layout itself and retry without interrupting the user. The packaged Claude bundle matches its source.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-intent-authoring.test.ts\",\n      \"tests/pi-canary-enroll-extension.test.ts\",\n      \"tests/imm-planner-kernel-intent-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/run-only-gates-s4-migration-autocommit.md",
+    "docs/adr/0023-silent-precondition-commit.md",
+    "docs/plans/run-only-gates-s4-migration-autocommit.intent.json",
+    "docs/specs/run-only-gates.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts",
+    "plugins/immune-brain/runtime/commands/kernel.ts",
+    "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts",
+    "plugins/immune-brain/runtime/kernel/storage_paths.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/imm-planner-kernel-intent-contract.test.ts",
+    "tests/kernel-intent-authoring.test.ts",
+    "tests/kernel-migrate.test.ts",
+    "tests/kernel-storage-layout-migration.test.ts",
+    "tests/pi-canary-enroll-extension.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

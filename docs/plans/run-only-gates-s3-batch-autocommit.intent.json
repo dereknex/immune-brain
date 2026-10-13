@@ -1,0 +1,39 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "run-only-gates-s3-batch-autocommit",
+  "owner": "user",
+  "goal": "A new unattended batch starts over a working tree whose only dirt is workflow files and files inside its children's scopes: the Host commits that set silently before binding the batch, and dirt outside it is left untouched and reported once with its paths.",
+  "acceptance": [
+    {
+      "id": "ROG-S3-A1",
+      "assertion": "Meet T3, D12 and BR-SCN-3 in docs/specs/run-only-gates.spec.md on both Hosts: for a non-resuming batch whose dirt is limited to .imm/audit, docs/plans, docs/specs and paths matching the union of the enrollable children's scope_hint, one commit with the D8 subject is created, the batch binds the post-commit HEAD, and the start is not rejected with working_tree_dirty. A clean tree creates no commit and a resuming batch creates no commit.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "ROG-S3-A2",
+      "assertion": "Meet D13, BR-X2 and BR-SCN-4: with an additional dirty file outside every child scope, that file is byte-identical in the index and the worktree afterwards, the start is rejected once with working_tree_dirty whose reason lists that path, and the recovery action does not ask the user to commit a path inside the committable set. The resume-time rejections working_tree_unstaged, working_tree_out_of_scope and authorized_scope_underivable are unchanged, and the packaged Claude bundle matches its source.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/unattended-batch-commit.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/run-only-gates-s3-batch-autocommit.md",
+    "docs/adr/0023-silent-precondition-commit.md",
+    "docs/plans/run-only-gates-s3-batch-autocommit.intent.json",
+    "docs/specs/run-only-gates.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-run.md",
+    "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/unattended-batch-commit.test.ts",
+    "tests/unattended-batch-run.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

@@ -1,0 +1,51 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "run-only-gates-s2-enrollment-autocommit",
+  "owner": "user",
+  "goal": "Enrollment never asks the user to commit by hand: a host-neutral module commits, silently and with an explicit pathspec, the dirty files inside the task scope plus the task's own TaskIntent and Spec before the Enrollment binding is prepared, on Claude Code and Pi.",
+  "acceptance": [
+    {
+      "id": "ROG-S2-A1",
+      "assertion": "Meet T2, D5-D8 and invariants I4-I8 in docs/specs/run-only-gates.spec.md against real temporary repositories: listed untracked, modified and staged paths land in exactly one commit with the D8 subject; unrelated staged and unstaged paths are byte-identical in the index and the worktree afterwards; an empty or all-clean list creates no commit; a failing pre-commit hook throws with Git's message and commits nothing; an unmerged index, an assume-unchanged or skip-worktree flag on a listed path, and a path escaping the repository are refused; no push, amend, --no-verify, branch switch or Git config write occurs.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-autocommit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "ROG-S2-A2",
+      "assertion": "Meet D9-D11, I9, I10 and BR-SCN-2 on both Hosts: with an untracked Spec and TaskIntent and a modified file inside scope_hint, Enrollment succeeds, HEAD advances by one commit containing exactly those paths, and the native confirmation is bound to the new HEAD. Dirt outside the scope is untouched and does not block. An unborn HEAD still receives its empty root commit first. A dirty scope reaching the Kernel directly is still refused, and the refusal text does not tell the user to commit.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/enrollment-dirty-scope.test.ts\",\n      \"tests/enrollment-git-base.test.ts\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/pi-canary-enroll-extension.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "ROG-S2-A3",
+      "assertion": "Meet BR-7 for the commit boundary: BASELINE Shared Guards and Host Confirmation Boundary and the imm-run staging rule state that the runtime may commit a precondition's committable set without a separate confirmation and that this grants no push, publication, history rewrite or commit of other paths; the three BASELINE copies are identical; ADR 0023 records the decision and the accepted risk; the packaged Claude bundle matches its source.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-effect-boundaries.test.ts\",\n      \"tests/baseline-packaging-contract.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/run-only-gates-s2-enrollment-autocommit.md",
+    "docs/adr/0023-silent-precondition-commit.md",
+    "docs/plans/run-only-gates-s2-enrollment-autocommit.intent.json",
+    "docs/specs/run-only-gates.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+    "plugins/immune-brain/BASELINE.md",
+    "plugins/immune-brain/dist/BASELINE.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-run.md",
+    "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts",
+    "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/kernel/enrollment.ts",
+    "plugins/immune-brain/runtime/workspace_scope.ts",
+    "plugins/immune-brain/skills/BASELINE.md",
+    "tests/baseline-packaging-contract.test.ts",
+    "tests/claude-host-authority.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/dist-docs-sync-contract.test.ts",
+    "tests/enrollment-dirty-scope.test.ts",
+    "tests/enrollment-git-base.test.ts",
+    "tests/pi-canary-enroll-extension.test.ts",
+    "tests/workflow-autocommit.test.ts",
+    "tests/workflow-effect-boundaries.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
