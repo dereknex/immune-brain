@@ -22,9 +22,12 @@ import { reconcileKernelAuthority, withKernelStoreLock } from "../runtime/kernel
 import { inspectStorageLayout } from "../runtime/kernel/storage_paths";
 import { migrateLegacyLayout } from "../runtime/kernel/storage_layout_migration";
 import {
+	commitEnrollmentPreconditions,
+	commitUnbornEnrollmentPreconditions,
 	inspectEnrollmentGitBase,
 	enrollmentGitBaseNotice,
 	initializeEnrollmentGitBase,
+	preconditionCommitNote,
 } from "../runtime/assurance/enrollment_git_base";
 import { piRunEntryRefusal, readTaskIntentForRecord } from "./imm-canary-work";
 import {
@@ -383,6 +386,12 @@ async function executeForegroundEnrollment(
 			if (blocked) return blocked;
 		}
 
+		// Commit the task's own dirty preconditions first, so every read and the
+		// confirmation below bind the HEAD that results. An owned workspace
+		// commits nothing.
+		gitBaseNote = preconditionCommitNote(await commitEnrollmentPreconditions(root, taskId, signal));
+		signal.throwIfAborted();
+
 		try {
 			taskIntent = await readTaskIntentForRecord(root, taskId);
 		} catch (error) {
@@ -510,7 +519,7 @@ async function executeForegroundEnrollment(
 			);
 			if (signal.aborted) return cancelled();
 			if (!confirmed)
-				return terminal(action, taskId, "rejected", stage, "Enrollment confirmation was rejected; zero authority writes were requested", "invoke the launcher again only if enrollment is still intended");
+				return terminal(action, taskId, "rejected", stage, `Enrollment confirmation was rejected; zero authority writes were requested${gitBaseNote}`, "invoke the launcher again only if enrollment is still intended");
 		}
 		{
 			let liveEarly: string | null = null;
@@ -541,7 +550,14 @@ async function executeForegroundEnrollment(
 		signal.throwIfAborted();
 
 		preparation = await initializeEnrollmentGitBase(root, { task_id: taskId, now }, preparation, gitBase, signal);
-		if (gitBase.state === "unborn") gitBaseNote = `; empty initial commit ${preparation.git_base_head} remains`;
+		if (gitBase.state === "unborn") {
+			gitBaseNote += `; empty initial commit ${preparation.git_base_head} remains`;
+			// The scope could not be compared with an unborn HEAD; commit it now
+			// that a base exists and bind the HEAD that results.
+			const late = await commitUnbornEnrollmentPreconditions(root, { task_id: taskId, now }, preparation, signal);
+			gitBaseNote += preconditionCommitNote(late.result);
+			preparation = late.preparation;
+		}
 		if (!preparation.intent) throw new Error("Enrollment requires a readable TaskIntent");
 		signal.throwIfAborted();
 

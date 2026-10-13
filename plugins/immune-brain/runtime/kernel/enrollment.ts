@@ -217,7 +217,7 @@ function runEnrollmentPreconditionChecks<T>(
 			try {
 				const dirty = dirtyScopePaths(root, intent.intent.scope_hint, input.task_id);
 				if (dirty.length > 0) {
-					const message = `task scope is already dirty before Enrollment: ${dirty.join(", ")}; commit, stash or revert these paths first`;
+					const message = `task scope is already dirty before Enrollment: ${dirty.join(", ")}; these paths were not part of the Enrollment base, retry Enrollment from the Host`;
 					fail(message, new Error(message));
 				}
 			} catch (error) {

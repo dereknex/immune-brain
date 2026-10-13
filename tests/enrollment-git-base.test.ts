@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import enrollExtension from "../plugins/immune-brain/.pi-extension/imm-canary-enroll";
@@ -38,6 +38,51 @@ function fixture() {
 	writeFileSync(join(root, "unrelated.txt"), "unstaged\n");
 	return root;
 }
+const specPath = `docs/specs/${taskId}.spec.md`;
+const PRECONDITION_SUBJECT = `chore(imm): commit Enrollment preconditions for ${taskId}`;
+const TASK_PATHS = [intentPath, specPath, "src/new.ts", "src/task.ts"];
+/**
+ * The state a Planner leaves behind (BR-SCN-2): a Spec and TaskIntent that are
+ * not committed, edits inside the scope, and staged, unstaged and untracked
+ * dirt outside it. An unborn HEAD keeps the TaskIntent staged, which is what
+ * the empty-base initialization requires.
+ */
+function scopedFixture(base: "committed" | "unborn" = "committed") {
+	const root = mkdtempSync(join(tmpdir(), "imm-precondition-"));
+	roots.push(root);
+	git(root, "init", "-q", "-b", "main");
+	git(root, "config", "user.name", "Project Author");
+	git(root, "config", "user.email", "author@example.test");
+	// A machine-wide core.hooksPath would hide the hook one test installs.
+	git(root, "config", "core.hooksPath", ".git/hooks");
+	for (const dir of ["src", "other", "docs/plans", "docs/specs"]) mkdirSync(join(root, dir), { recursive: true });
+	writeFileSync(join(root, "src/task.ts"), "export const value = 1;\n");
+	writeFileSync(join(root, "other/loose.txt"), "loose 0\n");
+	writeFileSync(join(root, "other/staged.txt"), "staged 0\n");
+	if (base === "committed") { git(root, "add", "-A"); git(root, "commit", "-qm", "base"); }
+	writeFileSync(join(root, intentPath), JSON.stringify({
+		contract: "assurance_kernel/task_intent/v1", task_id: taskId, owner: "user", goal: "enroll over uncommitted planning artifacts",
+		risk: "routine", revision: 1, scope_hint: ["src", intentPath, specPath],
+		acceptance: [{ id: "A1", assertion: "fixture check", verification: "bun test tests/fixture.test.ts" }],
+	}));
+	writeFileSync(join(root, specPath), "# Fixture Spec\n");
+	writeFileSync(join(root, "src/task.ts"), "export const value = 2;\n");
+	writeFileSync(join(root, "src/new.ts"), "export const added = true;\n");
+	if (base === "unborn") git(root, "add", "--", intentPath);
+	writeFileSync(join(root, "other/staged.txt"), "staged 1\n");
+	git(root, "add", "--", "other/staged.txt");
+	writeFileSync(join(root, "other/staged.txt"), "staged 2\n");
+	writeFileSync(join(root, "other/loose.txt"), "loose 1\n");
+	writeFileSync(join(root, "other/scratch.txt"), "scratch\n");
+	return root;
+}
+/** Everything observable about the paths outside the task scope. */
+const outsideScope = (root: string) => ({
+	index: git(root, "ls-files", "--stage", "--", "other"),
+	status: execFileSync("git", ["status", "--porcelain=v1", "--untracked-files=all", "--", "other"], { cwd: root, encoding: "utf8" }),
+	files: ["loose.txt", "staged.txt", "scratch.txt"].map((name) => readFileSync(join(root, "other", name), "utf8")),
+});
+const committedPaths = (root: string, rev = "HEAD") => git(root, "show", "--name-only", "--format=", rev).split("\n").filter(Boolean).sort();
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollment`, () => {
@@ -132,6 +177,113 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 		expect(result.error).not.toBe("");
 		expect(readTaskRecordRaw(root, taskId).record).toBeNull();
 		if (drift !== "head") expect(spawnSync("git", ["rev-parse", "--verify", "HEAD"], { cwd: root }).status).not.toBe(0);
+	});
+	test("uncommitted Spec, TaskIntent and in-scope edits are committed once and the confirmation binds that HEAD (BR-SCN-2)", async () => {
+		const root = scopedFixture();
+		const base = git(root, "rev-parse", "HEAD");
+		const outside = outsideScope(root);
+		let headAtConfirmation = "";
+		const result = await enroll(root, "accept", () => { headAtConfirmation = git(root, "rev-parse", "HEAD"); });
+		expect(result.error).toBe("");
+		const head = git(root, "rev-parse", "HEAD");
+		expect(git(root, "rev-parse", "HEAD~1")).toBe(base);
+		expect(git(root, "log", "-1", "--format=%s")).toBe(PRECONDITION_SUBJECT);
+		expect(committedPaths(root)).toEqual(TASK_PATHS);
+		// One native confirmation, shown after the commit and silent about it.
+		expect(result.prompts).toHaveLength(1);
+		expect(result.prompts[0]).not.toMatch(/precondition|commit Enrollment/i);
+		expect(headAtConfirmation).toBe(head);
+		expect(readTaskRecordRaw(root, taskId).record?.git_base_head).toBe(head);
+		// Dirt outside the scope neither blocks nor moves.
+		expect(outsideScope(root)).toEqual(outside);
+	});
+	test("a TaskIntent that is only staged over a clean scope makes no commit", async () => {
+		const root = scopedFixture();
+		git(root, "add", "--", ...TASK_PATHS); git(root, "commit", "-qm", "planning artifacts");
+		const intent = JSON.parse(readFileSync(join(root, intentPath), "utf8"));
+		writeFileSync(join(root, intentPath), JSON.stringify({ ...intent, goal: "restaged goal" }));
+		git(root, "add", "--", intentPath);
+		const head = git(root, "rev-parse", "HEAD");
+		const result = await enroll(root, "accept");
+		expect(result.error).toBe("");
+		expect(git(root, "rev-parse", "HEAD")).toBe(head);
+		expect(git(root, "diff", "--cached", "--name-only", "--", intentPath)).toBe(intentPath);
+	});
+	test("an unborn HEAD receives its empty root commit first and the precondition commit second", async () => {
+		const root = scopedFixture("unborn");
+		const result = await enroll(root, "accept");
+		expect(result.error).toBe("");
+		expect(result.prompts).toHaveLength(1);
+		expect(result.prompts[0]).toMatch(/empty initial commit/i);
+		expect(git(root, "rev-list", "--count", "HEAD")).toBe("2");
+		expect(git(root, "ls-tree", "-r", "HEAD~1")).toBe("");
+		expect(git(root, "log", "-1", "--format=%s")).toBe(PRECONDITION_SUBJECT);
+		expect(committedPaths(root)).toEqual(TASK_PATHS);
+		expect(readTaskRecordRaw(root, taskId).record?.git_base_head).toBe(git(root, "rev-parse", "HEAD"));
+		expect(git(root, "diff", "--cached", "--name-only")).toBe("other/staged.txt");
+		expect(readFileSync(join(root, "other/staged.txt"), "utf8")).toBe("staged 2\n");
+	});
+	for (const decision of ["decline", "cancel"] as const) test(`${decision} after the precondition commit names the commit that remains and a retry adds none`, async () => {
+		const root = scopedFixture();
+		const result = await enroll(root, decision);
+		const head = git(root, "rev-parse", "HEAD");
+		expect(git(root, "log", "-1", "--format=%s")).toBe(PRECONDITION_SUBJECT);
+		const terminal = result.result as { details: { summary: string } } | undefined;
+		expect(result.error || terminal?.details.summary).toContain(`Enrollment precondition commit ${head} remains`);
+		expect(readTaskRecordRaw(root, taskId).record).toBeNull();
+		const retry = await enroll(root, "accept");
+		expect(retry.error).toBe("");
+		expect(git(root, "rev-parse", "HEAD")).toBe(head);
+	});
+	test("enroll against a workspace an active task owns commits nothing and leaves its undelivered work alone", async () => {
+		const root = scopedFixture();
+		expect((await enroll(root, "accept")).error).toBe("");
+		// The owner's Executor work: tracked, staged and untracked edits in scope.
+		writeFileSync(join(root, "src/task.ts"), "export const value = 3;\n");
+		writeFileSync(join(root, "src/new.ts"), "export const added = false;\n");
+		git(root, "add", "--", "src/new.ts");
+		writeFileSync(join(root, "src/draft.ts"), "export const draft = true;\n");
+		const head = git(root, "rev-parse", "HEAD");
+		const index = git(root, "ls-files", "--stage");
+		const status = git(root, "status", "--porcelain=v1", "--untracked-files=all");
+		const record = JSON.stringify(readTaskRecordRaw(root, taskId).record);
+		const result = await enroll(root, "accept");
+		const terminal = result.result as { details: { state: string; summary: string } } | undefined;
+		expect(result.error || terminal?.details.state).not.toBe("");
+		expect(`${result.error}${terminal?.details.summary ?? ""}`).not.toContain("precondition commit");
+		expect(git(root, "rev-parse", "HEAD")).toBe(head);
+		expect(git(root, "ls-files", "--stage")).toBe(index);
+		expect(git(root, "status", "--porcelain=v1", "--untracked-files=all")).toBe(status);
+		expect(JSON.stringify(readTaskRecordRaw(root, taskId).record)).toBe(record);
+	});
+	test("a TaskIntent changed while the unborn-HEAD precondition commit runs is refused and never enrolled", async () => {
+		const root = scopedFixture("unborn");
+		// The empty root commit runs no hook; the precondition commit does.
+		const hook = join(root, ".git/hooks/pre-commit");
+		writeFileSync(hook, `#!/bin/sh\nsed 's/enroll over/changed during/' ${intentPath} > ${intentPath}.tmp && mv ${intentPath}.tmp ${intentPath}\n`); chmodSync(hook, 0o755);
+		const result = await enroll(root, "accept");
+		const terminal = result.result as { details: { summary: string } } | undefined;
+		const message = result.error || terminal?.details.summary;
+		expect(message).toContain("Workspace changed during the Enrollment precondition commit");
+		expect(message).toContain(`Enrollment precondition commit ${git(root, "rev-parse", "HEAD")} remains`);
+		expect(message).toContain("empty initial commit");
+		expect(JSON.parse(readFileSync(join(root, intentPath), "utf8")).goal).toContain("changed during");
+		expect(readTaskRecordRaw(root, taskId).record).toBeNull();
+	});
+	test("a commit refused by a Git hook fails Enrollment with Git's message before any confirmation", async () => {
+		const root = scopedFixture();
+		const hook = join(root, ".git/hooks/pre-commit");
+		writeFileSync(hook, "#!/bin/sh\necho 'policy says no' >&2\nexit 1\n"); chmodSync(hook, 0o755);
+		const head = git(root, "rev-parse", "HEAD");
+		const outside = outsideScope(root);
+		const result = await enroll(root, "accept");
+		const terminal = result.result as { details: { summary: string } } | undefined;
+		expect(result.error || terminal?.details.summary).toContain("policy says no");
+		expect(result.prompts).toHaveLength(0);
+		expect(git(root, "rev-parse", "HEAD")).toBe(head);
+		expect(git(root, "ls-files", "--", "src/new.ts", intentPath, specPath)).toBe("");
+		expect(outsideScope(root)).toEqual(outside);
+		expect(readTaskRecordRaw(root, taskId).record).toBeNull();
 	});
 	test("corrupt branch ref is rejected before confirmation", async () => {
 		const root = fixture(); writeFileSync(join(root, ".git/refs/heads/main"), `${"a".repeat(40)}\n`);

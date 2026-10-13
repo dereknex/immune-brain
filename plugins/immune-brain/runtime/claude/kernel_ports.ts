@@ -38,7 +38,7 @@ import {
 } from "../kernel/enrollment_authority";
 import { enrollTask } from "../kernel/enrollment";
 import { reconcileKernelAuthority, repairKernelAuthority } from "../kernel/storage";
-import { inspectEnrollmentGitBase, enrollmentGitBaseNotice, initializeEnrollmentGitBase } from "../assurance/enrollment_git_base";
+import { commitEnrollmentPreconditions, commitUnbornEnrollmentPreconditions, inspectEnrollmentGitBase, enrollmentGitBaseNotice, initializeEnrollmentGitBase, preconditionCommitNote } from "../assurance/enrollment_git_base";
 import { preparePiCanary, revalidatePiCanary } from "../kernel/pi_canary_prepare";
 import { runDeterministicQa } from "../assurance/qa";
 import { taskDeliveryIdentity } from "../workspace_scope";
@@ -391,23 +391,33 @@ export class ClaudeRuntime {
 
 	async enroll(taskId: string, meta: ToolMeta) {
 		const now = new Date().toISOString();
-		let preparation = await preparePiCanary(this.cwd, { task_id: taskId, now });
-		const intent = await readTaskIntentForRecord(this.cwd, taskId);
-		const gitBase = inspectEnrollmentGitBase(this.cwd);
-		const gate = await this.gate("enroll", { ...meta, taskId }, {
-			risk: intent.intent.risk,
-			intentRevision: preparation.intent?.revision,
-			intentContentHash: preparation.intent?.content_hash,
-			bindingDigest: preparation.digest,
-			gitBaseNotice: enrollmentGitBaseNotice(gitBase),
-		});
-		const { unchanged } = await revalidatePiCanary(this.cwd, { task_id: taskId, now }, preparation);
-		if (!unchanged) throw new NativeAuthorityError("workspace_changed", "workspace changed after native confirmation");
-		if (!preparation.intent) throw new Error("enrollment requires a readable TaskIntent");
-		throwIfCancelled(meta.signal);
-		preparation = initializeEnrollmentGitBase(this.cwd, { task_id: taskId, now }, preparation, gitBase, meta.signal);
-		const gitBaseNote = gitBase.state === "unborn" ? `; empty initial commit ${preparation.git_base_head} remains` : "";
+		// Commit the task's own dirty preconditions first, so the confirmation
+		// below binds the HEAD that results. An owned workspace commits nothing.
+		let gitBaseNote = preconditionCommitNote(commitEnrollmentPreconditions(this.cwd, taskId, meta.signal));
 		try {
+			let preparation = await preparePiCanary(this.cwd, { task_id: taskId, now });
+			const intent = await readTaskIntentForRecord(this.cwd, taskId);
+			const gitBase = inspectEnrollmentGitBase(this.cwd);
+			const gate = await this.gate("enroll", { ...meta, taskId }, {
+				risk: intent.intent.risk,
+				intentRevision: preparation.intent?.revision,
+				intentContentHash: preparation.intent?.content_hash,
+				bindingDigest: preparation.digest,
+				gitBaseNotice: enrollmentGitBaseNotice(gitBase),
+			});
+			const { unchanged } = await revalidatePiCanary(this.cwd, { task_id: taskId, now }, preparation);
+			if (!unchanged) throw new NativeAuthorityError("workspace_changed", "workspace changed after native confirmation");
+			if (!preparation.intent) throw new Error("enrollment requires a readable TaskIntent");
+			throwIfCancelled(meta.signal);
+			preparation = initializeEnrollmentGitBase(this.cwd, { task_id: taskId, now }, preparation, gitBase, meta.signal);
+			if (gitBase.state === "unborn") {
+				gitBaseNote += `; empty initial commit ${preparation.git_base_head} remains`;
+				// The scope could not be compared with an unborn HEAD; commit it
+				// now that a base exists and bind the HEAD that results.
+				const late = commitUnbornEnrollmentPreconditions(this.cwd, { task_id: taskId, now }, preparation, meta.signal);
+				gitBaseNote += preconditionCommitNote(late.result);
+				preparation = late.preparation;
+			}
 			if (!preparation.intent) throw new Error("Enrollment requires a readable TaskIntent");
 			const nonce = enrollmentNonce();
 			const binding: EnrollmentCapabilityBinding = {
@@ -422,8 +432,13 @@ export class ClaudeRuntime {
 			};
 			return await enrollTask(this.cwd, this.enrollmentRegistry, { binding, now });
 		} catch (error) {
-			if (gitBaseNote) throw new Error(`${error instanceof Error ? error.message : String(error)}${gitBaseNote}`);
-			throw error;
+			if (!gitBaseNote) throw error;
+			// A native-gate error keeps its type and code; only the text grows.
+			if (error instanceof NativeAuthorityError) {
+				error.message += gitBaseNote;
+				throw error;
+			}
+			throw new Error(`${error instanceof Error ? error.message : String(error)}${gitBaseNote}`);
 		}
 	}
 

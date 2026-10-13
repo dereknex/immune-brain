@@ -122,6 +122,8 @@ describe("Enrollment refuses an already dirty scope", () => {
 				const rehearsal = runEnrollmentRehearsal(root, input, capability, registry);
 				expect(rehearsal.evidence.outcome).toBe("not_ready");
 				expect(rehearsal.evidence.blockers.join("\n")).toContain(`task scope is already dirty before Enrollment: ${path}`);
+				// The Host commits these paths itself; the refusal never hands that to the user.
+				expect(rehearsal.evidence.blockers.join("\n")).not.toMatch(/commit, stash or revert|commit (them|these|it) /i);
 
 				expect(() => enrollCanaryTask(root, input, registry)).toThrow(
 					new RegExp(`task scope is already dirty before Enrollment: ${path.replace(".", "\\.")}`),
