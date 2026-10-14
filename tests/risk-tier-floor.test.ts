@@ -168,13 +168,15 @@ describe("changed-path task-tier classification", () => {
 	});
 
 	it("keeps ordinary routine paths routine and allows declared critical to escalate", () => {
-		expect(classifyTaskRisk(["src/feature.ts"], "routine", FLOOR)).toBe("routine");
-		expect(classifyTaskRisk(["src/feature.ts"], "critical", FLOOR)).toBe("critical");
+		for (const [declared, expected] of [["routine", "routine"], ["critical", "critical"]] as const) {
+			expect(classifyTaskRisk(["src/feature.ts"], declared, FLOOR)).toBe(expected);
+		}
 	});
 
 	it("does not allow declared routine to de-escalate a material path", () => {
-		expect(classifyTaskRisk(["docs/plans/other-task.intent.json"], "routine", FLOOR)).toBe("material");
-		expect(classifyTaskRisk(["docs/specs/other-task.spec.md"], "material", FLOOR)).toBe("material");
+		for (const [path, declared] of [["docs/plans/other-task.intent.json", "routine"], ["docs/specs/other-task.spec.md", "material"]] as const) {
+			expect(classifyTaskRisk([path], declared, FLOOR)).toBe("material");
+		}
 	});
 });
 

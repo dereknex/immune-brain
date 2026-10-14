@@ -454,10 +454,13 @@ describe("enrolled intent hash across the risk-floor move", () => {
 		return readTaskIntent(root, taskId);
 	};
 
-	test("an intent the floor raised keeps its hash and its floored risk", () => {
-		const read = enrolled("floored-intent", "plugins/immune-brain/runtime/kernel/intent.ts");
-		expect(read.intent.risk).toBe("material");
-		expect(read.content_hash).toBe("sha256:8da4ac58eebf0629cda9d21dc7bfe74ca458920f0e8b703b864700a8ed6bdaf0");
+	test.each([
+		["an intent the floor raised keeps its hash and its floored risk", "floored-intent", "plugins/immune-brain/runtime/kernel/intent.ts", "material", "sha256:8da4ac58eebf0629cda9d21dc7bfe74ca458920f0e8b703b864700a8ed6bdaf0"],
+		["an intent the floor did not raise keeps its hash and its declared risk", "unfloored-intent", "src/feature.ts", "routine", "sha256:5a7b125533b3dbb036e1211800c80c5ba00bd30559361db70b143a3cb762685d"],
+	])("%s", (_title, taskId, scope, risk, hash) => {
+		const read = enrolled(taskId, scope);
+		expect(read.intent.risk).toBe(risk);
+		expect(read.content_hash).toBe(hash);
 	});
 
 	test.each(["material", "routine"] as const)("recorded %s identity survives policy changes", (risk) => {
@@ -495,9 +498,4 @@ describe("enrolled intent hash across the risk-floor move", () => {
 		}
 	});
 
-	test("an intent the floor did not raise keeps its hash and its declared risk", () => {
-		const read = enrolled("unfloored-intent", "src/feature.ts");
-		expect(read.intent.risk).toBe("routine");
-		expect(read.content_hash).toBe("sha256:5a7b125533b3dbb036e1211800c80c5ba00bd30559361db70b143a3cb762685d");
-	});
 });

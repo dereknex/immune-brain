@@ -384,32 +384,28 @@ describe("plan validation parity", () => {
 		]);
 	});
 
-	it("rejects discovery cache entries without reason", () => {
-		const planPath = writeFixturePlan(
-			BASE_PLAN.replace(
-				"- Verification: `true`",
-				"- Verification: `true`\n- Discovery cache: path-without-reason",
-			),
-		);
-		expect(rejection(planPath)).toContain(
+	it.each([
+		[
+			"rejects discovery cache entries without reason",
+			"- Discovery cache: path-without-reason",
 			"Discovery cache entries must use 'path (reason)' format.",
-		);
-	});
-
-	it("rejects parallel probes without readonly: true", () => {
-		const planPath = writeFixturePlan(
-			BASE_PLAN.replace(
-				"- Verification: `true`",
-				"- Verification: `true`\n- Parallel probes: scope=a.py,output=foo,readonly=false",
-			),
-		);
-		expect(rejection(planPath)).toContain(
+		],
+		[
+			"rejects parallel probes without readonly: true",
+			"- Parallel probes: scope=a.py,output=foo,readonly=false",
 			"Parallel probes must declare readonly: true.",
+		],
+	])("%s", (_title, addedLine, message) => {
+		const planPath = writeFixturePlan(
+			BASE_PLAN.replace("- Verification: `true`", `- Verification: \`true\`\n${addedLine}`),
 		);
+		expect(rejection(planPath)).toContain(message);
 	});
 
-	it("accepts declared medium-risk design with a required Mermaid diagram", () => {
-		const path = writeFixtureWithSpec(`# Spec
+	it.each([
+		[
+			"accepts declared medium-risk design with a required Mermaid diagram",
+			`# Spec
 
 **Design risk**: Medium
 **Diagram decision**: required
@@ -421,64 +417,88 @@ describe("plan validation parity", () => {
 flowchart LR
   A --> B
 \`\`\`
-`);
-
-		expectAccepted(path);
-		expect(projection(path).warnings).toEqual([]);
-	});
-
-	it("accepts a Spec that records Design risk and no diagram fields", () => {
-		const path = writeFixtureWithSpec(`# Spec
+`,
+		],
+		[
+			"accepts a Spec that records Design risk and no diagram fields",
+			`# Spec
 
 **Design risk**: Medium
 
 ## Technical Design
 
 One bounded local contract described in prose.
-`);
-
+`,
+		],
+	])("%s", (_title, spec) => {
+		const path = writeFixtureWithSpec(spec);
 		expectAccepted(path);
 		expect(projection(path).warnings).toEqual([]);
 	});
 
-	it("rejects a Diagram reason recorded without a Diagram decision", () => {
-		const path = writeFixtureWithSpec(`# Spec
+	it.each([
+		[
+			"rejects a Diagram reason recorded without a Diagram decision",
+			`# Spec
 
 **Design risk**: Low
 **Diagram reason**: Orphaned reason.
-`);
-
-		expect(rejection(path)).toContain(
+`,
 			"Referenced Spec Diagram decision must be required or not_required.",
-		);
-	});
-
-	it("rejects declared medium-risk design without Technical Design", () => {
-		const path = writeFixtureWithSpec(`# Spec
+		],
+		[
+			"rejects declared medium-risk design without Technical Design",
+			`# Spec
 
 **Design risk**: Medium
 **Diagram decision**: not_required
 **Diagram reason**: Prose fully describes the local contract.
-`);
-
-		expect(rejection(path)).toContain(
+`,
 			"Referenced medium-risk Spec is missing a Technical Design section.",
-		);
-	});
-
-	it("rejects required diagram decisions without Mermaid", () => {
-		const path = writeFixtureWithSpec(`# Spec
+		],
+		[
+			"rejects required diagram decisions without Mermaid",
+			`# Spec
 
 **Design risk**: High
 **Diagram decision**: required
 **Diagram reason**: The state transition needs a diagram.
 
 ## Technical Design
-`);
-
-		expect(rejection(path)).toContain(
+`,
 			"Referenced Spec requires a Mermaid diagram but does not contain one.",
-		);
+		],
+		[
+			"rejects diagram decisions without a reason",
+			`# Spec
+
+**Design risk**: Low
+**Diagram decision**: not_required
+`,
+			"Referenced Spec is missing Diagram reason.",
+		],
+		[
+			"does not accept Mermaid outside Technical Design",
+			`# Spec
+
+**Design risk**: High
+**Diagram decision**: required
+**Diagram reason**: The state transition needs a diagram.
+
+\`\`\`mermaid
+flowchart LR
+  A --> B
+\`\`\`
+
+## Technical Design
+
+Prose only.
+`,
+			"Referenced Spec requires a Mermaid diagram but does not contain one.",
+		],
+	])("%s", (_title, spec, message) => {
+		const path = writeFixtureWithSpec(spec);
+		expect(rejection(path)).toContain(message);
 	});
 
 	it("rejects standard workflow for High-risk Specs", () => {
@@ -505,45 +525,12 @@ One bounded transition.
 		);
 	});
 
-	it("rejects diagram decisions without a reason", () => {
-		const path = writeFixtureWithSpec(`# Spec
-
-**Design risk**: Low
-**Diagram decision**: not_required
-`);
-
-		expect(rejection(path)).toContain(
-			"Referenced Spec is missing Diagram reason.",
-		);
-	});
-
 	it("rejects missing referenced Specs", () => {
 		const path = writeFixtureWithSpec();
 
 		expect(rejection(path)).toContain("Referenced Spec does not exist:");
 	});
 
-	it("does not accept Mermaid outside Technical Design", () => {
-		const path = writeFixtureWithSpec(`# Spec
-
-**Design risk**: High
-**Diagram decision**: required
-**Diagram reason**: The state transition needs a diagram.
-
-\`\`\`mermaid
-flowchart LR
-  A --> B
-\`\`\`
-
-## Technical Design
-
-Prose only.
-`);
-
-		expect(rejection(path)).toContain(
-			"Referenced Spec requires a Mermaid diagram but does not contain one.",
-		);
-	});
 
 	it("ignores design metadata examples inside code fences", () => {
 		const path = writeFixtureWithSpec(`# Legacy Spec

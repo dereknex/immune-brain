@@ -128,17 +128,17 @@ describe("managed task routing policy projection", () => {
 		});
 	});
 
-	it("fails closed on unknown fields", () => {
+	it.each([
+		["fails closed on unknown fields", '"terminal_import": "disabled"', '"terminal_import": "disabled",\n  "extra": true', "policy_unknown_field"],
+		["fails closed on unsupported values", '"new_task_route": "kernel_task_intent"', '"new_task_route": "v3"', "policy_unsupported_value"],
+	])("%s", (_title, from, to, reasonCode) => {
 		withRepo((root) => {
-			const altered = policyV1CanonicalBytes().replace(
-				'"terminal_import": "disabled"',
-				'"terminal_import": "disabled",\n  "extra": true',
-			);
+			const altered = policyV1CanonicalBytes().replace(from, to);
 			writeFileSync(policyPath(root), altered);
 			git(root, ["add", "docs/plans/managed-task-routing-policy.json"]);
 			const projection = inspectRoutingPolicy(root);
 			expect(projection.policy_status).toBe("invalid");
-			expect(projection.reason_code).toBe("policy_unknown_field");
+			expect(projection.reason_code).toBe(reasonCode);
 		});
 	});
 
@@ -157,19 +157,6 @@ describe("managed task routing policy projection", () => {
 		});
 	});
 
-	it("fails closed on unsupported values", () => {
-		withRepo((root) => {
-			const altered = policyV1CanonicalBytes().replace(
-				'"new_task_route": "kernel_task_intent"',
-				'"new_task_route": "v3"',
-			);
-			writeFileSync(policyPath(root), altered);
-			git(root, ["add", "docs/plans/managed-task-routing-policy.json"]);
-			const projection = inspectRoutingPolicy(root);
-			expect(projection.policy_status).toBe("invalid");
-			expect(projection.reason_code).toBe("policy_unsupported_value");
-		});
-	});
 
 	it("fails closed on non-canonical serialization", () => {
 		withRepo((root) => {

@@ -511,45 +511,25 @@ describe("acc-pi-batch-gate", () => {
 		assertZeroWrites(fixture.root, fixture.head, "missing-port");
 	});
 
-	it("decline produces zero Kernel writes, zero batch state, and no new Git ref", async () => {
-		const fixture = createBatchFixture("decline-zero");
+	it.each([
+		["decline produces zero Kernel writes, zero batch state, and no new Git ref", "decline-zero", "decline", { state: "rejected", reason: "native interaction declined", recovery_action: "wait for a fresh literal-user request" }],
+		["cancel produces zero writes and cancelled state", "cancel-zero", "cancel", { state: "cancelled", reason: "native interaction cancelled", recovery_action: "wait for a fresh literal-user request" }],
+	] as [string, string, "decline" | "cancel", { state: string; reason: string; recovery_action: string }][])("%s", async (_title, slug, decision, expected) => {
+		const fixture = createBatchFixture(slug);
 		const priorHead = fixture.head;
 
 		const result = await executePiUnattendedBatch({
 			root: fixture.root,
-			initiativeSlug: "decline-zero",
+			initiativeSlug: slug,
 			readInitiative: async () => fixture.observation,
-			confirmBatch: async () => "decline",
+			confirmBatch: async () => decision,
 		});
 
-		expect(result).toEqual({
-			state: "rejected",
-			reason: "native interaction declined",
-			recovery_action: "wait for a fresh literal-user request",
-		});
+		expect(result).toEqual(expected);
 
-		assertZeroWrites(fixture.root, priorHead, "decline-zero");
+		assertZeroWrites(fixture.root, priorHead, slug);
 	});
 
-	it("cancel produces zero writes and cancelled state", async () => {
-		const fixture = createBatchFixture("cancel-zero");
-		const priorHead = fixture.head;
-
-		const result = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "cancel-zero",
-			readInitiative: async () => fixture.observation,
-			confirmBatch: async () => "cancel",
-		});
-
-		expect(result).toEqual({
-			state: "cancelled",
-			reason: "native interaction cancelled",
-			recovery_action: "wait for a fresh literal-user request",
-		});
-
-		assertZeroWrites(fixture.root, priorHead, "cancel-zero");
-	});
 
 	it("a pending confirmation settles only on the caller's cancellation signal, with zero writes", async () => {
 		const fixture = createBatchFixture("pending-cancel");

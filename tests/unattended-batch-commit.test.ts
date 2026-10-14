@@ -189,27 +189,11 @@ describe("acc-batch-branch-preflight", () => {
 		rmSync(repo.root, { recursive: true, force: true });
 	});
 
-	it("rejects with dirty_working_tree when working tree has modified tracked files", () => {
-		writeFileSync(join(repo.root, ".gitignore"), ".imm/state/\n# dirty modification\n");
-		const currentBranch = git(repo.root, ["symbolic-ref", "--short", "HEAD"]);
-
-		const res = runBatchGitPreflight({
-			root: repo.root,
-			initiative_slug: "my-initiative",
-			base_head: repo.baseHead,
-		});
-
-		expect(res.ok).toBe(false);
-		if (!res.ok) {
-			expect(res.reason).toBe("dirty_working_tree");
-		}
-		expect(existsSync(join(repo.root, ".imm", "state", "batches"))).toBe(false);
-		expect(git(repo.root, ["symbolic-ref", "--short", "HEAD"])).toBe(currentBranch);
-		expect(() => git(repo.root, ["rev-parse", "--verify", "refs/heads/imm/my-initiative"])).toThrow();
-	});
-
-	it("rejects with dirty_working_tree when working tree has untracked non-ignored files", () => {
-		writeFileSync(join(repo.root, "untracked.txt"), "hello");
+	it.each([
+		["modified tracked files", () => writeFileSync(join(repo.root, ".gitignore"), ".imm/state/\n# dirty modification\n")],
+		["untracked non-ignored files", () => writeFileSync(join(repo.root, "untracked.txt"), "hello")],
+	])("rejects with dirty_working_tree when working tree has %s", (_kind, dirty) => {
+		dirty();
 		const currentBranch = git(repo.root, ["symbolic-ref", "--short", "HEAD"]);
 
 		const res = runBatchGitPreflight({

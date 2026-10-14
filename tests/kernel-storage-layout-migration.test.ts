@@ -188,14 +188,17 @@ describe("inspectStorageLayout failure branches", () => {
 		expect(inspection.old_authority_present).toBe(true);
 	});
 
-	it("reports migration_required when the pre-cutover workspace owner file exists without an owner", () => {
+	it.each([
+		["migration_required", null],
+		["migration_blocked_active", "task-001"],
+	])("reports %s when the workspace owner is %s", (layout, currentWorking) => {
 		const root = tempRoot();
 		mkdirSync(join(root, ".imm"), { recursive: true });
 		writeFileSync(
 			join(root, ".imm", "workspace.json"),
-			`${JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }, null, 2)}\n`,
+			`${JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: currentWorking }, null, 2)}\n`,
 		);
-		expect(inspectStorageLayout(root).layout).toBe("migration_required");
+		expect(inspectStorageLayout(root).layout).toBe(layout);
 	});
 
 	it("reports migration_blocked_active when a legacy claim exists", () => {
@@ -205,18 +208,6 @@ describe("inspectStorageLayout failure branches", () => {
 		expect(inspection.layout).toBe("migration_blocked_active");
 	});
 
-	it("reports migration_blocked_active when the workspace owner is non-null", () => {
-		const root = tempRoot();
-		mkdirSync(join(root, ".imm"), { recursive: true });
-		writeFileSync(
-			join(root, ".imm", "workspace.json"),
-			`${JSON.stringify({
-				contract: "assurance_kernel/workspace/v1",
-				current_working: "task-001",
-			}, null, 2)}\n`,
-		);
-		expect(inspectStorageLayout(root).layout).toBe("migration_blocked_active");
-	});
 
 	it("reports migration_blocked_active when the v3 Ledger is non-idle", () => {
 		const root = tempRoot();
@@ -1196,20 +1187,23 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 		expect(existsSync(join(root, ".imm/tasks/task-owner.json"))).toBe(true);
 	});
 
-	it("refuses to retire a legacy transaction marker the prior runtime must settle", async () => {
+	it.each([
+		["refuses to retire a legacy transaction marker the prior runtime must settle", "2026-08-14-026-old-task", ".imm/tasks", ".terminal-transaction.json"],
+		["refuses to retire while the retired file store still has a pending transaction marker", "2026-08-14-029-old-task", ".imm/state/transactions", "terminal-transaction.json"],
+	])("%s", async (_title, taskId, markerDir, markerFile) => {
 		const root = tempRoot();
-		writeLegacyTerminalPair(root, "2026-08-14-026-old-task");
+		writeLegacyTerminalPair(root, taskId);
 		commit(root, "legacy evidence");
 		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
 		commit(root, "preserve evidence");
 		expect((await runMigration(root)).outcome).toBe("migrated");
 		// The prior runtime left an unfinished transaction behind.
-		mkdirSync(join(root, ".imm/tasks"), { recursive: true });
-		writeFileSync(join(root, ".imm/tasks/.terminal-transaction.json"), "{\"contract\":\"assurance_kernel/terminal_transaction/v1\"}\n");
+		mkdirSync(join(root, markerDir), { recursive: true });
+		writeFileSync(join(root, markerDir, markerFile), "{\"contract\":\"assurance_kernel/terminal_transaction/v1\"}\n");
 		const outcome = await runMigration(root);
 		expect(outcome.outcome).toBe("invalid");
 		expect(outcome.reason).toMatch(/legacy transaction marker/);
-		expect(existsSync(join(root, ".imm/tasks/.terminal-transaction.json"))).toBe(true);
+		expect(existsSync(join(root, markerDir, markerFile))).toBe(true);
 	});
 
 	it("restores the store identity marker on the recovery path", async () => {
@@ -1287,20 +1281,6 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 		expect(existsSync(lockPath)).toBe(false);
 	});
 
-	it("refuses to retire while the retired file store still has a pending transaction marker", async () => {
-		const root = tempRoot();
-		writeLegacyTerminalPair(root, "2026-08-14-029-old-task");
-		commit(root, "legacy evidence");
-		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
-		commit(root, "preserve evidence");
-		expect((await runMigration(root)).outcome).toBe("migrated");
-		mkdirSync(join(root, ".imm/state/transactions"), { recursive: true });
-		writeFileSync(join(root, ".imm/state/transactions/terminal-transaction.json"), "{\"contract\":\"assurance_kernel/terminal_transaction/v1\"}\n");
-		const outcome = await runMigration(root);
-		expect(outcome.outcome).toBe("invalid");
-		expect(outcome.reason).toMatch(/legacy transaction marker/);
-		expect(existsSync(join(root, ".imm/state/transactions/terminal-transaction.json"))).toBe(true);
-	});
 
 	it("refuses recovery cleanup when the committed evidence left HEAD", async () => {
 		const root = tempRoot();
@@ -1460,31 +1440,18 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 });
 
 describe("inspectStorageLayout new-layout root safety (review round 10)", () => {
-	it("reports invalid when .imm/state is a symlink outside the repository", () => {
+	it.each([["state"], ["audit"]])("reports invalid when .imm/%s is a symlink outside the repository", (store) => {
 		const root = tempRoot();
 		mkdirSync(join(root, ".imm"), { recursive: true });
 		const outside = mkdtempSync(join(tmpdir(), "imm-outside-"));
 		try {
-			execFileSync("ln", ["-s", outside, join(root, ".imm", "state")]);
+			execFileSync("ln", ["-s", outside, join(root, ".imm", store)]);
 			const inspection = inspectStorageLayout(root);
 			expect(inspection.layout).toBe("invalid");
-			expect(inspection.reason).toContain("state");
+			expect(inspection.reason).toContain(store);
 		} finally {
 			rmSync(outside, { recursive: true, force: true });
 		}
 	});
 
-	it("reports invalid when .imm/audit is a symlink outside the repository", () => {
-		const root = tempRoot();
-		mkdirSync(join(root, ".imm"), { recursive: true });
-		const outside = mkdtempSync(join(tmpdir(), "imm-outside-"));
-		try {
-			execFileSync("ln", ["-s", outside, join(root, ".imm", "audit")]);
-			const inspection = inspectStorageLayout(root);
-			expect(inspection.layout).toBe("invalid");
-			expect(inspection.reason).toContain("audit");
-		} finally {
-			rmSync(outside, { recursive: true, force: true });
-		}
-	});
 });

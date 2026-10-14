@@ -751,10 +751,10 @@ describe("pi canary enroll handler integration", () => {
 		}
 	});
 
-	test("material new retains the confirmation gate", async () => {
+	test.each([["material"], ["critical"]] as ["material" | "critical"][])("%s new retains the confirmation gate", async (risk) => {
 		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
 		try {
-			makeEligibleRepo(root, TASK, "material");
+			makeEligibleRepo(root, TASK, risk);
 			const before = authoritySnapshot(root);
 			const ui = makeFakeUI(false);
 			const result = await runTool(root, ui, [], "new");
@@ -767,21 +767,6 @@ describe("pi canary enroll handler integration", () => {
 		}
 	});
 
-	test("critical new retains the confirmation gate", async () => {
-		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
-		try {
-			makeEligibleRepo(root, TASK, "critical");
-			const before = authoritySnapshot(root);
-			const ui = makeFakeUI(false);
-			const result = await runTool(root, ui, [], "new");
-			expect(ui.confirmCalls.length).toBe(1);
-			expect(result.details.state).toBe("rejected");
-			expect(result.details.summary).toMatch(/confirmation was rejected/i);
-			expect(authoritySnapshot(root)).toBe(before);
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
 
 	test("declined confirmation returns rejection with zero writes", async () => {
 		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));

@@ -100,17 +100,13 @@ describe("Kernel assurance obligations", () => {
 		expect(projectTask(intent, record, DIFF, record.intent_ref.content_hash, scope).next_obligation).toBe("complete");
 	});
 
-	test("a listed path raises Review even when declared risk is routine", () => {
+	test.each([
+		["a listed path raises Review even when declared risk is routine", "plugins/immune-brain/runtime/kernel/completion.ts"],
+		["declared routine cannot suppress a listed path", "docs/specs/other.spec.md"],
+	])("%s", (_title, listedPath) => {
 		const [intent, record] = fixture("routine", ["qa"]);
 		expect(
-			projectTask(
-				intent,
-				record,
-				DIFF,
-				record.intent_ref.content_hash,
-				["plugins/immune-brain/runtime/kernel/completion.ts"],
-				FLOOR,
-			).next_obligation,
+			projectTask(intent, record, DIFF, record.intent_ref.content_hash, [listedPath], FLOOR).next_obligation,
 		).toBe("run_review");
 	});
 
@@ -121,19 +117,6 @@ describe("Kernel assurance obligations", () => {
 		).toBe("complete");
 	});
 
-	test("declared routine cannot suppress a listed path", () => {
-		const [intent, record] = fixture("routine", ["qa"]);
-		expect(
-			projectTask(
-				intent,
-				record,
-				DIFF,
-				record.intent_ref.content_hash,
-				["docs/specs/other.spec.md"],
-				FLOOR,
-			).next_obligation,
-		).toBe("run_review");
-	});
 
 	test("another task Spec remains Material while own sidecars stay excluded", () => {
 		const scope = [

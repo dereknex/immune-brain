@@ -1257,24 +1257,26 @@ describe("claude host authority", () => {
 		expect(host.consumeReview(reservation)).toMatchObject({ ok: false });
 	});
 
-	test("PostToolUse missing operationId does not settle Review", () => {
+	function assertReviewNotSettled(operationId: string, observePostToolUse: (host: ClaudeReviewHost, operationId: string) => void, stopAgentId: string): void {
 		const host = new ClaudeReviewHost();
-		const reservation = host.prepareReview(reviewRequest("op-post-req"));
-		host.observe({ type: "SubagentStart", sessionId: "s", agent: REVIEWER_AGENT, agentId: "bound", operationId: "op-post-req" });
-		// Event matches agentId but lacks operationId: must be rejected
-		host.observe({ type: "PostToolUse", sessionId: "s", agentId: "bound", toolName: AGENT_TOOL, result: "unbound" });
-		host.observe({ type: "SubagentStop", sessionId: "s", agent: REVIEWER_AGENT, agentId: "bound", operationId: "op-post-req" });
+		const reservation = host.prepareReview(reviewRequest(operationId));
+		host.observe({ type: "SubagentStart", sessionId: "s", agent: REVIEWER_AGENT, agentId: "bound", operationId });
+		observePostToolUse(host, operationId);
+		host.observe({ type: "SubagentStop", sessionId: "s", agent: REVIEWER_AGENT, agentId: stopAgentId, operationId });
 		expect(host.consumeReview(reservation)).toMatchObject({ ok: false });
+	}
+
+	test("PostToolUse missing operationId does not settle Review", () => {
+		assertReviewNotSettled("op-post-req", (host) => {
+			// Event matches agentId but lacks operationId: must be rejected
+			host.observe({ type: "PostToolUse", sessionId: "s", agentId: "bound", toolName: AGENT_TOOL, result: "unbound" });
+		}, "bound");
 	});
 
-
 	test("wrong SubagentStop identity does not settle Review", () => {
-		const host = new ClaudeReviewHost();
-		const reservation = host.prepareReview(reviewRequest("op-stop"));
-		host.observe({ type: "SubagentStart", sessionId: "s", agent: REVIEWER_AGENT, agentId: "bound", operationId: "op-stop" });
-		host.observe({ type: "PostToolUse", sessionId: "s", agentId: "bound", toolName: AGENT_TOOL, result: "valid" });
-		host.observe({ type: "SubagentStop", sessionId: "s", agent: REVIEWER_AGENT, agentId: "other", operationId: "op-stop" });
-		expect(host.consumeReview(reservation)).toMatchObject({ ok: false });
+		assertReviewNotSettled("op-stop", (host, operationId) => {
+			host.observe({ type: "PostToolUse", sessionId: "s", agentId: "bound", toolName: AGENT_TOOL, result: "valid", operationId });
+		}, "other");
 	});
 
 	test("same-operation PostToolUse without the reserved agent cannot replace the result", () => {

@@ -652,16 +652,19 @@ describe("scope revision is judged against its next scope", () => {
 		execFileSync("git", ["add", "--", path], { cwd: root });
 	}
 
-	test("compatible: a staged sibling file covered only by the next scope applies without a gate", async () => {
+	test.each([
+		["compatible: a staged sibling file covered only by the next scope applies without a gate", "c1", "revise_intent", "src/mod/sibling.ts", 0],
+		["breaking: a staged path in another directory covered only by the next scope reaches one gate", "b1", "approve_breaking_intent_revision", "tests/envelope.test.ts", 1],
+	])("%s", async (_title, eventId, op, stagedPath, gates) => {
 		const root = makeScopeRoot();
 		try {
-			stage(root, "src/mod/sibling.ts");
-			const next = scopeIntent(["src/mod/sibling.ts"], 2);
+			stage(root, stagedPath);
+			const next = scopeIntent([stagedPath], 2);
 			const ui = makeUI();
 
-			await loadSurface().tool.execute("c1", { task_id: TASK, action: { op: "revise_intent", next_intent: next } }, undefined, undefined, makeCtx(root, ui));
+			await loadSurface().tool.execute(eventId, { task_id: TASK, action: { op, next_intent: next } }, undefined, undefined, makeCtx(root, ui));
 
-			expect(ui.dialogCalls).toHaveLength(0);
+			expect(ui.dialogCalls).toHaveLength(gates);
 			expect(storedRecord(root).intent_snapshot.scope_hint).toEqual(next.scope_hint);
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
@@ -701,19 +704,6 @@ describe("scope revision is judged against its next scope", () => {
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
-	test("breaking: a staged path in another directory covered only by the next scope reaches one gate", async () => {
-		const root = makeScopeRoot();
-		try {
-			stage(root, "tests/envelope.test.ts");
-			const next = scopeIntent(["tests/envelope.test.ts"], 2);
-			const ui = makeUI();
-
-			await loadSurface().tool.execute("b1", { task_id: TASK, action: { op: "approve_breaking_intent_revision", next_intent: next } }, undefined, undefined, makeCtx(root, ui));
-
-			expect(ui.dialogCalls).toHaveLength(1);
-			expect(storedRecord(root).intent_snapshot.scope_hint).toEqual(next.scope_hint);
-		} finally { rmSync(root, { recursive: true, force: true }); }
-	});
 
 	test("breaking: a staged path outside both scopes refuses before the gate and leaves the sidecar", async () => {
 		const root = makeScopeRoot();
