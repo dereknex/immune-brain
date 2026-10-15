@@ -7042,7 +7042,46 @@ function findingsDigest(findings) {
   const normalized = findings.map((f) => JSON.stringify({ acceptance_id: f.acceptance_id, id: f.id, kind: f.kind, summary: f.summary }));
   return `sha256:${createHash10("sha256").update(`[${normalized.join(",")}]`).digest("hex")}`;
 }
-var VerificationAbortedError, VerificationLaunchError, VerificationCleanupError, CLEANUP_CONFIRM_TIMEOUT_MS = 2000, CLEANUP_CONFIRM_POLL_MS = 25, GIT_REPOSITORY_BINDINGS2;
+function baselineGit(root, args) {
+  const env = {};
+  for (const [name, value] of Object.entries(process.env))
+    if (value !== undefined && !GIT_REPOSITORY_BINDINGS2.has(name))
+      env[name] = value;
+  return execFileSync4("git", ["-C", root, ...args], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    maxBuffer: QA_BASELINE_MAX_BYTES * 2,
+    env: { ...env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" }
+  });
+}
+function readQaBaseline(root, baseHead) {
+  if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(baseHead))
+    throw new VerificationDescriptorError("qa baseline base_head has an invalid identity");
+  const tree = baselineGit(root, ["rev-parse", `${baseHead}^{tree}`]).trim();
+  if (!baselineGit(root, ["ls-tree", "--name-only", tree, "--", QA_BASELINE_PATH]).trim())
+    return { tree, checks: [] };
+  const text = baselineGit(root, ["cat-file", "blob", `${tree}:${QA_BASELINE_PATH}`]);
+  if (Buffer.byteLength(text) > QA_BASELINE_MAX_BYTES)
+    throw new VerificationDescriptorError("qa baseline exceeds the byte bound");
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw new VerificationDescriptorError("qa baseline is not valid JSON");
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).some((key) => key !== "contract" && key !== "checks") || value.contract !== QA_BASELINE_CONTRACT || !Array.isArray(value.checks) || value.checks.length > QA_BASELINE_MAX_CHECKS)
+    throw new VerificationDescriptorError("qa baseline contract is invalid");
+  const seen = new Set;
+  const checks = value.checks.map((item) => {
+    const check = item;
+    if (!check || typeof check !== "object" || Array.isArray(check) || Object.keys(check).some((key) => key !== "id" && key !== "verification") || typeof check.id !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(check.id) || seen.has(check.id) || !check.verification || typeof check.verification !== "object" || Array.isArray(check.verification))
+      throw new VerificationDescriptorError("qa baseline check is invalid");
+    seen.add(check.id);
+    return { id: check.id, descriptor: parseVerificationDescriptor(JSON.stringify(check.verification)) };
+  });
+  return { tree, checks };
+}
+var VerificationAbortedError, VerificationLaunchError, VerificationCleanupError, CLEANUP_CONFIRM_TIMEOUT_MS = 2000, CLEANUP_CONFIRM_POLL_MS = 25, GIT_REPOSITORY_BINDINGS2, QA_BASELINE_PATH = "docs/agents/qa-baseline.json", QA_BASELINE_CONTRACT = "assurance_kernel/qa_baseline/v1", QA_BASELINE_MAX_BYTES = 262144, QA_BASELINE_MAX_CHECKS = 16;
 var init_verification = __esm(() => {
   init_verification_descriptor();
   init_verification_descriptor();
@@ -9908,10 +9947,14 @@ import { randomUUID as randomUUID6 } from "node:crypto";
 function qaFindingId(acceptanceId, snapshotDigest) {
   return `qa-${acceptanceId}-${attemptRef(snapshotDigest)}`;
 }
+function qaBaselineFindingId(checkId, snapshotDigest) {
+  return `qa-baseline-${checkId}-${attemptRef(snapshotDigest)}`;
+}
 function attemptRef(snapshotDigest) {
   const digest8 = snapshotDigest.slice("sha256:".length, "sha256:".length + 8);
   return `${digest8}-${randomUUID6().slice(0, 6)}`;
 }
+var PRE_EXISTING_BASELINE_PREFIX = "pre-existing baseline failure:";
 var init_qa_findings = () => {};
 
 // plugins/immune-brain/runtime/assurance/qa.ts
@@ -9951,12 +9994,69 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
     groups.set(key, group);
   }
   const materialized = options.delivery === "materialized";
+  const baselineHead = materialized ? undefined : options._baseHead ?? (options._frozenTree ? undefined : recordForSnapshot(snapshot).git_base_head);
+  const baseline = baselineHead ? readQaBaseline(snapshot.root, baselineHead) : null;
+  const totalChecks = snapshot.acceptance.length + (baseline?.checks.length ?? 0);
+  for (const [offset, check] of (baseline?.checks ?? []).entries()) {
+    const key = `baseline:${JSON.stringify(check.descriptor.environment)}`;
+    const group = groups.get(key) ?? [];
+    group.push({ id: `baseline:${check.id}`, index: snapshot.acceptance.length + offset, descriptor: check.descriptor, baseline: check.id });
+    groups.set(key, group);
+  }
   const tree = options._frozenTree?.tree ?? deliveryTreeForSnapshot(snapshot);
   const drift = materialized ? null : options._frozenTree ? options._frozenTree.drift ?? (() => []) : ((scope) => () => inScopeTrackedDrift(snapshot.root, tree, scope))(recordForSnapshot(snapshot).intent_snapshot.scope_hint);
   const path = verificationPath();
+  const failsIdenticallyAtBase = async (item, observed, baseTree) => {
+    live();
+    let copy;
+    try {
+      copy = (options._materializeDeliveryWorkspace ?? materializeDeliveryWorkspace)(snapshot.root, baseTree);
+    } catch {
+      return false;
+    }
+    const diagnostic = (reason, stage) => [{
+      acceptance_id: item.id,
+      descriptor_ref: `acceptance/${item.index}/verification/command`,
+      descriptor_digest: `sha256:${createHash16("sha256").update(JSON.stringify(item.descriptor)).digest("hex")}`,
+      stage,
+      outcome: reason,
+      elapsed_ms: 0,
+      exit_code: null,
+      stdout_bytes: null,
+      stderr_bytes: null
+    }];
+    const run = async (command) => {
+      const frozen = (options._resolveVerificationCommand ?? resolveVerificationCommand)(copy.root, command, path);
+      return (options._runFixedVerification ?? runFixedVerification)(copy.root, command, frozen, { signal: options.signal, path });
+    };
+    try {
+      const prepare = item.descriptor.environment.prepare;
+      if (prepare) {
+        const prepared = await run(prepare);
+        if (prepared.exit_code !== 0 || prepared.timed_out || prepared.output_limited)
+          return false;
+      }
+      const result = await run(item.descriptor.command);
+      live();
+      return result.exit_code === observed.exit_code && result.timed_out === observed.timed_out && result.output_limited === observed.output_limited;
+    } catch (error) {
+      if (error instanceof VerificationAbortedError)
+        throw error;
+      if (error instanceof VerificationCleanupError)
+        throw new QaPreparationError("resolution", [item.id], "process_cleanup_failed", diagnostic("process_cleanup_failed", "resolution"));
+      return false;
+    } finally {
+      try {
+        copy.cleanup();
+      } catch {
+        throw new QaPreparationError("integrity", [item.id], "delivery_cleanup_failed", diagnostic("delivery_cleanup_failed", "integrity"));
+      }
+    }
+  };
   const findings = [];
   const evidence = [];
   const allCommands = [];
+  const baselineFailures = [];
   for (const [environmentKey, group] of groups) {
     live();
     const ids = group.map((item) => item.id);
@@ -10060,7 +10160,7 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
         const started = performance.now();
         const progress = (phase, outcome, result) => options.onProgress?.({
           index: item.index + 1,
-          total: snapshot.acceptance.length,
+          total: totalChecks,
           acceptance_id: item.id,
           phase,
           elapsed_ms: Math.round(performance.now() - started),
@@ -10070,14 +10170,18 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
         const result = await execute(item.descriptor.command, "check", [item]);
         const failed = result.exit_code !== 0 || result.timed_out || result.output_limited;
         progress(failed ? "failed" : "passed", result.timed_out ? "timeout" : result.output_limited ? "output_limit" : failed ? "nonzero_exit" : "passed", result);
-        if (failed)
-          findings.push({
-            id: qaFindingId(item.id, snapshotDigest(snapshot)),
+        if (failed) {
+          const finding = {
+            id: item.baseline ? qaBaselineFindingId(item.baseline, snapshotDigest(snapshot)) : qaFindingId(item.id, snapshotDigest(snapshot)),
             kind: "blocking",
-            acceptance_id: item.id,
-            summary: `verification failed (exit ${result.exit_code}${result.timed_out ? ", timed out" : ""}${result.output_limited ? ", output limit" : ""}) stdout=${Buffer.byteLength(result.stdout)}B stderr=${Buffer.byteLength(result.stderr)}B`,
+            acceptance_id: item.baseline ? null : item.id,
+            summary: `${item.baseline ? `baseline check ${item.baseline} ` : ""}verification failed (exit ${result.exit_code}${result.timed_out ? ", timed out" : ""}${result.output_limited ? ", output limit" : ""}) stdout=${Buffer.byteLength(result.stdout)}B stderr=${Buffer.byteLength(result.stderr)}B`,
             findings_digest: ""
-          });
+          };
+          findings.push(finding);
+          if (item.baseline)
+            baselineFailures.push({ item, finding, observed: { exit_code: result.exit_code, timed_out: result.timed_out, output_limited: result.output_limited } });
+        }
       }
       try {
         for (const frozen of groupCommands)
@@ -10095,6 +10199,13 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
     }
   }
   live();
+  const disclosed = [];
+  for (const failure of baselineFailures) {
+    if (!baseline || !await failsIdenticallyAtBase(failure.item, failure.observed, baseline.tree))
+      continue;
+    findings.splice(findings.indexOf(failure.finding), 1);
+    disclosed.push({ ...failure.finding, kind: "advisory", summary: `${PRE_EXISTING_BASELINE_PREFIX} ${failure.finding.summary}` });
+  }
   for (const entry of allCommands) {
     try {
       if (entry.frozen?.entry)
@@ -10111,17 +10222,23 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
   };
   if (findings.length)
     return { ...base, decision: "rework", findings };
+  const disclosure = disclosed.length ? `; ${disclosed.map((item) => item.summary).join("; ")}` : "";
   const executionDigest = createHash16("sha256").update(JSON.stringify({
     tree,
     platform: process.platform,
     arch: process.arch,
     observations: evidence
   })).digest("hex");
-  return { ...base, decision: "pass", approval: {
-    kind: "qa",
-    authority_role: "qa",
-    summary: `all ${snapshot.acceptance.length} project verification check(s) passed; execution=sha256:${executionDigest}`
-  } };
+  return {
+    ...base,
+    decision: "pass",
+    approval: {
+      kind: "qa",
+      authority_role: "qa",
+      summary: `all ${totalChecks} project verification check(s) passed${disclosure}; execution=sha256:${executionDigest}`
+    },
+    ...disclosed.length ? { findings: disclosed } : {}
+  };
 }
 var init_qa = __esm(() => {
   init_coordinator();

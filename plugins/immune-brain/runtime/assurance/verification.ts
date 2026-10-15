@@ -3,7 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import { accessSync, constants, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { delimiter, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { VERIFICATION_DESCRIPTOR_BOUNDS, VerificationDescriptorError, type VerificationCommand } from "../verification_descriptor";
+import { VERIFICATION_DESCRIPTOR_BOUNDS, VerificationDescriptorError, parseVerificationDescriptor, type VerificationCommand, type VerificationDescriptor } from "../verification_descriptor";
 export * from "../verification_descriptor";
 
 export interface ExecutableIdentity {
@@ -268,4 +268,65 @@ export async function runFixedVerification(
 export function findingsDigest(findings: Array<{ id: string; kind: string; acceptance_id: string | null; summary: string }>): string {
 	const normalized = findings.map(f => JSON.stringify({ acceptance_id: f.acceptance_id, id: f.id, kind: f.kind, summary: f.summary }));
 	return `sha256:${createHash("sha256").update(`[${normalized.join(",")}]`).digest("hex")}`;
+}
+
+export const QA_BASELINE_PATH = "docs/agents/qa-baseline.json";
+export const QA_BASELINE_CONTRACT = "assurance_kernel/qa_baseline/v1";
+const QA_BASELINE_MAX_BYTES = 262_144;
+const QA_BASELINE_MAX_CHECKS = 16;
+
+export interface QaBaselineCheck {
+	id: string;
+	descriptor: VerificationDescriptor;
+}
+export interface QaBaseline {
+	/** Tree of the Enrollment `base_head`, the one a pre-existing failure is rerun against. */
+	tree: string;
+	checks: QaBaselineCheck[];
+}
+
+function baselineGit(root: string, args: string[]): string {
+	const env: Record<string, string> = {};
+	for (const [name, value] of Object.entries(process.env))
+		if (value !== undefined && !GIT_REPOSITORY_BINDINGS.has(name)) env[name] = value;
+	return execFileSync("git", ["-C", root, ...args], {
+		encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: QA_BASELINE_MAX_BYTES * 2,
+		env: { ...env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
+	});
+}
+
+/**
+ * Read the project QA baseline from the Enrollment `base_head` tree, never from
+ * the delivery, so a task cannot weaken its own baseline. An absent file adds
+ * no checks; an unreadable commit or an invalid file fails closed.
+ */
+export function readQaBaseline(root: string, baseHead: string): QaBaseline {
+	if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(baseHead))
+		throw new VerificationDescriptorError("qa baseline base_head has an invalid identity");
+	const tree = baselineGit(root, ["rev-parse", `${baseHead}^{tree}`]).trim();
+	if (!baselineGit(root, ["ls-tree", "--name-only", tree, "--", QA_BASELINE_PATH]).trim()) return { tree, checks: [] };
+	const text = baselineGit(root, ["cat-file", "blob", `${tree}:${QA_BASELINE_PATH}`]);
+	if (Buffer.byteLength(text) > QA_BASELINE_MAX_BYTES)
+		throw new VerificationDescriptorError("qa baseline exceeds the byte bound");
+	let value: unknown;
+	try { value = JSON.parse(text); }
+	catch { throw new VerificationDescriptorError("qa baseline is not valid JSON"); }
+	if (!value || typeof value !== "object" || Array.isArray(value)
+		|| Object.keys(value).some(key => key !== "contract" && key !== "checks")
+		|| (value as { contract?: unknown }).contract !== QA_BASELINE_CONTRACT
+		|| !Array.isArray((value as { checks?: unknown }).checks)
+		|| (value as { checks: unknown[] }).checks.length > QA_BASELINE_MAX_CHECKS)
+		throw new VerificationDescriptorError("qa baseline contract is invalid");
+	const seen = new Set<string>();
+	const checks = (value as { checks: unknown[] }).checks.map((item): QaBaselineCheck => {
+		const check = item as Record<string, unknown> | null;
+		if (!check || typeof check !== "object" || Array.isArray(check)
+			|| Object.keys(check).some(key => key !== "id" && key !== "verification")
+			|| typeof check.id !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(check.id) || seen.has(check.id)
+			|| !check.verification || typeof check.verification !== "object" || Array.isArray(check.verification))
+			throw new VerificationDescriptorError("qa baseline check is invalid");
+		seen.add(check.id);
+		return { id: check.id, descriptor: parseVerificationDescriptor(JSON.stringify(check.verification)) };
+	});
+	return { tree, checks };
 }
