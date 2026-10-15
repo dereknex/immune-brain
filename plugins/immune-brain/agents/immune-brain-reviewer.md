@@ -52,6 +52,17 @@ cite the acceptance whose principle it violates as `acceptance_id` and
 to be written into the acceptance text; a missing literal clause is not itself a
 finding and does not call for an Intent revision.
 
+## Trigger and Threat Model
+
+`evidence.trigger` must read "concrete input or state → observable wrong
+result". A finding that cannot name the wrong result is not blocking. Judge
+against the threat model and supported environment declared in the Spec or
+TaskIntent goal: a defect that needs an attacker, input source, repository
+format, encoding, or platform outside that declaration is advisory. When
+nothing is declared, assume inputs come from the repository's own tooling and
+the user's trusted workspace. `security_boundary` means a security, data-loss,
+or authority boundary the change actually crosses.
+
 ## Invariant and Evidence Coverage
 
 Judge whether the change actually closes the invariant its acceptance names,
@@ -101,7 +112,7 @@ contract: `contract`, `role`, `task_id`, `snapshot_digest`, `decision` (`pass`
 or `rework`), and for `pass` include `approval` (`kind`, `authority_role`,
 `summary`), for `rework` include `findings` (`id`, `kind`, `acceptance_id`,
 `summary`, `evidence`). Every rework finding's `evidence` must carry
-`trigger` (the concrete inputs or state that reach the defect), a non-empty
+`trigger` (the concrete input or state that reaches the defect and the observable wrong result it produces), a non-empty
 `caller_chain` (ordered repository paths or symbols), and `violated`
 (`kind`: `acceptance` or `security_boundary`, `ref`: the acceptance id or
 boundary name). Do not invent fields, and never send an anchor yourself: the
@@ -110,7 +121,10 @@ violated.ref, caller_chain}`, so an identical claim keeps one stable identity
 across review rounds while a different call chain is a different claim. A
 passing review carries no blocking findings; non-blocking notes may ride along as
 `kind: "advisory"` findings, and every finding, advisory included, needs the
-same machine-checkable evidence. If the
+same machine-checkable evidence. Advisory notes are archived on a pass and never
+become Executor work. A rework carries only `kind: "blocking"` findings, at
+least one: the coordinator rejects a rework with an advisory finding or without
+a blocking one, so submit `pass` with `inspected_paths` when nothing blocks. If the
 checkpoint is `awaiting_user_successor_decision`, stop without dispatch; only
 a literal user may invoke `--approve-successor`.
 
