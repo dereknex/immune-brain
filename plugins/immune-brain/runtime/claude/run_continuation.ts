@@ -1,4 +1,4 @@
-import { realpathSync, lstatSync, rmSync, renameSync, openSync, fstatSync, readSync, closeSync } from "node:fs";
+import { existsSync, realpathSync, lstatSync, rmSync, renameSync, openSync, fstatSync, readSync, closeSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -34,6 +34,8 @@ const blank = (): ContinuationMetadata => ({ state: null, sequence: 0, review: "
 const statePath = (sessionId: string, root: string) => join(cacheDir(root), `${sessionHash(sessionId)}.continuation`);
 const callPath = (toolId: string, root: string) => join(cacheDir(root), `${sessionHash(toolId)}.continuation-call`);
 function drop(path: string, root: string): void {
+	// Nothing to drop means no cache directory either: an idle session must leave the store untouched.
+	if (!existsSync(path)) return;
 	if (!ensurePrivateDir(cacheDir(root))) return;
 	try { const stat = lstatSync(path); if (stat.isFile() && ownedByUs(stat)) rmSync(path); } catch { /* absent */ }
 }

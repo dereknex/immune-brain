@@ -13731,7 +13731,7 @@ var init_batch_preflight = __esm(() => {
 init_batch_preflight();
 init_batch_state();
 import { randomUUID as randomUUID11 } from "node:crypto";
-import { existsSync as existsSync15, readdirSync as readdirSync10 } from "node:fs";
+import { existsSync as existsSync16, readdirSync as readdirSync10 } from "node:fs";
 import { join as join25 } from "node:path";
 import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
@@ -15073,7 +15073,7 @@ init_coordinator();
 init_storage();
 init_batch_git();
 init_batch_state();
-import { realpathSync as realpathSync14, lstatSync as lstatSync15, rmSync as rmSync10, renameSync as renameSync6, openSync as openSync9, fstatSync as fstatSync6, readSync as readSync3, closeSync as closeSync9 } from "node:fs";
+import { existsSync as existsSync11, realpathSync as realpathSync14, lstatSync as lstatSync15, rmSync as rmSync10, renameSync as renameSync6, openSync as openSync9, fstatSync as fstatSync6, readSync as readSync3, closeSync as closeSync9 } from "node:fs";
 import { randomUUID as randomUUID10 } from "node:crypto";
 import { join as join18 } from "node:path";
 import { tmpdir as tmpdir6 } from "node:os";
@@ -15179,6 +15179,8 @@ var blank = () => ({
 var statePath2 = (sessionId, root) => join18(cacheDir(root), `${sessionHash(sessionId)}.continuation`);
 var callPath = (toolId, root) => join18(cacheDir(root), `${sessionHash(toolId)}.continuation-call`);
 function drop(path, root) {
+  if (!existsSync11(path))
+    return;
   if (!ensurePrivateDir(cacheDir(root)))
     return;
   try {
@@ -15537,7 +15539,7 @@ init_storage();
 init_intent();
 init_canary_application();
 init_authority_port();
-import { existsSync as existsSync14, readFileSync as readFileSync18, writeFileSync as writeFileSync11 } from "node:fs";
+import { existsSync as existsSync15, readFileSync as readFileSync18, writeFileSync as writeFileSync11 } from "node:fs";
 import { execFileSync as execFileSync11 } from "node:child_process";
 import { join as join24 } from "node:path";
 
@@ -16054,7 +16056,7 @@ init_batch_reconfirmation();
 init_batch_git();
 init_batch_preflight();
 import { spawnSync as spawnSync16 } from "node:child_process";
-import { existsSync as existsSync13 } from "node:fs";
+import { existsSync as existsSync14 } from "node:fs";
 import { join as join23 } from "node:path";
 
 // plugins/immune-brain/runtime/unattended/batch_lanes.ts
@@ -16065,14 +16067,14 @@ init_risk_floor();
 init_backend_claim();
 import { spawnSync as spawnSync15 } from "node:child_process";
 import { createHash as createHash23 } from "node:crypto";
-import { existsSync as existsSync12, realpathSync as realpathSync15 } from "node:fs";
+import { existsSync as existsSync13, realpathSync as realpathSync15 } from "node:fs";
 import { isAbsolute as isAbsolute8, join as join22 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/runtime_contracts.ts
 init_backend_claim();
 init_storage_paths();
 init_types();
-import { existsSync as existsSync11, readFileSync as readFileSync16 } from "node:fs";
+import { existsSync as existsSync12, readFileSync as readFileSync16 } from "node:fs";
 import { dirname as dirname11, join as join20, resolve as resolve15 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 var RUNTIME_CONTRACTS_MANIFEST = "runtime_contracts.json";
@@ -16098,7 +16100,7 @@ function readRuntimeContracts(runtimeDir) {
     join20(runtimeDir, "runtime", "kernel", RUNTIME_CONTRACTS_MANIFEST),
     join20(runtimeDir, "plugins", "immune-brain", "runtime", "kernel", RUNTIME_CONTRACTS_MANIFEST)
   ];
-  const path = candidates.find((candidate) => existsSync11(candidate));
+  const path = candidates.find((candidate) => existsSync12(candidate));
   if (!path)
     return null;
   const raw = JSON.parse(readFileSync16(path, "utf8"));
@@ -16390,7 +16392,7 @@ function createDefaultLaneGitPort() {
   return {
     resolveRoot: (root) => resolveRealPath(root) ?? root,
     inspectLane(coordinatorRoot, lanePath) {
-      const real = existsSync12(lanePath) ? resolveRealPath(lanePath) : null;
+      const real = existsSync13(lanePath) ? resolveRealPath(lanePath) : null;
       const absent = {
         exists: real !== null,
         real_path: real,
@@ -16868,7 +16870,7 @@ async function runLaneBatch(input, persisted) {
     record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "released" } : c);
     persist();
   }
-  const lineage = existsSync12(join22(input.root, ".git")) ? classifyBatchLineage({
+  const lineage = existsSync13(join22(input.root, ".git")) ? classifyBatchLineage({
     root: input.root,
     branch: record.branch ?? "",
     expectedHead: expectedBatchHead(record),
@@ -17386,7 +17388,7 @@ function failPersistedLineage(root, existing, message) {
   return writeBatchRunState(root, record);
 }
 function reconcileLineage(root, record) {
-  if (!existsSync13(join23(root, ".git")))
+  if (!existsSync14(join23(root, ".git")))
     return { record, failure: null };
   const expected = expectedBatchHead(record);
   const lineage = classifyBatchLineage({
@@ -17409,7 +17411,7 @@ function reconcileLineage(root, record) {
   };
 }
 async function validatePersistedRun(input, record) {
-  if (!record.commits.length && record.children[0]?.state === "settled" && existsSync13(join23(input.root, ".git"))) {
+  if (!record.commits.length && record.children[0]?.state === "settled" && existsSync14(join23(input.root, ".git"))) {
     const head = spawnSync16("git", ["-C", input.root, "rev-parse", "HEAD"], { encoding: "utf8" });
     const live = head.stdout.trim();
     const expected = expectedBatchHead(record);
@@ -17439,7 +17441,7 @@ async function validatePersistedRun(input, record) {
     const git = batchGitPortOf(input);
     const evidence = await git.lookupBatchCommit(input.root, child.task_id, record.batch_id, undefined, record.branch);
     if (!evidence || evidence.commit !== child.commit) {
-      if (evidence === null && typeof child.commit === "string" && child.commit.length > 0 && existsSync13(join23(input.root, ".git"))) {
+      if (evidence === null && typeof child.commit === "string" && child.commit.length > 0 && existsSync14(join23(input.root, ".git"))) {
         const reach = spawnSync16("git", ["-C", input.root, "merge-base", "--is-ancestor", child.commit, "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
         if (reach.status !== 0) {
           throw new Error(`batch_head_lineage_broken: recorded commit ${child.commit} for ${child.task_id} is no longer reachable from HEAD`);
@@ -17899,7 +17901,7 @@ async function driveInterruptedChild(input, child) {
       const planChild = input.children.find((c) => c.task_id === child.task_id);
       const intentPath = planChild?.intent_path ?? undefined;
       const doCommit = async () => batchGitPortOf(input).commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath);
-      if (existing && !record.commits.length && existsSync13(join23(input.root, ".git")) && !ownUnpersistedBatchHead(input.root, record, existing.commit))
+      if (existing && !record.commits.length && existsSync14(join23(input.root, ".git")) && !ownUnpersistedBatchHead(input.root, record, existing.commit))
         throw new Error("first unpersisted batch commit provenance is invalid");
       const adopted = existing ?? await doCommit().catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
@@ -18414,7 +18416,7 @@ class ClaudeRuntime {
     try {
       if (!selectedClaudeParent(meta.toolCallId, this.cwd, slug))
         return result;
-      if (existsSync14(join24(this.cwd, ".imm", "audit", taskId)))
+      if (existsSync15(join24(this.cwd, ".imm", "audit", taskId)))
         execFileSync11("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch, ...batch.state === "started" && batch.report?.tracker ? { tracker: batch.report.tracker } : {} };
@@ -19771,7 +19773,7 @@ async function runHook() {
   const cwd = typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
   if (!readActiveClaimTaskId(cwd)) {
     const batchesDir = join25(cwd, ".imm", "state", "batches");
-    const activeBatch = existsSync15(batchesDir) && readdirSync10(batchesDir).some((file) => {
+    const activeBatch = existsSync16(batchesDir) && readdirSync10(batchesDir).some((file) => {
       if (!file.endsWith(".json") || file.endsWith(".report.json"))
         return false;
       const batch = readAnyBatchRunState(cwd, file.slice(0, -5));

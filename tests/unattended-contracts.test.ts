@@ -168,6 +168,17 @@ case "$command" in
         "Immune-Brain-Batch: "*) printf '%s\\n' "\${line#Immune-Brain-Batch: }" > "$committed.batch" ;;
       esac
     done ;;
+  show)
+    # The lineage check reads committed evidence with: git show <commit>:<path>.
+    for argument in "$@"; do
+      case "$argument" in
+        *:*) spec="$argument" ;;
+      esac
+    done
+    case "$spec" in
+      *:*) evidence="\${spec#*:}"; if [ -f "${options.root}/$evidence" ]; then cat "${options.root}/$evidence"; else exit 1; fi ;;
+      *) exit 1 ;;
+    esac ;;
   log)
     batch="${GUARD_BATCH_ID}"
     if [ -f "$committed.batch" ]; then IFS= read -r batch < "$committed.batch"; fi
@@ -688,6 +699,9 @@ describe("unattended batch contract text", () => {
 			"restores",
 			"interventions",
 			"final_verification",
+			// The recorded verification outcome and the bounded Parent repair tasks it produced.
+			"final_verification_result",
+			"repair_tasks",
 			// ADR 0018: the user's recorded delegation answer and its effects.
 			"revision_delegation",
 			"delegated_revisions",
@@ -711,6 +725,9 @@ describe("unattended batch contract text", () => {
 			"children",
 			"consecutive_qa_failures",
 			"commits",
+			"final_verification",
+			"final_verification_result",
+			"repair_tasks",
 			"adopted_heads",
 			"created_at",
 			"updated_at",

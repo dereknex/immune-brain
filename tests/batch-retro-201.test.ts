@@ -68,6 +68,8 @@ describe("final verification after a lane batch completes", () => {
 		const dir = realpathSync(mkdtempSync(join(tmpdir(), "imm-final-")));
 		try {
 			execFileSync("git", ["-C", dir, "init", "-q"]);
+			// Final verification binds to a resolvable, clean HEAD, so the fixture needs one commit.
+			execFileSync("git", ["-C", dir, "-c", "user.email=imm@test", "-c", "user.name=imm-test", "commit", "-q", "--allow-empty", "-m", "init"]);
 			const passing = await runFinalVerification(dir, ["git status"]);
 			expect(passing.passed).toBe(true);
 			expect(passing.results[0]).toMatchObject({ command: "git status", exit_code: 0, passed: true });
