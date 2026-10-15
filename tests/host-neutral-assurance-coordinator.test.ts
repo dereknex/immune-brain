@@ -17,6 +17,7 @@ import {
 	parseAssuranceVerdict,
 	projectTaskStatus,
 	reviewAdvisoryRecords,
+	reviewReworkFindings,
 	snapshotDigest,
 	type AssuranceCoordinatorPorts,
 	type AssuranceVerdict,
@@ -453,6 +454,65 @@ describe("host-neutral assurance coordinator", () => {
 		expect((await h.coordinator.advance(TASK, ctx)).state).toBe("blocked");
 		expect(h.qaRuns()).toBe(1); expect(h.counts().applyCount).toBe(2);
 	});
+	describe("review rework carries only blocking findings", () => {
+		const evidence = {
+			trigger: "a caller ignores the frozen tree → the stale bytes are approved",
+			caller_chain: ["runtime/assurance/coordinator.ts"],
+			violated: { kind: "acceptance" as const, ref: "A1" },
+		};
+		const finding = (id: string, kind: "blocking" | "advisory") => ({ id, kind, acceptance_id: "A1", summary: `${id} summary`, evidence });
+		const rework = (findings: unknown[]) => ({
+			contract: "assurance_kernel/assurance_verdict/v2",
+			role: "review",
+			task_id: TASK,
+			snapshot_digest: snapshotDigest(snapshot("review")),
+			decision: "rework" as const,
+			findings,
+		});
+
+		test("an advisory-only or mixed rework is rejected for resubmission with zero writes", async () => {
+			const h = makeCoordinator({ host: new FakeReviewHost() });
+			expect((await h.coordinator.advance(TASK, ctx)).state).toBe("review_ready");
+			for (const findings of [[finding("n-1", "advisory")], [finding("b-1", "blocking"), finding("n-1", "advisory")]]) {
+				const result = await h.coordinator.submitReview(TASK, ctx, rework(findings));
+				expect(result).toMatchObject({ state: "blocked", code: "verdict_invalid" });
+				expect((result as { reason: string }).reason).toContain('resubmit decision "pass" with approval.inspected_paths');
+			}
+			expect(h.counts().applyCount).toBe(1);
+			// The reservation survives: the corrected pass settles the same round.
+			expect(await h.coordinator.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
+		});
+
+		test("the parser never rewrites, drops or synthesizes Reviewer findings", () => {
+			const s = snapshot("review");
+			expect(() => parseAssuranceVerdict(rework([finding("n-1", "advisory")]), s)).toThrow(/only blocking findings/);
+			expect(() => parseAssuranceVerdict(rework([finding("b-1", "blocking"), finding("n-1", "advisory")]), s)).toThrow(/advisory finding\(s\) review-[0-9a-f]+-2-n-1/);
+			const parsed = parseAssuranceVerdict(rework([finding("b-1", "blocking"), finding("b-2", "blocking")]), s);
+			expect(parsed.findings?.map((entry) => [entry.kind, entry.summary])).toEqual([["blocking", "b-1 summary"], ["blocking", "b-2 summary"]]);
+		});
+
+		test("a blocking-only rework projects only blocking Executor findings", async () => {
+			const h = makeCoordinator({ host: new FakeReviewHost() });
+			expect((await h.coordinator.advance(TASK, ctx)).state).toBe("review_ready");
+			const result = await h.coordinator.submitReview(TASK, ctx, rework([finding("b-1", "blocking"), finding("b-2", "blocking")]));
+			expect(result).toMatchObject({ state: "rework", recovery: { next_obligation: "resolve_findings" } });
+			expect((result as { recovery: { finding_ids: string[] } }).recovery.finding_ids).toHaveLength(2);
+			const parsed = parseAssuranceVerdict(rework([finding("b-1", "blocking")]), snapshot("review"));
+			expect(reviewReworkFindings(parsed).map((entry) => entry.kind)).toEqual(["blocking"]);
+			expect(() => reviewReworkFindings({ ...parsed, findings: [...parsed.findings!, { ...parsed.findings![0], kind: "advisory" }] })).toThrow(/must all be blocking/);
+		});
+
+		test("a pass keeps advisory notes on the attestation and opens no Executor work", async () => {
+			const h = makeCoordinator({ host: new FakeReviewHost() });
+			expect((await h.coordinator.advance(TASK, ctx)).state).toBe("review_ready");
+			const pass = { ...passVerdict(snapshot("review")), findings: [finding("n-1", "advisory")] };
+			expect(await h.coordinator.submitReview(TASK, ctx, pass)).toEqual({ state: "completed" });
+			const parsed = parseAssuranceVerdict(pass, snapshot("review"));
+			expect(reviewAdvisoryRecords(parsed)).toHaveLength(1);
+			expect(() => reviewReworkFindings(parsed)).toThrow(/require a rework verdict/);
+		});
+	});
+
 	test("a blocking finding on a pass verdict is rejected", async () => {
 		const host = new FakeReviewHost();
 		const h = makeCoordinator({ host });

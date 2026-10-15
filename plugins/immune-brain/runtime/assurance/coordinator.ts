@@ -166,9 +166,13 @@ export interface AssuranceVerdict {
 export function reviewReworkFindings(verdict: AssuranceVerdict): TaskFinding[] {
 	if (verdict.decision !== "rework" || !verdict.findings?.length)
 		throw new Error("review rework findings require a rework verdict");
+	// Advisory notes belong to a pass attestation; one that reached a rework
+	// verdict is a contract violation, never Executor work to filter away.
+	if (verdict.findings.some((finding) => finding.kind !== "blocking"))
+		throw new Error("review rework findings must all be blocking");
 	return verdict.findings.map((finding) => ({
 		id: finding.id,
-		kind: finding.kind,
+		kind: "blocking" as const,
 		status: "open" as const,
 		acceptance_id: finding.acceptance_id,
 		source: "review" as const,
@@ -616,8 +620,8 @@ export function buildReviewSnapshotPrompt(
 		"Acceptance assertions:", acceptance,
 		`PASS shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>","inspected_paths":["<every changed path of the reviewed change set>"]}}`,
 		`A pass verdict may carry non-blocking notes as findings, but every one of them must set kind "advisory"; a blocking finding is a rework verdict and must omit approval: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>","inspected_paths":["<every changed path of the reviewed change set>"]},"findings":[{"id":"review-1","kind":"advisory","acceptance_id":"<id|null>","summary":"<one line>","evidence":{"trigger":"<concrete inputs or state>","caller_chain":["<path-or-symbol>"],"violated":{"kind":"acceptance|security_boundary","ref":"<acceptance id or boundary>"}}}]}`,
-		`REWORK shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"rework","findings":[{"id":"review-1","kind":"blocking|advisory","acceptance_id":"<id|null>","summary":"<one line>","evidence":{"trigger":"<concrete inputs or state>","caller_chain":["<path-or-symbol>"],"violated":{"kind":"acceptance|security_boundary","ref":"<acceptance id or boundary>"}}}]}`,
-		`REWORK verdicts must omit the approval field entirely; do not emit "approval": null.`,
+		`REWORK shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"rework","findings":[{"id":"review-1","kind":"blocking","acceptance_id":"<id|null>","summary":"<one line>","evidence":{"trigger":"<concrete input or state → observable wrong result>","caller_chain":["<path-or-symbol>"],"violated":{"kind":"acceptance|security_boundary","ref":"<acceptance id or boundary>"}}}]}`,
+		`REWORK verdicts must omit the approval field entirely; do not emit "approval": null. A rework carries only blocking findings, at least one; a note that blocks nothing is an advisory finding on a pass verdict, never on rework.`,
 	].join("\n");
 }
 
@@ -758,6 +762,14 @@ export function parseAssuranceVerdict(input: unknown, snapshot: SnapshotDescript
 	if (!Array.isArray(raw.findings) || raw.findings.length === 0) throw new Error("rework verdict findings are invalid");
 	if (raw.approval !== undefined && raw.approval !== null) throw new Error("rework verdict must omit approval");
 	const findings = parseVerdictFindings(raw.findings, snapshot);
+	// The verdict bytes stay the Reviewer's: a Review rework that mixes in
+	// advisory notes, or blocks on nothing, is rejected for resubmission and
+	// never demoted, filtered or synthesized here.
+	if (snapshot.role === "review") {
+		const advisory = findings.filter((finding) => finding.kind === "advisory");
+		if (advisory.length > 0 || !findings.some((finding) => finding.kind === "blocking"))
+			throw new Error(`review rework verdict must contain only blocking findings and at least one: ${advisory.length > 0 ? `advisory finding(s) ${advisory.map((finding) => finding.id).join(", ")} are not allowed on rework; ` : "it has no blocking finding; "}resubmit decision "pass" with approval.inspected_paths listing every reviewed changed path when nothing blocks, carrying any non-blocking notes as advisory findings`);
+	}
 	return { contract: "assurance_kernel/assurance_verdict/v2", role: snapshot.role, task_id: snapshot.task_id, snapshot_digest: snapshotDigest(snapshot), decision: "rework", findings };
 }
 
