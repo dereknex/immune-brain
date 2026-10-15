@@ -1,0 +1,30 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "workflow-execution-reliability-s2-lane-diagnostics",
+  "owner": "user",
+  "goal": "Make Lane read and scope refusals actionable without changing authority, while preserving existing authorized same-run recovery under S2 of docs/specs/workflow-execution-reliability.spec.md.",
+  "acceptance": [
+    {
+      "id": "S2-AC1",
+      "assertion": "Source E3; meet S2 and SCN-2 in docs/specs/workflow-execution-reliability.spec.md: an injected projection read failure is classified as unreadable, contract mismatch remains distinct and missing ownership parks without declaring completion. Matching active/done runs resume only after the existing fresh authorization; absent authorization, wrong run, changed plan and retired batch do not enroll or commit another run.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S2-AC2",
+      "assertion": "Source E4; meet S2 in docs/specs/workflow-execution-reliability.spec.md: out-of-scope and unsupported-index-flag commit refusals stay fail-closed and expose bounded escaped cause, relative path and applicable flag details. Newline/tab filenames and oversized lists are safely encoded with explicit omitted counts; raw verifier output, exception stacks, environment and file contents are not persisted.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-commit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/workflow-execution-reliability-diagnostics.md",
+    "docs/plans/workflow-execution-reliability-s2-lane-diagnostics.intent.json",
+    "docs/specs/workflow-execution-reliability.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "tests/unattended-batch-commit.test.ts",
+    "tests/unattended-batch-lanes.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
