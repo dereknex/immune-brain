@@ -131,7 +131,7 @@ export function runBatchGitPreflight(input: {
 		return {
 			ok: false,
 			reason: "dirty_working_tree",
-			message: `unsupported index flags (assume-unchanged/skip-worktree) detected: ${flaggedPreflight.join(", ")}`,
+			message: `unsupported index flags (assume-unchanged/skip-worktree) detected: ${scopeRefusal("unsupported_index_flags", flaggedPreflight).message}`,
 		};
 	}
 
@@ -248,7 +248,17 @@ function hasBoundaryWhitespace(path: string): boolean {
 	return path.split("/").some((segment) => segment.trim() !== segment || segment.length === 0);
 }
 
-function getUnsupportedIndexFlags(root: string): string[] {
+function scopeRefusal(cause: string, entries: Array<{ path: string; flags?: string[] }>): Error {
+	const included: typeof entries = [];
+	for (const entry of entries.slice(0, 24)) {
+		const candidate = { cause, entries: [...included, entry], omitted: entries.length - included.length - 1 };
+		if (Buffer.byteLength(`dirty_outside_scope: ${JSON.stringify(candidate)}`) > 4096) break;
+		included.push(entry);
+	}
+	return new Error(`dirty_outside_scope: ${JSON.stringify({ cause, entries: included, omitted: entries.length - included.length })}`);
+}
+
+function getUnsupportedIndexFlags(root: string): Array<{ path: string; flags: string[] }> {
 	const result = spawnSync("git", ["-C", root, "ls-files", "-v", "-z", "--"], {
 		encoding: "utf8",
 		stdio: ["ignore", "pipe", "pipe"],
@@ -257,12 +267,15 @@ function getUnsupportedIndexFlags(root: string): string[] {
 		throw new Error("failed to inspect index flags via git ls-files -v");
 	}
 	const entries = result.stdout.split("\0").filter((e) => e.length > 0);
-	const flagged: string[] = [];
+	const flagged: Array<{ path: string; flags: string[] }> = [];
 	for (const entry of entries) {
 		const tag = entry[0];
 		// Reject h (assume-unchanged), S (skip-worktree), and s (both flags combined) (Finding 1)
 		if (tag === "h" || tag === "S" || tag === "s") {
-			flagged.push(entry.slice(2));
+			flagged.push({ path: entry.slice(2), flags: [
+				...(tag === "h" || tag === "s" ? ["assume-unchanged"] : []),
+				...(tag === "S" || tag === "s" ? ["skip-worktree"] : []),
+			] });
 		}
 	}
 	return flagged;
@@ -544,7 +557,7 @@ export async function commitBatchChild(input: {
 	// 3b. Reject unsupported index flags before scope inspection (Finding 2)
 	const flaggedCommit = getUnsupportedIndexFlags(root);
 	if (flaggedCommit.length > 0) {
-		throw new Error("dirty_outside_scope");
+		throw scopeRefusal("unsupported_index_flags", flaggedCommit);
 	}
 
 	// 4. Identify changed paths and verify they are strictly within scope envelope + .imm/audit/<task-id>/** (Finding 2 & 4)
@@ -552,7 +565,7 @@ export async function commitBatchChild(input: {
 	const outsideScope = changedPaths.filter((p) => !isPathAllowedForChild(p, taskId, scopeHint));
 	if (outsideScope.length > 0) {
 		// Nothing is committed
-		throw new Error("dirty_outside_scope");
+		throw scopeRefusal("changed_paths", outsideScope.map(path => ({ path })));
 	}
 
 	// 5. Stage only paths needing an update, preserving already-staged deletions/renames (Finding 2)
@@ -582,7 +595,7 @@ export async function commitBatchChild(input: {
 	const stagedOutside = staged.filter((p) => !isPathAllowedForChild(p, taskId, scopeHint));
 	if (stagedOutside.length > 0) {
 		spawnSync("git", ["-C", root, "reset", "--quiet"], { stdio: ["ignore", "ignore", "ignore"] });
-		throw new Error("dirty_outside_scope");
+		throw scopeRefusal("staged_paths", stagedOutside.map(path => ({ path })));
 	}
 	const record = authoritative as {
 		contract?: string;
@@ -642,7 +655,7 @@ export async function commitBatchChild(input: {
 	const committedDelta = getCommittedDeltaPaths(root);
 	const deltaOutside = committedDelta.filter((p) => !isPathAllowedForChild(p, taskId, scopeHint));
 	if (deltaOutside.length > 0) {
-		throw new Error("dirty_outside_scope");
+		throw scopeRefusal("committed_paths", deltaOutside.map(path => ({ path })));
 	}
 
 	// 9. Persist durable commit evidence before returning (Finding 1)

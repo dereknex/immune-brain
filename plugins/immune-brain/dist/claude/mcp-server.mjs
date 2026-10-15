@@ -10846,7 +10846,7 @@ function runBatchGitPreflight(input) {
     return {
       ok: false,
       reason: "dirty_working_tree",
-      message: `unsupported index flags (assume-unchanged/skip-worktree) detected: ${flaggedPreflight.join(", ")}`
+      message: `unsupported index flags (assume-unchanged/skip-worktree) detected: ${scopeRefusal("unsupported_index_flags", flaggedPreflight).message}`
     };
   }
   const statusResult = spawnSync10("git", ["-C", root, "status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none"], {
@@ -10930,6 +10930,16 @@ function runBatchGitPreflight(input) {
 function hasBoundaryWhitespace(path) {
   return path.split("/").some((segment) => segment.trim() !== segment || segment.length === 0);
 }
+function scopeRefusal(cause, entries) {
+  const included = [];
+  for (const entry of entries.slice(0, 24)) {
+    const candidate = { cause, entries: [...included, entry], omitted: entries.length - included.length - 1 };
+    if (Buffer.byteLength(`dirty_outside_scope: ${JSON.stringify(candidate)}`) > 4096)
+      break;
+    included.push(entry);
+  }
+  return new Error(`dirty_outside_scope: ${JSON.stringify({ cause, entries: included, omitted: entries.length - included.length })}`);
+}
 function getUnsupportedIndexFlags(root) {
   const result = spawnSync10("git", ["-C", root, "ls-files", "-v", "-z", "--"], {
     encoding: "utf8",
@@ -10943,7 +10953,10 @@ function getUnsupportedIndexFlags(root) {
   for (const entry of entries) {
     const tag = entry[0];
     if (tag === "h" || tag === "S" || tag === "s") {
-      flagged.push(entry.slice(2));
+      flagged.push({ path: entry.slice(2), flags: [
+        ...tag === "h" || tag === "s" ? ["assume-unchanged"] : [],
+        ...tag === "S" || tag === "s" ? ["skip-worktree"] : []
+      ] });
     }
   }
   return flagged;
@@ -11146,12 +11159,12 @@ async function commitBatchChild(input) {
   }
   const flaggedCommit = getUnsupportedIndexFlags(root);
   if (flaggedCommit.length > 0) {
-    throw new Error("dirty_outside_scope");
+    throw scopeRefusal("unsupported_index_flags", flaggedCommit);
   }
   const changedPaths = getChangedProjectPaths(root);
   const outsideScope = changedPaths.filter((p) => !isPathAllowedForChild(p, taskId, scopeHint));
   if (outsideScope.length > 0) {
-    throw new Error("dirty_outside_scope");
+    throw scopeRefusal("changed_paths", outsideScope.map((path) => ({ path })));
   }
   const pathsToStage = getUnstagedProjectPaths(root);
   if (pathsToStage.length > 0) {
@@ -11171,7 +11184,7 @@ async function commitBatchChild(input) {
   const stagedOutside = staged.filter((p) => !isPathAllowedForChild(p, taskId, scopeHint));
   if (stagedOutside.length > 0) {
     spawnSync10("git", ["-C", root, "reset", "--quiet"], { stdio: ["ignore", "ignore", "ignore"] });
-    throw new Error("dirty_outside_scope");
+    throw scopeRefusal("staged_paths", stagedOutside.map((path) => ({ path })));
   }
   const record = authoritative;
   const qa = [...record.attestations ?? []].reverse().find((item) => item.kind === "qa");
@@ -11216,7 +11229,7 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
   const committedDelta = getCommittedDeltaPaths(root);
   const deltaOutside = committedDelta.filter((p) => !isPathAllowedForChild(p, taskId, scopeHint));
   if (deltaOutside.length > 0) {
-    throw new Error("dirty_outside_scope");
+    throw scopeRefusal("committed_paths", deltaOutside.map((path) => ({ path })));
   }
   writeBatchCommitEvidence(root, { batchId: batchId ?? "native-task", taskId, commit: newHead, parentHead: expectedHead });
   return { commit: newHead };
@@ -16796,8 +16809,16 @@ function laneRuntimeContractRefusal(root, executorRuntime) {
     return null;
   return `${RUNTIME_CONTRACT_MISMATCH}: coordinator runtime ${runningRuntimeSource()} and Lane runtime ${lane.path} disagree (${differences.join("; ")}); load the same runtime on both sides before starting the batch`;
 }
-function laneUnreadableReason(error) {
-  return /contract must equal|unknown field|schema version .* incompatible|unknown contract/i.test(error) ? `${LANE_CONTRACT_MISMATCH}: ${error}` : "batch_lane_lost";
+function laneUnreadableReason(error, taskId, runId) {
+  const category = /contract must equal|unknown field|schema version .* incompatible|unknown contract/i.test(error) ? LANE_CONTRACT_MISMATCH : "batch_lane_unreadable";
+  return `${category}: ${JSON.stringify({ stage: "project_task", task_id: taskId, run_id: runId ?? null })}`;
+}
+async function readLaneProjection(input, path, taskId) {
+  try {
+    return await input.kernel.projectTask(path, taskId);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
 }
 function laneBranchName(initiativeSlug, taskId) {
   return `imm-lane/${initiativeSlug}/${taskId}`;
@@ -17204,8 +17225,10 @@ async function runLaneBatch(input, persisted) {
         if (!child.lane?.run_id)
           return laneReport(record, "parked Lane has no recorded run identity; inspect it without re-enrolling", LANE_NEEDS_HUMAN_NEXT_ACTION);
         const facts = lanes.inspectLane(input.root, child.lane.path);
-        const fresh = await input.kernel.projectTask(child.lane.path, child.task_id);
-        if (!facts.exists || !facts.same_repository || !facts.is_worktree_root || facts.branch !== child.lane.branch || fresh.error !== null || fresh.projection.run_id !== child.lane.run_id || fresh.projection.open_user_decision_count > 0 || fresh.projection.replan_required_ids.length > 0)
+        const fresh = await readLaneProjection(input, child.lane.path, child.task_id);
+        if (fresh.error !== null)
+          return laneReport(record, laneUnreadableReason(fresh.error, child.task_id, child.lane.run_id), LANE_NEEDS_HUMAN_NEXT_ACTION);
+        if (!facts.exists || !facts.same_repository || !facts.is_worktree_root || facts.branch !== child.lane.branch || fresh.projection.run_id !== child.lane.run_id || fresh.projection.open_user_decision_count > 0 || fresh.projection.replan_required_ids.length > 0)
           return laneReport(record, "parked Lane identity or decision is unresolved", LANE_NEEDS_HUMAN_NEXT_ACTION);
         const state = fresh.projection.lifecycle === "done" && fresh.projection.completion_ready ? child.lane.lane_commit ? "lane_committed" : "settled" : fresh.projection.lifecycle === "active" && fresh.claim?.task_id === child.task_id && (facts.active_claim_task_id === null || facts.active_claim_task_id === child.task_id) ? "enrolled" : null;
         if (!state)
@@ -17411,8 +17434,10 @@ async function runLaneBatch(input, persisted) {
         task_id: taskId,
         batch: { registry: input.registry, capability: input.capability, binding: { batch_id: record.batch_id, expected_head: lane.base_head } }
       });
-      const fresh = await input.kernel.projectTask(lane.path, taskId);
-      if (fresh.error !== null || !fresh.projection.run_id || fresh.claim?.task_id !== taskId)
+      const fresh = await readLaneProjection(input, lane.path, taskId);
+      if (fresh.error !== null)
+        throw new Error(laneUnreadableReason(fresh.error, taskId, lane.run_id));
+      if (!fresh.projection.run_id || fresh.claim?.task_id !== taskId)
         throw new Error("enrolled Lane has no observable owned run");
       record.children = record.children.map((c) => c.task_id === taskId ? { ...c, state: "enrolled", reason: null, lane: { ...lane, run_id: fresh.projection.run_id } } : c);
       persist();
@@ -17430,14 +17455,9 @@ async function runLaneBatch(input, persisted) {
   for (const child of [...record.children]) {
     if (child.state !== "lane_admitted" && child.state !== "enrolled" || !child.lane)
       continue;
-    let fresh;
-    try {
-      fresh = await input.kernel.projectTask(child.lane.path, child.task_id);
-    } catch (error) {
-      fresh = { error: error instanceof Error ? error.message : String(error) };
-    }
+    const fresh = await readLaneProjection(input, child.lane.path, child.task_id);
     if (fresh.error !== null) {
-      parkChild(child.task_id, laneUnreadableReason(String(fresh.error)));
+      parkChild(child.task_id, laneUnreadableReason(fresh.error, child.task_id, child.lane.run_id));
       continue;
     }
     if (child.lane.run_id && fresh.projection.run_id !== child.lane.run_id) {
@@ -17628,9 +17648,11 @@ async function runLaneBatch(input, persisted) {
       });
       continue;
     }
-    const fresh = await input.kernel.projectTask(child.lane.path, child.task_id);
-    if (fresh.error !== null)
+    const fresh = await readLaneProjection(input, child.lane.path, child.task_id);
+    if (fresh.error !== null) {
+      parkChild(child.task_id, laneUnreadableReason(fresh.error, child.task_id, child.lane.run_id));
       continue;
+    }
     handoffs.push({
       role: "executor",
       task_id: child.task_id,

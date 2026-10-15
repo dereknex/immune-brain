@@ -956,6 +956,43 @@ describe("acc-batch-scope-bounded-commit", () => {
 		expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(repo.baseHead);
 	});
 
+	it.each(["rogue.ts", "rogue\n\t\".ts"])("reports escaped changed/staged scope paths without writes: %s", async rogue => {
+		const taskId = "task-safe-diagnostics";
+		writeChildAudit(repo.root, taskId, "done", repo.baseHead);
+		writeFileSync(join(repo.root, rogue), "PRIVATE_FILE_CONTENT");
+		git(repo.root, ["add", "--", rogue]);
+		const index = readFileSync(join(repo.root, ".git/index"));
+		let reason = "";
+		try {
+			await commitBatchChild({ root: repo.root, taskId, batchId: "batch-diag", expectedHead: repo.baseHead });
+		} catch (error) { reason = (error as Error).message; }
+		expect(reason).toStartWith("dirty_outside_scope: ");
+		const detail = JSON.parse(reason.slice("dirty_outside_scope: ".length));
+		expect(detail.cause).toBe("changed_paths");
+		expect(detail.entries).toContainEqual({ path: rogue });
+		expect(detail.omitted).toBe(0);
+		expect(reason).not.toContain("\n");
+		expect(reason).not.toContain("PRIVATE_FILE_CONTENT");
+		expect(readFileSync(join(repo.root, ".git/index"))).toEqual(index);
+		expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(repo.baseHead);
+	});
+
+	it("bounds large scope diagnostics and reports omitted entries", async () => {
+		const taskId = "task-bounded-diagnostics";
+		writeChildAudit(repo.root, taskId, "done", repo.baseHead);
+		for (let n = 0; n < 32; n++) writeFileSync(join(repo.root, `${"界".repeat(70)}-${n}.txt`), "private");
+		let reason = "";
+		try {
+			await commitBatchChild({ root: repo.root, taskId, batchId: "batch-diag", expectedHead: repo.baseHead });
+		} catch (error) { reason = (error as Error).message; }
+		expect(reason).toStartWith("dirty_outside_scope: ");
+		const detail = JSON.parse(reason.slice("dirty_outside_scope: ".length));
+		expect(detail.entries.length).toBeLessThan(24);
+		expect(detail.entries.length + detail.omitted).toBe(32);
+		expect(detail.omitted).toBeGreaterThan(0);
+		expect(Buffer.byteLength(reason)).toBeLessThanOrEqual(4096);
+	});
+
 	it("Finding 4: rejects files with trailing whitespace as dirty_outside_scope", async () => {
 		const taskId = "task-trailing-space";
 		const authorizedIntent = {
@@ -1051,7 +1088,7 @@ describe("acc-batch-scope-bounded-commit", () => {
 				batchId: "batch-assume-1",
 				expectedHead: baseNow,
 			}),
-		).rejects.toThrow("dirty_outside_scope");
+		).rejects.toThrow('"flags":["assume-unchanged"]');
 	});
 
 	it("Finding 1: rejects hidden out-of-scope modification carrying combined flags (tag s) as dirty_outside_scope", async () => {
@@ -1086,7 +1123,7 @@ describe("acc-batch-scope-bounded-commit", () => {
 				batchId: "batch-s-1",
 				expectedHead: baseNow,
 			}),
-		).rejects.toThrow("dirty_outside_scope");
+		).rejects.toThrow('"flags":["assume-unchanged","skip-worktree"]');
 	});
 
 	it("Finding 2: commits scoped staged deletion and staged rename without pathspec errors", async () => {

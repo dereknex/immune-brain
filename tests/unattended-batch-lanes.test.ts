@@ -1609,7 +1609,12 @@ describe("runtime contract preflight and mismatch park reason (#199)", () => {
 		}
 	});
 
-	it("parks a Lane whose state exists but is in a contract the coordinator refuses with its own reason and the parse error", async () => {
+	it.each([
+		["contract must equal assurance_kernel/task_record/v3; secret parse bytes", "batch_lane_contract_mismatch", false, false],
+		["EIO private exception bytes", "batch_lane_unreadable", false, false],
+		["EIO private exception bytes", "batch_lane_unreadable", true, false],
+		["EIO private exception bytes", "batch_lane_unreadable", false, true],
+	])("parks an unreadable Lane safely: %s", async (parseError, category, throws, done) => {
 		const fx = fixture();
 		try {
 			const kernel = laneKernel();
@@ -1617,14 +1622,29 @@ describe("runtime contract preflight and mismatch park reason (#199)", () => {
 			await startBatch(args);
 			const laneA = fx.lane("task-a");
 			await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] });
-			const parseError = "contract must equal assurance_kernel/task_record/v3; unknown field: git_base_head";
+			writeFileSync(join(laneA, "a.txt"), "lane implementation\n");
 			const project = kernel.projectTask;
-			kernel.projectTask = async (root, taskId) => ({ ...(await project(root, taskId)), error: parseError });
+			kernel.projectTask = async (root, taskId) => {
+				if (throws) throw new Error(parseError);
+				return { ...(await project(root, taskId)), error: parseError };
+			};
 			const report = lanes(await startBatch(args));
 			expect(report.children[0]!.state).toBe("needs_human");
-			expect(report.children[0]!.reason).toBe(`batch_lane_contract_mismatch: ${parseError}`);
-			// A genuinely missing Lane keeps batch_lane_lost.
+			const reason = report.children[0]!.reason!;
+			expect(reason).toStartWith(`${category}: `);
+			expect(reason).not.toContain(parseError);
+			expect(JSON.parse(reason.slice(reason.indexOf(": ") + 2))).toEqual({
+				stage: "project_task", task_id: "task-a", run_id: "run-1",
+			});
 			expect(report.children[0]!.reason).not.toBe("batch_lane_lost");
+			expect(readAnyBatchRunState(fx.repo, BATCH_ID)?.children[0]?.reason).toBe(reason);
+			// A fresh native authorization recovers the original active/done run.
+			kernel.projectTask = project;
+			if (done) kernel.settled.add("task-a");
+			const restored = lanes(await startBatch(request(fx, args.children, kernel, { confirmation_time: "2026-06-01T00:00:00.000Z" })));
+			expect(restored.children[0]!.lane?.run_id).toBe("run-1");
+			expect(restored.children[0]!.state).toBe(done ? "integrated" : "enrolled");
+			expect(kernel.enrolled.size).toBe(1);
 		} finally {
 			fx.cleanup();
 		}
