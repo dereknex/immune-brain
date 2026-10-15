@@ -228,7 +228,7 @@ export async function projectBatchPlan(
 		if (child.status !== "enrollable") continue;
 		if (directDependencies.get(child.task_id)!.some((id) => {
 			const status = childById.get(id)!.status;
-			return status === "already_owned" || status === "needs_human" || status === "blocked";
+			return status === "already_owned" || (status === "needs_human" && childById.get(id)!.reason !== "critical") || status === "blocked";
 		})) {
 			child.status = "blocked";
 			child.reason = "dependency_unavailable";

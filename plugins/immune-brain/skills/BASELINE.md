@@ -70,6 +70,10 @@ Planner or Brainstorm leaves the session's run entry unchanged.
 1. **Continue an existing Managed owner explicitly**: an active Assurance
    projection, TaskIntent, TaskRecord, reviewer `follow_up`, or other nonterminal
    Managed owner remains authoritative; the user resumes it with `imm-run`.
+   Once that entry binds this session, ordinary status questions and in-scope
+   clarification retain automatic response continuation. Explicit cancel, planning
+   entry or session replacement releases the binding; Host continuation metadata
+   remains non-authoritative.
 2. **Start explicitly**: the selected Immune-Brain Skill owns its planning or
    coordination work. It creates only requested artifacts and their required
    parent directories. Explicit Planner entry also owns absent routing-policy

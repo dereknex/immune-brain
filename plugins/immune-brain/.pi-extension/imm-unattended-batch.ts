@@ -12,12 +12,15 @@ import {
 } from "../runtime/kernel/batch_authority";
 import { createEnrollmentAuthorityRegistry } from "../runtime/kernel/enrollment_authority";
 import {
-	startBatch,
+	startBatch, completedParentReport,
 	type BatchRunnerKernelPort,
 	type BatchRunReport,
 	type BatchTrackerPort,
 } from "../runtime/unattended/batch_runner";
 import { createBatchKernelPort } from "../runtime/unattended/batch_kernel_port";
+import { observeInitiative } from "../runtime/unattended/batch_plan";
+import { integrateSettledCriticalSlices, advanceNativeParent } from "../runtime/unattended/batch_git";
+
 import type { BatchRunnerGitPort } from "../runtime/unattended/batch_git";
 import type { InitiativeObservationReader } from "../runtime/unattended/types";
 import { advancePiTask, piRunEntryRefusal } from "./imm-canary-work";
@@ -134,6 +137,7 @@ export interface PiBatchExecutionOptions {
 }
 
 export type PiBatchExecutionResult =
+	| NonNullable<Awaited<ReturnType<typeof advanceNativeParent>>>
 	| { state: "started"; batch_id: string; report: BatchRunReport }
 	| { state: "rejected"; reason: string; recovery_action: string }
 	| { state: "cancelled"; reason: string; recovery_action: string }
@@ -158,7 +162,7 @@ export async function executePiUnattendedBatch(
 	let commit: string | undefined;
 	try {
 		const result = await executePreparedPiBatch(options, (value) => { commit = value; });
-		if (commit && result.state !== "started") result.reason += `; batch precondition commit ${commit} remains`;
+		if (commit && "reason" in result) result.reason += `; batch precondition commit ${commit} remains`;
 		return result;
 	} catch (error) {
 		if (commit && error instanceof Error) error.message += `; batch precondition commit ${commit} remains`;
@@ -176,6 +180,32 @@ async function executePreparedPiBatch(
 	if (!reuseOnly && !interactive) return { state: "rejected", ...nonInteractiveRefusal() };
 	if (!reuseOnly && !options.confirmBatch) return batchReason("confirmation_port_unavailable");
 
+	await integrateSettledCriticalSlices(root, initiativeSlug, options.readInitiative);
+	const completed = await completedParentReport(root, initiativeSlug, options.readInitiative, options.batchTracker);
+	if (completed) return { state: "started", batch_id: completed.batch_id, report: completed };
+	const native = await advanceNativeParent(root, initiativeSlug, options.final_verification, options.readInitiative, options.batchTracker ?? createBatchTrackerPort(root, initiativeSlug),
+		async (effects) => {
+			// A continuation never opens a gate; unconfirmed commands wait for a fresh explicit entry.
+			if (reuseOnly || !options.confirmBatch) return batchReason("confirmation_port_unavailable");
+			let decision: "accept" | "accept_delegate" | "decline" | "cancel";
+			try {
+				decision = await options.confirmBatch({
+					title: `Authorize Parent Final Verification: ${effects.initiative_slug}`,
+					summary: `Initiative: ${effects.initiative_slug}\nPlan digest: ${effects.plan_digest}\nNo batch run is started.\nFinal verification commands run in this workspace outside Host permission:\n${effects.final_commands.map((command) => `  - ${command}`).join("\n")}`,
+					details: `Parent Tasks (${effects.children.length}):\n${effects.children.map((child) => `  - ${child.task_id} (${child.slice_id})`).join("\n")}${effects.integrate_task_ids.length > 0 ? `\n\nSettled deliveries committed first (${effects.integrate_task_ids.length}):\n${effects.integrate_task_ids.map((id) => `  - ${id}`).join("\n")}` : ""}`,
+					planDigest: effects.plan_digest,
+					signal,
+				});
+			} catch (err) {
+				if (signal?.aborted) return batchReason("confirmation_cancelled");
+				return batchReason("confirmation_failed", err instanceof Error ? err.message : String(err));
+			}
+			if (decision === "cancel" || signal?.aborted) return batchReason("confirmation_cancelled");
+			if (decision === "decline") return batchReason("confirmation_declined");
+			if (decision !== "accept") return batchReason("confirmation_no_decision");
+			return null;
+		});
+	if (native) return native;
 	// A lane_offers-only call resumes the recorded lane batch; refused before any gate otherwise.
 	const resolvedParallel = resolveLaneParallel(root, initiativeSlug, options.max_parallel, options.lane_offers, options.lane_instruction ?? options.lane_revision);
 	if (resolvedParallel !== undefined) options = { ...options, max_parallel: resolvedParallel };
@@ -235,7 +265,7 @@ async function executePreparedPiBatch(
 			}
 			const confirmDetails = {
 				title: `Authorize Unattended Batch: ${facts.initiative_slug}`,
-				summary: `Initiative: ${facts.initiative_slug}\nBatch branch: ${facts.batch_branch}\nPlan digest: ${facts.plan_digest}\nBudget: max_children=${facts.budget.max_children}, qa_failure_limit=${facts.budget.qa_failure_limit}${options.max_parallel !== undefined ? `\nLane mode: max_parallel=${options.max_parallel}` : ""}${options.max_parallel !== undefined && options.final_verification ? `\nFinal verification: ${options.final_verification.join("; ")}` : ""}`,
+				summary: `Initiative: ${facts.initiative_slug}\nBatch branch: ${facts.batch_branch}\nPlan digest: ${facts.plan_digest}\nBudget: max_children=${facts.budget.max_children}, qa_failure_limit=${facts.budget.qa_failure_limit}${options.max_parallel !== undefined ? `\nLane mode: max_parallel=${options.max_parallel}` : ""}${options.final_verification ? `\nFinal verification: ${options.final_verification.join("; ")}` : ""}`,
 				details: `Ordered children (${facts.children.length}):\n${facts.children.map((child) => `  - ${child.task_id} (${child.slice_id}) [risk: ${child.risk}] [status: ${child.status === "already_settled" ? "completed" : "pending execution"}]`).join("\n")}${facts.excluded.length > 0 ? `\n\nExcluded children:\n${facts.excluded.map((child) => `  - ${child.task_id} (${child.slice_id}): ${child.reason}`).join("\n")}` : ""}${options.max_parallel !== undefined ? `\n\nParallel groups (${facts.parallel_groups.length}):\n${facts.parallel_groups.map((group) => `  - ${group.join(", ")}`).join("\n")}${facts.scope_conflicts.length > 0 ? `\n\nSerialized by overlapping scope:\n${facts.scope_conflicts.map((c) => `  - ${c.task_id} after ${c.overlaps_with.join(", ")}`).join("\n")}` : ""}` : ""}${facts.reuse_blockers.length > 0 ? `\n\nRe-confirmation required: ${facts.reuse_blockers.join(", ")}.\nRecovery: confirm to issue a fresh authorization bound to the current plan and HEAD.` : ""}`,
 				planDigest: facts.plan_digest,
 				signal,
@@ -311,6 +341,7 @@ async function executePreparedPiBatch(
 	// this Host supplies only its own advanceTask progression seam (D5).
 	const kernelPort = createBatchKernelPort({
 		root,
+		parent: await (options.readInitiative ?? observeInitiative)(root, initiativeSlug),
 		enrollmentRegistry,
 		registry: batchRegistry,
 		capability,
@@ -320,7 +351,7 @@ async function executePreparedPiBatch(
 		overrides: otherOverrides,
 	});
 
-	const report = await startBatch({
+	let report = await startBatch({
 		root,
 		batch_id: batchId,
 		initiative_slug: initiativeSlug,
@@ -334,11 +365,11 @@ async function executePreparedPiBatch(
 		now,
 		kernel: kernelPort,
 		git: options.batchGit,
+		...(options.final_verification ? { final_verification: options.final_verification } : {}),
 		...(options.max_parallel !== undefined
 			? {
 					max_parallel: options.max_parallel,
 					tracker: options.batchTracker ?? createBatchTrackerPort(root, initiativeSlug),
-					...(options.final_verification ? { final_verification: options.final_verification } : {}),
 					...(options.lane_instruction ? { lane_instruction: options.lane_instruction } : {}),
 					...(options.lane_revision ? { lane_revision: options.lane_revision } : {}),
 					...(authorization.revision_delegation !== undefined ? { revision_delegation: authorization.revision_delegation } : {}),
@@ -351,6 +382,8 @@ async function executePreparedPiBatch(
 		return batchReason("batch_run_rejected", report.reason ?? "");
 	}
 
+	if (report.batch_state === "completed" && report.final_verification?.passed)
+		report = await completedParentReport(root, initiativeSlug, options.readInitiative, options.batchTracker) ?? report;
 	return {
 		state: "started",
 		batch_id: batchId,
@@ -554,7 +587,7 @@ export default function (
 				},
 			});
 
-			if (result.state !== "started") {
+			if (result.state !== "started" && result.state !== "native_parent") {
 				const failureState = result.state === "blocked" ? "blocked" : "failed";
 				throwToolFailure({
 					tool: "imm_canary_enrollment",

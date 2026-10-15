@@ -1,0 +1,225 @@
+import { describe, expect, it } from "bun:test";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { observeParentCompletion } from "../plugins/immune-brain/runtime/unattended/batch_git";
+import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
+import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
+import { prepareBatchRunState, prepareBatchLaneRunState, writeBatchRunState, writeBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
+import { assertIsolatedTaskPrerequisites } from "../plugins/immune-brain/runtime/github_issue_tracker";
+import { observeNativeParent } from "../plugins/immune-brain/runtime/unattended/batch_git";
+import { readBatchRunState, writeNativeParentFinalReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
+import { observeParentRun } from "../plugins/immune-brain/runtime/assurance/run_continuation";
+import { registerPiRunContinuation } from "../plugins/immune-brain/.pi-extension/pi-run-continuation";
+import { recognizePhaseEntry } from "../plugins/immune-brain/runtime/assurance/phase_entry";
+import { recordPhaseEntryPrompt } from "../plugins/immune-brain/runtime/claude/lane_guard";
+import { runContinuationHookOutput } from "../plugins/immune-brain/runtime/claude/run_continuation";
+import { runFinalVerification, parseFinalVerificationReport } from "../plugins/immune-brain/runtime/unattended/batch_final_verification";
+
+function repository() {
+ const root = mkdtempSync(join(tmpdir(), "gdr-parent-"));
+ execFileSync("git", ["init", "-q", "-b", "main"], { cwd: root });
+ writeFileSync(join(root, "base.txt"), "base\n");
+ execFileSync("git", ["add", "base.txt"], { cwd: root });
+ execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "base"], { cwd: root });
+ return root;
+}
+
+function parentFixture(nativeRoot: boolean, nativeOnly = false) {
+ const root = repository();
+ mkdirSync(join(root, "docs/plans"), { recursive: true }); mkdirSync(join(root, "docs/initiatives"), { recursive: true });
+ writeFileSync(join(root, ".gitignore"), ".imm/\nimmune-brain-claude/\n");
+ const make = (id: string, risk: "critical" | "material", path: string) => parseTaskIntentV1({
+  contract: "assurance_kernel/task_intent/v1", task_id: id, goal: `Deliver ${id}`,
+  acceptance: [{ id: "A1", assertion: "Delivery verified", verification: "bun --version" }],
+  scope_hint: [path, `docs/plans/${id}.intent.json`], risk, revision: 1, owner: "user",
+ });
+ const owner = make("root-task", nativeRoot ? "critical" : "material", "base.txt");
+ const other = make("other-task", nativeRoot ? "material" : "critical", "other.txt");
+ for (const intent of [owner, other]) writeFileSync(join(root, `docs/plans/${intent.task_id}.intent.json`), JSON.stringify(intent, null, 2) + "\n");
+ writeFileSync(join(root, "docs/initiatives/parent.md"), nativeOnly ? "# Parent\n## S1: root\nTasks:\n- root-task\n" : "# Parent\n## S1: root\nTasks:\n- root-task\n## S2: other\nTasks:\n- other-task\n");
+ execFileSync("git", ["add", "."], { cwd: root });
+ execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "plan"], { cwd: root });
+ const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+ seedKernelRunForTest(root, { task_id: owner.task_id, run_id: "run-root", record: {
+  contract: "assurance_kernel/task_record/v4", task_id: owner.task_id, intent_snapshot: owner,
+  intent_ref: { path: "docs/plans/root-task.intent.json", content_hash: canonicalIntentHash(owner) },
+  lifecycle: "active", artifact_state: "active", baseline: `sha256:${"a".repeat(64)}`, git_base_head: head,
+  attestations: [], findings: [], history: [],
+ } });
+ const child = nativeRoot ? other : owner;
+ const now = new Date().toISOString();
+ const args = { batch_id: "parent-batch", initiative_slug: "parent", plan_digest: `sha256:${"b".repeat(64)}`, base_head: head,
+  branch: execFileSync("git", ["symbolic-ref", "--short", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
+  confirmation_time: now, now, budget: { max_children: 1, qa_failure_limit: 2 },
+  children: [{ task_id: child.task_id, slice_id: "S1", blocked_by: [], status: "enrollable" as const,
+   risk: child.risk, intent_path: `docs/plans/${child.task_id}.intent.json`, intent_revision: 1,
+   intent_content_hash: canonicalIntentHash(child), scope_hint: child.scope_hint, reason: null, exclusion: null }],
+ };
+ if (!nativeOnly) {
+  if (nativeRoot) { const state = prepareBatchLaneRunState({ ...args, max_parallel: 4 }); state.batch_state = "running"; writeBatchLaneRunState(root, state); }
+  else { const state = prepareBatchRunState(args); state.batch_state = "running"; state.children[0]!.state = "enrolled"; writeBatchRunState(root, state); }
+ }
+ return { root, binding: { kind: "parent" as const, workspace: root, session_id: "parent-session", initiative_slug: "parent",
+  batch_id: args.batch_id, plan_digest: args.plan_digest } };
+}
+
+describe("native task transitions inside a Parent", () => {
+ it.each([false, true])("Parent progress ignores timing/revision noise (native=%s)", async native => {
+  const h = parentFixture(native, native);
+  try {
+   let binding: Parameters<typeof observeParentRun>[0] = h.binding;
+   if (native) {
+    const facts = await observeNativeParent(h.root, "parent");
+    if (!facts) throw new Error("native Parent fixture missing");
+    binding = { ...h.binding, batch_id: null, plan_digest: facts.plan_digest };
+   }
+   const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: h.root, encoding: "utf8" }).trim();
+   const final = (duration_ms: number) => ({ passed: false, head, results: [{ command: "bun --version", exit_code: 1, signal: null, passed: false, duration_ms }] });
+   const write = (duration: number) => {
+    if (native) writeNativeParentFinalReport(h.root, { contract: "assurance_kernel/parent_final_report/v1", initiative_slug: "parent", task_ids: ["root-task"], final_verification: final(duration) });
+    else { const record = readBatchRunState(h.root, h.binding.batch_id)!; record.children[0]!.reason = `unchanged outcome observed in ${duration}ms`; writeBatchRunState(h.root, record); }
+   };
+   write(10); const first = await observeParentRun(binding, "one");
+   write(200); const second = await observeParentRun(binding, "two");
+   expect(second.progress_digest).toBe(first.progress_digest);
+  } finally { rmSync(h.root, { recursive: true, force: true }); }
+ });
+
+ it("Local carrier dependencies are enforced before either Host can enroll a Child without remotes", async () => {
+  const h = parentFixture(false);
+  try {
+   writeFileSync(join(h.root, "docs/initiatives/parent.md"), "# Parent\n## S1: root\nTasks:\n- root-task\n## S2: child\nTasks:\n- other-task\nBlocked by: root-task\n");
+   await expect(assertIsolatedTaskPrerequisites(h.root, "other-task")).rejects.toThrow("Isolated Slice prerequisites are not integrated: root-task");
+   await expect(assertIsolatedTaskPrerequisites(h.root, "root-task")).resolves.toBeUndefined();
+  } finally { rmSync(h.root, { recursive: true, force: true }); }
+ });
+
+ it("an unrelated or malformed Initiative file never blocks Enrollment, but a malformed file naming the Task does", async () => {
+  const h = parentFixture(false);
+  try {
+   writeFileSync(join(h.root, "docs/initiatives/parent.md"), "# Parent\n## S1: root\nTasks:\n- root-task\n## S2: child\nTasks:\n- other-task\nBlocked by: root-task\n");
+   writeFileSync(join(h.root, "docs/initiatives/README.md"), "# Notes\nNo Slice is declared here.\n");
+   writeFileSync(join(h.root, "docs/initiatives/draft.md"), "# Draft\n## S1: split\nTasks:\n- one\n- two\n");
+   await expect(assertIsolatedTaskPrerequisites(h.root, "other-task")).rejects.toThrow("Isolated Slice prerequisites are not integrated: root-task");
+   await expect(assertIsolatedTaskPrerequisites(h.root, "root-task")).resolves.toBeUndefined();
+   await expect(assertIsolatedTaskPrerequisites(h.root, "unrelated-task")).resolves.toBeUndefined();
+   await expect(assertIsolatedTaskPrerequisites(h.root, "one")).rejects.toThrow("must name exactly one Task");
+  } finally { rmSync(h.root, { recursive: true, force: true }); }
+ });
+
+ it("Claude releases a Parent before reading stale workspace artifacts", async () => {
+  const h = parentFixture(false);
+  try {
+   const base = { cwd: h.root, session_id: h.binding.session_id };
+   const hook = (event: Record<string, unknown>) => runContinuationHookOutput({ ...base, ...event }, h.root);
+   const entry = { ...base, hook_event_name: "UserPromptSubmit", prompt: "/imm-run parent" };
+   recordPhaseEntryPrompt(entry, { root: h.root }); await hook(entry);
+   const batch = { tool_name: "mcp__plugin_immune-brain_immune-brain__start_unattended_batch", tool_use_id: "batch", tool_input: { initiative_slug: "parent" } };
+   await hook({ ...batch, hook_event_name: "PreToolUse" });
+   await hook({ ...batch, hook_event_name: "PostToolUse", tool_response: { state: "started", batch_id: h.binding.batch_id } });
+   rmSync(join(h.root, "docs/initiatives/parent.md"));
+   expect(JSON.parse((await hook({ hook_event_name: "Stop", cwd: tmpdir() }))!).systemMessage).toContain("workspace changed");
+   expect(await hook({ hook_event_name: "Stop" })).toBeNull();
+  } finally { rmSync(h.root, { recursive: true, force: true }); }
+ });
+
+ it("a Lane Parent drives its main-workspace native critical Task", async () => {
+  const h = parentFixture(true);
+  try {
+   const facts = await observeParentRun(h.binding, "boundary");
+   expect(facts.runnable).toBe(true); expect(facts.next_action).toContain("advance_assurance");
+   expect(facts.next_action).not.toContain("start_unattended_batch"); expect(facts.final_passed).toBe(false);
+  } finally { rmSync(h.root, { recursive: true, force: true }); }
+ });
+ it.each([true, false])("Pi parks a rejected critical gate and continues its ordinary Task (error=%s)", async isError => {
+  const h = parentFixture(false);
+  try {
+   const handlers = new Map<string, Function>();
+   registerPiRunContinuation({ on: (name: string, callback: Function) => handlers.set(name, callback) } as any,
+    { entry: text => recognizePhaseEntry(text, () => null) });
+   const ctx = { cwd: h.root, sessionManager: { getSessionId: () => h.binding.session_id, getLeafId: () => "boundary" } };
+   const emit = (name: string, event: unknown) => handlers.get(name)?.(event, ctx);
+   await emit("input", { text: "/imm-run parent", source: "interactive" });
+   await emit("tool_call", { toolName: "start_unattended_batch", toolCallId: "batch", input: { initiative_slug: "parent" } });
+   await emit("tool_result", { toolName: "start_unattended_batch", toolCallId: "batch", isError: false, details: { state: "started", batch_id: h.binding.batch_id } });
+   const gate = { toolName: "imm_canary_enrollment", toolCallId: "gate", input: { task_id: "other-task" } };
+   await emit("tool_call", gate);
+   await emit("tool_result", { ...gate, isError, details: { state: "cancelled", reason: "cancelled" } });
+   expect(await emit("tool_call", { ...gate, toolCallId: "retry" })).toMatchObject({ block: true });
+   const decision = await emit("agent_before_settle", { outcome: "completed", continue: false, context: { canContinue: true, pendingMessages: [] } });
+   expect(decision).toMatchObject({ continue: true });
+   expect(decision.entries[0].content).toContain("advance_assurance");
+  } finally { rmSync(h.root, { recursive: true, force: true }); }
+ });
+ it.each(["PostToolUse", "PostToolUseFailure"])("Claude parks only the critical gate after %s", async failureEvent => {
+  const h = parentFixture(false);
+  try {
+   const base = { cwd: h.root, session_id: h.binding.session_id };
+   const hook = (event: Record<string, unknown>) => runContinuationHookOutput({ ...base, ...event }, h.root);
+   const entry = { ...base, hook_event_name: "UserPromptSubmit", prompt: "/imm-run parent" };
+   recordPhaseEntryPrompt(entry, { root: h.root }); await hook(entry);
+   const batch = { tool_name: "mcp__plugin_immune-brain_immune-brain__start_unattended_batch", tool_use_id: "batch", tool_input: { initiative_slug: "parent" } };
+   await hook({ ...batch, hook_event_name: "PreToolUse" });
+   await hook({ ...batch, hook_event_name: "PostToolUse", tool_response: { state: "started", batch_id: h.binding.batch_id } });
+   const gate = { tool_name: "mcp__plugin_immune-brain_immune-brain__enroll", tool_use_id: "gate", tool_input: { task_id: "other-task" } };
+   await hook({ ...gate, hook_event_name: "PreToolUse" });
+   await hook({ ...gate, hook_event_name: failureEvent, tool_response: { state: "cancelled" }, error: "cancelled" });
+   expect(JSON.parse((await hook({ ...gate, tool_use_id: "retry", hook_event_name: "PreToolUse" }))!)).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
+   expect(await hook({ ...batch, tool_use_id: "resume", hook_event_name: "PreToolUse" })).toBeNull();
+   const transcript = join(h.root, ".imm", "transcript.jsonl");
+   writeFileSync(transcript, JSON.stringify({ type: "assistant", uuid: "parent-boundary" }) + "\n");
+   const stop = JSON.parse((await hook({ hook_event_name: "Stop", transcript_path: transcript }))!);
+   expect(stop).toMatchObject({ decision: "block", reason: expect.stringContaining("advance_assurance") });
+  } finally { rmSync(h.root, { recursive: true, force: true }); }
+ });
+});
+
+describe("Parent completion and final verification", () => {
+ it("keeps a Parent incomplete without integrated authoritative deliveries", async () => {
+  const root = repository();
+  try {
+   const proof = await observeParentCompletion(root, "parent", ["critical-slice", "normal-slice"]);
+   expect(proof.complete).toBe(false);
+   expect(proof.missing_task_ids).toEqual(["critical-slice", "normal-slice"]);
+   expect(proof.final_passed).toBe(false);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+ });
+ it("binds a passed final verifier to the integrated Git HEAD", async () => {
+  const root = repository();
+  try {
+   const report = await runFinalVerification(root, ["bun --version"]);
+   expect(report.passed).toBe(true);
+   expect(report.head).toBe(execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim());
+   expect(parseFinalVerificationReport(report, ["bun --version"])).toEqual(report);
+   expect(() => parseFinalVerificationReport(report, ["git --version"])).toThrow("commands changed");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+ });
+ it("does not certify uncommitted tracked source even when commands pass", async () => {
+  const root = repository();
+  try {
+   writeFileSync(join(root, "base.txt"), "unintegrated\n");
+   const report = await runFinalVerification(root, ["bun --version"]);
+   expect(report.results[0]!.passed).toBe(true);
+   expect(report.passed).toBe(false);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+ });
+ it("does not certify untracked source consumed by verification", async () => {
+  const root = repository();
+  try {
+   writeFileSync(join(root, "untracked-source.ts"), "export const uncommitted = true;\n");
+   const report = await runFinalVerification(root, ["bun --version"]);
+   expect(report.results[0]!.passed).toBe(true); expect(report.passed).toBe(false);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+ });
+ it("records a command failure without deleting integrated files", async () => {
+  const root = repository();
+  try {
+   const report = await runFinalVerification(root, ["git not-a-command"]);
+   expect(report.passed).toBe(false);
+   expect(report.results[0]!.exit_code).not.toBe(0);
+   expect(await Bun.file(join(root, "base.txt")).text()).toBe("base\n");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+ });
+});

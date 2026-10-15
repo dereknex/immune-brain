@@ -19,6 +19,8 @@ import {
 	rmSync,
 	writeFileSync,
 } from "node:fs";
+import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
+import { advanceNativeParent, commitBatchChild } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import { tmpdir } from "node:os";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -482,6 +484,42 @@ function initializeTrackedIntents(root: string, tasks: Array<{
 	const paths = tasks.map((task) => writeTrackedIntent(root, task.task_id, task.goal, task.risk, task.assertions));
 	spawnSync("git", ["add", ...paths], { cwd: root });
 	return paths;
+}
+
+function initializeTrackerHead(root: string) {
+	writeFileSync(join(root, ".gitignore"), ".imm/state/\n.imm/memory/\n");
+	for (const args of [["init", "-q"], ["config", "user.name", "Test"], ["config", "user.email", "test@example.com"],
+		["add", "."], ["commit", "--allow-empty", "-m", "tracker planning baseline"]]) {
+		const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+		if (result.status !== 0) throw new Error(`fixture git ${args[0]} failed: ${result.stderr}`);
+	}
+}
+
+/** Scripted terminal audit fixtures; actual Git integration and final verification remain exercised. */
+async function seedTrackerParentDelivery(root: string, initiative: string, taskIds: string[]) {
+	const intents = taskIds.map(taskId => {
+		const path = `docs/plans/${taskId}.intent.json`;
+		if (!existsSync(join(root, path))) writeTrackedIntent(root, taskId, `Deliver ${taskId}`);
+		return parseTaskIntentV1(JSON.parse(readFileSync(join(root, path), "utf8")));
+	});
+	initializeTrackerHead(root);
+	const baseHead = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).stdout.trim();
+	for (const intent of intents) {
+		const hash = canonicalIntentHash(intent); const directory = join(root, ".imm/audit", intent.task_id);
+		mkdirSync(directory, { recursive: true });
+		const bytes = JSON.stringify({ contract: "assurance_kernel/task_record/v4", task_id: intent.task_id, intent_snapshot: intent,
+			intent_ref: { path: `docs/plans/${intent.task_id}.intent.json`, content_hash: hash }, lifecycle: "done",
+			artifact_state: "frozen", baseline: hash, git_base_head: baseHead, attestations: [], findings: [], history: [] }, null, 2) + "\n";
+		writeFileSync(join(directory, "task-record.json"), bytes);
+		writeFileSync(join(directory, "terminal-proof.json"), JSON.stringify({ contract: "assurance_kernel/task_tombstone/v2",
+			task_id: intent.task_id, lifecycle_status: "terminal", terminal_lifecycle: "done", terminal_event_id: `evt-term-${intent.task_id}`,
+			final_record_hash: `sha256:${new Bun.CryptoHasher("sha256").update(bytes).digest("hex")}`, terminalized_at: new Date().toISOString() }) + "\n");
+		await commitBatchChild({ root, taskId: intent.task_id, batchId: null,
+			expectedHead: spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).stdout.trim() });
+	}
+	const report = await advanceNativeParent(root, initiative, ["bun --version"], async () => ({ initiative_slug: initiative, carrier: "local",
+		tasks: taskIds.map((task_id, i) => ({ task_id, slice_id: `S${i + 1}`, blocked_by: [] })) }), undefined, async () => null);
+	expect(report).toMatchObject({ action: "complete", proof: { complete: true } });
 }
 
 function publicAcceptance(taskId: string, count = 1, summary = "Deliver the bounded acceptance result") {
@@ -1389,6 +1427,7 @@ describe("plugin package runtime cutover parity", () => {
 
 	it("closes a Child only from an exact terminal event and preserves manual ambiguity", async () => {
 		await withIsolatedRootAsync(async (root) => {
+			initializeTrackerHead(root);
 			const gh = new FakeGh();
 			expect((await runGithubTrackerOperation(root, INITIATIVE, gh)).status).toBe("created");
 			expect((await runGithubTrackerOperation(root, TRACKED_TASK, gh)).status).toBe("created");
@@ -1424,6 +1463,7 @@ describe("plugin package runtime cutover parity", () => {
 			expect(await runGithubTrackerOperation(root, terminalOp, gh)).toMatchObject({ status: "updated" });
 			expect(gh.issues[1]).toMatchObject({ state: "closed", state_reason: "completed" });
 			expect(gh.issues[1].body).toContain(`<!-- immune-brain:terminal-event=${event} -->`);
+			expect(gh.issues[0].state).toBe("open"); // Child closure is not local delivery/final proof.
 
 			expect(await runGithubTrackerOperation(root, terminalOp, gh)).toMatchObject({ status: "already_current" });
 			expect(await runGithubTrackerOperation(root, { ...terminalOp, terminal_event_id: "complete:other:1" }, gh)).toMatchObject({ status: "ambiguous_remote_state" });
@@ -1434,14 +1474,16 @@ describe("plugin package runtime cutover parity", () => {
 			expect(await runGithubTrackerOperation(root, terminalOp, gh)).toMatchObject({ status: "updated" });
 			expect(gh.issues[1]).toMatchObject({ state: "closed", state_reason: "completed" });
 
-			expect((await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "near-limit-task" }, gh)).status).toBe("created");
+			expect((await runGithubTrackerOperation(root, { ...INITIATIVE, initiative_id: "near-limit-init" }, gh)).status).toBe("created");
+			expect((await runGithubTrackerOperation(root, { ...TRACKED_TASK, initiative_id: "near-limit-init", task_id: "near-limit-task" }, gh)).status).toBe("created");
 			const near = gh.issues.find((issue) => issue.body.includes("near-limit-task"))!;
 			const maxEvent = "e".repeat(500);
 			const suffix = `\n\n<!-- immune-brain:terminal-event=${maxEvent} -->\nTerminal event: \`${maxEvent}\`\n`;
 			near.body += "x".repeat(65_536 - Buffer.byteLength(suffix, "utf8") - Buffer.byteLength(near.body, "utf8"));
 			expect(await runGithubTrackerOperation(root, { op: "mark-terminal", task_id: "near-limit-task", phase: "done", terminal_event_id: maxEvent }, gh)).toMatchObject({ status: "updated" });
 
-			expect((await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "over-limit-task" }, gh)).status).toBe("created");
+			expect((await runGithubTrackerOperation(root, { ...INITIATIVE, initiative_id: "over-limit-init" }, gh)).status).toBe("created");
+			expect((await runGithubTrackerOperation(root, { ...TRACKED_TASK, initiative_id: "over-limit-init", task_id: "over-limit-task" }, gh)).status).toBe("created");
 			const over = gh.issues.find((issue) => issue.body.includes("over-limit-task"))!;
 			over.body += "x".repeat(65_536 - Buffer.byteLength(over.body, "utf8"));
 			const beforeOver = gh.mutations;
@@ -1475,6 +1517,7 @@ describe("plugin package runtime cutover parity", () => {
 			gh.issues[2].state = "open";
 			gh.issues[2].state_reason = null;
 			gh.issues[2].body = gh.issues[2].body.replace(/\n\n<!-- immune-brain:terminal-event=[^>]+ -->\nTerminal event: `[^`]+`\n/, "");
+			await seedTrackerParentDelivery(root, INITIATIVE.initiative_id, [TRACKED_TASK.task_id, "second-task"]);
 			const completed = await runGithubTrackerOperation(root, last, gh);
 			expect(completed).toMatchObject({ status: "updated", issue_number: 3 });
 			expect(completed.message).toContain("Parent #1");
@@ -1500,6 +1543,7 @@ describe("plugin package runtime cutover parity", () => {
 			expect((await runGithubTrackerOperation(root, TRACKED_TASK, gh)).status).toBe("created");
 			const terminal = { op: "mark-terminal" as const, task_id: TRACKED_TASK.task_id, phase: "done" as const, terminal_event_id: "complete:only:1" };
 
+			await seedTrackerParentDelivery(root, INITIATIVE.initiative_id, [TRACKED_TASK.task_id]);
 			gh.failNextReadOfIssue = 1;
 			const readFailure = await runGithubTrackerOperation(root, terminal, gh);
 			expect(readFailure).toMatchObject({ status: "retryable_failure", issue_number: 2 });
@@ -1960,6 +2004,7 @@ describe("initiative amendment publication", () => {
 
 	it("resumes the original approved batch after a failed close with a normal terminal event id (round-20 review-1)", async () => {
 		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
+			initializeTrackerHead(root);
 			// A failed terminal close leaves the pending Child open carrying a valid
 			// terminal suffix over the old approved-final content. The amendment
 			// publication with the original input must converge on retry.
@@ -1972,6 +2017,7 @@ describe("initiative amendment publication", () => {
 				terminal_event_id: "evt-failed-close",
 			} as any, gh);
 			expect(failed.status).toBe("updated");
+			expect(parentIssue.state).toBe("open"); // This publication fixture has no integrated Parent proof.
 			// Simulate the failed-close state: the close mutation is lost, leaving the
 			// Child open with a validated terminal suffix over approved-final content.
 			const closedChild = gh.issues.find((issue) => issue.body.includes("task-id=amend-live"))!;

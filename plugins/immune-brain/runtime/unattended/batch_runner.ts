@@ -21,13 +21,14 @@ export function batchQaFailureFacts(record: Pick<TaskRecord, "history"> & { find
 	return { qa_failure_count: failed.length, last_qa_failure_at: failed.at(-1)?.at ?? null,
 		recovery_findings: record.findings.filter(f => f.status === "open").map(f => ({ id: f.id, kind: f.kind, status: f.status, acceptance_id: f.acceptance_id })) };
 }
+import { runFinalVerification } from "./batch_final_verification";
 import type { BatchPlanChild } from "./types";
 import { ownUnpersistedBatchHead, takeReconfirmation } from "./batch_reconfirmation";
 import {
 	createDefaultBatchGitPort,
 	type BatchRunnerGitPort,
 } from "./batch_git";
-import { classifyBatchLineage, expectedBatchHead } from "./batch_preflight";
+import { classifyBatchLineage, expectedBatchHead, findSettledBatchRecord } from "./batch_preflight";
 import { laneRejectionReport, runLaneBatch, type LaneOffer } from "./batch_lanes";
 import {
 	type BatchRunStateRecord,
@@ -46,7 +47,44 @@ import {
 /** Kernel-facing ports the driver needs. Host adapters supply these. Git
  * operations are not Kernel-port members: the runner drives them through
  * BatchRunnerGitPort alone (D5 of docs/specs/deepen-authority-seams.spec.md). */
+import { readTaskTombstone } from "../kernel/backend_claim";
+import { observeInitiative } from "./batch_plan";
+import { observeParentCompletion } from "./batch_git";
+import { createBatchTrackerPort } from "./batch_lanes";
+import type { InitiativeObservationReader } from "./types";
+export async function completedParentReport(root: string, initiativeSlug: string, readInitiative?: InitiativeObservationReader,
+	tracker = createBatchTrackerPort(root, initiativeSlug)): Promise<BatchRunReport | null> {
+	const candidate = findSettledBatchRecord(root, initiativeSlug);
+	if (!candidate || candidate.batch_state !== "completed") return null;
+	const batch = readAnyBatchRunState(root, candidate.batch_id);
+	if (!batch || batch.final_verification_result?.passed !== true) return null;
+	const parent = await (readInitiative ?? observeInitiative)(root, initiativeSlug);
+	const proof = await observeParentCompletion(root, initiativeSlug, parent.tasks.map(child => child.task_id));
+	if (!proof.complete) return null;
+	const last = parent.tasks.at(-1);
+	const tombstone = last ? readTaskTombstone(root, last.task_id) : null;
+	let sync: Awaited<ReturnType<BatchTrackerPort["markTerminal"]>> | null = null;
+	if (last && tracker) {
+		if (!tombstone || tombstone.terminal_lifecycle !== "done") throw new Error("Parent tracker synchronization requires exact terminal evidence");
+		try { sync = await tracker.markTerminal(root, { task_id: last.task_id, phase: "done", terminal_event_id: tombstone.terminal_event_id }); }
+		catch { sync = { status: "failed", message: "Local Parent completion proved; retry tracker synchronization on this Host" }; }
+	}
+	const report = {
+		contract: "assurance_kernel/batch_run_report/v1" as const,
+		batch_id: batch.batch_id, initiative_slug: initiativeSlug, batch_state: batch.batch_state,
+		children: batch.children, commits: batch.commits, final_verification: batch.final_verification_result,
+		...(sync ? { tracker: sync } : {}),
+		reason: sync?.status === "failed" ? "Local Parent completion proved; tracker synchronization failed" : null,
+		next_action: sync?.status === "failed" ? sync.message : "Parent delivery and final verification passed",
+		created_at: new Date().toISOString(), ...(isLaneBatchRecord(batch) ? { max_parallel: batch.max_parallel, handoffs: [] } : {}),
+	};
+	// The first terminal report is historical; return this HEAD's freshly proved observation.
+	writeBatchRunReport(root, report);
+	return report as unknown as BatchRunReport;
+}
+
 export interface BatchRunnerKernelPort {
+
 	/** Enroll one child through the batch-derived capability. */
 	enrollTask(input: {
 		root: string;
@@ -68,6 +106,8 @@ export interface BatchRunnerKernelPort {
 	/** Authoritative batch ownership check: true when the task's Kernel claim
 	 * is held under this batch's derived capability (consumed child slot). */
 	ownsTaskClaim(taskId: string): boolean;
+	/** Read-only Parent prerequisites outside the ordinary authorization manifest. */
+	canStartTask?(taskId: string): Promise<boolean>;
 	/** review-8(4th rework): Kernel-side proof that a replacement parked-batch
 	 * authorization is genuine and bound to this exact batch_id,
 	 * plan_digest, and base_head, validated against the Kernel's authoritative
@@ -122,9 +162,9 @@ export interface StartBatchInput {
 	 */
 	executor_runtime?: string;
 	/**
-	 * Lane mode only: the project's full verification commands, recorded when a
-	 * new batch starts and run on the batch branch once every child is
-	 * integrated. Ignored on a resume; the recorded list stands.
+	 * The project's full verification commands, recorded when a new batch starts
+	 * and run on its branch after every delivery is integrated. A resume uses
+	 * the recorded list in either execution mode.
 	 */
 	final_verification?: string[];
 	/**
@@ -204,16 +244,13 @@ function requireFreshProjection<T extends AssuranceProjectionResult>(
 }
 
 /** Next pending child whose direct dependents are all committed. */
-function nextEnrollableChild(record: BatchRunStateRecord): BatchChildRun | null {
-	return (
-		record.children.find(
-			(child) =>
-				child.state === "pending" &&
-				record.children.every(
-					(other) => !child.blocked_by.includes(other.task_id) || other.state === "committed",
-				),
-		) ?? null
-	);
+async function nextEnrollableChild(record: BatchRunStateRecord, kernel: BatchRunnerKernelPort): Promise<BatchChildRun | null> {
+	for (const child of record.children) {
+		if (child.state !== "pending" || record.children.some(other => child.blocked_by.includes(other.task_id) && other.state !== "committed")) continue;
+		if (kernel.canStartTask && !await kernel.canStartTask(child.task_id)) continue;
+		return child;
+	}
+	return null;
 }
 
 const TERMINAL_NEXT_ACTIONS: Record<string, string> = {
@@ -239,6 +276,7 @@ function reportFor(
 		batch_state: record.batch_state,
 		children: record.children,
 		commits: record.commits,
+		...(record.final_verification_result ? { final_verification: record.final_verification_result } : {}),
 		reason,
 		next_action: nextAction || (TERMINAL_NEXT_ACTIONS[record.batch_state] ?? "Inspect the batch run state."),
 		created_at: record.updated_at,
@@ -400,17 +438,22 @@ async function validatePersistedRun(input: StartBatchInput, record: BatchRunStat
 		throw new Error("persisted batch commit list does not match child evidence");
 }
 
-/** review-6: restate a terminal record and ensure its report exists. */
-function replayTerminal(
-	root: string,
-	existing: BatchRunStateRecord,
-): BatchRunReport {
-	return finalize(
-		root,
-		existing,
-		`terminal state already reached: ${existing.batch_state}`,
-		"",
-	);
+async function finishSerial(input: StartBatchInput, record: BatchRunStateRecord): Promise<BatchRunReport> {
+	if (record.batch_state !== "completed" || !record.final_verification?.length)
+		return finalize(input.root, record, stopReasonFor(record), "");
+	if (!record.final_verification_result) {
+		const result = await runFinalVerification(input.root, record.final_verification);
+		record = writeBatchRunState(input.root, { ...record, final_verification_result: result });
+	}
+	const live = spawnSync("git", ["-C", input.root, "rev-parse", "HEAD"], { encoding: "utf8" });
+	const passed = record.final_verification_result!.passed && live.status === 0 && record.final_verification_result!.head === live.stdout.trim();
+	return finalize(input.root, record, passed ? "Every serial delivery is integrated and final verification passed" : "Final verification failed or its Git HEAD changed; Parent is not complete",
+		passed ? "Check every required Parent Slice before reporting overall success" : "Diagnose the failure, prepare the smallest repair TaskIntent for the original goal, validate it and request fresh native Enrollment");
+}
+
+/** A terminal replay retains its result and never silently reruns recorded commands. */
+function replayTerminal(input: StartBatchInput, existing: BatchRunStateRecord): Promise<BatchRunReport> {
+	return finishSerial(input, existing);
 }
 
 function validateRunAuthorization(input: StartBatchInput, existing: BatchRunStateRecord | null): ValidatedBatchAuthorization {
@@ -535,7 +578,7 @@ async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport>
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			if (isLineageBreakError(message)) {
-				if (isTerminalBatchState(existing.batch_state)) return replayTerminal(input.root, existing);
+				if (isTerminalBatchState(existing.batch_state)) return replayTerminal(input, existing);
 				const failed = failPersistedLineage(input.root, existing, message);
 				return finalize(input.root, failed, message, "");
 			}
@@ -544,7 +587,7 @@ async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport>
 	}
 	if (existing && isTerminalBatchState(existing.batch_state)) {
 		// Idempotent terminal replay: no state mutation, ensure the report.
-		return replayTerminal(input.root, existing);
+		return replayTerminal(input, existing);
 	}
 
 	if (existing?.batch_state === "needs_human") {
@@ -683,6 +726,7 @@ async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport>
 			confirmation_time: input.confirmation_time,
 			budget: input.budget,
 			now: input.now,
+			...(input.final_verification ? { final_verification: input.final_verification } : {}),
 		});
 
 	const persist = (): void => {
@@ -705,8 +749,10 @@ async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport>
 	let head = expectedBatchHead(record);
 
 	while (record.batch_state === "running") {
-		const child = nextEnrollableChild(record);
+		const child = await nextEnrollableChild(record, input.kernel);
 		if (!child) {
+			if (record.children.some(candidate => candidate.state === "pending"))
+				return reportFor(record, "Remaining children await Parent prerequisites", "Execute dependency-ready critical Slices through native single-task Enrollment, then continue this intact batch authorization");
 			record.batch_state = record.children.some(
 				(c) => c.state === "needs_human" || c.state === "skipped_blocked",
 			)
@@ -835,7 +881,7 @@ async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport>
 
 	}
 
-	return finalize(input.root, record, stopReasonFor(record), "");
+	return finishSerial(input, record);
 }
 
 function stopReasonFor(record: BatchRunStateRecord): string | null {
@@ -877,14 +923,14 @@ export async function resumeBatch(
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		if (isLineageBreakError(message)) {
-			if (isTerminalBatchState(existing.batch_state)) return replayTerminal(input.root, existing);
+			if (isTerminalBatchState(existing.batch_state)) return replayTerminal(input, existing);
 			const failed = failPersistedLineage(input.root, existing, message);
 			return finalize(input.root, failed, message, "");
 		}
 		throw error;
 	}
 	if (isTerminalBatchState(existing.batch_state))
-		return replayTerminal(input.root, existing);
+		return replayTerminal(input, existing);
 
 	// An enrolled-but-unsettled child must reach its own Kernel terminal
 	// settlement before anything else: its claim is already held and the
@@ -976,6 +1022,10 @@ export async function resumeBatch(
 								: c,
 					),
 					});
+				} else if (fresh.projection.lifecycle === "stopped" && fresh.claim === null) {
+					skipDependents(existing, driven.task_id, `dependency ${driven.task_id} stopped`);
+					existing = writeBatchRunState(input.root, { ...existing,
+						children: existing.children.map(c => c.task_id === driven.task_id ? { ...c, state: "needs_human", reason: "Kernel child stopped" } : c) });
 				} else {
 					// No Kernel claim and no terminal settlement: the enrollment
 					// never completed. Re-mark the child pending so the normal
@@ -1013,7 +1063,7 @@ export async function resumeBatch(
 		// the persisted child states, not the stale pre-recovery snapshot.
 		existing = readBatchRunState(input.root, input.batch_id)!;
 		if (isTerminalBatchState(existing.batch_state))
-			return replayTerminal(input.root, existing);
+			return replayTerminal(input, existing);
 	}
 
 	// No interrupted child remains: continue with the normal serial loop.
@@ -1175,6 +1225,14 @@ async function driveInterruptedChild(
 			record.children = record.children.map((c) =>
 				c.task_id === child.task_id ? { ...c, state: "needs_human", reason } : c,
 			);
+			if (terminal.state === "stopped") {
+				const fresh = requireFreshProjection(await input.kernel.projectTask(input.root, child.task_id), child.task_id);
+				if (fresh.claim === null && fresh.projection.lifecycle === "stopped") {
+					skipDependents(record, child.task_id, `dependency ${child.task_id} stopped`);
+					persist();
+					return null;
+				}
+			}
 			record.batch_state = "needs_human";
 			skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
 			persist();

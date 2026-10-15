@@ -310,27 +310,29 @@ describe("unattended batch plan projection", () => {
 				missing: "needs_human",
 				owned: "already_owned",
 				settled: "already_settled",
-				dependent: "blocked",
+				dependent: "enrollable",
 				final: "enrollable",
 				partial: "needs_human",
 				mismatched: "needs_human",
 				unbound: "enrollable",
 			});
 			expect(first.children.find((child) => child.task_id === "final")?.blocked_by).toEqual(["base", "critical", "settled"]);
-			expect(first.enrollable.map((child) => child.task_id)).toEqual(["base", "unbound", "final"]);
-			expect(first.enrollable[2].blocked_by).toEqual(["base"]);
+			expect(first.enrollable.map((child) => child.task_id)).toEqual(["base", "unbound", "dependent", "final"]);
+			expect(first.enrollable.find(child => child.task_id === "final")!.blocked_by).toEqual(["base"]);
+			expect(first.children.find(child => child.task_id === "dependent")!.blocked_by).toEqual(["critical"]);
 			const expectedDigest = `sha256:${createHash("sha256").update(stableStringify(first.enrollable)).digest("hex")}`;
 			expect(first.plan_digest).toBe(expectedDigest);
 			expect(first.budget).toEqual({
-				max_children: 3,
+				max_children: 4,
 				qa_failure_limit: 2,
 			});
 			// Every fixture child shares `tests/**`, so none can start together: the
 			// projection serializes them and names who each one waits behind.
-			expect(first.parallel_groups).toEqual([["base"], ["unbound"], ["final"]]);
+			expect(first.parallel_groups).toEqual([["base"], ["unbound"], ["dependent"], ["final"]]);
 			expect(first.scope_conflicts).toEqual([
 				{ task_id: "unbound", overlaps_with: ["base"] },
-				{ task_id: "final", overlaps_with: ["unbound"] },
+				{ task_id: "dependent", overlaps_with: ["base", "unbound"] },
+				{ task_id: "final", overlaps_with: ["dependent", "unbound"] },
 			]);
 		} finally {
 			rmSync(root, { recursive: true, force: true });

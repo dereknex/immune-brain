@@ -1,6 +1,7 @@
-import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, relative, resolve, sep } from "node:path";
+import { observeLocalInitiative } from "./local_initiative";
 import { readTaskIntent } from "./kernel/intent";
 
 const CONTRACT = "immune_brain/github_issue_tracker_result/v1" as const;
@@ -877,6 +878,49 @@ async function readBlockedByIds(
 	}
 }
 
+export async function assertIsolatedTaskPrerequisites(root: string, taskId: string,
+	transport?: GhTransport): Promise<void> {
+	const directory = resolve(root, "docs/initiatives");
+	const local = existsSync(directory) ? readdirSync(directory, { withFileTypes: true })
+		.filter(entry => entry.isFile() && /^[A-Za-z0-9][A-Za-z0-9._-]*\.md$/.test(entry.name))
+		// Only a file that names this Task can own it; an unrelated or malformed Initiative file must
+		// not block Enrollment, while a malformed file that does name it still fails closed below.
+		.filter(entry => readFileSync(resolve(directory, entry.name), "utf8").includes(taskId))
+		.map(entry => observeLocalInitiative(root, entry.name.slice(0, -3)))
+		.filter(parent => parent.tasks.some(task => task.task_id === taskId)) : [];
+	if (local.length > 1) throw new Error("Slice has ambiguous Local Initiative ownership");
+	if (local.length === 1) {
+		const parent = local[0]!;
+		const child = parent.tasks.find(task => task.task_id === taskId)!;
+		if (child.blocked_by.length) {
+			const { observeParentCompletion } = await import("./unattended/batch_git");
+			const proof = await observeParentCompletion(root, parent.initiative_id, child.blocked_by);
+			if (proof.missing_task_ids.length) throw new Error(`Isolated Slice prerequisites are not integrated: ${proof.missing_task_ids.join(", ")}; execute only this Slice after its prerequisites are delivered`);
+		}
+		return;
+	}
+	if (!transport) {
+		const remotes = spawnSync("git", ["-C", root, "remote"], { encoding: "utf8" });
+		if (remotes.status !== 0) throw new Error("cannot verify repository carrier before Slice Enrollment");
+		if (!remotes.stdout.trim()) return;
+	}
+	const gh = transport ?? createGhTransport();
+	const source = await snapshot(resolve(root), gh, "create-initiative");
+	if ("contract" in source) throw new Error(source.message);
+	const task = taskLookup(source.issues, source.repository.id, taskId);
+	if (task.kind === "missing") return;
+	if (task.kind === "ambiguous") throw new Error(task.message);
+	const initiative = ownershipMarkerValue(task.issue.body, "initiative-id");
+	if (!initiative) throw new Error("Task Issue has no unique Initiative identity");
+	const observation = await observeGithubInitiative(root, initiative, gh);
+	const child = observation.tasks.find(candidate => candidate.task_id === taskId);
+	if (!child) throw new Error("Task Issue is absent from its Parent topology");
+	if (!child.blocked_by.length) return;
+	const { observeParentCompletion } = await import("./unattended/batch_git");
+	const proof = await observeParentCompletion(root, initiative, child.blocked_by);
+	if (proof.missing_task_ids.length) throw new Error(`Isolated Slice prerequisites are not integrated: ${proof.missing_task_ids.join(", ")}; execute only this Slice after its prerequisites are delivered`);
+}
+
 export async function observeGithubInitiative(
 	root: string,
 	initiativeId: string,
@@ -1669,6 +1713,20 @@ async function closeParentWhenComplete(
 	if (sliceChildren.length === 0
 		|| !sliceChildren.every((candidate) => candidate.state === "closed" && candidate.state_reason === "completed"))
 		return childResult;
+	const sliceIds = [...parent.body.matchAll(/<!-- immune-brain:slice-id=([^>]+) -->/g)].map(match => match[1]!);
+	if (sliceIds.length !== sliceChildren.length || new Set(sliceIds).size !== sliceIds.length ||
+		sliceChildren.some(candidate => !sliceIds.includes(ownershipMarkerValue(candidate.body, "slice-id") ?? "")))
+		return retry("required Slice topology does not match the Parent", "ambiguous_remote_state");
+	const taskIds = sliceChildren.map(candidate => ownershipMarkerValue(candidate.body, "task-id"));
+	if (taskIds.some(id => !id)) return retry("required Slice has no Task identity", "ambiguous_remote_state");
+	try {
+		const { observeParentCompletion } = await import("./unattended/batch_git");
+		const completion = await observeParentCompletion(root, initiativeId, taskIds as string[]);
+		if (!completion.complete) return result(operation.op, childResult.status,
+			`${childResult.message}; Parent #${parentNumber} remains open: ${completion.reason}`, child.issue);
+	} catch (error) {
+		return retry(`local completion proof could not be verified: ${error instanceof Error ? error.message : String(error)}`);
+	}
 	const close = await gh.run(["issue", "close", String(parentNumber), "--repo", source.repository.name_with_owner, "--reason", "completed"], { cwd: root });
 	const confirmed = await readParent();
 	if ("contract" in confirmed) return confirmed;

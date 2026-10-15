@@ -613,7 +613,7 @@ describe("acc-pi-batch-gate", () => {
 		assertZeroWrites(fixture.root, fixture.head);
 	});
 
-	it("empty enrollable child set rejects with state: rejected and zero writes", async () => {
+	it("critical-only Parent returns a native single-task handoff without a batch gate or writes", async () => {
 		const fixture = createBatchFixture("empty-enrollable");
 		const observation: GithubInitiativeObservation = {
 			contract: "immune_brain/github_initiative_observation/v1",
@@ -636,9 +636,8 @@ describe("acc-pi-batch-gate", () => {
 		});
 
 		expect(dialogOpened).toBe(false);
-		expect(result.state).toBe("rejected");
-		expect(result.reason).toContain("empty enrollable child set");
-		expect(result.recovery_action).toContain("ensure the initiative has uncompleted, non-critical child tasks");
+		expect(result).toMatchObject({ state: "native_parent", action: "enroll", task_id: "empty-enrollable-c3", batch_id: null });
+		expect(result.next_action).toContain("native single-task Enrollment");
 		assertZeroWrites(fixture.root, fixture.head, "empty-enrollable");
 	});
 
@@ -1706,5 +1705,53 @@ describe("lane mode parameters (parallel-batch-lanes)", () => {
 		expect(serial!.details).not.toContain("Parallel groups");
 		expect(lane!.summary).toContain("Lane mode: max_parallel=1");
 		expect(lane!.details).toContain("Parallel groups (");
+	});
+});
+
+describe("native Parent final verification gate", () => {
+	it("opens the Pi confirmation with the exact commands before any Git or command effect", async () => {
+		const root = mkdtempSync(join(tmpdir(), "pi-native-final-"));
+		const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+		try {
+			initGitRepo(root);
+			const taskId = "delivered";
+			const paths = ["src/delivered.ts", `docs/plans/${taskId}.intent.json`, `docs/plans/archive/${taskId}.intent.json`];
+			const intent = { contract: "assurance_kernel/task_intent/v1", task_id: taskId, owner: "user", goal: "Deliver", scope_hint: paths,
+				acceptance: [{ id: "acc-1", assertion: "delivered", verification: "bun test" }], risk: "material", revision: 1 };
+			mkdirSync(join(root, "docs", "plans", "archive"), { recursive: true });
+			for (const path of paths.slice(1)) writeFileSync(join(root, path), `${JSON.stringify(intent, null, 2)}\n`);
+			const ran = `${root}.ran`;
+			writeFileSync(join(root, "marker.ts"), `require('node:fs').writeFileSync(${JSON.stringify(ran)}, 'ran');\n`);
+			git("add", "docs", "marker.ts"); git("commit", "-q", "-m", "plan");
+			const baseline = git("rev-parse", "HEAD");
+			const parsed = parseTaskIntentV1(intent), hash = canonicalIntentHash(parsed);
+			const audit = join(root, ".imm", "audit", taskId); mkdirSync(audit, { recursive: true });
+			const record = `${JSON.stringify({ contract: "assurance_kernel/task_record/v4", task_id: taskId, intent_snapshot: parsed,
+				intent_ref: { path: paths[2], content_hash: hash }, lifecycle: "done", artifact_state: "frozen", baseline: hash,
+				git_base_head: baseline, attestations: [], findings: [], history: [] }, null, 2)}\n`;
+			writeFileSync(join(audit, "task-record.json"), record);
+			writeFileSync(join(audit, "terminal-proof.json"), `${JSON.stringify({ contract: "assurance_kernel/task_tombstone/v2", task_id: taskId,
+				lifecycle_status: "terminal", terminal_lifecycle: "done", terminal_event_id: "evt-term-delivered",
+				final_record_hash: `sha256:${new Bun.CryptoHasher("sha256").update(record).digest("hex")}`, terminalized_at: new Date().toISOString() }, null, 2)}\n`);
+			mkdirSync(join(root, "src")); writeFileSync(join(root, paths[0]!), "export const delivered = true;\n");
+			const observation = { initiative_slug: "native-final", carrier: "local" as const, tasks: [{ task_id: taskId, slice_id: "S1", blocked_by: [] }] };
+			const seen: Array<{ title: string; summary: string; details: string }> = [];
+			const run = (decision: "accept" | "decline") => executePiUnattendedBatch({ root, initiativeSlug: "native-final",
+				final_verification: ["bun marker.ts"], readInitiative: async () => observation,
+				confirmBatch: async (details) => { seen.push(details); return decision; } });
+
+			const declined = await run("decline");
+			expect(declined).toMatchObject({ state: "rejected" });
+			expect(seen).toHaveLength(1);
+			expect(seen[0]!.title).toContain("Parent Final Verification");
+			expect(seen[0]!.summary).toContain("bun marker.ts");
+			expect(seen[0]!.details).toContain(taskId);
+			expect(git("rev-parse", "HEAD")).toBe(baseline);
+			expect(existsSync(ran)).toBe(false);
+
+			const accepted = await run("accept");
+			expect(accepted).toMatchObject({ state: "native_parent", action: "complete", proof: { complete: true } });
+			expect(existsSync(ran)).toBe(true);
+		} finally { rmSync(root, { recursive: true, force: true }); rmSync(`${root}.ran`, { force: true }); }
 	});
 });

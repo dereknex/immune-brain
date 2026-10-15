@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, openSync, closeSync, writeFileSync, renameSync, 
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { readSecureProjectFile, readSecureProjectBytes, withKernelStoreLock } from "../kernel/storage";
+import { parseFinalVerification, parseFinalVerificationReport } from "./batch_final_verification";
 import type { BatchPlanChild } from "./types";
 
 export type BatchRunState =
@@ -62,6 +63,11 @@ export interface BatchRunStateRecord {
 	consecutive_qa_failures: number;
 	/** Commit heads produced by this batch, in child order. */
 	commits: string[];
+	/** Recorded at confirmation; a resume never replaces these commands. */
+	final_verification?: string[];
+	final_verification_result?: import("./batch_final_verification").FinalVerificationReport;
+	/** Host observation of separately enrolled repairs; grants no task authority. */
+	repair_tasks?: Array<{ task_id: string; run_id: string }>;
 	/**
 	 * Fast-forward commits the user made on the batch branch, adopted as the new
 	 * expected head. Never attributed to a child and never rewritten.
@@ -168,6 +174,8 @@ export interface BatchLaneRunStateRecord {
 	interventions?: LaneIntervention[];
 	/** Commands run on the batch branch once every child is integrated; fixed when the batch starts. */
 	final_verification?: string[];
+	final_verification_result?: import("./batch_final_verification").FinalVerificationReport;
+	repair_tasks?: Array<{ task_id: string; run_id: string }>;
 	/**
 	 * ADR 0018: the literal user's grant, in this batch's confirmation, to let the
 	 * coordinator approve in-envelope Lane Intent revisions. Absent: not granted.
@@ -244,12 +252,27 @@ function canonicalBytes(record: AnyBatchRunStateRecord): string {
 	return `${JSON.stringify(withoutRetiredClock(record), null, 2)}\n`;
 }
 
+function validateRepairTasks(record: Record<string, unknown>): void {
+	if (record.repair_tasks === undefined) return;
+	if (!Array.isArray(record.repair_tasks) || record.repair_tasks.some(task => !task ||
+		typeof task.task_id !== "string" || !BATCH_ID_PATTERN.test(task.task_id) ||
+		typeof task.run_id !== "string" || !BATCH_ID_PATTERN.test(task.run_id)) ||
+		new Set(record.repair_tasks.map(task => task.task_id)).size !== record.repair_tasks.length)
+		throw new Error("invalid Parent repair task identities");
+}
+
 function validateRecordShape(value: unknown, batchId: string): asserts value is BatchRunStateRecord {
 	if (typeof value !== "object" || value === null)
 		throw new Error(`batch run state ${batchId} is not an object`);
 	const record = value as Record<string, unknown>;
 	if (record.contract !== "assurance_kernel/batch_run_state/v1")
 		throw new Error(`batch run state ${batchId} has an unknown contract`);
+	parseFinalVerification(record.final_verification);
+	validateRepairTasks(record);
+	if (record.final_verification_result !== undefined) {
+		parseFinalVerificationReport(record.final_verification_result, record.final_verification as string[] | undefined);
+		if (record.batch_state !== "completed") throw new Error("final verification requires a completed serial batch");
+	}
 	if (record.batch_id !== batchId)
 		throw new Error(`batch run state ${batchId} carries batch_id ${String(record.batch_id)}`);
 	if (typeof record.plan_digest !== "string" || !record.plan_digest)
@@ -366,10 +389,12 @@ export function prepareBatchRunState(input: {
 	confirmation_time: string;
 	budget: { max_children: number; qa_failure_limit: number };
 	now: string;
+	final_verification?: string[];
 }): BatchRunStateRecord {
 	validateBatchId(input.batch_id);
 	const prepared: BatchRunStateRecord = {
 		contract: "assurance_kernel/batch_run_state/v1",
+		...(input.final_verification ? { final_verification: parseFinalVerification(input.final_verification)! } : {}),
 		batch_id: input.batch_id,
 		initiative_slug: input.initiative_slug,
 		plan_digest: input.plan_digest,
@@ -589,6 +614,11 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 			record.final_verification.some((c: unknown) => typeof c !== "string" || !c))
 	)
 		throw new Error(`batch run state ${batchId} has an invalid final_verification list`);
+	validateRepairTasks(record);
+	if (record.final_verification_result !== undefined) {
+		parseFinalVerificationReport(record.final_verification_result, record.final_verification as string[] | undefined);
+		if (record.batch_state !== "completed") throw new Error("final verification requires a completed lane batch");
+	}
 	if (
 		record.interventions !== undefined &&
 		(!Array.isArray(record.interventions) ||
@@ -828,6 +858,10 @@ export interface BatchRunReport {
 	/** Safe observation only; never an execution-readiness certificate. */
 	recovery?: import("../assurance/coordinator").AssuranceRecovery;
 	diagnostics?: import("../assurance/qa").QaCheckDiagnostic[];
+	/** Final commands passed on this exact integrated head; absent means unverified. */
+	final_verification?: import("./batch_final_verification").FinalVerificationReport;
+	/** Latest Parent synchronization observation; does not replace delivery evidence. */
+	tracker?: { status: string; message: string };
 	/** The single next action for the operator. */
 	next_action: string;
 	created_at: string;
@@ -917,6 +951,46 @@ function reportPath(batchId: string): string {
 /** Persist one current stop report per batch. Terminal reports are immutable;
  * a resumable needs_human report may be replaced by the later stop reached
  * after a fresh literal-user confirmation. */
+export interface NativeParentFinalReport {
+	contract: "assurance_kernel/parent_final_report/v1";
+	initiative_slug: string;
+	task_ids: string[];
+	final_verification: import("./batch_final_verification").FinalVerificationReport;
+	repair_tasks?: Array<{ task_id: string; run_id: string }>;
+}
+
+function nativeParentReportPath(slug: string) {
+	validateBatchId(slug);
+	return join(".imm", "state", "batches", `${slug}.native.report.json`);
+}
+
+function validateNativeParentReport(report: NativeParentFinalReport) {
+	if (report.contract !== "assurance_kernel/parent_final_report/v1" || !Array.isArray(report.task_ids) || !report.task_ids.length ||
+		new Set(report.task_ids).size !== report.task_ids.length || report.task_ids.some(id => typeof id !== "string" || !BATCH_ID_PATTERN.test(id)))
+		throw new Error("invalid Parent final observation");
+	validateBatchId(report.initiative_slug);
+	validateRepairTasks({ repair_tasks: report.repair_tasks });
+	parseFinalVerificationReport(report.final_verification);
+}
+
+/** Final observations for Parents needing no ordinary batch; never a BatchAuthorization or readiness store. */
+export function readNativeParentFinalReport(root: string, slug: string): NativeParentFinalReport | null {
+	const path = nativeParentReportPath(slug);
+	if (!existsSync(join(root, path))) return null;
+	const report = JSON.parse(readSecureProjectFile(root, path));
+	validateNativeParentReport(report);
+	if (report.initiative_slug !== slug) throw new Error("Parent final observation identity changed");
+	return report;
+}
+
+export function writeNativeParentFinalReport(root: string, report: NativeParentFinalReport): void {
+	validateNativeParentReport(report);
+	withKernelStoreLock(root, () => {
+		ensureSecureDirectory(root, join(".imm", "state", "batches"));
+		writeFileAtomically(root, nativeParentReportPath(report.initiative_slug), JSON.stringify(report, null, 2) + "\n");
+	});
+}
+
 export function writeBatchRunReport<T extends PersistableReport>(root: string, report: T): T {
 	const relative = reportPath(report.batch_id);
 	return withKernelStoreLock(root, () => {

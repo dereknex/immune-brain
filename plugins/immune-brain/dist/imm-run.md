@@ -10,7 +10,10 @@ This skill adheres to the **[BASELINE.md](BASELINE.md)**.
 ## Kernel Canary Routing and Authority
 
 Only explicit `imm-run` entry starts or resumes this loop. Ordinary host input
-stays host-native; it never resumes a Managed owner implicitly. While a
+stays host-native; it never creates an execution binding. An already-bound run
+keeps its binding across status questions and in-scope clarification. Explicit
+cancel, planning entry or session replacement releases response continuation;
+Kernel ownership changes only through its own operations. While a
 non-terminal TaskRecord holds the workspace, both Hosts add a read-only notice
 to ordinary input (Pi `before_agent_start`, Claude Code `UserPromptSubmit`)
 naming the task, its next obligation and its scope: before committing or
@@ -18,9 +21,12 @@ modifying files inside that scope, read `status` and tell the user the task is
 active and what it waits for. The notice resumes nothing. Read the current
 Host's `status` projection first and verify the exact active backend claim,
 TaskIntent, and TaskRecord. Invalid or contradictory projections fail closed. A
-candidate TaskIntent is not Enrollment authority.
+candidate TaskIntent is not Enrollment authority. For a Parent Issue, route to
+[Unattended Batch Opt-In](imm-run-batch.md#unattended-batch-opt-in) after this authority
+read. A Child entry verifies prerequisite settlement and integration before its
+single-task native gate; it starts no other Slice.
 
-Enrollment is the first step of an explicit `imm-run` entry and belongs to no
+Enrollment is the first step of a single-task explicit `imm-run` entry and belongs to no
 other Skill. When the entry finds no active claim, resolve the validated
 candidate the user named (or the Planner's recommended first Task when the entry
 names none and exactly one candidate fits), then invoke the current Host's
@@ -89,7 +95,16 @@ are host-native maintenance entries, never dispatched as the Loop role. Internal
 
 ## Execution Loop
 
-Continue while the current projection has a valid action:
+Continue while the current projection has a valid action. Pi's response boundary
+and Claude's Stop Hook re-read facts for the active session binding. A valid action
+returns to this Loop; waiting Review/Executor invocations keep their existing call
+identity. Submit a returned verdict before editing; use projected recovery after
+a rejected submission. Only changed task/delivery facts or scoped source bytes
+reset substantive progress. Three unchanged observations stop with one recovery
+action; status, formatting and repeated failed commands do not reset the count.
+Host native-gate failures pause with same-Host recovery and never auto-retry.
+A single Slice ends at its own terminal proof; a Parent uses whole-plan completion
+from the [batch contract](imm-run-batch.md#unattended-batch-opt-in).
 
 1. For active artifacts, implement only the enrolled acceptance within the
    `scope_hint` envelope in the current conversation. New helpers or tests

@@ -82,10 +82,11 @@ describe("claude host package", () => {
       "mcp__plugin_immune-brain_immune-brain__enroll",
       "mcp__plugin_immune-brain_immune-brain__start_unattended_batch",
       "Edit",
-    ]) expect({ tool, routed: routed(tool) }).toEqual({ tool, routed: true });
-    for (const tool of [
+      "Agent",
       "mcp__plugin_immune-brain_immune-brain__status",
       "mcp__plugin_immune-brain_immune-brain__advance_assurance",
+    ]) expect({ tool, routed: routed(tool) }).toEqual({ tool, routed: true });
+    for (const tool of [
       "mcp__other__enroll",
       "Bash",
     ]) expect({ tool, routed: routed(tool) }).toEqual({ tool, routed: false });

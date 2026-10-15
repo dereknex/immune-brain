@@ -1,0 +1,1143 @@
+{
+  "contract": "immune_brain/goal_driven_run_live_evidence/v1",
+  "capture": {
+    "actor": "actual-host-model",
+    "carrier": "local-api-fixture",
+    "native_inputs": "scripted-fixture-test-user",
+    "captured_at": "2026-10-15T02:36:28.838Z",
+    "driver_storage": ".git/goal-driven-run-live",
+    "limitations": [
+      "Carrier calls use a local fake API; this report does not prove remote GitHub reliability.",
+      "Native inputs are scripted fixture-test-user inputs, not actual user approvals."
+    ]
+  },
+  "source_sha256": {
+    "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts": "sha256:b5e38ba5e45ddb2c7fe362c52eb412e22a6daebbbba8a52e6321c425d454931b",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts": "sha256:abc3e994cda381105089d18288d1b841a46acf54df255b901cbaa333d56f648c",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts": "sha256:92874a39c17f24014b885c869fb0dd37b4ff9da81abcbb53a590038353cdf6c2",
+    "plugins/immune-brain/.pi-extension/pi-run-continuation.ts": "sha256:932cc88ec8166a9d5bd8e9b04c1b1f01771dde64389f171519948738b0bc9961",
+    "plugins/immune-brain/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+    "plugins/immune-brain/dist/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs": "sha256:1a854a0936d45b96d08efa6285f4644c32dfa67556365fc406bd503678238201",
+    "plugins/immune-brain/dist/imm-run-batch.md": "sha256:cf8548b79b27691e9096c5cc2dce2571d87e40b68c17989cf4ba55beac008d4d",
+    "plugins/immune-brain/dist/imm-run.md": "sha256:73132e4696921fd15980366f210fd89530ac70764080427b89268472937d3154",
+    "plugins/immune-brain/dist/role-prompts/executor.md": "sha256:8661621239a6589dd074da5f52e32cf436b7344857f4c866b28b17bdfb8ad48c",
+    "plugins/immune-brain/hooks/hooks.json": "sha256:00cd183ca2d20520a8b9c35054116f0a3bf4e52471de4dccfdafe64e19d14d62",
+    "plugins/immune-brain/runtime/assurance/run_continuation.ts": "sha256:b8ffad8b936fa686107e4be1276c89d278b0b7b9cadcf25e3167403beef3e0b6",
+    "plugins/immune-brain/runtime/claude/interaction.ts": "sha256:5c9e83c7bbdd17f6734abd584be61cb4326e376a0caabe02d9f834a67f7a89e3",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts": "sha256:be07878e16140e05f01e00bd2dba5929f9d60ad170573a88aee38da638221805",
+    "plugins/immune-brain/runtime/claude/lane_guard.ts": "sha256:a4ae2aef3c1595754994b96da1aaaab368305b6f684c60445f045cc2f996e5eb",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts": "sha256:cc7f879d76a24b6dbef73adff9491df620b298d866717c5219fd2540d1e3664c",
+    "plugins/immune-brain/runtime/claude/run_continuation.ts": "sha256:1654a82d5783125e5c1810dfdb80a8695360093d9dddbfd3083fa1aab62039e9",
+    "plugins/immune-brain/runtime/github_issue_tracker.ts": "sha256:b07ff581d6a7294581182d16fc24c2ee738a0545c0c420482e5a513d0ef38ac7",
+    "plugins/immune-brain/runtime/prompts/executor.md": "sha256:8661621239a6589dd074da5f52e32cf436b7344857f4c866b28b17bdfb8ad48c",
+    "plugins/immune-brain/runtime/unattended/batch_disposition.ts": "sha256:c0050858f5487a0f630a2c9d94fe0735ab1d1472a29083dfa33859eaa0eb06d3",
+    "plugins/immune-brain/runtime/unattended/batch_final_verification.ts": "sha256:b40b3dbb06949f0f7e5ebb6598b1ccff18b67b0a34226240e53f37dd83c7e739",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts": "sha256:3d811aa661a5dc9078eeabfb42fdce80112737ea34d8af00482fc572a0353e38",
+    "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts": "sha256:2f43858e96741eb3aca95e99433e837cd45ada38b8332cd64dafb5890838721c",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts": "sha256:8cbf33ee009fc194b04e1b3bde63f0568e384642e780e62e377dc82b4affaa64",
+    "plugins/immune-brain/runtime/unattended/batch_plan.ts": "sha256:ed36a38ec53f1d2580b9ac7fb5ad6106091212e9d9034ea8b0b9545a8a3f296a",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts": "sha256:4ec9f3d89847afd17ad486b0b570d4cdc7f8b51c7b82321433d67900279db895",
+    "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts": "sha256:8a7a2a4d9e97172a5ac1ee0f83d6e85d7a7d98c9eb2119b4c0f336de182aaecb",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts": "sha256:0323b4e0ca3d24900ea57c6a275cd0acbae48295e9adf17b593e18ba98c74d32",
+    "plugins/immune-brain/runtime/unattended/batch_schedule.ts": "sha256:04c4cc57fda27ea1289e4d66b26e07e690f94d493b5364c224bee53e59fd5541",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts": "sha256:a87f9cf4512482ca7e981c99165fb00ab935bbdd31cc199ce55e6f2b0e8064eb",
+    "plugins/immune-brain/runtime/unattended/types.ts": "sha256:447e45ade83e3cfe7139bec56ef157e223c7251d1f268f3e75742b688f3c6018",
+    "plugins/immune-brain/skills/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+    "plugins/immune-brain/skills/imm-run/SKILL.md": "sha256:caa4657e96de275b7e11a3dad98f2f32e2987bd19ff71b451a33eb75eff023b0"
+  },
+  "hosts": [
+    {
+      "host": "pi",
+      "version": "1.2.0",
+      "models": [
+        "openai:gpt-5.6-sol",
+        "gpt-5.6-sol"
+      ],
+      "cases": [
+        {
+          "host": "pi",
+          "root": "/Users/derek/workspaces/immune-brain/.goal-driven-run-live/fixtures/gdr-live-pi-main-wo4uiR",
+          "scenarios": [
+            "parent_dependencies_and_independent_branch",
+            "ordinary_failure_and_review",
+            "successor_handoff",
+            "integration_and_final",
+            "serial_fallback"
+          ],
+          "outcome": "passed",
+          "manual_continuations": 0,
+          "response_boundaries": 1,
+          "initial_input_sha256": "sha256:a4486b81fa73036541e12ed6bc3d5d505889070b357ae8cade087f7cb9bc820a",
+          "source_sha256": {
+            "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts": "sha256:b5e38ba5e45ddb2c7fe362c52eb412e22a6daebbbba8a52e6321c425d454931b",
+            "plugins/immune-brain/.pi-extension/imm-canary-work.ts": "sha256:abc3e994cda381105089d18288d1b841a46acf54df255b901cbaa333d56f648c",
+            "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts": "sha256:92874a39c17f24014b885c869fb0dd37b4ff9da81abcbb53a590038353cdf6c2",
+            "plugins/immune-brain/.pi-extension/pi-run-continuation.ts": "sha256:932cc88ec8166a9d5bd8e9b04c1b1f01771dde64389f171519948738b0bc9961",
+            "plugins/immune-brain/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/dist/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/dist/claude/mcp-server.mjs": "sha256:1a854a0936d45b96d08efa6285f4644c32dfa67556365fc406bd503678238201",
+            "plugins/immune-brain/dist/imm-run-batch.md": "sha256:cf8548b79b27691e9096c5cc2dce2571d87e40b68c17989cf4ba55beac008d4d",
+            "plugins/immune-brain/dist/imm-run.md": "sha256:73132e4696921fd15980366f210fd89530ac70764080427b89268472937d3154",
+            "plugins/immune-brain/dist/role-prompts/executor.md": "sha256:8661621239a6589dd074da5f52e32cf436b7344857f4c866b28b17bdfb8ad48c",
+            "plugins/immune-brain/hooks/hooks.json": "sha256:00cd183ca2d20520a8b9c35054116f0a3bf4e52471de4dccfdafe64e19d14d62",
+            "plugins/immune-brain/runtime/assurance/run_continuation.ts": "sha256:b8ffad8b936fa686107e4be1276c89d278b0b7b9cadcf25e3167403beef3e0b6",
+            "plugins/immune-brain/runtime/claude/interaction.ts": "sha256:5c9e83c7bbdd17f6734abd584be61cb4326e376a0caabe02d9f834a67f7a89e3",
+            "plugins/immune-brain/runtime/claude/kernel_ports.ts": "sha256:be07878e16140e05f01e00bd2dba5929f9d60ad170573a88aee38da638221805",
+            "plugins/immune-brain/runtime/claude/lane_guard.ts": "sha256:a4ae2aef3c1595754994b96da1aaaab368305b6f684c60445f045cc2f996e5eb",
+            "plugins/immune-brain/runtime/claude/mcp_server.ts": "sha256:cc7f879d76a24b6dbef73adff9491df620b298d866717c5219fd2540d1e3664c",
+            "plugins/immune-brain/runtime/claude/run_continuation.ts": "sha256:1654a82d5783125e5c1810dfdb80a8695360093d9dddbfd3083fa1aab62039e9",
+            "plugins/immune-brain/runtime/github_issue_tracker.ts": "sha256:b07ff581d6a7294581182d16fc24c2ee738a0545c0c420482e5a513d0ef38ac7",
+            "plugins/immune-brain/runtime/prompts/executor.md": "sha256:8661621239a6589dd074da5f52e32cf436b7344857f4c866b28b17bdfb8ad48c",
+            "plugins/immune-brain/runtime/unattended/batch_disposition.ts": "sha256:c0050858f5487a0f630a2c9d94fe0735ab1d1472a29083dfa33859eaa0eb06d3",
+            "plugins/immune-brain/runtime/unattended/batch_final_verification.ts": "sha256:b40b3dbb06949f0f7e5ebb6598b1ccff18b67b0a34226240e53f37dd83c7e739",
+            "plugins/immune-brain/runtime/unattended/batch_git.ts": "sha256:3d811aa661a5dc9078eeabfb42fdce80112737ea34d8af00482fc572a0353e38",
+            "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts": "sha256:2f43858e96741eb3aca95e99433e837cd45ada38b8332cd64dafb5890838721c",
+            "plugins/immune-brain/runtime/unattended/batch_lanes.ts": "sha256:8cbf33ee009fc194b04e1b3bde63f0568e384642e780e62e377dc82b4affaa64",
+            "plugins/immune-brain/runtime/unattended/batch_plan.ts": "sha256:ed36a38ec53f1d2580b9ac7fb5ad6106091212e9d9034ea8b0b9545a8a3f296a",
+            "plugins/immune-brain/runtime/unattended/batch_preflight.ts": "sha256:4ec9f3d89847afd17ad486b0b570d4cdc7f8b51c7b82321433d67900279db895",
+            "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts": "sha256:8a7a2a4d9e97172a5ac1ee0f83d6e85d7a7d98c9eb2119b4c0f336de182aaecb",
+            "plugins/immune-brain/runtime/unattended/batch_runner.ts": "sha256:0323b4e0ca3d24900ea57c6a275cd0acbae48295e9adf17b593e18ba98c74d32",
+            "plugins/immune-brain/runtime/unattended/batch_schedule.ts": "sha256:04c4cc57fda27ea1289e4d66b26e07e690f94d493b5364c224bee53e59fd5541",
+            "plugins/immune-brain/runtime/unattended/batch_state.ts": "sha256:a87f9cf4512482ca7e981c99165fb00ab935bbdd31cc199ce55e6f2b0e8064eb",
+            "plugins/immune-brain/runtime/unattended/types.ts": "sha256:447e45ade83e3cfe7139bec56ef157e223c7251d1f268f3e75742b688f3c6018",
+            "plugins/immune-brain/skills/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/skills/imm-run/SKILL.md": "sha256:caa4657e96de275b7e11a3dad98f2f32e2987bd19ff71b451a33eb75eff023b0"
+          },
+          "models": [
+            "openai:gpt-5.6-sol",
+            "gpt-5.6-sol"
+          ],
+          "native_inputs": [
+            {
+              "attention_id": "f54d6ae6-38d8-49f4-9495-916d7fba7684",
+              "task_id": "gdr-live-pi-main",
+              "decision": "y",
+              "input_kind": "scripted-fixture-test-user"
+            }
+          ],
+          "integrated_head": "df391401f13746b7a0f18764bc0c5662844d114e",
+          "final_verification": {
+            "passed": true,
+            "head": "df391401f13746b7a0f18764bc0c5662844d114e",
+            "results": [
+              {
+                "command": "bun .fixture/final.ts",
+                "exit_code": 0,
+                "signal": null,
+                "passed": true,
+                "duration_ms": 6
+              }
+            ]
+          },
+          "tasks": [
+            {
+              "task_id": "gdr-live-pi-main-a",
+              "run_id": "run-ee39a032-bbc7-4c8b-8b61-3a0aa4f257af",
+              "record_bytes": "{\n  \"contract\": \"assurance_kernel/task_record/v4\",\n  \"task_id\": \"gdr-live-pi-main-a\",\n  \"intent_snapshot\": {\n    \"contract\": \"assurance_kernel/task_intent/v1\",\n    \"task_id\": \"gdr-live-pi-main-a\",\n    \"goal\": \"Write src/a.txt as exactly one followed by a newline\",\n    \"acceptance\": [\n      {\n        \"id\": \"result\",\n        \"assertion\": \"The a output and its integrated prerequisites are correct\",\n        \"verification\": \"{\\n  \\\"contract\\\": \\\"assurance_kernel/verification_descriptor/v2\\\",\\n  \\\"command\\\": {\\n    \\\"executable\\\": \\\"bun\\\",\\n    \\\"argv\\\": [\\n      \\\".fixture/verify.ts\\\",\\n      \\\"a\\\",\\n      \\\"one\\\"\\n    ],\\n    \\\"cwd\\\": \\\".\\\",\\n    \\\"timeout_ms\\\": 10000,\\n    \\\"max_output_bytes\\\": 8192\\n  },\\n  \\\"environment\\\": {\\n    \\\"writable_paths\\\": []\\n  }\\n}\\n\"\n      }\n    ],\n    \"scope_hint\": [\n      \"docs/plans/gdr-live-pi-main-a.intent.json\",\n      \"src/a.txt\"\n    ],\n    \"risk\": \"routine\",\n    \"revision\": 1,\n    \"owner\": \"user\"\n  },\n  \"intent_ref\": {\n    \"path\": \"docs/plans/gdr-live-pi-main-a.intent.json\",\n    \"content_hash\": \"sha256:39386ca9edd4cd33763589237acca21bbe4988143c6fc6bc1c634519ba8b1286\"\n  },\n  \"lifecycle\": \"done\",\n  \"artifact_state\": \"frozen\",\n  \"baseline\": \"sha256:39386ca9edd4cd33763589237acca21bbe4988143c6fc6bc1c634519ba8b1286\",\n  \"git_base_head\": \"ed748ff3d0c66ec425c60397c68ea867933805dc\",\n  \"attestations\": [\n    {\n      \"id\": \"approval-qa-f0a245c2\",\n      \"kind\": \"qa\",\n      \"authority_role\": \"qa\",\n      \"task_revision\": 1,\n      \"intent_content_hash\": \"sha256:39386ca9edd4cd33763589237acca21bbe4988143c6fc6bc1c634519ba8b1286\",\n      \"diff_hash\": \"sha256:300d943699c823fa663af685956080c59582ccfeca4e303bc1ddc8f02ee2e594\",\n      \"actor_id\": \"deterministic-qa\",\n      \"summary\": \"all 1 project verification check(s) passed; execution=sha256:c1e6b7b4cb1f96b807c1626a2d6ef214f7363cf1ec086b0af524562129da675c\",\n      \"acceptance_results\": [\n        {\n          \"acceptance_id\": \"result\",\n          \"status\": \"passed\",\n          \"summary\": \"host-attested QA: all 1 project verification check(s) passed; execution=sha256:c1e6b7b4cb1f96b807c1626a2d6ef214f7363cf1ec086b0af524562129da675c\"\n        }\n      ]\n    }\n  ],\n  \"findings\": [],\n  \"history\": [\n    {\n      \"id\": \"freeze_artifacts:gdr-live-pi-main-a:2026-10-15T00:57:21.282Z\",\n      \"at\": \"2026-10-15T00:57:21.282Z\",\n      \"type\": \"freeze_artifacts\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"TaskIntent frozen in place at docs/plans/gdr-live-pi-main-a.intent.json\"\n    },\n    {\n      \"id\": \"record_approval:gdr-live-pi-main-a:2026-10-15T00:57:25.952Z\",\n      \"at\": \"2026-10-15T00:57:25.952Z\",\n      \"type\": \"record_approval\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"approval-qa-f0a245c2\\naction_v2_sha256:726e183039c43933ef0e93ca4cabec7a06f92fcca9068054c7b72c6757caa184\",\n      \"authority\": {\n        \"authority_kind\": \"qa\",\n        \"actor_id\": \"deterministic-qa\",\n        \"confirmation_ref\": \"pi-confirm-2e31428bc81575d6\",\n        \"issued_at\": \"2026-10-15T00:57:25.952Z\"\n      }\n    },\n    {\n      \"id\": \"complete:gdr-live-pi-main-a:2026-10-15T00:57:26.607Z\",\n      \"at\": \"2026-10-15T00:57:26.607Z\",\n      \"type\": \"complete\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"done:frozen\",\n      \"reason\": \"action_v2_sha256:e8aaa5be7ed6a4fc3efcb42a725392fa339f7e3d48f97b8cf9d191a9608d051b\"\n    }\n  ]\n}\n",
+              "terminal_proof_bytes": "{\n  \"contract\": \"assurance_kernel/task_tombstone/v2\",\n  \"task_id\": \"gdr-live-pi-main-a\",\n  \"lifecycle_status\": \"terminal\",\n  \"terminal_lifecycle\": \"done\",\n  \"terminal_event_id\": \"complete:gdr-live-pi-main-a:2026-10-15T00:57:26.607Z\",\n  \"final_record_hash\": \"sha256:d654d6c9d66ffb1ef1da28acaaf75826af787879d557ae0a3acef73d5f1ef5b8\",\n  \"terminalized_at\": \"2026-10-15T00:57:26.607Z\"\n}\n",
+              "integrated_commit": "5522bd2188c42d9d0ea7a1f3436b512bb7465d59",
+              "commit_is_ancestor": true,
+              "scope_validated": true
+            },
+            {
+              "task_id": "gdr-live-pi-main-sum",
+              "run_id": "run-171ec6f6-68b5-43ca-9fde-c608e7ea6cae",
+              "record_bytes": "{\n  \"contract\": \"assurance_kernel/task_record/v4\",\n  \"task_id\": \"gdr-live-pi-main-sum\",\n  \"intent_snapshot\": {\n    \"contract\": \"assurance_kernel/task_intent/v1\",\n    \"task_id\": \"gdr-live-pi-main-sum\",\n    \"goal\": \"Write src/sum.txt as exactly three followed by a newline\",\n    \"acceptance\": [\n      {\n        \"id\": \"result\",\n        \"assertion\": \"The sum output and its integrated prerequisites are correct\",\n        \"verification\": \"{\\n  \\\"contract\\\": \\\"assurance_kernel/verification_descriptor/v2\\\",\\n  \\\"command\\\": {\\n    \\\"executable\\\": \\\"bun\\\",\\n    \\\"argv\\\": [\\n      \\\".fixture/verify.ts\\\",\\n      \\\"sum\\\",\\n      \\\"three\\\"\\n    ],\\n    \\\"cwd\\\": \\\".\\\",\\n    \\\"timeout_ms\\\": 10000,\\n    \\\"max_output_bytes\\\": 8192\\n  },\\n  \\\"environment\\\": {\\n    \\\"writable_paths\\\": [\\n      \\\".fixture-state\\\"\\n    ]\\n  }\\n}\\n\"\n      }\n    ],\n    \"scope_hint\": [\n      \"docs/plans/gdr-live-pi-main-sum.intent.json\",\n      \"src/sum.txt\"\n    ],\n    \"risk\": \"material\",\n    \"revision\": 1,\n    \"owner\": \"user\"\n  },\n  \"intent_ref\": {\n    \"path\": \"docs/plans/gdr-live-pi-main-sum.intent.json\",\n    \"content_hash\": \"sha256:f734e8782c53b534a8c8c826e1d6339d6a0388c125b54e25bfc77d7ab5e7c8e6\"\n  },\n  \"lifecycle\": \"done\",\n  \"artifact_state\": \"frozen\",\n  \"baseline\": \"sha256:f734e8782c53b534a8c8c826e1d6339d6a0388c125b54e25bfc77d7ab5e7c8e6\",\n  \"git_base_head\": \"0b365d268ee1b916786bbddec8f244cde68b2ff6\",\n  \"attestations\": [\n    {\n      \"id\": \"approval-qa-f57ce5ed\",\n      \"kind\": \"qa\",\n      \"authority_role\": \"qa\",\n      \"task_revision\": 1,\n      \"intent_content_hash\": \"sha256:f734e8782c53b534a8c8c826e1d6339d6a0388c125b54e25bfc77d7ab5e7c8e6\",\n      \"diff_hash\": \"sha256:b4fa4759382c6516b4ed561dbf03f7d4f98ba6abf92f169ca571aba67478e45e\",\n      \"actor_id\": \"deterministic-qa\",\n      \"summary\": \"all 1 project verification check(s) passed; execution=sha256:a8c00cc6bc06314d9692ee591b90f6d857f53d7de97868f80556d5a166850282\",\n      \"acceptance_results\": [\n        {\n          \"acceptance_id\": \"result\",\n          \"status\": \"passed\",\n          \"summary\": \"host-attested QA: all 1 project verification check(s) passed; execution=sha256:a8c00cc6bc06314d9692ee591b90f6d857f53d7de97868f80556d5a166850282\"\n        }\n      ]\n    },\n    {\n      \"id\": \"approval-review-f2efe79f\",\n      \"kind\": \"review\",\n      \"authority_role\": \"reviewer\",\n      \"task_revision\": 1,\n      \"intent_content_hash\": \"sha256:f734e8782c53b534a8c8c826e1d6339d6a0388c125b54e25bfc77d7ab5e7c8e6\",\n      \"diff_hash\": \"sha256:b4fa4759382c6516b4ed561dbf03f7d4f98ba6abf92f169ca571aba67478e45e\",\n      \"actor_id\": \"parent-mediated-review\",\n      \"summary\": \"已核验 manifest_digest、revision 单一父提交及 tree；完整检查唯一变更 src/sum.txt，输出由 pending 更新为 three，与 result 的 Kernel QA 通过证据一致，未发现阻断问题。\",\n      \"acceptance_results\": [],\n      \"review_revision\": {\n        \"contract\": \"assurance_kernel/review_revision_identity/v1\",\n        \"base_head\": \"0b365d268ee1b916786bbddec8f244cde68b2ff6\",\n        \"review_commit\": \"a5cda16d73568357324a384c4b6ded9ff5b70b6c\",\n        \"review_tree\": \"d69d9ef78e6b0df6af213876ee4d988ecad263f3\",\n        \"manifest_digest\": \"sha256:c55a59b6765bb8ea57334735d3f1d32c84e73787e73a4c3830332b7d09e2389d\"\n      },\n      \"reviewer_verdict_sha256\": \"sha256:d436482a3cd38120c2891fb121cefb83c028b3fa196eb37680a48c5430be04cb\"\n    }\n  ],\n  \"findings\": [\n    {\n      \"id\": \"qa-result-0a1095e7-3a1d7c\",\n      \"kind\": \"blocking\",\n      \"status\": \"resolved\",\n      \"acceptance_id\": \"result\",\n      \"source\": \"execution\",\n      \"review_round\": null,\n      \"summary\": \"verification failed (exit 3) stdout=0B stderr=47B\",\n      \"anchor\": null,\n      \"evidence\": null,\n      \"counterevidence\": null\n    }\n  ],\n  \"history\": [\n    {\n      \"id\": \"freeze_artifacts:gdr-live-pi-main-sum:2026-10-15T00:58:43.348Z\",\n      \"at\": \"2026-10-15T00:58:43.348Z\",\n      \"type\": \"freeze_artifacts\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"TaskIntent frozen in place at docs/plans/gdr-live-pi-main-sum.intent.json\"\n    },\n    {\n      \"id\": \"request_rework:gdr-live-pi-main-sum:2026-10-15T00:58:49.537Z\",\n      \"at\": \"2026-10-15T00:58:49.537Z\",\n      \"type\": \"request_rework\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:active\",\n      \"reason\": \"review_round_1\\naction_v2_sha256:16347fb93c5a3ab0a23f2f2bce6e2034fce00508b6f32c93920fae75c72a80e4\",\n      \"authority\": {\n        \"authority_kind\": \"qa\",\n        \"actor_id\": \"deterministic-qa\",\n        \"confirmation_ref\": \"pi-confirm-5ab5d3e2814f824c\",\n        \"issued_at\": \"2026-10-15T00:58:49.537Z\"\n      }\n    },\n    {\n      \"id\": \"resolve_finding:gdr-live-pi-main-sum:2026-10-15T00:59:21.552Z\",\n      \"at\": \"2026-10-15T00:59:21.552Z\",\n      \"type\": \"resolve_finding\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:active\",\n      \"reason\": \"qa-result-0a1095e7-3a1d7c\\naction_v2_sha256:1c78b3e08380b51f17a627127f458eb63ad8b08329cf1e6e1883b645357f2ebd\"\n    },\n    {\n      \"id\": \"freeze_artifacts:gdr-live-pi-main-sum:2026-10-15T00:59:28.615Z\",\n      \"at\": \"2026-10-15T00:59:28.615Z\",\n      \"type\": \"freeze_artifacts\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"TaskIntent frozen in place at docs/plans/gdr-live-pi-main-sum.intent.json\"\n    },\n    {\n      \"id\": \"record_approval:gdr-live-pi-main-sum:2026-10-15T00:59:33.493Z\",\n      \"at\": \"2026-10-15T00:59:33.493Z\",\n      \"type\": \"record_approval\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"approval-qa-f57ce5ed\\naction_v2_sha256:1cd1ea057c5180640505be8fb4dccc3e6f6a8807ca684e29a639ad9f91086885\",\n      \"authority\": {\n        \"authority_kind\": \"qa\",\n        \"actor_id\": \"deterministic-qa\",\n        \"confirmation_ref\": \"pi-confirm-b8757ae33f010ed8\",\n        \"issued_at\": \"2026-10-15T00:59:33.493Z\"\n      }\n    },\n    {\n      \"id\": \"record_approval:gdr-live-pi-main-sum:2026-10-15T01:07:07.985Z\",\n      \"at\": \"2026-10-15T01:07:07.985Z\",\n      \"type\": \"record_approval\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"approval-review-f2efe79f\\naction_v2_sha256:7a36c8f96920b8ade5c8639acfc811864eb4627f5ca52d9640cb7ae24cadd856\",\n      \"authority\": {\n        \"authority_kind\": \"review\",\n        \"actor_id\": \"parent-mediated-review\",\n        \"confirmation_ref\": \"pi-confirm-7542495a683ab974\",\n        \"issued_at\": \"2026-10-15T01:07:07.985Z\"\n      }\n    },\n    {\n      \"id\": \"complete:gdr-live-pi-main-sum:2026-10-15T01:07:08.623Z\",\n      \"at\": \"2026-10-15T01:07:08.623Z\",\n      \"type\": \"complete\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"done:frozen\",\n      \"reason\": \"action_v2_sha256:daf1018c5f62b4c726330740d5a8dac5774a947455c324280003ea59a93cf1bd\"\n    }\n  ]\n}\n",
+              "terminal_proof_bytes": "{\n  \"contract\": \"assurance_kernel/task_tombstone/v2\",\n  \"task_id\": \"gdr-live-pi-main-sum\",\n  \"lifecycle_status\": \"terminal\",\n  \"terminal_lifecycle\": \"done\",\n  \"terminal_event_id\": \"complete:gdr-live-pi-main-sum:2026-10-15T01:07:08.623Z\",\n  \"final_record_hash\": \"sha256:7fefcfca52ac6bd058bdf5fe00e6954812dce92dc260a8e37fbe620008c66b1e\",\n  \"terminalized_at\": \"2026-10-15T01:07:08.623Z\"\n}\n",
+              "integrated_commit": "6275a756abff499b31df1ab062f229d546e2649c",
+              "commit_is_ancestor": true,
+              "scope_validated": true
+            },
+            {
+              "task_id": "gdr-live-pi-main-b",
+              "run_id": "run-41f5f7df-d980-4820-9430-eab9dda2fe6e",
+              "record_bytes": "{\n  \"contract\": \"assurance_kernel/task_record/v4\",\n  \"task_id\": \"gdr-live-pi-main-b\",\n  \"intent_snapshot\": {\n    \"contract\": \"assurance_kernel/task_intent/v1\",\n    \"task_id\": \"gdr-live-pi-main-b\",\n    \"goal\": \"Write src/b.txt as exactly two followed by a newline\",\n    \"acceptance\": [\n      {\n        \"id\": \"result\",\n        \"assertion\": \"The b output and its integrated prerequisites are correct\",\n        \"verification\": \"{\\n  \\\"contract\\\": \\\"assurance_kernel/verification_descriptor/v2\\\",\\n  \\\"command\\\": {\\n    \\\"executable\\\": \\\"bun\\\",\\n    \\\"argv\\\": [\\n      \\\".fixture/verify.ts\\\",\\n      \\\"b\\\",\\n      \\\"two\\\"\\n    ],\\n    \\\"cwd\\\": \\\".\\\",\\n    \\\"timeout_ms\\\": 10000,\\n    \\\"max_output_bytes\\\": 8192\\n  },\\n  \\\"environment\\\": {\\n    \\\"writable_paths\\\": []\\n  }\\n}\\n\"\n      }\n    ],\n    \"scope_hint\": [\n      \"docs/plans/gdr-live-pi-main-b.intent.json\",\n      \"src/b.txt\"\n    ],\n    \"risk\": \"routine\",\n    \"revision\": 1,\n    \"owner\": \"user\"\n  },\n  \"intent_ref\": {\n    \"path\": \"docs/plans/gdr-live-pi-main-b.intent.json\",\n    \"content_hash\": \"sha256:4cd5a0ba5797919454a4b150ff04ee4dbb8cfa614b42ac5956de5a7e19429fb9\"\n  },\n  \"lifecycle\": \"done\",\n  \"artifact_state\": \"frozen\",\n  \"baseline\": \"sha256:4cd5a0ba5797919454a4b150ff04ee4dbb8cfa614b42ac5956de5a7e19429fb9\",\n  \"git_base_head\": \"5522bd2188c42d9d0ea7a1f3436b512bb7465d59\",\n  \"attestations\": [\n    {\n      \"id\": \"approval-qa-af93f304\",\n      \"kind\": \"qa\",\n      \"authority_role\": \"qa\",\n      \"task_revision\": 1,\n      \"intent_content_hash\": \"sha256:4cd5a0ba5797919454a4b150ff04ee4dbb8cfa614b42ac5956de5a7e19429fb9\",\n      \"diff_hash\": \"sha256:f0be16aeb17eed9a14c7ba4549be0e1feb384cd361af053372dc75867d39ac88\",\n      \"actor_id\": \"deterministic-qa\",\n      \"summary\": \"all 1 project verification check(s) passed; execution=sha256:6bc2e16738a85e3f77e148ca3baffc8adf7aef357b178fea9bde2b68c8c74419\",\n      \"acceptance_results\": [\n        {\n          \"acceptance_id\": \"result\",\n          \"status\": \"passed\",\n          \"summary\": \"host-attested QA: all 1 project verification check(s) passed; execution=sha256:6bc2e16738a85e3f77e148ca3baffc8adf7aef357b178fea9bde2b68c8c74419\"\n        }\n      ]\n    }\n  ],\n  \"findings\": [],\n  \"history\": [\n    {\n      \"id\": \"freeze_artifacts:gdr-live-pi-main-b:2026-10-15T00:57:59.432Z\",\n      \"at\": \"2026-10-15T00:57:59.432Z\",\n      \"type\": \"freeze_artifacts\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"TaskIntent frozen in place at docs/plans/gdr-live-pi-main-b.intent.json\"\n    },\n    {\n      \"id\": \"record_approval:gdr-live-pi-main-b:2026-10-15T00:58:04.202Z\",\n      \"at\": \"2026-10-15T00:58:04.202Z\",\n      \"type\": \"record_approval\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"approval-qa-af93f304\\naction_v2_sha256:e2b9c271a0c6cdb247ef2442dd244dfb381b752d1175a1f615c36774288dc0c6\",\n      \"authority\": {\n        \"authority_kind\": \"qa\",\n        \"actor_id\": \"deterministic-qa\",\n        \"confirmation_ref\": \"pi-confirm-8397edf17647aaae\",\n        \"issued_at\": \"2026-10-15T00:58:04.202Z\"\n      }\n    },\n    {\n      \"id\": \"complete:gdr-live-pi-main-b:2026-10-15T00:58:04.827Z\",\n      \"at\": \"2026-10-15T00:58:04.827Z\",\n      \"type\": \"complete\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"done:frozen\",\n      \"reason\": \"action_v2_sha256:09fa6619963af15e2515a6916ab3a5eb3257eaa3214562d2d4474c34c03ae653\"\n    }\n  ]\n}\n",
+              "terminal_proof_bytes": "{\n  \"contract\": \"assurance_kernel/task_tombstone/v2\",\n  \"task_id\": \"gdr-live-pi-main-b\",\n  \"lifecycle_status\": \"terminal\",\n  \"terminal_lifecycle\": \"done\",\n  \"terminal_event_id\": \"complete:gdr-live-pi-main-b:2026-10-15T00:58:04.827Z\",\n  \"final_record_hash\": \"sha256:476818b397e68648cc854cd60f8661206807a906a779929aec0745f281547857\",\n  \"terminalized_at\": \"2026-10-15T00:58:04.827Z\"\n}\n",
+              "integrated_commit": "0b365d268ee1b916786bbddec8f244cde68b2ff6",
+              "commit_is_ancestor": true,
+              "scope_validated": true
+            },
+            {
+              "task_id": "gdr-live-pi-main-integration",
+              "run_id": "run-5df2ddb1-45a8-4bea-8002-00d55c344368",
+              "record_bytes": "{\n  \"contract\": \"assurance_kernel/task_record/v4\",\n  \"task_id\": \"gdr-live-pi-main-integration\",\n  \"intent_snapshot\": {\n    \"contract\": \"assurance_kernel/task_intent/v1\",\n    \"task_id\": \"gdr-live-pi-main-integration\",\n    \"goal\": \"Write src/integration.txt as exactly passed followed by a newline\",\n    \"acceptance\": [\n      {\n        \"id\": \"result\",\n        \"assertion\": \"The integration output and its integrated prerequisites are correct\",\n        \"verification\": \"{\\n  \\\"contract\\\": \\\"assurance_kernel/verification_descriptor/v2\\\",\\n  \\\"command\\\": {\\n    \\\"executable\\\": \\\"bun\\\",\\n    \\\"argv\\\": [\\n      \\\".fixture/verify.ts\\\",\\n      \\\"integration\\\",\\n      \\\"passed\\\"\\n    ],\\n    \\\"cwd\\\": \\\".\\\",\\n    \\\"timeout_ms\\\": 10000,\\n    \\\"max_output_bytes\\\": 8192\\n  },\\n  \\\"environment\\\": {\\n    \\\"writable_paths\\\": []\\n  }\\n}\\n\"\n      }\n    ],\n    \"scope_hint\": [\n      \"docs/plans/gdr-live-pi-main-integration.intent.json\",\n      \"src\"\n    ],\n    \"risk\": \"routine\",\n    \"revision\": 1,\n    \"owner\": \"user\"\n  },\n  \"intent_ref\": {\n    \"path\": \"docs/plans/gdr-live-pi-main-integration.intent.json\",\n    \"content_hash\": \"sha256:f9ace16664ade9a70055068c6cb7d2aa3ef27002828ecc86a68567c56fed1b5a\"\n  },\n  \"lifecycle\": \"done\",\n  \"artifact_state\": \"frozen\",\n  \"baseline\": \"sha256:f9ace16664ade9a70055068c6cb7d2aa3ef27002828ecc86a68567c56fed1b5a\",\n  \"git_base_head\": \"6275a756abff499b31df1ab062f229d546e2649c\",\n  \"attestations\": [\n    {\n      \"id\": \"approval-qa-c802ca5e\",\n      \"kind\": \"qa\",\n      \"authority_role\": \"qa\",\n      \"task_revision\": 1,\n      \"intent_content_hash\": \"sha256:f9ace16664ade9a70055068c6cb7d2aa3ef27002828ecc86a68567c56fed1b5a\",\n      \"diff_hash\": \"sha256:b272f88407637fe7ee0180a1d693c0a1cc428503a3e2f1b39472f7d1b3e747af\",\n      \"actor_id\": \"deterministic-qa\",\n      \"summary\": \"all 1 project verification check(s) passed; execution=sha256:46b60ce47d6fbb2b83e4ef717ebd05f23173013f816f13d1f9a8929d428c8b53\",\n      \"acceptance_results\": [\n        {\n          \"acceptance_id\": \"result\",\n          \"status\": \"passed\",\n          \"summary\": \"host-attested QA: all 1 project verification check(s) passed; execution=sha256:46b60ce47d6fbb2b83e4ef717ebd05f23173013f816f13d1f9a8929d428c8b53\"\n        }\n      ]\n    }\n  ],\n  \"findings\": [],\n  \"history\": [\n    {\n      \"id\": \"freeze_artifacts:gdr-live-pi-main-integration:2026-10-15T01:07:56.920Z\",\n      \"at\": \"2026-10-15T01:07:56.920Z\",\n      \"type\": \"freeze_artifacts\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"TaskIntent frozen in place at docs/plans/gdr-live-pi-main-integration.intent.json\"\n    },\n    {\n      \"id\": \"record_approval:gdr-live-pi-main-integration:2026-10-15T01:08:03.131Z\",\n      \"at\": \"2026-10-15T01:08:03.131Z\",\n      \"type\": \"record_approval\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"approval-qa-c802ca5e\\naction_v2_sha256:f3b025d7d5466ad8349c7c7c44d4b343e4147167f732f81903f1eda2d46b468d\",\n      \"authority\": {\n        \"authority_kind\": \"qa\",\n        \"actor_id\": \"deterministic-qa\",\n        \"confirmation_ref\": \"pi-confirm-160fb7b59ec9819d\",\n        \"issued_at\": \"2026-10-15T01:08:03.131Z\"\n      }\n    },\n    {\n      \"id\": \"complete:gdr-live-pi-main-integration:2026-10-15T01:08:03.684Z\",\n      \"at\": \"2026-10-15T01:08:03.684Z\",\n      \"type\": \"complete\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"done:frozen\",\n      \"reason\": \"action_v2_sha256:12fbf909f612526f97c9867ebd41438c38e0024e70cbf33dbfa014d0fb131ec9\"\n    }\n  ]\n}\n",
+              "terminal_proof_bytes": "{\n  \"contract\": \"assurance_kernel/task_tombstone/v2\",\n  \"task_id\": \"gdr-live-pi-main-integration\",\n  \"lifecycle_status\": \"terminal\",\n  \"terminal_lifecycle\": \"done\",\n  \"terminal_event_id\": \"complete:gdr-live-pi-main-integration:2026-10-15T01:08:03.684Z\",\n  \"final_record_hash\": \"sha256:2b39cbee8ab85029d11c32d5b0a7ab9a3a560fca44fa7b9c1deba62d5af8a5e4\",\n  \"terminalized_at\": \"2026-10-15T01:08:03.684Z\"\n}\n",
+              "integrated_commit": "df391401f13746b7a0f18764bc0c5662844d114e",
+              "commit_is_ancestor": true,
+              "scope_validated": true
+            }
+          ],
+          "observations": {
+            "completion": {
+              "complete": true,
+              "integrated_task_ids": [
+                "gdr-live-pi-main-a",
+                "gdr-live-pi-main-b",
+                "gdr-live-pi-main-sum",
+                "gdr-live-pi-main-integration"
+              ],
+              "missing_task_ids": [],
+              "final_passed": true,
+              "head": "df391401f13746b7a0f18764bc0c5662844d114e",
+              "reason": null
+            },
+            "qa_failure_observed": true,
+            "review_observed": true,
+            "native_inputs": [
+              {
+                "attention_id": "f54d6ae6-38d8-49f4-9495-916d7fba7684",
+                "task_id": "gdr-live-pi-main",
+                "decision": "y",
+                "input_kind": "scripted-fixture-test-user"
+              }
+            ]
+          },
+          "controller_outcome": "passed"
+        },
+        {
+          "host": "pi",
+          "root": "/Users/derek/workspaces/immune-brain/.goal-driven-run-live/fixtures/gdr-live-pi-isolated-gCYAGw",
+          "scenarios": [
+            "isolated_child_prerequisite"
+          ],
+          "outcome": "passed",
+          "manual_continuations": 0,
+          "response_boundaries": 1,
+          "initial_input_sha256": "sha256:ab7ce8f99d7e656ee22f7acb6ef8b292987b1fed4eabcd58984f1701c2d6d5c9",
+          "source_sha256": {
+            "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts": "sha256:b5e38ba5e45ddb2c7fe362c52eb412e22a6daebbbba8a52e6321c425d454931b",
+            "plugins/immune-brain/.pi-extension/imm-canary-work.ts": "sha256:abc3e994cda381105089d18288d1b841a46acf54df255b901cbaa333d56f648c",
+            "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts": "sha256:92874a39c17f24014b885c869fb0dd37b4ff9da81abcbb53a590038353cdf6c2",
+            "plugins/immune-brain/.pi-extension/pi-run-continuation.ts": "sha256:932cc88ec8166a9d5bd8e9b04c1b1f01771dde64389f171519948738b0bc9961",
+            "plugins/immune-brain/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/dist/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/dist/claude/mcp-server.mjs": "sha256:1a854a0936d45b96d08efa6285f4644c32dfa67556365fc406bd503678238201",
+            "plugins/immune-brain/dist/imm-run-batch.md": "sha256:cf8548b79b27691e9096c5cc2dce2571d87e40b68c17989cf4ba55beac008d4d",
+            "plugins/immune-brain/dist/imm-run.md": "sha256:73132e4696921fd15980366f210fd89530ac70764080427b89268472937d3154",
+            "plugins/immune-brain/dist/role-prompts/executor.md": "sha256:8661621239a6589dd074da5f52e32cf436b7344857f4c866b28b17bdfb8ad48c",
+            "plugins/immune-brain/hooks/hooks.json": "sha256:00cd183ca2d20520a8b9c35054116f0a3bf4e52471de4dccfdafe64e19d14d62",
+            "plugins/immune-brain/runtime/assurance/run_continuation.ts": "sha256:b8ffad8b936fa686107e4be1276c89d278b0b7b9cadcf25e3167403beef3e0b6",
+            "plugins/immune-brain/runtime/claude/interaction.ts": "sha256:5c9e83c7bbdd17f6734abd584be61cb4326e376a0caabe02d9f834a67f7a89e3",
+            "plugins/immune-brain/runtime/claude/kernel_ports.ts": "sha256:be07878e16140e05f01e00bd2dba5929f9d60ad170573a88aee38da638221805",
+            "plugins/immune-brain/runtime/claude/lane_guard.ts": "sha256:a4ae2aef3c1595754994b96da1aaaab368305b6f684c60445f045cc2f996e5eb",
+            "plugins/immune-brain/runtime/claude/mcp_server.ts": "sha256:cc7f879d76a24b6dbef73adff9491df620b298d866717c5219fd2540d1e3664c",
+            "plugins/immune-brain/runtime/claude/run_continuation.ts": "sha256:1654a82d5783125e5c1810dfdb80a8695360093d9dddbfd3083fa1aab62039e9",
+            "plugins/immune-brain/runtime/github_issue_tracker.ts": "sha256:b07ff581d6a7294581182d16fc24c2ee738a0545c0c420482e5a513d0ef38ac7",
+            "plugins/immune-brain/runtime/prompts/executor.md": "sha256:8661621239a6589dd074da5f52e32cf436b7344857f4c866b28b17bdfb8ad48c",
+            "plugins/immune-brain/runtime/unattended/batch_disposition.ts": "sha256:c0050858f5487a0f630a2c9d94fe0735ab1d1472a29083dfa33859eaa0eb06d3",
+            "plugins/immune-brain/runtime/unattended/batch_final_verification.ts": "sha256:b40b3dbb06949f0f7e5ebb6598b1ccff18b67b0a34226240e53f37dd83c7e739",
+            "plugins/immune-brain/runtime/unattended/batch_git.ts": "sha256:3d811aa661a5dc9078eeabfb42fdce80112737ea34d8af00482fc572a0353e38",
+            "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts": "sha256:2f43858e96741eb3aca95e99433e837cd45ada38b8332cd64dafb5890838721c",
+            "plugins/immune-brain/runtime/unattended/batch_lanes.ts": "sha256:8cbf33ee009fc194b04e1b3bde63f0568e384642e780e62e377dc82b4affaa64",
+            "plugins/immune-brain/runtime/unattended/batch_plan.ts": "sha256:ed36a38ec53f1d2580b9ac7fb5ad6106091212e9d9034ea8b0b9545a8a3f296a",
+            "plugins/immune-brain/runtime/unattended/batch_preflight.ts": "sha256:4ec9f3d89847afd17ad486b0b570d4cdc7f8b51c7b82321433d67900279db895",
+            "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts": "sha256:8a7a2a4d9e97172a5ac1ee0f83d6e85d7a7d98c9eb2119b4c0f336de182aaecb",
+            "plugins/immune-brain/runtime/unattended/batch_runner.ts": "sha256:0323b4e0ca3d24900ea57c6a275cd0acbae48295e9adf17b593e18ba98c74d32",
+            "plugins/immune-brain/runtime/unattended/batch_schedule.ts": "sha256:04c4cc57fda27ea1289e4d66b26e07e690f94d493b5364c224bee53e59fd5541",
+            "plugins/immune-brain/runtime/unattended/batch_state.ts": "sha256:a87f9cf4512482ca7e981c99165fb00ab935bbdd31cc199ce55e6f2b0e8064eb",
+            "plugins/immune-brain/runtime/unattended/types.ts": "sha256:447e45ade83e3cfe7139bec56ef157e223c7251d1f268f3e75742b688f3c6018",
+            "plugins/immune-brain/skills/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/skills/imm-run/SKILL.md": "sha256:caa4657e96de275b7e11a3dad98f2f32e2987bd19ff71b451a33eb75eff023b0"
+          },
+          "models": [
+            "openai:gpt-5.6-sol"
+          ],
+          "native_inputs": [],
+          "integrated_head": "5e423487c8c9d2d36a2d63473c49a3a1232bf2f9",
+          "final_verification": null,
+          "tasks": [],
+          "observations": {
+            "no_claim": true,
+            "no_run": true,
+            "no_native_gate": true,
+            "no_sibling_delivery": true,
+            "tracked_source_pristine": true
+          },
+          "controller_outcome": "passed"
+        },
+        {
+          "host": "pi",
+          "root": "/Users/derek/workspaces/immune-brain/.goal-driven-run-live/fixtures/gdr-live-pi-cancel-Mu6GBj",
+          "scenarios": [
+            "explicit_cancellation"
+          ],
+          "outcome": "passed",
+          "manual_continuations": 0,
+          "response_boundaries": 1,
+          "initial_input_sha256": "sha256:6b0ec766049a8650e9970459137aec4683e66b2b502688b7ed3f3773b2b1b747",
+          "source_sha256": {
+            "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts": "sha256:b5e38ba5e45ddb2c7fe362c52eb412e22a6daebbbba8a52e6321c425d454931b",
+            "plugins/immune-brain/.pi-extension/imm-canary-work.ts": "sha256:abc3e994cda381105089d18288d1b841a46acf54df255b901cbaa333d56f648c",
+            "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts": "sha256:92874a39c17f24014b885c869fb0dd37b4ff9da81abcbb53a590038353cdf6c2",
+            "plugins/immune-brain/.pi-extension/pi-run-continuation.ts": "sha256:932cc88ec8166a9d5bd8e9b04c1b1f01771dde64389f171519948738b0bc9961",
+            "plugins/immune-brain/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/dist/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/dist/claude/mcp-server.mjs": "sha256:1a854a0936d45b96d08efa6285f4644c32dfa67556365fc406bd503678238201",
+            "plugins/immune-brain/dist/imm-run-batch.md": "sha256:cf8548b79b27691e9096c5cc2dce2571d87e40b68c17989cf4ba55beac008d4d",
+            "plugins/immune-brain/dist/imm-run.md": "sha256:73132e4696921fd15980366f210fd89530ac70764080427b89268472937d3154",
+            "plugins/immune-brain/dist/role-prompts/executor.md": "sha256:8661621239a6589dd074da5f52e32cf436b7344857f4c866b28b17bdfb8ad48c",
+            "plugins/immune-brain/hooks/hooks.json": "sha256:00cd183ca2d20520a8b9c35054116f0a3bf4e52471de4dccfdafe64e19d14d62",
+            "plugins/immune-brain/runtime/assurance/run_continuation.ts": "sha256:b8ffad8b936fa686107e4be1276c89d278b0b7b9cadcf25e3167403beef3e0b6",
+            "plugins/immune-brain/runtime/claude/interaction.ts": "sha256:5c9e83c7bbdd17f6734abd584be61cb4326e376a0caabe02d9f834a67f7a89e3",
+            "plugins/immune-brain/runtime/claude/kernel_ports.ts": "sha256:be07878e16140e05f01e00bd2dba5929f9d60ad170573a88aee38da638221805",
+            "plugins/immune-brain/runtime/claude/lane_guard.ts": "sha256:a4ae2aef3c1595754994b96da1aaaab368305b6f684c60445f045cc2f996e5eb",
+            "plugins/immune-brain/runtime/claude/mcp_server.ts": "sha256:cc7f879d76a24b6dbef73adff9491df620b298d866717c5219fd2540d1e3664c",
+            "plugins/immune-brain/runtime/claude/run_continuation.ts": "sha256:1654a82d5783125e5c1810dfdb80a8695360093d9dddbfd3083fa1aab62039e9",
+            "plugins/immune-brain/runtime/github_issue_tracker.ts": "sha256:b07ff581d6a7294581182d16fc24c2ee738a0545c0c420482e5a513d0ef38ac7",
+            "plugins/immune-brain/runtime/prompts/executor.md": "sha256:8661621239a6589dd074da5f52e32cf436b7344857f4c866b28b17bdfb8ad48c",
+            "plugins/immune-brain/runtime/unattended/batch_disposition.ts": "sha256:c0050858f5487a0f630a2c9d94fe0735ab1d1472a29083dfa33859eaa0eb06d3",
+            "plugins/immune-brain/runtime/unattended/batch_final_verification.ts": "sha256:b40b3dbb06949f0f7e5ebb6598b1ccff18b67b0a34226240e53f37dd83c7e739",
+            "plugins/immune-brain/runtime/unattended/batch_git.ts": "sha256:3d811aa661a5dc9078eeabfb42fdce80112737ea34d8af00482fc572a0353e38",
+            "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts": "sha256:2f43858e96741eb3aca95e99433e837cd45ada38b8332cd64dafb5890838721c",
+            "plugins/immune-brain/runtime/unattended/batch_lanes.ts": "sha256:8cbf33ee009fc194b04e1b3bde63f0568e384642e780e62e377dc82b4affaa64",
+            "plugins/immune-brain/runtime/unattended/batch_plan.ts": "sha256:ed36a38ec53f1d2580b9ac7fb5ad6106091212e9d9034ea8b0b9545a8a3f296a",
+            "plugins/immune-brain/runtime/unattended/batch_preflight.ts": "sha256:4ec9f3d89847afd17ad486b0b570d4cdc7f8b51c7b82321433d67900279db895",
+            "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts": "sha256:8a7a2a4d9e97172a5ac1ee0f83d6e85d7a7d98c9eb2119b4c0f336de182aaecb",
+            "plugins/immune-brain/runtime/unattended/batch_runner.ts": "sha256:0323b4e0ca3d24900ea57c6a275cd0acbae48295e9adf17b593e18ba98c74d32",
+            "plugins/immune-brain/runtime/unattended/batch_schedule.ts": "sha256:04c4cc57fda27ea1289e4d66b26e07e690f94d493b5364c224bee53e59fd5541",
+            "plugins/immune-brain/runtime/unattended/batch_state.ts": "sha256:a87f9cf4512482ca7e981c99165fb00ab935bbdd31cc199ce55e6f2b0e8064eb",
+            "plugins/immune-brain/runtime/unattended/types.ts": "sha256:447e45ade83e3cfe7139bec56ef157e223c7251d1f268f3e75742b688f3c6018",
+            "plugins/immune-brain/skills/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/skills/imm-run/SKILL.md": "sha256:caa4657e96de275b7e11a3dad98f2f32e2987bd19ff71b451a33eb75eff023b0"
+          },
+          "models": [
+            "openai:gpt-5.6-sol"
+          ],
+          "native_inputs": [
+            {
+              "attention_id": "87297262-7c80-45ae-8e7a-f375668cce9b",
+              "task_id": "gdr-live-pi-cancel",
+              "decision": "y",
+              "input_kind": "scripted-fixture-test-user"
+            },
+            {
+              "attention_id": "0c1893a8-a1a5-4458-a864-d56ec543127c",
+              "task_id": "gdr-live-pi-cancel-a",
+              "decision": "n",
+              "input_kind": "scripted-fixture-test-user"
+            }
+          ],
+          "integrated_head": "f181fc9509a7690540ac3da6d8a8543834996cb6",
+          "final_verification": null,
+          "tasks": [],
+          "observations": {
+            "cancel_input": {
+              "text": "停止本次运行",
+              "input_kind": "scripted-fixture-test-user"
+            },
+            "claim_preserved": true,
+            "claim_task_id": "gdr-live-pi-cancel-a",
+            "other_source_pristine": true,
+            "partial_active_scope_paths": [],
+            "kernel_completion_ready": false
+          },
+          "controller_outcome": "passed"
+        }
+      ],
+      "declared_gaps": [
+        {
+          "scenario": "status_preserves_binding",
+          "driver_case": "status",
+          "reason": "No valid terminal live capture after 2 attempts (model_error x2); not product evidence of success.",
+          "attempts": [
+            {
+              "capture": "gdr-live-pi-status-boSm5F",
+              "outcome": "failed",
+              "failure_kind": "model_error",
+              "failure_message": "terminated"
+            },
+            {
+              "capture": "gdr-live-pi-status-j1Ztyu",
+              "outcome": "failed",
+              "failure_kind": "model_error",
+              "failure_message": "terminated"
+            }
+          ],
+          "accepted_by": "user-approved-intent-revision-5"
+        },
+        {
+          "scenario": "critical_and_descendant",
+          "driver_case": "critical",
+          "reason": "No valid terminal live capture after 5 attempts (model_error x4, agent_ended_before_goal x1); not product evidence of success.",
+          "attempts": [
+            {
+              "capture": "gdr-live-pi-critical-UvUjQb",
+              "outcome": "failed",
+              "failure_kind": "model_error",
+              "failure_message": "terminated"
+            },
+            {
+              "capture": "gdr-live-pi-critical-0XnH8t",
+              "outcome": "failed",
+              "failure_kind": "model_error",
+              "failure_message": "terminated"
+            },
+            {
+              "capture": "gdr-live-pi-critical-0vWju2",
+              "outcome": "failed",
+              "failure_kind": "model_error",
+              "failure_message": "OpenAI API error (503): {\"message\":\"The ChatGPT user is temporarily unavailable. Please try again later.\",\"type\":\"servic"
+            },
+            {
+              "capture": "gdr-live-pi-critical-f9WuyA",
+              "outcome": "incomplete",
+              "failure_kind": "agent_ended_before_goal",
+              "failure_message": null
+            },
+            {
+              "capture": "gdr-live-pi-critical-8fFw9h",
+              "outcome": "failed",
+              "failure_kind": "model_error",
+              "failure_message": "terminated"
+            }
+          ],
+          "accepted_by": "user-approved-intent-revision-5"
+        },
+        {
+          "scenario": "final_failure_and_repair",
+          "driver_case": "repair",
+          "reason": "No valid terminal live capture after 2 attempts (model_error x2); not product evidence of success.",
+          "attempts": [
+            {
+              "capture": "gdr-live-pi-repair-RduedT",
+              "outcome": "failed",
+              "failure_kind": "model_error",
+              "failure_message": "Connection error."
+            },
+            {
+              "capture": "gdr-live-pi-repair-fpqCBO",
+              "outcome": "failed",
+              "failure_kind": "model_error",
+              "failure_message": "terminated"
+            }
+          ],
+          "accepted_by": "user-approved-intent-revision-5"
+        }
+      ]
+    },
+    {
+      "host": "claude-code",
+      "version": "2.1.300 (Claude Code)",
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "cases": [
+        {
+          "host": "claude-code",
+          "root": "/Users/derek/workspaces/immune-brain/.goal-driven-run-live/fixtures/gdr-live-claude-main-jWlDgo",
+          "scenarios": [
+            "parent_dependencies_and_independent_branch",
+            "ordinary_failure_and_review",
+            "successor_handoff",
+            "integration_and_final",
+            "serial_fallback"
+          ],
+          "outcome": "passed",
+          "manual_continuations": 0,
+          "response_boundaries": 1,
+          "initial_input_sha256": "sha256:9766f4609a98d458dab4ed4767d6c67b16d56d94a1d524c33bf3bc0c8fa52da1",
+          "source_sha256": {
+            "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts": "sha256:b5e38ba5e45ddb2c7fe362c52eb412e22a6daebbbba8a52e6321c425d454931b",
+            "plugins/immune-brain/.pi-extension/imm-canary-work.ts": "sha256:abc3e994cda381105089d18288d1b841a46acf54df255b901cbaa333d56f648c",
+            "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts": "sha256:92874a39c17f24014b885c869fb0dd37b4ff9da81abcbb53a590038353cdf6c2",
+            "plugins/immune-brain/.pi-extension/pi-run-continuation.ts": "sha256:932cc88ec8166a9d5bd8e9b04c1b1f01771dde64389f171519948738b0bc9961",
+            "plugins/immune-brain/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/dist/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/dist/claude/mcp-server.mjs": "sha256:1a854a0936d45b96d08efa6285f4644c32dfa67556365fc406bd503678238201",
+            "plugins/immune-brain/dist/imm-run-batch.md": "sha256:cf8548b79b27691e9096c5cc2dce2571d87e40b68c17989cf4ba55beac008d4d",
+            "plugins/immune-brain/dist/imm-run.md": "sha256:73132e4696921fd15980366f210fd89530ac70764080427b89268472937d3154",
+            "plugins/immune-brain/dist/role-prompts/executor.md": "sha256:8661621239a6589dd074da5f52e32cf436b7344857f4c866b28b17bdfb8ad48c",
+            "plugins/immune-brain/hooks/hooks.json": "sha256:00cd183ca2d20520a8b9c35054116f0a3bf4e52471de4dccfdafe64e19d14d62",
+            "plugins/immune-brain/runtime/assurance/run_continuation.ts": "sha256:b8ffad8b936fa686107e4be1276c89d278b0b7b9cadcf25e3167403beef3e0b6",
+            "plugins/immune-brain/runtime/claude/interaction.ts": "sha256:5c9e83c7bbdd17f6734abd584be61cb4326e376a0caabe02d9f834a67f7a89e3",
+            "plugins/immune-brain/runtime/claude/kernel_ports.ts": "sha256:be07878e16140e05f01e00bd2dba5929f9d60ad170573a88aee38da638221805",
+            "plugins/immune-brain/runtime/claude/lane_guard.ts": "sha256:a4ae2aef3c1595754994b96da1aaaab368305b6f684c60445f045cc2f996e5eb",
+            "plugins/immune-brain/runtime/claude/mcp_server.ts": "sha256:cc7f879d76a24b6dbef73adff9491df620b298d866717c5219fd2540d1e3664c",
+            "plugins/immune-brain/runtime/claude/run_continuation.ts": "sha256:1654a82d5783125e5c1810dfdb80a8695360093d9dddbfd3083fa1aab62039e9",
+            "plugins/immune-brain/runtime/github_issue_tracker.ts": "sha256:b07ff581d6a7294581182d16fc24c2ee738a0545c0c420482e5a513d0ef38ac7",
+            "plugins/immune-brain/runtime/prompts/executor.md": "sha256:8661621239a6589dd074da5f52e32cf436b7344857f4c866b28b17bdfb8ad48c",
+            "plugins/immune-brain/runtime/unattended/batch_disposition.ts": "sha256:c0050858f5487a0f630a2c9d94fe0735ab1d1472a29083dfa33859eaa0eb06d3",
+            "plugins/immune-brain/runtime/unattended/batch_final_verification.ts": "sha256:b40b3dbb06949f0f7e5ebb6598b1ccff18b67b0a34226240e53f37dd83c7e739",
+            "plugins/immune-brain/runtime/unattended/batch_git.ts": "sha256:3d811aa661a5dc9078eeabfb42fdce80112737ea34d8af00482fc572a0353e38",
+            "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts": "sha256:2f43858e96741eb3aca95e99433e837cd45ada38b8332cd64dafb5890838721c",
+            "plugins/immune-brain/runtime/unattended/batch_lanes.ts": "sha256:8cbf33ee009fc194b04e1b3bde63f0568e384642e780e62e377dc82b4affaa64",
+            "plugins/immune-brain/runtime/unattended/batch_plan.ts": "sha256:ed36a38ec53f1d2580b9ac7fb5ad6106091212e9d9034ea8b0b9545a8a3f296a",
+            "plugins/immune-brain/runtime/unattended/batch_preflight.ts": "sha256:4ec9f3d89847afd17ad486b0b570d4cdc7f8b51c7b82321433d67900279db895",
+            "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts": "sha256:8a7a2a4d9e97172a5ac1ee0f83d6e85d7a7d98c9eb2119b4c0f336de182aaecb",
+            "plugins/immune-brain/runtime/unattended/batch_runner.ts": "sha256:0323b4e0ca3d24900ea57c6a275cd0acbae48295e9adf17b593e18ba98c74d32",
+            "plugins/immune-brain/runtime/unattended/batch_schedule.ts": "sha256:04c4cc57fda27ea1289e4d66b26e07e690f94d493b5364c224bee53e59fd5541",
+            "plugins/immune-brain/runtime/unattended/batch_state.ts": "sha256:a87f9cf4512482ca7e981c99165fb00ab935bbdd31cc199ce55e6f2b0e8064eb",
+            "plugins/immune-brain/runtime/unattended/types.ts": "sha256:447e45ade83e3cfe7139bec56ef157e223c7251d1f268f3e75742b688f3c6018",
+            "plugins/immune-brain/skills/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/skills/imm-run/SKILL.md": "sha256:caa4657e96de275b7e11a3dad98f2f32e2987bd19ff71b451a33eb75eff023b0"
+          },
+          "models": [
+            "claude-sonnet-5-5"
+          ],
+          "native_inputs": [
+            {
+              "request_id": "0b5bd74f-ec1b-4992-8acb-ae6012d7947a",
+              "message": "Authorize this unattended batch run for gdr-live-claude-main?\n\nOperation: start_unattended_batch\nInitiative: gdr-live-claude-main\nBatch branch: imm/gdr-live-claude-main\nPlan digest: sha256:dce136ed790da75f0cb86a43766dae7428039edc37c967599b5bbb1414bfef9d\nOrdered children (4):\n  - gdr-live-claude-main-a (S1) [risk: routine]\n  - gdr-live-claude-main-b (S2) [risk: routine]\n  - gdr-live-claude-main-sum (S3) [risk: material]\n  - gdr-live-claude-main-integration (S4) [risk: routine]\nBudget: max_children=4, qa_failure_limit=2\nFinal verification: bun .fixture/final.ts",
+              "decision": "accept",
+              "input_kind": "scripted-fixture-test-user"
+            }
+          ],
+          "integrated_head": "cdb676d8927c54cbf7d9d63bd0f0ba728de7b3bc",
+          "final_verification": {
+            "passed": true,
+            "head": "cdb676d8927c54cbf7d9d63bd0f0ba728de7b3bc",
+            "results": [
+              {
+                "command": "bun .fixture/final.ts",
+                "exit_code": 0,
+                "signal": null,
+                "passed": true,
+                "duration_ms": 7
+              }
+            ]
+          },
+          "tasks": [
+            {
+              "task_id": "gdr-live-claude-main-sum",
+              "run_id": "run-c108e27f-80ab-434d-be3f-e29b12860f52",
+              "record_bytes": "{\n  \"contract\": \"assurance_kernel/task_record/v4\",\n  \"task_id\": \"gdr-live-claude-main-sum\",\n  \"intent_snapshot\": {\n    \"contract\": \"assurance_kernel/task_intent/v1\",\n    \"task_id\": \"gdr-live-claude-main-sum\",\n    \"goal\": \"Write src/sum.txt as exactly three followed by a newline\",\n    \"acceptance\": [\n      {\n        \"id\": \"result\",\n        \"assertion\": \"The sum output and its integrated prerequisites are correct\",\n        \"verification\": \"{\\n  \\\"contract\\\": \\\"assurance_kernel/verification_descriptor/v2\\\",\\n  \\\"command\\\": {\\n    \\\"executable\\\": \\\"bun\\\",\\n    \\\"argv\\\": [\\n      \\\".fixture/verify.ts\\\",\\n      \\\"sum\\\",\\n      \\\"three\\\"\\n    ],\\n    \\\"cwd\\\": \\\".\\\",\\n    \\\"timeout_ms\\\": 10000,\\n    \\\"max_output_bytes\\\": 8192\\n  },\\n  \\\"environment\\\": {\\n    \\\"writable_paths\\\": [\\n      \\\".fixture-state\\\"\\n    ]\\n  }\\n}\\n\"\n      }\n    ],\n    \"scope_hint\": [\n      \"docs/plans/gdr-live-claude-main-sum.intent.json\",\n      \"src/sum.txt\"\n    ],\n    \"risk\": \"material\",\n    \"revision\": 1,\n    \"owner\": \"user\"\n  },\n  \"intent_ref\": {\n    \"path\": \"docs/plans/gdr-live-claude-main-sum.intent.json\",\n    \"content_hash\": \"sha256:d5489f66892eed3632d2b26287995c3c9cf5e685567da2d5eeb7c48df3b5769e\"\n  },\n  \"lifecycle\": \"done\",\n  \"artifact_state\": \"frozen\",\n  \"baseline\": \"sha256:d5489f66892eed3632d2b26287995c3c9cf5e685567da2d5eeb7c48df3b5769e\",\n  \"git_base_head\": \"53fc1e81583b9055a05edd6bf41c21d4292c5ace\",\n  \"attestations\": [\n    {\n      \"id\": \"approval-qa-1c03bfdc\",\n      \"kind\": \"qa\",\n      \"authority_role\": \"qa\",\n      \"task_revision\": 1,\n      \"intent_content_hash\": \"sha256:d5489f66892eed3632d2b26287995c3c9cf5e685567da2d5eeb7c48df3b5769e\",\n      \"diff_hash\": \"sha256:947c7c5d6823de8d087b958e92c0397a0b7c95419f997cc0aa4fb26f4089e43e\",\n      \"actor_id\": \"deterministic-qa\",\n      \"summary\": \"all 1 project verification check(s) passed; execution=sha256:6e9951eebacb8bc6fd150a8435a25b1d1fa059a491ad3d13b655d2e9bfc1e965\",\n      \"acceptance_results\": [\n        {\n          \"acceptance_id\": \"result\",\n          \"status\": \"passed\",\n          \"summary\": \"host-attested QA: all 1 project verification check(s) passed; execution=sha256:6e9951eebacb8bc6fd150a8435a25b1d1fa059a491ad3d13b655d2e9bfc1e965\"\n        }\n      ]\n    },\n    {\n      \"id\": \"approval-review-84be9045\",\n      \"kind\": \"review\",\n      \"authority_role\": \"reviewer\",\n      \"task_revision\": 1,\n      \"intent_content_hash\": \"sha256:d5489f66892eed3632d2b26287995c3c9cf5e685567da2d5eeb7c48df3b5769e\",\n      \"diff_hash\": \"sha256:947c7c5d6823de8d087b958e92c0397a0b7c95419f997cc0aa4fb26f4089e43e\",\n      \"actor_id\": \"parent-mediated-review\",\n      \"summary\": \"src/sum.txt changed from pending to three, which is the sum of one (src/a.txt) and two (src/b.txt); provenance verified and QA passed.\",\n      \"acceptance_results\": [],\n      \"review_revision\": {\n        \"contract\": \"assurance_kernel/review_revision_identity/v1\",\n        \"base_head\": \"53fc1e81583b9055a05edd6bf41c21d4292c5ace\",\n        \"review_commit\": \"f866211202b001de808d540b0ad20f70b92b03d5\",\n        \"review_tree\": \"ccf81a5b34778200383a83e952feeb1da2c39ac7\",\n        \"manifest_digest\": \"sha256:1d930ebc07646a7158aa9e61d3efacf034dd7e980616d1673838b9926a3c9457\"\n      },\n      \"reviewer_verdict_sha256\": \"sha256:b2903041991e48fcdc7b8e806060d1d410fee5ae73bfbf4959dd27e549c5c0ad\"\n    }\n  ],\n  \"findings\": [\n    {\n      \"id\": \"qa-result-3e7bb941-a3e4ad\",\n      \"kind\": \"blocking\",\n      \"status\": \"resolved\",\n      \"acceptance_id\": \"result\",\n      \"source\": \"execution\",\n      \"review_round\": null,\n      \"summary\": \"verification failed (exit 3) stdout=0B stderr=47B\",\n      \"anchor\": null,\n      \"evidence\": null,\n      \"counterevidence\": null\n    }\n  ],\n  \"history\": [\n    {\n      \"id\": \"freeze_artifacts:gdr-live-claude-main-sum:2026-10-15T00:56:46.628Z\",\n      \"at\": \"2026-10-15T00:56:46.628Z\",\n      \"type\": \"freeze_artifacts\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"TaskIntent frozen in place at docs/plans/gdr-live-claude-main-sum.intent.json\"\n    },\n    {\n      \"id\": \"request_rework:gdr-live-claude-main-sum:2026-10-15T00:56:47.961Z\",\n      \"at\": \"2026-10-15T00:56:47.961Z\",\n      \"type\": \"request_rework\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:active\",\n      \"reason\": \"review_round_1\\naction_v2_sha256:4a90b3959128c71820d19009632892702d5ca85bb1401589f0447e9bb961b68a\",\n      \"authority\": {\n        \"authority_kind\": \"qa\",\n        \"actor_id\": \"deterministic-qa\",\n        \"confirmation_ref\": \"claude:deterministic-qa\",\n        \"issued_at\": \"2026-10-15T00:56:47.962Z\"\n      }\n    },\n    {\n      \"id\": \"resolve_finding:gdr-live-claude-main-sum:2026-10-15T00:56:56.540Z\",\n      \"at\": \"2026-10-15T00:56:56.540Z\",\n      \"type\": \"resolve_finding\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:active\",\n      \"reason\": \"qa-result-3e7bb941-a3e4ad\\naction_v2_sha256:fc83a408b82d832c619ef53f0eeadb766fb22df0ab602c4138d1e8e5fe773166\"\n    },\n    {\n      \"id\": \"freeze_artifacts:gdr-live-claude-main-sum:2026-10-15T00:56:58.324Z\",\n      \"at\": \"2026-10-15T00:56:58.324Z\",\n      \"type\": \"freeze_artifacts\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"TaskIntent frozen in place at docs/plans/gdr-live-claude-main-sum.intent.json\"\n    },\n    {\n      \"id\": \"record_approval:gdr-live-claude-main-sum:2026-10-15T00:56:59.558Z\",\n      \"at\": \"2026-10-15T00:56:59.558Z\",\n      \"type\": \"record_approval\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"approval-qa-1c03bfdc\\naction_v2_sha256:a6fe10dc6cd5451e87ad5a23152f95096ffa756e501b2167414ef7342d29e357\",\n      \"authority\": {\n        \"authority_kind\": \"qa\",\n        \"actor_id\": \"deterministic-qa\",\n        \"confirmation_ref\": \"claude:deterministic-qa\",\n        \"issued_at\": \"2026-10-15T00:56:59.558Z\"\n      }\n    },\n    {\n      \"id\": \"record_approval:gdr-live-claude-main-sum:2026-10-15T00:57:26.893Z\",\n      \"at\": \"2026-10-15T00:57:26.893Z\",\n      \"type\": \"record_approval\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"approval-review-84be9045\\naction_v2_sha256:c7ceb77756ae11ad4c46ec136cf3cef9f506d7da2e0d786a06bd37caf0e7c442\",\n      \"authority\": {\n        \"authority_kind\": \"review\",\n        \"actor_id\": \"parent-mediated-review\",\n        \"confirmation_ref\": \"claude:parent-mediated-review\",\n        \"issued_at\": \"2026-10-15T00:57:26.893Z\"\n      }\n    },\n    {\n      \"id\": \"complete:gdr-live-claude-main-sum:2026-10-15T00:57:27.475Z\",\n      \"at\": \"2026-10-15T00:57:27.475Z\",\n      \"type\": \"complete\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"done:frozen\",\n      \"reason\": \"action_v2_sha256:7a027df4cb10dfd0c208154cc25288fe3ccedaaee006d44273fb480fbf97a031\"\n    }\n  ]\n}\n",
+              "terminal_proof_bytes": "{\n  \"contract\": \"assurance_kernel/task_tombstone/v2\",\n  \"task_id\": \"gdr-live-claude-main-sum\",\n  \"lifecycle_status\": \"terminal\",\n  \"terminal_lifecycle\": \"done\",\n  \"terminal_event_id\": \"complete:gdr-live-claude-main-sum:2026-10-15T00:57:27.475Z\",\n  \"final_record_hash\": \"sha256:874675fbe36d580e42c652f55c155b3f2a09a9bbbdcb2abc01a9d72eab910757\",\n  \"terminalized_at\": \"2026-10-15T00:57:27.475Z\"\n}\n",
+              "integrated_commit": "c25f087624c2a8f48894014e81cd10e0b8b7a2c2",
+              "commit_is_ancestor": true,
+              "scope_validated": true
+            },
+            {
+              "task_id": "gdr-live-claude-main-a",
+              "run_id": "run-0c4546c4-c80c-42e7-a687-10738467135a",
+              "record_bytes": "{\n  \"contract\": \"assurance_kernel/task_record/v4\",\n  \"task_id\": \"gdr-live-claude-main-a\",\n  \"intent_snapshot\": {\n    \"contract\": \"assurance_kernel/task_intent/v1\",\n    \"task_id\": \"gdr-live-claude-main-a\",\n    \"goal\": \"Write src/a.txt as exactly one followed by a newline\",\n    \"acceptance\": [\n      {\n        \"id\": \"result\",\n        \"assertion\": \"The a output and its integrated prerequisites are correct\",\n        \"verification\": \"{\\n  \\\"contract\\\": \\\"assurance_kernel/verification_descriptor/v2\\\",\\n  \\\"command\\\": {\\n    \\\"executable\\\": \\\"bun\\\",\\n    \\\"argv\\\": [\\n      \\\".fixture/verify.ts\\\",\\n      \\\"a\\\",\\n      \\\"one\\\"\\n    ],\\n    \\\"cwd\\\": \\\".\\\",\\n    \\\"timeout_ms\\\": 10000,\\n    \\\"max_output_bytes\\\": 8192\\n  },\\n  \\\"environment\\\": {\\n    \\\"writable_paths\\\": []\\n  }\\n}\\n\"\n      }\n    ],\n    \"scope_hint\": [\n      \"docs/plans/gdr-live-claude-main-a.intent.json\",\n      \"src/a.txt\"\n    ],\n    \"risk\": \"routine\",\n    \"revision\": 1,\n    \"owner\": \"user\"\n  },\n  \"intent_ref\": {\n    \"path\": \"docs/plans/gdr-live-claude-main-a.intent.json\",\n    \"content_hash\": \"sha256:41e42ceead146b47bf12f546b59f74fd66ce2cfe2d9e59645d4d72335345124a\"\n  },\n  \"lifecycle\": \"done\",\n  \"artifact_state\": \"frozen\",\n  \"baseline\": \"sha256:41e42ceead146b47bf12f546b59f74fd66ce2cfe2d9e59645d4d72335345124a\",\n  \"git_base_head\": \"15b8b04e91fa89e537fd0bb530f7415a849033d2\",\n  \"attestations\": [\n    {\n      \"id\": \"approval-qa-af984521\",\n      \"kind\": \"qa\",\n      \"authority_role\": \"qa\",\n      \"task_revision\": 1,\n      \"intent_content_hash\": \"sha256:41e42ceead146b47bf12f546b59f74fd66ce2cfe2d9e59645d4d72335345124a\",\n      \"diff_hash\": \"sha256:ee85bc5b5d5f0b0dbdf9302cbae806ef87293ef6152fb114c5e8c93e35215997\",\n      \"actor_id\": \"deterministic-qa\",\n      \"summary\": \"all 1 project verification check(s) passed; execution=sha256:5d93ba33cb3967aaa9170c4122ef8ed9123bc0dae70b80574a839a8f24988a69\",\n      \"acceptance_results\": [\n        {\n          \"acceptance_id\": \"result\",\n          \"status\": \"passed\",\n          \"summary\": \"host-attested QA: all 1 project verification check(s) passed; execution=sha256:5d93ba33cb3967aaa9170c4122ef8ed9123bc0dae70b80574a839a8f24988a69\"\n        }\n      ]\n    }\n  ],\n  \"findings\": [\n    {\n      \"id\": \"qa-result-f48b50a0-f251aa\",\n      \"kind\": \"blocking\",\n      \"status\": \"resolved\",\n      \"acceptance_id\": \"result\",\n      \"source\": \"execution\",\n      \"review_round\": null,\n      \"summary\": \"verification failed (exit 1) stdout=0B stderr=759B\",\n      \"anchor\": null,\n      \"evidence\": null,\n      \"counterevidence\": null\n    }\n  ],\n  \"history\": [\n    {\n      \"id\": \"freeze_artifacts:gdr-live-claude-main-a:2026-10-15T00:56:17.960Z\",\n      \"at\": \"2026-10-15T00:56:17.960Z\",\n      \"type\": \"freeze_artifacts\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"TaskIntent frozen in place at docs/plans/gdr-live-claude-main-a.intent.json\"\n    },\n    {\n      \"id\": \"request_rework:gdr-live-claude-main-a:2026-10-15T00:56:18.910Z\",\n      \"at\": \"2026-10-15T00:56:18.910Z\",\n      \"type\": \"request_rework\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:active\",\n      \"reason\": \"review_round_1\\naction_v2_sha256:7c57ebd5631b545d1e2468c2a826c81ad5dedcf872d440028511377565ac6d77\",\n      \"authority\": {\n        \"authority_kind\": \"qa\",\n        \"actor_id\": \"deterministic-qa\",\n        \"confirmation_ref\": \"claude:deterministic-qa\",\n        \"issued_at\": \"2026-10-15T00:56:18.910Z\"\n      }\n    },\n    {\n      \"id\": \"resolve_finding:gdr-live-claude-main-a:2026-10-15T00:56:27.275Z\",\n      \"at\": \"2026-10-15T00:56:27.275Z\",\n      \"type\": \"resolve_finding\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:active\",\n      \"reason\": \"qa-result-f48b50a0-f251aa\\naction_v2_sha256:91414e4d0aed7e17bc8fae2d1f2f5df73d23ad217200a50235d4551a1cc70b7a\"\n    },\n    {\n      \"id\": \"freeze_artifacts:gdr-live-claude-main-a:2026-10-15T00:56:29.094Z\",\n      \"at\": \"2026-10-15T00:56:29.094Z\",\n      \"type\": \"freeze_artifacts\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"TaskIntent frozen in place at docs/plans/gdr-live-claude-main-a.intent.json\"\n    },\n    {\n      \"id\": \"record_approval:gdr-live-claude-main-a:2026-10-15T00:56:30.106Z\",\n      \"at\": \"2026-10-15T00:56:30.106Z\",\n      \"type\": \"record_approval\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"approval-qa-af984521\\naction_v2_sha256:31201da92b794c63e51ec1d46f17c460639aedf59c6e087f00c66f9c9ff9c0f4\",\n      \"authority\": {\n        \"authority_kind\": \"qa\",\n        \"actor_id\": \"deterministic-qa\",\n        \"confirmation_ref\": \"claude:deterministic-qa\",\n        \"issued_at\": \"2026-10-15T00:56:30.106Z\"\n      }\n    },\n    {\n      \"id\": \"complete:gdr-live-claude-main-a:2026-10-15T00:56:30.724Z\",\n      \"at\": \"2026-10-15T00:56:30.724Z\",\n      \"type\": \"complete\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"done:frozen\",\n      \"reason\": \"action_v2_sha256:a86e672696272e84fbb20a0f2ff372af03109a97f3cbb88c33e2a229a63b4a3f\"\n    }\n  ]\n}\n",
+              "terminal_proof_bytes": "{\n  \"contract\": \"assurance_kernel/task_tombstone/v2\",\n  \"task_id\": \"gdr-live-claude-main-a\",\n  \"lifecycle_status\": \"terminal\",\n  \"terminal_lifecycle\": \"done\",\n  \"terminal_event_id\": \"complete:gdr-live-claude-main-a:2026-10-15T00:56:30.724Z\",\n  \"final_record_hash\": \"sha256:9c06788b5d6d423d1c699cfd43a66ba1f098a4ec0ef610bfaa7d3b8fe531b963\",\n  \"terminalized_at\": \"2026-10-15T00:56:30.724Z\"\n}\n",
+              "integrated_commit": "ce8f80ee6874b04a11c05a22528fbfea1316ec5e",
+              "commit_is_ancestor": true,
+              "scope_validated": true
+            },
+            {
+              "task_id": "gdr-live-claude-main-integration",
+              "run_id": "run-a656e3bd-a8d8-44bc-9f73-e2261f72a0bc",
+              "record_bytes": "{\n  \"contract\": \"assurance_kernel/task_record/v4\",\n  \"task_id\": \"gdr-live-claude-main-integration\",\n  \"intent_snapshot\": {\n    \"contract\": \"assurance_kernel/task_intent/v1\",\n    \"task_id\": \"gdr-live-claude-main-integration\",\n    \"goal\": \"Write src/integration.txt as exactly passed followed by a newline\",\n    \"acceptance\": [\n      {\n        \"id\": \"result\",\n        \"assertion\": \"The integration output and its integrated prerequisites are correct\",\n        \"verification\": \"{\\n  \\\"contract\\\": \\\"assurance_kernel/verification_descriptor/v2\\\",\\n  \\\"command\\\": {\\n    \\\"executable\\\": \\\"bun\\\",\\n    \\\"argv\\\": [\\n      \\\".fixture/verify.ts\\\",\\n      \\\"integration\\\",\\n      \\\"passed\\\"\\n    ],\\n    \\\"cwd\\\": \\\".\\\",\\n    \\\"timeout_ms\\\": 10000,\\n    \\\"max_output_bytes\\\": 8192\\n  },\\n  \\\"environment\\\": {\\n    \\\"writable_paths\\\": []\\n  }\\n}\\n\"\n      }\n    ],\n    \"scope_hint\": [\n      \"docs/plans/gdr-live-claude-main-integration.intent.json\",\n      \"src\"\n    ],\n    \"risk\": \"routine\",\n    \"revision\": 1,\n    \"owner\": \"user\"\n  },\n  \"intent_ref\": {\n    \"path\": \"docs/plans/gdr-live-claude-main-integration.intent.json\",\n    \"content_hash\": \"sha256:f03afe60cc6d30a3ae24755f474ff46675c3919e0015150e005c6249c3fc5ff9\"\n  },\n  \"lifecycle\": \"done\",\n  \"artifact_state\": \"frozen\",\n  \"baseline\": \"sha256:f03afe60cc6d30a3ae24755f474ff46675c3919e0015150e005c6249c3fc5ff9\",\n  \"git_base_head\": \"c25f087624c2a8f48894014e81cd10e0b8b7a2c2\",\n  \"attestations\": [\n    {\n      \"id\": \"approval-qa-3a711aae\",\n      \"kind\": \"qa\",\n      \"authority_role\": \"qa\",\n      \"task_revision\": 1,\n      \"intent_content_hash\": \"sha256:f03afe60cc6d30a3ae24755f474ff46675c3919e0015150e005c6249c3fc5ff9\",\n      \"diff_hash\": \"sha256:99e3a20cc6bb201a02247a21cefca866b18eb30c49f07644343bb94ae2a297fb\",\n      \"actor_id\": \"deterministic-qa\",\n      \"summary\": \"all 1 project verification check(s) passed; execution=sha256:2186a2bf3abc1c2adf256dbb835c651a378bf390c15d9050fd599f82899069dd\",\n      \"acceptance_results\": [\n        {\n          \"acceptance_id\": \"result\",\n          \"status\": \"passed\",\n          \"summary\": \"host-attested QA: all 1 project verification check(s) passed; execution=sha256:2186a2bf3abc1c2adf256dbb835c651a378bf390c15d9050fd599f82899069dd\"\n        }\n      ]\n    }\n  ],\n  \"findings\": [],\n  \"history\": [\n    {\n      \"id\": \"freeze_artifacts:gdr-live-claude-main-integration:2026-10-15T00:57:34.225Z\",\n      \"at\": \"2026-10-15T00:57:34.225Z\",\n      \"type\": \"freeze_artifacts\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"TaskIntent frozen in place at docs/plans/gdr-live-claude-main-integration.intent.json\"\n    },\n    {\n      \"id\": \"record_approval:gdr-live-claude-main-integration:2026-10-15T00:57:35.268Z\",\n      \"at\": \"2026-10-15T00:57:35.268Z\",\n      \"type\": \"record_approval\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"approval-qa-3a711aae\\naction_v2_sha256:7e423c61a807254ca54ca2e6014d3ef632d23663de15b94a60e5ed1d4efd8b8a\",\n      \"authority\": {\n        \"authority_kind\": \"qa\",\n        \"actor_id\": \"deterministic-qa\",\n        \"confirmation_ref\": \"claude:deterministic-qa\",\n        \"issued_at\": \"2026-10-15T00:57:35.268Z\"\n      }\n    },\n    {\n      \"id\": \"complete:gdr-live-claude-main-integration:2026-10-15T00:57:35.875Z\",\n      \"at\": \"2026-10-15T00:57:35.875Z\",\n      \"type\": \"complete\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"done:frozen\",\n      \"reason\": \"action_v2_sha256:4ff3457301ef9991ec9c2826a7e99a179b9a804b330b4bf4de8dfe502397e8c8\"\n    }\n  ]\n}\n",
+              "terminal_proof_bytes": "{\n  \"contract\": \"assurance_kernel/task_tombstone/v2\",\n  \"task_id\": \"gdr-live-claude-main-integration\",\n  \"lifecycle_status\": \"terminal\",\n  \"terminal_lifecycle\": \"done\",\n  \"terminal_event_id\": \"complete:gdr-live-claude-main-integration:2026-10-15T00:57:35.875Z\",\n  \"final_record_hash\": \"sha256:e80d439290166dae2daaac7fa8eef290387543db972c865ab38184b890e50c37\",\n  \"terminalized_at\": \"2026-10-15T00:57:35.875Z\"\n}\n",
+              "integrated_commit": "cdb676d8927c54cbf7d9d63bd0f0ba728de7b3bc",
+              "commit_is_ancestor": true,
+              "scope_validated": true
+            },
+            {
+              "task_id": "gdr-live-claude-main-b",
+              "run_id": "run-7ed5cda8-f686-4962-acdc-8feca8ee29f3",
+              "record_bytes": "{\n  \"contract\": \"assurance_kernel/task_record/v4\",\n  \"task_id\": \"gdr-live-claude-main-b\",\n  \"intent_snapshot\": {\n    \"contract\": \"assurance_kernel/task_intent/v1\",\n    \"task_id\": \"gdr-live-claude-main-b\",\n    \"goal\": \"Write src/b.txt as exactly two followed by a newline\",\n    \"acceptance\": [\n      {\n        \"id\": \"result\",\n        \"assertion\": \"The b output and its integrated prerequisites are correct\",\n        \"verification\": \"{\\n  \\\"contract\\\": \\\"assurance_kernel/verification_descriptor/v2\\\",\\n  \\\"command\\\": {\\n    \\\"executable\\\": \\\"bun\\\",\\n    \\\"argv\\\": [\\n      \\\".fixture/verify.ts\\\",\\n      \\\"b\\\",\\n      \\\"two\\\"\\n    ],\\n    \\\"cwd\\\": \\\".\\\",\\n    \\\"timeout_ms\\\": 10000,\\n    \\\"max_output_bytes\\\": 8192\\n  },\\n  \\\"environment\\\": {\\n    \\\"writable_paths\\\": []\\n  }\\n}\\n\"\n      }\n    ],\n    \"scope_hint\": [\n      \"docs/plans/gdr-live-claude-main-b.intent.json\",\n      \"src/b.txt\"\n    ],\n    \"risk\": \"routine\",\n    \"revision\": 1,\n    \"owner\": \"user\"\n  },\n  \"intent_ref\": {\n    \"path\": \"docs/plans/gdr-live-claude-main-b.intent.json\",\n    \"content_hash\": \"sha256:e5bc73f3a9d3e177f68f9d53f75a7a5099be8c82d40a66c84dfdbdf814eb07fd\"\n  },\n  \"lifecycle\": \"done\",\n  \"artifact_state\": \"frozen\",\n  \"baseline\": \"sha256:e5bc73f3a9d3e177f68f9d53f75a7a5099be8c82d40a66c84dfdbdf814eb07fd\",\n  \"git_base_head\": \"ce8f80ee6874b04a11c05a22528fbfea1316ec5e\",\n  \"attestations\": [\n    {\n      \"id\": \"approval-qa-f36fdf12\",\n      \"kind\": \"qa\",\n      \"authority_role\": \"qa\",\n      \"task_revision\": 1,\n      \"intent_content_hash\": \"sha256:e5bc73f3a9d3e177f68f9d53f75a7a5099be8c82d40a66c84dfdbdf814eb07fd\",\n      \"diff_hash\": \"sha256:955fa99f1d147ca7124e02f217e1947d8bff58323fcb9e81f48feea2396540e8\",\n      \"actor_id\": \"deterministic-qa\",\n      \"summary\": \"all 1 project verification check(s) passed; execution=sha256:4674bc1c3470deebb710810670db7b8d7732f798ac8bf33bdce39639bcb885ac\",\n      \"acceptance_results\": [\n        {\n          \"acceptance_id\": \"result\",\n          \"status\": \"passed\",\n          \"summary\": \"host-attested QA: all 1 project verification check(s) passed; execution=sha256:4674bc1c3470deebb710810670db7b8d7732f798ac8bf33bdce39639bcb885ac\"\n        }\n      ]\n    }\n  ],\n  \"findings\": [],\n  \"history\": [\n    {\n      \"id\": \"freeze_artifacts:gdr-live-claude-main-b:2026-10-15T00:56:37.921Z\",\n      \"at\": \"2026-10-15T00:56:37.921Z\",\n      \"type\": \"freeze_artifacts\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"TaskIntent frozen in place at docs/plans/gdr-live-claude-main-b.intent.json\"\n    },\n    {\n      \"id\": \"record_approval:gdr-live-claude-main-b:2026-10-15T00:56:38.967Z\",\n      \"at\": \"2026-10-15T00:56:38.967Z\",\n      \"type\": \"record_approval\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"approval-qa-f36fdf12\\naction_v2_sha256:759449987d4e72da16a52ed620dd67d3c4a8815065fee9acf65bcb556435456a\",\n      \"authority\": {\n        \"authority_kind\": \"qa\",\n        \"actor_id\": \"deterministic-qa\",\n        \"confirmation_ref\": \"claude:deterministic-qa\",\n        \"issued_at\": \"2026-10-15T00:56:38.967Z\"\n      }\n    },\n    {\n      \"id\": \"complete:gdr-live-claude-main-b:2026-10-15T00:56:39.609Z\",\n      \"at\": \"2026-10-15T00:56:39.609Z\",\n      \"type\": \"complete\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"done:frozen\",\n      \"reason\": \"action_v2_sha256:dd3ad6810e0682f5cd972a1b47802a877f3dc781f69ece89db67203f0a31bf4f\"\n    }\n  ]\n}\n",
+              "terminal_proof_bytes": "{\n  \"contract\": \"assurance_kernel/task_tombstone/v2\",\n  \"task_id\": \"gdr-live-claude-main-b\",\n  \"lifecycle_status\": \"terminal\",\n  \"terminal_lifecycle\": \"done\",\n  \"terminal_event_id\": \"complete:gdr-live-claude-main-b:2026-10-15T00:56:39.609Z\",\n  \"final_record_hash\": \"sha256:8ba735ebf735ff7ddfd1ab6cf74c789841b5898a79379b05ac507c1e11f0371b\",\n  \"terminalized_at\": \"2026-10-15T00:56:39.609Z\"\n}\n",
+              "integrated_commit": "53fc1e81583b9055a05edd6bf41c21d4292c5ace",
+              "commit_is_ancestor": true,
+              "scope_validated": true
+            }
+          ],
+          "observations": {
+            "completion": {
+              "complete": true,
+              "integrated_task_ids": [
+                "gdr-live-claude-main-a",
+                "gdr-live-claude-main-b",
+                "gdr-live-claude-main-sum",
+                "gdr-live-claude-main-integration"
+              ],
+              "missing_task_ids": [],
+              "final_passed": true,
+              "head": "cdb676d8927c54cbf7d9d63bd0f0ba728de7b3bc",
+              "reason": null
+            },
+            "qa_failure_observed": true,
+            "review_observed": true,
+            "native_inputs": [
+              {
+                "request_id": "0b5bd74f-ec1b-4992-8acb-ae6012d7947a",
+                "message": "Authorize this unattended batch run for gdr-live-claude-main?\n\nOperation: start_unattended_batch\nInitiative: gdr-live-claude-main\nBatch branch: imm/gdr-live-claude-main\nPlan digest: sha256:dce136ed790da75f0cb86a43766dae7428039edc37c967599b5bbb1414bfef9d\nOrdered children (4):\n  - gdr-live-claude-main-a (S1) [risk: routine]\n  - gdr-live-claude-main-b (S2) [risk: routine]\n  - gdr-live-claude-main-sum (S3) [risk: material]\n  - gdr-live-claude-main-integration (S4) [risk: routine]\nBudget: max_children=4, qa_failure_limit=2\nFinal verification: bun .fixture/final.ts",
+                "decision": "accept",
+                "input_kind": "scripted-fixture-test-user"
+              }
+            ]
+          },
+          "controller_outcome": "host_result"
+        },
+        {
+          "host": "claude-code",
+          "root": "/Users/derek/workspaces/immune-brain/.goal-driven-run-live/fixtures/gdr-live-claude-status-u63Fc4",
+          "scenarios": [
+            "parent_dependencies_and_independent_branch",
+            "ordinary_failure_and_review",
+            "successor_handoff",
+            "integration_and_final",
+            "serial_fallback",
+            "status_preserves_binding"
+          ],
+          "outcome": "passed",
+          "manual_continuations": 0,
+          "response_boundaries": 1,
+          "initial_input_sha256": "sha256:78dacaee3cc7f187be4440dc6ff208b31737d0161c0da63f8b2903cd99875e65",
+          "source_sha256": {
+            "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts": "sha256:b5e38ba5e45ddb2c7fe362c52eb412e22a6daebbbba8a52e6321c425d454931b",
+            "plugins/immune-brain/.pi-extension/imm-canary-work.ts": "sha256:abc3e994cda381105089d18288d1b841a46acf54df255b901cbaa333d56f648c",
+            "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts": "sha256:92874a39c17f24014b885c869fb0dd37b4ff9da81abcbb53a590038353cdf6c2",
+            "plugins/immune-brain/.pi-extension/pi-run-continuation.ts": "sha256:932cc88ec8166a9d5bd8e9b04c1b1f01771dde64389f171519948738b0bc9961",
+            "plugins/immune-brain/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/dist/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/dist/claude/mcp-server.mjs": "sha256:1a854a0936d45b96d08efa6285f4644c32dfa67556365fc406bd503678238201",
+            "plugins/immune-brain/dist/imm-run-batch.md": "sha256:cf8548b79b27691e9096c5cc2dce2571d87e40b68c17989cf4ba55beac008d4d",
+            "plugins/immune-brain/dist/imm-run.md": "sha256:73132e4696921fd15980366f210fd89530ac70764080427b89268472937d3154",
+            "plugins/immune-brain/dist/role-prompts/executor.md": "sha256:8661621239a6589dd074da5f52e32cf436b7344857f4c866b28b17bdfb8ad48c",
+            "plugins/immune-brain/hooks/hooks.json": "sha256:00cd183ca2d20520a8b9c35054116f0a3bf4e52471de4dccfdafe64e19d14d62",
+            "plugins/immune-brain/runtime/assurance/run_continuation.ts": "sha256:b8ffad8b936fa686107e4be1276c89d278b0b7b9cadcf25e3167403beef3e0b6",
+            "plugins/immune-brain/runtime/claude/interaction.ts": "sha256:5c9e83c7bbdd17f6734abd584be61cb4326e376a0caabe02d9f834a67f7a89e3",
+            "plugins/immune-brain/runtime/claude/kernel_ports.ts": "sha256:be07878e16140e05f01e00bd2dba5929f9d60ad170573a88aee38da638221805",
+            "plugins/immune-brain/runtime/claude/lane_guard.ts": "sha256:a4ae2aef3c1595754994b96da1aaaab368305b6f684c60445f045cc2f996e5eb",
+            "plugins/immune-brain/runtime/claude/mcp_server.ts": "sha256:cc7f879d76a24b6dbef73adff9491df620b298d866717c5219fd2540d1e3664c",
+            "plugins/immune-brain/runtime/claude/run_continuation.ts": "sha256:1654a82d5783125e5c1810dfdb80a8695360093d9dddbfd3083fa1aab62039e9",
+            "plugins/immune-brain/runtime/github_issue_tracker.ts": "sha256:b07ff581d6a7294581182d16fc24c2ee738a0545c0c420482e5a513d0ef38ac7",
+            "plugins/immune-brain/runtime/prompts/executor.md": "sha256:8661621239a6589dd074da5f52e32cf436b7344857f4c866b28b17bdfb8ad48c",
+            "plugins/immune-brain/runtime/unattended/batch_disposition.ts": "sha256:c0050858f5487a0f630a2c9d94fe0735ab1d1472a29083dfa33859eaa0eb06d3",
+            "plugins/immune-brain/runtime/unattended/batch_final_verification.ts": "sha256:b40b3dbb06949f0f7e5ebb6598b1ccff18b67b0a34226240e53f37dd83c7e739",
+            "plugins/immune-brain/runtime/unattended/batch_git.ts": "sha256:3d811aa661a5dc9078eeabfb42fdce80112737ea34d8af00482fc572a0353e38",
+            "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts": "sha256:2f43858e96741eb3aca95e99433e837cd45ada38b8332cd64dafb5890838721c",
+            "plugins/immune-brain/runtime/unattended/batch_lanes.ts": "sha256:8cbf33ee009fc194b04e1b3bde63f0568e384642e780e62e377dc82b4affaa64",
+            "plugins/immune-brain/runtime/unattended/batch_plan.ts": "sha256:ed36a38ec53f1d2580b9ac7fb5ad6106091212e9d9034ea8b0b9545a8a3f296a",
+            "plugins/immune-brain/runtime/unattended/batch_preflight.ts": "sha256:4ec9f3d89847afd17ad486b0b570d4cdc7f8b51c7b82321433d67900279db895",
+            "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts": "sha256:8a7a2a4d9e97172a5ac1ee0f83d6e85d7a7d98c9eb2119b4c0f336de182aaecb",
+            "plugins/immune-brain/runtime/unattended/batch_runner.ts": "sha256:0323b4e0ca3d24900ea57c6a275cd0acbae48295e9adf17b593e18ba98c74d32",
+            "plugins/immune-brain/runtime/unattended/batch_schedule.ts": "sha256:04c4cc57fda27ea1289e4d66b26e07e690f94d493b5364c224bee53e59fd5541",
+            "plugins/immune-brain/runtime/unattended/batch_state.ts": "sha256:a87f9cf4512482ca7e981c99165fb00ab935bbdd31cc199ce55e6f2b0e8064eb",
+            "plugins/immune-brain/runtime/unattended/types.ts": "sha256:447e45ade83e3cfe7139bec56ef157e223c7251d1f268f3e75742b688f3c6018",
+            "plugins/immune-brain/skills/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/skills/imm-run/SKILL.md": "sha256:caa4657e96de275b7e11a3dad98f2f32e2987bd19ff71b451a33eb75eff023b0"
+          },
+          "models": [
+            "claude-sonnet-5-5"
+          ],
+          "native_inputs": [
+            {
+              "request_id": "e48477bb-dc37-4259-b0d2-1aed43664258",
+              "message": "Authorize this unattended batch run for gdr-live-claude-status?\n\nOperation: start_unattended_batch\nInitiative: gdr-live-claude-status\nBatch branch: imm/gdr-live-claude-status\nPlan digest: sha256:aac0341fe014f476ca82a4e2fe816dabd379fc8e6d95d22b22e13d8785670003\nOrdered children (4):\n  - gdr-live-claude-status-a (S1) [risk: routine]\n  - gdr-live-claude-status-b (S2) [risk: routine]\n  - gdr-live-claude-status-sum (S3) [risk: material]\n  - gdr-live-claude-status-integration (S4) [risk: routine]\nBudget: max_children=4, qa_failure_limit=2\nFinal verification: bun .fixture/final.ts",
+              "decision": "accept",
+              "input_kind": "scripted-fixture-test-user"
+            }
+          ],
+          "integrated_head": "519a773c31312082c740d4c10f5218a35d6d4634",
+          "final_verification": {
+            "passed": true,
+            "head": "519a773c31312082c740d4c10f5218a35d6d4634",
+            "results": [
+              {
+                "command": "bun .fixture/final.ts",
+                "exit_code": 0,
+                "signal": null,
+                "passed": true,
+                "duration_ms": 6
+              }
+            ]
+          },
+          "tasks": [
+            {
+              "task_id": "gdr-live-claude-status-a",
+              "run_id": "run-436a6602-037b-4e21-bb1b-4cecfc157ddb",
+              "record_bytes": "{\n  \"contract\": \"assurance_kernel/task_record/v4\",\n  \"task_id\": \"gdr-live-claude-status-a\",\n  \"intent_snapshot\": {\n    \"contract\": \"assurance_kernel/task_intent/v1\",\n    \"task_id\": \"gdr-live-claude-status-a\",\n    \"goal\": \"Write src/a.txt as exactly one followed by a newline\",\n    \"acceptance\": [\n      {\n        \"id\": \"result\",\n        \"assertion\": \"The a output and its integrated prerequisites are correct\",\n        \"verification\": \"{\\n  \\\"contract\\\": \\\"assurance_kernel/verification_descriptor/v2\\\",\\n  \\\"command\\\": {\\n    \\\"executable\\\": \\\"bun\\\",\\n    \\\"argv\\\": [\\n      \\\".fixture/verify.ts\\\",\\n      \\\"a\\\",\\n      \\\"one\\\"\\n    ],\\n    \\\"cwd\\\": \\\".\\\",\\n    \\\"timeout_ms\\\": 10000,\\n    \\\"max_output_bytes\\\": 8192\\n  },\\n  \\\"environment\\\": {\\n    \\\"writable_paths\\\": []\\n  }\\n}\\n\"\n      }\n    ],\n    \"scope_hint\": [\n      \"docs/plans/gdr-live-claude-status-a.intent.json\",\n      \"src/a.txt\"\n    ],\n    \"risk\": \"routine\",\n    \"revision\": 1,\n    \"owner\": \"user\"\n  },\n  \"intent_ref\": {\n    \"path\": \"docs/plans/gdr-live-claude-status-a.intent.json\",\n    \"content_hash\": \"sha256:cb61e0f7c047bac46ff4302eeb396330089c422b4ce5af345a6944600c0232dc\"\n  },\n  \"lifecycle\": \"done\",\n  \"artifact_state\": \"frozen\",\n  \"baseline\": \"sha256:cb61e0f7c047bac46ff4302eeb396330089c422b4ce5af345a6944600c0232dc\",\n  \"git_base_head\": \"9cc7423c3fedf4428fdfdb4d3a345ce37bd12f9a\",\n  \"attestations\": [\n    {\n      \"id\": \"approval-qa-52ee82b5\",\n      \"kind\": \"qa\",\n      \"authority_role\": \"qa\",\n      \"task_revision\": 1,\n      \"intent_content_hash\": \"sha256:cb61e0f7c047bac46ff4302eeb396330089c422b4ce5af345a6944600c0232dc\",\n      \"diff_hash\": \"sha256:171cae051eb49cea6a8a0c1ff0d36e0960c6ac52d9d0038022b987be93b46bed\",\n      \"actor_id\": \"deterministic-qa\",\n      \"summary\": \"all 1 project verification check(s) passed; execution=sha256:0824c7e717d3b72fcbc4ad201d7289772bbed800c24114059749359d663ff2db\",\n      \"acceptance_results\": [\n        {\n          \"acceptance_id\": \"result\",\n          \"status\": \"passed\",\n          \"summary\": \"host-attested QA: all 1 project verification check(s) passed; execution=sha256:0824c7e717d3b72fcbc4ad201d7289772bbed800c24114059749359d663ff2db\"\n        }\n      ]\n    }\n  ],\n  \"findings\": [\n    {\n      \"id\": \"qa-result-dad2c8b7-32b076\",\n      \"kind\": \"blocking\",\n      \"status\": \"resolved\",\n      \"acceptance_id\": \"result\",\n      \"source\": \"execution\",\n      \"review_round\": null,\n      \"summary\": \"verification failed (exit 1) stdout=0B stderr=761B\",\n      \"anchor\": null,\n      \"evidence\": null,\n      \"counterevidence\": null\n    }\n  ],\n  \"history\": [\n    {\n      \"id\": \"freeze_artifacts:gdr-live-claude-status-a:2026-10-15T00:56:25.540Z\",\n      \"at\": \"2026-10-15T00:56:25.540Z\",\n      \"type\": \"freeze_artifacts\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"TaskIntent frozen in place at docs/plans/gdr-live-claude-status-a.intent.json\"\n    },\n    {\n      \"id\": \"request_rework:gdr-live-claude-status-a:2026-10-15T00:56:26.525Z\",\n      \"at\": \"2026-10-15T00:56:26.525Z\",\n      \"type\": \"request_rework\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:active\",\n      \"reason\": \"review_round_1\\naction_v2_sha256:eb2d08a558d65054dbaf9b7c7a52d6b94a376999b05eb5dc55be5affd7109344\",\n      \"authority\": {\n        \"authority_kind\": \"qa\",\n        \"actor_id\": \"deterministic-qa\",\n        \"confirmation_ref\": \"claude:deterministic-qa\",\n        \"issued_at\": \"2026-10-15T00:56:26.525Z\"\n      }\n    },\n    {\n      \"id\": \"resolve_finding:gdr-live-claude-status-a:2026-10-15T00:56:36.361Z\",\n      \"at\": \"2026-10-15T00:56:36.361Z\",\n      \"type\": \"resolve_finding\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:active\",\n      \"reason\": \"qa-result-dad2c8b7-32b076\\naction_v2_sha256:a53c596aebcb5373e0fcdb2515f5b670733646904260d4b84c1f25cefcfc58db\"\n    },\n    {\n      \"id\": \"freeze_artifacts:gdr-live-claude-status-a:2026-10-15T00:56:38.105Z\",\n      \"at\": \"2026-10-15T00:56:38.105Z\",\n      \"type\": \"freeze_artifacts\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"TaskIntent frozen in place at docs/plans/gdr-live-claude-status-a.intent.json\"\n    },\n    {\n      \"id\": \"record_approval:gdr-live-claude-status-a:2026-10-15T00:56:39.134Z\",\n      \"at\": \"2026-10-15T00:56:39.134Z\",\n      \"type\": \"record_approval\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"approval-qa-52ee82b5\\naction_v2_sha256:d668d4e429afb93770a66f6755476317eed2adbd28b346728f8882528e95dfcb\",\n      \"authority\": {\n        \"authority_kind\": \"qa\",\n        \"actor_id\": \"deterministic-qa\",\n        \"confirmation_ref\": \"claude:deterministic-qa\",\n        \"issued_at\": \"2026-10-15T00:56:39.134Z\"\n      }\n    },\n    {\n      \"id\": \"complete:gdr-live-claude-status-a:2026-10-15T00:56:39.797Z\",\n      \"at\": \"2026-10-15T00:56:39.797Z\",\n      \"type\": \"complete\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"done:frozen\",\n      \"reason\": \"action_v2_sha256:0ba44304818f6ca28a9c2322a530abbecad5b7bdcba44deb1f08b3300246b898\"\n    }\n  ]\n}\n",
+              "terminal_proof_bytes": "{\n  \"contract\": \"assurance_kernel/task_tombstone/v2\",\n  \"task_id\": \"gdr-live-claude-status-a\",\n  \"lifecycle_status\": \"terminal\",\n  \"terminal_lifecycle\": \"done\",\n  \"terminal_event_id\": \"complete:gdr-live-claude-status-a:2026-10-15T00:56:39.797Z\",\n  \"final_record_hash\": \"sha256:11b7e4d080f1a25b689936d78f6d29263966ff4e9a66637b6c1a0de3dfc63d45\",\n  \"terminalized_at\": \"2026-10-15T00:56:39.797Z\"\n}\n",
+              "integrated_commit": "7e5d56514777396b7ebba775c7c41f974ad62ede",
+              "commit_is_ancestor": true,
+              "scope_validated": true
+            },
+            {
+              "task_id": "gdr-live-claude-status-integration",
+              "run_id": "run-36585941-9878-470c-a4bd-b0359403b9dd",
+              "record_bytes": "{\n  \"contract\": \"assurance_kernel/task_record/v4\",\n  \"task_id\": \"gdr-live-claude-status-integration\",\n  \"intent_snapshot\": {\n    \"contract\": \"assurance_kernel/task_intent/v1\",\n    \"task_id\": \"gdr-live-claude-status-integration\",\n    \"goal\": \"Write src/integration.txt as exactly passed followed by a newline\",\n    \"acceptance\": [\n      {\n        \"id\": \"result\",\n        \"assertion\": \"The integration output and its integrated prerequisites are correct\",\n        \"verification\": \"{\\n  \\\"contract\\\": \\\"assurance_kernel/verification_descriptor/v2\\\",\\n  \\\"command\\\": {\\n    \\\"executable\\\": \\\"bun\\\",\\n    \\\"argv\\\": [\\n      \\\".fixture/verify.ts\\\",\\n      \\\"integration\\\",\\n      \\\"passed\\\"\\n    ],\\n    \\\"cwd\\\": \\\".\\\",\\n    \\\"timeout_ms\\\": 10000,\\n    \\\"max_output_bytes\\\": 8192\\n  },\\n  \\\"environment\\\": {\\n    \\\"writable_paths\\\": []\\n  }\\n}\\n\"\n      }\n    ],\n    \"scope_hint\": [\n      \"docs/plans/gdr-live-claude-status-integration.intent.json\",\n      \"src\"\n    ],\n    \"risk\": \"routine\",\n    \"revision\": 1,\n    \"owner\": \"user\"\n  },\n  \"intent_ref\": {\n    \"path\": \"docs/plans/gdr-live-claude-status-integration.intent.json\",\n    \"content_hash\": \"sha256:3d0bf79a60b86137d4bdbc003afbd2a4462c108e68b68378f4ac35acf8e4cdf9\"\n  },\n  \"lifecycle\": \"done\",\n  \"artifact_state\": \"frozen\",\n  \"baseline\": \"sha256:3d0bf79a60b86137d4bdbc003afbd2a4462c108e68b68378f4ac35acf8e4cdf9\",\n  \"git_base_head\": \"00cfac3a9282fb58aa2a80d4aefb1cf2a28662b8\",\n  \"attestations\": [\n    {\n      \"id\": \"approval-qa-2ac2c938\",\n      \"kind\": \"qa\",\n      \"authority_role\": \"qa\",\n      \"task_revision\": 1,\n      \"intent_content_hash\": \"sha256:3d0bf79a60b86137d4bdbc003afbd2a4462c108e68b68378f4ac35acf8e4cdf9\",\n      \"diff_hash\": \"sha256:6ccbb28ffa13267bec5ee857471ec3310fafcfb9b108262275d361d67162507a\",\n      \"actor_id\": \"deterministic-qa\",\n      \"summary\": \"all 1 project verification check(s) passed; execution=sha256:9d33aa3f7edd38321fef4a30593a14f3b27e6663ee796b9cf48ad0f99f602b38\",\n      \"acceptance_results\": [\n        {\n          \"acceptance_id\": \"result\",\n          \"status\": \"passed\",\n          \"summary\": \"host-attested QA: all 1 project verification check(s) passed; execution=sha256:9d33aa3f7edd38321fef4a30593a14f3b27e6663ee796b9cf48ad0f99f602b38\"\n        }\n      ]\n    }\n  ],\n  \"findings\": [],\n  \"history\": [\n    {\n      \"id\": \"freeze_artifacts:gdr-live-claude-status-integration:2026-10-15T00:57:43.350Z\",\n      \"at\": \"2026-10-15T00:57:43.350Z\",\n      \"type\": \"freeze_artifacts\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"TaskIntent frozen in place at docs/plans/gdr-live-claude-status-integration.intent.json\"\n    },\n    {\n      \"id\": \"record_approval:gdr-live-claude-status-integration:2026-10-15T00:57:44.287Z\",\n      \"at\": \"2026-10-15T00:57:44.287Z\",\n      \"type\": \"record_approval\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"approval-qa-2ac2c938\\naction_v2_sha256:c0823afa134f4776ea58c9780f698092361e9d38c220fd7d0128a4305eb29525\",\n      \"authority\": {\n        \"authority_kind\": \"qa\",\n        \"actor_id\": \"deterministic-qa\",\n        \"confirmation_ref\": \"claude:deterministic-qa\",\n        \"issued_at\": \"2026-10-15T00:57:44.287Z\"\n      }\n    },\n    {\n      \"id\": \"complete:gdr-live-claude-status-integration:2026-10-15T00:57:44.838Z\",\n      \"at\": \"2026-10-15T00:57:44.838Z\",\n      \"type\": \"complete\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"done:frozen\",\n      \"reason\": \"action_v2_sha256:1fa0fc6ba4993b0687a0b661dffb62a76f28518eb7b0c0f85a1a69f96d5ff40a\"\n    }\n  ]\n}\n",
+              "terminal_proof_bytes": "{\n  \"contract\": \"assurance_kernel/task_tombstone/v2\",\n  \"task_id\": \"gdr-live-claude-status-integration\",\n  \"lifecycle_status\": \"terminal\",\n  \"terminal_lifecycle\": \"done\",\n  \"terminal_event_id\": \"complete:gdr-live-claude-status-integration:2026-10-15T00:57:44.838Z\",\n  \"final_record_hash\": \"sha256:3949ac0a0f66f22c24ed4e6dbcf50b6328c391a1616fcd4678fa69dcd6035860\",\n  \"terminalized_at\": \"2026-10-15T00:57:44.838Z\"\n}\n",
+              "integrated_commit": "519a773c31312082c740d4c10f5218a35d6d4634",
+              "commit_is_ancestor": true,
+              "scope_validated": true
+            },
+            {
+              "task_id": "gdr-live-claude-status-sum",
+              "run_id": "run-08eb04b6-bcf2-4f5b-9ac6-6fae7a074205",
+              "record_bytes": "{\n  \"contract\": \"assurance_kernel/task_record/v4\",\n  \"task_id\": \"gdr-live-claude-status-sum\",\n  \"intent_snapshot\": {\n    \"contract\": \"assurance_kernel/task_intent/v1\",\n    \"task_id\": \"gdr-live-claude-status-sum\",\n    \"goal\": \"Write src/sum.txt as exactly three followed by a newline\",\n    \"acceptance\": [\n      {\n        \"id\": \"result\",\n        \"assertion\": \"The sum output and its integrated prerequisites are correct\",\n        \"verification\": \"{\\n  \\\"contract\\\": \\\"assurance_kernel/verification_descriptor/v2\\\",\\n  \\\"command\\\": {\\n    \\\"executable\\\": \\\"bun\\\",\\n    \\\"argv\\\": [\\n      \\\".fixture/verify.ts\\\",\\n      \\\"sum\\\",\\n      \\\"three\\\"\\n    ],\\n    \\\"cwd\\\": \\\".\\\",\\n    \\\"timeout_ms\\\": 10000,\\n    \\\"max_output_bytes\\\": 8192\\n  },\\n  \\\"environment\\\": {\\n    \\\"writable_paths\\\": [\\n      \\\".fixture-state\\\"\\n    ]\\n  }\\n}\\n\"\n      }\n    ],\n    \"scope_hint\": [\n      \"docs/plans/gdr-live-claude-status-sum.intent.json\",\n      \"src/sum.txt\"\n    ],\n    \"risk\": \"material\",\n    \"revision\": 1,\n    \"owner\": \"user\"\n  },\n  \"intent_ref\": {\n    \"path\": \"docs/plans/gdr-live-claude-status-sum.intent.json\",\n    \"content_hash\": \"sha256:54dc90879eaf7728d97af2be6389bda3c4f2f413ad008710177d204dd66cfcdc\"\n  },\n  \"lifecycle\": \"done\",\n  \"artifact_state\": \"frozen\",\n  \"baseline\": \"sha256:54dc90879eaf7728d97af2be6389bda3c4f2f413ad008710177d204dd66cfcdc\",\n  \"git_base_head\": \"93383fc4c38b1bc7d50164270c4c9f471b708a3c\",\n  \"attestations\": [\n    {\n      \"id\": \"approval-qa-a5eabbb4\",\n      \"kind\": \"qa\",\n      \"authority_role\": \"qa\",\n      \"task_revision\": 1,\n      \"intent_content_hash\": \"sha256:54dc90879eaf7728d97af2be6389bda3c4f2f413ad008710177d204dd66cfcdc\",\n      \"diff_hash\": \"sha256:4d86ea3bf56654c189049e1064b49b8e0a575e22fa15a5ee12620ac55c11be5d\",\n      \"actor_id\": \"deterministic-qa\",\n      \"summary\": \"all 1 project verification check(s) passed; execution=sha256:ef0b1649405960932f57878b6d83901ec83fceeaa9666c67fa5c102203f1c519\",\n      \"acceptance_results\": [\n        {\n          \"acceptance_id\": \"result\",\n          \"status\": \"passed\",\n          \"summary\": \"host-attested QA: all 1 project verification check(s) passed; execution=sha256:ef0b1649405960932f57878b6d83901ec83fceeaa9666c67fa5c102203f1c519\"\n        }\n      ]\n    },\n    {\n      \"id\": \"approval-review-3cdb8dc5\",\n      \"kind\": \"review\",\n      \"authority_role\": \"reviewer\",\n      \"task_revision\": 1,\n      \"intent_content_hash\": \"sha256:54dc90879eaf7728d97af2be6389bda3c4f2f413ad008710177d204dd66cfcdc\",\n      \"diff_hash\": \"sha256:4d86ea3bf56654c189049e1064b49b8e0a575e22fa15a5ee12620ac55c11be5d\",\n      \"actor_id\": \"parent-mediated-review\",\n      \"summary\": \"src/sum.txt changed from 'pending' to 'three', matching one+two from the integrated a.txt and b.txt prerequisites; provenance verified.\",\n      \"acceptance_results\": [],\n      \"review_revision\": {\n        \"contract\": \"assurance_kernel/review_revision_identity/v1\",\n        \"base_head\": \"93383fc4c38b1bc7d50164270c4c9f471b708a3c\",\n        \"review_commit\": \"6623be959ca5123519bc15f6333207a5168f8b51\",\n        \"review_tree\": \"c425bd024adc3b3f877967ea4cc60af3cbdf37d4\",\n        \"manifest_digest\": \"sha256:027b3050506d0ba7ea91533ee72306e5c66aa5c52e8de7cd76c0dfebfc41cfb2\"\n      },\n      \"reviewer_verdict_sha256\": \"sha256:638e4584830272e80d6d63b3f883a160922a390654c0418f2183e42b80ef3096\"\n    }\n  ],\n  \"findings\": [\n    {\n      \"id\": \"qa-result-7e553fee-0653f4\",\n      \"kind\": \"blocking\",\n      \"status\": \"resolved\",\n      \"acceptance_id\": \"result\",\n      \"source\": \"execution\",\n      \"review_round\": null,\n      \"summary\": \"verification failed (exit 3) stdout=0B stderr=47B\",\n      \"anchor\": null,\n      \"evidence\": null,\n      \"counterevidence\": null\n    }\n  ],\n  \"history\": [\n    {\n      \"id\": \"freeze_artifacts:gdr-live-claude-status-sum:2026-10-15T00:56:56.301Z\",\n      \"at\": \"2026-10-15T00:56:56.301Z\",\n      \"type\": \"freeze_artifacts\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"TaskIntent frozen in place at docs/plans/gdr-live-claude-status-sum.intent.json\"\n    },\n    {\n      \"id\": \"request_rework:gdr-live-claude-status-sum:2026-10-15T00:56:57.622Z\",\n      \"at\": \"2026-10-15T00:56:57.622Z\",\n      \"type\": \"request_rework\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:active\",\n      \"reason\": \"review_round_1\\naction_v2_sha256:759904b46ed6a85c0a2943d58488e19bc8fab316bf549d0ca9623c8f3cc097a5\",\n      \"authority\": {\n        \"authority_kind\": \"qa\",\n        \"actor_id\": \"deterministic-qa\",\n        \"confirmation_ref\": \"claude:deterministic-qa\",\n        \"issued_at\": \"2026-10-15T00:56:57.622Z\"\n      }\n    },\n    {\n      \"id\": \"resolve_finding:gdr-live-claude-status-sum:2026-10-15T00:57:04.731Z\",\n      \"at\": \"2026-10-15T00:57:04.731Z\",\n      \"type\": \"resolve_finding\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:active\",\n      \"reason\": \"qa-result-7e553fee-0653f4\\naction_v2_sha256:13f73abff87cab77fe840161748462196c1dd31d27cbbf094a400f8f74a53a35\"\n    },\n    {\n      \"id\": \"freeze_artifacts:gdr-live-claude-status-sum:2026-10-15T00:57:06.724Z\",\n      \"at\": \"2026-10-15T00:57:06.724Z\",\n      \"type\": \"freeze_artifacts\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"TaskIntent frozen in place at docs/plans/gdr-live-claude-status-sum.intent.json\"\n    },\n    {\n      \"id\": \"record_approval:gdr-live-claude-status-sum:2026-10-15T00:57:07.982Z\",\n      \"at\": \"2026-10-15T00:57:07.982Z\",\n      \"type\": \"record_approval\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"approval-qa-a5eabbb4\\naction_v2_sha256:918c523bb8340a0aab192cd60312a4651259b34287ff3661a50630d022e46e4d\",\n      \"authority\": {\n        \"authority_kind\": \"qa\",\n        \"actor_id\": \"deterministic-qa\",\n        \"confirmation_ref\": \"claude:deterministic-qa\",\n        \"issued_at\": \"2026-10-15T00:57:07.982Z\"\n      }\n    },\n    {\n      \"id\": \"record_approval:gdr-live-claude-status-sum:2026-10-15T00:57:35.346Z\",\n      \"at\": \"2026-10-15T00:57:35.346Z\",\n      \"type\": \"record_approval\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"approval-review-3cdb8dc5\\naction_v2_sha256:215abc2f37cc67aa921c206afc1a2a5a49d41873c3738db9965ad12ecb85d032\",\n      \"authority\": {\n        \"authority_kind\": \"review\",\n        \"actor_id\": \"parent-mediated-review\",\n        \"confirmation_ref\": \"claude:parent-mediated-review\",\n        \"issued_at\": \"2026-10-15T00:57:35.346Z\"\n      }\n    },\n    {\n      \"id\": \"complete:gdr-live-claude-status-sum:2026-10-15T00:57:35.953Z\",\n      \"at\": \"2026-10-15T00:57:35.953Z\",\n      \"type\": \"complete\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"done:frozen\",\n      \"reason\": \"action_v2_sha256:ebd1a274fe6b502d304874d54c347848f46514f4980888b4b1c98ccaac5e390c\"\n    }\n  ]\n}\n",
+              "terminal_proof_bytes": "{\n  \"contract\": \"assurance_kernel/task_tombstone/v2\",\n  \"task_id\": \"gdr-live-claude-status-sum\",\n  \"lifecycle_status\": \"terminal\",\n  \"terminal_lifecycle\": \"done\",\n  \"terminal_event_id\": \"complete:gdr-live-claude-status-sum:2026-10-15T00:57:35.953Z\",\n  \"final_record_hash\": \"sha256:07f6a90bc0e06c909640a3e3a3a0160f4f7bd21bbcb07b01358788b36a18f666\",\n  \"terminalized_at\": \"2026-10-15T00:57:35.953Z\"\n}\n",
+              "integrated_commit": "00cfac3a9282fb58aa2a80d4aefb1cf2a28662b8",
+              "commit_is_ancestor": true,
+              "scope_validated": true
+            },
+            {
+              "task_id": "gdr-live-claude-status-b",
+              "run_id": "run-b1821e64-d115-4862-bf2e-d963b59767eb",
+              "record_bytes": "{\n  \"contract\": \"assurance_kernel/task_record/v4\",\n  \"task_id\": \"gdr-live-claude-status-b\",\n  \"intent_snapshot\": {\n    \"contract\": \"assurance_kernel/task_intent/v1\",\n    \"task_id\": \"gdr-live-claude-status-b\",\n    \"goal\": \"Write src/b.txt as exactly two followed by a newline\",\n    \"acceptance\": [\n      {\n        \"id\": \"result\",\n        \"assertion\": \"The b output and its integrated prerequisites are correct\",\n        \"verification\": \"{\\n  \\\"contract\\\": \\\"assurance_kernel/verification_descriptor/v2\\\",\\n  \\\"command\\\": {\\n    \\\"executable\\\": \\\"bun\\\",\\n    \\\"argv\\\": [\\n      \\\".fixture/verify.ts\\\",\\n      \\\"b\\\",\\n      \\\"two\\\"\\n    ],\\n    \\\"cwd\\\": \\\".\\\",\\n    \\\"timeout_ms\\\": 10000,\\n    \\\"max_output_bytes\\\": 8192\\n  },\\n  \\\"environment\\\": {\\n    \\\"writable_paths\\\": []\\n  }\\n}\\n\"\n      }\n    ],\n    \"scope_hint\": [\n      \"docs/plans/gdr-live-claude-status-b.intent.json\",\n      \"src/b.txt\"\n    ],\n    \"risk\": \"routine\",\n    \"revision\": 1,\n    \"owner\": \"user\"\n  },\n  \"intent_ref\": {\n    \"path\": \"docs/plans/gdr-live-claude-status-b.intent.json\",\n    \"content_hash\": \"sha256:527bbf8aa1996a28390915240529801df1e9bf226835fc6bc5eab42d08da7f1b\"\n  },\n  \"lifecycle\": \"done\",\n  \"artifact_state\": \"frozen\",\n  \"baseline\": \"sha256:527bbf8aa1996a28390915240529801df1e9bf226835fc6bc5eab42d08da7f1b\",\n  \"git_base_head\": \"7e5d56514777396b7ebba775c7c41f974ad62ede\",\n  \"attestations\": [\n    {\n      \"id\": \"approval-qa-dba5137a\",\n      \"kind\": \"qa\",\n      \"authority_role\": \"qa\",\n      \"task_revision\": 1,\n      \"intent_content_hash\": \"sha256:527bbf8aa1996a28390915240529801df1e9bf226835fc6bc5eab42d08da7f1b\",\n      \"diff_hash\": \"sha256:6456ab779dcad3269f613072c7e6dcb44ca8d40c41ae2ced368449a18b268c5d\",\n      \"actor_id\": \"deterministic-qa\",\n      \"summary\": \"all 1 project verification check(s) passed; execution=sha256:82bac15b94b19647289543f1037d0e2371c0547b4f9127d1b1944d8947154cc4\",\n      \"acceptance_results\": [\n        {\n          \"acceptance_id\": \"result\",\n          \"status\": \"passed\",\n          \"summary\": \"host-attested QA: all 1 project verification check(s) passed; execution=sha256:82bac15b94b19647289543f1037d0e2371c0547b4f9127d1b1944d8947154cc4\"\n        }\n      ]\n    }\n  ],\n  \"findings\": [],\n  \"history\": [\n    {\n      \"id\": \"freeze_artifacts:gdr-live-claude-status-b:2026-10-15T00:56:47.814Z\",\n      \"at\": \"2026-10-15T00:56:47.814Z\",\n      \"type\": \"freeze_artifacts\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"TaskIntent frozen in place at docs/plans/gdr-live-claude-status-b.intent.json\"\n    },\n    {\n      \"id\": \"record_approval:gdr-live-claude-status-b:2026-10-15T00:56:48.926Z\",\n      \"at\": \"2026-10-15T00:56:48.926Z\",\n      \"type\": \"record_approval\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"approval-qa-dba5137a\\naction_v2_sha256:2b4d3e582ad73fffe85e1c1f07a5745f0d18678ceed0cb859d24ec48c3ba9042\",\n      \"authority\": {\n        \"authority_kind\": \"qa\",\n        \"actor_id\": \"deterministic-qa\",\n        \"confirmation_ref\": \"claude:deterministic-qa\",\n        \"issued_at\": \"2026-10-15T00:56:48.926Z\"\n      }\n    },\n    {\n      \"id\": \"complete:gdr-live-claude-status-b:2026-10-15T00:56:49.552Z\",\n      \"at\": \"2026-10-15T00:56:49.552Z\",\n      \"type\": \"complete\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"done:frozen\",\n      \"reason\": \"action_v2_sha256:95703ee26fd200947e2a289564ee23b50f55aace5cf6278bb57a763c93c542e8\"\n    }\n  ]\n}\n",
+              "terminal_proof_bytes": "{\n  \"contract\": \"assurance_kernel/task_tombstone/v2\",\n  \"task_id\": \"gdr-live-claude-status-b\",\n  \"lifecycle_status\": \"terminal\",\n  \"terminal_lifecycle\": \"done\",\n  \"terminal_event_id\": \"complete:gdr-live-claude-status-b:2026-10-15T00:56:49.552Z\",\n  \"final_record_hash\": \"sha256:144d4171b52bd11d51e49ef3718c7b77de572f0206abe3d5f6f47debef1d4fd9\",\n  \"terminalized_at\": \"2026-10-15T00:56:49.552Z\"\n}\n",
+              "integrated_commit": "93383fc4c38b1bc7d50164270c4c9f471b708a3c",
+              "commit_is_ancestor": true,
+              "scope_validated": true
+            }
+          ],
+          "observations": {
+            "completion": {
+              "complete": true,
+              "integrated_task_ids": [
+                "gdr-live-claude-status-a",
+                "gdr-live-claude-status-b",
+                "gdr-live-claude-status-sum",
+                "gdr-live-claude-status-integration"
+              ],
+              "missing_task_ids": [],
+              "final_passed": true,
+              "head": "519a773c31312082c740d4c10f5218a35d6d4634",
+              "reason": null
+            },
+            "qa_failure_observed": true,
+            "review_observed": true,
+            "native_inputs": [
+              {
+                "request_id": "e48477bb-dc37-4259-b0d2-1aed43664258",
+                "message": "Authorize this unattended batch run for gdr-live-claude-status?\n\nOperation: start_unattended_batch\nInitiative: gdr-live-claude-status\nBatch branch: imm/gdr-live-claude-status\nPlan digest: sha256:aac0341fe014f476ca82a4e2fe816dabd379fc8e6d95d22b22e13d8785670003\nOrdered children (4):\n  - gdr-live-claude-status-a (S1) [risk: routine]\n  - gdr-live-claude-status-b (S2) [risk: routine]\n  - gdr-live-claude-status-sum (S3) [risk: material]\n  - gdr-live-claude-status-integration (S4) [risk: routine]\nBudget: max_children=4, qa_failure_limit=2\nFinal verification: bun .fixture/final.ts",
+                "decision": "accept",
+                "input_kind": "scripted-fixture-test-user"
+              }
+            ],
+            "status_query": {
+              "text": "当前进度？",
+              "input_kind": "scripted-fixture-test-user"
+            }
+          },
+          "controller_outcome": "host_result"
+        },
+        {
+          "host": "claude-code",
+          "root": "/Users/derek/workspaces/immune-brain/.goal-driven-run-live/fixtures/gdr-live-claude-repair-Vf9uTi",
+          "scenarios": [
+            "parent_dependencies_and_independent_branch",
+            "ordinary_failure_and_review",
+            "successor_handoff",
+            "integration_and_final",
+            "serial_fallback",
+            "final_failure_and_repair"
+          ],
+          "outcome": "passed",
+          "manual_continuations": 0,
+          "response_boundaries": 1,
+          "initial_input_sha256": "sha256:f0fbdd49794fcdadf09f2627d5286ca2056dd66d9c2e2b8647b41aeaebedb8e1",
+          "source_sha256": {
+            "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts": "sha256:b5e38ba5e45ddb2c7fe362c52eb412e22a6daebbbba8a52e6321c425d454931b",
+            "plugins/immune-brain/.pi-extension/imm-canary-work.ts": "sha256:abc3e994cda381105089d18288d1b841a46acf54df255b901cbaa333d56f648c",
+            "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts": "sha256:92874a39c17f24014b885c869fb0dd37b4ff9da81abcbb53a590038353cdf6c2",
+            "plugins/immune-brain/.pi-extension/pi-run-continuation.ts": "sha256:932cc88ec8166a9d5bd8e9b04c1b1f01771dde64389f171519948738b0bc9961",
+            "plugins/immune-brain/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/dist/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/dist/claude/mcp-server.mjs": "sha256:1a854a0936d45b96d08efa6285f4644c32dfa67556365fc406bd503678238201",
+            "plugins/immune-brain/dist/imm-run-batch.md": "sha256:cf8548b79b27691e9096c5cc2dce2571d87e40b68c17989cf4ba55beac008d4d",
+            "plugins/immune-brain/dist/imm-run.md": "sha256:73132e4696921fd15980366f210fd89530ac70764080427b89268472937d3154",
+            "plugins/immune-brain/dist/role-prompts/executor.md": "sha256:8661621239a6589dd074da5f52e32cf436b7344857f4c866b28b17bdfb8ad48c",
+            "plugins/immune-brain/hooks/hooks.json": "sha256:00cd183ca2d20520a8b9c35054116f0a3bf4e52471de4dccfdafe64e19d14d62",
+            "plugins/immune-brain/runtime/assurance/run_continuation.ts": "sha256:b8ffad8b936fa686107e4be1276c89d278b0b7b9cadcf25e3167403beef3e0b6",
+            "plugins/immune-brain/runtime/claude/interaction.ts": "sha256:5c9e83c7bbdd17f6734abd584be61cb4326e376a0caabe02d9f834a67f7a89e3",
+            "plugins/immune-brain/runtime/claude/kernel_ports.ts": "sha256:be07878e16140e05f01e00bd2dba5929f9d60ad170573a88aee38da638221805",
+            "plugins/immune-brain/runtime/claude/lane_guard.ts": "sha256:a4ae2aef3c1595754994b96da1aaaab368305b6f684c60445f045cc2f996e5eb",
+            "plugins/immune-brain/runtime/claude/mcp_server.ts": "sha256:cc7f879d76a24b6dbef73adff9491df620b298d866717c5219fd2540d1e3664c",
+            "plugins/immune-brain/runtime/claude/run_continuation.ts": "sha256:1654a82d5783125e5c1810dfdb80a8695360093d9dddbfd3083fa1aab62039e9",
+            "plugins/immune-brain/runtime/github_issue_tracker.ts": "sha256:b07ff581d6a7294581182d16fc24c2ee738a0545c0c420482e5a513d0ef38ac7",
+            "plugins/immune-brain/runtime/prompts/executor.md": "sha256:8661621239a6589dd074da5f52e32cf436b7344857f4c866b28b17bdfb8ad48c",
+            "plugins/immune-brain/runtime/unattended/batch_disposition.ts": "sha256:c0050858f5487a0f630a2c9d94fe0735ab1d1472a29083dfa33859eaa0eb06d3",
+            "plugins/immune-brain/runtime/unattended/batch_final_verification.ts": "sha256:b40b3dbb06949f0f7e5ebb6598b1ccff18b67b0a34226240e53f37dd83c7e739",
+            "plugins/immune-brain/runtime/unattended/batch_git.ts": "sha256:3d811aa661a5dc9078eeabfb42fdce80112737ea34d8af00482fc572a0353e38",
+            "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts": "sha256:2f43858e96741eb3aca95e99433e837cd45ada38b8332cd64dafb5890838721c",
+            "plugins/immune-brain/runtime/unattended/batch_lanes.ts": "sha256:8cbf33ee009fc194b04e1b3bde63f0568e384642e780e62e377dc82b4affaa64",
+            "plugins/immune-brain/runtime/unattended/batch_plan.ts": "sha256:ed36a38ec53f1d2580b9ac7fb5ad6106091212e9d9034ea8b0b9545a8a3f296a",
+            "plugins/immune-brain/runtime/unattended/batch_preflight.ts": "sha256:4ec9f3d89847afd17ad486b0b570d4cdc7f8b51c7b82321433d67900279db895",
+            "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts": "sha256:8a7a2a4d9e97172a5ac1ee0f83d6e85d7a7d98c9eb2119b4c0f336de182aaecb",
+            "plugins/immune-brain/runtime/unattended/batch_runner.ts": "sha256:0323b4e0ca3d24900ea57c6a275cd0acbae48295e9adf17b593e18ba98c74d32",
+            "plugins/immune-brain/runtime/unattended/batch_schedule.ts": "sha256:04c4cc57fda27ea1289e4d66b26e07e690f94d493b5364c224bee53e59fd5541",
+            "plugins/immune-brain/runtime/unattended/batch_state.ts": "sha256:a87f9cf4512482ca7e981c99165fb00ab935bbdd31cc199ce55e6f2b0e8064eb",
+            "plugins/immune-brain/runtime/unattended/types.ts": "sha256:447e45ade83e3cfe7139bec56ef157e223c7251d1f268f3e75742b688f3c6018",
+            "plugins/immune-brain/skills/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/skills/imm-run/SKILL.md": "sha256:caa4657e96de275b7e11a3dad98f2f32e2987bd19ff71b451a33eb75eff023b0"
+          },
+          "models": [
+            "claude-sonnet-5-5"
+          ],
+          "native_inputs": [
+            {
+              "request_id": "3a09c56e-bc76-49d3-bbf8-34207d037332",
+              "message": "Authorize this unattended batch run for gdr-live-claude-repair?\n\nOperation: start_unattended_batch\nInitiative: gdr-live-claude-repair\nBatch branch: imm/gdr-live-claude-repair\nPlan digest: sha256:d35eb850fb742d055b17116851f7f9a4d0026e7f49daa5cbf0c7d799bcf64cf2\nOrdered children (4):\n  - gdr-live-claude-repair-a (S1) [risk: routine]\n  - gdr-live-claude-repair-b (S2) [risk: routine]\n  - gdr-live-claude-repair-sum (S3) [risk: material]\n  - gdr-live-claude-repair-integration (S4) [risk: routine]\nBudget: max_children=4, qa_failure_limit=2\nFinal verification: bun .fixture/final.ts",
+              "decision": "accept",
+              "input_kind": "scripted-fixture-test-user"
+            },
+            {
+              "request_id": "4e7a9a88-dd7a-475a-b9e7-7b9f80680c69",
+              "message": "Authorize this exact Immune-Brain operation?\n\nOperation: enroll\nTask: gdr-live-claude-repair-repair-b0d1b55e5f66\nRisk: material\nIntent revision: 1\nIntent hash: sha256:3f27b26dd4e5ca13e149af1c7aec3be0e2feae7f02dd636b07fc2e434fa8a790\nBinding digest: sha256:0ac01d4689ea69572299cf912812b4baec260093cb6eeb10da1beccbd5dab7f1",
+              "decision": "accept",
+              "input_kind": "scripted-fixture-test-user"
+            }
+          ],
+          "integrated_head": "513dcc4812478610a66df79cb277865ca47b110e",
+          "final_verification": {
+            "passed": true,
+            "head": "513dcc4812478610a66df79cb277865ca47b110e",
+            "results": [
+              {
+                "command": "bun .fixture/final.ts",
+                "exit_code": 0,
+                "signal": null,
+                "passed": true,
+                "duration_ms": 6
+              }
+            ]
+          },
+          "tasks": [
+            {
+              "task_id": "gdr-live-claude-repair-integration",
+              "run_id": "run-35689410-8bff-425b-9cbf-e3291ec9afbe",
+              "record_bytes": "{\n  \"contract\": \"assurance_kernel/task_record/v4\",\n  \"task_id\": \"gdr-live-claude-repair-integration\",\n  \"intent_snapshot\": {\n    \"contract\": \"assurance_kernel/task_intent/v1\",\n    \"task_id\": \"gdr-live-claude-repair-integration\",\n    \"goal\": \"Write src/integration.txt as exactly passed followed by a newline\",\n    \"acceptance\": [\n      {\n        \"id\": \"result\",\n        \"assertion\": \"The integration output and its integrated prerequisites are correct\",\n        \"verification\": \"{\\n  \\\"contract\\\": \\\"assurance_kernel/verification_descriptor/v2\\\",\\n  \\\"command\\\": {\\n    \\\"executable\\\": \\\"bun\\\",\\n    \\\"argv\\\": [\\n      \\\".fixture/verify.ts\\\",\\n      \\\"integration\\\",\\n      \\\"passed\\\"\\n    ],\\n    \\\"cwd\\\": \\\".\\\",\\n    \\\"timeout_ms\\\": 10000,\\n    \\\"max_output_bytes\\\": 8192\\n  },\\n  \\\"environment\\\": {\\n    \\\"writable_paths\\\": []\\n  }\\n}\\n\"\n      }\n    ],\n    \"scope_hint\": [\n      \"docs/plans/gdr-live-claude-repair-integration.intent.json\",\n      \"src\"\n    ],\n    \"risk\": \"routine\",\n    \"revision\": 1,\n    \"owner\": \"user\"\n  },\n  \"intent_ref\": {\n    \"path\": \"docs/plans/gdr-live-claude-repair-integration.intent.json\",\n    \"content_hash\": \"sha256:24a3e286e3053ada3e637e19c770e64be50afccf310c9fe9eb499771e8520a41\"\n  },\n  \"lifecycle\": \"done\",\n  \"artifact_state\": \"frozen\",\n  \"baseline\": \"sha256:24a3e286e3053ada3e637e19c770e64be50afccf310c9fe9eb499771e8520a41\",\n  \"git_base_head\": \"9026f13f6d805dbee3a4fd8ab5836b522daab728\",\n  \"attestations\": [\n    {\n      \"id\": \"approval-qa-3896b8ca\",\n      \"kind\": \"qa\",\n      \"authority_role\": \"qa\",\n      \"task_revision\": 1,\n      \"intent_content_hash\": \"sha256:24a3e286e3053ada3e637e19c770e64be50afccf310c9fe9eb499771e8520a41\",\n      \"diff_hash\": \"sha256:d26c370fefbd7244c51808baf8c061c6c5a68bb166c0826240e635c377975442\",\n      \"actor_id\": \"deterministic-qa\",\n      \"summary\": \"all 1 project verification check(s) passed; execution=sha256:19900742f1d856b0cb8cb9361d0b64627321e8508faf94cbc376d80b222ecb8b\",\n      \"acceptance_results\": [\n        {\n          \"acceptance_id\": \"result\",\n          \"status\": \"passed\",\n          \"summary\": \"host-attested QA: all 1 project verification check(s) passed; execution=sha256:19900742f1d856b0cb8cb9361d0b64627321e8508faf94cbc376d80b222ecb8b\"\n        }\n      ]\n    }\n  ],\n  \"findings\": [],\n  \"history\": [\n    {\n      \"id\": \"freeze_artifacts:gdr-live-claude-repair-integration:2026-10-15T00:57:32.467Z\",\n      \"at\": \"2026-10-15T00:57:32.467Z\",\n      \"type\": \"freeze_artifacts\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"TaskIntent frozen in place at docs/plans/gdr-live-claude-repair-integration.intent.json\"\n    },\n    {\n      \"id\": \"record_approval:gdr-live-claude-repair-integration:2026-10-15T00:57:33.554Z\",\n      \"at\": \"2026-10-15T00:57:33.554Z\",\n      \"type\": \"record_approval\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"approval-qa-3896b8ca\\naction_v2_sha256:19614bdf88c70c54d710005c1fdcea5da89da4323931f04b2b0d5135977beca6\",\n      \"authority\": {\n        \"authority_kind\": \"qa\",\n        \"actor_id\": \"deterministic-qa\",\n        \"confirmation_ref\": \"claude:deterministic-qa\",\n        \"issued_at\": \"2026-10-15T00:57:33.554Z\"\n      }\n    },\n    {\n      \"id\": \"complete:gdr-live-claude-repair-integration:2026-10-15T00:57:34.256Z\",\n      \"at\": \"2026-10-15T00:57:34.256Z\",\n      \"type\": \"complete\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"done:frozen\",\n      \"reason\": \"action_v2_sha256:a24f85f34512d71f04aefba6de6bbea4a8857873550968c2e5ba5f333d76b4ed\"\n    }\n  ]\n}\n",
+              "terminal_proof_bytes": "{\n  \"contract\": \"assurance_kernel/task_tombstone/v2\",\n  \"task_id\": \"gdr-live-claude-repair-integration\",\n  \"lifecycle_status\": \"terminal\",\n  \"terminal_lifecycle\": \"done\",\n  \"terminal_event_id\": \"complete:gdr-live-claude-repair-integration:2026-10-15T00:57:34.256Z\",\n  \"final_record_hash\": \"sha256:1a8cef83f1f7ed6e220f446f2c12725a345a26bb2e389f5553383e5d013011c8\",\n  \"terminalized_at\": \"2026-10-15T00:57:34.256Z\"\n}\n",
+              "integrated_commit": "fea60ea888ec09a0b976b3bc533b9942c60eb5b7",
+              "commit_is_ancestor": true,
+              "scope_validated": true
+            },
+            {
+              "task_id": "gdr-live-claude-repair-a",
+              "run_id": "run-133c5686-8e45-4a41-bba8-89603e2c0f5f",
+              "record_bytes": "{\n  \"contract\": \"assurance_kernel/task_record/v4\",\n  \"task_id\": \"gdr-live-claude-repair-a\",\n  \"intent_snapshot\": {\n    \"contract\": \"assurance_kernel/task_intent/v1\",\n    \"task_id\": \"gdr-live-claude-repair-a\",\n    \"goal\": \"Write src/a.txt as exactly one followed by a newline\",\n    \"acceptance\": [\n      {\n        \"id\": \"result\",\n        \"assertion\": \"The a output and its integrated prerequisites are correct\",\n        \"verification\": \"{\\n  \\\"contract\\\": \\\"assurance_kernel/verification_descriptor/v2\\\",\\n  \\\"command\\\": {\\n    \\\"executable\\\": \\\"bun\\\",\\n    \\\"argv\\\": [\\n      \\\".fixture/verify.ts\\\",\\n      \\\"a\\\",\\n      \\\"one\\\"\\n    ],\\n    \\\"cwd\\\": \\\".\\\",\\n    \\\"timeout_ms\\\": 10000,\\n    \\\"max_output_bytes\\\": 8192\\n  },\\n  \\\"environment\\\": {\\n    \\\"writable_paths\\\": []\\n  }\\n}\\n\"\n      }\n    ],\n    \"scope_hint\": [\n      \"docs/plans/gdr-live-claude-repair-a.intent.json\",\n      \"src/a.txt\"\n    ],\n    \"risk\": \"routine\",\n    \"revision\": 1,\n    \"owner\": \"user\"\n  },\n  \"intent_ref\": {\n    \"path\": \"docs/plans/gdr-live-claude-repair-a.intent.json\",\n    \"content_hash\": \"sha256:87e814c5dde182bbf8a84133e15acccea962992aa1d4ee28a61072baa8fd7f2d\"\n  },\n  \"lifecycle\": \"done\",\n  \"artifact_state\": \"frozen\",\n  \"baseline\": \"sha256:87e814c5dde182bbf8a84133e15acccea962992aa1d4ee28a61072baa8fd7f2d\",\n  \"git_base_head\": \"45dc1bc7cec693fae38d432172c9e32cb78c68f5\",\n  \"attestations\": [\n    {\n      \"id\": \"approval-qa-97fddc5a\",\n      \"kind\": \"qa\",\n      \"authority_role\": \"qa\",\n      \"task_revision\": 1,\n      \"intent_content_hash\": \"sha256:87e814c5dde182bbf8a84133e15acccea962992aa1d4ee28a61072baa8fd7f2d\",\n      \"diff_hash\": \"sha256:69b2202aee5225fce04497220a87c97383867dff1185ddccbe935b6ed8615193\",\n      \"actor_id\": \"deterministic-qa\",\n      \"summary\": \"all 1 project verification check(s) passed; execution=sha256:5bca4b15361fc3eb097df1c1a410a819ac56c89db1808a80f6df636ab410bca6\",\n      \"acceptance_results\": [\n        {\n          \"acceptance_id\": \"result\",\n          \"status\": \"passed\",\n          \"summary\": \"host-attested QA: all 1 project verification check(s) passed; execution=sha256:5bca4b15361fc3eb097df1c1a410a819ac56c89db1808a80f6df636ab410bca6\"\n        }\n      ]\n    }\n  ],\n  \"findings\": [\n    {\n      \"id\": \"qa-result-1efb8eaa-d5f3df\",\n      \"kind\": \"blocking\",\n      \"status\": \"resolved\",\n      \"acceptance_id\": \"result\",\n      \"source\": \"execution\",\n      \"review_round\": null,\n      \"summary\": \"verification failed (exit 1) stdout=0B stderr=761B\",\n      \"anchor\": null,\n      \"evidence\": null,\n      \"counterevidence\": null\n    }\n  ],\n  \"history\": [\n    {\n      \"id\": \"freeze_artifacts:gdr-live-claude-repair-a:2026-10-15T00:56:23.632Z\",\n      \"at\": \"2026-10-15T00:56:23.632Z\",\n      \"type\": \"freeze_artifacts\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"TaskIntent frozen in place at docs/plans/gdr-live-claude-repair-a.intent.json\"\n    },\n    {\n      \"id\": \"request_rework:gdr-live-claude-repair-a:2026-10-15T00:56:24.580Z\",\n      \"at\": \"2026-10-15T00:56:24.580Z\",\n      \"type\": \"request_rework\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:active\",\n      \"reason\": \"review_round_1\\naction_v2_sha256:b97050e5e3da2a2aef07a261ad9d1aec5c153c50c1bffb14f4d0b2af14dc654b\",\n      \"authority\": {\n        \"authority_kind\": \"qa\",\n        \"actor_id\": \"deterministic-qa\",\n        \"confirmation_ref\": \"claude:deterministic-qa\",\n        \"issued_at\": \"2026-10-15T00:56:24.580Z\"\n      }\n    },\n    {\n      \"id\": \"resolve_finding:gdr-live-claude-repair-a:2026-10-15T00:56:29.940Z\",\n      \"at\": \"2026-10-15T00:56:29.940Z\",\n      \"type\": \"resolve_finding\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:active\",\n      \"reason\": \"qa-result-1efb8eaa-d5f3df\\naction_v2_sha256:9df85925c363e7e81a4a500107f089087c9c96b9fb01fca7698abb6f837c9b84\"\n    },\n    {\n      \"id\": \"freeze_artifacts:gdr-live-claude-repair-a:2026-10-15T00:56:31.862Z\",\n      \"at\": \"2026-10-15T00:56:31.862Z\",\n      \"type\": \"freeze_artifacts\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"TaskIntent frozen in place at docs/plans/gdr-live-claude-repair-a.intent.json\"\n    },\n    {\n      \"id\": \"record_approval:gdr-live-claude-repair-a:2026-10-15T00:56:32.971Z\",\n      \"at\": \"2026-10-15T00:56:32.971Z\",\n      \"type\": \"record_approval\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"approval-qa-97fddc5a\\naction_v2_sha256:50a0629b83a09b855992f1b28f0da731e50ee31988c5edeaebd172700a63d431\",\n      \"authority\": {\n        \"authority_kind\": \"qa\",\n        \"actor_id\": \"deterministic-qa\",\n        \"confirmation_ref\": \"claude:deterministic-qa\",\n        \"issued_at\": \"2026-10-15T00:56:32.971Z\"\n      }\n    },\n    {\n      \"id\": \"complete:gdr-live-claude-repair-a:2026-10-15T00:56:33.564Z\",\n      \"at\": \"2026-10-15T00:56:33.564Z\",\n      \"type\": \"complete\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"done:frozen\",\n      \"reason\": \"action_v2_sha256:0fe6ca6582d6c169dc488e44d50d4ce7d5351f8f9446caee397c23a4f80d9427\"\n    }\n  ]\n}\n",
+              "terminal_proof_bytes": "{\n  \"contract\": \"assurance_kernel/task_tombstone/v2\",\n  \"task_id\": \"gdr-live-claude-repair-a\",\n  \"lifecycle_status\": \"terminal\",\n  \"terminal_lifecycle\": \"done\",\n  \"terminal_event_id\": \"complete:gdr-live-claude-repair-a:2026-10-15T00:56:33.564Z\",\n  \"final_record_hash\": \"sha256:3159fa41301d4d965a6709ecaa869baf1ac555463574b19573103a5ab3e19c70\",\n  \"terminalized_at\": \"2026-10-15T00:56:33.564Z\"\n}\n",
+              "integrated_commit": "e3b13315abe3f12bc6e4081c1a1b012c307e7173",
+              "commit_is_ancestor": true,
+              "scope_validated": true
+            },
+            {
+              "task_id": "gdr-live-claude-repair-sum",
+              "run_id": "run-ecca5927-6b1a-4297-9fb3-16a693fe7f9f",
+              "record_bytes": "{\n  \"contract\": \"assurance_kernel/task_record/v4\",\n  \"task_id\": \"gdr-live-claude-repair-sum\",\n  \"intent_snapshot\": {\n    \"contract\": \"assurance_kernel/task_intent/v1\",\n    \"task_id\": \"gdr-live-claude-repair-sum\",\n    \"goal\": \"Write src/sum.txt as exactly three followed by a newline\",\n    \"acceptance\": [\n      {\n        \"id\": \"result\",\n        \"assertion\": \"The sum output and its integrated prerequisites are correct\",\n        \"verification\": \"{\\n  \\\"contract\\\": \\\"assurance_kernel/verification_descriptor/v2\\\",\\n  \\\"command\\\": {\\n    \\\"executable\\\": \\\"bun\\\",\\n    \\\"argv\\\": [\\n      \\\".fixture/verify.ts\\\",\\n      \\\"sum\\\",\\n      \\\"three\\\"\\n    ],\\n    \\\"cwd\\\": \\\".\\\",\\n    \\\"timeout_ms\\\": 10000,\\n    \\\"max_output_bytes\\\": 8192\\n  },\\n  \\\"environment\\\": {\\n    \\\"writable_paths\\\": [\\n      \\\".fixture-state\\\"\\n    ]\\n  }\\n}\\n\"\n      }\n    ],\n    \"scope_hint\": [\n      \"docs/plans/gdr-live-claude-repair-sum.intent.json\",\n      \"src/sum.txt\"\n    ],\n    \"risk\": \"material\",\n    \"revision\": 1,\n    \"owner\": \"user\"\n  },\n  \"intent_ref\": {\n    \"path\": \"docs/plans/gdr-live-claude-repair-sum.intent.json\",\n    \"content_hash\": \"sha256:4449d33d25dbf9760ee682ecded2240e9ecf320db19e245c2f9097b175f89ca0\"\n  },\n  \"lifecycle\": \"done\",\n  \"artifact_state\": \"frozen\",\n  \"baseline\": \"sha256:4449d33d25dbf9760ee682ecded2240e9ecf320db19e245c2f9097b175f89ca0\",\n  \"git_base_head\": \"dcc2b17ba6f4a700f996644287038f04847a2b74\",\n  \"attestations\": [\n    {\n      \"id\": \"approval-qa-f7f905a6\",\n      \"kind\": \"qa\",\n      \"authority_role\": \"qa\",\n      \"task_revision\": 1,\n      \"intent_content_hash\": \"sha256:4449d33d25dbf9760ee682ecded2240e9ecf320db19e245c2f9097b175f89ca0\",\n      \"diff_hash\": \"sha256:c2768901c04e17f03ea3cd7fbe60ed7b0cc32f84b3acee409d8e64afb70c533a\",\n      \"actor_id\": \"deterministic-qa\",\n      \"summary\": \"all 1 project verification check(s) passed; execution=sha256:6ac406a5d3bf06e5d17b515e4115de9217aadd563485aed51e5a38be486ebfa0\",\n      \"acceptance_results\": [\n        {\n          \"acceptance_id\": \"result\",\n          \"status\": \"passed\",\n          \"summary\": \"host-attested QA: all 1 project verification check(s) passed; execution=sha256:6ac406a5d3bf06e5d17b515e4115de9217aadd563485aed51e5a38be486ebfa0\"\n        }\n      ]\n    },\n    {\n      \"id\": \"approval-review-d274e83b\",\n      \"kind\": \"review\",\n      \"authority_role\": \"reviewer\",\n      \"task_revision\": 1,\n      \"intent_content_hash\": \"sha256:4449d33d25dbf9760ee682ecded2240e9ecf320db19e245c2f9097b175f89ca0\",\n      \"diff_hash\": \"sha256:c2768901c04e17f03ea3cd7fbe60ed7b0cc32f84b3acee409d8e64afb70c533a\",\n      \"actor_id\": \"parent-mediated-review\",\n      \"summary\": \"src/sum.txt changed from pending to three (1+2 from a.txt and b.txt), with a trailing newline; provenance verified and QA passed.\",\n      \"acceptance_results\": [],\n      \"review_revision\": {\n        \"contract\": \"assurance_kernel/review_revision_identity/v1\",\n        \"base_head\": \"dcc2b17ba6f4a700f996644287038f04847a2b74\",\n        \"review_commit\": \"aa80e4a829b8bd5812c7f63a0a4770bec0210c0f\",\n        \"review_tree\": \"4315c2da9a2d75ca701d1f681a76459a2d280def\",\n        \"manifest_digest\": \"sha256:de2337f256522c94e51db714a2eb48013b1c0e7da8494609bde95017dd9090bb\"\n      },\n      \"reviewer_verdict_sha256\": \"sha256:b205649293c6e71d6b09946d775eea6566d97b15df007bfbad7340eeeea5dea8\"\n    }\n  ],\n  \"findings\": [\n    {\n      \"id\": \"qa-result-f2be3186-aa35da\",\n      \"kind\": \"blocking\",\n      \"status\": \"resolved\",\n      \"acceptance_id\": \"result\",\n      \"source\": \"execution\",\n      \"review_round\": null,\n      \"summary\": \"verification failed (exit 3) stdout=0B stderr=47B\",\n      \"anchor\": null,\n      \"evidence\": null,\n      \"counterevidence\": null\n    }\n  ],\n  \"history\": [\n    {\n      \"id\": \"freeze_artifacts:gdr-live-claude-repair-sum:2026-10-15T00:56:47.274Z\",\n      \"at\": \"2026-10-15T00:56:47.274Z\",\n      \"type\": \"freeze_artifacts\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"TaskIntent frozen in place at docs/plans/gdr-live-claude-repair-sum.intent.json\"\n    },\n    {\n      \"id\": \"request_rework:gdr-live-claude-repair-sum:2026-10-15T00:56:48.706Z\",\n      \"at\": \"2026-10-15T00:56:48.706Z\",\n      \"type\": \"request_rework\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:active\",\n      \"reason\": \"review_round_1\\naction_v2_sha256:691825df89e799a8540bd969bad00e1b8a4a987f9c21be341baa5cace935354b\",\n      \"authority\": {\n        \"authority_kind\": \"qa\",\n        \"actor_id\": \"deterministic-qa\",\n        \"confirmation_ref\": \"claude:deterministic-qa\",\n        \"issued_at\": \"2026-10-15T00:56:48.706Z\"\n      }\n    },\n    {\n      \"id\": \"resolve_finding:gdr-live-claude-repair-sum:2026-10-15T00:56:53.080Z\",\n      \"at\": \"2026-10-15T00:56:53.080Z\",\n      \"type\": \"resolve_finding\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:active\",\n      \"reason\": \"qa-result-f2be3186-aa35da\\naction_v2_sha256:580feff15bcf07ec8b3d7ca7a79b2027d1c22e8e6c77ab25825e24149c14d1c8\"\n    },\n    {\n      \"id\": \"freeze_artifacts:gdr-live-claude-repair-sum:2026-10-15T00:56:54.888Z\",\n      \"at\": \"2026-10-15T00:56:54.888Z\",\n      \"type\": \"freeze_artifacts\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"TaskIntent frozen in place at docs/plans/gdr-live-claude-repair-sum.intent.json\"\n    },\n    {\n      \"id\": \"record_approval:gdr-live-claude-repair-sum:2026-10-15T00:56:56.131Z\",\n      \"at\": \"2026-10-15T00:56:56.131Z\",\n      \"type\": \"record_approval\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"approval-qa-f7f905a6\\naction_v2_sha256:461437e612c3dea0312ce1751e184befc5ea490d2ec05882c90e62f6d8f00ccd\",\n      \"authority\": {\n        \"authority_kind\": \"qa\",\n        \"actor_id\": \"deterministic-qa\",\n        \"confirmation_ref\": \"claude:deterministic-qa\",\n        \"issued_at\": \"2026-10-15T00:56:56.131Z\"\n      }\n    },\n    {\n      \"id\": \"record_approval:gdr-live-claude-repair-sum:2026-10-15T00:57:26.011Z\",\n      \"at\": \"2026-10-15T00:57:26.011Z\",\n      \"type\": \"record_approval\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"approval-review-d274e83b\\naction_v2_sha256:de522653d2c96fcde4bf07f4696f78cb18a141a9c1e8b74dd5546f37081a33dd\",\n      \"authority\": {\n        \"authority_kind\": \"review\",\n        \"actor_id\": \"parent-mediated-review\",\n        \"confirmation_ref\": \"claude:parent-mediated-review\",\n        \"issued_at\": \"2026-10-15T00:57:26.011Z\"\n      }\n    },\n    {\n      \"id\": \"complete:gdr-live-claude-repair-sum:2026-10-15T00:57:26.670Z\",\n      \"at\": \"2026-10-15T00:57:26.670Z\",\n      \"type\": \"complete\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"done:frozen\",\n      \"reason\": \"action_v2_sha256:543fa9b7ffb40e3a106238b4ca86416ef1420ced9a950910070f8c1c389ba394\"\n    }\n  ]\n}\n",
+              "terminal_proof_bytes": "{\n  \"contract\": \"assurance_kernel/task_tombstone/v2\",\n  \"task_id\": \"gdr-live-claude-repair-sum\",\n  \"lifecycle_status\": \"terminal\",\n  \"terminal_lifecycle\": \"done\",\n  \"terminal_event_id\": \"complete:gdr-live-claude-repair-sum:2026-10-15T00:57:26.670Z\",\n  \"final_record_hash\": \"sha256:25f39dce4c706792858c1940f1d57b3c5c87022df247517bc7f9ee8a0893bf89\",\n  \"terminalized_at\": \"2026-10-15T00:57:26.670Z\"\n}\n",
+              "integrated_commit": "9026f13f6d805dbee3a4fd8ab5836b522daab728",
+              "commit_is_ancestor": true,
+              "scope_validated": true
+            },
+            {
+              "task_id": "gdr-live-claude-repair-b",
+              "run_id": "run-14147f8b-21cf-49ae-9d4b-7264fdf2dcca",
+              "record_bytes": "{\n  \"contract\": \"assurance_kernel/task_record/v4\",\n  \"task_id\": \"gdr-live-claude-repair-b\",\n  \"intent_snapshot\": {\n    \"contract\": \"assurance_kernel/task_intent/v1\",\n    \"task_id\": \"gdr-live-claude-repair-b\",\n    \"goal\": \"Write src/b.txt as exactly two followed by a newline\",\n    \"acceptance\": [\n      {\n        \"id\": \"result\",\n        \"assertion\": \"The b output and its integrated prerequisites are correct\",\n        \"verification\": \"{\\n  \\\"contract\\\": \\\"assurance_kernel/verification_descriptor/v2\\\",\\n  \\\"command\\\": {\\n    \\\"executable\\\": \\\"bun\\\",\\n    \\\"argv\\\": [\\n      \\\".fixture/verify.ts\\\",\\n      \\\"b\\\",\\n      \\\"two\\\"\\n    ],\\n    \\\"cwd\\\": \\\".\\\",\\n    \\\"timeout_ms\\\": 10000,\\n    \\\"max_output_bytes\\\": 8192\\n  },\\n  \\\"environment\\\": {\\n    \\\"writable_paths\\\": []\\n  }\\n}\\n\"\n      }\n    ],\n    \"scope_hint\": [\n      \"docs/plans/gdr-live-claude-repair-b.intent.json\",\n      \"src/b.txt\"\n    ],\n    \"risk\": \"routine\",\n    \"revision\": 1,\n    \"owner\": \"user\"\n  },\n  \"intent_ref\": {\n    \"path\": \"docs/plans/gdr-live-claude-repair-b.intent.json\",\n    \"content_hash\": \"sha256:92ca1415a2939773f07366e33158856f250bcd8c3d40b2e03a0bbddd18b7a7d7\"\n  },\n  \"lifecycle\": \"done\",\n  \"artifact_state\": \"frozen\",\n  \"baseline\": \"sha256:92ca1415a2939773f07366e33158856f250bcd8c3d40b2e03a0bbddd18b7a7d7\",\n  \"git_base_head\": \"e3b13315abe3f12bc6e4081c1a1b012c307e7173\",\n  \"attestations\": [\n    {\n      \"id\": \"approval-qa-bc54630e\",\n      \"kind\": \"qa\",\n      \"authority_role\": \"qa\",\n      \"task_revision\": 1,\n      \"intent_content_hash\": \"sha256:92ca1415a2939773f07366e33158856f250bcd8c3d40b2e03a0bbddd18b7a7d7\",\n      \"diff_hash\": \"sha256:bde04c1260a41a52675e924a0c3f6dcb9da95df615ede14cd83d16b39b60b967\",\n      \"actor_id\": \"deterministic-qa\",\n      \"summary\": \"all 1 project verification check(s) passed; execution=sha256:d4aaf2066b2decd363702be7c6b27cbc97317a95ed1b830f48acca66d15fe426\",\n      \"acceptance_results\": [\n        {\n          \"acceptance_id\": \"result\",\n          \"status\": \"passed\",\n          \"summary\": \"host-attested QA: all 1 project verification check(s) passed; execution=sha256:d4aaf2066b2decd363702be7c6b27cbc97317a95ed1b830f48acca66d15fe426\"\n        }\n      ]\n    }\n  ],\n  \"findings\": [],\n  \"history\": [\n    {\n      \"id\": \"freeze_artifacts:gdr-live-claude-repair-b:2026-10-15T00:56:39.714Z\",\n      \"at\": \"2026-10-15T00:56:39.714Z\",\n      \"type\": \"freeze_artifacts\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"TaskIntent frozen in place at docs/plans/gdr-live-claude-repair-b.intent.json\"\n    },\n    {\n      \"id\": \"record_approval:gdr-live-claude-repair-b:2026-10-15T00:56:40.853Z\",\n      \"at\": \"2026-10-15T00:56:40.853Z\",\n      \"type\": \"record_approval\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"approval-qa-bc54630e\\naction_v2_sha256:49de516afeee489421014a316683ca1a99ca00ba52602dddb7ca778a12fd3cf2\",\n      \"authority\": {\n        \"authority_kind\": \"qa\",\n        \"actor_id\": \"deterministic-qa\",\n        \"confirmation_ref\": \"claude:deterministic-qa\",\n        \"issued_at\": \"2026-10-15T00:56:40.853Z\"\n      }\n    },\n    {\n      \"id\": \"complete:gdr-live-claude-repair-b:2026-10-15T00:56:41.551Z\",\n      \"at\": \"2026-10-15T00:56:41.551Z\",\n      \"type\": \"complete\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"done:frozen\",\n      \"reason\": \"action_v2_sha256:01d8a6f06e39c3f21bf2032e3e9c6e42cbe3a07ae231956c6b2fcc4d8caf40d6\"\n    }\n  ]\n}\n",
+              "terminal_proof_bytes": "{\n  \"contract\": \"assurance_kernel/task_tombstone/v2\",\n  \"task_id\": \"gdr-live-claude-repair-b\",\n  \"lifecycle_status\": \"terminal\",\n  \"terminal_lifecycle\": \"done\",\n  \"terminal_event_id\": \"complete:gdr-live-claude-repair-b:2026-10-15T00:56:41.551Z\",\n  \"final_record_hash\": \"sha256:a11aafe1b79aaf442ab5b7879e4a3a44b02cdd0c36bd0740f049dbaa72b24fcb\",\n  \"terminalized_at\": \"2026-10-15T00:56:41.551Z\"\n}\n",
+              "integrated_commit": "dcc2b17ba6f4a700f996644287038f04847a2b74",
+              "commit_is_ancestor": true,
+              "scope_validated": true
+            },
+            {
+              "task_id": "gdr-live-claude-repair-repair-b0d1b55e5f66",
+              "run_id": "run-e051d96b-2b8b-49a1-a8c0-e6528ce0285b",
+              "record_bytes": "{\n  \"contract\": \"assurance_kernel/task_record/v4\",\n  \"task_id\": \"gdr-live-claude-repair-repair-b0d1b55e5f66\",\n  \"intent_snapshot\": {\n    \"contract\": \"assurance_kernel/task_intent/v1\",\n    \"task_id\": \"gdr-live-claude-repair-repair-b0d1b55e5f66\",\n    \"goal\": \"Demonstrate actual autonomous Parent delivery\",\n    \"acceptance\": [\n      {\n        \"id\": \"final-1\",\n        \"assertion\": \"Restore the original goal and pass final command 1\",\n        \"verification\": \"{\\n  \\\"contract\\\": \\\"assurance_kernel/verification_descriptor/v2\\\",\\n  \\\"command\\\": {\\n    \\\"executable\\\": \\\"bun\\\",\\n    \\\"argv\\\": [\\n      \\\".fixture/final.ts\\\"\\n    ],\\n    \\\"cwd\\\": \\\".\\\",\\n    \\\"timeout_ms\\\": 120000,\\n    \\\"max_output_bytes\\\": 131072\\n  },\\n  \\\"environment\\\": {\\n    \\\"prepare\\\": null,\\n    \\\"writable_paths\\\": []\\n  }\\n}\\n\"\n      }\n    ],\n    \"scope_hint\": [\n      \"docs/plans/gdr-live-claude-repair-repair-b0d1b55e5f66.intent.json\",\n      \"src/repair.txt\"\n    ],\n    \"risk\": \"material\",\n    \"revision\": 1,\n    \"owner\": \"user\"\n  },\n  \"intent_ref\": {\n    \"path\": \"docs/plans/gdr-live-claude-repair-repair-b0d1b55e5f66.intent.json\",\n    \"content_hash\": \"sha256:3f27b26dd4e5ca13e149af1c7aec3be0e2feae7f02dd636b07fc2e434fa8a790\"\n  },\n  \"lifecycle\": \"done\",\n  \"artifact_state\": \"frozen\",\n  \"baseline\": \"sha256:3f27b26dd4e5ca13e149af1c7aec3be0e2feae7f02dd636b07fc2e434fa8a790\",\n  \"git_base_head\": \"fea60ea888ec09a0b976b3bc533b9942c60eb5b7\",\n  \"attestations\": [\n    {\n      \"id\": \"approval-qa-ed864dad\",\n      \"kind\": \"qa\",\n      \"authority_role\": \"qa\",\n      \"task_revision\": 1,\n      \"intent_content_hash\": \"sha256:3f27b26dd4e5ca13e149af1c7aec3be0e2feae7f02dd636b07fc2e434fa8a790\",\n      \"diff_hash\": \"sha256:e6ee7fdc0803fcdc5f2d4c2791edfaeb19562dfa2d56daed289564cc4587330f\",\n      \"actor_id\": \"deterministic-qa\",\n      \"summary\": \"all 1 project verification check(s) passed; execution=sha256:b9af002bef3545dd2d65fd2bf00e81fe1ec20e473e7bb88e3f03fcb6adaa433c\",\n      \"acceptance_results\": [\n        {\n          \"acceptance_id\": \"final-1\",\n          \"status\": \"passed\",\n          \"summary\": \"host-attested QA: all 1 project verification check(s) passed; execution=sha256:b9af002bef3545dd2d65fd2bf00e81fe1ec20e473e7bb88e3f03fcb6adaa433c\"\n        }\n      ]\n    },\n    {\n      \"id\": \"approval-review-4c9cfa80\",\n      \"kind\": \"review\",\n      \"authority_role\": \"reviewer\",\n      \"task_revision\": 1,\n      \"intent_content_hash\": \"sha256:3f27b26dd4e5ca13e149af1c7aec3be0e2feae7f02dd636b07fc2e434fa8a790\",\n      \"diff_hash\": \"sha256:e6ee7fdc0803fcdc5f2d4c2791edfaeb19562dfa2d56daed289564cc4587330f\",\n      \"actor_id\": \"parent-mediated-review\",\n      \"summary\": \"Revision provenance verified; the change adds the intent file and src/repair.txt, within scope, and final-1 passed in Kernel QA.\",\n      \"acceptance_results\": [],\n      \"review_revision\": {\n        \"contract\": \"assurance_kernel/review_revision_identity/v1\",\n        \"base_head\": \"fea60ea888ec09a0b976b3bc533b9942c60eb5b7\",\n        \"review_commit\": \"4cb76bc9be64682d9851b6e79ba22d79a90369c3\",\n        \"review_tree\": \"63963181b82e1aedba348d481083e39725cb5be0\",\n        \"manifest_digest\": \"sha256:f2cae6fcecc63786ba4efaa119536c75d2ba7e3238fa55e4535615ac9cd5bd5d\"\n      },\n      \"reviewer_verdict_sha256\": \"sha256:d5621f123e831845eb9a992504a91217e070096819780e485d26960f2d948eef\"\n    }\n  ],\n  \"findings\": [],\n  \"history\": [\n    {\n      \"id\": \"freeze_artifacts:gdr-live-claude-repair-repair-b0d1b55e5f66:2026-10-15T00:58:04.454Z\",\n      \"at\": \"2026-10-15T00:58:04.454Z\",\n      \"type\": \"freeze_artifacts\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"TaskIntent frozen in place at docs/plans/gdr-live-claude-repair-repair-b0d1b55e5f66.intent.json\"\n    },\n    {\n      \"id\": \"record_approval:gdr-live-claude-repair-repair-b0d1b55e5f66:2026-10-15T00:58:05.728Z\",\n      \"at\": \"2026-10-15T00:58:05.728Z\",\n      \"type\": \"record_approval\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"approval-qa-ed864dad\\naction_v2_sha256:9fd539ffdbad237563afce4e58dd96a83522504b5e1d63b77b1f1ae0cd344022\",\n      \"authority\": {\n        \"authority_kind\": \"qa\",\n        \"actor_id\": \"deterministic-qa\",\n        \"confirmation_ref\": \"claude:deterministic-qa\",\n        \"issued_at\": \"2026-10-15T00:58:05.728Z\"\n      }\n    },\n    {\n      \"id\": \"record_approval:gdr-live-claude-repair-repair-b0d1b55e5f66:2026-10-15T00:58:30.951Z\",\n      \"at\": \"2026-10-15T00:58:30.951Z\",\n      \"type\": \"record_approval\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"approval-review-4c9cfa80\\naction_v2_sha256:6bbbbec0daab6ab3aa34ed3e3868be9d6169037f02e04b9835cdcfa5665c46e2\",\n      \"authority\": {\n        \"authority_kind\": \"review\",\n        \"actor_id\": \"parent-mediated-review\",\n        \"confirmation_ref\": \"claude:parent-mediated-review\",\n        \"issued_at\": \"2026-10-15T00:58:30.951Z\"\n      }\n    },\n    {\n      \"id\": \"complete:gdr-live-claude-repair-repair-b0d1b55e5f66:2026-10-15T00:58:31.566Z\",\n      \"at\": \"2026-10-15T00:58:31.566Z\",\n      \"type\": \"complete\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"done:frozen\",\n      \"reason\": \"action_v2_sha256:997f1e72322790bd09dd8b2def881164a59e40dd8173e759c03952ef6b4e74fd\"\n    }\n  ]\n}\n",
+              "terminal_proof_bytes": "{\n  \"contract\": \"assurance_kernel/task_tombstone/v2\",\n  \"task_id\": \"gdr-live-claude-repair-repair-b0d1b55e5f66\",\n  \"lifecycle_status\": \"terminal\",\n  \"terminal_lifecycle\": \"done\",\n  \"terminal_event_id\": \"complete:gdr-live-claude-repair-repair-b0d1b55e5f66:2026-10-15T00:58:31.566Z\",\n  \"final_record_hash\": \"sha256:f698304797bda9fad1736e0389eb0c8b721de6ef1a4ade94e55d32b30622fad5\",\n  \"terminalized_at\": \"2026-10-15T00:58:31.566Z\"\n}\n",
+              "integrated_commit": "513dcc4812478610a66df79cb277865ca47b110e",
+              "commit_is_ancestor": true,
+              "scope_validated": true
+            }
+          ],
+          "observations": {
+            "completion": {
+              "complete": true,
+              "integrated_task_ids": [
+                "gdr-live-claude-repair-a",
+                "gdr-live-claude-repair-b",
+                "gdr-live-claude-repair-sum",
+                "gdr-live-claude-repair-integration",
+                "gdr-live-claude-repair-repair-b0d1b55e5f66"
+              ],
+              "missing_task_ids": [],
+              "final_passed": true,
+              "head": "513dcc4812478610a66df79cb277865ca47b110e",
+              "reason": null
+            },
+            "qa_failure_observed": true,
+            "review_observed": true,
+            "native_inputs": [
+              {
+                "request_id": "3a09c56e-bc76-49d3-bbf8-34207d037332",
+                "message": "Authorize this unattended batch run for gdr-live-claude-repair?\n\nOperation: start_unattended_batch\nInitiative: gdr-live-claude-repair\nBatch branch: imm/gdr-live-claude-repair\nPlan digest: sha256:d35eb850fb742d055b17116851f7f9a4d0026e7f49daa5cbf0c7d799bcf64cf2\nOrdered children (4):\n  - gdr-live-claude-repair-a (S1) [risk: routine]\n  - gdr-live-claude-repair-b (S2) [risk: routine]\n  - gdr-live-claude-repair-sum (S3) [risk: material]\n  - gdr-live-claude-repair-integration (S4) [risk: routine]\nBudget: max_children=4, qa_failure_limit=2\nFinal verification: bun .fixture/final.ts",
+                "decision": "accept",
+                "input_kind": "scripted-fixture-test-user"
+              },
+              {
+                "request_id": "4e7a9a88-dd7a-475a-b9e7-7b9f80680c69",
+                "message": "Authorize this exact Immune-Brain operation?\n\nOperation: enroll\nTask: gdr-live-claude-repair-repair-b0d1b55e5f66\nRisk: material\nIntent revision: 1\nIntent hash: sha256:3f27b26dd4e5ca13e149af1c7aec3be0e2feae7f02dd636b07fc2e434fa8a790\nBinding digest: sha256:0ac01d4689ea69572299cf912812b4baec260093cb6eeb10da1beccbd5dab7f1",
+                "decision": "accept",
+                "input_kind": "scripted-fixture-test-user"
+              }
+            ]
+          },
+          "controller_outcome": "host_result"
+        },
+        {
+          "host": "claude-code",
+          "root": "/Users/derek/workspaces/immune-brain/.goal-driven-run-live/fixtures/gdr-live-claude-critical-NJT8UG",
+          "scenarios": [
+            "critical_and_descendant"
+          ],
+          "outcome": "passed",
+          "manual_continuations": 0,
+          "response_boundaries": 1,
+          "initial_input_sha256": "sha256:186dc2bb2ee850d67f9fae083f41936e10d4f9cc6bc5eba46912551abdc8eeac",
+          "source_sha256": {
+            "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts": "sha256:b5e38ba5e45ddb2c7fe362c52eb412e22a6daebbbba8a52e6321c425d454931b",
+            "plugins/immune-brain/.pi-extension/imm-canary-work.ts": "sha256:abc3e994cda381105089d18288d1b841a46acf54df255b901cbaa333d56f648c",
+            "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts": "sha256:92874a39c17f24014b885c869fb0dd37b4ff9da81abcbb53a590038353cdf6c2",
+            "plugins/immune-brain/.pi-extension/pi-run-continuation.ts": "sha256:932cc88ec8166a9d5bd8e9b04c1b1f01771dde64389f171519948738b0bc9961",
+            "plugins/immune-brain/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/dist/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/dist/claude/mcp-server.mjs": "sha256:1a854a0936d45b96d08efa6285f4644c32dfa67556365fc406bd503678238201",
+            "plugins/immune-brain/dist/imm-run-batch.md": "sha256:cf8548b79b27691e9096c5cc2dce2571d87e40b68c17989cf4ba55beac008d4d",
+            "plugins/immune-brain/dist/imm-run.md": "sha256:73132e4696921fd15980366f210fd89530ac70764080427b89268472937d3154",
+            "plugins/immune-brain/dist/role-prompts/executor.md": "sha256:8661621239a6589dd074da5f52e32cf436b7344857f4c866b28b17bdfb8ad48c",
+            "plugins/immune-brain/hooks/hooks.json": "sha256:00cd183ca2d20520a8b9c35054116f0a3bf4e52471de4dccfdafe64e19d14d62",
+            "plugins/immune-brain/runtime/assurance/run_continuation.ts": "sha256:b8ffad8b936fa686107e4be1276c89d278b0b7b9cadcf25e3167403beef3e0b6",
+            "plugins/immune-brain/runtime/claude/interaction.ts": "sha256:5c9e83c7bbdd17f6734abd584be61cb4326e376a0caabe02d9f834a67f7a89e3",
+            "plugins/immune-brain/runtime/claude/kernel_ports.ts": "sha256:be07878e16140e05f01e00bd2dba5929f9d60ad170573a88aee38da638221805",
+            "plugins/immune-brain/runtime/claude/lane_guard.ts": "sha256:a4ae2aef3c1595754994b96da1aaaab368305b6f684c60445f045cc2f996e5eb",
+            "plugins/immune-brain/runtime/claude/mcp_server.ts": "sha256:cc7f879d76a24b6dbef73adff9491df620b298d866717c5219fd2540d1e3664c",
+            "plugins/immune-brain/runtime/claude/run_continuation.ts": "sha256:1654a82d5783125e5c1810dfdb80a8695360093d9dddbfd3083fa1aab62039e9",
+            "plugins/immune-brain/runtime/github_issue_tracker.ts": "sha256:b07ff581d6a7294581182d16fc24c2ee738a0545c0c420482e5a513d0ef38ac7",
+            "plugins/immune-brain/runtime/prompts/executor.md": "sha256:8661621239a6589dd074da5f52e32cf436b7344857f4c866b28b17bdfb8ad48c",
+            "plugins/immune-brain/runtime/unattended/batch_disposition.ts": "sha256:c0050858f5487a0f630a2c9d94fe0735ab1d1472a29083dfa33859eaa0eb06d3",
+            "plugins/immune-brain/runtime/unattended/batch_final_verification.ts": "sha256:b40b3dbb06949f0f7e5ebb6598b1ccff18b67b0a34226240e53f37dd83c7e739",
+            "plugins/immune-brain/runtime/unattended/batch_git.ts": "sha256:3d811aa661a5dc9078eeabfb42fdce80112737ea34d8af00482fc572a0353e38",
+            "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts": "sha256:2f43858e96741eb3aca95e99433e837cd45ada38b8332cd64dafb5890838721c",
+            "plugins/immune-brain/runtime/unattended/batch_lanes.ts": "sha256:8cbf33ee009fc194b04e1b3bde63f0568e384642e780e62e377dc82b4affaa64",
+            "plugins/immune-brain/runtime/unattended/batch_plan.ts": "sha256:ed36a38ec53f1d2580b9ac7fb5ad6106091212e9d9034ea8b0b9545a8a3f296a",
+            "plugins/immune-brain/runtime/unattended/batch_preflight.ts": "sha256:4ec9f3d89847afd17ad486b0b570d4cdc7f8b51c7b82321433d67900279db895",
+            "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts": "sha256:8a7a2a4d9e97172a5ac1ee0f83d6e85d7a7d98c9eb2119b4c0f336de182aaecb",
+            "plugins/immune-brain/runtime/unattended/batch_runner.ts": "sha256:0323b4e0ca3d24900ea57c6a275cd0acbae48295e9adf17b593e18ba98c74d32",
+            "plugins/immune-brain/runtime/unattended/batch_schedule.ts": "sha256:04c4cc57fda27ea1289e4d66b26e07e690f94d493b5364c224bee53e59fd5541",
+            "plugins/immune-brain/runtime/unattended/batch_state.ts": "sha256:a87f9cf4512482ca7e981c99165fb00ab935bbdd31cc199ce55e6f2b0e8064eb",
+            "plugins/immune-brain/runtime/unattended/types.ts": "sha256:447e45ade83e3cfe7139bec56ef157e223c7251d1f268f3e75742b688f3c6018",
+            "plugins/immune-brain/skills/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/skills/imm-run/SKILL.md": "sha256:caa4657e96de275b7e11a3dad98f2f32e2987bd19ff71b451a33eb75eff023b0"
+          },
+          "models": [
+            "claude-sonnet-5-5"
+          ],
+          "native_inputs": [
+            {
+              "request_id": "3ac8f830-b3f2-45ce-8e4c-7e60fcb34f41",
+              "message": "Authorize this unattended batch run for gdr-live-claude-critical?\n\nOperation: start_unattended_batch\nInitiative: gdr-live-claude-critical\nBatch branch: imm/gdr-live-claude-critical\nPlan digest: sha256:2113d45c532d8e243cb887bcc04182f7bd05e899846fcbb496079f8431e66a92\nOrdered children (1):\n  - gdr-live-claude-critical-integration (S2) [risk: routine]\nExcluded children (1):\n  - gdr-live-claude-critical-a (S1): critical\nBudget: max_children=1, qa_failure_limit=2\nFinal verification: bun .fixture/final.ts",
+              "decision": "accept",
+              "input_kind": "scripted-fixture-test-user"
+            },
+            {
+              "request_id": "d1f93776-79b1-4f63-ac84-d5f8191e4ce2",
+              "message": "Authorize this exact Immune-Brain operation?\n\nOperation: enroll\nTask: gdr-live-claude-critical-a\nRisk: critical\nIntent revision: 1\nIntent hash: sha256:e41e3196e576ee7b9d9e52fd7f9e548dd4bc63bc374ce0d8e2d50b85dc81146f\nBinding digest: sha256:3d41647d39aa346926d8b04d18a4fb9478e9a097c7eff03915148bbee5dad1b0",
+              "decision": "accept",
+              "input_kind": "scripted-fixture-test-user"
+            }
+          ],
+          "integrated_head": "892dc670a54fe0c5c0958db05519b6d58f22e113",
+          "final_verification": {
+            "passed": true,
+            "head": "892dc670a54fe0c5c0958db05519b6d58f22e113",
+            "results": [
+              {
+                "command": "bun .fixture/final.ts",
+                "exit_code": 0,
+                "signal": null,
+                "passed": true,
+                "duration_ms": 6
+              }
+            ]
+          },
+          "tasks": [
+            {
+              "task_id": "gdr-live-claude-critical-integration",
+              "run_id": "run-77207f08-9bba-48ab-b190-43b842184c1a",
+              "record_bytes": "{\n  \"contract\": \"assurance_kernel/task_record/v4\",\n  \"task_id\": \"gdr-live-claude-critical-integration\",\n  \"intent_snapshot\": {\n    \"contract\": \"assurance_kernel/task_intent/v1\",\n    \"task_id\": \"gdr-live-claude-critical-integration\",\n    \"goal\": \"Write src/integration.txt as exactly passed followed by a newline\",\n    \"acceptance\": [\n      {\n        \"id\": \"result\",\n        \"assertion\": \"The integration output and its integrated prerequisites are correct\",\n        \"verification\": \"{\\n  \\\"contract\\\": \\\"assurance_kernel/verification_descriptor/v2\\\",\\n  \\\"command\\\": {\\n    \\\"executable\\\": \\\"bun\\\",\\n    \\\"argv\\\": [\\n      \\\".fixture/verify.ts\\\",\\n      \\\"integration\\\",\\n      \\\"passed\\\"\\n    ],\\n    \\\"cwd\\\": \\\".\\\",\\n    \\\"timeout_ms\\\": 10000,\\n    \\\"max_output_bytes\\\": 8192\\n  },\\n  \\\"environment\\\": {\\n    \\\"writable_paths\\\": []\\n  }\\n}\\n\"\n      }\n    ],\n    \"scope_hint\": [\n      \"docs/plans/gdr-live-claude-critical-integration.intent.json\",\n      \"src\"\n    ],\n    \"risk\": \"routine\",\n    \"revision\": 1,\n    \"owner\": \"user\"\n  },\n  \"intent_ref\": {\n    \"path\": \"docs/plans/gdr-live-claude-critical-integration.intent.json\",\n    \"content_hash\": \"sha256:bf50ad31672c2a6b10d5b1ca9a59f1c1faeae248a63603f118a2a008b61d9f92\"\n  },\n  \"lifecycle\": \"done\",\n  \"artifact_state\": \"frozen\",\n  \"baseline\": \"sha256:bf50ad31672c2a6b10d5b1ca9a59f1c1faeae248a63603f118a2a008b61d9f92\",\n  \"git_base_head\": \"bc252fe626de2b127ae6bca38ed58404f10bed3c\",\n  \"attestations\": [\n    {\n      \"id\": \"approval-qa-36c9c833\",\n      \"kind\": \"qa\",\n      \"authority_role\": \"qa\",\n      \"task_revision\": 1,\n      \"intent_content_hash\": \"sha256:bf50ad31672c2a6b10d5b1ca9a59f1c1faeae248a63603f118a2a008b61d9f92\",\n      \"diff_hash\": \"sha256:7693c2a6f3af362def1c9931fb643978ca8c9760e9c050a5c3d5cdd2d0b9859a\",\n      \"actor_id\": \"deterministic-qa\",\n      \"summary\": \"all 1 project verification check(s) passed; execution=sha256:99c8a5ecd985176e416f7d0c633f50efe3ca483da7311bf5184e3f36241bc0d9\",\n      \"acceptance_results\": [\n        {\n          \"acceptance_id\": \"result\",\n          \"status\": \"passed\",\n          \"summary\": \"host-attested QA: all 1 project verification check(s) passed; execution=sha256:99c8a5ecd985176e416f7d0c633f50efe3ca483da7311bf5184e3f36241bc0d9\"\n        }\n      ]\n    }\n  ],\n  \"findings\": [],\n  \"history\": [\n    {\n      \"id\": \"freeze_artifacts:gdr-live-claude-critical-integration:2026-10-15T00:57:06.146Z\",\n      \"at\": \"2026-10-15T00:57:06.146Z\",\n      \"type\": \"freeze_artifacts\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"TaskIntent frozen in place at docs/plans/gdr-live-claude-critical-integration.intent.json\"\n    },\n    {\n      \"id\": \"record_approval:gdr-live-claude-critical-integration:2026-10-15T00:57:07.161Z\",\n      \"at\": \"2026-10-15T00:57:07.161Z\",\n      \"type\": \"record_approval\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"approval-qa-36c9c833\\naction_v2_sha256:da2abf053fb45001ff792452446bfe087ac608f0abcf2ab1bea54893a85532c1\",\n      \"authority\": {\n        \"authority_kind\": \"qa\",\n        \"actor_id\": \"deterministic-qa\",\n        \"confirmation_ref\": \"claude:deterministic-qa\",\n        \"issued_at\": \"2026-10-15T00:57:07.161Z\"\n      }\n    },\n    {\n      \"id\": \"complete:gdr-live-claude-critical-integration:2026-10-15T00:57:07.783Z\",\n      \"at\": \"2026-10-15T00:57:07.783Z\",\n      \"type\": \"complete\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"done:frozen\",\n      \"reason\": \"action_v2_sha256:fec395e2ee376ee2f8ad4a4b87774522330feb43b61b4d405001d41f08f86668\"\n    }\n  ]\n}\n",
+              "terminal_proof_bytes": "{\n  \"contract\": \"assurance_kernel/task_tombstone/v2\",\n  \"task_id\": \"gdr-live-claude-critical-integration\",\n  \"lifecycle_status\": \"terminal\",\n  \"terminal_lifecycle\": \"done\",\n  \"terminal_event_id\": \"complete:gdr-live-claude-critical-integration:2026-10-15T00:57:07.783Z\",\n  \"final_record_hash\": \"sha256:8940be84438696bea10fe691e540c3bf6c83af598a985d92deca919350ada10f\",\n  \"terminalized_at\": \"2026-10-15T00:57:07.783Z\"\n}\n",
+              "integrated_commit": "892dc670a54fe0c5c0958db05519b6d58f22e113",
+              "commit_is_ancestor": true,
+              "scope_validated": true
+            },
+            {
+              "task_id": "gdr-live-claude-critical-a",
+              "run_id": "run-92ddc1e6-d727-4717-9454-c8f10ec84a35",
+              "record_bytes": "{\n  \"contract\": \"assurance_kernel/task_record/v4\",\n  \"task_id\": \"gdr-live-claude-critical-a\",\n  \"intent_snapshot\": {\n    \"contract\": \"assurance_kernel/task_intent/v1\",\n    \"task_id\": \"gdr-live-claude-critical-a\",\n    \"goal\": \"Write src/a.txt as exactly one followed by a newline\",\n    \"acceptance\": [\n      {\n        \"id\": \"result\",\n        \"assertion\": \"The a output and its integrated prerequisites are correct\",\n        \"verification\": \"{\\n  \\\"contract\\\": \\\"assurance_kernel/verification_descriptor/v2\\\",\\n  \\\"command\\\": {\\n    \\\"executable\\\": \\\"bun\\\",\\n    \\\"argv\\\": [\\n      \\\".fixture/verify.ts\\\",\\n      \\\"a\\\",\\n      \\\"one\\\"\\n    ],\\n    \\\"cwd\\\": \\\".\\\",\\n    \\\"timeout_ms\\\": 10000,\\n    \\\"max_output_bytes\\\": 8192\\n  },\\n  \\\"environment\\\": {\\n    \\\"writable_paths\\\": []\\n  }\\n}\\n\"\n      }\n    ],\n    \"scope_hint\": [\n      \"docs/plans/gdr-live-claude-critical-a.intent.json\",\n      \"src/a.txt\"\n    ],\n    \"risk\": \"critical\",\n    \"revision\": 1,\n    \"owner\": \"user\"\n  },\n  \"intent_ref\": {\n    \"path\": \"docs/plans/gdr-live-claude-critical-a.intent.json\",\n    \"content_hash\": \"sha256:e41e3196e576ee7b9d9e52fd7f9e548dd4bc63bc374ce0d8e2d50b85dc81146f\"\n  },\n  \"lifecycle\": \"done\",\n  \"artifact_state\": \"frozen\",\n  \"baseline\": \"sha256:e41e3196e576ee7b9d9e52fd7f9e548dd4bc63bc374ce0d8e2d50b85dc81146f\",\n  \"git_base_head\": \"09095f007418d3ca8ad8232db61b51c8da888e75\",\n  \"attestations\": [\n    {\n      \"id\": \"approval-qa-ab89492b\",\n      \"kind\": \"qa\",\n      \"authority_role\": \"qa\",\n      \"task_revision\": 1,\n      \"intent_content_hash\": \"sha256:e41e3196e576ee7b9d9e52fd7f9e548dd4bc63bc374ce0d8e2d50b85dc81146f\",\n      \"diff_hash\": \"sha256:ab64a37ccd4fec8ef5823767460959218ca44fb4ab79bcc5dadf0e9722d05d26\",\n      \"actor_id\": \"deterministic-qa\",\n      \"summary\": \"all 1 project verification check(s) passed; execution=sha256:d0236b4db30014ea1a135c389ae0220fe3b11290cb8df1fb21be45de87e75bc5\",\n      \"acceptance_results\": [\n        {\n          \"acceptance_id\": \"result\",\n          \"status\": \"passed\",\n          \"summary\": \"host-attested QA: all 1 project verification check(s) passed; execution=sha256:d0236b4db30014ea1a135c389ae0220fe3b11290cb8df1fb21be45de87e75bc5\"\n        }\n      ]\n    },\n    {\n      \"id\": \"approval-review-c16338c7\",\n      \"kind\": \"review\",\n      \"authority_role\": \"reviewer\",\n      \"task_revision\": 1,\n      \"intent_content_hash\": \"sha256:e41e3196e576ee7b9d9e52fd7f9e548dd4bc63bc374ce0d8e2d50b85dc81146f\",\n      \"diff_hash\": \"sha256:ab64a37ccd4fec8ef5823767460959218ca44fb4ab79bcc5dadf0e9722d05d26\",\n      \"actor_id\": \"parent-mediated-review\",\n      \"summary\": \"Provenance verified (single parent base, tree matches); the only change is src/a.txt from 'pending' to 'one' and the QA outcome passed.\",\n      \"acceptance_results\": [],\n      \"review_revision\": {\n        \"contract\": \"assurance_kernel/review_revision_identity/v1\",\n        \"base_head\": \"09095f007418d3ca8ad8232db61b51c8da888e75\",\n        \"review_commit\": \"1755342d19b8ccbb272fbc1facbefa6e3a1864a3\",\n        \"review_tree\": \"f2951151e74cf0d4ffb15848d421ebf9a045d563\",\n        \"manifest_digest\": \"sha256:6fac306a23dd4431ff372c7413529b7229d78500e292278ac5bdacc20ba5b5f1\"\n      },\n      \"reviewer_verdict_sha256\": \"sha256:59f8c1065d8478538e45547fda5b2d6d252a9cb39001939a71247ca50f95adc3\"\n    }\n  ],\n  \"findings\": [],\n  \"history\": [\n    {\n      \"id\": \"freeze_artifacts:gdr-live-claude-critical-a:2026-10-15T00:56:20.334Z\",\n      \"at\": \"2026-10-15T00:56:20.334Z\",\n      \"type\": \"freeze_artifacts\",\n      \"from_state\": \"active:active\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"TaskIntent frozen in place at docs/plans/gdr-live-claude-critical-a.intent.json\"\n    },\n    {\n      \"id\": \"record_approval:gdr-live-claude-critical-a:2026-10-15T00:56:27.239Z\",\n      \"at\": \"2026-10-15T00:56:27.239Z\",\n      \"type\": \"record_approval\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"approval-qa-ab89492b\\naction_v2_sha256:2daa309b065f653a1c23958937bba4d3b75bfb5c92a89b85d0de5b4f1f5ca5e8\",\n      \"authority\": {\n        \"authority_kind\": \"qa\",\n        \"actor_id\": \"deterministic-qa\",\n        \"confirmation_ref\": \"claude:deterministic-qa\",\n        \"issued_at\": \"2026-10-15T00:56:27.239Z\"\n      }\n    },\n    {\n      \"id\": \"record_approval:gdr-live-claude-critical-a:2026-10-15T00:56:55.398Z\",\n      \"at\": \"2026-10-15T00:56:55.398Z\",\n      \"type\": \"record_approval\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"active:frozen\",\n      \"reason\": \"approval-review-c16338c7\\naction_v2_sha256:5529a78bf9dcefb308dc6928eae7abb0cb36a0e81cc7945e292fcd69d07f02af\",\n      \"authority\": {\n        \"authority_kind\": \"review\",\n        \"actor_id\": \"parent-mediated-review\",\n        \"confirmation_ref\": \"claude:parent-mediated-review\",\n        \"issued_at\": \"2026-10-15T00:56:55.398Z\"\n      }\n    },\n    {\n      \"id\": \"complete:gdr-live-claude-critical-a:2026-10-15T00:56:56.020Z\",\n      \"at\": \"2026-10-15T00:56:56.020Z\",\n      \"type\": \"complete\",\n      \"from_state\": \"active:frozen\",\n      \"to_state\": \"done:frozen\",\n      \"reason\": \"action_v2_sha256:16f3815d427214aedf9d9a9f16c0a18649e22a1b28bfc6df16f4b7387510d572\"\n    }\n  ]\n}\n",
+              "terminal_proof_bytes": "{\n  \"contract\": \"assurance_kernel/task_tombstone/v2\",\n  \"task_id\": \"gdr-live-claude-critical-a\",\n  \"lifecycle_status\": \"terminal\",\n  \"terminal_lifecycle\": \"done\",\n  \"terminal_event_id\": \"complete:gdr-live-claude-critical-a:2026-10-15T00:56:56.020Z\",\n  \"final_record_hash\": \"sha256:490a65d975ef56e157306dd16e100c5eff9fedc909e90ff21f3605b8f736f20b\",\n  \"terminalized_at\": \"2026-10-15T00:56:56.020Z\"\n}\n",
+              "integrated_commit": "bc252fe626de2b127ae6bca38ed58404f10bed3c",
+              "commit_is_ancestor": true,
+              "scope_validated": true
+            }
+          ],
+          "observations": {
+            "completion": {
+              "complete": true,
+              "integrated_task_ids": [
+                "gdr-live-claude-critical-a",
+                "gdr-live-claude-critical-integration"
+              ],
+              "missing_task_ids": [],
+              "final_passed": true,
+              "head": "892dc670a54fe0c5c0958db05519b6d58f22e113",
+              "reason": null
+            },
+            "qa_failure_observed": false,
+            "review_observed": true,
+            "native_inputs": [
+              {
+                "request_id": "3ac8f830-b3f2-45ce-8e4c-7e60fcb34f41",
+                "message": "Authorize this unattended batch run for gdr-live-claude-critical?\n\nOperation: start_unattended_batch\nInitiative: gdr-live-claude-critical\nBatch branch: imm/gdr-live-claude-critical\nPlan digest: sha256:2113d45c532d8e243cb887bcc04182f7bd05e899846fcbb496079f8431e66a92\nOrdered children (1):\n  - gdr-live-claude-critical-integration (S2) [risk: routine]\nExcluded children (1):\n  - gdr-live-claude-critical-a (S1): critical\nBudget: max_children=1, qa_failure_limit=2\nFinal verification: bun .fixture/final.ts",
+                "decision": "accept",
+                "input_kind": "scripted-fixture-test-user"
+              },
+              {
+                "request_id": "d1f93776-79b1-4f63-ac84-d5f8191e4ce2",
+                "message": "Authorize this exact Immune-Brain operation?\n\nOperation: enroll\nTask: gdr-live-claude-critical-a\nRisk: critical\nIntent revision: 1\nIntent hash: sha256:e41e3196e576ee7b9d9e52fd7f9e548dd4bc63bc374ce0d8e2d50b85dc81146f\nBinding digest: sha256:3d41647d39aa346926d8b04d18a4fb9478e9a097c7eff03915148bbee5dad1b0",
+                "decision": "accept",
+                "input_kind": "scripted-fixture-test-user"
+              }
+            ]
+          },
+          "controller_outcome": "host_result"
+        },
+        {
+          "host": "claude-code",
+          "root": "/Users/derek/workspaces/immune-brain/.goal-driven-run-live/fixtures/gdr-live-claude-isolated-CS4HkF",
+          "scenarios": [
+            "isolated_child_prerequisite"
+          ],
+          "outcome": "passed",
+          "manual_continuations": 0,
+          "response_boundaries": 1,
+          "initial_input_sha256": "sha256:81394a94d09585307b8a312bbda0c7f17b820bed86e8cb078820ca7bd892b95c",
+          "source_sha256": {
+            "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts": "sha256:b5e38ba5e45ddb2c7fe362c52eb412e22a6daebbbba8a52e6321c425d454931b",
+            "plugins/immune-brain/.pi-extension/imm-canary-work.ts": "sha256:abc3e994cda381105089d18288d1b841a46acf54df255b901cbaa333d56f648c",
+            "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts": "sha256:92874a39c17f24014b885c869fb0dd37b4ff9da81abcbb53a590038353cdf6c2",
+            "plugins/immune-brain/.pi-extension/pi-run-continuation.ts": "sha256:932cc88ec8166a9d5bd8e9b04c1b1f01771dde64389f171519948738b0bc9961",
+            "plugins/immune-brain/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/dist/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/dist/claude/mcp-server.mjs": "sha256:1a854a0936d45b96d08efa6285f4644c32dfa67556365fc406bd503678238201",
+            "plugins/immune-brain/dist/imm-run-batch.md": "sha256:cf8548b79b27691e9096c5cc2dce2571d87e40b68c17989cf4ba55beac008d4d",
+            "plugins/immune-brain/dist/imm-run.md": "sha256:73132e4696921fd15980366f210fd89530ac70764080427b89268472937d3154",
+            "plugins/immune-brain/dist/role-prompts/executor.md": "sha256:8661621239a6589dd074da5f52e32cf436b7344857f4c866b28b17bdfb8ad48c",
+            "plugins/immune-brain/hooks/hooks.json": "sha256:00cd183ca2d20520a8b9c35054116f0a3bf4e52471de4dccfdafe64e19d14d62",
+            "plugins/immune-brain/runtime/assurance/run_continuation.ts": "sha256:b8ffad8b936fa686107e4be1276c89d278b0b7b9cadcf25e3167403beef3e0b6",
+            "plugins/immune-brain/runtime/claude/interaction.ts": "sha256:5c9e83c7bbdd17f6734abd584be61cb4326e376a0caabe02d9f834a67f7a89e3",
+            "plugins/immune-brain/runtime/claude/kernel_ports.ts": "sha256:be07878e16140e05f01e00bd2dba5929f9d60ad170573a88aee38da638221805",
+            "plugins/immune-brain/runtime/claude/lane_guard.ts": "sha256:a4ae2aef3c1595754994b96da1aaaab368305b6f684c60445f045cc2f996e5eb",
+            "plugins/immune-brain/runtime/claude/mcp_server.ts": "sha256:cc7f879d76a24b6dbef73adff9491df620b298d866717c5219fd2540d1e3664c",
+            "plugins/immune-brain/runtime/claude/run_continuation.ts": "sha256:1654a82d5783125e5c1810dfdb80a8695360093d9dddbfd3083fa1aab62039e9",
+            "plugins/immune-brain/runtime/github_issue_tracker.ts": "sha256:b07ff581d6a7294581182d16fc24c2ee738a0545c0c420482e5a513d0ef38ac7",
+            "plugins/immune-brain/runtime/prompts/executor.md": "sha256:8661621239a6589dd074da5f52e32cf436b7344857f4c866b28b17bdfb8ad48c",
+            "plugins/immune-brain/runtime/unattended/batch_disposition.ts": "sha256:c0050858f5487a0f630a2c9d94fe0735ab1d1472a29083dfa33859eaa0eb06d3",
+            "plugins/immune-brain/runtime/unattended/batch_final_verification.ts": "sha256:b40b3dbb06949f0f7e5ebb6598b1ccff18b67b0a34226240e53f37dd83c7e739",
+            "plugins/immune-brain/runtime/unattended/batch_git.ts": "sha256:3d811aa661a5dc9078eeabfb42fdce80112737ea34d8af00482fc572a0353e38",
+            "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts": "sha256:2f43858e96741eb3aca95e99433e837cd45ada38b8332cd64dafb5890838721c",
+            "plugins/immune-brain/runtime/unattended/batch_lanes.ts": "sha256:8cbf33ee009fc194b04e1b3bde63f0568e384642e780e62e377dc82b4affaa64",
+            "plugins/immune-brain/runtime/unattended/batch_plan.ts": "sha256:ed36a38ec53f1d2580b9ac7fb5ad6106091212e9d9034ea8b0b9545a8a3f296a",
+            "plugins/immune-brain/runtime/unattended/batch_preflight.ts": "sha256:4ec9f3d89847afd17ad486b0b570d4cdc7f8b51c7b82321433d67900279db895",
+            "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts": "sha256:8a7a2a4d9e97172a5ac1ee0f83d6e85d7a7d98c9eb2119b4c0f336de182aaecb",
+            "plugins/immune-brain/runtime/unattended/batch_runner.ts": "sha256:0323b4e0ca3d24900ea57c6a275cd0acbae48295e9adf17b593e18ba98c74d32",
+            "plugins/immune-brain/runtime/unattended/batch_schedule.ts": "sha256:04c4cc57fda27ea1289e4d66b26e07e690f94d493b5364c224bee53e59fd5541",
+            "plugins/immune-brain/runtime/unattended/batch_state.ts": "sha256:a87f9cf4512482ca7e981c99165fb00ab935bbdd31cc199ce55e6f2b0e8064eb",
+            "plugins/immune-brain/runtime/unattended/types.ts": "sha256:447e45ade83e3cfe7139bec56ef157e223c7251d1f268f3e75742b688f3c6018",
+            "plugins/immune-brain/skills/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/skills/imm-run/SKILL.md": "sha256:caa4657e96de275b7e11a3dad98f2f32e2987bd19ff71b451a33eb75eff023b0"
+          },
+          "models": [
+            "claude-sonnet-5-5"
+          ],
+          "native_inputs": [],
+          "integrated_head": "4c53db7da4418e5d0c2974c51afc0b4c9ef0f4f9",
+          "final_verification": null,
+          "tasks": [],
+          "observations": {
+            "no_claim": true,
+            "no_run": true,
+            "no_native_gate": true,
+            "no_sibling_delivery": true,
+            "tracked_source_pristine": true
+          },
+          "controller_outcome": "host_result"
+        },
+        {
+          "host": "claude-code",
+          "root": "/Users/derek/workspaces/immune-brain/.goal-driven-run-live/fixtures/gdr-live-claude-cancel-4X7Ibp",
+          "scenarios": [
+            "explicit_cancellation"
+          ],
+          "outcome": "passed",
+          "manual_continuations": 0,
+          "response_boundaries": 1,
+          "initial_input_sha256": "sha256:e0ed282aeebb9bdb48bf3acb1f86419845298fc17b5457475d8960b4fb1b298e",
+          "source_sha256": {
+            "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts": "sha256:b5e38ba5e45ddb2c7fe362c52eb412e22a6daebbbba8a52e6321c425d454931b",
+            "plugins/immune-brain/.pi-extension/imm-canary-work.ts": "sha256:abc3e994cda381105089d18288d1b841a46acf54df255b901cbaa333d56f648c",
+            "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts": "sha256:92874a39c17f24014b885c869fb0dd37b4ff9da81abcbb53a590038353cdf6c2",
+            "plugins/immune-brain/.pi-extension/pi-run-continuation.ts": "sha256:932cc88ec8166a9d5bd8e9b04c1b1f01771dde64389f171519948738b0bc9961",
+            "plugins/immune-brain/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/dist/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/dist/claude/mcp-server.mjs": "sha256:1a854a0936d45b96d08efa6285f4644c32dfa67556365fc406bd503678238201",
+            "plugins/immune-brain/dist/imm-run-batch.md": "sha256:cf8548b79b27691e9096c5cc2dce2571d87e40b68c17989cf4ba55beac008d4d",
+            "plugins/immune-brain/dist/imm-run.md": "sha256:73132e4696921fd15980366f210fd89530ac70764080427b89268472937d3154",
+            "plugins/immune-brain/dist/role-prompts/executor.md": "sha256:8661621239a6589dd074da5f52e32cf436b7344857f4c866b28b17bdfb8ad48c",
+            "plugins/immune-brain/hooks/hooks.json": "sha256:00cd183ca2d20520a8b9c35054116f0a3bf4e52471de4dccfdafe64e19d14d62",
+            "plugins/immune-brain/runtime/assurance/run_continuation.ts": "sha256:b8ffad8b936fa686107e4be1276c89d278b0b7b9cadcf25e3167403beef3e0b6",
+            "plugins/immune-brain/runtime/claude/interaction.ts": "sha256:5c9e83c7bbdd17f6734abd584be61cb4326e376a0caabe02d9f834a67f7a89e3",
+            "plugins/immune-brain/runtime/claude/kernel_ports.ts": "sha256:be07878e16140e05f01e00bd2dba5929f9d60ad170573a88aee38da638221805",
+            "plugins/immune-brain/runtime/claude/lane_guard.ts": "sha256:a4ae2aef3c1595754994b96da1aaaab368305b6f684c60445f045cc2f996e5eb",
+            "plugins/immune-brain/runtime/claude/mcp_server.ts": "sha256:cc7f879d76a24b6dbef73adff9491df620b298d866717c5219fd2540d1e3664c",
+            "plugins/immune-brain/runtime/claude/run_continuation.ts": "sha256:1654a82d5783125e5c1810dfdb80a8695360093d9dddbfd3083fa1aab62039e9",
+            "plugins/immune-brain/runtime/github_issue_tracker.ts": "sha256:b07ff581d6a7294581182d16fc24c2ee738a0545c0c420482e5a513d0ef38ac7",
+            "plugins/immune-brain/runtime/prompts/executor.md": "sha256:8661621239a6589dd074da5f52e32cf436b7344857f4c866b28b17bdfb8ad48c",
+            "plugins/immune-brain/runtime/unattended/batch_disposition.ts": "sha256:c0050858f5487a0f630a2c9d94fe0735ab1d1472a29083dfa33859eaa0eb06d3",
+            "plugins/immune-brain/runtime/unattended/batch_final_verification.ts": "sha256:b40b3dbb06949f0f7e5ebb6598b1ccff18b67b0a34226240e53f37dd83c7e739",
+            "plugins/immune-brain/runtime/unattended/batch_git.ts": "sha256:3d811aa661a5dc9078eeabfb42fdce80112737ea34d8af00482fc572a0353e38",
+            "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts": "sha256:2f43858e96741eb3aca95e99433e837cd45ada38b8332cd64dafb5890838721c",
+            "plugins/immune-brain/runtime/unattended/batch_lanes.ts": "sha256:8cbf33ee009fc194b04e1b3bde63f0568e384642e780e62e377dc82b4affaa64",
+            "plugins/immune-brain/runtime/unattended/batch_plan.ts": "sha256:ed36a38ec53f1d2580b9ac7fb5ad6106091212e9d9034ea8b0b9545a8a3f296a",
+            "plugins/immune-brain/runtime/unattended/batch_preflight.ts": "sha256:4ec9f3d89847afd17ad486b0b570d4cdc7f8b51c7b82321433d67900279db895",
+            "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts": "sha256:8a7a2a4d9e97172a5ac1ee0f83d6e85d7a7d98c9eb2119b4c0f336de182aaecb",
+            "plugins/immune-brain/runtime/unattended/batch_runner.ts": "sha256:0323b4e0ca3d24900ea57c6a275cd0acbae48295e9adf17b593e18ba98c74d32",
+            "plugins/immune-brain/runtime/unattended/batch_schedule.ts": "sha256:04c4cc57fda27ea1289e4d66b26e07e690f94d493b5364c224bee53e59fd5541",
+            "plugins/immune-brain/runtime/unattended/batch_state.ts": "sha256:a87f9cf4512482ca7e981c99165fb00ab935bbdd31cc199ce55e6f2b0e8064eb",
+            "plugins/immune-brain/runtime/unattended/types.ts": "sha256:447e45ade83e3cfe7139bec56ef157e223c7251d1f268f3e75742b688f3c6018",
+            "plugins/immune-brain/skills/BASELINE.md": "sha256:79cdc6fcfab1ef012d215287d82ceb82af4d95fd86b5e5303e9c752e8bd3e27c",
+            "plugins/immune-brain/skills/imm-run/SKILL.md": "sha256:caa4657e96de275b7e11a3dad98f2f32e2987bd19ff71b451a33eb75eff023b0"
+          },
+          "models": [
+            "claude-sonnet-5-5"
+          ],
+          "native_inputs": [
+            {
+              "request_id": "ad9f10e5-2db8-4d9a-b9d6-4284be8231af",
+              "message": "Authorize this unattended batch run for gdr-live-claude-cancel?\n\nOperation: start_unattended_batch\nInitiative: gdr-live-claude-cancel\nBatch branch: imm/gdr-live-claude-cancel\nPlan digest: sha256:361b084872f320b9047c3fdd832d58d563dd7d9ed7f2f1bf3dcf86b703d27a81\nOrdered children (4):\n  - gdr-live-claude-cancel-a (S1) [risk: routine]\n  - gdr-live-claude-cancel-b (S2) [risk: routine]\n  - gdr-live-claude-cancel-sum (S3) [risk: material]\n  - gdr-live-claude-cancel-integration (S4) [risk: routine]\nBudget: max_children=4, qa_failure_limit=2\nFinal verification: bun .fixture/final.ts",
+              "decision": "accept",
+              "input_kind": "scripted-fixture-test-user"
+            },
+            {
+              "request_id": "b849ab0f-f275-4377-84ce-cfe72dda88af",
+              "message": "Authorize this exact Immune-Brain operation?\n\nOperation: stop\nTask: gdr-live-claude-cancel-a\nRisk: routine\nIntent revision: 1\nIntent hash: sha256:1089320b27dd8efdef20c09ddd1d8ec56855abd3827d264b4aa2ae6916ce3539\nBinding digest: sha256:31fb2d60e9d49d75f15365b5514611348c84649989dd20fbae805d7e0b36c55c:",
+              "decision": "decline",
+              "input_kind": "scripted-fixture-test-user"
+            }
+          ],
+          "integrated_head": "9dcfccff5dc6c3e289bc3871fed17ecb7643ca1c",
+          "final_verification": null,
+          "tasks": [],
+          "observations": {
+            "cancel_input": {
+              "text": "停止本次运行",
+              "input_kind": "scripted-fixture-test-user"
+            },
+            "claim_preserved": true,
+            "claim_task_id": "gdr-live-claude-cancel-a",
+            "other_source_pristine": true,
+            "partial_active_scope_paths": [
+              "src/a.txt"
+            ],
+            "kernel_completion_ready": false
+          },
+          "controller_outcome": "host_result"
+        }
+      ],
+      "declared_gaps": []
+    }
+  ]
+}

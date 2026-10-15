@@ -4,19 +4,24 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+	observeNativeParent, advanceNativeParent, observeParentCompletion, integrateSettledCriticalSlices,
 	runBatchGitPreflight,
 	commitBatchChild,
 	lookupBatchCommit,
+	createDefaultBatchGitPort,
 	classifyBatchLineage,
+	type NativeParentEffects, type NativeParentGate,
 } from "../plugins/immune-brain/runtime/unattended/batch_git";
+import { integrateLaneCommit } from "../plugins/immune-brain/runtime/unattended/batch_integration";
+import { runFinalVerification } from "../plugins/immune-brain/runtime/unattended/batch_final_verification";
 import { expectedBatchHead } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
 import {
-	startBatch,
+	startBatch, completedParentReport,
 	resumeBatch,
 	type BatchRunnerKernelPort,
 	type StartBatchInput,
 } from "../plugins/immune-brain/runtime/unattended/batch_runner";
-import { readBatchRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
+import { prepareBatchLaneRunState, writeBatchLaneRunState, readBatchRunState, prepareBatchRunState, writeBatchRunState, writeBatchRunReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import {
 	createBatchAuthorityRegistry,
 	computeBatchPlanDigest,
@@ -177,6 +182,217 @@ function writeTaskIntent(
 	writeFileSync(join(root, intentPath), `${JSON.stringify(intent, null, 2)}\n`);
 	return intentPath;
 }
+
+describe("Lane Parent delivery proof", () => {
+	it("proves replayed Lane production on the coordinator and rejects mismatched candidates or missing producer evidence", async () => {
+		const repo = initGitRepo(); const lane = `${repo.root}-lane`;
+		try {
+			const taskId = "lane-child", paths = [`src/${taskId}.ts`, `docs/plans/${taskId}.intent.json`, `docs/plans/archive/${taskId}.intent.json`];
+			writeTaskIntent(repo.root, taskId, "Lane delivery", paths);
+			const intent = JSON.parse(readFileSync(join(repo.root, paths[1]!), "utf8"));
+			mkdirSync(join(repo.root, "docs/plans/archive")); writeFileSync(join(repo.root, paths[2]!), JSON.stringify(intent));
+			git(repo.root, ["add", "docs"]); git(repo.root, ["commit", "-m", "plan"]);
+			const base = git(repo.root, ["rev-parse", "HEAD"]);
+			git(repo.root, ["worktree", "add", "-b", "lane", lane, base]);
+			writeChildAudit(lane, taskId, "done", base, intent);
+			mkdirSync(join(lane, "src")); writeFileSync(join(lane, paths[0]!), "export const delivered = true;\n");
+			const produced = await commitBatchChild({ root: lane, taskId, batchId: "lane-proof", expectedHead: base, branch: "lane" });
+			writeFileSync(join(repo.root, "sibling.txt"), "independent\n"); git(repo.root, ["add", "sibling.txt"]); git(repo.root, ["commit", "-m", "independent delivery"]);
+			const predecessor = git(repo.root, ["rev-parse", "HEAD"]);
+			const landed = integrateLaneCommit({ root: repo.root, branch: "main", batch_head: predecessor, lane_base: base, lane_commit: produced.commit });
+			expect(landed.commit).not.toBe(produced.commit);
+			const now = new Date().toISOString();
+			const record = prepareBatchLaneRunState({ batch_id: "lane-proof", initiative_slug: "lane-parent", base_head: base, branch: "main",
+				plan_digest: `sha256:${"c".repeat(64)}`, confirmation_time: now, now, max_parallel: 2,
+				budget: { max_children: 1, qa_failure_limit: 2 }, children: [{ task_id: taskId, slice_id: "S1", blocked_by: [], status: "enrollable",
+					risk: "material", intent_path: paths[1]!, intent_revision: 1, intent_content_hash: canonicalIntentHash(parseTaskIntentV1(intent)), scope_hint: paths, reason: null, exclusion: null }] });
+			record.batch_state = "completed"; record.children[0]!.state = "integrated"; record.children[0]!.commit = landed.commit;
+			record.children[0]!.lane = { path: lane, branch: "lane", base_head: base, lane_commit: produced.commit };
+			record.commits = [landed.commit]; record.final_verification_result = await runFinalVerification(repo.root, ["bun --version"]);
+			writeBatchLaneRunState(repo.root, record);
+			expect((await observeParentCompletion(repo.root, "lane-parent", [taskId])).complete).toBe(true);
+			record.children[0]!.commit = predecessor; record.commits = [predecessor]; writeBatchLaneRunState(repo.root, record);
+			await expect(observeParentCompletion(repo.root, "lane-parent", [taskId])).rejects.toThrow("candidate differs");
+			record.children[0]!.commit = landed.commit; record.commits = [landed.commit]; writeBatchLaneRunState(repo.root, record);
+			const producerPath = join(lane, ".imm/state/batches/commits/lane-proof-lane-child.json");
+			const producerBytes = readFileSync(producerPath);
+			rmSync(join(lane, ".imm/state/batches/commits"), { recursive: true });
+			await expect(observeParentCompletion(repo.root, "lane-parent", [taskId])).rejects.toThrow("production evidence");
+			mkdirSync(join(lane, ".imm/state/batches/commits"), { recursive: true }); writeFileSync(producerPath, producerBytes);
+			await createDefaultBatchGitPort().retainLaneEvidence!({ root: repo.root, taskId, batchId: record.batch_id, branch: "main",
+				lane: { path: lane, base_head: base, lane_commit: produced.commit, integrated_commit: landed.commit } });
+			git(repo.root, ["worktree", "remove", "--force", lane]);
+			git(repo.root, ["branch", "-D", "lane"]); git(repo.root, ["reflog", "expire", "--expire=now", "--all"]);
+			git(repo.root, ["gc", "--prune=now"]);
+			record.children[0]!.state = "released"; writeBatchLaneRunState(repo.root, record);
+			expect((await observeParentCompletion(repo.root, "lane-parent", [taskId])).complete).toBe(true);
+			record.children[0]!.commit = predecessor; record.commits = [predecessor]; writeBatchLaneRunState(repo.root, record);
+			await expect(observeParentCompletion(repo.root, "lane-parent", [taskId])).rejects.toThrow("candidate differs");
+		} finally { rmSync(repo.root, { recursive: true, force: true }); rmSync(lane, { recursive: true, force: true }); }
+	});
+});
+
+describe("native Parent completion without ordinary grants", () => {
+	it.each(["fast_forward", "diverged", "wrong_branch"])("checks native Enrollment precondition lineage: %s", async (movement) => {
+		const repo = initGitRepo();
+		try {
+			const now = new Date().toISOString();
+			const batch = prepareBatchRunState({ batch_id: "native-lineage", initiative_slug: "native-parent", base_head: repo.baseHead,
+				branch: "main", plan_digest: `sha256:${"c".repeat(64)}`, confirmation_time: now, now,
+				budget: { max_children: 1, qa_failure_limit: 2 }, children: [{ task_id: "ordinary", slice_id: "S2", blocked_by: ["critical"],
+					status: "enrollable", risk: "material", intent_path: "docs/plans/ordinary.intent.json", intent_revision: 1,
+					intent_content_hash: `sha256:${"d".repeat(64)}`, scope_hint: ["src/ordinary.ts"], reason: null, exclusion: null }] });
+			batch.batch_state = "running"; writeBatchRunState(repo.root, batch);
+			const paths = ["src/critical.ts", "docs/plans/critical.intent.json", "docs/plans/archive/critical.intent.json"];
+			writeTaskIntent(repo.root, "critical", "Goal for critical", paths);
+			const intent = JSON.parse(readFileSync(join(repo.root, paths[1]!), "utf8")); intent.risk = "critical";
+			writeFileSync(join(repo.root, paths[1]!), JSON.stringify(intent)); mkdirSync(join(repo.root, "docs/plans/archive"));
+			writeFileSync(join(repo.root, paths[2]!), JSON.stringify(intent));
+			git(repo.root, ["add", "docs/plans"]); git(repo.root, ["commit", "-m", "chore(imm): commit Enrollment preconditions for critical"]);
+			const enrolledHead = git(repo.root, ["rev-parse", "HEAD"]);
+			writeChildAudit(repo.root, "critical", "done", enrolledHead, intent);
+			mkdirSync(join(repo.root, "src")); writeFileSync(join(repo.root, paths[0]!), "export const critical = true;\n");
+			if (movement === "diverged") {
+				git(repo.root, ["checkout", "--orphan", "unrelated"]); git(repo.root, ["add", "docs/plans"]); git(repo.root, ["commit", "-m", "unrelated history"]);
+			} else if (movement === "wrong_branch") git(repo.root, ["checkout", "-b", "other"]);
+			const reader = async () => ({ initiative_slug: "native-parent", carrier: "local" as const, tasks: [{ task_id: "critical", slice_id: "S1", blocked_by: [] }] });
+			if (movement !== "fast_forward") {
+				const before = readFileSync(join(repo.root, ".imm/state/batches/native-lineage.json"));
+				await expect(integrateSettledCriticalSlices(repo.root, "native-parent", reader)).rejects.toThrow("batch_head_lineage_broken");
+				expect(readFileSync(join(repo.root, ".imm/state/batches/native-lineage.json"))).toEqual(before);
+			} else {
+				await integrateSettledCriticalSlices(repo.root, "native-parent", reader);
+				const stored = readBatchRunState(repo.root, "native-lineage")!;
+				expect(stored.adopted_heads?.[0]).toEqual({ from: repo.baseHead, to: enrolledHead });
+				expect(expectedBatchHead(stored)).toBe(git(repo.root, ["rev-parse", "HEAD"]));
+				expect(await lookupBatchCommit({ root: repo.root, taskId: "critical", batchId: "native-lineage.critical", branch: "main" })).not.toBeNull();
+			}
+		} finally { rmSync(repo.root, { recursive: true, force: true }); }
+	});
+	it("routes a critical-only Parent directly to one native task gate", async () => {
+		const repo = initGitRepo();
+		try {
+			writeTaskIntent(repo.root, "critical", "Goal for critical", ["src/critical.ts"]);
+			const path = join(repo.root, "docs/plans/critical.intent.json");
+			const intent = JSON.parse(readFileSync(path, "utf8")); intent.risk = "critical";
+			writeFileSync(path, JSON.stringify(intent)); git(repo.root, ["add", "docs/plans"]); git(repo.root, ["commit", "-m", "plan"]);
+			const reader = async () => ({ initiative_slug: "native-parent", carrier: "local" as const, tasks: [
+				{ task_id: "critical", slice_id: "S1", blocked_by: [] },
+			] });
+			const before = git(repo.root, ["rev-parse", "HEAD"]);
+			const result = await advanceNativeParent(repo.root, "native-parent", ["bun --version"], reader);
+			expect(result).toMatchObject({ state: "native_parent", batch_id: null, action: "enroll", task_id: "critical" });
+			expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(before);
+			expect(readBatchRunState(repo.root, "native-parent")).toBeNull();
+		} finally { rmSync(repo.root, { recursive: true, force: true }); }
+	});
+	it("integrates a delivered-only Parent, verifies it and replays without a new commit or empty grant", async () => {
+		const repo = initGitRepo();
+		try {
+			const paths = ["src/delivered.ts", "docs/plans/delivered.intent.json", "docs/plans/archive/delivered.intent.json"];
+			writeTaskIntent(repo.root, "delivered", "Goal for delivered", paths);
+			const intent = JSON.parse(readFileSync(join(repo.root, "docs/plans/delivered.intent.json"), "utf8"));
+			mkdirSync(join(repo.root, "docs/plans/archive"));
+			writeFileSync(join(repo.root, "docs/plans/archive/delivered.intent.json"), JSON.stringify(intent));
+			git(repo.root, ["add", "docs/plans"]); git(repo.root, ["commit", "-m", "plan"]);
+			const baseline = git(repo.root, ["rev-parse", "HEAD"]);
+			writeChildAudit(repo.root, "delivered", "done", baseline, intent);
+			mkdirSync(join(repo.root, "src")); writeFileSync(join(repo.root, "src/delivered.ts"), "export const delivered = true;\n");
+			const reader = async () => ({ initiative_slug: "native-parent", carrier: "local" as const, tasks: [
+				{ task_id: "delivered", slice_id: "S1", blocked_by: [] },
+			] });
+			const disclosed: NativeParentEffects[] = [];
+			const gate: NativeParentGate = async (effects) => { disclosed.push(effects); return null; };
+			const result = await advanceNativeParent(repo.root, "native-parent", ["bun --version"], reader, undefined, gate);
+			expect(disclosed).toEqual([{ initiative_slug: "native-parent", plan_digest: expect.stringMatching(/^sha256:/),
+				children: [{ task_id: "delivered", slice_id: "S1" }], integrate_task_ids: ["delivered"], final_commands: ["bun --version"] }]);
+			expect(result).toMatchObject({ state: "native_parent", action: "complete", proof: { complete: true } });
+			expect(git(repo.root, ["log", "-1", "--format=%B"])).toContain("Immune-Brain-Task: delivered");
+			expect(git(repo.root, ["log", "-1", "--format=%B"])).not.toContain("Immune-Brain-Batch:");
+			const head = git(repo.root, ["rev-parse", "HEAD"]);
+			expect((await advanceNativeParent(repo.root, "native-parent", undefined, reader))?.action).toBe("complete");
+			expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(head);
+			expect(readBatchRunState(repo.root, "native-parent")).toBeNull();
+			expect((await observeParentCompletion(repo.root, "native-parent", ["delivered"])).complete).toBe(true);
+			git(repo.root, ["checkout", "--orphan", "unrelated-history"]);
+			git(repo.root, ["rm", "-r", "--cached", "."]); git(repo.root, ["add", "."]); git(repo.root, ["commit", "-m", "copied bytes without delivery history"]);
+			expect(spawnSync("git", ["-C", repo.root, "merge-base", "--is-ancestor", head, "HEAD"]).status).toBe(1);
+			await expect(lookupBatchCommit({ root: repo.root, taskId: "delivered", batchId: null })).rejects.toThrow("diverged");
+			await expect(observeParentCompletion(repo.root, "native-parent", ["delivered"])).rejects.toThrow("diverged");
+		} finally { rmSync(repo.root, { recursive: true, force: true }); }
+	});
+	it("opens no Git or command effect for a delivered-only Parent without an accepting native gate", async () => {
+		for (const gate of [undefined, async () => ({ state: "rejected" as const, reason: "native interaction declined", recovery_action: "wait" }),
+			async () => ({ state: "cancelled" as const, reason: "native interaction cancelled", recovery_action: "wait" })]) {
+			const repo = initGitRepo();
+			try {
+				const paths = ["src/delivered.ts", "docs/plans/delivered.intent.json", "docs/plans/archive/delivered.intent.json"];
+				writeTaskIntent(repo.root, "delivered", "Goal for delivered", paths);
+				const intent = JSON.parse(readFileSync(join(repo.root, "docs/plans/delivered.intent.json"), "utf8"));
+				mkdirSync(join(repo.root, "docs/plans/archive"));
+				writeFileSync(join(repo.root, "docs/plans/archive/delivered.intent.json"), JSON.stringify(intent));
+				writeFileSync(join(repo.root, "marker.ts"), "require('node:fs').writeFileSync('ran.txt', 'ran');\n");
+				git(repo.root, ["add", "docs/plans", "marker.ts"]); git(repo.root, ["commit", "-m", "plan"]);
+				const baseline = git(repo.root, ["rev-parse", "HEAD"]);
+				writeChildAudit(repo.root, "delivered", "done", baseline, intent);
+				mkdirSync(join(repo.root, "src")); writeFileSync(join(repo.root, "src/delivered.ts"), "export const delivered = true;\n");
+				const reader = async () => ({ initiative_slug: "native-parent", carrier: "local" as const, tasks: [
+					{ task_id: "delivered", slice_id: "S1", blocked_by: [] },
+				] });
+				const result = await advanceNativeParent(repo.root, "native-parent", ["bun marker.ts"], reader, undefined, gate);
+				expect(result).toMatchObject({ state: expect.stringMatching(/^(rejected|cancelled)$/) });
+				expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(baseline);
+				expect(existsSync(join(repo.root, "ran.txt"))).toBe(false);
+				expect((await observeNativeParent(repo.root, "native-parent", reader))?.native).toBeNull();
+			} finally { rmSync(repo.root, { recursive: true, force: true }); }
+		}
+	});
+	it("returns the current successful Parent observation while preserving the first failed terminal report", async () => {
+		const repo = initGitRepo(); const previous = process.env.GDR_COMPLETION_TEST_FAILURE;
+		try {
+			const paths = ["src/delivered.ts", "docs/plans/delivered.intent.json", "docs/plans/archive/delivered.intent.json"];
+			writeTaskIntent(repo.root, "delivered", "Goal for delivered", paths);
+			const intent = JSON.parse(readFileSync(join(repo.root, "docs/plans/delivered.intent.json"), "utf8"));
+			mkdirSync(join(repo.root, "docs/plans/archive")); mkdirSync(join(repo.root, "docs/initiatives"));
+			writeFileSync(join(repo.root, "docs/plans/archive/delivered.intent.json"), JSON.stringify(intent));
+			writeFileSync(join(repo.root, "docs/initiatives/native-parent.md"), "# Parent\n## S1: delivered\nTasks:\n- delivered\n");
+			writeFileSync(join(repo.root, "verify.ts"), "process.exit(Number(process.env.GDR_COMPLETION_TEST_FAILURE ?? 0));\n");
+			git(repo.root, ["add", "docs", "verify.ts"]); git(repo.root, ["commit", "-m", "plan"]);
+			const baseline = git(repo.root, ["rev-parse", "HEAD"]);
+			writeChildAudit(repo.root, "delivered", "done", baseline, intent);
+			mkdirSync(join(repo.root, "src")); writeFileSync(join(repo.root, "src/delivered.ts"), "export const delivered = true;\n");
+			const reader = async () => ({ initiative_slug: "native-parent", carrier: "local" as const,
+				tasks: [{ task_id: "delivered", slice_id: "S1", blocked_by: [] }] });
+			const commands = ["bun verify.ts"];
+			process.env.GDR_COMPLETION_TEST_FAILURE = "1";
+			const failed = await advanceNativeParent(repo.root, "native-parent", commands, reader, undefined, async () => null);
+			expect(failed?.final_verification?.passed).toBe(false);
+			const head = git(repo.root, ["rev-parse", "HEAD"]); const now = new Date().toISOString();
+			const batch = prepareBatchRunState({ batch_id: "completion-replay", initiative_slug: "native-parent", base_head: baseline,
+				branch: "main", plan_digest: `sha256:${"c".repeat(64)}`, confirmation_time: now, now,
+				budget: { max_children: 1, qa_failure_limit: 2 }, final_verification: commands,
+				children: [{ task_id: "delivered", slice_id: "S1", blocked_by: [], status: "already_settled", risk: "material",
+					intent_path: "docs/plans/delivered.intent.json", intent_revision: 1, intent_content_hash: canonicalIntentHash(parseTaskIntentV1(intent)),
+					scope_hint: paths, reason: null, exclusion: null }] });
+			batch.batch_state = "completed"; batch.children[0]!.state = "committed"; batch.children[0]!.commit = head; batch.commits = [head];
+			batch.final_verification_result = failed!.final_verification!; writeBatchRunState(repo.root, batch);
+			const historical = { contract: "assurance_kernel/batch_run_report/v1" as const, batch_id: batch.batch_id,
+				initiative_slug: batch.initiative_slug, batch_state: batch.batch_state, children: batch.children, commits: batch.commits,
+				final_verification: batch.final_verification_result, reason: "final verification failed", next_action: "repair", created_at: now };
+			writeBatchRunReport(repo.root, historical);
+			process.env.GDR_COMPLETION_TEST_FAILURE = "0";
+			batch.final_verification_result = await runFinalVerification(repo.root, commands); writeBatchRunState(repo.root, batch);
+			const current = await completedParentReport(repo.root, "native-parent", reader,
+				{ markTerminal: async () => ({ status: "updated", message: "Parent closure confirmed on integrated HEAD" }) });
+			expect(current?.tracker).toEqual({ status: "updated", message: "Parent closure confirmed on integrated HEAD" });
+			expect(current?.final_verification?.passed).toBe(true); expect(current?.next_action).toContain("passed");
+			expect(writeBatchRunReport(repo.root, historical).final_verification.passed).toBe(false);
+		} finally {
+			if (previous === undefined) delete process.env.GDR_COMPLETION_TEST_FAILURE; else process.env.GDR_COMPLETION_TEST_FAILURE = previous;
+			rmSync(repo.root, { recursive: true, force: true });
+		}
+	});
+});
 
 describe("acc-batch-branch-preflight", () => {
 	let repo: { root: string; baseHead: string };

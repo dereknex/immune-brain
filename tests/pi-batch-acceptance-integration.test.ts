@@ -28,6 +28,7 @@ try { await import("@earendil-works/pi-tui"); } catch {
 		truncateToWidth: (s: string, width: number) => s.slice(0, width), visibleWidth: (s: string) => s.length }));
 }
 const { default: registerPiBatch } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
+const { default: registerPiEnrollment } = await import("../plugins/immune-brain/.pi-extension/imm-canary-enroll");
 const { default: registerPiWork, recordPiPhaseInput } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
 // The phase entry gate (ADR 0019) sits in front of this Tool. These tests
 // exercise what lies behind it, so their session records a real run entry
@@ -87,6 +88,8 @@ async function fixture(slug: string) {
 			}) }],
 		}, null, 2)}\n`);
 	}
+	mkdirSync(join(root, "docs/initiatives"), { recursive: true });
+	writeFileSync(join(root, `docs/initiatives/${slug}.md`), `# Parent\n## S1: predecessor\nTasks:\n- ${tasks[0]}\n## S2: target\nTasks:\n- ${tasks[1]}\nBlocked by: ${tasks[0]}\n`);
 	git(root, "init", "-q", "-b", "main"); git(root, "config", "user.name", "Fixture"); git(root, "config", "user.email", "fixture@example.com");
 	git(root, "add", "-A"); git(root, "commit", "-qm", "fixture Intents and original source");
 	const base = git(root, "rev-parse", "HEAD");
@@ -94,26 +97,42 @@ async function fixture(slug: string) {
 		tasks: tasks.map((task, i) => ({ task_id: task, slice_id: `S${i + 1}`, issue_number: 101 + i, blocked_by: i ? [tasks[0]!] : [] })) };
 	let gates = 0;
 	let answer: () => Selection | Promise<Selection> = () => "confirm";
-	let batchTool: any, workTool: any;
+	let batchTool: any, workTool: any, enrollmentTool: any;
+	let entryPending = true;
+	const handlers = new Map<string, Function[]>();
 	// One Host session: both real extensions are registered with only the
 	// Initiative observation and native-dialog seams injected.
 	const restart = () => {
 		const tools: any[] = [];
-		const pi = { registerTool: (tool: unknown) => tools.push(tool), registerCommand() {}, on() {}, events: { on() {}, emit() {} } } as never;
+		handlers.clear(); entryPending = true;
+		const pi = { registerTool: (tool: unknown) => tools.push(tool), registerCommand() {},
+			on(name: string, callback: Function) { handlers.set(name, [...(handlers.get(name) ?? []), callback]); }, events: { on() {}, emit() {} } } as never;
 		registerPiWork(pi);
+		registerPiEnrollment(pi);
 		registerPiBatch(pi, { readInitiative: async () => observation });
 		batchTool = tools.find(t => t.name === "start_unattended_batch");
 		workTool = tools.find(t => t.name === "imm_kernel_canary");
+		enrollmentTool = tools.find(t => t.name === "imm_canary_enrollment");
 	};
 	restart();
 	const ctx = () => ({ cwd: root, mode: "tui", sessionManager: RUN_ENTRY_SESSION, ui: { setWidget() {}, setStatus() {}, notify() {}, custom: async () => { gates++; return answer(); } } });
+	const emit = async (name: string, event: object) => { for (const callback of handlers.get(name) ?? []) await callback(event, ctx()); };
+	const enter = async (text: string) => { entryPending = false; await emit("input", { text, source: "interactive" }); };
 	const call = async (tool: any, params: unknown): Promise<any> => {
+		if (entryPending) await enter(`/imm-run ${slug}`);
+		const id = randomUUID(), event = { toolName: tool.name, toolCallId: id, input: params };
 		try {
-			const response = await tool.execute(randomUUID(), params, undefined, undefined, ctx());
-			return JSON.parse(response.content[0].text);
-		} catch (error) { return { state: "refused", reason: error instanceof Error ? error.message : String(error) }; }
+			await emit("tool_call", event);
+			const response = await tool.execute(id, params, undefined, undefined, ctx());
+			await emit("tool_result", { ...response, ...event, isError: false });
+			return tool.name === "imm_canary_enrollment" ? response.details : JSON.parse(response.content[0].text);
+		} catch (error) {
+			await emit("tool_result", { ...event, isError: true, content: [{ type: "text", text: String(error) }] });
+			return { state: "refused", reason: error instanceof Error ? error.message : String(error) };
+		}
 	};
-	return { root, slug, tasks, base, restart, observation,
+	return { root, slug, tasks, base, restart, observation, enter,
+		enroll: (task: string) => call(enrollmentTool, { action: "new", task_id: task }),
 		batch: () => call(batchTool, { initiative_slug: slug }),
 		kernel: (task: string, action: Record<string, unknown>) => call(workTool, { task_id: task, action }),
 		implement: (n: number, content = "implemented\n") => { writeFileSync(join(root, `src/child-${n}.txt`), content); git(root, "add", `src/child-${n}.txt`); },
@@ -156,6 +175,24 @@ async function settle(f: Awaited<ReturnType<typeof fixture>>, n: number) {
 }
 
 describe("registered Pi batch entry with real Kernel, QA and Git (routine fixture)", () => {
+	it("explicit Slice settles without integrating or executing its authorized sibling", async () => {
+		const f = await fixture("acceptance-isolated");
+		const first = await f.batch();
+		await f.enter(`/imm-run ${f.tasks[0]}`);
+		await f.kernel(f.tasks[0]!, { op: "status" });
+		const settled = await settle(f, 1);
+		expect(settled).not.toHaveProperty("batch");
+		expect(f.state(first.batch_id).children[1]?.state).toBe("pending");
+		expect(f.head()).toBe(f.base); expect(f.gates()).toBe(1);
+	}, 60000);
+
+	it("Local Slice dependency refusal happens before Pi Enrollment's native gate", async () => {
+		const f = await fixture("acceptance-local-dependency");
+		await f.enter(`/imm-run ${f.tasks[1]}`);
+		expect(await f.enroll(f.tasks[1]!)).toMatchObject({ state: "refused", reason: expect.stringContaining(`Isolated Slice prerequisites are not integrated: ${f.tasks[0]}`) });
+		expect(f.gates()).toBe(0); expect(f.head()).toBe(f.base);
+	}, 60000);
+
 	it("hands off to the Executor before any QA and repeats that handoff without a second Enrollment, gate, QA run or commit", async () => {
 		const f = await fixture("acceptance-handoff");
 		const first = await f.batch();
@@ -259,6 +296,8 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 		expect(second).toMatchObject({ batch_id: first.batch_id, report: { children: [{ state: "committed" }, { state: "enrolled" }], handoff: { task_id: f.tasks[1] } } });
 		expect(second.report.recovery).toBeUndefined();
 		f.restart();
+		// Re-select the Parent from its persisted batch receipt in the recreated adapter.
+		expect((await f.batch()).report.handoff.task_id).toBe(f.tasks[1]);
 		expect((await settle(f, 2)).batch.report.batch_state).toBe("completed");
 		expect(f.commits()).toHaveLength(2);
 		expect(f.gates()).toBe(1);

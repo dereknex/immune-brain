@@ -17,6 +17,7 @@ import {
 } from "./interaction";
 import { ClaudeReviewHost, FileHookEventLog, parseHookStdin } from "./review_host";
 import { activeTaskHookOutput, consumePhaseAdmission, laneGuardHookOutput, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "./lane_guard";
+import { readRunToolSession, runContinuationHookOutput } from "./run_continuation";
 import { ClaudeRuntime, type ToolMeta } from "./kernel_ports";
 import { parseLaneInstruction, parseLaneOffers, parseMaxParallel, resolveLaneParallel } from "../unattended/batch_lanes";
 import { parseFinalVerification } from "../unattended/batch_final_verification";
@@ -152,8 +153,12 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 	// The phase entry gate, before any preparation or native dialog. The hook
 	// decided on the session's literal entry; no admission for this exact call
 	// means no hook saw it, which refuses.
+	let hookSessionId: string | null = null;
 	const requireRunEntry = (operation: GatedTool, toolCallId: string) => {
-		if (consumeAdmission(toolCallId, operation)) return;
+		const correlated = readRunToolSession(toolCallId, operation, options.cwd ?? process.cwd());
+		if (!options.consumePhaseAdmission && !correlated)
+			throw new NativeAuthorityError("run_entry_required", "Enrollment needs exact Hook session and workspace correlation");
+		if (consumeAdmission(toolCallId, operation)) { hookSessionId = correlated ?? hookSessionId; return; }
 		throw new NativeAuthorityError("run_entry_required", `${operation} needs a literal-user imm-run entry in this session`);
 	};
 	return {
@@ -171,6 +176,8 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 		},
 		sessionInteractive: () => negotiatedInteractive,
 		async callTool(name: string, args: Record<string, unknown>, meta: Partial<ToolMeta> = {}) {
+			const observedSession = readRunToolSession(meta.toolCallId ?? `call-${name}`, name, options.cwd ?? process.cwd());
+			if (observedSession) hookSessionId = observedSession;
 			if (name === "start_unattended_batch") {
 				const initiativeSlug = String(args.initiative_slug ?? "");
 				if (!initiativeSlug) throw new Error("initiative_slug is required");
@@ -183,7 +190,7 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
 				requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
 				const toolMeta: ToolMeta = {
-					sessionId: meta.sessionId ?? connectionId,
+					sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
 					toolCallId: meta.toolCallId ?? `call-${name}`,
 					taskId: initiativeSlug,
 					initiativeSlug,
@@ -215,7 +222,7 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				const probe = probeHost(options.env ?? process.env, process.platform, negotiatedVersion);
 				if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
 				const toolMeta: ToolMeta = {
-					sessionId: meta.sessionId ?? connectionId,
+					sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
 					toolCallId: meta.toolCallId ?? `call-${name}`,
 					taskId: initiativeSlug,
 					initiativeSlug,
@@ -242,7 +249,7 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 			const probe = probeHost(options.env ?? process.env, process.platform, negotiatedVersion);
 			if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
 			const toolMeta: ToolMeta = {
-				sessionId: meta.sessionId ?? connectionId,
+				sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
 				toolCallId: meta.toolCallId ?? `call-${name}`,
 				taskId,
 				interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
@@ -482,6 +489,23 @@ export function elicitationParams(input: NativeConfirmationInput) {
 	}
 	if (input.operation === "start_unattended_batch") {
 		const b = input.batchDetails;
+		if (b?.parent_final_verification) {
+			const lines = [
+				`Operation: start_unattended_batch (native Parent final verification; no batch run is started)`,
+				`Initiative: ${input.initiativeSlug ?? b.initiative_slug}`,
+				input.planDigest ? `Plan digest: ${input.planDigest}` : null,
+				`Parent Tasks (${b.children.length}):\n${b.children.map((c) => `  - ${c.task_id} (${c.slice_id})`).join("\n")}`,
+				b.parent_final_verification.integrate_task_ids.length > 0
+					? `Settled deliveries committed first (${b.parent_final_verification.integrate_task_ids.length}):\n${b.parent_final_verification.integrate_task_ids.map((id) => `  - ${id}`).join("\n")}`
+					: null,
+				`Final verification commands run in this workspace outside Host permission:\n${(b.final_verification ?? []).map((command) => `  - ${command}`).join("\n")}`,
+			].filter(Boolean);
+			return {
+				mode: "form",
+				message: `Authorize this Parent final verification for ${input.initiativeSlug}?\n\n${lines.join("\n")}`,
+				requestedSchema: { type: "object", properties: {} },
+			};
+		}
 		const details = [
 			`Operation: start_unattended_batch`,
 			`Initiative: ${input.initiativeSlug ?? b?.initiative_slug}`,
@@ -493,7 +517,7 @@ export function elicitationParams(input: NativeConfirmationInput) {
 			b?.lane_mode ? `Lane mode: max_parallel=${b.lane_mode.max_parallel}` : null,
 			b?.lane_mode ? `Parallel groups (${b.lane_mode.parallel_groups.length}):\n${b.lane_mode.parallel_groups.map((group) => `  - ${group.join(", ")}`).join("\n")}` : null,
 			b?.lane_mode && b.lane_mode.serialized.length > 0 ? `Serialized by overlapping scope (${b.lane_mode.serialized.length}):\n${b.lane_mode.serialized.map((c) => `  - ${c.task_id} after ${c.overlaps_with.join(", ")}`).join("\n")}` : null,
-			b?.lane_mode?.final_verification ? `Final verification: ${b.lane_mode.final_verification.join("; ")}` : null,
+			b?.final_verification ? `Final verification: ${b.final_verification.join("; ")}` : null,
 			b?.lane_mode?.offer_revision_delegation ? REVISION_DELEGATION_TEXT : null,
 		].filter(Boolean);
 		return {
@@ -758,15 +782,20 @@ async function runHook(): Promise<void> {
 	let payload: Record<string, unknown> | null = null;
 	try { payload = JSON.parse(raw) as Record<string, unknown>; } catch { payload = null; }
 	if (payload?.hook_event_name === "PreToolUse") {
-		const decision = laneGuardHookOutput(payload) ?? phaseEntryGateHookOutput(payload);
+		const decision = laneGuardHookOutput(payload) ?? phaseEntryGateHookOutput(payload) ?? await runContinuationHookOutput(payload);
 		if (decision) process.stdout.write(`${decision}\n`);
 		return;
 	}
 	if (payload?.hook_event_name === "UserPromptSubmit") {
 		recordPhaseEntryPrompt(payload);
+		await runContinuationHookOutput(payload);
 		const notice = await activeTaskHookOutput(payload);
 		if (notice) process.stdout.write(`${notice}\n`);
 		return;
+	}
+	if (payload) {
+		const continuation = await runContinuationHookOutput(payload);
+		if (continuation) process.stdout.write(`${continuation}\n`);
 	}
 	const event = parseHookStdin(raw);
 	if (!event) return;

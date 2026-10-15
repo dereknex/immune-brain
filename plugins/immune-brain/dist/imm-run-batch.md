@@ -5,14 +5,22 @@ Loop contract in [`imm-run.md`](imm-run.md) owns every other branch.
 
 ## Unattended Batch Opt-In
 
-The only unattended batch entry is the privileged Host tool `start_unattended_batch`
-with its `initiative_slug` parameter. That parameter is the opt-in (lane mode adds an optional `max_parallel`, see [Parallel Batch Opt-In](#parallel-batch-opt-in)): absent the call,
-`imm-run` behavior is byte-identical to per-task Enrollment, and no batch state,
-branch, or Batch Authorization exists. The Standalone Hosts expose the same tool
-name and the same required parameter; it is never a batch of tasks the Host chose.
-When an Initiative is referenced by its tracker Issue (e.g. `github #<number>`),
-extract `initiative_slug` from the Issue body `<!-- immune-brain:initiative-id=<slug> -->`
-marker or title prefix before invoking the tool.
+The privileged Host tool `start_unattended_batch` executes a confirmed Initiative.
+An explicit `imm-run <Parent Issue>` selects that Parent's complete published plan:
+resolve its `<!-- immune-brain:initiative-id=<slug> -->` marker and call the tool
+with `initiative_slug`, directly opening native Batch Authorization. Parent
+selection is the batch opt-in; it needs no separate chat question. An explicit
+`imm-run <Slice/Child Issue>` executes only that TaskIntent after its entrypoint
+verifies predecessor settlement and Git integration. Reading Parent context
+grants no authority to start predecessors or siblings. A standalone task id uses
+single-task Enrollment.
+
+Before confirmation, choose execution mode from dependency readiness, scope
+conflicts, configured Lane capacity and available supervised Executor capability.
+Use Lane mode up to the project limit when supervision is available; otherwise
+choose Managed serial execution in this Host. Both modes record and execute the
+same `final_verification` commands. A mode change after confirmation needs a fresh
+native authorization. See [Parallel Batch Opt-In](#parallel-batch-opt-in).
 
 The Initiative's carrier decides where the children are read from. When
 `docs/initiatives/<initiative_slug>.md` exists, the Host reads that Local carrier
@@ -25,9 +33,15 @@ confirmation.
 
 Invoking it authorizes only a user-confirmed batch of already-planned child
 TaskIntents. The Host projects the batch plan from the Initiative's published
-children, excludes every `critical` child, renders the ordered child list, budget,
-and plan digest through its native confirmation, and issues one Kernel Batch
-Authorization for that exact plan. The extension mints no capability and owns no
+children, lists every `critical` child as a native-confirmation exception, renders
+the ordinary ordered child list, final commands, budget and plan digest through
+its native confirmation, and issues one Kernel Batch Authorization for ordinary
+Slices. Normal successors of a critical Slice retain ordinary authorization;
+the complete Parent dependency graph still prevents their execution until the
+critical delivery is settled and integrated. Critical Slices consume no batch slot:
+when ready, invoke single-task native Enrollment, drive their Loop, then re-enter
+the Parent tool to scope-bound commit their settled delivery and resume ordinary
+work. Independent branches keep progressing while one branch is blocked. The extension mints no capability and owns no
 batch state transition: the shared `startBatch` driver in
 `runtime/unattended/` owns every batch transition, and each child is still
 enrolled, assured, and settled by the Kernel under an ordinary TaskRecord.
@@ -38,6 +52,30 @@ in the current foreground conversation, stages only its scoped changes, and
 runs focused diagnostics before Kernel Assurance. Re-entering the batch before
 implementation returns the same handoff without QA or another confirmation.
 The runtime owns no model invocation and adds no persisted execution lifecycle.
+Keep the Parent binding across child settlement, handoffs and status questions.
+Continue filling dependency-ready, non-conflicting capacity; below-limit QA/Review
+failures return to bounded repair in this Loop. Repeated failures use the existing
+coordinator correction limits, retaining failure history and counters.
+
+A batch `completed` flag proves only the ordinary child driver finished. Parent
+success requires all necessary Slices settled with current Intent evidence,
+commits integrated into the final branch, recorded final commands passing on that
+exact HEAD, and all separately enrolled repairs integrated. The integration Slice
+owns cross-Slice verification and repair scope before its settlement. On a later
+final failure, restore a recoverable local environment and retry the recorded
+commands; otherwise diagnose, author and validate the smallest repair TaskIntent
+for the original goal, then open a fresh single-task native Enrollment without
+chat pre-confirmation. Settled Slices retain their evidence. Track only an observed
+repair run, integrate its settled delivery, and rerun final verification. Parent
+Issue closure waits for this whole-plan proof; a tracker failure reports the local
+proof and one synchronization recovery action.
+
+A critical-only or delivered-only Parent starts no batch, but its first run of
+caller-supplied final commands executes outside Host permission. Before any
+settled-delivery commit or command runs, the current Host opens its native
+confirmation listing those exact commands; a decline, cancellation or missing
+gate leaves no Git or command effect. Recorded commands rerun under that earlier
+confirmation, and changed commands need a fresh explicit Parent entry.
 
 After diagnostics pass, the Parent advances Kernel QA and dispatches any reserved
 foreground Review once using the exact returned `agent_params`, then submits its
@@ -63,9 +101,9 @@ per completed child.
 
 ### Parallel Batch Opt-In
 
-Lane mode is opt-in through the optional `max_parallel` parameter of
-`start_unattended_batch`; absent it, everything above is the whole contract and the
-run stays serial and byte-identical. `max_parallel` is a positive integer; the
+Lane mode uses the optional `max_parallel` parameter of `start_unattended_batch`,
+selected by the Parent before native confirmation; without Lane supervision the
+confirmed run stays Managed serial on this Host. `max_parallel` is a positive integer; the
 Standalone Hosts expose the same optional `lane_offers` list, each entry naming a
 `task_id` and an absolute `path` of an already existing Git worktree. The runner
 admits an offered Lane only when it shares the coordinator repository, is not the

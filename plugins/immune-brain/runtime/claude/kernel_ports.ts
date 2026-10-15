@@ -50,7 +50,7 @@ import {
 	restoreStagedIntent as restoreStagedIntentShared,
 } from "../staged_intent";
 import { projectTaskStatus, projectTerminalTrackerState, TRACKER_PROJECTION_FAILURE } from "../assurance/coordinator";
-import { runGithubTrackerOperation } from "../github_issue_tracker";
+import { runGithubTrackerOperation, assertIsolatedTaskPrerequisites } from "../github_issue_tracker";
 import { readTaskTombstone } from "../kernel/backend_claim";
 import {
 	authorizeBatch,
@@ -58,7 +58,7 @@ import {
 	findResumableBatchSlugForTask,
 } from "../unattended/batch_preflight";
 import {
-	startBatch,
+	startBatch, completedParentReport,
 	type BatchRunnerKernelPort,
 	type BatchRunReport,
 	type BatchTrackerPort,
@@ -77,6 +77,7 @@ import {
 import type {
 	InitiativeObservationReader,
 } from "../unattended/types";
+import { integrateSettledCriticalSlices, advanceNativeParent } from "../unattended/batch_git";
 import { observeInitiative } from "../unattended/batch_plan";
 import {
 	confirmationRef,
@@ -88,6 +89,7 @@ import {
 	type NativeDecision,
 	type PrivilegedOperation,
 } from "./interaction";
+import { selectedClaudeParent } from "./run_continuation";
 import { ClaudeReviewHost, FileHookEventLog, type ClaudeHookEvent } from "./review_host";
 import { probeHost, type PermissionMode } from "./capability";
 
@@ -256,6 +258,7 @@ export interface ClaudeRuntimeOptions {
  * authorization flow passes them through untouched.
  */
 type ClaudeBatchStartResult =
+	| NonNullable<Awaited<ReturnType<typeof advanceNativeParent>>>
 	| { state: "started"; batch_id: string; report: BatchRunReport }
 	| { state: "retired"; batch_id: string; report: BatchRunReport | BatchLaneRunReport }
 	| { state: "rejected"; reason: string; recovery_action: string }
@@ -401,6 +404,7 @@ export class ClaudeRuntime {
 		// below binds the HEAD that results. An owned workspace commits nothing.
 		let gitBaseNote = preconditionCommitNote(commitEnrollmentPreconditions(this.cwd, taskId, meta.signal));
 		try {
+			await assertIsolatedTaskPrerequisites(this.cwd, taskId);
 			let preparation = await preparePiCanary(this.cwd, { task_id: taskId, now });
 			const intent = await readTaskIntentForRecord(this.cwd, taskId);
 			const gitBase = inspectEnrollmentGitBase(this.cwd);
@@ -491,13 +495,14 @@ export class ClaudeRuntime {
 		}
 		if (!slug) return result;
 		try {
+			if (!selectedClaudeParent(meta.toolCallId, this.cwd, slug)) return result;
 			// The batch commit takes exactly the scope envelope plus this task's own
 			// audit evidence, and its preflight refuses unstaged changes: stage only
 			// that evidence, the step an Executor otherwise does by hand.
 			if (existsSync(join(this.cwd, ".imm", "audit", taskId)))
 				execFileSync("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
 			const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
-			return { ...(result as object), batch } as T;
+			return { ...(result as object), batch, ...(batch.state === "started" && batch.report?.tracker ? { tracker: batch.report.tracker } : {}) } as T;
 		} catch (error) {
 			return {
 				...(result as object),
@@ -823,6 +828,44 @@ export class ClaudeRuntime {
 		if (!reuseOnly && !this.requestConfirmation)
 			throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
 
+		await integrateSettledCriticalSlices(this.cwd, initiativeSlug, this.readInitiative);
+		const completed = await completedParentReport(this.cwd, initiativeSlug, this.readInitiative, this.batchTracker);
+		if (completed) return { state: "started", batch_id: completed.batch_id, report: completed };
+		const native = await advanceNativeParent(this.cwd, initiativeSlug, options.final_verification, this.readInitiative, this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug),
+			async (effects) => {
+				// A continuation never opens a gate; unconfirmed commands wait for a fresh explicit entry.
+				if (reuseOnly) return batchReason("confirmation_port_unavailable");
+				try {
+					const confirmation = await this.requestConfirmation!({
+						operation: "start_unattended_batch",
+						initiativeSlug,
+						toolCallId: meta.toolCallId,
+						planDigest: effects.plan_digest,
+						batchDetails: {
+							initiative_slug: effects.initiative_slug,
+							batch_branch: "",
+							children: effects.children,
+							excluded: [],
+							final_verification: effects.final_commands,
+							parent_final_verification: { integrate_task_ids: effects.integrate_task_ids },
+						},
+						signal: meta.signal,
+					});
+					if (meta.signal?.aborted) return batchReason("cancelled_before_execution");
+					if (confirmation.decision === "accept") return null;
+					if (confirmation.decision === "cancel") return batchReason("confirmation_cancelled");
+					if (confirmation.decision === "decline") return batchReason("confirmation_declined");
+					return batchReason("confirmation_no_decision");
+				} catch (err) {
+					if (meta.signal?.aborted) return batchReason("cancelled_before_execution");
+					if (err instanceof NativeAuthorityError) {
+						if (err.reasonCode === "unsupported_host") throw err;
+						return { state: err.reasonCode === "user_cancelled" ? "cancelled" : "rejected", reason: err.message, recovery_action: err.recoveryAction };
+					}
+					return batchReason("confirmation_failed", err instanceof Error ? err.message : String(err));
+				}
+			});
+		if (native) return native;
 		// 1. Host-independent batch preflight: claim ownership, branch
 		// availability, working-tree cleanliness against the authorized scope,
 		// recovery children, plan digest, and base HEAD are one shared projection,
@@ -900,6 +943,7 @@ export class ClaudeRuntime {
 								reason: child.reason,
 							})),
 							budget: facts.budget,
+							...(options.final_verification ? { final_verification: options.final_verification } : {}),
 							...(options.max_parallel !== undefined
 								? {
 										lane_mode: {
@@ -997,6 +1041,7 @@ export class ClaudeRuntime {
 		};
 		const kernelPort = createBatchKernelPort({
 			root: this.cwd,
+			parent: await (this.readInitiative ?? observeInitiative)(this.cwd, initiativeSlug),
 			enrollmentRegistry: this.enrollmentRegistry,
 			registry: this.batchRegistry,
 			capability,
@@ -1005,7 +1050,7 @@ export class ClaudeRuntime {
 			resume: { isResuming, existingBatch, batchBranch },
 			overrides: this.batchKernel,
 		});
-		const report = await startBatch({
+		let report = await startBatch({
 			root: this.cwd,
 			batch_id: batchId,
 			initiative_slug: initiativeSlug,
@@ -1019,11 +1064,11 @@ export class ClaudeRuntime {
 			now,
 			kernel: kernelPort,
 			git: this.batchGit,
+			...(options.final_verification ? { final_verification: options.final_verification } : {}),
 			...(options.max_parallel !== undefined
 				? {
 						max_parallel: options.max_parallel,
 						tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug),
-						...(options.final_verification ? { final_verification: options.final_verification } : {}),
 						...(options.lane_instruction ? { lane_instruction: options.lane_instruction } : {}),
 						...(options.lane_revision ? { lane_revision: options.lane_revision } : {}),
 						...(authorization.revision_delegation !== undefined ? { revision_delegation: authorization.revision_delegation } : {}),
@@ -1035,6 +1080,8 @@ export class ClaudeRuntime {
 		// review-3 & review-batch-preflight-recovery-is-diagnostic: map rejected batch state to rejected result with same-Host recovery action
 		if (report.batch_state === "rejected") return batchReason("batch_run_rejected", report.reason ?? "");
 
+		if (report.batch_state === "completed" && report.final_verification?.passed)
+			report = await completedParentReport(this.cwd, initiativeSlug, this.readInitiative, this.batchTracker) ?? report;
 		return {
 			state: "started",
 			batch_id: batchId,

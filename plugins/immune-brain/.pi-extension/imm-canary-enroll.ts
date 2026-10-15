@@ -15,6 +15,7 @@ import { resolve } from "node:path";
 // from the Kernel's own prepare module.
 import { LITERAL_USER_ACTOR_ID } from "../runtime/kernel/actor_identity";
 import { createEnrollmentAuthorityRegistry } from "../runtime/kernel/enrollment_authority";
+import { assertIsolatedTaskPrerequisites } from "../runtime/github_issue_tracker";
 import { preparePiCanary, revalidatePiCanary } from "../runtime/assurance/enrollment";
 import { evaluateCanaryEligibility } from "../runtime/kernel/canary_eligibility";
 import { enrollmentScopeDisclosure, enrollTask, EnrollmentRehearsalError } from "../runtime/kernel/enrollment";
@@ -408,6 +409,7 @@ async function executeForegroundEnrollment(
 				`task ${taskId} is terminal in this worktree`,
 				"inspect authority state; do not retry enrollment",
 			);
+		await assertIsolatedTaskPrerequisites(root, taskId);
 		let preparation = await preparePiCanary(root, { task_id: taskId, now });
 		signal.throwIfAborted();
 		if (!preparation.intent)

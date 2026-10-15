@@ -394,7 +394,7 @@ function laneGitOf(input: StartBatchInput): BatchLaneGitPort {
 	return (input.git as (BatchRunnerGitPort & { lane?: BatchLaneGitPort }) | undefined)?.lane ?? createDefaultLaneGitPort();
 }
 
-function serialGitOf(input: StartBatchInput): Pick<BatchRunnerGitPort, "preflight" | "commitChild" | "lookupBatchCommit"> {
+function serialGitOf(input: StartBatchInput): Pick<BatchRunnerGitPort, "preflight" | "commitChild" | "lookupBatchCommit" | "retainLaneEvidence"> {
 	return input.git ?? defaultSerialGit();
 }
 
@@ -877,6 +877,8 @@ export async function runLaneBatch(
 			lane_commit: child.lane.lane_commit,
 		});
 		if (!found) continue;
+		await git.retainLaneEvidence?.({ root: input.root, taskId: child.task_id, batchId: record.batch_id,
+			branch: record.branch, lane: { ...child.lane, lane_commit: child.lane.lane_commit, integrated_commit: found } });
 		record.children = record.children.map((c) => (c.task_id === child.task_id ? { ...c, state: "integrated", commit: found } : c));
 		record.commits = [...record.commits, found];
 		persist();
@@ -1171,6 +1173,8 @@ export async function runLaneBatch(
 					.filter((c) => c.state === "integrated" && c.task_id !== child.task_id)
 					.map((c) => ({ task_id: c.task_id, intent_path: intentPathOf(c.task_id), commit: c.commit })),
 			});
+			await git.retainLaneEvidence?.({ root: input.root, taskId: child.task_id, batchId: record.batch_id,
+				branch: record.branch, lane: { ...child.lane, lane_commit: child.lane.lane_commit, integrated_commit: commit } });
 			record.children = record.children.map((c) => (c.task_id === child.task_id ? { ...c, state: "integrated", commit, reason: null } : c));
 			record.commits = [...record.commits, commit];
 			persist();
@@ -1203,6 +1207,10 @@ export async function runLaneBatch(
 			refusals.push({ ...offer, reason: "batch_lane_unknown_child" });
 			continue;
 		}
+		if (input.kernel.canStartTask && !await input.kernel.canStartTask(offer.task_id)) {
+			refusals.push({ ...offer, reason: "Parent prerequisite is not integrated" });
+			continue;
+		}
 		const head = expectedBatchHead(record);
 		const facts = lanes.inspectLane(input.root, offer.path);
 		const reason = decideLaneAdmission({
@@ -1231,6 +1239,7 @@ export async function runLaneBatch(
 		// completion report is written. A failure is reported, never rolled back.
 		const final = record.final_verification?.length ? await runFinalVerification(input.root, record.final_verification) : undefined;
 		record.batch_state = "completed";
+		if (final) record.final_verification_result = final;
 		persist();
 		return finalizeLane(
 			input.root,

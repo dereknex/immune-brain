@@ -556,9 +556,9 @@ Key invariants:
 
 ## Unattended Batch Runs
 
-When an Initiative contains multiple ready children, developers can run the entire batch unattended via the Host's privileged `start_unattended_batch` tool without manually driving `imm-run` for each child task.
+Enter `imm-run <Parent Issue>` to execute its complete approved plan through the Host's `start_unattended_batch` tool and native authorization. Enter `imm-run <Slice/Child Issue>` to execute only that Slice after prerequisite delivery checks; it starts no siblings or predecessors.
 
-Immune-Brain supports two batch execution modes: **Default Serial Mode** and **Parallel Batch Lanes**.
+The Parent chooses **Managed Serial Mode** or **Parallel Batch Lanes** before confirmation, using dependency readiness, scope conflicts, Lane capacity and supervised Host capability. Without Lane supervision it runs serially in the same Host. Status questions preserve the binding; explicit cancellation releases continuation.
 
 ### 1. Batch Execution Modes Overview
 
@@ -573,9 +573,9 @@ Immune-Brain supports two batch execution modes: **Default Serial Mode** and **P
 
 ### 2. Batch Authority & Invariants
 
-- **Explicit Entry & Single Authorization:** No batch state or branch exists before calling `start_unattended_batch`; without it, `imm-run` behaves identically to single-task enrollment. The native gate (Pi TUI dialog or Claude MCP elicitation) displays the ordered child list and global `plan_digest`; this single user confirmation constitutes complete Batch Authorization.
+- **Explicit Entry & Single Authorization:** Parent selection invokes `start_unattended_batch` directly; a standalone Task or Child uses single-task Enrollment. Critical-only and delivered-only Parents use native task gates and final observations without an empty batch grant. The native gate (Pi TUI dialog or Claude MCP elicitation) displays the ordered child list and global `plan_digest`; this single user confirmation constitutes complete Batch Authorization.
 - **Child Authority Invariance:** A batch merely bundles authorization scope without weakening engineering rigor. Every child is still individually enrolled, scope-frozen, QA-verified via authentic child processes, reviewed in isolation, and settled with its own `TaskRecord`. A batch is a scope of authorization, not a new authority layer.
-- **Deterministic Boundaries:** Only runs published, non-`critical` children. Any required human decision (`needs_human`), budget/timeout interruption, or integration error halts the batch safely, marking dependent children as `skipped_blocked` rather than reordering. Runners never push, open PRs, or make arbitrary decisions.
+- **Deterministic Boundaries:** Ordinary children use batch authorization; ready `critical` children use separate native Enrollment. Ordinary failures receive bounded repair. A blocker parks its dependent branch while independent work continues. Parent success and closure require every necessary delivery integrated and final verification passing on the final HEAD; later code defects receive a validated repair candidate and fresh native Enrollment. Runners never push, open PRs, or make arbitrary decisions.
 
 ### 3. Parallel Batch Lanes Lifecycle & Architecture
 

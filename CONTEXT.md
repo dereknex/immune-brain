@@ -11,8 +11,12 @@ Ordinary host work that does not create or mutate Managed authority. It includes
 _Avoid_: Direct Path, unmanaged fallback
 
 **Managed Path**:
-The authority-governed workflow entered only through `imm-brainstorm`, `imm-planner`, or `imm-run`. Existing Managed ownership remains authoritative but resumes only through explicit `imm-run` entry.
+The authority-governed workflow entered only through `imm-brainstorm`, `imm-planner`, or `imm-run`. Existing ownership remains authoritative; explicit `imm-run` binds execution to the session and retains continuation across status questions until settlement, a concrete blocker or explicit cancellation.
 _Avoid_: automatic routing, default mutation path
+
+**Run binding**:
+The session-local, non-authoritative association between an explicit `imm-run` entry and its single Task or whole Initiative. Releasing it ends response continuation without changing Kernel ownership.
+_Avoid_: run authority, second scheduler
 
 **Brainstorm**:
 A read-only framing activity that resolves material ambiguity before planning. It produces constraints and decisions, not execution authority.
@@ -231,6 +235,7 @@ _Avoid_: current acceptance field, QA attestation
 - Kernel authority: `plugins/immune-brain/runtime/kernel/` owns TaskIntent parsing, Enrollment, TaskRecord reduction/storage, claims, projections, and completion.
 - Worktree state: `.imm/state/kernel.sqlite` holds current authority — each run's TaskRecord, workspace ownership, claim state, run identity and terminal proof, written in one transaction per mutation. `.imm/audit/<task-id>/` stores settled terminal evidence (tracked); the database, its WAL/SHM siblings and backups are Git-ignored runtime state, and `.imm/state/tasks/*.json` survives only as retired layout that the explicit migration diagnoses.
 - Host integration: `plugins/immune-brain/.pi-extension/` owns Pi native Enrollment, deterministic QA, foreground Review dispatch, authorization dialogs, and Task Rail presentation. `plugins/immune-brain/runtime/claude/` owns the Claude Code MCP/Hook adapter; the plugin manifests live under `plugins/immune-brain/.claude-plugin/`, `.mcp.json`, `hooks/`, and `agents/`.
+- Response continuation: `runtime/assurance/run_continuation.ts` projects read-only task/Parent facts; `.pi-extension/pi-run-continuation.ts` and `runtime/claude/run_continuation.ts` bind the session and drive Pi settle/Claude Stop boundaries. Kernel and the existing batch driver retain execution ownership.
 - Loop dispatch: `plugins/immune-brain/runtime/loop_contract.ts`, `role_prompt_bridge.ts`, and `runtime/prompts/` define internal role routing and bounded delegation contracts.
 - Batch execution: `plugins/immune-brain/runtime/unattended/` and `plugins/immune-brain/runtime/kernel/batch_authority.ts` alone own every batch state transition, plan projection, Git branch and per-child commit, and Batch Authorization; the Claude and Pi host adapters are callers only.
 - CLI surface: `plugins/immune-brain/runtime/v4_runtime.ts` routes the stable wrappers in `plugins/immune-brain/bin/`; `imm-kernel` owns current Kernel commands, while `imm-plan` retains routing-policy and historical Plan validation surfaces.

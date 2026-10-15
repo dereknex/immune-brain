@@ -1,6 +1,6 @@
 # Goal-driven imm-run
 
-**Status**: Validated execution candidate; not enrolled. Canonical TaskIntent is Git-tracked; validation reports `valid: true` and `enrollment_ready: true`.
+**Status**: Implementation in progress under enrolled TaskIntent revision 5; real dual-Host acceptance and Kernel assurance are still required.
 **Design risk**: High — continuation crosses two Host lifecycle boundaries and must preserve literal-user entry, cancellation, Review ownership, and Kernel completion authority.
 **Document language**: English.
 **Execution posture**: focused deterministic tests at the Host, batch and tracker seams, plus mandatory real-Host unattended evidence on both Hosts.
@@ -36,7 +36,7 @@ The IDs below capture the already accepted conversation decisions; they do not r
 | GDR-DEC-5 | Reuse the existing dependency/scope scheduler and Lane supervision. Fill available eligible capacity up to the resolved ceiling; dependent or conflicting Slices serialize without asking the user to choose an execution mode. |
 | GDR-DEC-6 | Maximize authorized completion through preflight, ordinary repair and existing coordinator correction. Isolate blocked children and continue independent work; never suppress a required gate, reset a failure budget or call a partial/failed result complete. |
 | GDR-DEC-7 | Resolve mode before confirmation: supervised Lanes when available, otherwise same-Host Managed serial execution with the same QA, Review and aggregate checks. Do not switch a confirmed mode silently. |
-| GDR-DEC-8 | Real unattended execution evidence on Pi and Claude Code is mandatory for delivery. Controlled fixtures cannot substitute for either Host; an unavailable Host leaves acceptance incomplete. |
+| GDR-DEC-8 | Real unattended execution evidence on Pi and Claude Code is mandatory for delivery. Controlled fixtures cannot substitute for either Host; an unavailable Host leaves acceptance incomplete. Revision 5 (user-approved): a Pi scenario whose live capture repeatedly failed to reach a valid terminal result may be recorded as a declared gap with its reason and failed attempts; Claude Code allows none, and an undeclared missing scenario still leaves acceptance incomplete. |
 | GDR-DEC-9 | List critical exceptions before entry and use each critical child's existing native Enrollment after dependency readiness. Its pending/declined gate blocks only its affected work; critical delivery remains necessary for Parent success. |
 | GDR-DEC-10 | After settled delivery fails final verification, diagnose and prepare/validate a minimal original-goal repair TaskIntent automatically, then request fresh native Enrollment directly. Preserve deliveries; equal failures without new diagnosis or progress cannot mint repeated tasks. |
 
@@ -113,7 +113,7 @@ All scenarios derive from BR-REQ-1 and the user's acceptance of BR-DEC-2. They d
 - **Actor**: Repository owner assessing delivery.
 - **Given**: Deterministic fixtures and packaging checks pass.
 - **When**: Feature acceptance is evaluated.
-- **Then**: Both actual supported Hosts must run the Parent scenario with a dependency chain and independent branch through ordinary failure, Review, subsequent handoffs, integration and final pass, without human continuation prompts after the initial authorization. Also exercise serial fallback, Child isolation, cancellation and the explicitly permitted exception gates. Missing live evidence blocks acceptance.
+- **Then**: Both actual supported Hosts must run the Parent scenario with a dependency chain and independent branch through ordinary failure, Review, subsequent handoffs, integration and final pass, without human continuation prompts after the initial authorization. Also exercise serial fallback, Child isolation, cancellation and the explicitly permitted exception gates. Missing live evidence blocks acceptance unless the Pi scenario is a declared gap under GDR-DEC-8.
 - **Verification**: GDR-A7; records distinguish actual Host/model execution from tracker fixtures and operator-authorized gate interactions.
 
 ## Discovery evidence and dependencies
@@ -348,7 +348,7 @@ The seven acceptance items below are the complete planned TaskIntent acceptance.
 | GDR-A4 / BR-DEC-1 | Contracts, hooks, mirrors and generated bundle describe and implement the approved boundaries. `tests/goal-driven-run-contract.test.ts` (new), `tests/claude-host-package.test.ts`, `tests/dist-docs-sync-contract.test.ts`, `tests/pi-canary-notification-correlation.test.ts`. | Publish mode selection, prerequisite checking, critical/new-task gates, aggregate closure, required real evidence and recovery limits. Stop/tool-failure registration; foreground assurance; empty Footer; byte-current mirrors/bundle; no changeset-existence assertion after release consumption. |
 | GDR-A5 / GDR-DEC-4 | Parent/Child entry, serial/Lane scheduling and aggregate delivery are complete. `tests/goal-driven-batch-run.test.ts` (new, actual batch/Kernel fixtures), `tests/unattended-batch-commit.test.ts` (existing delivery/lineage regression). | Parent automatic route; Child cannot start siblings/prerequisites; missing/stopped/unintegrated prerequisites block it. A→C plus independent B; integration unlocks C without a wave barrier; scope/capacity/lineage guards; blocked subtree isolation. Missing Lane capability selects same-Host serial before confirmation, with final checks; no silent mode change. Failed/missing final result cannot complete Parent or close its Issue; child closure and `completed` alone are insufficient. |
 | GDR-A6 / GDR-DEC-9 | Critical and post-settlement repair use their own exact native authority and preserve Parent recovery. `tests/goal-driven-run-recovery.test.ts` (new), `tests/batch-stale-disposition.test.ts` (existing retirement/report regression). | Critical → ordinary plus independent branch; pending/refused gate isolation; downstream membership/digest remains authorized; no delegated critical bypass or risk downgrade. Critical-only Parent and delivered-only final checks avoid invalid empty batch. Final failure prepares/validates a candidate tied to original goal/failure/delivery, then requires fresh Enrollment. No settled-task reopen, pre-gate implementation, unrelated goal, extra Issue publication or equal-failure task minting. Accepted repair integrates and reruns final checks; cancelled/failed gates are not retried. |
-| GDR-A7 / GDR-DEC-8 | Matching actual Pi and Claude Code evidence proves the accepted unattended paths. `tests/goal-driven-run-live-evidence.test.ts` (new), tracked report `docs/evidence/goal-driven-run-host-smoke.json` (new, generated from actual runs). | Require both actual Hosts/versions, runtime/prompt/bundle byte identities, scenario coverage, run/task and terminal/integration/final references. Reject missing Host/scenario, stale tested bytes, failed outcome or ordinary-path human continuation. Distinguish authorized exception decisions and separate status/cancel inputs. Fixture-only output is not acceptable live evidence. |
+| GDR-A7 / GDR-DEC-8 | Matching actual Pi and Claude Code evidence proves the accepted unattended paths. `tests/goal-driven-run-live-evidence.test.ts` (new), tracked report `docs/evidence/goal-driven-run-host-smoke.json` (new, generated from actual runs). | Require both actual Hosts/versions, runtime/prompt/bundle byte identities, scenario coverage, run/task and terminal/integration/final references. Reject missing Host/scenario, stale tested bytes, failed outcome or ordinary-path human continuation. Distinguish authorized exception decisions and separate status/cancel inputs. Fixture-only output is not acceptable live evidence. A declared Pi gap is accepted only when the report names the scenario, a reason and the failed attempts; a Claude Code gap or an undeclared missing scenario is rejected. |
 
 Before implementation assurance, run the actual supported Pi (1.2.0 seam verified during design) and record the exact supported Claude Code version. Each must execute a Parent with a dependency chain and independent branch through ordinary failure/repair, required Review, subsequent handoffs, integrated final checks and success, without human continuation prompts after initial authorization. Also test serial fallback, single-Child isolation/prerequisite refusal, status input, cancellation/no automatic recovery, critical gate/descendant progression and final-failure/new-repair gate progression. Permitted native exception decisions are counted separately from manual continuation. Do not raise Host caps or hide manual interventions.
 
@@ -358,7 +358,7 @@ Generate affected bundle/mirrors, run the focused acceptance files and affected 
 
 ## Execution candidate and reference closure
 
-One standalone implementation TaskIntent: `goal-driven-run`, risk `material`, revision 1, owner `user`. Candidate path: `docs/plans/goal-driven-run.intent.json`. This Spec is its sole active Spec. This feature's implementation does not itself require an Initiative or remote Issue publication; future Parent batches and authorized repair TaskIntents are separate execution subjects.
+One standalone implementation TaskIntent: `goal-driven-run`, risk `material`, revision 5, owner `user`. Candidate path: `docs/plans/goal-driven-run.intent.json`. This Spec is its sole active Spec. This feature's implementation does not itself require an Initiative or remote Issue publication; future Parent batches and authorized repair TaskIntents are separate execution subjects.
 
 ### Implementation sequence
 
@@ -410,6 +410,8 @@ plugins/immune-brain/dist/imm-run.md
 plugins/immune-brain/dist/role-prompts/executor.md
 plugins/immune-brain/hooks/hooks.json
 plugins/immune-brain/runtime/assurance/run_continuation.ts
+plugins/immune-brain/runtime/claude/interaction.ts
+plugins/immune-brain/runtime/claude/kernel_ports.ts
 plugins/immune-brain/runtime/claude/lane_guard.ts
 plugins/immune-brain/runtime/claude/mcp_server.ts
 plugins/immune-brain/runtime/claude/run_continuation.ts
@@ -443,8 +445,10 @@ tests/goal-driven-batch-run.test.ts
 tests/goal-driven-run-contract.test.ts
 tests/goal-driven-run-live-evidence.test.ts
 tests/goal-driven-run-recovery.test.ts
+tests/pi-batch-acceptance-integration.test.ts
 tests/pi-batch-authority.test.ts
 tests/pi-canary-enroll-extension.test.ts
+tests/pi-canary-assurance-progression.test.ts
 tests/pi-canary-notification-correlation.test.ts
 tests/pi-canary-work-extension.test.ts
 tests/pi-phase-entry-gate.test.ts
@@ -514,7 +518,7 @@ Required phases remain: verified target/prerequisites; pre-confirmation mode sel
 
 ## Planning validation result
 
-The execution plan preserves all ten confirmed GDR decisions and nine scenarios, with P0–P7 covering the complete implementation and handoff. The expanded 67-entry concrete scope includes the existing Git/lineage and retired-report owners plus their regressions. Embedded author input, the scope list and the canonical sidecar match; all seven focused descriptor test paths are in scope. Twelve paths are future implementation outputs, including the required live evidence, its checker, the changeset, the shared policy and two adapters. No future output has been created as a placeholder.
+The execution plan preserves all ten confirmed GDR decisions and nine scenarios, with P0–P7 covering the complete implementation and handoff. The expanded 71-entry concrete scope includes the existing Claude confirmation/dispatch, Git/lineage and retired-report owners plus their regressions. Embedded author input, the scope list and the canonical sidecar match; all seven focused descriptor test paths are in scope. Twelve paths are future implementation outputs, including the required live evidence, its checker, the changeset, the shared policy and two adapters. No future output has been created as a placeholder.
 
 Canonical `imm-kernel intent author docs/plans/goal-driven-run.intent.json --stdin --json` succeeded after fresh ownership/routing checks. Only the Planner-owned Spec and TaskIntent are staged. Canonical validation reports `valid: true`, `git_ownership: tracked`, `enrollment_ready: true`, risk `material`, and all seven descriptors eligible. These are planning checks; they do not execute acceptance suites or prove runtime implementation or actual Host evidence. Revalidate workspace ownership and Intent/Spec bytes at the literal execution entry; no Enrollment, implementation, commit, push or remote publication occurred during planning.
 
@@ -561,7 +565,7 @@ The JSON below matches the candidate created exclusively through canonical autho
     },
     {
       "id": "GDR-A7",
-      "assertion": "Source GDR-DEC-8 in docs/specs/goal-driven-run.spec.md. Meet BR-SCN-9 with actual unattended Pi and Claude Code runs, not fixture-only success. Preserve bounded evidence in docs/evidence/goal-driven-run-host-smoke.json: exact supported versions, tested runtime/prompt/hook/bundle hashes, dependency/independent-branch ordinary failure/Review/handoff/final-pass coverage, serial fallback, Child isolation, status/cancel boundaries and permitted critical/new-repair gates. Require matching run/delivery/final references and no manual continuation in the ordinary path; unavailable Host, stale bytes, missing coverage or placeholder reports leave acceptance incomplete. Verify preserved evidence in tests/goal-driven-run-live-evidence.test.ts; review capture provenance.",
+      "assertion": "Source GDR-DEC-8 in docs/specs/goal-driven-run.spec.md. Meet BR-SCN-9 with actual unattended Pi and Claude Code runs, not fixture-only success. Preserve bounded evidence in docs/evidence/goal-driven-run-host-smoke.json: exact supported versions, tested runtime/prompt/hook/bundle hashes, dependency/independent-branch ordinary failure/Review/handoff/final-pass coverage, serial fallback, Child isolation, status/cancel boundaries and permitted critical/new-repair gates. Require matching run/delivery/final references and no manual continuation in the ordinary path; unavailable Host, stale bytes, missing coverage or placeholder reports leave acceptance incomplete, except Pi scenarios the evidence names as declared gaps with a recorded reason; Claude Code has none. Verify preserved evidence in tests/goal-driven-run-live-evidence.test.ts; review capture provenance.",
       "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/goal-driven-run-live-evidence.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
     }
   ],
@@ -586,6 +590,8 @@ The JSON below matches the candidate created exclusively through canonical autho
     "plugins/immune-brain/dist/role-prompts/executor.md",
     "plugins/immune-brain/hooks/hooks.json",
     "plugins/immune-brain/runtime/assurance/run_continuation.ts",
+    "plugins/immune-brain/runtime/claude/interaction.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
     "plugins/immune-brain/runtime/claude/lane_guard.ts",
     "plugins/immune-brain/runtime/claude/mcp_server.ts",
     "plugins/immune-brain/runtime/claude/run_continuation.ts",
@@ -619,8 +625,10 @@ The JSON below matches the candidate created exclusively through canonical autho
     "tests/goal-driven-run-contract.test.ts",
     "tests/goal-driven-run-live-evidence.test.ts",
     "tests/goal-driven-run-recovery.test.ts",
+    "tests/pi-batch-acceptance-integration.test.ts",
     "tests/pi-batch-authority.test.ts",
     "tests/pi-canary-enroll-extension.test.ts",
+    "tests/pi-canary-assurance-progression.test.ts",
     "tests/pi-canary-notification-correlation.test.ts",
     "tests/pi-canary-work-extension.test.ts",
     "tests/pi-phase-entry-gate.test.ts",
@@ -635,6 +643,6 @@ The JSON below matches the candidate created exclusively through canonical autho
     "tests/unattended-batch-schedule.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 5
 }
 ```

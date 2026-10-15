@@ -465,7 +465,7 @@ describe("one production batch child Kernel port", () => {
 
 		// D5: the shared port owns every Kernel-facing member, nothing git-shaped.
 		expect(Object.keys(shared).sort()).toEqual([
-			"advanceTask", "enrollTask", "ownsTaskClaim", "projectTask", "validateBatchAuthorization",
+			"advanceTask", "canStartTask", "enrollTask", "ownsTaskClaim", "projectTask", "validateBatchAuthorization",
 		]);
 	});
 
@@ -1343,6 +1343,27 @@ describe("startBatch state machine", () => {
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
+	});
+
+	it("a stopped claimless Child parks only its dependent subtree while an independent authorized Child delivers", async () => {
+		const root = tempRoot();
+		try {
+			const a = child("task-a", "S1"), c = child("task-c", "S3", ["task-a"]), b = child("task-b", "S2");
+			const kernel = scriptedKernel({ "task-a": [{ state: "stopped" }], "task-b": [{ state: "completed" }] });
+			const stopped = new Set<string>();
+			const advance = kernel.advanceTask.bind(kernel), project = kernel.projectTask.bind(kernel);
+			kernel.advanceTask = async (root, id) => { const result = await advance(root, id); if (result.state === "stopped") {
+				stopped.add(id); kernel.enrolled = kernel.enrolled.filter(task => task !== id);
+			} return result; };
+			kernel.projectTask = async (root, id) => { const fresh = await project(root, id); return stopped.has(id)
+				? { ...fresh, claim: null, projection: { ...fresh.projection, lifecycle: "stopped", completion_ready: false } } : fresh; };
+			const report = await startBatch(input(root, [a, b, c], kernel));
+			expect(report.batch_state).toBe("needs_human");
+			expect(report.children.find(child => child.task_id === "task-b")?.state).toBe("committed");
+			expect(report.children.find(child => child.task_id === "task-a")?.state).toBe("needs_human");
+			expect(report.children.find(child => child.task_id === "task-c")?.state).toBe("skipped_blocked");
+			expect(kernel.commits.map(commit => commit.task_id)).toEqual(["task-b"]);
+		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
 	it("a child stop parks it and skips dependents", async () => {

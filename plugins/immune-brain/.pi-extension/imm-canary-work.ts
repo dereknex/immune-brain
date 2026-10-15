@@ -28,6 +28,7 @@ import { Type } from "typebox";
 import { PLUGIN_VERSION } from "../runtime/plugin_version";
 import { findResumableBatchSlugForTask } from "../runtime/unattended/batch_preflight";
 import { executePiUnattendedBatch } from "./imm-unattended-batch";
+import { registerPiRunContinuation } from "./pi-run-continuation";
 import {
 } from "./pi-canary-verification";
 import {
@@ -424,6 +425,10 @@ export default function (
 		return { action: "continue" } as const;
 	});
 
+	// Validate dispatch before the receipt observer records an Agent call.
+	const continuation = registerPiRunContinuation(pi, {
+		entry: (text, root) => recognizePhaseEntry(text, piAliasReader(root)),
+	});
 	pi.registerCommand("imm-tasks", {
 		handler: async (_args: string, ctx?: ExtensionContext) => {
 			if (!ctx || ctx.mode !== "tui") return;
@@ -661,6 +666,7 @@ export default function (
 					ctx,
 					taskId,
 					await enrichAssuranceResult(ctx, taskId, result as unknown as Record<string, unknown>),
+					(slug) => continuation.selectedParent(ctx.cwd, ctx.sessionManager.getSessionId(), slug),
 				);
 				presentTaskRailResult(ctx, taskId, enriched);
 				throwIfCanaryToolFailure(taskId, action.op, enriched);
@@ -1615,6 +1621,7 @@ async function closeOutBatchChild(
 	ctx: ExtensionContext,
 	taskId: string,
 	enriched: Record<string, unknown>,
+	selectedParent: (slug: string) => boolean,
 ): Promise<Record<string, unknown>> {
 	const taskState = enriched.task_state as { lifecycle?: unknown } | undefined;
 	if (taskState?.lifecycle !== "done") return enriched;
@@ -1626,6 +1633,7 @@ async function closeOutBatchChild(
 	}
 	if (!slug) return enriched;
 	try {
+		if (!selectedParent(slug)) return enriched;
 		// The batch commit takes exactly the scope envelope plus this task's own
 		// audit evidence and refuses unstaged changes: stage only that evidence.
 		if (existsSync(join(ctx.cwd, ".imm", "audit", taskId)))

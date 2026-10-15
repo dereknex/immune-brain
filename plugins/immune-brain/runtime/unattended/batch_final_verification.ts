@@ -4,6 +4,8 @@
 // the completing tick runs exactly what the literal user saw at confirmation.
 // A failure marks the completion report as not passed; integrated commits are
 // never rolled back. Only exit status and timing are recorded, never output.
+import { createHash } from "node:crypto";
+import { parseTaskIntentV1 } from "../kernel/intent";
 import { spawn, spawnSync } from "node:child_process";
 
 export const MAX_FINAL_VERIFICATION_COMMANDS = 8;
@@ -38,6 +40,24 @@ export function parseFinalVerification(value: unknown): string[] | undefined {
 	});
 }
 
+export function parseFinalVerificationReport(value: unknown, commands?: readonly string[]): FinalVerificationReport {
+	if (!value || typeof value !== "object") throw new Error("invalid final verification result");
+	const report = value as FinalVerificationReport;
+	if (typeof report.passed !== "boolean" || !(report.head === null || typeof report.head === "string") ||
+		!Array.isArray(report.results) || !report.results.length || report.results.some(result =>
+			!result || typeof result.command !== "string" || typeof result.passed !== "boolean" ||
+			!(result.exit_code === null || Number.isInteger(result.exit_code)) ||
+			!(result.signal === null || typeof result.signal === "string") ||
+			!Number.isFinite(result.duration_ms) || result.duration_ms < 0 ||
+			result.passed !== (result.exit_code === 0 && result.signal === null)))
+		throw new Error("invalid final verification result");
+	parseFinalVerification(report.results.map(result => result.command));
+	if (report.passed && report.results.some(result => !result.passed)) throw new Error("contradictory final verification result");
+	if (commands && JSON.stringify(report.results.map(result => result.command)) !== JSON.stringify(commands))
+		throw new Error("final verification commands changed");
+	return report;
+}
+
 /** One command, asynchronously, so a long suite never blocks the Host's event loop. */
 function runOne(root: string, command: string, timeoutMs: number): Promise<FinalVerificationResult> {
 	const [executable, ...argv] = command.split(" ");
@@ -48,7 +68,7 @@ function runOne(root: string, command: string, timeoutMs: number): Promise<Final
 			if (settled) return;
 			settled = true;
 			clearTimeout(timer);
-			resolve({ command, exit_code: exitCode, signal, passed: exitCode === 0, duration_ms: Date.now() - started });
+			resolve({ command, exit_code: exitCode, signal, passed: exitCode === 0 && signal === null, duration_ms: Date.now() - started });
 		};
 		const child = spawn(executable!, argv, { cwd: root, stdio: "ignore", env: process.env });
 		const timer = setTimeout(() => {
@@ -60,13 +80,47 @@ function runOne(root: string, command: string, timeoutMs: number): Promise<Final
 	});
 }
 
+export function prepareFinalRepairCandidate(input: {
+	initiative_slug: string; original_goal: string; scope_hint: string[];
+	failure: FinalVerificationReport; prior_repairs: number;
+}) {
+	const failure = parseFinalVerificationReport(input.failure);
+	if (failure.passed || !failure.head) throw new Error("repair candidate requires a failed final verification bound to a delivery HEAD");
+	if (!failure.results.some(result => !result.passed)) throw new Error("reconcile the verification environment or delivery HEAD before preparing a code repair");
+	if (!Number.isInteger(input.prior_repairs) || input.prior_repairs < 0 || input.prior_repairs >= 2)
+		throw new Error("Parent coordinator correction budget exhausted");
+	const identity = createHash("sha256").update(JSON.stringify({ head: failure.head,
+		results: failure.results.map(({ command, exit_code, signal }) => ({ command, exit_code, signal })) })).digest("hex");
+	const taskId = `${input.initiative_slug.slice(0, 96)}-repair-${identity.slice(0, 12)}`;
+	const candidate = parseTaskIntentV1({ contract: "assurance_kernel/task_intent/v1", task_id: taskId,
+		goal: input.original_goal, owner: "user", revision: 1, risk: "material", scope_hint: [...new Set([...input.scope_hint, `docs/plans/${taskId}.intent.json`])],
+		acceptance: failure.results.map((result, index) => {
+			const [executable, ...argv] = result.command.split(" ");
+			return { id: `final-${index + 1}`, assertion: `Restore the original goal and pass final command ${index + 1}`,
+				verification: JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v2",
+					command: { executable, argv, cwd: ".", timeout_ms: 120000, max_output_bytes: 131072 },
+					environment: { prepare: null, writable_paths: [] } }, null, 2) + "\n" };
+		}) });
+	return { failure_id: `sha256:${identity}`, delivery_head: failure.head, candidate };
+}
+
 export async function runFinalVerification(
 	root: string,
 	commands: readonly string[],
 	options: { timeoutMs?: number } = {},
 ): Promise<FinalVerificationReport> {
+	const verifiedCommands = parseFinalVerification([...commands])!;
 	const head = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
+	const clean = () => {
+		const tracked = spawnSync("git", ["-C", root, "diff", "--quiet", "HEAD"]);
+		const untracked = spawnSync("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z"], { encoding: "utf8" });
+		return tracked.status === 0 && untracked.status === 0 && untracked.stdout.length === 0;
+	};
+	const cleanBefore = clean();
 	const results: FinalVerificationResult[] = [];
-	for (const command of commands) results.push(await runOne(root, command, options.timeoutMs ?? DEFAULT_TIMEOUT_MS));
-	return { passed: results.every((result) => result.passed), head: head.status === 0 ? head.stdout.trim() : null, results };
+	for (const command of verifiedCommands) results.push(await runOne(root, command, options.timeoutMs ?? DEFAULT_TIMEOUT_MS));
+	const after = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
+	const unchangedHead = head.status === 0 && after.status === 0 && head.stdout.trim() === after.stdout.trim();
+	const cleanAfter = clean();
+	return { passed: results.every(result => result.passed) && unchangedHead && cleanBefore && cleanAfter, head: head.status === 0 ? head.stdout.trim() : null, results };
 }

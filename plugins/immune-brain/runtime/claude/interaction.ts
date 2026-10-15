@@ -86,7 +86,10 @@ export interface NativeConfirmationInput {
 		batch_branch: string;
 		children: Array<{ task_id: string; slice_id: string; risk?: string }>;
 		excluded: Array<{ task_id: string; slice_id: string; reason: string }>;
-		budget: { max_children: number; qa_failure_limit: number };
+		budget?: { max_children: number; qa_failure_limit: number };
+		final_verification?: string[];
+		/** Present only for a native Parent: no batch is started, only these commits and final commands run. */
+		parent_final_verification?: { integrate_task_ids: string[] };
 		/** Present only when the run uses Lanes. */
 		lane_mode?: {
 			max_parallel: number;

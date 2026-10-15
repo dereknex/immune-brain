@@ -482,7 +482,8 @@ test("host hooks never project active state and publish terminal projection only
 	// Durable absence guards: the retired mark-active projection is fully deleted
 	// from every Pi adapter source that owns tracker or batch glue.
 	expect(enrollment).not.toContain("markGithubTaskActive");
-	expect(enrollment).not.toContain("github_issue_tracker");
+	expect(enrollment).not.toContain("markGithubTaskTerminal");
+	expect(enrollment).toContain("assertIsolatedTaskPrerequisites(root, taskId)");
 	expect(work).not.toContain("markGithubTaskActive");
 	expect(work).not.toContain("mark-active");
 	expect(batch).not.toContain("markGithubTaskActive");

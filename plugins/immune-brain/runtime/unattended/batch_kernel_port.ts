@@ -3,6 +3,8 @@
 // Kernel-facing member; a Host supplies only advanceTask, its own progression
 // seam. Git operations are not Kernel-port members: the runner drives them
 // through BatchRunnerGitPort alone.
+import { observeParentCompletion } from "./batch_git";
+import type { InitiativeObservation } from "./types";
 import { projectAssurance } from "../kernel/assurance_projection";
 import { deriveChildEnrollment, type BatchAuthorizationBinding, type BatchAuthorityRegistry } from "../kernel/batch_authority";
 import { enrollTask } from "../kernel/enrollment";
@@ -16,6 +18,7 @@ import { batchQaFailureFacts, type BatchChildAdvanceResult, type BatchRunnerKern
 export interface BatchKernelPortInput {
 	/** Worktree root the batch runs in. */
 	root: string;
+	parent?: InitiativeObservation;
 	/** Enrollment authority registry shared with the single Enrollment entry (D3). */
 	enrollmentRegistry: EnrollmentAuthorityRegistry;
 	/** The batch's registry, derived capability and validated binding. */
@@ -53,6 +56,16 @@ export function createBatchKernelPort(input: BatchKernelPortInput): BatchRunnerK
 	const deriveEnrollment = input.deps?.deriveChildEnrollment ?? deriveChildEnrollment;
 	const enrollKernelTask = input.deps?.enrollTask ?? enrollTask;
 	const base: BatchRunnerKernelPort = {
+		canStartTask: async taskId => {
+			if (!input.parent) return true;
+			const task = input.parent.tasks.find(child => child.task_id === taskId);
+			if (!task) throw new Error("authorized child absent from confirmed Parent topology");
+			const authorizedIds = new Set(input.registry.children(input.capability).map(child => child.task_id));
+			const external = task.blocked_by.filter(id => !authorizedIds.has(id));
+			if (!external.length) return true;
+			const observation = await observeParentCompletion(input.root, input.parent.initiative_id, external);
+			return observation.missing_task_ids.length === 0;
+		},
 		enrollTask: async ({ root, task_id, batch }) => {
 			const now = new Date().toISOString();
 			const derived = deriveEnrollment(root, batch.registry, {

@@ -14,6 +14,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { laneWriteRefusal } from "../unattended/lane_workspace";
 import { activeTaskNotice } from "../assurance/active_task_notice";
+import { releasesRunBinding } from "../assurance/run_continuation";
 import { readAliasFile } from "../assurance/alias_file";
 import {
 	admitPhaseOperation,
@@ -93,7 +94,7 @@ function cwdOf(payload: Record<string, unknown>): string {
 }
 
 /** Project aliases first, then the user's, as Claude Code resolves commands. */
-function claudeAliasReader(cwd: string, home: string): AliasReader {
+export function claudeAliasReader(cwd: string, home: string): AliasReader {
 	return (name) => {
 		for (const dir of [join(cwd, ".claude", "commands"), join(home, ".claude", "commands")]) {
 			const body = readAliasFile(join(dir, `${name}.md`));
@@ -148,7 +149,8 @@ export function recordPhaseEntryPrompt(payload: Record<string, unknown>, locatio
 	const sessionId = sessionIdOf(payload);
 	if (!sessionId) return false;
 	const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
-	const entry = recognizePhaseEntry(prompt, claudeAliasReader(cwdOf(payload), locations.home ?? homedir()));
+	const recognized = recognizePhaseEntry(prompt, claudeAliasReader(cwdOf(payload), locations.home ?? homedir()));
+	const entry = releasesRunBinding(prompt, recognized === "plan" ? "planner" : null) ? "plan" : recognized;
 	return appendPhaseEntry(sessionId, entry, locations.root ?? tmpdir(), locations);
 }
 

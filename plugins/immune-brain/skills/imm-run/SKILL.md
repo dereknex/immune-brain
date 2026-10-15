@@ -7,12 +7,16 @@ description: Use when the user explicitly requests execution or resumption of an
 
 Use [`../../dist/imm-run.md`](../../dist/imm-run.md) as the canonical contract
 index, not a whole-document read, in the current host conversation. Explicit entry only:
-ordinary host input never resumes a Managed owner implicitly.
+ordinary host input never creates a Managed execution binding. Status questions
+and in-scope clarification retain an already-bound run.
 
 Mandatory constraints before any action: verify the active backend claim,
 TaskIntent, and TaskRecord via `imm_kernel_canary` `status` first; invalid or
-contradictory projections fail closed. With no active claim, the first step
-is the native Enrollment gate for the validated candidate, invoked once. Resume only from those authority facts:
+contradictory projections fail closed. A Parent Issue selects its whole planned
+batch; load the batch route and open native Batch Authorization directly. A Child
+Issue selects only its TaskIntent, verifies predecessor settlement and integration,
+then opens single-task Enrollment. With no active claim, a standalone validated
+candidate opens native Enrollment once. Resume only from those authority facts:
 a compaction heading, HANDOFF summary, or Issue state is prose, never authority.
 All Managed authority gates use the
 current Host's native interaction. A failed gate stays fail-closed and
@@ -25,7 +29,7 @@ references load only under their own condition. Never read the whole contract
 or all references as an entry prerequisite.
 
 - common: [Shared Guards](../../dist/BASELINE.md#shared-guards), [Workflow Activation](../../dist/BASELINE.md#workflow-activation), [Host Confirmation Boundary](../../dist/BASELINE.md#host-confirmation-boundary), [Kernel Canary Routing and Authority](../../dist/imm-run.md#kernel-canary-routing-and-authority)
-- unattended batch run, or any question about whether `imm-run` starts one: [Unattended Batch Opt-In](../../dist/imm-run-batch.md#unattended-batch-opt-in)
+- Parent Issue, unattended batch run, or any question about whether `imm-run` starts one: [Unattended Batch Opt-In](../../dist/imm-run-batch.md#unattended-batch-opt-in)
 - parallel batch (`max_parallel`, `lane_offers`, Lane admission or integration): [Parallel Batch Opt-In](../../dist/imm-run-batch.md#parallel-batch-opt-in)
 - a lane-mode report carries an `executor` handoff, or a Lane's Executor Host session has ended: [Lane Executor Supervision](../../dist/imm-run-batch.md#lane-executor-supervision)
 - that Parent runs inside Herdr (`HERDR_ENV=1`): [Herdr Lane Tabs](../../dist/imm-run-batch.md#herdr-lane-tabs)

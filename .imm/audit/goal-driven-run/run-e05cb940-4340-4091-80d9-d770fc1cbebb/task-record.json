@@ -1,0 +1,989 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "goal-driven-run",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "goal-driven-run",
+    "goal": "Make explicit imm-run deliver a verified Parent plan through dependency/scope-driven supervised Lanes or same-Host Managed serial execution, and a named Slice through one prerequisite-verified task, on Pi and Claude Code as specified in docs/specs/goal-driven-run.spec.md. Continue implementation, assurance, integration and bounded recovery without continuation prompts; use existing per-task gates for critical work and fresh original-goal repair candidates, and require all delivery plus passing final checks and matching real-Host evidence without new authority schemas or a competing scheduler.",
+    "acceptance": [
+      {
+        "id": "GDR-A1",
+        "assertion": "Source BR-DEC-2 in docs/specs/goal-driven-run.spec.md. Enforce D1-D2 and D5-D9 for verified single-task or Parent contexts with exact current task/batch authority. Fresh observations guide existing obligations, full required delivery and final/recovery handling without minting authority. Preserve progress limits, dirty-warning versus projection-error handling, task versus aggregate completion, interruption and pending-call controls in tests/run-continuation.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/run-continuation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "GDR-A2",
+        "assertion": "Source BR-REQ-1 and GDR-DEC-4 through GDR-DEC-10 in docs/specs/goal-driven-run.spec.md. Deliver BR-SCN-1 through BR-SCN-8 on Pi through registered entry/tool and agent_before_settle handlers. Verify Child prerequisites and isolated scope; preserve Parent context across serial/Lane, critical and freshly authorized repair handoffs. Preserve ordinary input, exact Review submission, supervised waits and aggregate truth; never retry failed gates or manufacture entry. Exercise real Kernel/batch fixtures in tests/pi-run-continuation.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-run-continuation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "GDR-A3",
+        "assertion": "Source BR-REQ-1 and GDR-DEC-4 through GDR-DEC-10 in docs/specs/goal-driven-run.spec.md. Deliver BR-SCN-1 through BR-SCN-8 through packaged Claude Stop and prompt/tool-failure observations. Correlate Hook session/workspace/tool-use/result independently of MCP connection, with fresh task/batch authority. Cover Child prerequisites, serial/Lane and exception handoffs, Review ordering, interruption, duplicates, waits and Host caps using actual fixtures in tests/claude-run-continuation.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-run-continuation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "GDR-A4",
+        "assertion": "Source BR-DEC-1 and GDR-DEC-4 through GDR-DEC-10 in docs/specs/goal-driven-run.spec.md. Publish automatic target routing, prerequisite checks, pre-confirmation serial fallback, dependency/scope scheduling, critical/new-repair gates, full aggregate proof/Parent closure and mandatory dual-Host evidence. Keep hooks, mirrors and Claude bundle current; preserve foreground assurance and empty Footer. Check tests/goal-driven-run-contract.test.ts, tests/claude-host-package.test.ts, tests/dist-docs-sync-contract.test.ts and tests/pi-canary-notification-correlation.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/goal-driven-run-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\",\n      \"tests/pi-canary-notification-correlation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "GDR-A5",
+        "assertion": "Source GDR-DEC-4 through GDR-DEC-7 in docs/specs/goal-driven-run.spec.md. Meet BR-SCN-4/BR-SCN-5/BR-SCN-6 by exact Parent versus Child routing, prerequisite done/integration validation, existing dependency/scope scheduling, branch/authority guards and independent recovery. Select same-Host serial before confirmation when supervision is absent; both drivers execute final checks. Require all required integrated delivery and passing matching final evidence before Parent success/closure; stopped/excluded work, closed Issues and batch completed alone are insufficient. Check tests/goal-driven-batch-run.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/goal-driven-batch-run.test.ts\",\n      \"tests/unattended-batch-commit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "GDR-A6",
+        "assertion": "Source GDR-DEC-9/GDR-DEC-10 in docs/specs/goal-driven-run.spec.md. Meet BR-SCN-7/BR-SCN-8 with critical per-task Enrollment, authorized descendant resumption and independent progress, including critical-only/delivered-only Parents. Final failure diagnoses and canonically prepares/validates a minimal original-goal repair candidate bound to failure/delivery, then requires new native Enrollment before implementation. Preserve settled evidence, existing limits and declined/failed-gate suppression; no equal-failure task minting, delegated critical bypass, unplanned authority or inferred Issue publication. Accepted repair reintegrates and reruns final checks. Verify tests/goal-driven-run-recovery.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/goal-driven-run-recovery.test.ts\",\n      \"tests/batch-stale-disposition.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "GDR-A7",
+        "assertion": "Source GDR-DEC-8 in docs/specs/goal-driven-run.spec.md. Meet BR-SCN-9 with actual unattended Pi and Claude Code runs, not fixture-only success. Preserve bounded evidence in docs/evidence/goal-driven-run-host-smoke.json: exact supported versions, tested runtime/prompt/hook/bundle hashes, dependency/independent-branch ordinary failure/Review/handoff/final-pass coverage, serial fallback, Child isolation, status/cancel boundaries and permitted critical/new-repair gates. Require matching run/delivery/final references and no manual continuation in the ordinary path; unavailable Host, stale bytes, missing coverage or placeholder reports leave acceptance incomplete, except Pi scenarios the evidence names as declared gaps with a recorded reason; Claude Code has none. Verify preserved evidence in tests/goal-driven-run-live-evidence.test.ts; review capture provenance.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/goal-driven-run-live-evidence.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/goal-driven-run.md",
+      "CONTEXT.md",
+      "README.md",
+      "README.zh-CN.md",
+      "docs/agents/issue-tracker.md",
+      "docs/evidence/goal-driven-run-host-smoke.json",
+      "docs/plans/goal-driven-run.intent.json",
+      "docs/specs/goal-driven-run.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/.pi-extension/pi-run-continuation.ts",
+      "plugins/immune-brain/BASELINE.md",
+      "plugins/immune-brain/dist/BASELINE.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run-batch.md",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/dist/role-prompts/executor.md",
+      "plugins/immune-brain/hooks/hooks.json",
+      "plugins/immune-brain/runtime/assurance/run_continuation.ts",
+      "plugins/immune-brain/runtime/claude/interaction.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/lane_guard.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/claude/run_continuation.ts",
+      "plugins/immune-brain/runtime/github_issue_tracker.ts",
+      "plugins/immune-brain/runtime/prompts/executor.md",
+      "plugins/immune-brain/runtime/unattended/batch_disposition.ts",
+      "plugins/immune-brain/runtime/unattended/batch_final_verification.ts",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_schedule.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/types.ts",
+      "plugins/immune-brain/skills/BASELINE.md",
+      "plugins/immune-brain/skills/imm-run/SKILL.md",
+      "tests/batch-completion-verifier.test.ts",
+      "tests/batch-plan-reconfirmation.test.ts",
+      "tests/batch-stale-disposition.test.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/claude-phase-entry-gate.test.ts",
+      "tests/claude-run-continuation.test.ts",
+      "tests/dist-docs-sync-contract.test.ts",
+      "tests/explicit-phase-entry-run-contract.test.ts",
+      "tests/github-issue-projection-contract.test.ts",
+      "tests/goal-driven-batch-run.test.ts",
+      "tests/goal-driven-run-contract.test.ts",
+      "tests/goal-driven-run-live-evidence.test.ts",
+      "tests/goal-driven-run-recovery.test.ts",
+      "tests/pi-batch-acceptance-integration.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/pi-canary-assurance-progression.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/pi-canary-notification-correlation.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/pi-phase-entry-gate.test.ts",
+      "tests/pi-run-continuation.test.ts",
+      "tests/plugin-package-runtime.test.ts",
+      "tests/run-continuation.test.ts",
+      "tests/unattended-batch-commit.test.ts",
+      "tests/unattended-batch-integration.test.ts",
+      "tests/unattended-batch-lanes.test.ts",
+      "tests/unattended-batch-plan.test.ts",
+      "tests/unattended-batch-run.test.ts",
+      "tests/unattended-batch-schedule.test.ts"
+    ],
+    "risk": "material",
+    "revision": 5,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/goal-driven-run.intent.json",
+    "content_hash": "sha256:6e6310bbd5696cbfc457f54417e7ea6981f2ee257d4dadf3668e89b261ba5db9"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:dc9b5e632e69631de82d49527df587956ddca2f557b9df677faaf2cc7264af51",
+  "git_base_head": "67b744adfd55b4dff2f12a4024ae628181b898c5",
+  "attestations": [
+    {
+      "id": "approval-qa-d1f39234",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:e6077433ff901bda15486e4bd916f89a6154a37d8843ee83ab90103a24134a1a",
+      "diff_hash": "sha256:dc31232a624c37102991dc64a5efe249a24853050349ccccc2ecdff321646188",
+      "actor_id": "deterministic-qa",
+      "summary": "all 7 project verification check(s) passed; execution=sha256:9cfc40d6ca554963c83cd9a8449d1e411912268e246969df492142af2b0518c1",
+      "acceptance_results": [
+        {
+          "acceptance_id": "GDR-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:9cfc40d6ca554963c83cd9a8449d1e411912268e246969df492142af2b0518c1"
+        },
+        {
+          "acceptance_id": "GDR-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:9cfc40d6ca554963c83cd9a8449d1e411912268e246969df492142af2b0518c1"
+        },
+        {
+          "acceptance_id": "GDR-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:9cfc40d6ca554963c83cd9a8449d1e411912268e246969df492142af2b0518c1"
+        },
+        {
+          "acceptance_id": "GDR-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:9cfc40d6ca554963c83cd9a8449d1e411912268e246969df492142af2b0518c1"
+        },
+        {
+          "acceptance_id": "GDR-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:9cfc40d6ca554963c83cd9a8449d1e411912268e246969df492142af2b0518c1"
+        },
+        {
+          "acceptance_id": "GDR-A6",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:9cfc40d6ca554963c83cd9a8449d1e411912268e246969df492142af2b0518c1"
+        },
+        {
+          "acceptance_id": "GDR-A7",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:9cfc40d6ca554963c83cd9a8449d1e411912268e246969df492142af2b0518c1"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-d393d36b",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:f1fff8f718c307b74cf48caf8ee051b880620a19f4b8dccef682f197ed13ab15",
+      "diff_hash": "sha256:5d566cac54e731e5459c5283295734fa2995e19426c0b0c38bf1e35d191f912f",
+      "actor_id": "deterministic-qa",
+      "summary": "all 7 project verification check(s) passed; execution=sha256:90f81146aaf61d54bc561747b0a9252eb689dc01cf49ce5b1b06e4a64da7b90e",
+      "acceptance_results": [
+        {
+          "acceptance_id": "GDR-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:90f81146aaf61d54bc561747b0a9252eb689dc01cf49ce5b1b06e4a64da7b90e"
+        },
+        {
+          "acceptance_id": "GDR-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:90f81146aaf61d54bc561747b0a9252eb689dc01cf49ce5b1b06e4a64da7b90e"
+        },
+        {
+          "acceptance_id": "GDR-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:90f81146aaf61d54bc561747b0a9252eb689dc01cf49ce5b1b06e4a64da7b90e"
+        },
+        {
+          "acceptance_id": "GDR-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:90f81146aaf61d54bc561747b0a9252eb689dc01cf49ce5b1b06e4a64da7b90e"
+        },
+        {
+          "acceptance_id": "GDR-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:90f81146aaf61d54bc561747b0a9252eb689dc01cf49ce5b1b06e4a64da7b90e"
+        },
+        {
+          "acceptance_id": "GDR-A6",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:90f81146aaf61d54bc561747b0a9252eb689dc01cf49ce5b1b06e4a64da7b90e"
+        },
+        {
+          "acceptance_id": "GDR-A7",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:90f81146aaf61d54bc561747b0a9252eb689dc01cf49ce5b1b06e4a64da7b90e"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-ad04c542",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:f1fff8f718c307b74cf48caf8ee051b880620a19f4b8dccef682f197ed13ab15",
+      "diff_hash": "sha256:498edc886de648b6e8df46225c98e1705fb94545f47fe71ad1ac7b35b09838e1",
+      "actor_id": "deterministic-qa",
+      "summary": "all 7 project verification check(s) passed; execution=sha256:4737ae64994c6fb123ec7704c7c901c4538a45c42e74c9a187de1361f5ab90c6",
+      "acceptance_results": [
+        {
+          "acceptance_id": "GDR-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:4737ae64994c6fb123ec7704c7c901c4538a45c42e74c9a187de1361f5ab90c6"
+        },
+        {
+          "acceptance_id": "GDR-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:4737ae64994c6fb123ec7704c7c901c4538a45c42e74c9a187de1361f5ab90c6"
+        },
+        {
+          "acceptance_id": "GDR-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:4737ae64994c6fb123ec7704c7c901c4538a45c42e74c9a187de1361f5ab90c6"
+        },
+        {
+          "acceptance_id": "GDR-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:4737ae64994c6fb123ec7704c7c901c4538a45c42e74c9a187de1361f5ab90c6"
+        },
+        {
+          "acceptance_id": "GDR-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:4737ae64994c6fb123ec7704c7c901c4538a45c42e74c9a187de1361f5ab90c6"
+        },
+        {
+          "acceptance_id": "GDR-A6",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:4737ae64994c6fb123ec7704c7c901c4538a45c42e74c9a187de1361f5ab90c6"
+        },
+        {
+          "acceptance_id": "GDR-A7",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:4737ae64994c6fb123ec7704c7c901c4538a45c42e74c9a187de1361f5ab90c6"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-58963bd7",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 5,
+      "intent_content_hash": "sha256:6e6310bbd5696cbfc457f54417e7ea6981f2ee257d4dadf3668e89b261ba5db9",
+      "diff_hash": "sha256:456a97b43f67b816c7d9434e3189fe622edc522349f238320d552d18ccdc2988",
+      "actor_id": "deterministic-qa",
+      "summary": "all 7 project verification check(s) passed; execution=sha256:4942cf1c184e3fe45bf6c138852831132c343afa07eed956543d45d7e84761a3",
+      "acceptance_results": [
+        {
+          "acceptance_id": "GDR-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:4942cf1c184e3fe45bf6c138852831132c343afa07eed956543d45d7e84761a3"
+        },
+        {
+          "acceptance_id": "GDR-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:4942cf1c184e3fe45bf6c138852831132c343afa07eed956543d45d7e84761a3"
+        },
+        {
+          "acceptance_id": "GDR-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:4942cf1c184e3fe45bf6c138852831132c343afa07eed956543d45d7e84761a3"
+        },
+        {
+          "acceptance_id": "GDR-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:4942cf1c184e3fe45bf6c138852831132c343afa07eed956543d45d7e84761a3"
+        },
+        {
+          "acceptance_id": "GDR-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:4942cf1c184e3fe45bf6c138852831132c343afa07eed956543d45d7e84761a3"
+        },
+        {
+          "acceptance_id": "GDR-A6",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:4942cf1c184e3fe45bf6c138852831132c343afa07eed956543d45d7e84761a3"
+        },
+        {
+          "acceptance_id": "GDR-A7",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:4942cf1c184e3fe45bf6c138852831132c343afa07eed956543d45d7e84761a3"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-3c79ea21",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 5,
+      "intent_content_hash": "sha256:6e6310bbd5696cbfc457f54417e7ea6981f2ee257d4dadf3668e89b261ba5db9",
+      "diff_hash": "sha256:456a97b43f67b816c7d9434e3189fe622edc522349f238320d552d18ccdc2988",
+      "actor_id": "parent-mediated-review",
+      "summary": "Revision 0b1cba38 (single parent 67b744ad, tree 1504828e) delivers goal-driven run continuation on Pi and Claude Code with fresh Kernel/batch facts, Child prerequisite isolation, aggregate delivery proof, repair/critical gates and byte-matched dual-Host evidence; no blocking defect found.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "67b744adfd55b4dff2f12a4024ae628181b898c5",
+        "review_commit": "0b1cba3879e1594fb90eab885886bb0703925d22",
+        "review_tree": "1504828e04055e9a60edc32f11a13b2a63885c0e",
+        "manifest_digest": "sha256:0356d616394cf8fd8beccc93f3d776dbebdf608860974efe867d8fd72f9d90a8"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-e21dacf1b869-1-review-1",
+          "acceptance_id": "GDR-A5",
+          "summary": "assertIsolatedTaskPrerequisites fails closed whenever the repository has any git remote and the GitHub snapshot cannot be read (non-GitHub remote, unauthenticated or offline gh). A standalone TaskIntent with no Initiative is then also refused Enrollment on both Hosts, and no test covers a remote-present, carrier-unreadable standalone Task. The Spec's unknown-observation rule supports failing closed for Slice-associated targets, so this is non-blocking, but the availability trade-off is undocumented and untested.",
+          "anchor": "sha256:1322f6330e3b46224a9999c5035452e61b990af940c7b92c15bc6df1362d4e72",
+          "evidence": {
+            "trigger": "Repository with an origin remote where `gh api repos/{owner}/{repo}` exits non-zero; enroll a standalone Task id that appears in no docs/initiatives file; snapshot() returns a failure and the function throws before preparePiCanary or the native gate.",
+            "caller_chain": [
+              "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts:executeForegroundEnrollment",
+              "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.enroll",
+              "plugins/immune-brain/runtime/github_issue_tracker.ts:assertIsolatedTaskPrerequisites",
+              "plugins/immune-brain/runtime/github_issue_tracker.ts:snapshot"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "GDR-A5"
+            }
+          }
+        },
+        {
+          "id": "review-e21dacf1b869-2-review-2",
+          "acceptance_id": "GDR-A7",
+          "summary": "Evidence provenance is bounded as the contract allows: capture.carrier is local-api-fixture with scripted fixture-test-user native inputs, and Pi records three declared gaps (status_preserves_binding, critical_and_descendant, final_failure_and_repair) accepted under user-approved Intent revision 5, each with recorded failed attempts. Claude Code has no gaps and covers all scenarios. All source_sha256 entries (top level and per case) match the blobs in the review revision. Pi status, critical and final-repair behavior rests on deterministic fixtures (GDR-A2/A6), not live Pi capture, which is noted for the record.",
+          "anchor": "sha256:618040e879b81e36551430d1770b3228e72b6042f0421393b916652b38a1b4ba",
+          "evidence": {
+            "trigger": "docs/evidence/goal-driven-run-host-smoke.json hosts[pi].declared_gaps lists three scenarios; hosts[claude-code].declared_gaps is empty; every recorded source hash was recomputed from the review commit and matched.",
+            "caller_chain": [
+              "docs/evidence/goal-driven-run-host-smoke.json",
+              "tests/goal-driven-run-live-evidence.test.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "GDR-A7"
+            }
+          }
+        },
+        {
+          "id": "review-e21dacf1b869-3-review-3",
+          "acceptance_id": "GDR-A4",
+          "summary": "tests/pi-canary-assurance-progression.test.ts drops `expect(enrollment).not.toContain(\"github_issue_tracker\")` in favor of a narrower `not.toContain(\"markGithubTaskTerminal\")` plus a positive check for assertIsolatedTaskPrerequisites. The import is required by the delivered Child prerequisite gate and the tracker-terminal boundary is still asserted, so this is a justified weakening, noted as advisory only.",
+          "anchor": "sha256:4229cad71b809c91d781dfddb5f468a675baaebd4ef3c5b78bd1d6237b25ec6c",
+          "evidence": {
+            "trigger": "Pi enrollment adapter now imports assertIsolatedTaskPrerequisites from github_issue_tracker, which the previous broad boundary assertion forbade.",
+            "caller_chain": [
+              "tests/pi-canary-assurance-progression.test.ts",
+              "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "GDR-A4"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:95086fb67771f90ca6c8796c8b33f78c85141be0042ac03773573f81f182ef1c"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-bec0b6e1da4b-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "GDR-A5",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Child 单独入口仍会启动兄弟任务。plugins/immune-brain/runtime/claude/kernel_ports.ts:485–503 的 closeOutBatchChild 不检查当前选择的是 Child 还是 Parent，Child 结算后直接恢复整个 batch；Pi 的 imm-canary-work.ts:1619–1638 也有相同行为。应只允许经过验证的 Parent 上下文继续 batch，并增加已有 batch 中单独恢复 Child、结算后兄弟保持 pending 的测试。",
+      "anchor": "sha256:45346f58a373d306cdad2103a4fabe357ab27de1c367f777f59e957b0be1c5f8",
+      "evidence": {
+        "trigger": "一个已授权且仍 running 的串行 batch 包含 enrolled 的 A 和 pending 的 B。用户重新明确进入 imm-run A，随后 advance_assurance 或 submit_review 将 A 结算为 done。closeOutBatchChild 查找历史 batch 并调用 startUnattendedBatch，driver 集成 A 后可以直接 Enrollment B。读取未修改的 batch_preflight.ts 是为了核实 changed caller 使用的 findResumableBatchSlugForTask 确实只检查持久化 membership，不检查本次选定的 Parent 上下文。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.advance",
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.closeOutBatchChild",
+          "plugins/immune-brain/runtime/unattended/batch_preflight.ts:findResumableBatchSlugForTask",
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.startUnattendedBatch",
+          "plugins/immune-brain/runtime/unattended/batch_runner.ts:startBatchLocked"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "GDR-A5"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-bec0b6e1da4b-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "GDR-A5",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Local carrier 的 Child 前置检查被跳过。plugins/immune-brain/runtime/github_issue_tracker.ts:880–894 在没有 Git remote 时直接返回，之后也只查 GitHub Task；本地 Initiative 中尚未交付的 predecessor 因而不能阻止 Child Enrollment。应先核实适用的 Local carrier，再使用相同的 done/integration 检查，并在两个 Host 的入口 fixture 中覆盖无 remote 的本地依赖。",
+      "anchor": "sha256:fafe40271188a3dd2d4987eb139796249afc89fc7e565ef7b8ae8da373b732f2",
+      "evidence": {
+        "trigger": "无 Git remote 的仓库通过 docs/initiatives/parent.md 声明 Child C blocked_by A，A 尚未 settled/integrated。用户进入 imm-run C；assertIsolatedTaskPrerequisites 因 remote 列表为空而成功返回，随后打开 C 的 native gate 并允许 Enrollment。读取未修改的 local_initiative.ts 是为了核实 acceptance 所要求的现有 Local carrier 确实承载 task_id 和 blocked_by 关系。",
+        "caller_chain": [
+          "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts:executeForegroundEnrollment",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:assertIsolatedTaskPrerequisites"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "GDR-A5"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-bec0b6e1da4b-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "GDR-A2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Pi 没有阻止失败 native gate 的再次调用。plugins/immune-brain/.pi-extension/pi-run-continuation.ts:36–56 只拦截 parked critical task；普通 Enrollment 或授权失败仅设置 hostFailure，settle 后 reset 又删除该状态。已有 phase entry 仍然有效，因此模型可以在没有新 imm-run 的情况下重新打开同一 gate。应保留失败 gate 的抑制状态直到明确重新进入，并测试 settle 前后两种重复调用。",
+      "anchor": "sha256:6efe33e164d60846d11c6763f81e4d669f9067e716926e775e2c03383157f8af",
+      "evidence": {
+        "trigger": "同一 Pi session 已明确进入 imm-run。非 critical Enrollment 被取消，或 request_authorization 失败；随后模型发出新的 toolCallId 再次调用相同 native operation，期间没有新的用户 imm-run。Continuation 的 tool_call 不检查 hostFailure，而 ForegroundEnrollmentCoordinator 在上一调用结束后清除 active slot，piRunEntryRefusal 仍认可原有 phase entry，因此重复调用能够再次打开 native dialog。",
+        "caller_chain": [
+          "plugins/immune-brain/.pi-extension/pi-run-continuation.ts:tool_result",
+          "plugins/immune-brain/.pi-extension/pi-run-continuation.ts:tool_call",
+          "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts:execute",
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:piRunEntryRefusal",
+          "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts:ForegroundEnrollmentCoordinator.run"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "GDR-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-bec0b6e1da4b-4-review-4",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "GDR-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Parent 的 substantive-progress invariant 没有沿用单任务的过滤规则。plugins/immune-brain/runtime/assurance/run_continuation.ts:123–130、198–199 将完整 status/native/final report 放入 progress digest，包括 record/workspace revisions 和 verifier duration_ms。相同失败仅因重新记录或运行时长变化即可不断重置停滞计数。应只摘要实质 delivery、scope bytes 和 disposition；增加 Parent 对重复失败、仅 timing/revision 变化的测试。",
+      "anchor": "sha256:7d37fddadce65584136b0ba8e81bda8d98e394e341adcfc19afc9e88786b9355",
+      "evidence": {
+        "trigger": "critical-only 或 delivered-only Parent 的全部原交付已集成，final command 在同一个 HEAD、相同源码上持续返回相同非零 exit code，没有新诊断或 repair。advanceNativeParent 在 action=repair 时再次运行 recorded commands，新的 duration_ms 被写入 native report；observeParentRun 摘要整个 facts.native，使每次观察成为新的 progress_digest，unchanged_observations 始终重置。单任务测试排除了 record_revision，但 Parent 将完整 status 包入 taskProgress，未覆盖同一 invariant 的 Parent 路径。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:advanceNativeParent",
+          "plugins/immune-brain/runtime/unattended/batch_final_verification.ts:runFinalVerification",
+          "plugins/immune-brain/runtime/assurance/run_continuation.ts:observeParentRun",
+          "plugins/immune-brain/runtime/assurance/run_continuation.ts:decideRunContinuation"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "GDR-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-bec0b6e1da4b-5-review-5",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "GDR-A3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Claude Parent Stop 未验证当前 workspace。plugins/immune-brain/runtime/claude/run_continuation.ts:215–216 将旧 binding 直接传给 observeParentRun，后者从 binding 返回 workspace/session identity，因此 identity comparison 永远看不到 payload.cwd 的变化。同一 session 切换 workspace 后仍可收到旧 Parent 的续接指令。应在读取 Parent facts 前比较当前 canonical workspace 与 binding，并测试 workspace 改变后必须明确重新进入。",
+      "anchor": "sha256:202d0b84977e8f6df24d956fa743863b878d735e9434a3746a67865d75880d72",
+      "evidence": {
+        "trigger": "session S 在 workspace W1 已绑定未完成的 Parent。随后相同 session 的 Stop payload.cwd 为 W2。Continuation metadata 仅按 session 存储；Parent 分支使用 W1 的 binding 读取事实，并返回 W1/S 的 observation。decideRunContinuation 比较的是两份旧 identity，继续 block Stop 并要求在当前 W2 对旧 Parent 执行下一动作。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/mcp_server.ts:runHook",
+          "plugins/immune-brain/runtime/claude/run_continuation.ts:runContinuationHookOutput",
+          "plugins/immune-brain/runtime/assurance/run_continuation.ts:observeParentRun",
+          "plugins/immune-brain/runtime/assurance/run_continuation.ts:decideRunContinuation"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "GDR-A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-bec0b6e1da4b-6-review-6",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "GDR-A3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Claude 将每次 Stop 回调人为变成新 boundary，不能去重。plugins/immune-brain/runtime/claude/run_continuation.ts:212–221 无条件递增 sequence 并作为 boundary_id，重复投递同一 payload 会再次 block，随后还会消耗停滞额度而暂停合法运行。这违反 Spec 对重复及不可区分 Stop 的明确规则。应使用可验证的 Host boundary identity；无法区分时保守 yield，并增加重复 payload 的注册 Hook 测试。",
+      "anchor": "sha256:e6e3c6fd02ca4a3fc2d19d041862b40578fff2fb109d359d729cc38e85803ea6",
+      "evidence": {
+        "trigger": "已绑定且事实没有变化的 Claude run 收到同一个 Stop payload 两次，例如重复注册的 Hook 或事件重投递。两次调用没有不同的 Host boundary identity，但 sequence 分别递增，decideRunContinuation 的 duplicate-boundary 分支无法命中，第二次仍允许 corrective continuation；第三次相同投递会将 session 标记 paused。现有 tests/claude-run-continuation.test.ts 用相同 Stop payload 期待多次 block，未断言 Spec 要求的保守边界行为。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/mcp_server.ts:runHook",
+          "plugins/immune-brain/runtime/claude/run_continuation.ts:runContinuationHookOutput",
+          "plugins/immune-brain/runtime/assurance/run_continuation.ts:decideRunContinuation"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "GDR-A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-bec0b6e1da4b-7-review-7",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "GDR-A5",
+      "source": "review",
+      "review_round": 1,
+      "summary": "已停止 Child 仍会停住独立且已授权的串行分支。plugins/immune-brain/runtime/unattended/batch_runner.ts:1218–1227 将 stopped Child 的整个 batch 置为 needs_human；新 observeParentRun 在 run_continuation.ts:171 又只允许 running batch 的 ready children 续接，因此没有 active claim 时独立 B 也被搁置。应区分 child/subtree blocker 与 Parent-wide blocker，继续安全且已授权的独立工作，并测试 A stopped、B 交付、Parent 仍 incomplete。",
+      "anchor": "sha256:b2e758b2d35f381de57c2d5f1ff9317e45dd8f33bcd2c73c37cb3d9f76428f9d",
+      "evidence": {
+        "trigger": "串行 Parent 包含 A→C 和 scope-disjoint 的独立 B，B 的 batch slot 已授权且预算未耗尽。A 被正式停止，Kernel 已释放 claim。driveInterruptedChild 将 A parked、C skipped_blocked，并把整个 batch 置为 needs_human；B 仍 pending。observeParentRun 的 scheduler 能识别 B ready，但 batch_state 检查令 runnable=false，导致 Parent pause 而非继续 B。此情况没有 foreign owner 或 branch conflict，不属于必须停止独立工作的 authority boundary。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_runner.ts:resumeBatch",
+          "plugins/immune-brain/runtime/unattended/batch_runner.ts:driveInterruptedChild",
+          "plugins/immune-brain/runtime/assurance/run_continuation.ts:observeParentRun",
+          "plugins/immune-brain/runtime/assurance/run_continuation.ts:decideRunContinuation"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "GDR-A5"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-c50316580a97-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "GDR-A5",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_git.ts:858 使用 serial commit lookup 验证 Lane 集成交付，导致正常 Lane Parent 无法获得 aggregate completion proof。请按 Lane 已记录的集成 commit 验证交付来源、terminal evidence 和 candidate identity，并补充真实 Lane 集成后 Parent 完成的回归测试。",
+      "anchor": "sha256:3f51cf19cb16209cfee1ccb74e26364e2a0e60caf090285c321abc81fb459177",
+      "evidence": {
+        "trigger": "交付证明完整性这一 invariant class 未覆盖 Lane 路径：batch_lanes.ts:1137 在 child.lane.path 调用 commitChild，durable commit evidence 写入该 Lane 的 .imm/state/batches/commits；随后 batch_lanes.ts:1163 在 coordinator 集成交付，只保存 integrated commit 和 batch state。observeParentCompletion 却在 coordinator root 调用 lookupBatchCommit；后者在 batch_git.ts:744-749 要求 coordinator 本地存在 durable batch commit evidence，因此发现正常的 Immune-Brain-Batch commit 后抛出 lacks durable batch runner production evidence。即使所有 Lane 已集成且 final verification 通过，Parent continuation、critical prerequisite 检查及 Parent Issue closure 都会失败。直接读取 unchanged batch_integration.ts 是为了追踪 changed batch_lanes.ts 的实际 integration state machine；其 integrateGuardedLaneCommit 只验证 candidate 并 fast-forward，没有复制或记录 coordinator commit evidence，且重放后 candidate SHA 可以不同于原 Lane commit。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:runLaneBatch",
+          "plugins/immune-brain/runtime/unattended/batch_integration.ts:integrateGuardedLaneCommit",
+          "plugins/immune-brain/runtime/unattended/batch_runner.ts:completedParentReport",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:observeParentCompletion",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:lookupBatchCommit"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "GDR-A5"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-c50316580a97-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "GDR-A6",
+      "source": "review",
+      "review_round": 2,
+      "summary": "tests/goal-driven-run-recovery.test.ts:14-41 只验证 repair candidate 的纯函数输出，没有在约定的 automated seam 验证 BR-SCN-8 的 fresh Enrollment、repair settlement/integration 和 final rerun。请补充该完整恢复路径及 declined gate 的行为测试。",
+      "anchor": "sha256:55fdc448cbe2552dede776f746d68b0f70feb85cc79a5f82aa66c3cba2109a21",
+      "evidence": {
+        "trigger": "结算后恢复的 acceptance coverage class 存在缺口：必需 children 已 settled/integrated，final verification 失败，随后准备并批准新的 repair TaskIntent。Spec 的 BR-SCN-8 和 GDR-A6 要求测试断言新 native Enrollment 之前不实施、原交付保持不变、accepted repair 经 assurance/integration 后重跑 final verification、Parent closure 等待成功结果。交付的 tests/goal-driven-run-recovery.test.ts 全部四个测试只调用 prepareFinalRepairCandidate，没有触发 Enrollment、recordParentRepair、repair integration 或 final rerun。其他已审查的新增 batch tests 验证 critical gate parking 和 final command 单独运行，也没有断言这个 repair round trip；保存的 GDR-A7 live report 不能替代 GDR-A6 明确约定的 automated seam。Kernel outcomes 中的 passed 证明现有描述符通过，但这些断言未覆盖 BR-SCN-8 的 Then。",
+        "caller_chain": [
+          "tests/goal-driven-run-recovery.test.ts",
+          "plugins/immune-brain/runtime/unattended/batch_final_verification.ts:prepareFinalRepairCandidate",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:recordParentRepair",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:integrateSettledCriticalSlices"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "GDR-A6"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "qa-GDR-A7-414acd9a-b8dbf2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "GDR-A7",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=1170B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "review-76d989dc0427-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "GDR-A6",
+      "source": "review",
+      "review_round": 3,
+      "summary": "The native-Parent path (critical-only or delivered-only Parent) runs model-supplied final_verification commands and creates scope-bound Git commits inside start_unattended_batch before any native confirmation. The user never sees or approves those commands, which breaks the 'no unplanned authority' and exact-authority requirement.",
+      "anchor": "sha256:3480903f9bb2f6f32be1ab76abd89c9fb6acc080e7a9b12b3826c99eef6d1c88",
+      "evidence": {
+        "trigger": "A Parent whose non-critical Slices all have settled evidence (or that has only critical Slices) and has no active or settled batch record. The model calls start_unattended_batch {initiative_slug, final_verification:['sh','-c ...' or any <=8 whitespace-split commands]}. observeNativeParent returns facts, so advanceNativeParent runs before prepareBatchPreflight and before requestConfirmation/confirmBatch. It then calls commitBatchChild(batchId:null) on the current HEAD branch and runFinalVerification(root, recorded ?? commands). The commands come straight from tool args, are executed by the MCP/Pi extension process outside Host Bash permission, and are never rendered in a native confirmation. The first call also records them, so later calls are bound to them. In batch mode the same commands are only executed after the confirmation that displays them. tests/goal-driven-run-recovery.test.ts and tests/goal-driven-batch-run.test.ts call advanceNativeParent directly and assert no confirmation or disclosure for the native path.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/mcp_server.ts:callTool(start_unattended_batch)",
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.startPreparedBatch",
+          "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:executePreparedPiBatch",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:advanceNativeParent",
+          "plugins/immune-brain/runtime/unattended/batch_final_verification.ts:runFinalVerification"
+        ],
+        "violated": {
+          "kind": "security_boundary",
+          "ref": "native_authority_confirmation_of_final_verification_commands"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-76d989dc0427-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "GDR-A5",
+      "source": "review",
+      "review_round": 3,
+      "summary": "The Child prerequisite check at Enrollment parses every docs/initiatives/*.md file and throws on any unrelated or malformed one, so a stray Local Initiative file blocks Enrollment of every task, including standalone, critical and repair tasks.",
+      "anchor": "sha256:959b73d8b59e1c50c000c7e3d6d3612e6b6ed80b9d1be2be9d282a78a320ef8e",
+      "evidence": {
+        "trigger": "Any workspace where docs/initiatives contains a .md file that observeLocalInitiative refuses, for example README.md or a draft with no '## <slice>:' heading, or a Slice with zero or several Tasks. enroll for an unrelated task_id calls assertIsolatedTaskPrerequisites(root, taskId), which maps ALL matching files through observeLocalInitiative before filtering by task. That function throws 'declares no Slice' or 'must name exactly one Task', so Enrollment is refused although the task does not belong to that file. The check is not scoped to the exact Parent that owns the Child, and the delivered tests only cover a well-formed initiative.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.enroll",
+          "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts:executeForegroundEnrollment",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:assertIsolatedTaskPrerequisites",
+          "plugins/immune-brain/runtime/local_initiative.ts:observeLocalInitiative"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "GDR-A5"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:goal-driven-run:2026-10-14T02:43:42.593Z",
+      "at": "2026-10-14T02:43:42.593Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:7ead986418fa53615cc517893954ad2d0815c5ab817dba540798ad793962fd3d",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-2ac0e4b28da039c6",
+        "issued_at": "2026-10-14T02:43:43.215Z"
+      }
+    },
+    {
+      "id": "revise_intent:goal-driven-run:2026-10-14T08:01:48.540Z",
+      "at": "2026-10-14T08:01:48.540Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\nscope_added:tests/pi-canary-assurance-progression.test.ts\naction_v2_sha256:bfd3453ad961572529a921f02eb63a7b094768ed2ad28022db76487572329e07"
+    },
+    {
+      "id": "freeze_artifacts:goal-driven-run:2026-10-14T09:33:56.957Z",
+      "at": "2026-10-14T09:33:56.957Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/goal-driven-run.intent.json"
+    },
+    {
+      "id": "record_approval:goal-driven-run:2026-10-14T09:35:20.912Z",
+      "at": "2026-10-14T09:35:20.912Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-d1f39234\naction_v2_sha256:09226174938e7b99d313a3574a326eea609f4843053c26132a22db85323e1196",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-0e654999905dafc5",
+        "issued_at": "2026-10-14T09:35:20.912Z"
+      }
+    },
+    {
+      "id": "request_rework:goal-driven-run:2026-10-14T09:45:52.543Z",
+      "at": "2026-10-14T09:45:52.543Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:2687d4a3a74a3f4f30bea35a52e5a60227a7bbd35d996bccd6fe0da892cbf440",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-02823904fcc793e5",
+        "issued_at": "2026-10-14T09:45:52.544Z"
+      }
+    },
+    {
+      "id": "revise_intent:goal-driven-run:2026-10-14T10:06:42.604Z",
+      "at": "2026-10-14T10:06:42.604Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_4\nscope_added:tests/pi-batch-acceptance-integration.test.ts\naction_v2_sha256:51f326c14627403117ecddfae789b1a8854a7e285a570fccf1a1285d6828b4ba"
+    },
+    {
+      "id": "resolve_finding:goal-driven-run:2026-10-14T10:52:18.926Z",
+      "at": "2026-10-14T10:52:18.926Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-bec0b6e1da4b-1-review-1\naction_v2_sha256:2896288779b455db2a78e01c173a104d59643ecb12b494ea978de95fb0f04706"
+    },
+    {
+      "id": "resolve_finding:goal-driven-run:2026-10-14T10:52:23.791Z",
+      "at": "2026-10-14T10:52:23.791Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-bec0b6e1da4b-2-review-2\naction_v2_sha256:512f76557324f803e1406d21ad8dec1b9ee7bda57fd9aba435aab8df77918758"
+    },
+    {
+      "id": "resolve_finding:goal-driven-run:2026-10-14T10:52:28.559Z",
+      "at": "2026-10-14T10:52:28.559Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-bec0b6e1da4b-3-review-3\naction_v2_sha256:6c90c4ef057a1a754dc03c195be9ba0d6fd84e83098c325b9eb38323b92577a5"
+    },
+    {
+      "id": "resolve_finding:goal-driven-run:2026-10-14T10:52:33.546Z",
+      "at": "2026-10-14T10:52:33.546Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-bec0b6e1da4b-4-review-4\naction_v2_sha256:c2fb679dfc1708c74a00494f25dbb43d0f5ae89b9308e28bc635f4d5406df680"
+    },
+    {
+      "id": "resolve_finding:goal-driven-run:2026-10-14T10:52:38.461Z",
+      "at": "2026-10-14T10:52:38.461Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-bec0b6e1da4b-5-review-5\naction_v2_sha256:24c3dc892c574081c7f739152c25ff4cf0c0b86c3e3f106b178bd9d519c955c2"
+    },
+    {
+      "id": "resolve_finding:goal-driven-run:2026-10-14T10:52:43.443Z",
+      "at": "2026-10-14T10:52:43.443Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-bec0b6e1da4b-6-review-6\naction_v2_sha256:23c639bbd62b767dac7b0bc1de9da6643cceae1c74c47b709c3fb11cd8e076a2"
+    },
+    {
+      "id": "resolve_finding:goal-driven-run:2026-10-14T10:52:48.267Z",
+      "at": "2026-10-14T10:52:48.267Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-bec0b6e1da4b-7-review-7\naction_v2_sha256:43219b12e1748ab03c41ea4e21aeed40d05a9824142c6fb54dcf886657b1d4ff"
+    },
+    {
+      "id": "freeze_artifacts:goal-driven-run:2026-10-14T10:58:06.511Z",
+      "at": "2026-10-14T10:58:06.511Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/goal-driven-run.intent.json"
+    },
+    {
+      "id": "record_approval:goal-driven-run:2026-10-14T10:58:54.461Z",
+      "at": "2026-10-14T10:58:54.461Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-d393d36b\naction_v2_sha256:cb079bacd90247178c6de47afb929993037b23919d941346120d766e9b6a64a5",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-06af375076925c1f",
+        "issued_at": "2026-10-14T10:58:54.462Z"
+      }
+    },
+    {
+      "id": "request_rework:goal-driven-run:2026-10-14T11:04:51.736Z",
+      "at": "2026-10-14T11:04:51.736Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:799c2342b0aae44c6de6a9501c4bb8bcde4abbc417098e453de2527763d5d46e",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-2124ed0b7625dabc",
+        "issued_at": "2026-10-14T11:04:51.736Z"
+      }
+    },
+    {
+      "id": "resolve_finding:goal-driven-run:2026-10-14T11:11:21.622Z",
+      "at": "2026-10-14T11:11:21.622Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c50316580a97-1-review-1\naction_v2_sha256:4bc686f5d676c42219bfe53f4b346394ca8a94672eda77fd782dabccd987badb"
+    },
+    {
+      "id": "resolve_finding:goal-driven-run:2026-10-14T11:11:28.074Z",
+      "at": "2026-10-14T11:11:28.074Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c50316580a97-2-review-2\naction_v2_sha256:469bf6770afee6e06f60580b9b883eac7911b7327c1714d9b3da244b7e6a4af3"
+    },
+    {
+      "id": "freeze_artifacts:goal-driven-run:2026-10-14T15:02:08.710Z",
+      "at": "2026-10-14T15:02:08.710Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/goal-driven-run.intent.json"
+    },
+    {
+      "id": "request_rework:goal-driven-run:2026-10-14T15:03:01.467Z",
+      "at": "2026-10-14T15:03:01.467Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_3\naction_v2_sha256:d0df321b8dd9e8f33dd3fb14630abc8a63062e88d1c6d49c6aec420a0cedaac3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-14T15:03:01.467Z"
+      }
+    },
+    {
+      "id": "resolve_finding:goal-driven-run:2026-10-14T16:09:35.462Z",
+      "at": "2026-10-14T16:09:35.462Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-GDR-A7-414acd9a-b8dbf2\naction_v2_sha256:858cbe4704a472742579d2a8cee6b41ffe77f1e670392d5bca26ef029595ce75"
+    },
+    {
+      "id": "freeze_artifacts:goal-driven-run:2026-10-14T16:09:40.892Z",
+      "at": "2026-10-14T16:09:40.892Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/goal-driven-run.intent.json"
+    },
+    {
+      "id": "record_approval:goal-driven-run:2026-10-14T16:10:21.984Z",
+      "at": "2026-10-14T16:10:21.984Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ad04c542\naction_v2_sha256:e97bc950eec1013021e8a2921b0d2d819ebfaa3f45ef46dde53bede34173d3fe",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-14T16:10:21.985Z"
+      }
+    },
+    {
+      "id": "request_rework:goal-driven-run:2026-10-14T16:17:01.574Z",
+      "at": "2026-10-14T16:17:01.574Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_3\naction_v2_sha256:52b775fe96808a52f6cd87aef5b00283ccf51b4b6d68bff0a56f8a922445456b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-14T16:17:01.574Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:goal-driven-run:2026-10-15T02:29:52.092Z",
+      "at": "2026-10-15T02:29:52.092Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_5\naction_v2_sha256:e869ae16838f7b671cd5c06b2337838301528c1b0fc6a3007456f9256c4a43c5",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-96df1b656f49bafc",
+        "issued_at": "2026-10-15T02:34:23.079Z"
+      }
+    },
+    {
+      "id": "resolve_finding:goal-driven-run:2026-10-15T02:36:55.067Z",
+      "at": "2026-10-15T02:36:55.067Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-76d989dc0427-1-review-1\naction_v2_sha256:dfb9f8ec4b30e32085cf40c652e11024e7c5c2db467f92380bb534ae795e6438"
+    },
+    {
+      "id": "resolve_finding:goal-driven-run:2026-10-15T02:36:58.179Z",
+      "at": "2026-10-15T02:36:58.179Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-76d989dc0427-2-review-2\naction_v2_sha256:17640419ea084c535bcb24b19725c35063a8687b04e3d0a06cad3b3a40e0b353"
+    },
+    {
+      "id": "freeze_artifacts:goal-driven-run:2026-10-15T02:37:04.963Z",
+      "at": "2026-10-15T02:37:04.963Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/goal-driven-run.intent.json"
+    },
+    {
+      "id": "record_approval:goal-driven-run:2026-10-15T02:37:57.744Z",
+      "at": "2026-10-15T02:37:57.744Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-58963bd7\naction_v2_sha256:e1212dfa24d021175bdf71731d05f31974771c3f3da5a1c4908b80ab1b4c5a33",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-15T02:37:57.744Z"
+      }
+    },
+    {
+      "id": "record_approval:goal-driven-run:2026-10-15T02:47:17.260Z",
+      "at": "2026-10-15T02:47:17.260Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-3c79ea21\naction_v2_sha256:96962847214916a54dd3599e66544baa0a781d18e438a8888e7e52ec1a9b90b9",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-15T02:47:17.261Z"
+      }
+    },
+    {
+      "id": "complete:goal-driven-run:2026-10-15T02:47:21.010Z",
+      "at": "2026-10-15T02:47:21.010Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:14f2883a4a7140163219773aad740ef0127353c0b16a8310dc66dc9a813e044b"
+    }
+  ]
+}

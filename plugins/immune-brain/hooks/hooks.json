@@ -12,7 +12,7 @@
         ]
       },
       {
-        "matcher": "Skill|mcp__.*immune-brain.*__(enroll|start_unattended_batch)",
+        "matcher": "Skill|Agent|mcp__.*immune-brain.*__.*",
         "hooks": [
           {
             "type": "command",
@@ -52,6 +52,26 @@
       }
     ],
     "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/claude/mcp-server.mjs\" --hook"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/claude/mcp-server.mjs\" --hook"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
       {
         "hooks": [
           {

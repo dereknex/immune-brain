@@ -17,6 +17,8 @@ import {
 } from "../plugins/immune-brain/runtime/claude/interaction";
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
 import { ClaudeRuntime, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
+import { runContinuationHookOutput } from "../plugins/immune-brain/runtime/claude/run_continuation";
+import { readBatchRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
 // Delivery QA has no node_modules; use host seams only when the real package is absent.
 try { await import("typebox"); } catch {
@@ -713,6 +715,25 @@ describe("batch foreground Executor integration", () => {
 	}, 60000);
 });
 
+async function attachParentHookContext(client: any, root: string, slug: string) {
+	const sessionId = `closeout-${root}`;
+	const base = { cwd: root, session_id: sessionId };
+	const enter = async (text: string) => { const payload = { ...base, hook_event_name: "UserPromptSubmit", prompt: text };
+		recordPhaseEntryPrompt(payload); await runContinuationHookOutput(payload); };
+	await enter(`/imm-run ${slug}`);
+	const original = client.callTool.bind(client);
+	let sequence = 0;
+	client.callTool = async (name: string, args: Record<string, unknown>, meta: Partial<ToolMeta> = {}) => {
+		const id = `closeout-${root}-${++sequence}`;
+		const call = { ...base, tool_name: `mcp__plugin_immune-brain_immune-brain__${name}`, tool_use_id: id, tool_input: args };
+		await runContinuationHookOutput({ ...call, hook_event_name: "PreToolUse" });
+		const result = await original(name, args, { ...meta, toolCallId: id });
+		await runContinuationHookOutput({ ...call, hook_event_name: "PostToolUse", tool_response: result });
+		return result;
+	};
+	return enter;
+}
+
 describe("batch foreground closeout", () => {
 	// A child that reaches `done` in the foreground re-enters the batch in the same
 	// tool call, reusing the stored authorization: no gate, one commit, and the
@@ -746,6 +767,7 @@ describe("batch foreground closeout", () => {
 			requestConfirmation: async () => ({ decision: "accept", requestId: `closeout-${++confirmations}` }),
 		});
 		client.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
+		await attachParentHookContext(client, fixture.root, slug);
 		const { REVIEWER_AGENT, AGENT_TOOL } = await import("../plugins/immune-brain/runtime/claude/review_host");
 		try {
 			let started: any = await client.callTool("start_unattended_batch", { initiative_slug: slug });
@@ -786,7 +808,7 @@ describe("batch foreground closeout", () => {
 });
 
 describe("batch foreground closeout boundaries", () => {
-	function closeoutFixture(slug: string) {
+	async function closeoutFixture(slug: string) {
 		const fixture = createBatchFixture(slug);
 		writeFileSync(join(fixture.root, "verify.ts"), `import { strict as assert } from "node:assert"; assert.equal(await Bun.file(process.argv[2]).text(), "implemented");\n`);
 		for (const n of [1, 2]) {
@@ -809,7 +831,8 @@ describe("batch foreground closeout boundaries", () => {
 			requestConfirmation: async () => ({ decision: "accept", requestId: `boundary-${++confirmations}` }),
 		});
 		client.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-		return { fixture, client, confirmations: () => confirmations };
+		const enter = await attachParentHookContext(client, fixture.root, slug);
+		return { fixture, client, confirmations: () => confirmations, enter };
 	}
 	async function reviewPass(client: any, root: string, slug: string, task: string) {
 		const { REVIEWER_AGENT, AGENT_TOOL } = await import("../plugins/immune-brain/runtime/claude/review_host");
@@ -827,9 +850,40 @@ describe("batch foreground closeout boundaries", () => {
 		return { advanced, verdict };
 	}
 
+	it("Local Slice dependency refusal happens before Claude Enrollment's native gate", async () => {
+		const slug = "boundary-local-dependency";
+		const { fixture, client, confirmations, enter } = await closeoutFixture(slug);
+		try {
+			if (execFileSync("git", ["remote"], { cwd: fixture.root, encoding: "utf8" }).trim().split("\n").includes("origin"))
+				execFileSync("git", ["remote", "remove", "origin"], { cwd: fixture.root });
+			mkdirSync(join(fixture.root, "docs/initiatives"), { recursive: true });
+			writeFileSync(join(fixture.root, `docs/initiatives/${slug}.md`), `# Parent\n## S1: predecessor\nTasks:\n- ${slug}-c1\n## S2: target\nTasks:\n- ${slug}-c2\nBlocked by: ${slug}-c1\n`);
+			await enter(`/imm-run ${slug}-c2`);
+			await expect(client.callTool("enroll", { task_id: `${slug}-c2` })).rejects.toThrow(`Isolated Slice prerequisites are not integrated: ${slug}-c1`);
+			expect(confirmations()).toBe(0);
+		} finally { await client.runtime.coordinator.onSessionShutdown?.(); }
+	}, 60000);
+
+	it("explicit Child re-entry settles only that Child while its authorized sibling remains pending", async () => {
+		const slug = "boundary-isolated";
+		const { fixture, client, confirmations, enter } = await closeoutFixture(slug);
+		try {
+			const choose = await enter;
+			const batch: any = await client.callTool("start_unattended_batch", { initiative_slug: slug });
+			const task = `${slug}-c1`;
+			await choose(`/imm-run ${task}`);
+			await client.callTool("status", { task_id: task });
+			const { verdict } = await reviewPass(client, fixture.root, slug, task);
+			const settled: any = await client.callTool("submit_review", { task_id: task, verdict });
+			expect(settled.state).toBe("completed"); expect(settled).not.toHaveProperty("batch");
+			expect(readBatchRunState(fixture.root, batch.batch_id)?.children.find(child => child.task_id === `${slug}-c2`)?.state).toBe("pending");
+			expect(confirmations()).toBe(1);
+		} finally { await client.runtime.coordinator.onSessionShutdown?.(); }
+	}, 60000);
+
 	it("a child that is not done is not closed out: advance_assurance to review_ready carries no batch continuation", async () => {
 		const slug = "boundary-notdone";
-		const { fixture, client, confirmations } = closeoutFixture(slug);
+		const { fixture, client, confirmations } = await closeoutFixture(slug);
 		try {
 			await client.callTool("start_unattended_batch", { initiative_slug: slug });
 			writeFileSync(join(fixture.root, "impl-1.txt"), "implemented");
@@ -844,7 +898,7 @@ describe("batch foreground closeout boundaries", () => {
 
 	it("a continuation the batch refuses (plan drift) reports a recovery action beside the unchanged result and opens no gate", async () => {
 		const slug = "boundary-drift";
-		const { fixture, client, confirmations } = closeoutFixture(slug);
+		const { fixture, client, confirmations } = await closeoutFixture(slug);
 		try {
 			await client.callTool("start_unattended_batch", { initiative_slug: slug });
 			const { verdict } = await reviewPass(client, fixture.root, slug, `${slug}-c1`);
@@ -1202,7 +1256,7 @@ describe("acc-claude-batch-fail-closed", () => {
 		expect(existsSync(join(fixture.root, ".imm", "state", "batch"))).toBe(false);
 	});
 
-	it("empty enrollable child set rejects with state: rejected and zero writes", async () => {
+	it("critical-only Parent returns a native task handoff without an empty batch grant", async () => {
 		const fixture = createBatchFixture("empty-enrollable");
 		// All tasks are critical or non-enrollable
 		const observation: GithubInitiativeObservation = {
@@ -1233,9 +1287,8 @@ describe("acc-claude-batch-fail-closed", () => {
 		);
 
 		expect(confirmationOpened).toBe(false);
-		expect(result.state).toBe("rejected");
-		expect(result.reason).toContain("empty enrollable child set");
-		expect(result.recovery_action).toContain("ensure the initiative has uncompleted, non-critical child tasks");
+		expect(result).toMatchObject({ state: "native_parent", action: "enroll", task_id: "empty-enrollable-c3", batch_id: null });
+		expect(result.next_action).toContain("native single-task Enrollment");
 		expect(existsSync(join(fixture.root, ".imm", "state", "batch"))).toBe(false);
 	});
 
@@ -1338,9 +1391,9 @@ describe("acc-claude-batch-fail-closed", () => {
 		expect(existsSync(join(fixture.root, ".imm", "state", "batch"))).toBe(false);
 	});
 
-	it("review-2: children with already_settled prerequisites start without digest mismatch", async () => {
+	it("refuses a prerequisite tombstone without its audited record before opening a batch gate", async () => {
 		const fixture = createBatchFixture("settled-prereq");
-		// Create tombstone for c1 so it is already settled and committed
+		// A lone tombstone cannot prove a settled, integrated prerequisite.
 		mkdirSync(join(fixture.root, ".imm", "audit", "settled-prereq-c1"), { recursive: true });
 		writeFileSync(
 			join(fixture.root, ".imm", "audit", "settled-prereq-c1", "terminal-proof.json"),
@@ -1357,41 +1410,23 @@ describe("acc-claude-batch-fail-closed", () => {
 		execFileSync("git", ["add", ".imm/audit/"], { cwd: fixture.root });
 		execFileSync("git", ["commit", "-q", "-m", "audit c1"], { cwd: fixture.root });
 
-		const commitsByTask = new Map<string, string>();
+		let confirmations = 0;
+		const auditBefore = readFileSync(join(fixture.root, ".imm/audit/settled-prereq-c1/terminal-proof.json"));
+		const headBefore = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" });
 		const runtime = createMcpRuntime({
 			cwd: fixture.root,
 			env: ENV,
 			interactive: true,
 			readInitiative: async () => fixture.observation,
-			batchKernel: {
-				enrollTask: async () => ({ record_revision: "rev-settled" }),
-				advanceTask: async () => ({ state: "completed" }),
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string) => {
-					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
-					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
-					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-					commitsByTask.set(taskId, commit);
-					return { commit };
-				},
-				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
-			},
-			requestConfirmation: async () => ({ decision: "accept", requestId: "req-settled" }),
+			requestConfirmation: async () => { confirmations++; return { decision: "accept", requestId: "req-settled" }; },
 		});
 		runtime.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-
-		const result = await runtime.callTool(
-			"start_unattended_batch",
-			{ initiative_slug: "settled-prereq" },
-			{ toolCallId: "toolu-settled" },
-		);
-
-		expect(result.state).toBe("started");
-		expect(result.report).toBeDefined();
-		expect(result.report.batch_state).not.toBe("rejected");
+		await expect(runtime.callTool("start_unattended_batch", { initiative_slug: "settled-prereq" },
+			{ toolCallId: "toolu-settled" })).rejects.toThrow("terminal audit pair is incomplete");
+		expect(confirmations).toBe(0);
+		expect(existsSync(join(fixture.root, ".imm/state/batches"))).toBe(false);
+		expect(readFileSync(join(fixture.root, ".imm/audit/settled-prereq-c1/terminal-proof.json"))).toEqual(auditBefore);
+		expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" })).toBe(headBefore);
 	});
 
 	for (const host of ["claude", "pi"] as const) it(`${host}: starts new children after a completed batch without replaying its identity`, async () => {

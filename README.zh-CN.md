@@ -559,9 +559,9 @@ flowchart TD
 
 ## 无人值守批次运行
 
-当一个 Initiative 下包含多个已就绪的 child 任务时，开发者无需逐个手动触发 `imm-run`，可通过 Host 原生 privileged tool `start_unattended_batch` 进行整批无人值守推进。
+输入 `imm-run <Parent Issue>`，会自动选择完整已批准计划，通过 Host 的 `start_unattended_batch` 和 native 授权执行。输入 `imm-run <Slice/Child Issue>` 则先检查前置交付，只执行该 Slice，不启动前置或兄弟任务。
 
-系统支持两种批次运行形态：**默认串行模式** 与 **多 Lane 并行模式（Parallel Batch Lanes）**。
+Parent 在确认前根据依赖、scope 冲突、Lane 容量及受监督 Host 能力，选择 **Managed 串行模式** 或 **多 Lane 并行模式**；缺少 Lane supervision 时在同一 Host 串行执行。状态询问保留运行绑定，显式取消解除续接。
 
 ### 1. 批次运行模式概览
 
@@ -576,9 +576,9 @@ flowchart TD
 
 ### 2. 批次授权与运行红线
 
-- **入口显式且单一授权：** 未调用 `start_unattended_batch` 之前不存在任何批次状态或分支；未调用时 `imm-run` 行为与逐任务 Enrollment 完全一致。调用时由原生 gate（Pi TUI 弹窗或 Claude MCP elicitation）一次性展示有序任务清单与全局 `plan_digest`，用户的单次确认即为整批执行提供完备授权。
+- **入口显式且单一授权：** Parent 入口直接调用 `start_unattended_batch`；独立 Task 和 Child 走单任务 Enrollment。critical-only 和 delivered-only Parent 使用单任务 native gate 和最终验证观察，不制造空批次授权。调用时由原生 gate（Pi TUI 弹窗或 Claude MCP elicitation）一次性展示有序任务清单与全局 `plan_digest`，用户的单次确认即为整批执行提供完备授权。
 - **Child Authority 守恒：** 批次仅代表授权范围的聚合，绝非降低工程标准。每个 child 依然由 Kernel 单独执行 Enrollment、物理 Scope 冻结、真实子进程 QA、隔离 Review 与独立的 `TaskRecord` 结算。批次只是一次授权的覆盖范围，不是新的授权层级。
-- **确定性执行边界：** 仅推进已发布且非 `critical` 的 child 任务；遇到人工决策挂起（`needs_human`）、预算/超时中断或提交异常时立即安全暂停批次，被阻断任务的下游依赖标记为跳过（`skipped_blocked`）而非无序推进。批次运行器不擅自 push、不开 PR、不代替用户结算决策。
+- **确定性执行边界：** 普通 child 使用批次授权，已就绪的 `critical` child 单独 native Enrollment。普通失败自动进行有界修复；阻塞只停放其依赖分支，独立任务继续。所有必需交付集成、最终 HEAD 验证通过后才报告 Parent 成功并关闭 Issue；结算后发现的代码缺陷先生成、验证修复候选，再打开新的 native Enrollment。批次运行器不擅自 push、不开 PR、不代替用户结算决策。
 
 ### 3. 多 Lane 并行流水线与架构（Parallel Batch Lanes）
 
