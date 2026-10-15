@@ -220,6 +220,11 @@ export interface TaskHistoryEntryV3 {
 	to_state: string;
 	reason: string;
 	authority?: AuthorityAuditDescriptor;
+	/**
+	 * The revision a Review-authored rework analyzed. Optional so legacy records
+	 * and QA or user rework stay valid; later rounds derive their delta from it.
+	 */
+	review_revision?: ReviewRevisionIdentityV1;
 }
 
 export interface TaskRecordV3 {
@@ -304,7 +309,12 @@ export type TaskAction =
 			next_intent: TaskIntentV1;
 			next_intent_ref: TaskIntentRefV3;
 	  })
-	| (TaskActionBase & { type: "request_rework"; findings: TaskFinding[] })
+	| (TaskActionBase & {
+			type: "request_rework";
+			findings: TaskFinding[];
+			/** Review-authored rework only: the immutable revision that Review analyzed. */
+			review_revision?: ReviewRevisionIdentityV1;
+	  })
 	| (TaskActionBase & { type: "complete" })
 	| (TaskActionBase & { type: "stop"; reason: string })
 	| (TaskActionBase & { type: "authorize_rework" })

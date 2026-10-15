@@ -57,6 +57,16 @@ nothing is declared, assume inputs come from the repository's own tooling and
 the user's trusted workspace. `security_boundary` means a security, data-loss,
 or authority boundary the change actually crosses.
 
+From Review round 3 the manifest carries `prior_review_commit` and
+`delta_paths`: the paths the latest rework changed. Review that delta and its
+direct interactions. A blocking finding is admitted only when at least one
+`caller_chain` entry names a path in `delta_paths`, or `violated.kind` is
+`security_boundary`; an edge case that already existed in round 1 is advisory
+unless it crosses a security, data-loss, or authority boundary. A verdict that
+blocks outside the delta is rejected for resubmission. When the manifest carries
+`delta_skipped` instead, no delta exists for the round and this rule does not
+apply.
+
 ## Invariant and Evidence Coverage
 
 Judge whether the change actually closes the invariant its acceptance names,

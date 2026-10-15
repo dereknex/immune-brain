@@ -27,6 +27,8 @@ import {
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
+import { captureReviewManifest } from "../plugins/immune-brain/runtime/assurance/review_evidence";
+import { taskRevisionDiffHash } from "../plugins/immune-brain/runtime/workspace_scope";
 
 const TASK = "canary-rework-task";
 const INTENT = {
@@ -224,16 +226,33 @@ function reworkCapability(kind: "review" | "qa" | "user", overrides: Record<stri
 	});
 }
 
-function requestReviewRework(findings: Record<string, unknown>[], at: string) {
+function reviewRevision(overrides: Record<string, string> = {}) {
+	return {
+		contract: "assurance_kernel/review_revision_identity/v1" as const,
+		base_head: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
+		review_commit: "c".repeat(40),
+		review_tree: "d".repeat(40),
+		manifest_digest: "sha256:" + "e".repeat(64),
+		...overrides,
+	};
+}
+
+function requestReviewRework(
+	findings: Record<string, unknown>[],
+	at: string,
+	revision?: ReturnType<typeof reviewRevision>,
+	authority: "review" | "qa" | "user" = "review",
+) {
 	const action = capabilityActionFor({
 		op: "request_rework",
 		task_id: TASK,
 		at,
 		actor_id: "reviewer-1",
 		findings: findings as never[],
+		...(revision ? { review_revision: revision } : {}),
 	});
 	const capability = createMutationAuthorityCapabilityForTest(mutationRegistry, {
-		authority_kind: "review",
+		authority_kind: authority,
 		task_id: TASK,
 		action_digest: digestOfAction(action),
 		expected_record_hash: readTaskRecordRaw(root, TASK).revision,
@@ -245,7 +264,13 @@ function requestReviewRework(findings: Record<string, unknown>[], at: string) {
 		findings_digest: findingsDigestV2(findings as never[]),
 	});
 	return execute(
-		{ op: "request_rework", capability, findings: findings as never[], actor_id: "reviewer-1" },
+		{
+			op: "request_rework",
+			capability,
+			findings: findings as never[],
+			actor_id: "reviewer-1",
+			...(revision ? { review_revision: revision } : {}),
+		},
 		at,
 	);
 }
@@ -754,5 +779,119 @@ describe("request_rework authority", () => {
 				{ ...base, evidence: { ...REVIEW_EVIDENCE, caller_chain: ["other"] } } as never,
 			]),
 		);
+	});
+});
+
+describe("review rework persists the reviewed revision", () => {
+	const finding = () => [reviewFinding({ id: "rw-rev", anchor: ANCHOR, evidence: REVIEW_EVIDENCE })];
+
+	test("a Review rework stores its revision on the round history entry", () => {
+		toReview();
+		const revision = reviewRevision();
+		const result = requestReviewRework(finding(), "2026-08-12T10:00:03.000Z", revision);
+		const entry = result.record.history.at(-1);
+		expect(entry?.type).toBe("request_rework");
+		expect(entry?.reason.split("\n")[0]).toBe("review_round_1");
+		expect(entry?.review_revision).toEqual(revision);
+		// The stored record re-parses: the optional field is legal persisted data.
+		expect(readTaskRecordRaw(root, TASK).record?.history.at(-1)?.review_revision).toEqual(revision);
+	});
+
+	test("a Review rework without a revision stays valid for legacy callers", () => {
+		toReview();
+		const result = requestReviewRework(finding(), "2026-08-12T10:00:03.000Z");
+		expect(result.record.history.at(-1)?.review_revision).toBeUndefined();
+		expect(result.record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
+	});
+
+	test("a revision naming another base is rejected with zero writes", () => {
+		toReview();
+		const before = readTaskRecordRaw(root, TASK).revision;
+		expect(() =>
+			requestReviewRework(finding(), "2026-08-12T10:00:03.000Z", reviewRevision({ base_head: "f".repeat(40) })),
+		).toThrow(/base_head must equal the Enrollment git_base_head/);
+		expect(readTaskRecordRaw(root, TASK).revision).toBe(before);
+	});
+
+	test("QA and user rework cannot carry a review revision", () => {
+		for (const authority of ["qa", "user"] as const) {
+			toReview(`2026-08-12T10:0${authority === "qa" ? 1 : 2}:02.000Z`);
+			const plain = [{ ...FINDINGS[0], id: `rw-${authority}` }];
+			expect(() =>
+				requestReviewRework(plain, `2026-08-12T10:0${authority === "qa" ? 1 : 2}:03.000Z`, reviewRevision(), authority),
+			).toThrow(/cannot carry a review revision/);
+		}
+	});
+});
+
+describe("review manifest rework delta", () => {
+	const HEAD = () => execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+	function manifestFor(round: number, prior: { review_commit: string; review_tree: string } | null) {
+		const scope = [`docs/specs/${TASK}.spec.md`, "src/task.ts"];
+		return captureReviewManifest(root, {
+			taskId: TASK,
+			baseHead: HEAD(),
+			scopeHint: scope,
+			expectedDiffHash: taskRevisionDiffHash(root, scope, HEAD()),
+			intentRevision: 1,
+			intentContentHash: currentIntentHash(),
+			recordRevision: "r:" + "1".repeat(64),
+			workspaceRevision: "w:" + "2".repeat(64),
+			lifecycle: "active",
+			artifactState: "frozen",
+			risk: "material",
+			outcomes: {},
+			delta: { round, prior },
+		});
+	}
+	function stage(path: string, text: string) {
+		writeFileSync(join(root, path), text);
+		execFileSync("git", ["add", "-A"], { cwd: root });
+	}
+
+	test("round 3 lists exactly the paths the latest rework changed", () => {
+		stage("src/task.ts", "export const a = 1;\n");
+		stage(`docs/specs/${TASK}.spec.md`, "# v1\n");
+		const round2 = manifestFor(2, null);
+		expect(round2.delta_paths).toBeUndefined();
+		expect(round2.delta_skipped).toBeUndefined();
+		// Rework touches only the spec; src/task.ts is byte-identical to round 2.
+		stage(`docs/specs/${TASK}.spec.md`, "# v2\n");
+		const round3 = manifestFor(3, { review_commit: round2.review_commit, review_tree: round2.review_tree });
+		expect(round3.prior_review_commit).toBe(round2.review_commit);
+		expect(round3.delta_paths).toEqual([`docs/specs/${TASK}.spec.md`]);
+		expect(round3.manifest_digest).not.toBe(round2.manifest_digest);
+	});
+
+	test("a missing or unresolvable prior revision skips the rule instead of blocking", () => {
+		stage("src/task.ts", "export const a = 1;\n");
+		const legacy = manifestFor(3, null);
+		expect(legacy.delta_skipped).toBe("prior_review_revision_absent");
+		expect(legacy.delta_paths).toBeUndefined();
+		const pruned = manifestFor(3, { review_commit: "a".repeat(40), review_tree: "b".repeat(40) });
+		expect(pruned.delta_skipped).toBe("prior_review_revision_unresolvable");
+	});
+
+	test("rounds 1 and 2 add no delta fields so their digest is unchanged", () => {
+		stage("src/task.ts", "export const a = 1;\n");
+		const withoutDelta = (() => {
+			const scope = [`docs/specs/${TASK}.spec.md`, "src/task.ts"];
+			return captureReviewManifest(root, {
+				taskId: TASK,
+				baseHead: HEAD(),
+				scopeHint: scope,
+				expectedDiffHash: taskRevisionDiffHash(root, scope, HEAD()),
+				intentRevision: 1,
+				intentContentHash: currentIntentHash(),
+				recordRevision: "r:" + "1".repeat(64),
+				workspaceRevision: "w:" + "2".repeat(64),
+				lifecycle: "active",
+				artifactState: "frozen",
+				risk: "material",
+				outcomes: {},
+			});
+		})();
+		expect(manifestFor(1, null).manifest_digest).toBe(withoutDelta.manifest_digest);
+		expect(manifestFor(2, null).manifest_digest).toBe(withoutDelta.manifest_digest);
 	});
 });

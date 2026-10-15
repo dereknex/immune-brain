@@ -454,6 +454,67 @@ describe("host-neutral assurance coordinator", () => {
 		expect((await h.coordinator.advance(TASK, ctx)).state).toBe("blocked");
 		expect(h.qaRuns()).toBe(1); expect(h.counts().applyCount).toBe(2);
 	});
+	describe("review round 3 admits blocking findings only inside the rework delta", () => {
+		const deltaSnapshot = (review_delta: SnapshotDescriptor["review_delta"]): SnapshotDescriptor => ({
+			...snapshot("review"),
+			...(review_delta ? { review_delta } : {}),
+		});
+		const inDelta = deltaSnapshot({
+			round: 3,
+			prior_review_commit: "b".repeat(40),
+			delta_paths: ["runtime/kernel/reducer.ts"],
+		});
+		const blocking = (id: string, caller_chain: string[], violated: { kind: "acceptance" | "security_boundary"; ref: string }) => ({
+			id,
+			kind: "blocking" as const,
+			acceptance_id: "A1",
+			summary: `${id} summary`,
+			evidence: { trigger: "input → observable wrong result", caller_chain, violated },
+		});
+		const reworkFor = (s: SnapshotDescriptor, findings: unknown[]) => ({
+			contract: "assurance_kernel/assurance_verdict/v2",
+			role: "review",
+			task_id: TASK,
+			snapshot_digest: snapshotDigest(s),
+			decision: "rework" as const,
+			findings,
+		});
+
+		test("a blocking finding outside the delta is rejected naming the finding and both remedies", () => {
+			const verdict = reworkFor(inDelta, [blocking("old-1", ["runtime/kernel/other.ts"], { kind: "acceptance", ref: "A1" })]);
+			expect(() => parseAssuranceVerdict(verdict, inDelta)).toThrow(/round 3.*review-[0-9a-f]+-1-old-1.*advisory.*security_boundary/s);
+		});
+
+		test("a finding whose caller chain touches a delta path is admitted, with or without a line suffix", () => {
+			for (const entry of ["runtime/kernel/reducer.ts", "runtime/kernel/reducer.ts:612", "./runtime/kernel/reducer.ts#reviewRound"]) {
+				const verdict = reworkFor(inDelta, [blocking("new-1", [entry], { kind: "acceptance", ref: "A1" })]);
+				expect(parseAssuranceVerdict(verdict, inDelta).findings).toHaveLength(1);
+			}
+		});
+
+		test("a security_boundary finding is admitted outside the delta", () => {
+			const verdict = reworkFor(inDelta, [blocking("sec-1", ["runtime/kernel/other.ts"], { kind: "security_boundary", ref: "authority" })]);
+			expect(parseAssuranceVerdict(verdict, inDelta).findings).toHaveLength(1);
+		});
+
+		test("one out-of-delta finding rejects the whole verdict even beside an admitted one", () => {
+			const verdict = reworkFor(inDelta, [
+				blocking("new-1", ["runtime/kernel/reducer.ts"], { kind: "acceptance", ref: "A1" }),
+				blocking("old-1", ["runtime/kernel/other.ts"], { kind: "acceptance", ref: "A1" }),
+			]);
+			expect(() => parseAssuranceVerdict(verdict, inDelta)).toThrow(/review-[0-9a-f]+-2-old-1/);
+		});
+
+		test("rounds without a delta and a skipped delta never block on the missing fact", () => {
+			const outside = [blocking("old-1", ["runtime/kernel/other.ts"], { kind: "acceptance", ref: "A1" })];
+			const round2 = deltaSnapshot(undefined);
+			expect(parseAssuranceVerdict(reworkFor(round2, outside), round2).findings).toHaveLength(1);
+			for (const skipped of ["prior_review_revision_absent", "prior_review_revision_unresolvable"] as const) {
+				const s = deltaSnapshot({ round: 3, skipped });
+				expect(parseAssuranceVerdict(reworkFor(s, outside), s).findings).toHaveLength(1);
+			}
+		});
+	});
 	describe("review rework carries only blocking findings", () => {
 		const evidence = {
 			trigger: "a caller ignores the frozen tree → the stale bytes are approved",

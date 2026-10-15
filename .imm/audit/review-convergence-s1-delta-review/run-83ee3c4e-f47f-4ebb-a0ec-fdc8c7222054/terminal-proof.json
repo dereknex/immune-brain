@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "review-convergence-s1-delta-review",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:review-convergence-s1-delta-review:2026-10-15T05:34:11.913Z",
+  "final_record_hash": "sha256:8683ffe75679b7776631e5f5fe9fbafa8ef02b279bc05906ca7db857376b2fa1",
+  "terminalized_at": "2026-10-15T05:34:11.913Z"
+}

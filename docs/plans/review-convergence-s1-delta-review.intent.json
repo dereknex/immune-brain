@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "review-convergence-s1-delta-review",
-  "owner": "user",
   "goal": "From the third Review round, admit a new blocking finding only when it touches the latest rework delta or crosses a security, data-loss, or authority boundary, using a durably persisted per-round review revision.",
   "acceptance": [
     {
@@ -13,10 +12,13 @@
   "scope_hint": [
     "docs/plans/review-convergence-s1-delta-review.intent.json",
     "docs/specs/review-convergence.spec.md",
+    "plugins/immune-brain/agents/immune-brain-reviewer.md",
     "plugins/immune-brain/dist/claude/mcp-server.mjs",
     "plugins/immune-brain/dist/role-prompts/code-review.md",
     "plugins/immune-brain/runtime/assurance/coordinator.ts",
     "plugins/immune-brain/runtime/assurance/review_evidence.ts",
+    "plugins/immune-brain/runtime/assurance/verdict_authority.ts",
+    "plugins/immune-brain/runtime/kernel/canary_application.ts",
     "plugins/immune-brain/runtime/kernel/reducer.ts",
     "plugins/immune-brain/runtime/kernel/types.ts",
     "plugins/immune-brain/runtime/kernel/validation.ts",
@@ -26,5 +28,6 @@
     "tests/kernel-canary-rework-authority.test.ts"
   ],
   "risk": "critical",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

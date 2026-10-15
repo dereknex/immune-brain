@@ -10,6 +10,7 @@ import {
 	REDUCED_MUTATION_BRAND,
 	type AuthorityAuditDescriptor,
 	type ReducedTaskMutation,
+	type ReviewRevisionIdentityV1,
 	type TaskAction,
 	type TaskFinding,
 	type TaskIntentRefV3,
@@ -138,6 +139,7 @@ function appendHistory(
 	from: string,
 	detail: string | null,
 	audit: AuthorityAuditDescriptor | null,
+	reviewRevision?: ReviewRevisionIdentityV1,
 ): void {
 	if (record.history.some((entry) => entry.id === action.event_id))
 		throw new KernelInvariantError([
@@ -151,6 +153,7 @@ function appendHistory(
 		to_state: string;
 		reason: string;
 		authority?: AuthorityAuditDescriptor;
+		review_revision?: ReviewRevisionIdentityV1;
 	} = {
 		id: action.event_id,
 		at: action.at,
@@ -166,6 +169,7 @@ function appendHistory(
 		),
 	};
 	if (audit) entry.authority = { ...audit };
+	if (reviewRevision) entry.review_revision = { ...reviewRevision };
 	record.history.push(entry as (typeof record.history)[number]);
 }
 
@@ -568,6 +572,23 @@ export function reduceTask(
 					"request_rework requires review, qa, or user authority",
 				]);
 			const round = reviewRound(record);
+			// The reviewed revision is audit data for the next round's delta, not
+			// authority: it is legal only on Review rework and, on a v4 record, must
+			// name the Enrollment base exactly as an approval does. Its absence is a
+			// legacy record and never blocks.
+			if (action.review_revision) {
+				if (authorityAudit.authority_kind !== "review")
+					throw new KernelInvariantError([
+						`${authorityAudit.authority_kind} rework cannot carry a review revision`,
+					]);
+				if (
+					record.contract === "assurance_kernel/task_record/v4" &&
+					action.review_revision.base_head !== record.git_base_head
+				)
+					throw new KernelInvariantError([
+						"review_revision.base_head must equal the Enrollment git_base_head",
+					]);
+			}
 			// An anchor is authority: it decides whether this claim inherits an
 			// existing refutation. The Kernel recomputes it from the finding's own
 			// evidence, so a caller cannot bind one claim's identity to another
@@ -698,7 +719,14 @@ export function reduceTask(
 					]);
 				record.findings.push(boundary);
 			}
-			appendHistory(record, action, from, `review_round_${round}`, authorityAudit);
+			appendHistory(
+				record,
+				action,
+				from,
+				`review_round_${round}`,
+				authorityAudit,
+				action.review_revision,
+			);
 			break;
 		}
 		case "authorize_rework": {

@@ -277,7 +277,7 @@ function parseHistoryV3(
 ): TaskHistoryEntryV3 {
 	const path = `record.history[${index}]`;
 	const item = objectAt(value, path, violations);
-	rejectUnknown(item, ["id", "at", "type", "from_state", "to_state", "reason", "authority"], path, violations);
+	rejectUnknown(item, ["id", "at", "type", "from_state", "to_state", "reason", "authority", "review_revision"], path, violations);
 	let authority: AuthorityAuditDescriptor | undefined;
 	if (item.authority !== undefined) {
 		const auth = objectAt(item.authority, `${path}.authority`, violations);
@@ -292,6 +292,11 @@ function parseHistoryV3(
 				: {}),
 		};
 	}
+	const reviewRevision = item.review_revision === undefined
+		? undefined
+		: parseReviewRevisionIdentity(item.review_revision, `${path}.review_revision`, violations);
+	if (reviewRevision && authority?.authority_kind !== "review")
+		violations.push(`${path}.review_revision is only valid on review-authored history`);
 	return {
 		id: stringAt(item.id, `${path}.id`, violations),
 		at: stringAt(item.at, `${path}.at`, violations),
@@ -300,6 +305,7 @@ function parseHistoryV3(
 		to_state: stringAt(item.to_state, `${path}.to_state`, violations),
 		reason: stringAt(item.reason, `${path}.reason`, violations),
 		...(authority ? { authority } : {}),
+		...(reviewRevision ? { review_revision: reviewRevision } : {}),
 	};
 }
 
@@ -858,7 +864,7 @@ export function parseTaskAction(raw: unknown): TaskAction {
 		case "request_rework": {
 			rejectUnknown(
 				value,
-				[...ACTION_BASE_FIELDS, "findings"],
+				[...ACTION_BASE_FIELDS, "findings", "review_revision"],
 				"action",
 				violations,
 			);
@@ -869,7 +875,15 @@ export function parseTaskAction(raw: unknown): TaskAction {
 			).map((item, index) => parseFinding(item, index, violations));
 			if (findings.length === 0)
 				violations.push("action.findings must contain at least one finding");
-			action = { ...base, type: "request_rework", findings };
+			const reviewRevision = value.review_revision === undefined
+				? undefined
+				: parseReviewRevisionIdentity(value.review_revision, "action.review_revision", violations);
+			action = {
+				...base,
+				type: "request_rework",
+				findings,
+				...(reviewRevision ? { review_revision: reviewRevision } : {}),
+			};
 			break;
 		}
 		case "stop": {

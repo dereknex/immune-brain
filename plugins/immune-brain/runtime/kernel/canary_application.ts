@@ -41,6 +41,7 @@ import {
 } from "./storage";
 import { KernelInvariantError } from "./validation";
 import type {
+	ReviewRevisionIdentityV1,
 	StoredTaskMutationV3,
 	TaskAction,
 	TaskApprovalV2,
@@ -54,7 +55,14 @@ export type CanaryOperation =
 	| { op: "record_finding"; finding: Omit<TaskFinding, "status" | "source" | "review_round">; actor_id: string }
 	| { op: "resolve_finding"; finding_id: string; actor_id: string }
 	| { op: "refute_finding"; finding_id: string; attestation_id: string; actor_id: string }
-	| { op: "request_rework"; capability: object; findings: TaskFinding[]; actor_id: string }
+	| {
+			op: "request_rework";
+			capability: object;
+			findings: TaskFinding[];
+			actor_id: string;
+			/** Review-authored rework: the immutable revision Review analyzed. */
+			review_revision?: ReviewRevisionIdentityV1;
+	  }
 	| { op: "record_approval"; capability: object; approval: TaskApprovalV2; actor_id: string }
 	| { op: "revise_intent"; next_intent: TaskIntentV1; actor_id: string }
 	| { op: "approve_breaking_intent_revision"; capability: object; next_intent: TaskIntentV1; actor_id: string }
@@ -116,6 +124,17 @@ export function beginDrainCapabilityAction(taskId: string, at: string): TaskActi
  * capability minted against this action's digest always validates.
  * "begin-drain" delegates to the canonical begin_drain action.
  */
+/** Fixed key order so the minted digest equals the parsed action's digest. */
+function canonicalReviewRevision(revision: ReviewRevisionIdentityV1): ReviewRevisionIdentityV1 {
+	return {
+		contract: revision.contract,
+		base_head: revision.base_head,
+		review_commit: revision.review_commit,
+		review_tree: revision.review_tree,
+		manifest_digest: revision.manifest_digest,
+	};
+}
+
 export function capabilityActionFor(input: {
 	op: string;
 	task_id: string;
@@ -128,6 +147,7 @@ export function capabilityActionFor(input: {
 	next_intent_ref?: unknown;
 	finding_id?: string;
 	resolution?: unknown;
+	review_revision?: ReviewRevisionIdentityV1;
 }): TaskAction {
 	if (input.op === "begin-drain") {
 		return beginDrainCapabilityAction(input.task_id, input.at);
@@ -148,7 +168,11 @@ export function capabilityActionFor(input: {
 		case "record_approval":
 			return { ...base, approval: input.approval } as TaskAction;
 		case "request_rework":
-			return { ...base, findings: input.findings } as TaskAction;
+			return {
+				...base,
+				findings: input.findings,
+				...(input.review_revision ? { review_revision: canonicalReviewRevision(input.review_revision) } : {}),
+			} as TaskAction;
 		case "authorize_rework":
 			return { ...base, type: "authorize_rework" } as TaskAction;
 		case "stop":
@@ -376,7 +400,14 @@ export function createCanaryApplication(
 				break;
 			case "request_rework":
 				capability = operation.capability;
-				action = { ...base, type: "request_rework", findings: operation.findings };
+				action = {
+					...base,
+					type: "request_rework",
+					findings: operation.findings,
+					...(operation.review_revision
+						? { review_revision: canonicalReviewRevision(operation.review_revision) }
+						: {}),
+				};
 				break;
 			case "record_approval":
 				capability = operation.capability;

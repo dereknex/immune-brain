@@ -1717,7 +1717,7 @@ function parseFinding(value, index, violations) {
 function parseHistoryV3(value, index, violations) {
   const path = `record.history[${index}]`;
   const item = objectAt2(value, path, violations);
-  rejectUnknown2(item, ["id", "at", "type", "from_state", "to_state", "reason", "authority"], path, violations);
+  rejectUnknown2(item, ["id", "at", "type", "from_state", "to_state", "reason", "authority", "review_revision"], path, violations);
   let authority;
   if (item.authority !== undefined) {
     const auth = objectAt2(item.authority, `${path}.authority`, violations);
@@ -1730,6 +1730,9 @@ function parseHistoryV3(value, index, violations) {
       ...auth.expires_at !== undefined ? { expires_at: stringAt(auth.expires_at, `${path}.authority.expires_at`, violations) } : {}
     };
   }
+  const reviewRevision = item.review_revision === undefined ? undefined : parseReviewRevisionIdentity(item.review_revision, `${path}.review_revision`, violations);
+  if (reviewRevision && authority?.authority_kind !== "review")
+    violations.push(`${path}.review_revision is only valid on review-authored history`);
   return {
     id: stringAt(item.id, `${path}.id`, violations),
     at: stringAt(item.at, `${path}.at`, violations),
@@ -1737,7 +1740,8 @@ function parseHistoryV3(value, index, violations) {
     from_state: stringAt(item.from_state, `${path}.from_state`, violations),
     to_state: stringAt(item.to_state, `${path}.to_state`, violations),
     reason: stringAt(item.reason, `${path}.reason`, violations),
-    ...authority ? { authority } : {}
+    ...authority ? { authority } : {},
+    ...reviewRevision ? { review_revision: reviewRevision } : {}
   };
 }
 function parseApprovalV2(value, index, violations, allowReviewRevision = false) {
@@ -2120,11 +2124,17 @@ function parseTaskAction(raw) {
       break;
     }
     case "request_rework": {
-      rejectUnknown2(value, [...ACTION_BASE_FIELDS, "findings"], "action", violations);
+      rejectUnknown2(value, [...ACTION_BASE_FIELDS, "findings", "review_revision"], "action", violations);
       const findings = arrayAt(value.findings, "action.findings", violations).map((item, index) => parseFinding(item, index, violations));
       if (findings.length === 0)
         violations.push("action.findings must contain at least one finding");
-      action = { ...base, type: "request_rework", findings };
+      const reviewRevision = value.review_revision === undefined ? undefined : parseReviewRevisionIdentity(value.review_revision, "action.review_revision", violations);
+      action = {
+        ...base,
+        type: "request_rework",
+        findings,
+        ...reviewRevision ? { review_revision: reviewRevision } : {}
+      };
       break;
     }
     case "stop": {
@@ -2547,7 +2557,7 @@ function copyRecord(record) {
 function reviewRound(record) {
   return Math.max(0, ...record.findings.filter((item) => item.source === "review").map((item) => item.review_round ?? 0)) + 1;
 }
-function appendHistory(record, action, from, detail, audit) {
+function appendHistory(record, action, from, detail, audit, reviewRevision) {
   if (record.history.some((entry) => entry.id === action.event_id))
     throw new KernelInvariantError([
       `history contains duplicate id ${action.event_id}`
@@ -2562,6 +2572,8 @@ function appendHistory(record, action, from, detail, audit) {
   };
   if (audit)
     entry.authority = { ...audit };
+  if (reviewRevision)
+    entry.review_revision = { ...reviewRevision };
   record.history.push(entry);
 }
 function intentRefMatches(intent, ref) {
@@ -2844,6 +2856,16 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths, f
           "request_rework requires review, qa, or user authority"
         ]);
       const round = reviewRound(record);
+      if (action.review_revision) {
+        if (authorityAudit.authority_kind !== "review")
+          throw new KernelInvariantError([
+            `${authorityAudit.authority_kind} rework cannot carry a review revision`
+          ]);
+        if (record.contract === "assurance_kernel/task_record/v4" && action.review_revision.base_head !== record.git_base_head)
+          throw new KernelInvariantError([
+            "review_revision.base_head must equal the Enrollment git_base_head"
+          ]);
+      }
       for (const finding of action.findings) {
         const anchor = finding.anchor ?? null;
         const evidence = finding.evidence ?? null;
@@ -2910,7 +2932,7 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths, f
           ]);
         record.findings.push(boundary);
       }
-      appendHistory(record, action, from, `review_round_${round}`, authorityAudit);
+      appendHistory(record, action, from, `review_round_${round}`, authorityAudit, action.review_revision);
       break;
     }
     case "authorize_rework": {
@@ -7329,6 +7351,15 @@ function beginDrainCapabilityAction(taskId, at) {
     reason: "begin_drain"
   };
 }
+function canonicalReviewRevision(revision) {
+  return {
+    contract: revision.contract,
+    base_head: revision.base_head,
+    review_commit: revision.review_commit,
+    review_tree: revision.review_tree,
+    manifest_digest: revision.manifest_digest
+  };
+}
 function capabilityActionFor(input) {
   if (input.op === "begin-drain") {
     return beginDrainCapabilityAction(input.task_id, input.at);
@@ -7346,7 +7377,11 @@ function capabilityActionFor(input) {
     case "record_approval":
       return { ...base, approval: input.approval };
     case "request_rework":
-      return { ...base, findings: input.findings };
+      return {
+        ...base,
+        findings: input.findings,
+        ...input.review_revision ? { review_revision: canonicalReviewRevision(input.review_revision) } : {}
+      };
     case "authorize_rework":
       return { ...base, type: "authorize_rework" };
     case "stop":
@@ -7524,7 +7559,12 @@ function createCanaryApplication(registry) {
         break;
       case "request_rework":
         capability = operation.capability;
-        action = { ...base, type: "request_rework", findings: operation.findings };
+        action = {
+          ...base,
+          type: "request_rework",
+          findings: operation.findings,
+          ...operation.review_revision ? { review_revision: canonicalReviewRevision(operation.review_revision) } : {}
+        };
         break;
       case "record_approval":
         capability = operation.capability;
@@ -7906,6 +7946,31 @@ function captureReviewBundle(root, scopeHint, expectedDiffHash, outcomes) {
   }
   return { ...unsigned, bundle_digest: bundleDigest(unsigned) };
 }
+function reviewDeltaFields(root, delta, currentTree) {
+  if (!delta || delta.round < REVIEW_DELTA_FROM_ROUND)
+    return {};
+  if (!delta.prior)
+    return { delta_skipped: "prior_review_revision_absent" };
+  try {
+    gitEvidence(root, ["cat-file", "-e", `${delta.prior.review_commit}^{commit}`]);
+    gitEvidence(root, ["cat-file", "-e", `${delta.prior.review_tree}^{tree}`]);
+    const names = gitEvidenceBytes(root, [
+      "diff-tree",
+      "-r",
+      "--name-only",
+      "--no-renames",
+      "-z",
+      delta.prior.review_tree,
+      currentTree
+    ]).toString("utf8");
+    return {
+      prior_review_commit: delta.prior.review_commit,
+      delta_paths: names.split("\x00").filter(Boolean).sort()
+    };
+  } catch {
+    return { delta_skipped: "prior_review_revision_unresolvable" };
+  }
+}
 function manifestDigest(manifest) {
   return `sha256:${createHash12("sha256").update(JSON.stringify(manifest)).digest("hex")}`;
 }
@@ -8065,7 +8130,8 @@ function captureReviewManifest(root, input) {
     workspace_revision: input.workspaceRevision,
     lifecycle: input.lifecycle,
     artifact_state: input.artifactState,
-    risk: input.risk
+    risk: input.risk,
+    ...reviewDeltaFields(root, input.delta, revision.review_tree)
   };
   const manifest = { ...unsigned, manifest_digest: manifestDigest(unsigned) };
   if (Buffer.byteLength(JSON.stringify(manifest)) > MAX_REVIEW_BUNDLE_BYTES)
@@ -8103,7 +8169,7 @@ function assertReviewArtifact(path) {
   if (read.trim().length === 0)
     throw new Error(`review evidence artifact is empty: ${path}`);
 }
-var MAX_REVIEW_BUNDLE_BYTES, reviewUtf8, GIT_OBJECT_ID4, REVIEW_MODES, GIT_COMMIT_ID2, REVIEW_TASK_ID, REVISION_DIFF_HASH, REVIEW_REF_NAMESPACE = "refs/immune-brain/reviews", SNAPSHOT_IDENTITY;
+var MAX_REVIEW_BUNDLE_BYTES, reviewUtf8, GIT_OBJECT_ID4, REVIEW_MODES, GIT_COMMIT_ID2, REVIEW_TASK_ID, REVISION_DIFF_HASH, REVIEW_REF_NAMESPACE = "refs/immune-brain/reviews", SNAPSHOT_IDENTITY, REVIEW_DELTA_FROM_ROUND = 3;
 var init_review_evidence = __esm(() => {
   init_workspace_scope();
   init_storage();
@@ -8147,7 +8213,17 @@ function buildSnapshot(input) {
     dirty_files: [...input.dirty_files ?? []].sort(),
     review_bundle_digest: input.review_bundle_digest ?? null,
     ...input.review_revision ? { review_revision: input.review_revision } : {},
+    ...input.review_delta ? { review_delta: input.review_delta } : {},
     root: resolve11(input.root)
+  };
+}
+function reviewDeltaInput(record) {
+  const round = Math.max(0, ...record.findings.filter((item) => item.source === "review").map((item) => item.review_round ?? 0)) + 1;
+  const prior = [...record.history].reverse().find((entry) => entry.type === "request_rework" && entry.reason.split(`
+`)[0] === `review_round_${round - 1}`);
+  return {
+    round,
+    prior: prior?.review_revision ? { review_commit: prior.review_revision.review_commit, review_tree: prior.review_revision.review_tree } : null
   };
 }
 async function ensureReviewRevision(root, taskId, projection) {
@@ -8173,7 +8249,8 @@ async function ensureReviewRevision(root, taskId, projection) {
     lifecycle: projection.projection.lifecycle,
     artifactState: projection.projection.artifact_state,
     risk: record.intent_snapshot.risk,
-    outcomes: qaOutcomes(record)
+    outcomes: qaOutcomes(record),
+    delta: reviewDeltaInput(record)
   });
   return {
     contract: "assurance_kernel/review_revision/v1",
@@ -8220,7 +8297,8 @@ async function buildAssuranceSnapshot(root, taskId, role, projection, readRecord
     lifecycle: projection.projection.lifecycle,
     artifactState: projection.projection.artifact_state,
     risk: intent.risk,
-    outcomes: qaOutcomes(record.record)
+    outcomes: qaOutcomes(record.record),
+    delta: reviewDeltaInput(record.record)
   }) : null;
   const taskSnapshot = !reviewBundle && !reviewManifest ? captureGitTaskSnapshot(root, intent.scope_hint, taskId) : null;
   const dirtyFiles = reviewManifest ? Object.keys(reviewManifest.changed_paths) : reviewBundle ? Object.keys(reviewBundle.dirty_files) : Object.keys(taskSnapshot.staged_files);
@@ -8250,12 +8328,19 @@ async function buildAssuranceSnapshot(root, taskId, role, projection, readRecord
         review_commit: reviewManifest.review_commit,
         review_tree: reviewManifest.review_tree,
         manifest_digest: reviewManifest.manifest_digest
-      } : undefined
+      } : undefined,
+      review_delta: reviewManifest ? reviewDeltaOf(reviewManifest, record.record) : undefined
     }),
     descriptors,
     reviewBundle,
     reviewManifest
   };
+}
+function reviewDeltaOf(manifest, record) {
+  const { round } = reviewDeltaInput(record);
+  if (round < REVIEW_DELTA_FROM_ROUND)
+    return;
+  return manifest.delta_paths ? { round, prior_review_commit: manifest.prior_review_commit, delta_paths: manifest.delta_paths } : { round, skipped: manifest.delta_skipped ?? "prior_review_revision_absent" };
 }
 function qaOutcomes(record) {
   return Object.fromEntries(record.attestations.filter((item) => item.kind === "qa").flatMap((item) => item.acceptance_results).map((result) => [result.acceptance_id, { status: result.status, summary: result.summary }]));
@@ -8312,7 +8397,8 @@ function createVerdictAuthority(options, registry = createMutationAuthorityRegis
       } : undefined;
       const op = verdict.decision === "rework" ? "request_rework" : "record_approval";
       const payload = approval ? { approval } : { findings };
-      const action = capabilityActionFor({ op, task_id: snapshot.task_id, at: now, actor_id: actorId, ...payload });
+      const reworkRevision = verdict.decision === "rework" && snapshot.role === "review" && snapshot.review_revision ? { review_revision: snapshot.review_revision } : {};
+      const action = capabilityActionFor({ op, task_id: snapshot.task_id, at: now, actor_id: actorId, ...payload, ...reworkRevision });
       const capability = registry.issue({
         authority_kind: snapshot.role,
         task_id: snapshot.task_id,
@@ -8331,7 +8417,7 @@ function createVerdictAuthority(options, registry = createMutationAuthorityRegis
       const settlement = (async () => app.execute({
         root: ctx.cwd,
         task_id: snapshot.task_id,
-        operation: approval ? { op: "record_approval", capability, approval, actor_id: actorId } : { op: "request_rework", capability, findings, actor_id: actorId },
+        operation: approval ? { op: "record_approval", capability, approval, actor_id: actorId } : { op: "request_rework", capability, findings, actor_id: actorId, ...reworkRevision },
         prior_intent_token: priorIntentToken,
         now
       }))();
@@ -8744,6 +8830,15 @@ function selfServedScopeLines(added) {
     `Self-served scope additions (added by compatible Intent revisions with no user confirmation; judge each against the goal and its acceptance, not as pre-approved): ${added.join(", ")}`
   ];
 }
+function reviewDeltaLines(delta) {
+  if (!delta)
+    return [];
+  if ("skipped" in delta)
+    return [`Review round ${delta.round}: no rework delta is available (${delta.skipped}); the delta admission rule does not apply to this round.`];
+  return [
+    `Review round ${delta.round}: review only the latest rework delta and its direct interactions. Prior reviewed commit ${delta.prior_review_commit}; delta_paths: ${delta.delta_paths.length ? delta.delta_paths.join(", ") : "(none)"}. A blocking finding must have a caller_chain path in delta_paths or violated.kind "security_boundary"; otherwise it is advisory on a pass verdict.`
+  ];
+}
 function buildReviewSnapshotPrompt(snapshot, evidencePath, options = {}) {
   if (snapshot.role !== "review")
     throw new Error("native review prompt requires review role");
@@ -8768,6 +8863,7 @@ function buildReviewSnapshotPrompt(snapshot, evidencePath, options = {}) {
     `TaskRecord revision: ${snapshot.record_revision}`,
     revision ? `Intent revision ${snapshot.intent_revision} (hash ${snapshot.intent_content_hash}), diff ${snapshot.diff_hash}, review revision ${revision.review_commit} (base ${revision.base_head}, tree ${revision.review_tree}, manifest ${revision.manifest_digest}), state ${snapshot.lifecycle}:${snapshot.artifact_state}.` : `Intent revision ${snapshot.intent_revision} (hash ${snapshot.intent_content_hash}), diff ${snapshot.diff_hash}, review bundle ${snapshot.review_bundle_digest}, state ${snapshot.lifecycle}:${snapshot.artifact_state}.`,
     ...selfServedScopeLines(options.selfServedScopeAdditions),
+    ...reviewDeltaLines(snapshot.review_delta),
     "Acceptance assertions:",
     acceptance,
     `PASS shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>","inspected_paths":["<every changed path of the reviewed change set>"]}}`,
@@ -8910,11 +9006,33 @@ function parseAssuranceVerdict(input, snapshot) {
     throw new Error("rework verdict must omit approval");
   const findings = parseVerdictFindings(raw.findings, snapshot);
   if (snapshot.role === "review") {
+    const outOfDelta = outOfDeltaBlockingFindings(findings, snapshot);
+    if (outOfDelta.length > 0)
+      throw new Error(`review round ${snapshot.review_delta.round} admits a blocking finding only when a caller_chain path is in the rework delta or it is a security_boundary violation; finding(s) ${outOfDelta.map((finding) => finding.id).join(", ")} are outside the delta (${snapshot.review_delta.delta_paths.join(", ") || "no changed paths"}); resubmit each as an advisory finding on a pass verdict, or justify it with violated.kind "security_boundary"`);
     const advisory = findings.filter((finding) => finding.kind === "advisory");
     if (advisory.length > 0 || !findings.some((finding) => finding.kind === "blocking"))
       throw new Error(`review rework verdict must contain only blocking findings and at least one: ${advisory.length > 0 ? `advisory finding(s) ${advisory.map((finding) => finding.id).join(", ")} are not allowed on rework; ` : "it has no blocking finding; "}resubmit decision "pass" with approval.inspected_paths listing every reviewed changed path when nothing blocks, carrying any non-blocking notes as advisory findings`);
   }
   return { contract: "assurance_kernel/assurance_verdict/v2", role: snapshot.role, task_id: snapshot.task_id, snapshot_digest: snapshotDigest(snapshot), decision: "rework", findings };
+}
+function outOfDeltaBlockingFindings(findings, snapshot) {
+  const delta = snapshot.review_delta;
+  if (!delta || !("delta_paths" in delta))
+    return [];
+  const changed = new Set(delta.delta_paths);
+  return findings.filter((finding) => {
+    if (finding.kind !== "blocking")
+      return false;
+    const evidence = finding.evidence;
+    if (!evidence)
+      return false;
+    if (evidence.violated.kind === "security_boundary")
+      return false;
+    return !evidence.caller_chain.some((entry) => changed.has(callerChainPath(entry)));
+  });
+}
+function callerChainPath(entry) {
+  return entry.trim().replace(/^\.\//, "").split(/[:#(\s]/, 1)[0] ?? "";
 }
 function parseVerdictFindings(rawFindings, snapshot) {
   return rawFindings.map((item, index) => {

@@ -1,0 +1,182 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "review-convergence-s1-delta-review",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "review-convergence-s1-delta-review",
+    "goal": "From the third Review round, admit a new blocking finding only when it touches the latest rework delta or crosses a security, data-loss, or authority boundary, using a durably persisted per-round review revision.",
+    "acceptance": [
+      {
+        "id": "RC-S1-A1",
+        "assertion": "Meet S1 in docs/specs/review-convergence.spec.md: a review-authored request_rework persists its ReviewRevisionIdentityV1 on the round history entry as an optional field validated against git_base_head; Review round 3 and later receive prior_review_commit and delta_paths in the manifest; a round>=3 blocking finding with violated.kind other than security_boundary and no caller_chain path in delta_paths is rejected for resubmission, while in-delta or security_boundary findings are admitted; rounds 1-2 and legacy records without a prior revision behave unchanged and never block on the missing fact.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-canary-rework-authority.test.ts\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/review-convergence-s1-delta-review.intent.json",
+      "docs/specs/review-convergence.spec.md",
+      "plugins/immune-brain/agents/immune-brain-reviewer.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/role-prompts/code-review.md",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/assurance/review_evidence.ts",
+      "plugins/immune-brain/runtime/assurance/verdict_authority.ts",
+      "plugins/immune-brain/runtime/kernel/canary_application.ts",
+      "plugins/immune-brain/runtime/kernel/reducer.ts",
+      "plugins/immune-brain/runtime/kernel/types.ts",
+      "plugins/immune-brain/runtime/kernel/validation.ts",
+      "plugins/immune-brain/runtime/prompts/code-review.md",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/host-neutral-assurance-coordinator.test.ts",
+      "tests/kernel-canary-rework-authority.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/review-convergence-s1-delta-review.intent.json",
+    "content_hash": "sha256:35deb682e1eab52f6517b3badd0cf1e85e6b5f3d99d55e8e082d92a7bbdca491"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:17c3ac415a40b56c499bb67d35f7d4f90c306e4e50269276629c3f6a58414b5d",
+  "git_base_head": "be09aed2b33b25884e374b34c8e0c53553f3fb86",
+  "attestations": [
+    {
+      "id": "approval-qa-d7cec1a5",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:35deb682e1eab52f6517b3badd0cf1e85e6b5f3d99d55e8e082d92a7bbdca491",
+      "diff_hash": "sha256:2e3476ce02b5f547c5185ca3798b242bd0ccc11a4ad066d4278c366c677d1134",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:7c403c1cc0007a0beaae43ae649fd32220d27c8f0f06b718d85116113775fb88",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RC-S1-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:7c403c1cc0007a0beaae43ae649fd32220d27c8f0f06b718d85116113775fb88"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-70033efd",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:35deb682e1eab52f6517b3badd0cf1e85e6b5f3d99d55e8e082d92a7bbdca491",
+      "diff_hash": "sha256:2e3476ce02b5f547c5185ca3798b242bd0ccc11a4ad066d4278c366c677d1134",
+      "actor_id": "parent-mediated-review",
+      "summary": "Review rework persists its revision on the round history entry (Review-only, base_head checked against git_base_head, optional so legacy records stay valid); round>=3 manifests carry prior_review_commit/delta_paths with a non-blocking skipped path; out-of-delta non-security blocking findings are rejected for resubmission while in-delta and security_boundary ones are admitted; rounds 1-2 digests unchanged.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "be09aed2b33b25884e374b34c8e0c53553f3fb86",
+        "review_commit": "050cb6f50096520d6933d9561dff0080b94f07d6",
+        "review_tree": "4e26ea8b3d513f45d4aa20f51242ffcc3a97cbdf",
+        "manifest_digest": "sha256:fb0f73ec3e88d816b079ddf302d503a6e230a07ef8f0b18cd1d52b51c85d5797"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-d5c6800868ed-1-review-1",
+          "acceptance_id": "RC-S1-A1",
+          "summary": "A persisted history review_revision is not cross-checked against record.git_base_head when a record is parsed, unlike attestation review_revision; the base_head check exists only in the reducer at write time, and v3 records accept the field without any base check.",
+          "anchor": "sha256:024e4c3b4779816342bb6cd9b996fe776c6d505090e4fdac9f4e0e9fb7a17fcc",
+          "evidence": {
+            "trigger": "A stored v4 record whose request_rework history entry carries review_revision.base_head different from record.git_base_head parses successfully, so reviewDeltaInput would use its review_tree as the prior revision",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/kernel/validation.ts",
+              "plugins/immune-brain/runtime/kernel/reducer.ts",
+              "plugins/immune-brain/runtime/assurance/verdict_authority.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "RC-S1-A1"
+            }
+          }
+        },
+        {
+          "id": "review-d5c6800868ed-2-review-2",
+          "acceptance_id": "RC-S1-A1",
+          "summary": "The glue that derives the round and prior revision from record history (reviewDeltaInput/reviewDeltaOf) and persists snapshot.review_revision on Review rework (reworkRevision in createVerdictAuthority) is not exercised end to end; tests cover captureReviewManifest, the reducer, and parseAssuranceVerdict separately. A regression there would silently degrade to delta_skipped instead of failing.",
+          "anchor": "sha256:2927a49dd4990718b6ae6e22dcfbb1db300e87ce9331527cdd9d2de7583dc209",
+          "evidence": {
+            "trigger": "Review rework submitted through createVerdictAuthority at round 2, then a round 3 dispatch: no test asserts the history entry carries the revision or that the round 3 snapshot receives review_delta with delta_paths",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/assurance/verdict_authority.ts",
+              "plugins/immune-brain/runtime/assurance/coordinator.ts",
+              "tests/host-neutral-assurance-coordinator.test.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "RC-S1-A1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:14cb66f5edf5a7cebb40d62db00c0974bc23124c41af24bc9a1cb775992ddc6f"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:review-convergence-s1-delta-review:2026-10-15T03:29:33.442Z",
+      "at": "2026-10-15T03:29:33.442Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:29edd737eb9de623b54d21a6eabf24444005398a773b7194b59dbc40bd2817cb",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-5c9ddf1dd49cfc48",
+        "issued_at": "2026-10-15T03:30:12.920Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:review-convergence-s1-delta-review:2026-10-15T03:51:14.175Z",
+      "at": "2026-10-15T03:51:14.175Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-convergence-s1-delta-review.intent.json"
+    },
+    {
+      "id": "record_approval:review-convergence-s1-delta-review:2026-10-15T03:51:41.815Z",
+      "at": "2026-10-15T03:51:41.815Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-d7cec1a5\naction_v2_sha256:20a4b1105a7d38cfb839dc09754ea264f6f30242bc301b139f64d739c529e1a7",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-15T03:51:41.815Z"
+      }
+    },
+    {
+      "id": "record_approval:review-convergence-s1-delta-review:2026-10-15T05:34:10.465Z",
+      "at": "2026-10-15T05:34:10.465Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-70033efd\naction_v2_sha256:26dfbc506c9275f57f4ecb6034905e9687b135cd53a4f63a7956fadd7189c7c6",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-15T05:34:10.465Z"
+      }
+    },
+    {
+      "id": "complete:review-convergence-s1-delta-review:2026-10-15T05:34:11.913Z",
+      "at": "2026-10-15T05:34:11.913Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:365acc7812d4363658f89e2af3362e995c3e3e8e263b2d0851f2b8f4a8c10672"
+    }
+  ]
+}
