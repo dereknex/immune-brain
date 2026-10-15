@@ -1697,7 +1697,8 @@ function parseFinding(value, index, violations) {
     "summary",
     "anchor",
     "evidence",
-    "counterevidence"
+    "counterevidence",
+    "replan_cause"
   ], path, violations);
   return {
     id: stringAt(item.id, `${path}.id`, violations),
@@ -1711,7 +1712,8 @@ function parseFinding(value, index, violations) {
     ...item.evidence !== undefined ? { evidence: parseFindingEvidence(item.evidence, `${path}.evidence`, violations) } : {},
     ...item.counterevidence !== undefined ? {
       counterevidence: parseFindingCounterevidence(item.counterevidence, `${path}.counterevidence`, violations)
-    } : {}
+    } : {},
+    ...item.replan_cause !== undefined ? { replan_cause: enumAt(item.replan_cause, REPLAN_CAUSES, `${path}.replan_cause`, violations) } : {}
   };
 }
 function parseHistoryV3(value, index, violations) {
@@ -1883,6 +1885,31 @@ function parseAttestationV3(value, index, acceptanceIds, violations, allowReview
     ...reviewerVerdictSha256 !== undefined ? { reviewer_verdict_sha256: reviewerVerdictSha256 } : {}
   };
 }
+function parseResidualRiskAcceptance(value, path, violations) {
+  const item = objectAt2(value, path, violations);
+  rejectUnknown2(item, ["intent_revision", "intent_content_hash", "diff_hash", "finding_ids", "reason", "actor_id", "accepted_at"], path, violations);
+  const intentContentHash = stringAt(item.intent_content_hash, `${path}.intent_content_hash`, violations);
+  if (!SHA256_HEX.test(intentContentHash))
+    violations.push(`${path}.intent_content_hash must be sha256:<64 hex>`);
+  const diffHash = stringAt(item.diff_hash, `${path}.diff_hash`, violations);
+  if (!SHA256_HEX.test(diffHash))
+    violations.push(`${path}.diff_hash must be sha256:<64 hex>`);
+  const reason = stringAt(item.reason, `${path}.reason`, violations);
+  if (reason.trim() === "")
+    violations.push(`${path}.reason must be non-empty`);
+  const findingIds = arrayAt(item.finding_ids, `${path}.finding_ids`, violations).map((entry, index) => stringAt(entry, `${path}.finding_ids[${index}]`, violations));
+  if (findingIds.length === 0)
+    violations.push(`${path}.finding_ids must name at least one finding`);
+  return {
+    intent_revision: positiveInteger2(item.intent_revision, `${path}.intent_revision`, violations),
+    intent_content_hash: intentContentHash,
+    diff_hash: diffHash,
+    finding_ids: findingIds,
+    reason,
+    actor_id: stringAt(item.actor_id, `${path}.actor_id`, violations),
+    accepted_at: stringAt(item.accepted_at, `${path}.accepted_at`, violations)
+  };
+}
 function parseTaskRecordAtVersion(raw, version) {
   const violations = [];
   const value = objectAt2(raw, "record", violations);
@@ -1897,7 +1924,7 @@ function parseTaskRecordAtVersion(raw, version) {
     "attestations",
     "findings",
     "history",
-    ...version === 4 ? ["git_base_head"] : []
+    ...version === 4 ? ["git_base_head", "review_round_budget_extension", "residual_risk_acceptance"] : []
   ], "record", violations);
   const expectedContract = version === 4 ? TASK_RECORD_CONTRACT_V4 : TASK_RECORD_CONTRACT_V3;
   if (value.contract !== expectedContract)
@@ -1951,6 +1978,26 @@ function parseTaskRecordAtVersion(raw, version) {
   }
   const findings = arrayAt(value.findings, "record.findings", violations).map((item, index) => parseFinding(item, index, violations));
   const history = arrayAt(value.history, "record.history", violations).map((item, index) => parseHistoryV3(item, index, violations));
+  for (const [index, finding] of findings.entries()) {
+    const path = `record.findings[${index}]`;
+    if (finding.replan_cause !== undefined && finding.kind !== "replan_required")
+      violations.push(`${path}.replan_cause is only valid on a replan_required finding`);
+    if (finding.status === "accepted_risk" && (finding.kind !== "blocking" || finding.source !== "review"))
+      violations.push(`${path} accepted_risk requires a blocking Review finding`);
+  }
+  let budgetExtension;
+  if (value.review_round_budget_extension !== undefined) {
+    budgetExtension = positiveInteger2(value.review_round_budget_extension, "record.review_round_budget_extension", violations);
+  }
+  const residualRiskAcceptance = value.residual_risk_acceptance === undefined ? undefined : parseResidualRiskAcceptance(value.residual_risk_acceptance, "record.residual_risk_acceptance", violations);
+  if (findings.some((finding) => finding.status === "accepted_risk") && residualRiskAcceptance === undefined)
+    violations.push("record.residual_risk_acceptance is required while a finding is accepted_risk");
+  if (residualRiskAcceptance) {
+    for (const id of residualRiskAcceptance.finding_ids) {
+      if (!findings.some((finding) => finding.id === id && finding.status === "accepted_risk"))
+        violations.push(`record.residual_risk_acceptance.finding_ids names ${id}, which is not accepted_risk`);
+    }
+  }
   uniqueIds(attestations, "record.attestations", violations);
   uniqueIds(findings, "record.findings", violations);
   uniqueIds(history, "record.history", violations);
@@ -1990,6 +2037,8 @@ function parseTaskRecordAtVersion(raw, version) {
     artifact_state: artifactState,
     baseline,
     ...version === 4 ? { git_base_head: gitBaseHead } : {},
+    ...version === 4 && budgetExtension !== undefined ? { review_round_budget_extension: budgetExtension } : {},
+    ...version === 4 && residualRiskAcceptance !== undefined ? { residual_risk_acceptance: residualRiskAcceptance } : {},
     attestations,
     findings,
     history
@@ -2117,10 +2166,28 @@ function parseTaskAction(raw) {
       };
       break;
     }
-    case "complete":
-    case "authorize_rework": {
+    case "complete": {
       rejectUnknown2(value, [...ACTION_BASE_FIELDS], "action", violations);
       action = { ...base, type: base.type };
+      break;
+    }
+    case "authorize_rework": {
+      rejectUnknown2(value, [...ACTION_BASE_FIELDS, "rounds"], "action", violations);
+      let rounds;
+      if (value.rounds !== undefined) {
+        rounds = positiveInteger2(value.rounds, "action.rounds", violations);
+        if (rounds > MAX_REWORK_GRANT_ROUNDS)
+          violations.push(`action.rounds must be an integer from 1 to ${MAX_REWORK_GRANT_ROUNDS}`);
+      }
+      action = { ...base, type: "authorize_rework", ...rounds !== undefined ? { rounds } : {} };
+      break;
+    }
+    case "accept_residual_risk": {
+      rejectUnknown2(value, [...ACTION_BASE_FIELDS, "reason"], "action", violations);
+      const reason = stringAt(value.reason, "action.reason", violations);
+      if (reason.trim() === "")
+        violations.push("accept_residual_risk requires a non-empty reason");
+      action = { ...base, type: "accept_residual_risk", reason };
       break;
     }
     case "request_rework": {
@@ -2185,6 +2252,19 @@ function assertTaskRecordUpdateV3(previousRaw, nextRaw, action) {
     if (next.intent_ref.path !== previous.intent_ref.path && action.type !== "request_rework" && action.type !== "authorize_rework" && action.type !== "stop")
       violations.push("only artifact transitions may change intent_ref path");
   }
+  const previousExtension = previous.review_round_budget_extension ?? 0;
+  const expectedExtension = previousExtension + (action.type === "authorize_rework" ? action.rounds ?? 1 : 0);
+  if ((next.review_round_budget_extension ?? 0) !== expectedExtension)
+    violations.push("review_round_budget_extension changes only by an authorize_rework grant");
+  if (action.type === "accept_residual_risk") {
+    const acceptance = next.residual_risk_acceptance;
+    const newlyAccepted = next.findings.filter((item) => item.status === "accepted_risk" && previous.findings.find((prior) => prior.id === item.id)?.status !== "accepted_risk").map((item) => item.id).sort();
+    if (!acceptance)
+      violations.push("accept_residual_risk must record residual_risk_acceptance");
+    else if (acceptance.diff_hash !== action.diff_hash || acceptance.intent_revision !== next.intent_snapshot.revision || acceptance.intent_content_hash !== next.intent_ref.content_hash || acceptance.reason !== action.reason || acceptance.actor_id !== action.actor_id || JSON.stringify([...acceptance.finding_ids].sort()) !== JSON.stringify(newlyAccepted))
+      violations.push("residual_risk_acceptance must bind the accepting action and the findings it accepted");
+  } else if (JSON.stringify(next.residual_risk_acceptance ?? null) !== JSON.stringify(previous.residual_risk_acceptance ?? null))
+    violations.push("residual_risk_acceptance changes only by accept_residual_risk");
   if (next.attestations.length < previous.attestations.length)
     violations.push("attestations are append-only");
   if (next.history.length !== previous.history.length + 1)
@@ -2194,7 +2274,7 @@ function assertTaskRecordUpdateV3(previousRaw, nextRaw, action) {
     if (!current || JSON.stringify(current) !== JSON.stringify(prior))
       violations.push(`attestation ${prior.id} was rewritten`);
   }
-  const resolvingFindingIds = action.type === "resolve_finding" ? [action.finding_id] : action.type === "resolve_user_decision" ? [action.finding_id] : action.type === "authorize_rework" || action.type === "approve_breaking_intent_revision" ? previous.findings.filter((item) => item.kind === "replan_required" && item.status === "open").map((item) => item.id) : [];
+  const resolvingFindingIds = action.type === "resolve_finding" ? [action.finding_id] : action.type === "resolve_user_decision" ? [action.finding_id] : action.type === "authorize_rework" || action.type === "accept_residual_risk" || action.type === "approve_breaking_intent_revision" ? previous.findings.filter((item) => item.kind === "replan_required" && item.status === "open").map((item) => item.id) : [];
   const withoutFields = (finding, fields) => {
     const copy = { ...finding };
     for (const field of fields)
@@ -2205,13 +2285,13 @@ function assertTaskRecordUpdateV3(previousRaw, nextRaw, action) {
     const current = next.findings.find((item) => item.id === prior.id);
     if (!current)
       violations.push(`finding item ${prior.id} was removed`);
-    else if (JSON.stringify(current) !== JSON.stringify(prior) && !(resolvingFindingIds.includes(prior.id) && prior.status !== "resolved" && current.status === "resolved" && (prior.status === "open" || !refutationIsLive(prior, previous.attestations, refutationIdentity(previous, action.diff_hash))) && withoutFields(prior, ["status"]) === withoutFields(current, ["status"])) && !(action.type === "refute_finding" && prior.id === action.finding_id && prior.status !== "resolved" && current.status === "refuted" && (prior.status === "open" || !refutationIsLive(prior, previous.attestations, refutationIdentity(previous, action.diff_hash))) && current.counterevidence?.attestation_id === action.attestation_id && current.counterevidence?.acceptance_id === prior.acceptance_id && isFreshPassingQaAttestation(previous.attestations.find((item) => item.id === action.attestation_id), current.counterevidence?.acceptance_id ?? "", refutationIdentity(previous, action.diff_hash)) && withoutFields(prior, ["status", "counterevidence"]) === withoutFields(current, ["status", "counterevidence"])))
+    else if (JSON.stringify(current) !== JSON.stringify(prior) && !(resolvingFindingIds.includes(prior.id) && prior.status !== "resolved" && current.status === "resolved" && (prior.status === "open" || !refutationIsLive(prior, previous.attestations, refutationIdentity(previous, action.diff_hash))) && withoutFields(prior, ["status"]) === withoutFields(current, ["status"])) && !(action.type === "accept_residual_risk" && prior.kind === "blocking" && prior.source === "review" && prior.status === "open" && current.status === "accepted_risk" && withoutFields(prior, ["status"]) === withoutFields(current, ["status"])) && !(action.type === "refute_finding" && prior.id === action.finding_id && prior.status !== "resolved" && current.status === "refuted" && (prior.status === "open" || !refutationIsLive(prior, previous.attestations, refutationIdentity(previous, action.diff_hash))) && current.counterevidence?.attestation_id === action.attestation_id && current.counterevidence?.acceptance_id === prior.acceptance_id && isFreshPassingQaAttestation(previous.attestations.find((item) => item.id === action.attestation_id), current.counterevidence?.acceptance_id ?? "", refutationIdentity(previous, action.diff_hash)) && withoutFields(prior, ["status", "counterevidence"]) === withoutFields(current, ["status", "counterevidence"])))
       violations.push(`finding item ${prior.id} was rewritten`);
   }
   if (violations.length > 0)
     throw new KernelInvariantError(violations);
 }
-var GIT_OBJECT_ID, KernelValidationError, KernelInvariantError, EVIDENCE_STATUSES, FINDING_KINDS, FINDING_STATUSES, FINDING_SOURCES, APPROVAL_KINDS, APPROVAL_AUTHORITY_ROLES, SHA256_HEX, ACTION_V2_TYPES, ACTION_BASE_FIELDS;
+var GIT_OBJECT_ID, KernelValidationError, KernelInvariantError, EVIDENCE_STATUSES, FINDING_KINDS, FINDING_STATUSES, REPLAN_CAUSES, MAX_REWORK_GRANT_ROUNDS = 5, FINDING_SOURCES, APPROVAL_KINDS, APPROVAL_AUTHORITY_ROLES, SHA256_HEX, ACTION_V2_TYPES, ACTION_BASE_FIELDS;
 var init_validation = __esm(() => {
   init_types();
   init_intent();
@@ -2242,7 +2322,8 @@ var init_validation = __esm(() => {
     "unresolved_user_decision",
     "replan_required"
   ];
-  FINDING_STATUSES = ["open", "resolved", "refuted"];
+  FINDING_STATUSES = ["open", "resolved", "refuted", "accepted_risk"];
+  REPLAN_CAUSES = ["budget_exhausted", "repeated_security_boundary"];
   FINDING_SOURCES = [
     "execution",
     "review",
@@ -2267,6 +2348,7 @@ var init_validation = __esm(() => {
     "complete",
     "stop",
     "authorize_rework",
+    "accept_residual_risk",
     "resolve_user_decision"
   ];
   ACTION_BASE_FIELDS = [
@@ -2401,7 +2483,9 @@ function completionDecision(intent, record, currentDiffHash, currentIntentConten
   const freshAcceptanceSet = new Set(freshAcceptanceIds);
   const missingAcceptanceIds = intent.acceptance.map((item) => item.id).filter((id) => !freshAcceptanceSet.has(id));
   const staleAttestationIds = record.attestations.filter((item) => item.task_revision !== intent.revision || item.intent_content_hash !== currentIntentContentHash || item.diff_hash !== currentDiffHash).map((item) => item.id);
-  const requiredKinds = REQUIRED_ATTESTATIONS[resolveProjectedRisk(intent, changedPaths, floor)];
+  const acceptance = record.residual_risk_acceptance;
+  const residualRiskAccepted = acceptance !== undefined && acceptance.intent_revision === intent.revision && acceptance.intent_content_hash === currentIntentContentHash && acceptance.diff_hash === currentDiffHash && acceptance.finding_ids.every((id) => record.findings.some((item) => item.id === id && item.status === "accepted_risk"));
+  const requiredKinds = REQUIRED_ATTESTATIONS[resolveProjectedRisk(intent, changedPaths, floor)].filter((kind) => !(residualRiskAccepted && kind === "review"));
   const candidates = freshAttestations.filter((item) => requiredKinds.includes(item.kind));
   const missingApprovalKinds = requiredKinds.filter((kind) => !candidates.some((attestation) => attestation.kind === kind));
   const separationFailure = missingApprovalKinds.length === 0 && !hasDistinctAuthorityAssignment(requiredKinds, candidates);
@@ -2582,7 +2666,7 @@ function intentRefMatches(intent, ref) {
   return (ref.path === activePath || ref.path === archivedPath) && ref.content_hash === canonicalIntentHash(intent);
 }
 function hasPrivilegedKind(action) {
-  return action.type === "record_approval" || action.type === "approve_breaking_intent_revision" || action.type === "request_rework" || action.type === "authorize_rework" || action.type === "stop" || action.type === "resolve_user_decision";
+  return action.type === "record_approval" || action.type === "approve_breaking_intent_revision" || action.type === "request_rework" || action.type === "authorize_rework" || action.type === "accept_residual_risk" || action.type === "stop" || action.type === "resolve_user_decision";
 }
 function findingsDigestV2(findings) {
   const normalized = findings.map((finding) => ({
@@ -2594,6 +2678,9 @@ function findingsDigestV2(findings) {
     ...finding.evidence !== undefined ? { evidence: finding.evidence ?? null } : {}
   }));
   return `sha256:${createHash4("sha256").update(stableJson(normalized)).digest("hex")}`;
+}
+function effectiveReviewRoundBudget(record) {
+  return REVIEW_REWORK_ROUND_BUDGET + (record.review_round_budget_extension ?? 0);
 }
 function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths, floor = NO_RISK_FLOOR) {
   const previous = parseTaskRecord(recordRaw);
@@ -2891,7 +2978,7 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths, f
       const disputed = admissions.find(({ finding, inherited }) => finding.kind === "blocking" && inherited === undefined && finding.evidence?.violated.kind === "security_boundary" && priorBlockingReviewFindings.some((prior) => prior.evidence?.violated.kind === "security_boundary" && prior.evidence?.violated.ref === finding.evidence?.violated.ref))?.finding;
       const effectiveBlockingRounds = new Set(priorBlockingReviewFindings.map((finding) => finding.review_round)).size;
       const hasEffectiveBlockingNow = admissions.some(({ finding, inherited }) => finding.kind === "blocking" && inherited === undefined);
-      const parkForReplan = authorityAudit.authority_kind === "review" && (disputed !== undefined || hasEffectiveBlockingNow && effectiveBlockingRounds >= REVIEW_REWORK_ROUND_BUDGET);
+      const parkForReplan = authorityAudit.authority_kind === "review" && (disputed !== undefined || hasEffectiveBlockingNow && effectiveBlockingRounds >= effectiveReviewRoundBudget(record));
       if (!parkForReplan) {
         record.artifact_state = "active";
         record.intent_ref.path = `docs/plans/${record.task_id}.intent.json`;
@@ -2924,7 +3011,8 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths, f
           acceptance_id: disputed?.acceptance_id ?? null,
           source: "kernel",
           review_round: round,
-          summary: disputed !== undefined ? "Review returned the same security boundary twice; a durable replan is required." : `Review exhausted its ${REVIEW_REWORK_ROUND_BUDGET}-round rework budget; a durable replan is required.`
+          replan_cause: disputed !== undefined ? "repeated_security_boundary" : "budget_exhausted",
+          summary: disputed !== undefined ? "Review returned the same security boundary twice; a durable replan is required." : `Review exhausted its ${effectiveReviewRoundBudget(record)}-round rework budget; a durable replan is required.`
         };
         if (findingIds.has(boundary.id))
           throw new KernelInvariantError([
@@ -2951,9 +3039,50 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths, f
         ]);
       for (const finding of open)
         finding.status = "resolved";
+      record.review_round_budget_extension = (record.review_round_budget_extension ?? 0) + (action.rounds ?? 1);
       record.artifact_state = "active";
       record.intent_ref.path = `docs/plans/${record.task_id}.intent.json`;
       appendHistory(record, action, from, open.map((finding) => finding.id).join(","), authorityAudit);
+      break;
+    }
+    case "accept_residual_risk": {
+      if (record.lifecycle !== "active")
+        throw new KernelInvariantError([
+          `cannot accept residual risk while lifecycle is ${record.lifecycle}`
+        ]);
+      if (authorityAudit?.authority_kind !== "user")
+        throw new KernelInvariantError([
+          "accept_residual_risk requires literal-user authority"
+        ]);
+      const boundaries = record.findings.filter((finding) => finding.kind === "replan_required" && finding.status === "open");
+      if (boundaries.length === 0 || boundaries.some((finding) => finding.replan_cause !== "budget_exhausted"))
+        throw new KernelInvariantError([
+          "accept_residual_risk requires an open replan boundary caused by budget exhaustion"
+        ]);
+      if (record.findings.some((finding) => finding.kind === "unresolved_user_decision" && finding.status === "open"))
+        throw new KernelInvariantError([
+          "accept_residual_risk cannot settle a task with an open user decision"
+        ]);
+      const accepted = record.findings.filter((finding) => finding.kind === "blocking" && finding.source === "review" && finding.status === "open");
+      if (accepted.length === 0)
+        throw new KernelInvariantError([
+          "accept_residual_risk requires at least one open blocking Review finding"
+        ]);
+      for (const finding of boundaries)
+        finding.status = "resolved";
+      for (const finding of accepted)
+        finding.status = "accepted_risk";
+      record.residual_risk_acceptance = {
+        intent_revision: record.intent_snapshot.revision,
+        intent_content_hash: record.intent_ref.content_hash,
+        diff_hash: diffHash,
+        finding_ids: accepted.map((finding) => finding.id),
+        reason: action.reason,
+        actor_id: action.actor_id,
+        accepted_at: action.at
+      };
+      appendHistory(record, action, from, `accepted_risk:${accepted.map((finding) => finding.id).join(",")}
+${action.reason}`, authorityAudit);
       break;
     }
     case "complete": {
@@ -5582,6 +5711,50 @@ var init_workspace_scope = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/kernel/assurance_projection.ts
+function parseReworkChoice(exits, content) {
+  if (typeof content !== "object" || content === null || Array.isArray(content))
+    return null;
+  const fields = content;
+  const allowed = new Set(["exit", "rounds", "reason"]);
+  if (Object.keys(fields).some((key) => !allowed.has(key)))
+    return null;
+  if (fields.exit === "replan")
+    return { exit: "replan" };
+  if (fields.exit === "grant_rounds") {
+    const rounds = fields.rounds ?? exits.grant_rounds.min;
+    if (!Number.isInteger(rounds))
+      return null;
+    const value = rounds;
+    if (value < exits.grant_rounds.min || value > exits.grant_rounds.max)
+      return null;
+    return { exit: "grant_rounds", rounds: value };
+  }
+  if (fields.exit === "accept_residual_risk") {
+    if (!exits.accept_residual_risk)
+      return null;
+    const reason = typeof fields.reason === "string" ? fields.reason.trim() : "";
+    return reason ? { exit: "accept_residual_risk", reason } : null;
+  }
+  return null;
+}
+function reworkExitLines(exits) {
+  return [
+    `Exit grant_rounds: grant ${exits.grant_rounds.min}-${exits.grant_rounds.max} more Review round(s)`,
+    ...exits.accept_residual_risk ? ["Exit accept_residual_risk: accept the open Review findings below as residual risk (a reason is required)"] : [],
+    "Exit replan: revise the Intent through approve_breaking_intent_revision",
+    ...exits.findings.length > 0 ? [`Open blocking Review findings (${exits.findings.length}):`, ...exits.findings.map((finding) => `  - ${finding.id}: ${finding.summary}`)] : []
+  ];
+}
+function deriveReworkExits(record) {
+  const boundaries = record.findings.filter((finding) => finding.kind === "replan_required" && finding.status === "open");
+  const findings = record.findings.filter((finding) => finding.kind === "blocking" && finding.source === "review" && finding.status === "open").map((finding) => ({ id: finding.id, summary: finding.summary }));
+  return {
+    grant_rounds: { min: 1, max: MAX_REWORK_GRANT_ROUNDS },
+    accept_residual_risk: boundaries.length > 0 && boundaries.every((finding) => finding.replan_cause === "budget_exhausted") && findings.length > 0,
+    replan: true,
+    findings
+  };
+}
 function deriveAssuranceAuthorization(input) {
   if (input.open_user_decision_count === 1)
     return { state: "resolve_user_decision", blocked: null };
@@ -5591,7 +5764,11 @@ function deriveAssuranceAuthorization(input) {
       blocked: `resolve-user-decision requires exactly one open user decision; found ${input.open_user_decision_count}`
     };
   if (input.next_obligation === "revise_intent")
-    return { state: "authorize_rework", blocked: null };
+    return {
+      state: "authorize_rework",
+      blocked: null,
+      ...input.exits ? { exits: input.exits } : {}
+    };
   return { state: "none", blocked: null };
 }
 function emptyProjection() {
@@ -5697,7 +5874,8 @@ function projectFromRecord(record, recordRevision, workspaceRevision, snapshot, 
     completion_ready: decision.complete,
     authorization: !inspectSpecBinding(intent).ok ? { state: "none", blocked: "invalid Spec binding requires a valid breaking intent revision" } : deriveAssuranceAuthorization({
       next_obligation: decision.next_obligation,
-      open_user_decision_count: openUserDecisionCount
+      open_user_decision_count: openUserDecisionCount,
+      exits: deriveReworkExits(record)
     })
   };
 }
@@ -5813,6 +5991,7 @@ var init_assurance_projection = __esm(() => {
   init_completion();
   init_risk_floor();
   init_spec_binding();
+  init_validation();
   init_workspace_scope();
 });
 
@@ -7230,7 +7409,7 @@ function applyTaskAction(input) {
           "intent token does not match the committed record intent"
         ]);
     }
-    const privileged = action.type === "record_approval" || action.type === "approve_breaking_intent_revision" || action.type === "request_rework" || action.type === "authorize_rework" || action.type === "stop" || action.type === "resolve_user_decision";
+    const privileged = action.type === "record_approval" || action.type === "approve_breaking_intent_revision" || action.type === "request_rework" || action.type === "authorize_rework" || action.type === "accept_residual_risk" || action.type === "stop" || action.type === "resolve_user_decision";
     const expectedAuthority = privileged ? {
       task_id,
       run_id: currentRunId(root, task_id) ?? undefined,
@@ -7383,7 +7562,13 @@ function capabilityActionFor(input) {
         ...input.review_revision ? { review_revision: canonicalReviewRevision(input.review_revision) } : {}
       };
     case "authorize_rework":
-      return { ...base, type: "authorize_rework" };
+      return {
+        ...base,
+        type: "authorize_rework",
+        ...input.rounds !== undefined ? { rounds: input.rounds } : {}
+      };
+    case "accept_residual_risk":
+      return { ...base, type: "accept_residual_risk", reason: input.reason };
     case "stop":
       return { ...base, reason: input.reason };
     case "approve_breaking_intent_revision":
@@ -7602,7 +7787,15 @@ function createCanaryApplication(registry) {
         break;
       case "authorize_rework":
         capability = operation.capability;
-        action = { ...base, type: "authorize_rework" };
+        action = {
+          ...base,
+          type: "authorize_rework",
+          ...operation.rounds !== undefined ? { rounds: operation.rounds } : {}
+        };
+        break;
+      case "accept_residual_risk":
+        capability = operation.capability;
+        action = { ...base, type: "accept_residual_risk", reason: operation.reason };
         break;
       case "resolve_user_decision":
         capability = operation.capability;
@@ -18455,6 +18648,7 @@ async function mintCapability(registry, input) {
     at: input.now,
     actor_id: input.actor_id,
     ...input.reason !== undefined ? { reason: input.reason } : {},
+    ...input.rounds !== undefined ? { rounds: input.rounds } : {},
     ...input.findings !== undefined ? { findings: input.findings } : {},
     ...input.approval !== undefined ? { approval: input.approval } : {},
     ...input.next_intent !== undefined ? { next_intent: input.next_intent } : {},
@@ -18564,6 +18758,7 @@ class ClaudeRuntime {
     const gate = evaluateNativeGate({ operation, interactive, decision: result.decision });
     if (!gate.ok)
       throw gate.error;
+    const { reworkExits: _exits, ...refBinding } = binding;
     return {
       confirmation_ref: confirmationRef({
         connectionId: meta.sessionId,
@@ -18571,8 +18766,9 @@ class ClaudeRuntime {
         requestId: result.requestId,
         operation,
         taskId: meta.taskId,
-        ...binding
-      })
+        ...refBinding
+      }),
+      ...result.reworkChoice ? { reworkChoice: result.reworkChoice } : {}
     };
   }
   async status(taskId, nextScope) {
@@ -18729,6 +18925,8 @@ class ClaudeRuntime {
       throw new Error(`unsupported privileged operation ${operation}`);
     let op = operation;
     let decisionOp;
+    let reworkExits;
+    let reworkChoice;
     const nextIntent = extra.next_intent ? parseProjectTaskIntent(this.cwd, extra.next_intent) : undefined;
     const nextScope = nextIntent?.scope_hint;
     const diffProvider = nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf;
@@ -18748,6 +18946,7 @@ class ClaudeRuntime {
         decisionOp = { finding_id: open[0].id, resolution: `resume after literal-user decision: ${open[0].summary}` };
       } else {
         op = "authorize_rework";
+        reworkExits = projection.projection.authorization.exits;
       }
     }
     const priorIntent = await readTaskIntentForRecord(this.cwd, taskId);
@@ -18790,8 +18989,10 @@ class ClaudeRuntime {
         risk: projection.projection.risk,
         intentRevision: nextIntent?.revision ?? projection.projection.intent_revision,
         intentContentHash: nextIntentHash ?? projection.projection.intent_content_hash,
-        bindingDigest: `${preparedDiffHash}:${nextIntentHash ?? ""}`
+        bindingDigest: `${preparedDiffHash}:${nextIntentHash ?? ""}`,
+        ...reworkExits ? { reworkExits } : {}
       });
+      reworkChoice = gate.reworkChoice;
     } catch (error) {
       if (stagedSnapshot) {
         const current = await readTaskRecordRaw(this.cwd, taskId);
@@ -18800,6 +19001,19 @@ class ClaudeRuntime {
         }
       }
       throw error;
+    }
+    if (reworkExits) {
+      if (!reworkChoice)
+        throw new NativeAuthorityError("interaction_not_opened", "native interaction returned no exit");
+      if (reworkChoice.exit === "replan") {
+        return {
+          state: "replan_selected",
+          task_id: taskId,
+          next: "revise the Intent, then call approve_breaking_intent_revision"
+        };
+      }
+      if (reworkChoice.exit === "accept_residual_risk")
+        op = "accept_residual_risk";
     }
     const { registry, app } = this.authority();
     const confirmation = gate.confirmation_ref;
@@ -18830,7 +19044,9 @@ class ClaudeRuntime {
         confirmation_ref: confirmation,
         ...op === "approve_breaking_intent_revision" ? { next_intent: nextIntent, next_intent_ref: nextIntentRef } : {},
         ...op === "resolve_user_decision" && decisionOp ? decisionOp : {},
-        ...op === "stop" ? { reason: stopReason(extra.reason) } : {}
+        ...op === "stop" ? { reason: stopReason(extra.reason) } : {},
+        ...op === "authorize_rework" && reworkChoice?.exit === "grant_rounds" ? { rounds: reworkChoice.rounds } : {},
+        ...op === "accept_residual_risk" && reworkChoice?.exit === "accept_residual_risk" ? { reason: reworkChoice.reason } : {}
       });
       throwIfCancelled(meta.signal);
       const result = app.execute({
@@ -18842,14 +19058,16 @@ class ClaudeRuntime {
           actor_id: canonicalActorId(actorId),
           ...op === "approve_breaking_intent_revision" ? { next_intent: nextIntent, next_intent_ref: nextIntentRef } : {},
           ...op === "resolve_user_decision" && decisionOp ? decisionOp : {},
-          ...op === "stop" ? { reason: stopReason(extra.reason) } : {}
+          ...op === "stop" ? { reason: stopReason(extra.reason) } : {},
+          ...op === "authorize_rework" && reworkChoice?.exit === "grant_rounds" ? { rounds: reworkChoice.rounds } : {},
+          ...op === "accept_residual_risk" && reworkChoice?.exit === "accept_residual_risk" ? { reason: reworkChoice.reason } : {}
         },
         prior_intent_token: priorIntent.token,
         diffProvider,
         now
       });
       committed = result;
-      if (op === "stop" || op === "authorize_rework" || op === "approve_breaking_intent_revision")
+      if (op === "stop" || op === "authorize_rework" || op === "accept_residual_risk" || op === "approve_breaking_intent_revision")
         stagePlanningArtifactTransition(this.cwd, result.record);
     } catch (error) {
       if (stagedSnapshot) {
@@ -19253,6 +19471,7 @@ class ClaudeRuntime {
 
 // plugins/immune-brain/runtime/claude/mcp_server.ts
 init_batch_final_verification();
+init_assurance_projection();
 var MCP_PROTOCOL_VERSION = "2025-06-18";
 var TOOLS = [
   { name: "status", description: "Read the Kernel Assurance Projection for an exact task.", privileged: false },
@@ -19737,6 +19956,42 @@ ${details.join(`
       } : { type: "object", properties: {} }
     };
   }
+  if (input.reworkExits) {
+    const exits = input.reworkExits;
+    const exitValues = [
+      "grant_rounds",
+      ...exits.accept_residual_risk ? ["accept_residual_risk"] : [],
+      "replan"
+    ];
+    return {
+      mode: "form",
+      message: `Choose how to resolve this replan boundary for ${input.taskId}.
+
+${[
+        `Operation: ${input.operation}`,
+        `Task: ${input.taskId}`,
+        input.risk ? `Risk: ${input.risk}` : null,
+        input.bindingDigest ? `Binding digest: ${input.bindingDigest}` : null,
+        ...reworkExitLines(exits)
+      ].filter(Boolean).join(`
+`)}`,
+      requestedSchema: {
+        type: "object",
+        properties: {
+          exit: { type: "string", title: "Exit", enum: exitValues, default: "grant_rounds" },
+          rounds: {
+            type: "integer",
+            title: "Further Review rounds (grant_rounds)",
+            minimum: exits.grant_rounds.min,
+            maximum: exits.grant_rounds.max,
+            default: exits.grant_rounds.min
+          },
+          ...exits.accept_residual_risk ? { reason: { type: "string", title: "Reason for accepting residual risk (accept_residual_risk)" } } : {}
+        },
+        required: ["exit"]
+      }
+    };
+  }
   const details = [
     `Operation: ${input.operation}`,
     `Task: ${input.taskId}`,
@@ -19808,7 +20063,14 @@ async function serveStdio(options = {}) {
         throw new NativeAuthorityError("correlation_missing", "MCP elicitation returned an invalid action");
       }
       let delegateRevisions = false;
-      if (action === "accept") {
+      let reworkChoice;
+      if (action === "accept" && input.reworkExits) {
+        const parsed = parseReworkChoice(input.reworkExits, result.content);
+        if (!parsed) {
+          throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the requested exit schema");
+        }
+        reworkChoice = parsed;
+      } else if (action === "accept") {
         const content = result.content;
         const offered = input.operation === "start_unattended_batch" && input.batchDetails?.lane_mode?.offer_revision_delegation === true;
         const keys = typeof content === "object" && content !== null && !Array.isArray(content) ? Object.keys(content) : null;
@@ -19818,7 +20080,12 @@ async function serveStdio(options = {}) {
         }
         delegateRevisions = offered && content.delegate_in_lane_revisions === true;
       }
-      return { decision: action, requestId, ...delegateRevisions ? { delegateRevisions: true } : {} };
+      return {
+        decision: action,
+        requestId,
+        ...delegateRevisions ? { delegateRevisions: true } : {},
+        ...reworkChoice ? { reworkChoice } : {}
+      };
     } finally {
       pending.delete(requestId);
       if (abortListener)

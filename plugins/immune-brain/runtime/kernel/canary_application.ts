@@ -68,7 +68,8 @@ export type CanaryOperation =
 	| { op: "approve_breaking_intent_revision"; capability: object; next_intent: TaskIntentV1; actor_id: string }
 	| { op: "complete"; actor_id: string }
 	| { op: "stop"; capability: object; reason: string; actor_id: string }
-	| { op: "authorize_rework"; capability: object; actor_id: string }
+	| { op: "authorize_rework"; capability: object; actor_id: string; rounds?: number }
+	| { op: "accept_residual_risk"; capability: object; reason: string; actor_id: string }
 	| { op: "resolve_user_decision"; capability: object; finding_id: string; resolution: string; actor_id: string };
 
 export interface CanaryExecuteInput {
@@ -148,6 +149,8 @@ export function capabilityActionFor(input: {
 	finding_id?: string;
 	resolution?: unknown;
 	review_revision?: ReviewRevisionIdentityV1;
+	/** authorize_rework only: further Review rounds granted, 1-5. */
+	rounds?: number;
 }): TaskAction {
 	if (input.op === "begin-drain") {
 		return beginDrainCapabilityAction(input.task_id, input.at);
@@ -174,7 +177,15 @@ export function capabilityActionFor(input: {
 				...(input.review_revision ? { review_revision: canonicalReviewRevision(input.review_revision) } : {}),
 			} as TaskAction;
 		case "authorize_rework":
-			return { ...base, type: "authorize_rework" } as TaskAction;
+			// `rounds` joins the digest only when present, so a legacy caller
+			// keeps the exact digest it always minted.
+			return {
+				...base,
+				type: "authorize_rework",
+				...(input.rounds !== undefined ? { rounds: input.rounds } : {}),
+			} as TaskAction;
+		case "accept_residual_risk":
+			return { ...base, type: "accept_residual_risk", reason: input.reason } as TaskAction;
 		case "stop":
 			return { ...base, reason: input.reason } as TaskAction;
 		case "approve_breaking_intent_revision":
@@ -445,7 +456,15 @@ export function createCanaryApplication(
 				break;
 			case "authorize_rework":
 				capability = operation.capability;
-				action = { ...base, type: "authorize_rework" };
+				action = {
+					...base,
+					type: "authorize_rework",
+					...(operation.rounds !== undefined ? { rounds: operation.rounds } : {}),
+				};
+				break;
+			case "accept_residual_risk":
+				capability = operation.capability;
+				action = { ...base, type: "accept_residual_risk", reason: operation.reason };
 				break;
 			case "resolve_user_decision":
 				capability = operation.capability;

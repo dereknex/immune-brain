@@ -902,7 +902,11 @@ describe("claude host authority", () => {
 			env: ENV,
 			interactive: true,
 			permissionMode: "manual",
-			requestConfirmation: async ({ operation }) => ({ decision: "accept", requestId: `nested-${operation}` }),
+			requestConfirmation: async ({ operation }) => ({
+				decision: "accept",
+				requestId: `nested-${operation}`,
+				reworkChoice: { exit: "grant_rounds", rounds: 2 },
+			}),
 		});
 		const meta = (toolCallId: string): ToolMeta => ({ taskId, sessionId: "s", toolCallId, requiresUserInteraction: true, interactive: true, permissionMode: "manual" });
 		await runtime.enroll(taskId, meta("enroll"));
@@ -963,6 +967,146 @@ describe("claude host authority", () => {
 		const finding = (result.record as { findings: Array<{ kind: string; status: string }>; lifecycle: string }).findings.find((item) => item.kind === "replan_required");
 		expect(result.record.lifecycle).toBe("active");
 		expect(finding?.status).toBe("resolved");
+		expect(readTaskRecordRaw(fixture.root, taskId).record?.review_round_budget_extension).toBe(2);
+	});
+
+	/** Enroll and park a task on a real replan boundary, then ask for authorization. */
+	async function parkedForReplan(
+		taskId: string,
+		cause: "security" | "budget",
+		confirm: (input: { reworkExits?: unknown; operation: string }) => Record<string, unknown>,
+	) {
+		const fixture = authorityFixtureRoot(taskId);
+		const offered: unknown[] = [];
+		const runtime = new ClaudeRuntime({
+			cwd: fixture.root,
+			env: ENV,
+			interactive: true,
+			permissionMode: "manual",
+			requestConfirmation: async (input) => {
+				offered.push((input as { reworkExits?: unknown }).reworkExits);
+				return { decision: "accept", requestId: `nested-${input.operation}`, ...confirm(input as never) } as never;
+			},
+		});
+		const meta = (toolCallId: string): ToolMeta => ({ taskId, sessionId: "s", toolCallId, requiresUserInteraction: true, interactive: true, permissionMode: "manual" });
+		await runtime.enroll(taskId, meta("enroll"));
+		// Enrollment goes through the same confirmation port; only the rework gate is under test.
+		offered.length = 0;
+		const registry = createMutationAuthorityRegistry();
+		const app = createCanaryApplication(registry);
+		const rounds = cause === "security" ? 2 : 6;
+		for (let round = 1; round <= rounds; round += 1) {
+			const at = `2098-09-07T00:${String(round).padStart(2, "0")}:00.000Z`;
+			const prior = await readTaskIntent(fixture.root, taskId, readTaskRecordRaw(fixture.root, taskId).record!.intent_ref.path);
+			const diffProvider = (root: string, record: unknown) => diffHashOf(root, record as never);
+			await app.execute({
+				root: fixture.root,
+				task_id: taskId,
+				operation: { op: "freeze_artifacts", actor_id: "executor" } as never,
+				prior_intent_token: prior.token,
+				diffProvider,
+				now: at,
+			});
+			execFileSync("git", ["add", "-A"], { cwd: fixture.root });
+			const record = readTaskRecordRaw(fixture.root, taskId);
+			const evidence = cause === "security"
+				? {
+					trigger: "the descriptor writes outside the authorized directory",
+					caller_chain: ["runtime/kernel/enrollment.ts"],
+					violated: { kind: "security_boundary" as const, ref: "boundary:authorization" },
+				}
+				: {
+					trigger: "the matcher accepts an unrelated acceptance",
+					caller_chain: ["runtime/kernel/reducer.ts"],
+					violated: { kind: "acceptance" as const, ref: "A1" },
+				};
+			const finding = {
+				id: `review-${round}`,
+				kind: "blocking",
+				status: "open",
+				acceptance_id: cause === "security" ? null : "A1",
+				source: "review",
+				review_round: null,
+				summary: `review needs rework ${round}`,
+				anchor: anchorForEvidence(evidence),
+				evidence,
+			};
+			const action = capabilityActionFor({ op: "request_rework", task_id: taskId, at, actor_id: "reviewer", findings: [finding] });
+			const capability = createMutationAuthorityCapabilityForTest(registry, {
+				authority_kind: "review",
+				task_id: taskId,
+				action_digest: digestOfAction(action),
+				expected_record_hash: record.revision,
+				intent_revision: record.record!.intent_snapshot.revision,
+				intent_content_hash: record.record!.intent_ref.content_hash,
+				diff_hash: diffHashOf(fixture.root, record.record as never),
+				actor_id: "reviewer",
+				confirmation_ref: `review-${round}`,
+				findings_digest: findingsDigestV2([finding] as never[]),
+			});
+			const afterFreeze = await readTaskIntent(fixture.root, taskId, readTaskRecordRaw(fixture.root, taskId).record!.intent_ref.path);
+			await app.execute({
+				root: fixture.root,
+				task_id: taskId,
+				operation: { op: "request_rework", capability, findings: [finding], actor_id: "reviewer" } as never,
+				prior_intent_token: afterFreeze.token,
+				diffProvider,
+				now: at,
+			});
+			execFileSync("git", ["add", "-A"], { cwd: fixture.root });
+		}
+		const boundary = () => readTaskRecordRaw(fixture.root, taskId).record!.findings.find((item) => item.kind === "replan_required");
+		return { fixture, runtime, meta, offered, boundary, taskId };
+	}
+
+	test("the replan gate offers the same three exits and hides residual risk on a security boundary", async () => {
+		const parked = await parkedForReplan("exits-security", "security", () => ({ reworkChoice: { exit: "grant_rounds", rounds: 1 } }));
+		expect(parked.boundary()?.replan_cause).toBe("repeated_security_boundary");
+		await parked.runtime.authorize(parked.taskId, "request_authorization", parked.meta("authorize"));
+		expect(parked.offered).toHaveLength(1);
+		expect(parked.offered[0]).toMatchObject({
+			grant_rounds: { min: 1, max: 5 },
+			accept_residual_risk: false,
+			replan: true,
+		});
+	});
+
+	test("choosing replan writes nothing and leaves the boundary open", async () => {
+		const parked = await parkedForReplan("exits-replan", "security", () => ({ reworkChoice: { exit: "replan" } }));
+		const before = readTaskRecordRaw(parked.fixture.root, parked.taskId).revision;
+		const result = await parked.runtime.authorize(parked.taskId, "request_authorization", parked.meta("authorize"));
+		expect(result).toMatchObject({ state: "replan_selected" });
+		expect(readTaskRecordRaw(parked.fixture.root, parked.taskId).revision).toBe(before);
+		expect(parked.boundary()?.status).toBe("open");
+	});
+
+	test("accepting residual risk on a budget boundary settles the open Review findings", async () => {
+		const parked = await parkedForReplan("exits-accept", "budget", () => ({
+			reworkChoice: { exit: "accept_residual_risk", reason: "owner accepts the remaining findings" },
+		}));
+		expect(parked.boundary()?.replan_cause).toBe("budget_exhausted");
+		const result = await parked.runtime.authorize(parked.taskId, "request_authorization", parked.meta("authorize"));
+		expect(parked.offered[0]).toMatchObject({ accept_residual_risk: true });
+		expect(result.record.lifecycle).toBe("active");
+		const record = readTaskRecordRaw(parked.fixture.root, parked.taskId).record!;
+		expect(record.findings.find((item) => item.kind === "replan_required")?.status).toBe("resolved");
+		expect(record.findings.filter((item) => item.kind === "blocking" && item.source === "review").every((item) => item.status === "accepted_risk")).toBe(true);
+		expect(record.residual_risk_acceptance).toMatchObject({
+			reason: "owner accepts the remaining findings",
+			actor_id: expect.any(String),
+		});
+	});
+
+	test("a residual-risk choice the boundary does not offer is rejected by the Kernel with no write", async () => {
+		const parked = await parkedForReplan("exits-not-offered", "security", () => ({
+			reworkChoice: { exit: "accept_residual_risk", reason: "forced through a custom port" },
+		}));
+		const before = readTaskRecordRaw(parked.fixture.root, parked.taskId).revision;
+		await expect(
+			parked.runtime.authorize(parked.taskId, "request_authorization", parked.meta("authorize")),
+		).rejects.toThrow();
+		expect(readTaskRecordRaw(parked.fixture.root, parked.taskId).revision).toBe(before);
+		expect(parked.boundary()?.status).toBe("open");
 	});
 
 

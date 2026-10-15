@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { PHASE_ENTRY_RECOVERY } from "../assurance/phase_entry";
+import type { ReworkChoice, ReworkExitsReadiness } from "../kernel/assurance_projection";
 
 export const PRIVILEGED_OPERATIONS = [
 	"enroll",
@@ -81,6 +82,8 @@ export interface NativeConfirmationInput {
 	bindingDigest?: string;
 	gitBaseNotice?: string;
 	planDigest?: string;
+	/** Present only for a replan boundary: the exits the user chooses between. */
+	reworkExits?: ReworkExitsReadiness;
 	batchDetails?: {
 		initiative_slug: string;
 		batch_branch: string;
@@ -117,6 +120,8 @@ export interface NativeConfirmationResult {
 	requestId: string;
 	/** ADR 0018: true only when the user ticked the delegation in a lane batch gate. */
 	delegateRevisions?: boolean;
+	/** Present only when the request offered `reworkExits` and the user accepted. */
+	reworkChoice?: ReworkChoice;
 }
 
 export type NativeConfirmationPort = (input: NativeConfirmationInput) => Promise<NativeConfirmationResult>;

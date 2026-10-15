@@ -895,3 +895,166 @@ describe("review manifest rework delta", () => {
 		expect(manifestFor(2, null).manifest_digest).toBe(withoutDelta.manifest_digest);
 	});
 });
+
+describe("budget exhaustion decision", () => {
+	const BOUNDARY_SECURITY_EVIDENCE = {
+		trigger: "an unauthenticated caller reaches the privileged path",
+		caller_chain: ["runtime/claude/mcp_server.ts"],
+		violated: { kind: "security_boundary", ref: "literal-user-authority" },
+	};
+	let clock = 0;
+	const stamp = () =>
+		`2026-08-12T13:${String(Math.floor(clock / 60)).padStart(2, "0")}:${String(clock++ % 60).padStart(2, "0")}.000Z`;
+
+	function blockingRound(label: string) {
+		toReview(stamp());
+		return requestReviewRework(
+			[reviewFinding({ id: label, anchor: anchorForEvidence(REVIEW_EVIDENCE as never), evidence: REVIEW_EVIDENCE })],
+			stamp(),
+		);
+	}
+
+	const openBoundary = (record: { findings: { kind: string; status: string }[] }) =>
+		record.findings.some((f) => f.kind === "replan_required" && f.status === "open");
+
+	/** A genuinely parked record: the budget is spent by real blocking Review rounds. */
+	function parkAtBudget() {
+		let result = blockingRound("park-0");
+		for (let round = 1; round <= REVIEW_REWORK_ROUND_BUDGET; round += 1) result = blockingRound(`park-${round}`);
+		const boundary = result.record.findings.find((f) => f.kind === "replan_required" && f.status === "open");
+		expect(boundary?.replan_cause).toBe("budget_exhausted");
+		expect(result.record.lifecycle).toBe("active");
+		execFileSync("git", ["add", "-A"], { cwd: root });
+		return result;
+	}
+
+	function decide(
+		op: "authorize_rework" | "accept_residual_risk",
+		fields: { rounds?: number; reason?: string; kind?: "user" | "review" | "qa" } = {},
+	) {
+		const at = stamp();
+		const action = capabilityActionFor({
+			op,
+			task_id: TASK,
+			at,
+			actor_id: "literal-user",
+			...(fields.rounds !== undefined ? { rounds: fields.rounds } : {}),
+			...(fields.reason !== undefined ? { reason: fields.reason } : {}),
+		});
+		const capability = createMutationAuthorityCapabilityForTest(mutationRegistry, {
+			authority_kind: fields.kind ?? "user",
+			task_id: TASK,
+			action_digest: digestOfAction(action),
+			expected_record_hash: readTaskRecordRaw(root, TASK).revision,
+			intent_revision: 1,
+			intent_content_hash: currentIntentHash(),
+			diff_hash: DIFF,
+			actor_id: "literal-user",
+			confirmation_ref: `confirm-${op}-${at}`,
+			findings_digest: null,
+		});
+		return execute(
+			op === "authorize_rework"
+				? { op, capability, actor_id: "literal-user", ...(fields.rounds !== undefined ? { rounds: fields.rounds } : {}) }
+				: { op, capability, actor_id: "literal-user", reason: fields.reason ?? "" },
+			at,
+		);
+	}
+
+	test("a grant of three rounds parks again at the third further blocking round, not before", () => {
+		parkAtBudget();
+		const granted = decide("authorize_rework", { rounds: 3 });
+		expect(granted.record.review_round_budget_extension).toBe(3);
+		expect(granted.record.findings.find((f) => f.kind === "replan_required")?.status).toBe("resolved");
+		const parkedAt: number[] = [];
+		for (let round = 1; round <= 3; round += 1) {
+			if (openBoundary(blockingRound(`granted-${round}`).record)) parkedAt.push(round);
+		}
+		expect(parkedAt).toEqual([3]);
+	});
+
+	test("a legacy grant without rounds extends the budget by exactly one", () => {
+		parkAtBudget();
+		expect(decide("authorize_rework").record.review_round_budget_extension).toBe(1);
+		expect(openBoundary(blockingRound("legacy-1").record)).toBe(true);
+	});
+
+	test("a grant outside 1-5 is rejected with zero writes", () => {
+		parkAtBudget();
+		const before = readTaskRecordRaw(root, TASK).revision;
+		expect(() => decide("authorize_rework", { rounds: 6 })).toThrow(/rounds/);
+		expect(() => decide("authorize_rework", { rounds: 0 })).toThrow(/rounds/);
+		expect(readTaskRecordRaw(root, TASK).revision).toBe(before);
+	});
+
+	test("accepting residual risk settles the boundary and moves the open findings to accepted_risk", () => {
+		parkAtBudget();
+		const openBefore = readTaskRecordRaw(root, TASK)
+			.record!.findings.filter((f) => f.kind === "blocking" && f.source === "review" && f.status === "open")
+			.map((f) => f.id);
+		expect(openBefore.length).toBeGreaterThan(0);
+		const accepted = decide("accept_residual_risk", { reason: "reviewed by the owner; follow-up filed" });
+		expect(accepted.record.findings.find((f) => f.kind === "replan_required")?.status).toBe("resolved");
+		for (const id of openBefore) expect(accepted.record.findings.find((f) => f.id === id)?.status).toBe("accepted_risk");
+		expect(accepted.record.residual_risk_acceptance).toMatchObject({
+			reason: "reviewed by the owner; follow-up filed",
+			actor_id: "literal-user",
+			finding_ids: openBefore,
+		});
+		expect(accepted.record.history.at(-1)?.authority?.authority_kind).toBe("user");
+		expect(accepted.record.lifecycle).toBe("active");
+	});
+
+	test("an accepted risk completes once QA is green, without a Review approval", () => {
+		parkAtBudget();
+		decide("accept_residual_risk", { reason: "owner accepts the remaining findings" });
+		toReview(stamp());
+		const done = app.execute({
+			root,
+			task_id: TASK,
+			operation: { op: "complete", actor_id: "executor-1" },
+			prior_intent_token: token(),
+			diffProvider: () => ({ diff_hash: DIFF, changed_paths: [] as const }),
+			now: stamp(),
+		});
+		expect(done.record.lifecycle).toBe("done");
+		expect(done.record.attestations.some((item) => item.kind === "review")).toBe(false);
+	});
+
+	test("an accept without literal-user authority or without a reason is rejected with zero writes", () => {
+		parkAtBudget();
+		const before = readTaskRecordRaw(root, TASK).revision;
+		expect(() => decide("accept_residual_risk", { reason: "ok", kind: "review" })).toThrow(/literal-user|authority/i);
+		expect(() => decide("accept_residual_risk", { reason: "ok", kind: "qa" })).toThrow(/literal-user|authority/i);
+		expect(() => decide("accept_residual_risk", { reason: "   " })).toThrow(/reason/i);
+		expect(readTaskRecordRaw(root, TASK).revision).toBe(before);
+	});
+
+	test("a repeated security boundary offers no residual-risk exit", () => {
+		const security = (id: string) =>
+			reviewFinding({
+				id,
+				acceptance_id: null,
+				anchor: anchorForEvidence(BOUNDARY_SECURITY_EVIDENCE as never),
+				evidence: BOUNDARY_SECURITY_EVIDENCE,
+			});
+		toReview(stamp());
+		requestReviewRework([security("sec-1")], stamp());
+		toReview(stamp());
+		const parked = requestReviewRework([security("sec-2")], stamp());
+		expect(parked.record.findings.find((f) => f.kind === "replan_required")?.replan_cause).toBe(
+			"repeated_security_boundary",
+		);
+		execFileSync("git", ["add", "-A"], { cwd: root });
+		const before = readTaskRecordRaw(root, TASK).revision;
+		expect(() => decide("accept_residual_risk", { reason: "accepted" })).toThrow(/budget exhaustion/);
+		expect(readTaskRecordRaw(root, TASK).revision).toBe(before);
+	});
+
+	test("accept_residual_risk is rejected when no boundary is open", () => {
+		toReview(stamp());
+		const before = readTaskRecordRaw(root, TASK).revision;
+		expect(() => decide("accept_residual_risk", { reason: "nothing to accept" })).toThrow(/budget exhaustion/);
+		expect(readTaskRecordRaw(root, TASK).revision).toBe(before);
+	});
+});

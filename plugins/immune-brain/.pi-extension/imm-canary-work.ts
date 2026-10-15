@@ -125,8 +125,11 @@ import {
 } from "../runtime/kernel/canary_application";
 import { findingsDigestV2 } from "../runtime/kernel/reducer";
 import {
+	parseReworkChoice,
 	projectAssurance,
+	reworkExitLines,
 	type AssuranceProjectionResult,
+	type ReworkChoice,
 } from "../runtime/kernel/assurance_projection";
 import type { TaskRecord } from "../runtime/kernel/types";
 import type { RoleDelegationContext } from "../runtime/role_prompt_bridge";
@@ -847,6 +850,7 @@ export default function (
 	type AuthorizationOutcome =
 		| { state: "applied"; operation: AuthorizeOperation; lifecycle?: string; delivery_error?: string }
 		| { state: "cancelled"; operation: AuthorizeOperation; reason: string }
+		| { state: "replan_selected"; operation: AuthorizeOperation; reason: string }
 		| { state: "blocked"; reason: string };
 
 	async function authorizeExactOperation(
@@ -946,6 +950,9 @@ export default function (
 				return { state: "blocked", reason };
 			}
 		}
+		// Only a replan boundary offers exits; both Hosts render the same ones.
+		const reworkExits = operation === "authorize-rework" ? projection.projection.authorization.exits : undefined;
+		let reworkChoice: ReworkChoice | undefined;
 		const dialogSummary = [
 			`Task: ${taskId}`,
 			`Decision: ${operation}`,
@@ -971,7 +978,10 @@ export default function (
 					]
 				: []),
 			...(operation === "authorize-rework"
-				? [`Replan boundaries: ${projection.projection.replan_required_ids.join(", ")}`]
+				? [
+						`Replan boundaries: ${projection.projection.replan_required_ids.join(", ")}`,
+						...(reworkExits ? reworkExitLines(reworkExits) : []),
+					]
 				: []),
 			...(nextIntent
 				? [
@@ -1010,12 +1020,46 @@ export default function (
 				summary: dialogSummary,
 				details: dialogDetails,
 				signal: ctx.signal,
-				actions: [
-					{ value: "authorize", label: uxText(UX_LANG, "Authorize", "批准"), description: uxText(UX_LANG, `Apply ${operation} after re-checking state`, `重新校验状态后应用 ${operation}`) },
-					{ value: "cancel", label: uxText(UX_LANG, "Cancel", "取消"), description: uxText(UX_LANG, "Leave managed authority unchanged", "保持托管权限状态不变") },
-				],
+				actions: reworkExits
+					? [
+							{ value: "grant_rounds", label: uxText(UX_LANG, "Grant more Review rounds", "追加 Review 轮次"), description: uxText(UX_LANG, `Grant ${reworkExits.grant_rounds.min}-${reworkExits.grant_rounds.max} further rounds`, `追加 ${reworkExits.grant_rounds.min}-${reworkExits.grant_rounds.max} 轮`) },
+							...(reworkExits.accept_residual_risk
+								? [{ value: "accept_residual_risk", label: uxText(UX_LANG, "Accept residual risk", "接受残余风险"), description: uxText(UX_LANG, "Accept the open Review findings with a reason", "附理由接受未决 Review 发现") }]
+								: []),
+							{ value: "replan", label: uxText(UX_LANG, "Replan", "重新规划"), description: uxText(UX_LANG, "Revise the Intent instead", "改为修订 Intent") },
+							{ value: "cancel", label: uxText(UX_LANG, "Cancel", "取消"), description: uxText(UX_LANG, "Leave managed authority unchanged", "保持托管权限状态不变") },
+						]
+					: [
+							{ value: "authorize", label: uxText(UX_LANG, "Authorize", "批准"), description: uxText(UX_LANG, `Apply ${operation} after re-checking state`, `重新校验状态后应用 ${operation}`) },
+							{ value: "cancel", label: uxText(UX_LANG, "Cancel", "取消"), description: uxText(UX_LANG, "Leave managed authority unchanged", "保持托管权限状态不变") },
+						],
 			});
-			confirmed = selected === "authorize";
+			if (reworkExits) {
+				if (selected === "grant_rounds" || selected === "accept_residual_risk" || selected === "replan") {
+					const raw: Record<string, unknown> = { exit: selected };
+					if (selected === "grant_rounds") {
+						const text = await ctx.ui.input(
+							uxText(UX_LANG, `Further Review rounds (${reworkExits.grant_rounds.min}-${reworkExits.grant_rounds.max})`, `追加 Review 轮次(${reworkExits.grant_rounds.min}-${reworkExits.grant_rounds.max})`),
+							String(reworkExits.grant_rounds.min),
+							{ signal: ctx.signal },
+						);
+						if (text !== undefined && text.trim()) raw.rounds = Number(text.trim());
+						if (text === undefined) raw.exit = "cancelled";
+					} else if (selected === "accept_residual_risk") {
+						const text = await ctx.ui.input(uxText(UX_LANG, "Reason for accepting residual risk", "接受残余风险的理由"), "", { signal: ctx.signal });
+						if (text === undefined) raw.exit = "cancelled";
+						else raw.reason = text;
+					}
+					// The same parser the Claude Host uses, so the accepted shapes cannot drift.
+					reworkChoice = raw.exit === "cancelled" ? undefined : (parseReworkChoice(reworkExits, raw) ?? undefined);
+					confirmed = reworkChoice !== undefined;
+					if (raw.exit !== "cancelled" && !reworkChoice) {
+						notifyOnce(ctx, `authorization-exit:${taskId}`, `authorize ${operation}: the chosen exit was not valid; nothing applied`, "warning");
+					}
+				}
+			} else {
+				confirmed = selected === "authorize";
+			}
 		} catch (error) {
 			if (nextIntent) {
 				restoreStagedIntent();
@@ -1044,6 +1088,12 @@ export default function (
 				await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
 			progression.closeInvocation(invocation);
 			return { state: "cancelled", operation, reason: "cancelled" };
+		}
+		// A replan is not a mutation of this operation: the Intent revision has
+		// its own gate, so nothing is written here.
+		if (reworkChoice?.exit === "replan") {
+			progression.closeInvocation(invocation);
+			return { state: "replan_selected", operation, reason: "revise the Intent, then authorize approve-breaking-intent-revision" };
 		}
 		if (!progression.sessionActiveValue() || progression.sessionGenerationValue() !== authorizationGeneration || progression.invocationState(invocation) !== "open") {
 			if (nextIntent) {
@@ -1082,7 +1132,12 @@ export default function (
 							next_intent_ref: nextIntentRef!,
 						}
 					: operation === "authorize-rework"
-						? { op: "authorize_rework" as const }
+						? reworkChoice?.exit === "accept_residual_risk"
+							? { op: "accept_residual_risk" as const, reason: reworkChoice.reason }
+							: {
+									op: "authorize_rework" as const,
+									...(reworkChoice?.exit === "grant_rounds" ? { rounds: reworkChoice.rounds } : {}),
+								}
 						: userDecisionOperation!;
 				// The exact host-built operation is shared by capability digest and
 				// application payload; command arguments cannot inject authority fields.
@@ -1116,7 +1171,8 @@ export default function (
 						...(exactOperation.op === "resolve_user_decision"
 							? { finding_id: exactOperation.finding_id, resolution: exactOperation.resolution }
 							: {}),
-						...(exactOperation.op === "stop" ? { reason: exactOperation.reason } : {}),
+						...(exactOperation.op === "stop" || exactOperation.op === "accept_residual_risk" ? { reason: exactOperation.reason } : {}),
+						...(exactOperation.op === "authorize_rework" && "rounds" in exactOperation ? { rounds: exactOperation.rounds } : {}),
 						now,
 					});
 					const result = (await app.execute({
@@ -1132,6 +1188,7 @@ export default function (
 					if (
 						exactOperation.op === "stop" ||
 						exactOperation.op === "authorize_rework" ||
+						exactOperation.op === "accept_residual_risk" ||
 						exactOperation.op === "approve_breaking_intent_revision"
 					) stagePlanningArtifactTransition(ctx.cwd, result.record);
 					return { state: "applied", operation, lifecycle: result.record.lifecycle };
@@ -1486,6 +1543,7 @@ async function mintCapability(
 		next_intent?: unknown;
 		next_intent_ref?: unknown;
 		reason?: string;
+		rounds?: number;
 		finding_id?: string;
 		resolution?: string;
 		now: string;
@@ -1501,6 +1559,7 @@ async function mintCapability(
 		at: now,
 		actor_id: input.actor_id,
 		...(input.reason !== undefined ? { reason: input.reason } : {}),
+		...(input.rounds !== undefined ? { rounds: input.rounds } : {}),
 		...(input.findings !== undefined ? { findings: input.findings } : {}),
 		...(input.approval !== undefined ? { approval: input.approval } : {}),
 		...(input.next_intent !== undefined ? { next_intent: input.next_intent } : {}),

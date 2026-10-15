@@ -12,6 +12,8 @@ import {
 	type FindingKind,
 	type FindingSource,
 	type FindingStatus,
+	type ReplanCause,
+	type ResidualRiskAcceptanceV1,
 	type TaskAction,
 	type ReviewAdvisoryFindingV1,
 	type TaskApprovalV2,
@@ -156,7 +158,10 @@ const FINDING_KINDS: FindingKind[] = [
 	"unresolved_user_decision",
 	"replan_required",
 ];
-const FINDING_STATUSES: FindingStatus[] = ["open", "resolved", "refuted"];
+const FINDING_STATUSES: FindingStatus[] = ["open", "resolved", "refuted", "accepted_risk"];
+const REPLAN_CAUSES: ReplanCause[] = ["budget_exhausted", "repeated_security_boundary"];
+/** Upper bound of one `authorize_rework` grant. */
+export const MAX_REWORK_GRANT_ROUNDS = 5;
 const FINDING_SOURCES: FindingSource[] = [
 	"execution",
 	"review",
@@ -240,6 +245,7 @@ export function parseFinding(
 			"anchor",
 			"evidence",
 			"counterevidence",
+			"replan_cause",
 		],
 		path,
 		violations,
@@ -266,6 +272,9 @@ export function parseFinding(
 						violations,
 					),
 				}
+			: {}),
+		...(item.replan_cause !== undefined
+			? { replan_cause: enumAt(item.replan_cause, REPLAN_CAUSES, `${path}.replan_cause`, violations) }
 			: {}),
 	};
 }
@@ -494,13 +503,46 @@ function parseAttestationV3(
 	};
 }
 
+function parseResidualRiskAcceptance(
+	value: unknown,
+	path: string,
+	violations: string[],
+): ResidualRiskAcceptanceV1 {
+	const item = objectAt(value, path, violations);
+	rejectUnknown(
+		item,
+		["intent_revision", "intent_content_hash", "diff_hash", "finding_ids", "reason", "actor_id", "accepted_at"],
+		path,
+		violations,
+	);
+	const intentContentHash = stringAt(item.intent_content_hash, `${path}.intent_content_hash`, violations);
+	if (!SHA256_HEX.test(intentContentHash)) violations.push(`${path}.intent_content_hash must be sha256:<64 hex>`);
+	const diffHash = stringAt(item.diff_hash, `${path}.diff_hash`, violations);
+	if (!SHA256_HEX.test(diffHash)) violations.push(`${path}.diff_hash must be sha256:<64 hex>`);
+	const reason = stringAt(item.reason, `${path}.reason`, violations);
+	if (reason.trim() === "") violations.push(`${path}.reason must be non-empty`);
+	const findingIds = arrayAt(item.finding_ids, `${path}.finding_ids`, violations).map((entry, index) =>
+		stringAt(entry, `${path}.finding_ids[${index}]`, violations),
+	);
+	if (findingIds.length === 0) violations.push(`${path}.finding_ids must name at least one finding`);
+	return {
+		intent_revision: positiveInteger(item.intent_revision, `${path}.intent_revision`, violations),
+		intent_content_hash: intentContentHash,
+		diff_hash: diffHash,
+		finding_ids: findingIds,
+		reason,
+		actor_id: stringAt(item.actor_id, `${path}.actor_id`, violations),
+		accepted_at: stringAt(item.accepted_at, `${path}.accepted_at`, violations),
+	};
+}
+
 export function parseTaskRecordAtVersion(raw: unknown, version: 3 | 4): TaskRecordV3 | TaskRecordV4 {
 	const violations: string[] = [];
 	const value = objectAt(raw, "record", violations);
 	rejectUnknown(
 		value,
 		["contract", "task_id", "intent_snapshot", "intent_ref", "lifecycle", "artifact_state", "baseline", "attestations", "findings", "history",
-			...(version === 4 ? ["git_base_head"] : [])],
+			...(version === 4 ? ["git_base_head", "review_round_budget_extension", "residual_risk_acceptance"] : [])],
 		"record",
 		violations,
 	);
@@ -557,6 +599,28 @@ export function parseTaskRecordAtVersion(raw: unknown, version: 3 | 4): TaskReco
 	}
 	const findings = arrayAt(value.findings, "record.findings", violations).map((item, index) => parseFinding(item, index, violations));
 	const history = arrayAt(value.history, "record.history", violations).map((item, index) => parseHistoryV3(item, index, violations));
+	for (const [index, finding] of findings.entries()) {
+		const path = `record.findings[${index}]`;
+		if (finding.replan_cause !== undefined && finding.kind !== "replan_required")
+			violations.push(`${path}.replan_cause is only valid on a replan_required finding`);
+		if (finding.status === "accepted_risk" && (finding.kind !== "blocking" || finding.source !== "review"))
+			violations.push(`${path} accepted_risk requires a blocking Review finding`);
+	}
+	let budgetExtension: number | undefined;
+	if (value.review_round_budget_extension !== undefined) {
+		budgetExtension = positiveInteger(value.review_round_budget_extension, "record.review_round_budget_extension", violations);
+	}
+	const residualRiskAcceptance = value.residual_risk_acceptance === undefined
+		? undefined
+		: parseResidualRiskAcceptance(value.residual_risk_acceptance, "record.residual_risk_acceptance", violations);
+	if (findings.some((finding) => finding.status === "accepted_risk") && residualRiskAcceptance === undefined)
+		violations.push("record.residual_risk_acceptance is required while a finding is accepted_risk");
+	if (residualRiskAcceptance) {
+		for (const id of residualRiskAcceptance.finding_ids) {
+			if (!findings.some((finding) => finding.id === id && finding.status === "accepted_risk"))
+				violations.push(`record.residual_risk_acceptance.finding_ids names ${id}, which is not accepted_risk`);
+		}
+	}
 	uniqueIds(attestations, "record.attestations", violations);
 	uniqueIds(findings, "record.findings", violations);
 	uniqueIds(history, "record.history", violations);
@@ -619,6 +683,8 @@ export function parseTaskRecordAtVersion(raw: unknown, version: 3 | 4): TaskReco
 		artifact_state: artifactState as TaskRecordV3["artifact_state"],
 		baseline,
 		...(version === 4 ? { git_base_head: gitBaseHead } : {}),
+		...(version === 4 && budgetExtension !== undefined ? { review_round_budget_extension: budgetExtension } : {}),
+		...(version === 4 && residualRiskAcceptance !== undefined ? { residual_risk_acceptance: residualRiskAcceptance } : {}),
 		attestations,
 		findings,
 		history,
@@ -670,6 +736,7 @@ const ACTION_V2_TYPES = [
 	"complete",
 	"stop",
 	"authorize_rework",
+	"accept_residual_risk",
 	"resolve_user_decision",
 ] as const;
 
@@ -855,10 +922,27 @@ export function parseTaskAction(raw: unknown): TaskAction {
 			};
 			break;
 		}
-		case "complete":
-		case "authorize_rework": {
+		case "complete": {
 			rejectUnknown(value, [...ACTION_BASE_FIELDS], "action", violations);
 			action = { ...base, type: base.type };
+			break;
+		}
+		case "authorize_rework": {
+			rejectUnknown(value, [...ACTION_BASE_FIELDS, "rounds"], "action", violations);
+			let rounds: number | undefined;
+			if (value.rounds !== undefined) {
+				rounds = positiveInteger(value.rounds, "action.rounds", violations);
+				if (rounds > MAX_REWORK_GRANT_ROUNDS)
+					violations.push(`action.rounds must be an integer from 1 to ${MAX_REWORK_GRANT_ROUNDS}`);
+			}
+			action = { ...base, type: "authorize_rework", ...(rounds !== undefined ? { rounds } : {}) };
+			break;
+		}
+		case "accept_residual_risk": {
+			rejectUnknown(value, [...ACTION_BASE_FIELDS, "reason"], "action", violations);
+			const reason = stringAt(value.reason, "action.reason", violations);
+			if (reason.trim() === "") violations.push("accept_residual_risk requires a non-empty reason");
+			action = { ...base, type: "accept_residual_risk", reason };
 			break;
 		}
 		case "request_rework": {
@@ -975,6 +1059,37 @@ export function assertTaskRecordUpdateV3(
 			violations.push("only artifact transitions may change intent_ref path");
 	}
 
+	// The budget extension grows only by an authorize_rework grant, and the
+	// residual-risk acceptance changes only by accept_residual_risk.
+	const previousExtension = previous.review_round_budget_extension ?? 0;
+	const expectedExtension = previousExtension +
+		(action.type === "authorize_rework" ? (action.rounds ?? 1) : 0);
+	if ((next.review_round_budget_extension ?? 0) !== expectedExtension)
+		violations.push("review_round_budget_extension changes only by an authorize_rework grant");
+	if (action.type === "accept_residual_risk") {
+		const acceptance = next.residual_risk_acceptance;
+		const newlyAccepted = next.findings
+			.filter((item) => item.status === "accepted_risk" &&
+				previous.findings.find((prior) => prior.id === item.id)?.status !== "accepted_risk")
+			.map((item) => item.id)
+			.sort();
+		if (!acceptance)
+			violations.push("accept_residual_risk must record residual_risk_acceptance");
+		else if (
+			acceptance.diff_hash !== action.diff_hash ||
+			acceptance.intent_revision !== next.intent_snapshot.revision ||
+			acceptance.intent_content_hash !== next.intent_ref.content_hash ||
+			acceptance.reason !== action.reason ||
+			acceptance.actor_id !== action.actor_id ||
+			JSON.stringify([...acceptance.finding_ids].sort()) !== JSON.stringify(newlyAccepted)
+		)
+			violations.push("residual_risk_acceptance must bind the accepting action and the findings it accepted");
+	} else if (
+		JSON.stringify(next.residual_risk_acceptance ?? null) !==
+		JSON.stringify(previous.residual_risk_acceptance ?? null)
+	)
+		violations.push("residual_risk_acceptance changes only by accept_residual_risk");
+
 	// Attestations and history are append-only.
 	if (next.attestations.length < previous.attestations.length)
 		violations.push("attestations are append-only");
@@ -992,6 +1107,7 @@ export function assertTaskRecordUpdateV3(
 			: action.type === "resolve_user_decision"
 				? [action.finding_id]
 			: action.type === "authorize_rework" ||
+				  action.type === "accept_residual_risk" ||
 				  action.type === "approve_breaking_intent_revision"
 				? previous.findings
 					.filter((item) => item.kind === "replan_required" && item.status === "open")
@@ -1025,6 +1141,16 @@ export function assertTaskRecordUpdateV3(
 						previous.attestations,
 						refutationIdentity(previous, action.diff_hash),
 					)) &&
+				withoutFields(prior, ["status"]) === withoutFields(current, ["status"])
+			) &&
+			!(
+				// accept_residual_risk moves an open blocking Review finding to
+				// accepted_risk and changes nothing else about it.
+				action.type === "accept_residual_risk" &&
+				prior.kind === "blocking" &&
+				prior.source === "review" &&
+				prior.status === "open" &&
+				current.status === "accepted_risk" &&
 				withoutFields(prior, ["status"]) === withoutFields(current, ["status"])
 			) &&
 			!(

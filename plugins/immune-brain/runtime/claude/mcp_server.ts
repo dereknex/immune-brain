@@ -23,6 +23,7 @@ import { parseLaneInstruction, parseLaneOffers, parseMaxParallel, resolveLanePar
 import { parseFinalVerification } from "../unattended/batch_final_verification";
 import { parseLaneRevision, REVISION_DELEGATION_TEXT } from "../unattended/batch_delegation";
 import type { AssuranceCoordinatorPorts } from "../assurance/coordinator";
+import { parseReworkChoice, reworkExitLines, type ReworkChoice } from "../kernel/assurance_projection";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
@@ -538,6 +539,41 @@ export function elicitationParams(input: NativeConfirmationInput) {
 				: { type: "object", properties: {} },
 		};
 	}
+	if (input.reworkExits) {
+		const exits = input.reworkExits;
+		const exitValues = [
+			"grant_rounds",
+			...(exits.accept_residual_risk ? ["accept_residual_risk"] : []),
+			"replan",
+		];
+		return {
+			mode: "form",
+			message: `Choose how to resolve this replan boundary for ${input.taskId}.\n\n${[
+				`Operation: ${input.operation}`,
+				`Task: ${input.taskId}`,
+				input.risk ? `Risk: ${input.risk}` : null,
+				input.bindingDigest ? `Binding digest: ${input.bindingDigest}` : null,
+				...reworkExitLines(exits),
+			].filter(Boolean).join("\n")}`,
+			requestedSchema: {
+				type: "object",
+				properties: {
+					exit: { type: "string", title: "Exit", enum: exitValues, default: "grant_rounds" },
+					rounds: {
+						type: "integer",
+						title: "Further Review rounds (grant_rounds)",
+						minimum: exits.grant_rounds.min,
+						maximum: exits.grant_rounds.max,
+						default: exits.grant_rounds.min,
+					},
+					...(exits.accept_residual_risk
+						? { reason: { type: "string", title: "Reason for accepting residual risk (accept_residual_risk)" } }
+						: {}),
+				},
+				required: ["exit"],
+			},
+		};
+	}
 	const details = [
 		`Operation: ${input.operation}`,
 		`Task: ${input.taskId}`,
@@ -614,7 +650,14 @@ export async function serveStdio(options: {
 				throw new NativeAuthorityError("correlation_missing", "MCP elicitation returned an invalid action");
 			}
 			let delegateRevisions = false;
-			if (action === "accept") {
+			let reworkChoice: ReworkChoice | undefined;
+			if (action === "accept" && input.reworkExits) {
+				const parsed = parseReworkChoice(input.reworkExits, (result as { content?: unknown }).content);
+				if (!parsed) {
+					throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the requested exit schema");
+				}
+				reworkChoice = parsed;
+			} else if (action === "accept") {
 				const content = (result as { content?: unknown }).content;
 				const offered = input.operation === "start_unattended_batch" && input.batchDetails?.lane_mode?.offer_revision_delegation === true;
 				const keys = typeof content === "object" && content !== null && !Array.isArray(content) ? Object.keys(content) : null;
@@ -625,7 +668,12 @@ export async function serveStdio(options: {
 				}
 				delegateRevisions = offered && (content as Record<string, unknown>).delegate_in_lane_revisions === true;
 			}
-			return { decision: action, requestId, ...(delegateRevisions ? { delegateRevisions: true } : {}) };
+			return {
+				decision: action,
+				requestId,
+				...(delegateRevisions ? { delegateRevisions: true } : {}),
+				...(reworkChoice ? { reworkChoice } : {}),
+			};
 		} finally {
 			pending.delete(requestId);
 			if (abortListener) input.signal?.removeEventListener("abort", abortListener);

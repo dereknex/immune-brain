@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "review-convergence-s2-budget-exhaustion",
-  "owner": "user",
   "goal": "Replace the one-round pass-through at an exhausted Review rework budget with one literal-user decision offering three exits: grant N more rounds, accept remaining Review findings as residual risk, or replan.",
   "acceptance": [
     {
@@ -21,6 +20,7 @@
     "plugins/immune-brain/runtime/claude/mcp_server.ts",
     "plugins/immune-brain/runtime/kernel/application.ts",
     "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+    "plugins/immune-brain/runtime/kernel/canary_application.ts",
     "plugins/immune-brain/runtime/kernel/completion.ts",
     "plugins/immune-brain/runtime/kernel/reducer.ts",
     "plugins/immune-brain/runtime/kernel/types.ts",
@@ -31,5 +31,6 @@
     "tests/pi-canary-user-authority.test.ts"
   ],
   "risk": "critical",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }
