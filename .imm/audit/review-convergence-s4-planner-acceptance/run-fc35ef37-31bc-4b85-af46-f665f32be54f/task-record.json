@@ -1,0 +1,87 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "review-convergence-s4-planner-acceptance",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "review-convergence-s4-planner-acceptance",
+    "goal": "Make Planner Specs declare their threat model and supported environment and write acceptance as enumerated negative cases with focused verification descriptors.",
+    "acceptance": [
+      {
+        "id": "RC-S4-A1",
+        "assertion": "Meet S4 in docs/specs/review-convergence.spec.md: the imm-planner contract and its dist mirror require a threat model and supported environment declaration for Specs with external input, require concrete enumerated negative cases instead of absolute any-malformed-input clauses, and require focused test-file descriptors rather than whole suites.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/explicit-phase-entry-planner-contract.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/review-convergence-s4-planner-acceptance.intent.json",
+      "docs/specs/review-convergence.spec.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/skills/imm-planner/SKILL.md",
+      "tests/explicit-phase-entry-planner-contract.test.ts",
+      "tests/skill-dist-consistency.test.ts"
+    ],
+    "risk": "routine",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/review-convergence-s4-planner-acceptance.intent.json",
+    "content_hash": "sha256:a3e4f70bfb4b4d111291fa5ef65635f67a7b31f4de9b3fc96f94e072b4307423"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:a3e4f70bfb4b4d111291fa5ef65635f67a7b31f4de9b3fc96f94e072b4307423",
+  "git_base_head": "7ea76a5651352c4f6da555837d91c9aa18a8ae44",
+  "attestations": [
+    {
+      "id": "approval-qa-8b21d4a6",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:a3e4f70bfb4b4d111291fa5ef65635f67a7b31f4de9b3fc96f94e072b4307423",
+      "diff_hash": "sha256:31d31dd4e796badff595cb245e87a621effdaf16ae9298054bfc6520aadb6d1a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:068780f348aa41e499d046d043359f08dbfbb4d97fda94e3fc932a62067ce430",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RC-S4-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:068780f348aa41e499d046d043359f08dbfbb4d97fda94e3fc932a62067ce430"
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:review-convergence-s4-planner-acceptance:2026-10-15T02:09:12.497Z",
+      "at": "2026-10-15T02:09:12.497Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-convergence-s4-planner-acceptance.intent.json"
+    },
+    {
+      "id": "record_approval:review-convergence-s4-planner-acceptance:2026-10-15T02:09:14.309Z",
+      "at": "2026-10-15T02:09:14.309Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-8b21d4a6\naction_v2_sha256:e9e6f007aaaeb327017ae80dbc4b78c2eb2ca51125f36f84f7125ba9cf330076",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-15T02:09:14.309Z"
+      }
+    },
+    {
+      "id": "complete:review-convergence-s4-planner-acceptance:2026-10-15T02:09:15.260Z",
+      "at": "2026-10-15T02:09:15.260Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:873812d0bf03612a6146f443b2aa3b11bba96a660abf678bf6522da661cd4e07"
+    }
+  ]
+}

@@ -82,6 +82,27 @@ describe("explicit phase entry: Planner and Brainstorm never route to Enrollment
 		expect(loader).toContain("Brainstorm stops after framing; the user launches `imm-planner`");
 	});
 
+	test("Planner requires a threat model, enumerated negative cases and focused descriptors (RC-S4-A1)", () => {
+		const planner = read("dist/imm-planner.md");
+		const discipline = section(planner, "### Verification Descriptor Discipline");
+		expect(discipline).toContain("`Threat model and supported environment` line");
+		expect(discipline).toContain("supported Git object formats, encodings, and platforms");
+		expect(discipline).toContain("`None beyond the repository's own tooling` is a valid declaration");
+		expect(discipline).toContain("Write acceptance as the concrete negative cases the slice must reject");
+		expect(discipline).toContain("Never write an absolute clause such as `any missing, malformed, or unsafe input cannot succeed`");
+		expect(discipline).toContain("never a whole suite or an unscoped test command");
+
+		const flags = section(planner, "## Red Flags");
+		expect(flags).toContain("omits its `Threat model and supported environment` line");
+		expect(flags).toContain("absolute any-malformed-input clause instead of enumerated negative cases");
+		expect(flags).toContain("runs a whole suite instead of focused test files");
+
+		const loader = flat("skills/imm-planner/SKILL.md");
+		expect(loader).toContain("declares its threat model and supported environment");
+		expect(loader).toContain("enumerates concrete negative cases rather than absolute any-malformed-input clauses");
+		expect(loader).toContain("descriptors name focused test files, never whole suites");
+	});
+
 	test("every BASELINE copy assigns routine Enrollment to imm-run and keeps the Plan-only stop", () => {
 		for (const rel of BASELINE_COPIES) {
 			const text = flat(rel);
