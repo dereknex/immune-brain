@@ -97,9 +97,10 @@ const INTENT_HASH = canonicalIntentHash(parseTaskIntentV1(INTENT));
 interface FakeUI {
 	notifyCalls: Array<{ text: string; kind: string }>;
 	confirmCalls: Array<{ title: string; body: string }>;
+	inputCalls: Array<{ title: string; placeholder?: string }>;
 }
 function makeUI(): FakeUI {
-	return { notifyCalls: [], confirmCalls: [] };
+	return { notifyCalls: [], confirmCalls: [], inputCalls: [] };
 }
 
 function makeEnrolledRoot(): string {
@@ -188,6 +189,34 @@ function seedOpenReplanRequired(root: string): void {
 	});
 }
 
+/** A boundary parked by budget exhaustion, with the Review finding it would accept. */
+function seedBudgetExhaustedBoundary(root: string): void {
+	mutateStoredRecord(root, (record) => {
+		record.artifact_state = "active";
+		(record.findings as unknown[]).push(
+			{
+				id: "review-open-1",
+				kind: "blocking",
+				status: "open",
+				acceptance_id: null,
+				source: "review",
+				review_round: 6,
+				summary: "remaining review finding",
+			},
+			{
+				id: "rework:review-limit:replan-required",
+				kind: "replan_required",
+				status: "open",
+				acceptance_id: null,
+				source: "kernel",
+				review_round: 6,
+				replan_cause: "budget_exhausted",
+				summary: "Review exhausted its 5-round rework budget; a durable replan is required.",
+			},
+		);
+	});
+}
+
 function loadSurface(dependencies: Record<string, unknown> = {}): {
 	shutdown: () => Promise<void>;
 	tool: {
@@ -231,13 +260,28 @@ function authorityBytes(root: string): { record: string; claim: string } {
 	};
 }
 
-function ctxFor(root: string, ui: FakeUI, confirmResult: boolean | (() => Promise<boolean>), mode = "tui") {
+/**
+ * `confirmResult` true takes the first action, false takes the negative one,
+ * `{ downs }` moves down that many items first. `inputs` answers `ui.input`
+ * in order; an exhausted queue behaves as the user dismissing the input.
+ */
+function ctxFor(
+	root: string,
+	ui: FakeUI,
+	confirmResult: boolean | (() => Promise<boolean>) | { downs: number },
+	mode = "tui",
+	inputs: Array<string | undefined> = [],
+) {
 	return {
 		mode,
 		cwd: root,
 		signal: new AbortController().signal,
 		ui: {
 			notify: (text: string, kind: string) => ui.notifyCalls.push({ text, kind }),
+			input: async (title: string, placeholder?: string) => {
+				ui.inputCalls.push({ title, placeholder });
+				return inputs.shift();
+			},
 			custom: async (factory: any) => {
 				let selected: string | undefined;
 				const component = factory(
@@ -249,9 +293,19 @@ function ctxFor(root: string, ui: FakeUI, confirmResult: boolean | (() => Promis
 				component.handleInput?.("d");
 				const body = component.render(120).join("\n");
 				ui.confirmCalls.push({ title: body, body });
+				if (typeof confirmResult === "object") {
+					for (let step = 0; step < confirmResult.downs; step += 1) component.handleInput?.("\u001b[B");
+					component.handleInput?.("\r");
+					return selected;
+				}
 				const approved = typeof confirmResult === "function" ? await confirmResult() : confirmResult;
-				if (!approved) component.handleInput?.("\u001b[B");
-				component.handleInput?.("\r");
+				if (!approved) {
+					// The dialog's own negative shortcut, so the harness never depends on
+					// how many options precede "cancel".
+					component.handleInput?.("n");
+					if (selected === undefined) component.handleInput?.("\u001b[B");
+				}
+				if (selected === undefined) component.handleInput?.("\r");
 				return selected;
 			},
 		},
@@ -627,12 +681,14 @@ describe("pi canary user authority", () => {
 				{ task_id: TASK, action: { op: "request_authorization" } },
 				undefined,
 				undefined,
-				ctxFor(root, ui, true),
+				ctxFor(root, ui, true, "tui", ["2"]),
 			);
 			expect(parseToolState(result)).toMatchObject({ state: "applied", operation: "authorize-rework", lifecycle: "active" });
 			expect(ui.confirmCalls).toHaveLength(1);
 			expect(ui.confirmCalls[0].title).toContain("authorize-rework");
+			expect(ui.inputCalls).toHaveLength(1);
 			const record = readTaskRecordRaw(root, TASK).record;
+			expect(record?.review_round_budget_extension).toBe(2);
 			expect(record?.findings.find((finding) => finding.kind === "replan_required")?.status).toBe("resolved");
 			expect(readAuditTaskPair(root, TASK)).toBeNull();
 			expect(readBackendClaim(root)?.lifecycle_status).toBe("active");
@@ -657,6 +713,142 @@ describe("pi canary user authority", () => {
 			);
 			expect(parseToolState(result)).toMatchObject({ state: "cancelled", operation: "authorize-rework" });
 			expect(ui.confirmCalls).toHaveLength(1);
+			expect(authorityBytes(root)).toEqual(initial);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("an out-of-range grant applies nothing", async () => {
+		const root = makeEnrolledRoot();
+		try {
+			seedOpenReplanRequired(root);
+			const initial = authorityBytes(root);
+			const { tool } = loadSurface();
+			const ui = makeUI();
+			const result = await tool.execute(
+				"req-rework-range",
+				{ task_id: TASK, action: { op: "request_authorization" } },
+				undefined,
+				undefined,
+				ctxFor(root, ui, true, "tui", ["9"]),
+			);
+			expect(parseToolState(result)).toMatchObject({ state: "cancelled", operation: "authorize-rework" });
+			expect(ui.notifyCalls.some((call) => call.kind === "warning" && /not valid/.test(call.text))).toBe(true);
+			expect(authorityBytes(root)).toEqual(initial);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("dismissing the rounds input applies nothing", async () => {
+		const root = makeEnrolledRoot();
+		try {
+			seedOpenReplanRequired(root);
+			const initial = authorityBytes(root);
+			const { tool } = loadSurface();
+			const ui = makeUI();
+			const result = await tool.execute(
+				"req-rework-dismiss",
+				{ task_id: TASK, action: { op: "request_authorization" } },
+				undefined,
+				undefined,
+				ctxFor(root, ui, true, "tui", [undefined]),
+			);
+			expect(parseToolState(result)).toMatchObject({ state: "cancelled", operation: "authorize-rework" });
+			expect(authorityBytes(root)).toEqual(initial);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("choosing replan writes nothing and points at the revision gate", async () => {
+		const root = makeEnrolledRoot();
+		try {
+			seedOpenReplanRequired(root);
+			const initial = authorityBytes(root);
+			const { tool } = loadSurface();
+			const ui = makeUI();
+			// A legacy boundary offers [grant_rounds, replan, cancel]: replan is second.
+			const result = await tool.execute(
+				"req-rework-replan",
+				{ task_id: TASK, action: { op: "request_authorization" } },
+				undefined,
+				undefined,
+				ctxFor(root, ui, { downs: 1 }),
+			);
+			expect(parseToolState(result)).toMatchObject({ state: "replan_selected", operation: "authorize-rework" });
+			expect(ui.inputCalls).toHaveLength(0);
+			expect(authorityBytes(root)).toEqual(initial);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("a boundary without a recorded cause offers no residual-risk exit", async () => {
+		const root = makeEnrolledRoot();
+		try {
+			seedOpenReplanRequired(root);
+			const { tool } = loadSurface();
+			const ui = makeUI();
+			await tool.execute(
+				"req-rework-legacy",
+				{ task_id: TASK, action: { op: "request_authorization" } },
+				undefined,
+				undefined,
+				ctxFor(root, ui, false),
+			);
+			expect(ui.confirmCalls[0].body).toContain("grant_rounds");
+			expect(ui.confirmCalls[0].body).not.toContain("accept_residual_risk");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("accepting residual risk records the reason and moves the findings to accepted_risk", async () => {
+		const root = makeEnrolledRoot();
+		try {
+			seedBudgetExhaustedBoundary(root);
+			const { tool } = loadSurface();
+			const ui = makeUI();
+			// A budget boundary offers [grant_rounds, accept_residual_risk, replan, cancel].
+			const result = await tool.execute(
+				"req-rework-accept",
+				{ task_id: TASK, action: { op: "request_authorization" } },
+				undefined,
+				undefined,
+				ctxFor(root, ui, { downs: 1 }, "tui", ["owner accepts the remaining finding"]),
+			);
+			expect(parseToolState(result)).toMatchObject({ state: "applied", operation: "authorize-rework", lifecycle: "active" });
+			expect(ui.confirmCalls[0].body).toContain("accept_residual_risk");
+			expect(ui.confirmCalls[0].body).toContain("review-open-1");
+			const record = readTaskRecordRaw(root, TASK).record;
+			expect(record?.findings.find((finding) => finding.id === "review-open-1")?.status).toBe("accepted_risk");
+			expect(record?.findings.find((finding) => finding.kind === "replan_required")?.status).toBe("resolved");
+			expect(record?.residual_risk_acceptance).toMatchObject({
+				reason: "owner accepts the remaining finding",
+				finding_ids: ["review-open-1"],
+			});
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("accepting residual risk with a blank reason applies nothing", async () => {
+		const root = makeEnrolledRoot();
+		try {
+			seedBudgetExhaustedBoundary(root);
+			const initial = authorityBytes(root);
+			const { tool } = loadSurface();
+			const ui = makeUI();
+			const result = await tool.execute(
+				"req-rework-accept-blank",
+				{ task_id: TASK, action: { op: "request_authorization" } },
+				undefined,
+				undefined,
+				ctxFor(root, ui, { downs: 1 }, "tui", ["   "]),
+			);
+			expect(parseToolState(result)).toMatchObject({ state: "cancelled", operation: "authorize-rework" });
 			expect(authorityBytes(root)).toEqual(initial);
 		} finally {
 			rmSync(root, { recursive: true, force: true });

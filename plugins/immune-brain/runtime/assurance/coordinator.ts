@@ -166,9 +166,13 @@ export interface AssuranceVerdict {
 export function reviewReworkFindings(verdict: AssuranceVerdict): TaskFinding[] {
 	if (verdict.decision !== "rework" || !verdict.findings?.length)
 		throw new Error("review rework findings require a rework verdict");
+	// Advisory notes belong to a pass attestation; one that reached a rework
+	// verdict is a contract violation, never Executor work to filter away.
+	if (verdict.findings.some((finding) => finding.kind !== "blocking"))
+		throw new Error("review rework findings must all be blocking");
 	return verdict.findings.map((finding) => ({
 		id: finding.id,
-		kind: finding.kind,
+		kind: "blocking" as const,
 		status: "open" as const,
 		acceptance_id: finding.acceptance_id,
 		source: "review" as const,
@@ -228,6 +232,14 @@ export interface SnapshotDescriptor {
 	review_bundle_digest: string | null;
 	/** Present only when Review authority binds an immutable Git revision (v4). */
 	review_revision?: ReviewRevisionIdentity;
+	/**
+	 * Review round 3 and later: the paths the latest rework changed. `skipped`
+	 * means the prior revision was absent or unresolvable and the admission rule
+	 * does not apply to this round.
+	 */
+	review_delta?:
+		| { round: number; prior_review_commit: string; delta_paths: string[] }
+		| { round: number; skipped: "prior_review_revision_absent" | "prior_review_revision_unresolvable" };
 	root: string;
 }
 
@@ -583,6 +595,15 @@ function selfServedScopeLines(added: readonly string[] | undefined): string[] {
  * dispatched agent carries no instructions (Pi) gets `buildReviewPrompt`, which
  * prepends both.
  */
+function reviewDeltaLines(delta: SnapshotDescriptor["review_delta"]): string[] {
+	if (!delta) return [];
+	if ("skipped" in delta)
+		return [`Review round ${delta.round}: no rework delta is available (${delta.skipped}); the delta admission rule does not apply to this round.`];
+	return [
+		`Review round ${delta.round}: review only the latest rework delta and its direct interactions. Prior reviewed commit ${delta.prior_review_commit}; delta_paths: ${delta.delta_paths.length ? delta.delta_paths.join(", ") : "(none)"}. A blocking finding must have a caller_chain path in delta_paths or violated.kind "security_boundary"; otherwise it is advisory on a pass verdict.`,
+	];
+}
+
 export function buildReviewSnapshotPrompt(
 	snapshot: SnapshotDescriptor,
 	evidencePath?: string,
@@ -613,11 +634,12 @@ export function buildReviewSnapshotPrompt(
 			? `Intent revision ${snapshot.intent_revision} (hash ${snapshot.intent_content_hash}), diff ${snapshot.diff_hash}, review revision ${revision.review_commit} (base ${revision.base_head}, tree ${revision.review_tree}, manifest ${revision.manifest_digest}), state ${snapshot.lifecycle}:${snapshot.artifact_state}.`
 			: `Intent revision ${snapshot.intent_revision} (hash ${snapshot.intent_content_hash}), diff ${snapshot.diff_hash}, review bundle ${snapshot.review_bundle_digest}, state ${snapshot.lifecycle}:${snapshot.artifact_state}.`,
 		...selfServedScopeLines(options.selfServedScopeAdditions),
+		...reviewDeltaLines(snapshot.review_delta),
 		"Acceptance assertions:", acceptance,
 		`PASS shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>","inspected_paths":["<every changed path of the reviewed change set>"]}}`,
 		`A pass verdict may carry non-blocking notes as findings, but every one of them must set kind "advisory"; a blocking finding is a rework verdict and must omit approval: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>","inspected_paths":["<every changed path of the reviewed change set>"]},"findings":[{"id":"review-1","kind":"advisory","acceptance_id":"<id|null>","summary":"<one line>","evidence":{"trigger":"<concrete inputs or state>","caller_chain":["<path-or-symbol>"],"violated":{"kind":"acceptance|security_boundary","ref":"<acceptance id or boundary>"}}}]}`,
-		`REWORK shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"rework","findings":[{"id":"review-1","kind":"blocking|advisory","acceptance_id":"<id|null>","summary":"<one line>","evidence":{"trigger":"<concrete inputs or state>","caller_chain":["<path-or-symbol>"],"violated":{"kind":"acceptance|security_boundary","ref":"<acceptance id or boundary>"}}}]}`,
-		`REWORK verdicts must omit the approval field entirely; do not emit "approval": null.`,
+		`REWORK shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"rework","findings":[{"id":"review-1","kind":"blocking","acceptance_id":"<id|null>","summary":"<one line>","evidence":{"trigger":"<concrete input or state → observable wrong result>","caller_chain":["<path-or-symbol>"],"violated":{"kind":"acceptance|security_boundary","ref":"<acceptance id or boundary>"}}}]}`,
+		`REWORK verdicts must omit the approval field entirely; do not emit "approval": null. A rework carries only blocking findings, at least one; a note that blocks nothing is an advisory finding on a pass verdict, never on rework.`,
 	].join("\n");
 }
 
@@ -758,7 +780,44 @@ export function parseAssuranceVerdict(input: unknown, snapshot: SnapshotDescript
 	if (!Array.isArray(raw.findings) || raw.findings.length === 0) throw new Error("rework verdict findings are invalid");
 	if (raw.approval !== undefined && raw.approval !== null) throw new Error("rework verdict must omit approval");
 	const findings = parseVerdictFindings(raw.findings, snapshot);
+	// The verdict bytes stay the Reviewer's: a Review rework that mixes in
+	// advisory notes, or blocks on nothing, is rejected for resubmission and
+	// never demoted, filtered or synthesized here.
+	if (snapshot.role === "review") {
+		const outOfDelta = outOfDeltaBlockingFindings(findings, snapshot);
+		if (outOfDelta.length > 0)
+			throw new Error(`review round ${snapshot.review_delta!.round} admits a blocking finding only when a caller_chain path is in the rework delta or it is a security_boundary violation; finding(s) ${outOfDelta.map((finding) => finding.id).join(", ")} are outside the delta (${(snapshot.review_delta as { delta_paths: string[] }).delta_paths.join(", ") || "no changed paths"}); resubmit each as an advisory finding on a pass verdict, or justify it with violated.kind "security_boundary"`);
+		const advisory = findings.filter((finding) => finding.kind === "advisory");
+		if (advisory.length > 0 || !findings.some((finding) => finding.kind === "blocking"))
+			throw new Error(`review rework verdict must contain only blocking findings and at least one: ${advisory.length > 0 ? `advisory finding(s) ${advisory.map((finding) => finding.id).join(", ")} are not allowed on rework; ` : "it has no blocking finding; "}resubmit decision "pass" with approval.inspected_paths listing every reviewed changed path when nothing blocks, carrying any non-blocking notes as advisory findings`);
+	}
 	return { contract: "assurance_kernel/assurance_verdict/v2", role: snapshot.role, task_id: snapshot.task_id, snapshot_digest: snapshotDigest(snapshot), decision: "rework", findings };
+}
+
+/**
+ * Review round 3 and later admits a blocking finding only when it touches the
+ * latest rework delta or crosses a security boundary. The rule is skipped, never
+ * blocking, when no delta was computed for the round.
+ */
+function outOfDeltaBlockingFindings(
+	findings: ReturnType<typeof parseVerdictFindings>,
+	snapshot: SnapshotDescriptor,
+): Array<{ id: string }> {
+	const delta = snapshot.review_delta;
+	if (!delta || !("delta_paths" in delta)) return [];
+	const changed = new Set(delta.delta_paths);
+	return findings.filter((finding) => {
+		if (finding.kind !== "blocking") return false;
+		const evidence = (finding as { evidence?: { violated: { kind: string }; caller_chain: string[] } }).evidence;
+		if (!evidence) return false;
+		if (evidence.violated.kind === "security_boundary") return false;
+		return !evidence.caller_chain.some((entry) => changed.has(callerChainPath(entry)));
+	});
+}
+
+/** The path component of a caller_chain entry: drops a `:line`, `#symbol` or `(` suffix. */
+function callerChainPath(entry: string): string {
+	return entry.trim().replace(/^\.\//, "").split(/[:#(\s]/, 1)[0] ?? "";
 }
 
 /**

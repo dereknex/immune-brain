@@ -1,0 +1,162 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "review-convergence-s3-qa-baseline",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "review-convergence-s3-qa-baseline",
+    "goal": "Make deterministic QA always run a project-declared baseline read from the Enrollment base tree, and disclose rather than block a baseline check that fails identically at base_head.",
+    "acceptance": [
+      {
+        "id": "RC-S3-A1",
+        "assertion": "Meet S3 in docs/specs/review-convergence.spec.md: QA reads docs/agents/qa-baseline.json from the base_head tree, never the delivery; a failing baseline check yields a blocking QA finding with acceptance_id null; when the same check also fails on the materialized base_head tree the finding is advisory with the pre-existing baseline failure prefix and is disclosed; a failing acceptance descriptor never receives this tolerance; an absent baseline file adds no checks; this repository declares bun run typecheck as its baseline.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/shared-deterministic-qa.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/agents/qa-baseline.json",
+      "docs/plans/review-convergence-s3-qa-baseline.intent.json",
+      "docs/specs/review-convergence.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/assurance/qa.ts",
+      "plugins/immune-brain/runtime/assurance/qa_findings.ts",
+      "plugins/immune-brain/runtime/assurance/verification.ts",
+      "tests/qa-prepare-diagnostics.test.ts",
+      "tests/shared-deterministic-qa.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/review-convergence-s3-qa-baseline.intent.json",
+    "content_hash": "sha256:fc88e1687c91c07e204f59d119085cf266454aee25812d824bb9a2991eec9b3a"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:fc88e1687c91c07e204f59d119085cf266454aee25812d824bb9a2991eec9b3a",
+  "git_base_head": "dac1912c1cd9d6a948a07f46ea8b0ba8b799b0c4",
+  "attestations": [
+    {
+      "id": "approval-qa-01a2160d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:fc88e1687c91c07e204f59d119085cf266454aee25812d824bb9a2991eec9b3a",
+      "diff_hash": "sha256:ad7a566256a1e3af9a7d112bc5ef8457282448b7cd8cda33bd849c3c36f77d1c",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:2f4b9c46f0fcec910a031596b816245b22bca2e2fe002133ad266645cfb06118",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RC-S3-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:2f4b9c46f0fcec910a031596b816245b22bca2e2fe002133ad266645cfb06118"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-dedbea66",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:fc88e1687c91c07e204f59d119085cf266454aee25812d824bb9a2991eec9b3a",
+      "diff_hash": "sha256:ad7a566256a1e3af9a7d112bc5ef8457282448b7cd8cda33bd849c3c36f77d1c",
+      "actor_id": "parent-mediated-review",
+      "summary": "RC-S3-A1 holds. The baseline is read from the base_head tree and fails closed on a malformed file. A failing check blocks with acceptance_id null, and a failure that also occurs at base_head becomes an advisory with the pre-existing prefix, disclosed in the QA approval summary and the Review manifest outcomes. Acceptance descriptors never receive the tolerance, an absent file adds no checks, and the repository declares bun run typecheck. The dist bundle mirrors the runtime source.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "dac1912c1cd9d6a948a07f46ea8b0ba8b799b0c4",
+        "review_commit": "ed55168feddda9b48c11c4ae7683789f2ccdf24d",
+        "review_tree": "bcde7a7078422eec7039edb63600e54c8eb64291",
+        "manifest_digest": "sha256:96a1561d287f42ae799d5c3d780a42fa86af78d2ffa423882814b53aa80fc872"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-0604d4db0bd4-1-review-1",
+          "acceptance_id": "RC-S3-A1",
+          "summary": "The QA job deadline is derived from acceptance descriptors only, so the declared timeouts of baseline checks and of the base_head rerun (its own prepare plus check) are not in the budget. Typical typecheck runs fit inside the 15 minute floor. A task whose acceptance timeouts already approach the derived budget could have a slow baseline check aborted by the job deadline, which surfaces as a loud QA budget failure rather than a wrong verdict.",
+          "anchor": "sha256:7a8b857058711a88ad4c18d34f02aececce0fa0ed2967ccc8ee681df3b291cf8",
+          "evidence": {
+            "trigger": "Acceptance descriptors that declare close to 15 minutes in total plus a baseline typecheck that uses most of its declared 300s check and 300s prepare timeouts, or a pre-existing failure that triggers the rerun with a second prepare and check.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/assurance/coordinator.ts:deriveQaJobTimeoutMs",
+              "plugins/immune-brain/runtime/assurance/coordinator.ts:advanceOnce",
+              "plugins/immune-brain/runtime/assurance/qa.ts:runDeterministicQa",
+              "plugins/immune-brain/runtime/assurance/qa.ts:failsIdenticallyAtBase"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "RC-S3-A1"
+            }
+          }
+        },
+        {
+          "id": "review-0604d4db0bd4-2-review-2",
+          "acceptance_id": "RC-S3-A1",
+          "summary": "The delivered tests pin the identical-failure, blocking, acceptance-no-tolerance and absent-file cases. They do not pin the spec's stated negative bounds: a baseline check that fails at base_head with a different exit code, timeout or output-limit flag, or whose base rerun materialization or prepare fails, must stay blocking. Lane batch integration recheck (delivery materialized) also deliberately skips baseline checks. Both are untested boundaries, not defects in the accepted contract.",
+          "anchor": "sha256:bc48da10c743117abab847d3e75165e5d2713fb5311fadb5ac5502d27f72feac",
+          "evidence": {
+            "trigger": "A baseline check exits 1 on the delivery but exits 2 or times out at base_head; or environment.prepare fails in the base_head materialization.",
+            "caller_chain": [
+              "tests/shared-deterministic-qa.test.ts:project QA baseline",
+              "plugins/immune-brain/runtime/assurance/qa.ts:failsIdenticallyAtBase",
+              "plugins/immune-brain/runtime/unattended/batch_integration.ts:runDeterministicQa"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "RC-S3-A1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:c7d8ba20c51a973c0cb09c1b5f761efcf2a95c543effc7c4278b9e779a8f21bc"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:review-convergence-s3-qa-baseline:2026-10-15T02:38:25.105Z",
+      "at": "2026-10-15T02:38:25.105Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-convergence-s3-qa-baseline.intent.json"
+    },
+    {
+      "id": "record_approval:review-convergence-s3-qa-baseline:2026-10-15T02:38:37.195Z",
+      "at": "2026-10-15T02:38:37.195Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-01a2160d\naction_v2_sha256:2ba59b2d0174969bd1f263207b72e44b974f0a8d5647f0ace2fbd6771c99cce5",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-15T02:38:37.195Z"
+      }
+    },
+    {
+      "id": "record_approval:review-convergence-s3-qa-baseline:2026-10-15T02:41:42.891Z",
+      "at": "2026-10-15T02:41:42.891Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-dedbea66\naction_v2_sha256:941a53600dac024c762d0b01402a394f55106964855dcfa6fcf6fb4888e59c07",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-15T02:41:42.891Z"
+      }
+    },
+    {
+      "id": "complete:review-convergence-s3-qa-baseline:2026-10-15T02:41:44.277Z",
+      "at": "2026-10-15T02:41:44.277Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:917851d0375d76a42d888d219e8976ea903c80b467791099f20ceaa41c3dc15f"
+    }
+  ]
+}

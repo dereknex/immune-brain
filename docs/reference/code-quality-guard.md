@@ -54,5 +54,7 @@ There are no hard line-count, parameter-count, nesting, complexity, boolean-para
 - `blocking`: a concrete correctness, security, error-state, dependency/API authenticity, test-integrity, or unauthorized-behavior defect.
 - `advisory`: a concrete task-local maintenance risk worth fixing in this change, with an affected path and failure rationale.
 - Pure formatting, naming preference, line count, parameter count, design taste, and hypothetical extensibility produce no finding.
-- A passing Review has no findings. Do not turn low-value suggestions into `rework` merely to preserve them.
+- A `pass` may carry advisory notes: they are archived on the review attestation and never require action. A `rework` contains only blocking findings, at least one; a note that blocks nothing is an advisory finding on a `pass`, never on `rework`. Do not turn low-value suggestions into `rework` merely to preserve them.
+- Every blocking finding states its `evidence.trigger` as a concrete input or state and the observable wrong result it produces. A finding that cannot name the wrong result is not blocking.
+- Judge against the threat model and supported environment declared in the Spec or TaskIntent goal. A defect that needs an attacker, input source, repository format, encoding, or platform outside that declaration is advisory. When nothing is declared, assume inputs come from the repository's own tooling and the user's trusted workspace. `security_boundary` means a security, data-loss, or authority boundary the change actually crosses.
 - Findings identify the affected path and risk. Review reports risks and verification criteria; it does not edit code or generate patches.

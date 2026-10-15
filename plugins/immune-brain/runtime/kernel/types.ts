@@ -16,7 +16,13 @@ export type FindingKind =
 	| "advisory"
 	| "unresolved_user_decision"
 	| "replan_required";
-export type FindingStatus = "open" | "resolved" | "refuted";
+export type FindingStatus = "open" | "resolved" | "refuted" | "accepted_risk";
+
+/**
+ * Why a `replan_required` boundary was raised. Absent on boundaries written
+ * before this field existed; such a boundary offers no residual-risk exit.
+ */
+export type ReplanCause = "budget_exhausted" | "repeated_security_boundary";
 export type FindingSource = "execution" | "review" | "kernel" | "migration";
 
 /** Machine-checkable provenance a Review finding must carry at the verdict boundary. */
@@ -55,6 +61,8 @@ export interface TaskFinding {
 	anchor?: string | null;
 	evidence?: FindingEvidence | null;
 	counterevidence?: FindingCounterevidence | null;
+	/** `replan_required` findings only: the Kernel-observed cause of the boundary. */
+	replan_cause?: ReplanCause;
 }
 
 export type ApprovalKind = "review" | "qa" | "user";
@@ -220,6 +228,11 @@ export interface TaskHistoryEntryV3 {
 	to_state: string;
 	reason: string;
 	authority?: AuthorityAuditDescriptor;
+	/**
+	 * The revision a Review-authored rework analyzed. Optional so legacy records
+	 * and QA or user rework stay valid; later rounds derive their delta from it.
+	 */
+	review_revision?: ReviewRevisionIdentityV1;
 }
 
 export interface TaskRecordV3 {
@@ -243,6 +256,29 @@ export interface TaskRecordV3 {
 export interface TaskRecordV4 extends Omit<TaskRecordV3, "contract"> {
 	contract: typeof TASK_RECORD_CONTRACT_V4;
 	git_base_head: string;
+	/**
+	 * Cumulative Review rework rounds the literal user granted past
+	 * `REVIEW_REWORK_ROUND_BUDGET`. Optional and additive; absent means 0.
+	 */
+	review_round_budget_extension?: number;
+	/** The literal user's acceptance of the open blocking Review findings for one exact revision. */
+	residual_risk_acceptance?: ResidualRiskAcceptanceV1;
+}
+
+/**
+ * Binds an `accept_residual_risk` decision to the intent revision and diff it
+ * was made for. It stands in for the Review approval only while all three
+ * still match the current identity; any later change makes it stale and
+ * Review is required again.
+ */
+export interface ResidualRiskAcceptanceV1 {
+	intent_revision: number;
+	intent_content_hash: string;
+	diff_hash: string;
+	finding_ids: string[];
+	reason: string;
+	actor_id: string;
+	accepted_at: string;
 }
 
 /** The live record shape every Kernel owner passes around. The v3 drain window is closed: `TaskRecordV2`/`TaskRecordV3` remain only as the frozen historical shapes `readAuditTaskPair` reads from `.imm/audit/`. */
@@ -304,10 +340,20 @@ export type TaskAction =
 			next_intent: TaskIntentV1;
 			next_intent_ref: TaskIntentRefV3;
 	  })
-	| (TaskActionBase & { type: "request_rework"; findings: TaskFinding[] })
+	| (TaskActionBase & {
+			type: "request_rework";
+			findings: TaskFinding[];
+			/** Review-authored rework only: the immutable revision that Review analyzed. */
+			review_revision?: ReviewRevisionIdentityV1;
+	  })
 	| (TaskActionBase & { type: "complete" })
 	| (TaskActionBase & { type: "stop"; reason: string })
-	| (TaskActionBase & { type: "authorize_rework" })
+	| (TaskActionBase & {
+			type: "authorize_rework";
+			/** Further Review rework rounds granted, 1-5. Absent means 1. */
+			rounds?: number;
+	  })
+	| (TaskActionBase & { type: "accept_residual_risk"; reason: string })
 	| (TaskActionBase & { type: "resolve_user_decision"; finding_id: string; resolution: string });
 
 

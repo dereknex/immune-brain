@@ -436,6 +436,26 @@ human judgment of motion quality; a descriptor can assert only the automated
 half. Textual presence in a contract string is not proof that a provider obeyed
 it, and structural Enrollment readiness is not proof that a descriptor executed.
 
+**Threat model and supported environment.** Every Spec whose design takes
+external input states one `Threat model and supported environment` line: the
+input's trust level, the adversary if any, and the supported Git object formats,
+encodings, and platforms. `None beyond the repository's own tooling` is a valid
+declaration; an omitted line is not. Acceptance and Review are judged against
+that declaration, so an input or environment it excludes is not an acceptance
+case.
+
+**Enumerated negative cases.** Write acceptance as the concrete negative cases
+the slice must reject, each naming its input and its expected rejection. Never
+write an absolute clause such as `any missing, malformed, or unsafe input cannot
+succeed`: it has no bound a descriptor can exercise and invites unbounded
+Review rounds. Name the cases the slice handles, such as an empty value, a
+truncated record, or a path outside the scope, and pin each in a test.
+
+**Focused descriptors.** A descriptor lists the explicit test files that
+exercise its acceptance, such as `bun test tests/<seam>.test.ts`, never a whole
+suite or an unscoped test command, so an unrelated failure cannot fail an
+acceptance.
+
 ## Core Responsibilities
 
 - **Decomposition**: Convert requirements into one or more TaskIntents. Add a Spec under `docs/specs/` only for complex work. Treat Technical Design as one TaskIntent decomposition dimension alongside outcome, Verification, dependency, risk, rollback, compatibility, and authority.
@@ -651,6 +671,7 @@ a State Ledger. Keep historical Plan validation strictly read-only.
 ## Red Flags
 
 - Acceptance verification names only hypothetical evidence with no runnable descriptor.
+- A Spec with external input omits its `Threat model and supported environment` line, acceptance uses an absolute any-malformed-input clause instead of enumerated negative cases, or a descriptor runs a whole suite instead of focused test files.
 - An acceptance descriptor names no negative or bound control for its invariant, or its required prerequisite (dependency, simulator, preparation) is absent and still counted as a pass.
 - A required check matches zero tests or is skipped and the run is reported as passing.
 - New work depends on a prose Plan validator, Step activation, or State Ledger.

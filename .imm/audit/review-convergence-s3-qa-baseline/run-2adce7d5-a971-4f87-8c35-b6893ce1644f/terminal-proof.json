@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "review-convergence-s3-qa-baseline",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:review-convergence-s3-qa-baseline:2026-10-15T02:41:44.277Z",
+  "final_record_hash": "sha256:e514d68cb870da73e28fe44a8ef0c7ddb87b8d648c9258b4f3a259ee823eba43",
+  "terminalized_at": "2026-10-15T02:41:44.277Z"
+}

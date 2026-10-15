@@ -1,0 +1,30 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "review-convergence-s0-verdict-contract",
+  "owner": "user",
+  "goal": "Make a Review rework verdict carry only blocking findings, keep advisory notes archived on pass and out of Executor work, require each blocking trigger to name an input and an observable wrong result, forbid Reviewers from exceeding the declared threat model, and point generic review tools at the Code Quality Guard through a root CODING_STANDARDS.md.",
+  "acceptance": [
+    {
+      "id": "RC-S0-A1",
+      "assertion": "Meet S0 in docs/specs/review-convergence.spec.md: the coordinator rejects a rework verdict containing any advisory finding or no blocking finding with a diagnostic directing the Reviewer to resubmit pass with inspected_paths; a blocking-only rework projects only blocking Executor findings; a pass carrying advisory findings persists them on the review attestation and opens no Executor work; the coordinator never rewrites, drops, or synthesizes Reviewer findings; the Code Quality Guard, Reviewer prompt, their dist mirrors, and CODING_STANDARDS.md state one consistent pass/rework rule.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\",\n      \"tests/code-quality-guard-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "CODING_STANDARDS.md",
+    "docs/plans/review-convergence-s0-verdict-contract.intent.json",
+    "docs/reference/code-quality-guard.md",
+    "docs/specs/review-convergence.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/docs/reference/code-quality-guard.md",
+    "plugins/immune-brain/dist/role-prompts/code-review.md",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain/runtime/prompts/code-review.md",
+    "tests/code-quality-guard-contract.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/host-neutral-assurance-coordinator.test.ts",
+    "tests/pi-canary-assurance-authority.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

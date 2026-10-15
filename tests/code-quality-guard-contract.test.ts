@@ -44,6 +44,30 @@ describe("Code Quality Guard contract", () => {
 		}
 	});
 
+	it("states one pass/rework rule across the Guard, Reviewer prompt, mirrors and CODING_STANDARDS.md", () => {
+		const rule = {
+			guard: "A `rework` contains only blocking findings, at least one",
+			prompt: "A rework carries only `kind: \"blocking\"` findings",
+			standards: "a `rework` contains only blocking findings",
+		};
+		const guard = read("docs/reference/code-quality-guard.md");
+		expect(guard).toContain(rule.guard);
+		expect(guard).not.toContain("A passing Review has no findings");
+		expect(read("plugins/immune-brain/dist/docs/reference/code-quality-guard.md")).toBe(guard);
+
+		const promptSource = read("plugins/immune-brain/runtime/prompts/code-review.md");
+		const prompt = promptSource.replace(/\s+/g, " ");
+		expect(prompt).toContain(rule.prompt);
+		expect(prompt).toContain("concrete input or state → observable wrong result");
+		expect(prompt).toContain("outside that declaration is advisory");
+		expect(read("plugins/immune-brain/dist/role-prompts/code-review.md")).toBe(promptSource);
+
+		const standards = read("CODING_STANDARDS.md");
+		expect(standards).toContain("docs/reference/code-quality-guard.md");
+		expect(standards).toContain(rule.standards);
+		expect(standards).toContain("concrete correctness, regression, security, or significant maintenance risk in the reviewed change");
+	});
+
 	it("documents standalone repair and current user-facing boundaries", () => {
 		expect(read("plugins/immune-brain/dist/imm-pr-fix.md")).toContain("Code Quality Guard");
 		expect(read("plugins/immune-brain/README.md")).toContain("Code Quality Guard");

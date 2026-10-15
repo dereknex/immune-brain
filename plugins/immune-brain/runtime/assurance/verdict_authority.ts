@@ -13,7 +13,7 @@ import type { TaskRecord, TaskApprovalV2 } from "../kernel/types";
 import { captureGitTaskSnapshot } from "../workspace_scope";
 import { parseVerificationDescriptor } from "../verification_descriptor";
 import type { VerificationDescriptor } from "./verification";
-import { captureReviewBundle, captureReviewManifest, type ReviewBundle, type ReviewManifestV5, type ReviewRevision } from "./review_evidence";
+import { captureReviewBundle, captureReviewManifest, REVIEW_DELTA_FROM_ROUND, type ReviewBundle, type ReviewDeltaInput, type ReviewManifestV5, type ReviewRevision } from "./review_evidence";
 import { reviewReworkFindings, reviewAdvisoryRecords, type SnapshotDescriptor, type AssuranceRole, type AssuranceVerdict, type HostContext } from "./coordinator";
 import type { InvocationToken } from "./invocations";
 import type { ConfirmationReferenceSource } from "./host_port";
@@ -37,6 +37,7 @@ export interface SnapshotDescriptorInput {
 	acceptance: Array<{ id: string; assertion: string; verification: string }>;
 	dirty_files?: string[];
 	review_bundle_digest?: string | null;
+	review_delta?: SnapshotDescriptor["review_delta"];
 	/** Present only when Review authority binds an immutable Git revision (v4). */
 	review_revision?: {
 		contract: "assurance_kernel/review_revision_identity/v1";
@@ -68,10 +69,33 @@ export function buildSnapshot(input: SnapshotDescriptorInput): SnapshotDescripto
 		dirty_files: [...(input.dirty_files ?? [])].sort(),
 		review_bundle_digest: input.review_bundle_digest ?? null,
 		...(input.review_revision ? { review_revision: input.review_revision } : {}),
+		...(input.review_delta ? { review_delta: input.review_delta } : {}),
 		root: resolve(input.root),
 	};
 }
 
+
+/**
+ * The Review round the next dispatch opens and the revision the previous round
+ * analyzed. Both ensureReviewRevision and the snapshot read it through here so
+ * the manifest digest they bind cannot diverge. A record with no persisted
+ * prior revision yields `prior: null`, which skips the delta rule.
+ */
+function reviewDeltaInput(record: TaskRecord): ReviewDeltaInput {
+	const round = Math.max(
+		0,
+		...record.findings.filter((item) => item.source === "review").map((item) => item.review_round ?? 0),
+	) + 1;
+	const prior = [...record.history]
+		.reverse()
+		.find((entry) => entry.type === "request_rework" && entry.reason.split("\n")[0] === `review_round_${round - 1}`);
+	return {
+		round,
+		prior: prior?.review_revision
+			? { review_commit: prior.review_revision.review_commit, review_tree: prior.review_revision.review_tree }
+			: null,
+	};
+}
 
 export async function ensureReviewRevision(
 	root: string,
@@ -103,6 +127,7 @@ export async function ensureReviewRevision(
 		// write that exact summary, so the submit-time digest comparison held by
 		// coincidence rather than by construction.
 		outcomes: qaOutcomes(record),
+		delta: reviewDeltaInput(record),
 	});
 	return {
 		contract: "assurance_kernel/review_revision/v1",
@@ -182,6 +207,7 @@ export async function buildAssuranceSnapshot(
 				artifactState: projection.projection.artifact_state,
 				risk: intent.risk,
 				outcomes: qaOutcomes(record.record),
+				delta: reviewDeltaInput(record.record),
 			})
 		: null;
 	const taskSnapshot = !reviewBundle && !reviewManifest
@@ -221,11 +247,23 @@ export async function buildAssuranceSnapshot(
 							manifest_digest: reviewManifest.manifest_digest,
 						}
 						: undefined,
+				review_delta: reviewManifest ? reviewDeltaOf(reviewManifest, record.record) : undefined,
 		}),
 		descriptors,
 		reviewBundle,
 		reviewManifest,
 	};
+}
+
+function reviewDeltaOf(
+	manifest: ReviewManifestV5,
+	record: TaskRecord,
+): SnapshotDescriptor["review_delta"] {
+	const { round } = reviewDeltaInput(record);
+	if (round < REVIEW_DELTA_FROM_ROUND) return undefined;
+	return manifest.delta_paths
+		? { round, prior_review_commit: manifest.prior_review_commit!, delta_paths: manifest.delta_paths }
+		: { round, skipped: manifest.delta_skipped ?? "prior_review_revision_absent" };
 }
 
 function qaOutcomes(
@@ -316,7 +354,11 @@ export function createVerdictAuthority(options: {
    } : undefined;
    const op = verdict.decision === "rework" ? "request_rework" : "record_approval";
    const payload = approval ? { approval } : { findings };
-   const action = capabilityActionFor({ op, task_id: snapshot.task_id, at: now, actor_id: actorId, ...payload });
+   // Only a Review-authored rework persists the revision it analyzed; the next
+   // round derives its delta from it. QA rework never carries one.
+   const reworkRevision = verdict.decision === "rework" && snapshot.role === "review" && snapshot.review_revision
+    ? { review_revision: snapshot.review_revision } : {};
+   const action = capabilityActionFor({ op, task_id: snapshot.task_id, at: now, actor_id: actorId, ...payload, ...reworkRevision });
    const capability = registry.issue({
     authority_kind: snapshot.role, task_id: snapshot.task_id,
     ...(snapshot.run_id ? { run_id: snapshot.run_id } : {}),
@@ -332,7 +374,7 @@ export function createVerdictAuthority(options: {
    // then afterCommit. A thrown hook never undoes the committed transition.
    const settlement = (async () => app.execute({ root: ctx.cwd, task_id: snapshot.task_id,
     operation: approval ? { op: "record_approval", capability, approval, actor_id: actorId }
-     : { op: "request_rework", capability, findings, actor_id: actorId }, prior_intent_token: priorIntentToken, now }))();
+     : { op: "request_rework", capability, findings, actor_id: actorId, ...reworkRevision }, prior_intent_token: priorIntentToken, now }))();
    let hookFailed = false;
    let hookError: unknown;
    try { hooks.onCommit?.(); } catch (error) { hookFailed = true; hookError = error; }

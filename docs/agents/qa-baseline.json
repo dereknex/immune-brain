@@ -1,0 +1,28 @@
+{
+  "contract": "assurance_kernel/qa_baseline/v1",
+  "checks": [
+    {
+      "id": "typecheck",
+      "verification": {
+        "contract": "assurance_kernel/verification_descriptor/v2",
+        "command": {
+          "executable": "bun",
+          "argv": ["run", "typecheck"],
+          "cwd": ".",
+          "timeout_ms": 300000,
+          "max_output_bytes": 196608
+        },
+        "environment": {
+          "prepare": {
+            "executable": "bun",
+            "argv": ["install", "--frozen-lockfile"],
+            "cwd": ".",
+            "timeout_ms": 300000,
+            "max_output_bytes": 196608
+          },
+          "writable_paths": ["node_modules"]
+        }
+      }
+    }
+  ]
+}

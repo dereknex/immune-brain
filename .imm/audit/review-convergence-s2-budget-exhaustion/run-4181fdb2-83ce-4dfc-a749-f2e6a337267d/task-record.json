@@ -1,0 +1,147 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "review-convergence-s2-budget-exhaustion",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "review-convergence-s2-budget-exhaustion",
+    "goal": "Replace the one-round pass-through at an exhausted Review rework budget with one literal-user decision offering three exits: grant N more rounds, accept remaining Review findings as residual risk, or replan.",
+    "acceptance": [
+      {
+        "id": "RC-S2-A1",
+        "assertion": "Meet S2 in docs/specs/review-convergence.spec.md: from a record parked by budget exhaustion, authorize_rework with rounds N (1-5) parks again only after N further blocking rounds; accept_residual_risk with literal-user authority and a non-empty reason resolves the boundary, moves open blocking Review findings to accepted_risk, and permits completion only when QA and acceptance obligations are met; the same action from review, qa, or parent authority, without a reason, or on a repeated-security-boundary dispute is rejected with zero writes; Claude and Pi present the same three exits; an unattended batch parks instead of choosing an exit; records without the new fields parse and behave unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-canary-rework-authority.test.ts\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/pi-canary-user-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/review-convergence-s2-budget-exhaustion.intent.json",
+      "docs/specs/review-convergence.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/authorization_operation.ts",
+      "plugins/immune-brain/runtime/claude/interaction.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/kernel/application.ts",
+      "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+      "plugins/immune-brain/runtime/kernel/canary_application.ts",
+      "plugins/immune-brain/runtime/kernel/completion.ts",
+      "plugins/immune-brain/runtime/kernel/reducer.ts",
+      "plugins/immune-brain/runtime/kernel/types.ts",
+      "plugins/immune-brain/runtime/kernel/validation.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/kernel-canary-rework-authority.test.ts",
+      "tests/pi-canary-user-authority.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/review-convergence-s2-budget-exhaustion.intent.json",
+    "content_hash": "sha256:16cebd476a901ca7dee39d6b0668b282ddbdbf7ca0202e819cf65da943ec7077"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:5cfd90a9e982df169654d832fc6e9a3909ff48ff1dc7e02e9fa2d0d5f5650827",
+  "git_base_head": "519ff590967df4a4720100eb3237542fa04bea03",
+  "attestations": [
+    {
+      "id": "approval-qa-c18ca403",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:16cebd476a901ca7dee39d6b0668b282ddbdbf7ca0202e819cf65da943ec7077",
+      "diff_hash": "sha256:9c7a5fe125d01072031ec9c64042f888ca11f64fe36219f175574851f42a0feb",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:d6ee6e96bb15621cd0555f0f0de102ea2f76a9e8083752db95c0d567a3f8c8fb",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RC-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:d6ee6e96bb15621cd0555f0f0de102ea2f76a9e8083752db95c0d567a3f8c8fb"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-910c586f",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:16cebd476a901ca7dee39d6b0668b282ddbdbf7ca0202e819cf65da943ec7077",
+      "diff_hash": "sha256:9c7a5fe125d01072031ec9c64042f888ca11f64fe36219f175574851f42a0feb",
+      "actor_id": "parent-mediated-review",
+      "summary": "Review revision 0aa5c1a (sole parent 519ff59, tree f05bdf4) closes RC-S2-A1: cumulative 1-5 round grant with legacy default 1, literal-user-only accept_residual_risk gated on a budget_exhausted boundary with a non-empty reason and rejected with zero writes otherwise, accepted_risk bound to the exact intent revision, intent hash and diff so QA and acceptance obligations still gate completion, and both Hosts sharing one exit parser and projection. Records without the new fields parse and behave unchanged.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "519ff590967df4a4720100eb3237542fa04bea03",
+        "review_commit": "0aa5c1a603460ceecd146d1fcfa173fce9aaaeef",
+        "review_tree": "f05bdf461a08267e4d4c4e84a9d9d2f619032aea",
+        "manifest_digest": "sha256:db8d96a360e889a2757f326bf07aa682f395baee7bee116ecbc1d33070386476"
+      },
+      "reviewer_verdict_sha256": "sha256:c38d2f35c241a5904bd9f19065b694ad153c1cb03f5f1ea1dffe7032b5d3bcc9"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:review-convergence-s2-budget-exhaustion:2026-10-15T06:01:44.421Z",
+      "at": "2026-10-15T06:01:44.421Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:8dc02d6e3da8d813864686f4a7d463538b046319ee26dafd33f449a46d3dc1d3",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-e3d87b9ec0fc806f",
+        "issued_at": "2026-10-15T06:02:05.976Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:review-convergence-s2-budget-exhaustion:2026-10-15T06:35:17.962Z",
+      "at": "2026-10-15T06:35:17.962Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-convergence-s2-budget-exhaustion.intent.json"
+    },
+    {
+      "id": "record_approval:review-convergence-s2-budget-exhaustion:2026-10-15T06:36:37.939Z",
+      "at": "2026-10-15T06:36:37.939Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-c18ca403\naction_v2_sha256:c13cecb67d2e45a506d5995d93bb5df194726435eff164339b259bbdcb3a30eb",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-15T06:36:37.939Z"
+      }
+    },
+    {
+      "id": "record_approval:review-convergence-s2-budget-exhaustion:2026-10-15T06:39:46.323Z",
+      "at": "2026-10-15T06:39:46.323Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-910c586f\naction_v2_sha256:ba54c3d6bee27aea2190e3850d8c865123690367d6cf73ca7ca6a5bbeaf3c988",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-15T06:39:46.323Z"
+      }
+    },
+    {
+      "id": "complete:review-convergence-s2-budget-exhaustion:2026-10-15T06:39:48.040Z",
+      "at": "2026-10-15T06:39:48.040Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:c88fc08e9a40b59a50ffb33018f5e075075800afdb5b20b3a7d5aab4b31a0626"
+    }
+  ]
+}

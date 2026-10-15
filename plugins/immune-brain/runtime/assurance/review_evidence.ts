@@ -287,7 +287,52 @@ export interface ReviewManifestV5 {
 	lifecycle: string;
 	artifact_state: string;
 	risk: string;
+	/** Round 3 and later only: the prior round's reviewed commit. */
+	prior_review_commit?: string;
+	/** Paths whose tree entries differ between the prior and current review trees. */
+	delta_paths?: string[];
+	/** Round 3 and later only: why no delta is available, so the rule is skipped. */
+	delta_skipped?: "prior_review_revision_absent" | "prior_review_revision_unresolvable";
 	manifest_digest: string;
+}
+
+/** The first Review round that judges only the rework delta. */
+export const REVIEW_DELTA_FROM_ROUND = 3;
+
+export interface ReviewDeltaInput {
+	/** The round this Review opens, derived from the Kernel's review findings. */
+	round: number;
+	/** The revision the previous round reviewed; null for a legacy record. */
+	prior: { review_commit: string; review_tree: string } | null;
+}
+
+function reviewDeltaFields(
+	root: string,
+	delta: ReviewDeltaInput | undefined,
+	currentTree: string,
+): Pick<ReviewManifestV5, "prior_review_commit" | "delta_paths" | "delta_skipped"> {
+	if (!delta || delta.round < REVIEW_DELTA_FROM_ROUND) return {};
+	if (!delta.prior) return { delta_skipped: "prior_review_revision_absent" };
+	try {
+		gitEvidence(root, ["cat-file", "-e", `${delta.prior.review_commit}^{commit}`]);
+		gitEvidence(root, ["cat-file", "-e", `${delta.prior.review_tree}^{tree}`]);
+		const names = gitEvidenceBytes(root, [
+			"diff-tree",
+			"-r",
+			"--name-only",
+			"--no-renames",
+			"-z",
+			delta.prior.review_tree,
+			currentTree,
+		]).toString("utf8");
+		return {
+			prior_review_commit: delta.prior.review_commit,
+			delta_paths: names.split("\0").filter(Boolean).sort(),
+		};
+	} catch {
+		// A pruned or unreachable prior revision must never block Review.
+		return { delta_skipped: "prior_review_revision_unresolvable" };
+	}
 }
 
 function manifestDigest(manifest: Omit<ReviewManifestV5, "manifest_digest">): string {
@@ -485,6 +530,8 @@ export function captureReviewManifest(
 		artifactState: string;
 		risk: string;
 		outcomes: Record<string, ReviewOutcome>;
+		/** Present once the task has a Review history; absent keeps rounds 1-2 byte-identical. */
+		delta?: ReviewDeltaInput;
 	},
 ): ReviewManifestV5 {
 	const { snapshot, revision } = publishInput(root, input);
@@ -508,6 +555,7 @@ export function captureReviewManifest(
 		lifecycle: input.lifecycle,
 		artifact_state: input.artifactState,
 		risk: input.risk,
+		...reviewDeltaFields(root, input.delta, revision.review_tree),
 	};
 	const manifest = { ...unsigned, manifest_digest: manifestDigest(unsigned) };
 	if (Buffer.byteLength(JSON.stringify(manifest)) > MAX_REVIEW_BUNDLE_BYTES)

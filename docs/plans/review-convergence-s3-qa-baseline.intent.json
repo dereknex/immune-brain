@@ -1,0 +1,26 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "review-convergence-s3-qa-baseline",
+  "owner": "user",
+  "goal": "Make deterministic QA always run a project-declared baseline read from the Enrollment base tree, and disclose rather than block a baseline check that fails identically at base_head.",
+  "acceptance": [
+    {
+      "id": "RC-S3-A1",
+      "assertion": "Meet S3 in docs/specs/review-convergence.spec.md: QA reads docs/agents/qa-baseline.json from the base_head tree, never the delivery; a failing baseline check yields a blocking QA finding with acceptance_id null; when the same check also fails on the materialized base_head tree the finding is advisory with the pre-existing baseline failure prefix and is disclosed; a failing acceptance descriptor never receives this tolerance; an absent baseline file adds no checks; this repository declares bun run typecheck as its baseline.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/shared-deterministic-qa.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/agents/qa-baseline.json",
+    "docs/plans/review-convergence-s3-qa-baseline.intent.json",
+    "docs/specs/review-convergence.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/assurance/qa.ts",
+    "plugins/immune-brain/runtime/assurance/qa_findings.ts",
+    "plugins/immune-brain/runtime/assurance/verification.ts",
+    "tests/qa-prepare-diagnostics.test.ts",
+    "tests/shared-deterministic-qa.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

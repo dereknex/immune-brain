@@ -113,7 +113,22 @@ export function completionDecision(
 		)
 		.map((item) => item.id);
 
-	const requiredKinds = REQUIRED_ATTESTATIONS[resolveProjectedRisk(intent, changedPaths, floor)];
+	// A literal-user residual-risk acceptance stands in for the Review
+	// approval only while it names this exact intent revision, intent hash and
+	// diff, and every finding it accepted is still accepted. QA, acceptance and
+	// every other obligation are unaffected, and any later change makes it stale.
+	const acceptance = record.residual_risk_acceptance;
+	const residualRiskAccepted =
+		acceptance !== undefined &&
+		acceptance.intent_revision === intent.revision &&
+		acceptance.intent_content_hash === currentIntentContentHash &&
+		acceptance.diff_hash === currentDiffHash &&
+		acceptance.finding_ids.every((id) =>
+			record.findings.some((item) => item.id === id && item.status === "accepted_risk"),
+		);
+	const requiredKinds = REQUIRED_ATTESTATIONS[
+		resolveProjectedRisk(intent, changedPaths, floor)
+	].filter((kind) => !(residualRiskAccepted && kind === "review"));
 	const candidates = freshAttestations.filter((item) => requiredKinds.includes(item.kind));
 	const missingApprovalKinds = requiredKinds.filter(
 		(kind) => !candidates.some((attestation) => attestation.kind === kind),

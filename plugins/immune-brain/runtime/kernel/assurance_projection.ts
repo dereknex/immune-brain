@@ -23,6 +23,7 @@ import {
 import { projectTask, resolveProjectedRisk } from "./completion";
 import { readRiskFloor, type RiskFloor } from "./risk_floor";
 import { inspectSpecBinding } from "./spec_binding";
+import { MAX_REWORK_GRANT_ROUNDS } from "./validation";
 import { taskDeliveryIdentity } from "../workspace_scope";
 import type { AssuranceObligation, TaskIntentV1, TaskRecord, TaskRecordV3 } from "./types";
 import type { TaskRecordV2 } from "./legacy_task_record";
@@ -42,6 +43,90 @@ export interface AssuranceAuthorizationReadiness {
 	state: "resolve_user_decision" | "authorize_rework" | "none";
 	/** Non-null only when Kernel facts prove the authorization is blocked. */
 	blocked: string | null;
+	/**
+	 * Present only with state "authorize_rework": the exits the literal user may
+	 * choose at the open replan boundary. Both Hosts render exactly these and map
+	 * each to one Kernel action, so the offer cannot drift between them.
+	 */
+	exits?: ReworkExitsReadiness;
+}
+
+export interface ReworkExitsReadiness {
+	/** `authorize_rework` with `rounds` in this inclusive range. */
+	grant_rounds: { min: number; max: number };
+	/** `accept_residual_risk`; offered only when the boundary is a budget exhaustion. */
+	accept_residual_risk: boolean;
+	/** `approve_breaking_intent_revision`; always available. */
+	replan: true;
+	/** The open blocking Review findings the user would be accepting. */
+	findings: Array<{ id: string; summary: string }>;
+}
+
+/** The one exit the literal user picked at the replan boundary. */
+export type ReworkChoice =
+	| { exit: "grant_rounds"; rounds: number }
+	| { exit: "accept_residual_risk"; reason: string }
+	| { exit: "replan" };
+
+/**
+ * Parse a Host's form content into a choice. Both Hosts call this, so what is
+ * accepted cannot drift between them. Unknown keys, an exit the boundary does not
+ * offer, an out-of-range grant and a blank reason all yield null.
+ */
+export function parseReworkChoice(exits: ReworkExitsReadiness, content: unknown): ReworkChoice | null {
+	if (typeof content !== "object" || content === null || Array.isArray(content)) return null;
+	const fields = content as Record<string, unknown>;
+	const allowed = new Set(["exit", "rounds", "reason"]);
+	if (Object.keys(fields).some((key) => !allowed.has(key))) return null;
+	if (fields.exit === "replan") return { exit: "replan" };
+	if (fields.exit === "grant_rounds") {
+		const rounds = fields.rounds ?? exits.grant_rounds.min;
+		if (!Number.isInteger(rounds)) return null;
+		const value = rounds as number;
+		if (value < exits.grant_rounds.min || value > exits.grant_rounds.max) return null;
+		return { exit: "grant_rounds", rounds: value };
+	}
+	if (fields.exit === "accept_residual_risk") {
+		if (!exits.accept_residual_risk) return null;
+		const reason = typeof fields.reason === "string" ? fields.reason.trim() : "";
+		return reason ? { exit: "accept_residual_risk", reason } : null;
+	}
+	return null;
+}
+
+/** The exits as the lines both Hosts show, so the offer reads the same everywhere. */
+export function reworkExitLines(exits: ReworkExitsReadiness): string[] {
+	return [
+		`Exit grant_rounds: grant ${exits.grant_rounds.min}-${exits.grant_rounds.max} more Review round(s)`,
+		...(exits.accept_residual_risk
+			? ["Exit accept_residual_risk: accept the open Review findings below as residual risk (a reason is required)"]
+			: []),
+		"Exit replan: revise the Intent through approve_breaking_intent_revision",
+		...(exits.findings.length > 0
+			? [`Open blocking Review findings (${exits.findings.length}):`, ...exits.findings.map((finding) => `  - ${finding.id}: ${finding.summary}`)]
+			: []),
+	];
+}
+
+export function deriveReworkExits(record: Pick<TaskRecord, "findings">): ReworkExitsReadiness {
+	const boundaries = record.findings.filter(
+		(finding) => finding.kind === "replan_required" && finding.status === "open",
+	);
+	const findings = record.findings
+		.filter(
+			(finding) =>
+				finding.kind === "blocking" && finding.source === "review" && finding.status === "open",
+		)
+		.map((finding) => ({ id: finding.id, summary: finding.summary }));
+	return {
+		grant_rounds: { min: 1, max: MAX_REWORK_GRANT_ROUNDS },
+		accept_residual_risk:
+			boundaries.length > 0 &&
+			boundaries.every((finding) => finding.replan_cause === "budget_exhausted") &&
+			findings.length > 0,
+		replan: true,
+		findings,
+	};
 }
 
 export interface AssuranceProjection {
@@ -85,6 +170,7 @@ export interface AssuranceProjectionResult {
 export function deriveAssuranceAuthorization(input: {
 	next_obligation: AssuranceObligation;
 	open_user_decision_count: number;
+	exits?: ReworkExitsReadiness;
 }): AssuranceAuthorizationReadiness {
 	if (input.open_user_decision_count === 1)
 		return { state: "resolve_user_decision", blocked: null };
@@ -94,7 +180,11 @@ export function deriveAssuranceAuthorization(input: {
 			blocked: `resolve-user-decision requires exactly one open user decision; found ${input.open_user_decision_count}`,
 		};
 	if (input.next_obligation === "revise_intent")
-		return { state: "authorize_rework", blocked: null };
+		return {
+			state: "authorize_rework",
+			blocked: null,
+			...(input.exits ? { exits: input.exits } : {}),
+		};
 	return { state: "none", blocked: null };
 }
 
@@ -245,6 +335,7 @@ function projectFromRecord(
 			: deriveAssuranceAuthorization({
 			next_obligation: decision.next_obligation,
 			open_user_decision_count: openUserDecisionCount,
+			exits: deriveReworkExits(record),
 		}),
 	};
 }

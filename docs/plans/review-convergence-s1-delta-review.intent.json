@@ -1,0 +1,33 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "review-convergence-s1-delta-review",
+  "goal": "From the third Review round, admit a new blocking finding only when it touches the latest rework delta or crosses a security, data-loss, or authority boundary, using a durably persisted per-round review revision.",
+  "acceptance": [
+    {
+      "id": "RC-S1-A1",
+      "assertion": "Meet S1 in docs/specs/review-convergence.spec.md: a review-authored request_rework persists its ReviewRevisionIdentityV1 on the round history entry as an optional field validated against git_base_head; Review round 3 and later receive prior_review_commit and delta_paths in the manifest; a round>=3 blocking finding with violated.kind other than security_boundary and no caller_chain path in delta_paths is rejected for resubmission, while in-delta or security_boundary findings are admitted; rounds 1-2 and legacy records without a prior revision behave unchanged and never block on the missing fact.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-canary-rework-authority.test.ts\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/review-convergence-s1-delta-review.intent.json",
+    "docs/specs/review-convergence.spec.md",
+    "plugins/immune-brain/agents/immune-brain-reviewer.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/role-prompts/code-review.md",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain/runtime/assurance/review_evidence.ts",
+    "plugins/immune-brain/runtime/assurance/verdict_authority.ts",
+    "plugins/immune-brain/runtime/kernel/canary_application.ts",
+    "plugins/immune-brain/runtime/kernel/reducer.ts",
+    "plugins/immune-brain/runtime/kernel/types.ts",
+    "plugins/immune-brain/runtime/kernel/validation.ts",
+    "plugins/immune-brain/runtime/prompts/code-review.md",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/host-neutral-assurance-coordinator.test.ts",
+    "tests/kernel-canary-rework-authority.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 2,
+  "owner": "user"
+}

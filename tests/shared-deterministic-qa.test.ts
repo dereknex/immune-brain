@@ -246,3 +246,66 @@ describe("task QA in the working directory", () => {
 		expect(inScopeTrackedDrift(root, tree, scope)).toEqual(["check.sh", "src/a.txt", "src/b.txt"]);
 	});
 });
+
+describe("project QA baseline", () => {
+	const git = (root: string, ...args: string[]) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8" }).trim();
+	const verification = (executable: string) => ({ contract: "assurance_kernel/verification_descriptor/v2",
+		command: { executable, argv: [], cwd: ".", timeout_ms: 20000, max_output_bytes: 8192 } });
+	// `fails.sh` exits nonzero while a file named `broken` exists in its tree.
+	function repository(options: { baseline?: boolean; brokenAtBase?: boolean } = {}) {
+		const root = temp();
+		git(root, "init", "-q"); git(root, "config", "user.email", "qa@example.invalid"); git(root, "config", "user.name", "qa");
+		mkdirSync(join(root, "src")); mkdirSync(join(root, "docs/agents"), { recursive: true });
+		writeFileSync(join(root, "src/a.txt"), "frozen\n");
+		writeFileSync(join(root, "fails.sh"), "#!/bin/sh\ntest ! -e broken\n");
+		writeFileSync(join(root, "red.sh"), "#!/bin/sh\nexit 1\n");
+		writeFileSync(join(root, "ok.sh"), "#!/bin/sh\nexit 0\n");
+		for (const name of ["fails.sh", "red.sh", "ok.sh"]) chmodSync(join(root, name), 0o755);
+		if (options.baseline !== false)
+			writeFileSync(join(root, "docs/agents/qa-baseline.json"), JSON.stringify({ contract: "assurance_kernel/qa_baseline/v1",
+				checks: [{ id: "guard", verification: verification("./fails.sh") }] }));
+		if (options.brokenAtBase) writeFileSync(join(root, "broken"), "red\n");
+		git(root, "add", "-A"); git(root, "commit", "-q", "-m", "base");
+		return { root, head: git(root, "rev-parse", "HEAD"), tree: git(root, "rev-parse", "HEAD^{tree}") };
+	}
+	const run = (repo: { root: string; head: string; tree: string }, acceptance: string) => {
+		const s = { ...snapshot("baseline", [{ id: "A1" }]), root: repo.root };
+		return runDeterministicQa(s, new Map([["A1", parseVerificationDescriptor(JSON.stringify(verification(acceptance)))]]),
+			{ _baseHead: repo.head, _frozenTree: { tree: repo.tree, drift: () => inScopeTrackedDrift(repo.root, repo.tree, ["src"]) } });
+	};
+
+	test("a failing baseline check blocks with a null acceptance id, read from base_head and not the delivery", async () => {
+		const repo = repository();
+		// The delivery deletes its own baseline declaration and introduces the failure.
+		rmSync(join(repo.root, "docs/agents/qa-baseline.json")); writeFileSync(join(repo.root, "broken"), "new\n");
+		const verdict = await run(repo, "./ok.sh");
+		expect(verdict.decision).toBe("rework");
+		expect(verdict.findings).toHaveLength(1);
+		expect(verdict.findings![0]).toMatchObject({ kind: "blocking", acceptance_id: null });
+		expect(verdict.findings![0].id).toStartWith("qa-baseline-guard-");
+		expect(verdict.findings![0].summary).not.toContain("pre-existing baseline failure:");
+	});
+	test("a baseline check that also fails on the base_head tree is advisory and disclosed on a pass", async () => {
+		const repo = repository({ brokenAtBase: true });
+		const verdict = await run(repo, "./ok.sh");
+		expect(verdict.decision).toBe("pass");
+		expect(verdict.findings).toHaveLength(1);
+		expect(verdict.findings![0]).toMatchObject({ kind: "advisory", acceptance_id: null });
+		expect(verdict.findings![0].summary).toStartWith("pre-existing baseline failure:");
+		expect(verdict.approval?.summary).toContain("pre-existing baseline failure:");
+	});
+	test("a failing acceptance descriptor never receives the pre-existing tolerance", async () => {
+		const repo = repository({ brokenAtBase: true });
+		const verdict = await run(repo, "./red.sh");
+		expect(verdict.decision).toBe("rework");
+		expect(verdict.findings!.filter(item => item.kind === "blocking" && item.acceptance_id === "A1")).toHaveLength(1);
+		expect(verdict.findings!.some(item => item.kind === "advisory")).toBe(false);
+	});
+	test("an absent baseline file adds no checks", async () => {
+		const repo = repository({ baseline: false, brokenAtBase: true });
+		const verdict = await run(repo, "./ok.sh");
+		expect(verdict.decision).toBe("pass");
+		expect(verdict.approval?.summary).toStartWith("all 1 project verification check(s) passed;");
+		expect(verdict.findings).toBeUndefined();
+	});
+});

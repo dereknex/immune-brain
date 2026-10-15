@@ -14,7 +14,13 @@ import {
 import {
 	writeNativeReviewEvidence,
 } from "../assurance/review_evidence";
-import { projectAssurance, type AssuranceProjection, type AssuranceProjectionResult } from "../kernel/assurance_projection";
+import {
+	projectAssurance,
+	type AssuranceProjection,
+	type AssuranceProjectionResult,
+	type ReworkChoice,
+	type ReworkExitsReadiness,
+} from "../kernel/assurance_projection";
 import { type TaskFinding, type TaskRecord } from "../kernel/types";
 import { findingsDigestV2 } from "../kernel/reducer";
 import { readTaskRecordRaw, recoverKernelStoreFollowUps } from "../kernel/storage";
@@ -190,6 +196,7 @@ async function mintCapability(
 		next_intent?: unknown;
 		next_intent_ref?: unknown;
 		reason?: string;
+		rounds?: number;
 		finding_id?: string;
 		resolution?: string;
 		now: string;
@@ -202,6 +209,7 @@ async function mintCapability(
 		at: input.now,
 		actor_id: input.actor_id,
 		...(input.reason !== undefined ? { reason: input.reason } : {}),
+		...(input.rounds !== undefined ? { rounds: input.rounds } : {}),
 		...(input.findings !== undefined ? { findings: input.findings } : {}),
 		...(input.approval !== undefined ? { approval: input.approval } : {}),
 		...(input.next_intent !== undefined ? { next_intent: input.next_intent } : {}),
@@ -361,7 +369,8 @@ export class ClaudeRuntime {
 		intentContentHash?: string;
 		bindingDigest?: string;
 		gitBaseNotice?: string;
-	} = {}): Promise<{ confirmation_ref: string }> {
+		reworkExits?: ReworkExitsReadiness;
+	} = {}): Promise<{ confirmation_ref: string; reworkChoice?: ReworkChoice }> {
 		throwIfCancelled(meta.signal);
 		const probe = probeHost(this.env, process.platform, this.hostVersion);
 		if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
@@ -376,6 +385,7 @@ export class ClaudeRuntime {
 		throwIfCancelled(meta.signal);
 		const gate = evaluateNativeGate({ operation, interactive, decision: result.decision });
 		if (!gate.ok) throw gate.error;
+		const { reworkExits: _exits, ...refBinding } = binding;
 		return {
 			confirmation_ref: confirmationRef({
 				connectionId: meta.sessionId,
@@ -383,8 +393,9 @@ export class ClaudeRuntime {
 				requestId: result.requestId,
 				operation,
 				taskId: meta.taskId,
-				...binding,
+				...refBinding,
 			}),
+			...(result.reworkChoice ? { reworkChoice: result.reworkChoice } : {}),
 		};
 	}
 
@@ -603,8 +614,11 @@ export class ClaudeRuntime {
 			return repairKernelAuthority(this.cwd, taskId, authority.revision);
 		}
 		if (!isPrivilegedOperation(operation) && operation !== "request_authorization") throw new Error(`unsupported privileged operation ${operation}`);
-		let op: PrivilegedOperation | "request_authorization" | "resolve_user_decision" | "authorize_rework" = operation;
+		let op: PrivilegedOperation | "request_authorization" | "resolve_user_decision" | "authorize_rework" | "accept_residual_risk" = operation;
 		let decisionOp: { finding_id: string; resolution: string } | undefined;
+		// Set only at a replan boundary: the exits the literal user chooses between.
+		let reworkExits: ReworkExitsReadiness | undefined;
+		let reworkChoice: ReworkChoice | undefined;
 		const nextIntent = extra.next_intent ? parseProjectTaskIntent(this.cwd, extra.next_intent) : undefined;
 		// The whole operation is judged against the scope it asks for (D6).
 		const nextScope = nextIntent?.scope_hint;
@@ -628,6 +642,7 @@ export class ClaudeRuntime {
 				decisionOp = { finding_id: open[0].id, resolution: `resume after literal-user decision: ${open[0].summary}` };
 			} else {
 				op = "authorize_rework";
+				reworkExits = projection.projection.authorization.exits;
 			}
 		}
 		const priorIntent = await readTaskIntentForRecord(this.cwd, taskId);
@@ -647,7 +662,7 @@ export class ClaudeRuntime {
 			restoreStagedIntentShared(this.cwd, stagedSnapshot);
 		};
 		let preparedDiffHash = projection.projection.diff_hash;
-		let gate: { confirmation_ref: string };
+		let gate: { confirmation_ref: string; reworkChoice?: ReworkChoice };
 		try {
 			if (sidecar && nextIntent) {
 				writeFileSync(sidecar, `${JSON.stringify(nextIntent, null, 2)}\n`);
@@ -672,7 +687,9 @@ export class ClaudeRuntime {
 				intentRevision: nextIntent?.revision ?? projection.projection.intent_revision,
 				intentContentHash: nextIntentHash ?? projection.projection.intent_content_hash,
 				bindingDigest: `${preparedDiffHash}:${nextIntentHash ?? ""}`,
+				...(reworkExits ? { reworkExits } : {}),
 			});
+			reworkChoice = gate.reworkChoice;
 		} catch (error) {
 			if (stagedSnapshot) {
 				const current = await readTaskRecordRaw(this.cwd, taskId);
@@ -681,6 +698,19 @@ export class ClaudeRuntime {
 				}
 			}
 			throw error;
+		}
+		if (reworkExits) {
+			if (!reworkChoice) throw new NativeAuthorityError("interaction_not_opened", "native interaction returned no exit");
+			// A replan is not a mutation of this operation: the user chose to revise
+			// the Intent, which has its own gate. Nothing is written.
+			if (reworkChoice.exit === "replan") {
+				return {
+					state: "replan_selected",
+					task_id: taskId,
+					next: "revise the Intent, then call approve_breaking_intent_revision",
+				};
+			}
+			if (reworkChoice.exit === "accept_residual_risk") op = "accept_residual_risk";
 		}
 		const { registry, app } = this.authority();
 		const confirmation = gate.confirmation_ref;
@@ -712,6 +742,8 @@ export class ClaudeRuntime {
 				...(op === "approve_breaking_intent_revision" ? { next_intent: nextIntent, next_intent_ref: nextIntentRef } : {}),
 				...(op === "resolve_user_decision" && decisionOp ? decisionOp : {}),
 				...(op === "stop" ? { reason: stopReason(extra.reason) } : {}),
+				...(op === "authorize_rework" && reworkChoice?.exit === "grant_rounds" ? { rounds: reworkChoice.rounds } : {}),
+				...(op === "accept_residual_risk" && reworkChoice?.exit === "accept_residual_risk" ? { reason: reworkChoice.reason } : {}),
 			});
 			throwIfCancelled(meta.signal);
 			const result = app.execute({
@@ -724,6 +756,8 @@ export class ClaudeRuntime {
 					...(op === "approve_breaking_intent_revision" ? { next_intent: nextIntent, next_intent_ref: nextIntentRef } : {}),
 					...(op === "resolve_user_decision" && decisionOp ? decisionOp : {}),
 					...(op === "stop" ? { reason: stopReason(extra.reason) } : {}),
+					...(op === "authorize_rework" && reworkChoice?.exit === "grant_rounds" ? { rounds: reworkChoice.rounds } : {}),
+					...(op === "accept_residual_risk" && reworkChoice?.exit === "accept_residual_risk" ? { reason: reworkChoice.reason } : {}),
 				} as never,
 				prior_intent_token: priorIntent.token,
 				diffProvider,
@@ -733,6 +767,7 @@ export class ClaudeRuntime {
 			if (
 				op === "stop" ||
 				op === "authorize_rework" ||
+				op === "accept_residual_risk" ||
 				op === "approve_breaking_intent_revision"
 			) stagePlanningArtifactTransition(this.cwd, result.record);
 		} catch (error) {

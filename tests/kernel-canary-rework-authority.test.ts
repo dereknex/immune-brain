@@ -27,6 +27,8 @@ import {
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
+import { captureReviewManifest } from "../plugins/immune-brain/runtime/assurance/review_evidence";
+import { taskRevisionDiffHash } from "../plugins/immune-brain/runtime/workspace_scope";
 
 const TASK = "canary-rework-task";
 const INTENT = {
@@ -224,16 +226,33 @@ function reworkCapability(kind: "review" | "qa" | "user", overrides: Record<stri
 	});
 }
 
-function requestReviewRework(findings: Record<string, unknown>[], at: string) {
+function reviewRevision(overrides: Record<string, string> = {}) {
+	return {
+		contract: "assurance_kernel/review_revision_identity/v1" as const,
+		base_head: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
+		review_commit: "c".repeat(40),
+		review_tree: "d".repeat(40),
+		manifest_digest: "sha256:" + "e".repeat(64),
+		...overrides,
+	};
+}
+
+function requestReviewRework(
+	findings: Record<string, unknown>[],
+	at: string,
+	revision?: ReturnType<typeof reviewRevision>,
+	authority: "review" | "qa" | "user" = "review",
+) {
 	const action = capabilityActionFor({
 		op: "request_rework",
 		task_id: TASK,
 		at,
 		actor_id: "reviewer-1",
 		findings: findings as never[],
+		...(revision ? { review_revision: revision } : {}),
 	});
 	const capability = createMutationAuthorityCapabilityForTest(mutationRegistry, {
-		authority_kind: "review",
+		authority_kind: authority,
 		task_id: TASK,
 		action_digest: digestOfAction(action),
 		expected_record_hash: readTaskRecordRaw(root, TASK).revision,
@@ -245,7 +264,13 @@ function requestReviewRework(findings: Record<string, unknown>[], at: string) {
 		findings_digest: findingsDigestV2(findings as never[]),
 	});
 	return execute(
-		{ op: "request_rework", capability, findings: findings as never[], actor_id: "reviewer-1" },
+		{
+			op: "request_rework",
+			capability,
+			findings: findings as never[],
+			actor_id: "reviewer-1",
+			...(revision ? { review_revision: revision } : {}),
+		},
 		at,
 	);
 }
@@ -754,5 +779,282 @@ describe("request_rework authority", () => {
 				{ ...base, evidence: { ...REVIEW_EVIDENCE, caller_chain: ["other"] } } as never,
 			]),
 		);
+	});
+});
+
+describe("review rework persists the reviewed revision", () => {
+	const finding = () => [reviewFinding({ id: "rw-rev", anchor: ANCHOR, evidence: REVIEW_EVIDENCE })];
+
+	test("a Review rework stores its revision on the round history entry", () => {
+		toReview();
+		const revision = reviewRevision();
+		const result = requestReviewRework(finding(), "2026-08-12T10:00:03.000Z", revision);
+		const entry = result.record.history.at(-1);
+		expect(entry?.type).toBe("request_rework");
+		expect(entry?.reason.split("\n")[0]).toBe("review_round_1");
+		expect(entry?.review_revision).toEqual(revision);
+		// The stored record re-parses: the optional field is legal persisted data.
+		expect(readTaskRecordRaw(root, TASK).record?.history.at(-1)?.review_revision).toEqual(revision);
+	});
+
+	test("a Review rework without a revision stays valid for legacy callers", () => {
+		toReview();
+		const result = requestReviewRework(finding(), "2026-08-12T10:00:03.000Z");
+		expect(result.record.history.at(-1)?.review_revision).toBeUndefined();
+		expect(result.record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
+	});
+
+	test("a revision naming another base is rejected with zero writes", () => {
+		toReview();
+		const before = readTaskRecordRaw(root, TASK).revision;
+		expect(() =>
+			requestReviewRework(finding(), "2026-08-12T10:00:03.000Z", reviewRevision({ base_head: "f".repeat(40) })),
+		).toThrow(/base_head must equal the Enrollment git_base_head/);
+		expect(readTaskRecordRaw(root, TASK).revision).toBe(before);
+	});
+
+	test("QA and user rework cannot carry a review revision", () => {
+		for (const authority of ["qa", "user"] as const) {
+			toReview(`2026-08-12T10:0${authority === "qa" ? 1 : 2}:02.000Z`);
+			const plain = [{ ...FINDINGS[0], id: `rw-${authority}` }];
+			expect(() =>
+				requestReviewRework(plain, `2026-08-12T10:0${authority === "qa" ? 1 : 2}:03.000Z`, reviewRevision(), authority),
+			).toThrow(/cannot carry a review revision/);
+		}
+	});
+});
+
+describe("review manifest rework delta", () => {
+	const HEAD = () => execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+	function manifestFor(round: number, prior: { review_commit: string; review_tree: string } | null) {
+		const scope = [`docs/specs/${TASK}.spec.md`, "src/task.ts"];
+		return captureReviewManifest(root, {
+			taskId: TASK,
+			baseHead: HEAD(),
+			scopeHint: scope,
+			expectedDiffHash: taskRevisionDiffHash(root, scope, HEAD()),
+			intentRevision: 1,
+			intentContentHash: currentIntentHash(),
+			recordRevision: "r:" + "1".repeat(64),
+			workspaceRevision: "w:" + "2".repeat(64),
+			lifecycle: "active",
+			artifactState: "frozen",
+			risk: "material",
+			outcomes: {},
+			delta: { round, prior },
+		});
+	}
+	function stage(path: string, text: string) {
+		writeFileSync(join(root, path), text);
+		execFileSync("git", ["add", "-A"], { cwd: root });
+	}
+
+	test("round 3 lists exactly the paths the latest rework changed", () => {
+		stage("src/task.ts", "export const a = 1;\n");
+		stage(`docs/specs/${TASK}.spec.md`, "# v1\n");
+		const round2 = manifestFor(2, null);
+		expect(round2.delta_paths).toBeUndefined();
+		expect(round2.delta_skipped).toBeUndefined();
+		// Rework touches only the spec; src/task.ts is byte-identical to round 2.
+		stage(`docs/specs/${TASK}.spec.md`, "# v2\n");
+		const round3 = manifestFor(3, { review_commit: round2.review_commit, review_tree: round2.review_tree });
+		expect(round3.prior_review_commit).toBe(round2.review_commit);
+		expect(round3.delta_paths).toEqual([`docs/specs/${TASK}.spec.md`]);
+		expect(round3.manifest_digest).not.toBe(round2.manifest_digest);
+	});
+
+	test("a missing or unresolvable prior revision skips the rule instead of blocking", () => {
+		stage("src/task.ts", "export const a = 1;\n");
+		const legacy = manifestFor(3, null);
+		expect(legacy.delta_skipped).toBe("prior_review_revision_absent");
+		expect(legacy.delta_paths).toBeUndefined();
+		const pruned = manifestFor(3, { review_commit: "a".repeat(40), review_tree: "b".repeat(40) });
+		expect(pruned.delta_skipped).toBe("prior_review_revision_unresolvable");
+	});
+
+	test("rounds 1 and 2 add no delta fields so their digest is unchanged", () => {
+		stage("src/task.ts", "export const a = 1;\n");
+		const withoutDelta = (() => {
+			const scope = [`docs/specs/${TASK}.spec.md`, "src/task.ts"];
+			return captureReviewManifest(root, {
+				taskId: TASK,
+				baseHead: HEAD(),
+				scopeHint: scope,
+				expectedDiffHash: taskRevisionDiffHash(root, scope, HEAD()),
+				intentRevision: 1,
+				intentContentHash: currentIntentHash(),
+				recordRevision: "r:" + "1".repeat(64),
+				workspaceRevision: "w:" + "2".repeat(64),
+				lifecycle: "active",
+				artifactState: "frozen",
+				risk: "material",
+				outcomes: {},
+			});
+		})();
+		expect(manifestFor(1, null).manifest_digest).toBe(withoutDelta.manifest_digest);
+		expect(manifestFor(2, null).manifest_digest).toBe(withoutDelta.manifest_digest);
+	});
+});
+
+describe("budget exhaustion decision", () => {
+	const BOUNDARY_SECURITY_EVIDENCE = {
+		trigger: "an unauthenticated caller reaches the privileged path",
+		caller_chain: ["runtime/claude/mcp_server.ts"],
+		violated: { kind: "security_boundary", ref: "literal-user-authority" },
+	};
+	let clock = 0;
+	const stamp = () =>
+		`2026-08-12T13:${String(Math.floor(clock / 60)).padStart(2, "0")}:${String(clock++ % 60).padStart(2, "0")}.000Z`;
+
+	function blockingRound(label: string) {
+		toReview(stamp());
+		return requestReviewRework(
+			[reviewFinding({ id: label, anchor: anchorForEvidence(REVIEW_EVIDENCE as never), evidence: REVIEW_EVIDENCE })],
+			stamp(),
+		);
+	}
+
+	const openBoundary = (record: { findings: { kind: string; status: string }[] }) =>
+		record.findings.some((f) => f.kind === "replan_required" && f.status === "open");
+
+	/** A genuinely parked record: the budget is spent by real blocking Review rounds. */
+	function parkAtBudget() {
+		let result = blockingRound("park-0");
+		for (let round = 1; round <= REVIEW_REWORK_ROUND_BUDGET; round += 1) result = blockingRound(`park-${round}`);
+		const boundary = result.record.findings.find((f) => f.kind === "replan_required" && f.status === "open");
+		expect(boundary?.replan_cause).toBe("budget_exhausted");
+		expect(result.record.lifecycle).toBe("active");
+		execFileSync("git", ["add", "-A"], { cwd: root });
+		return result;
+	}
+
+	function decide(
+		op: "authorize_rework" | "accept_residual_risk",
+		fields: { rounds?: number; reason?: string; kind?: "user" | "review" | "qa" } = {},
+	) {
+		const at = stamp();
+		const action = capabilityActionFor({
+			op,
+			task_id: TASK,
+			at,
+			actor_id: "literal-user",
+			...(fields.rounds !== undefined ? { rounds: fields.rounds } : {}),
+			...(fields.reason !== undefined ? { reason: fields.reason } : {}),
+		});
+		const capability = createMutationAuthorityCapabilityForTest(mutationRegistry, {
+			authority_kind: fields.kind ?? "user",
+			task_id: TASK,
+			action_digest: digestOfAction(action),
+			expected_record_hash: readTaskRecordRaw(root, TASK).revision,
+			intent_revision: 1,
+			intent_content_hash: currentIntentHash(),
+			diff_hash: DIFF,
+			actor_id: "literal-user",
+			confirmation_ref: `confirm-${op}-${at}`,
+			findings_digest: null,
+		});
+		return execute(
+			op === "authorize_rework"
+				? { op, capability, actor_id: "literal-user", ...(fields.rounds !== undefined ? { rounds: fields.rounds } : {}) }
+				: { op, capability, actor_id: "literal-user", reason: fields.reason ?? "" },
+			at,
+		);
+	}
+
+	test("a grant of three rounds parks again at the third further blocking round, not before", () => {
+		parkAtBudget();
+		const granted = decide("authorize_rework", { rounds: 3 });
+		expect(granted.record.review_round_budget_extension).toBe(3);
+		expect(granted.record.findings.find((f) => f.kind === "replan_required")?.status).toBe("resolved");
+		const parkedAt: number[] = [];
+		for (let round = 1; round <= 3; round += 1) {
+			if (openBoundary(blockingRound(`granted-${round}`).record)) parkedAt.push(round);
+		}
+		expect(parkedAt).toEqual([3]);
+	});
+
+	test("a legacy grant without rounds extends the budget by exactly one", () => {
+		parkAtBudget();
+		expect(decide("authorize_rework").record.review_round_budget_extension).toBe(1);
+		expect(openBoundary(blockingRound("legacy-1").record)).toBe(true);
+	});
+
+	test("a grant outside 1-5 is rejected with zero writes", () => {
+		parkAtBudget();
+		const before = readTaskRecordRaw(root, TASK).revision;
+		expect(() => decide("authorize_rework", { rounds: 6 })).toThrow(/rounds/);
+		expect(() => decide("authorize_rework", { rounds: 0 })).toThrow(/rounds/);
+		expect(readTaskRecordRaw(root, TASK).revision).toBe(before);
+	});
+
+	test("accepting residual risk settles the boundary and moves the open findings to accepted_risk", () => {
+		parkAtBudget();
+		const openBefore = readTaskRecordRaw(root, TASK)
+			.record!.findings.filter((f) => f.kind === "blocking" && f.source === "review" && f.status === "open")
+			.map((f) => f.id);
+		expect(openBefore.length).toBeGreaterThan(0);
+		const accepted = decide("accept_residual_risk", { reason: "reviewed by the owner; follow-up filed" });
+		expect(accepted.record.findings.find((f) => f.kind === "replan_required")?.status).toBe("resolved");
+		for (const id of openBefore) expect(accepted.record.findings.find((f) => f.id === id)?.status).toBe("accepted_risk");
+		expect(accepted.record.residual_risk_acceptance).toMatchObject({
+			reason: "reviewed by the owner; follow-up filed",
+			actor_id: "literal-user",
+			finding_ids: openBefore,
+		});
+		expect(accepted.record.history.at(-1)?.authority?.authority_kind).toBe("user");
+		expect(accepted.record.lifecycle).toBe("active");
+	});
+
+	test("an accepted risk completes once QA is green, without a Review approval", () => {
+		parkAtBudget();
+		decide("accept_residual_risk", { reason: "owner accepts the remaining findings" });
+		toReview(stamp());
+		const done = app.execute({
+			root,
+			task_id: TASK,
+			operation: { op: "complete", actor_id: "executor-1" },
+			prior_intent_token: token(),
+			diffProvider: () => ({ diff_hash: DIFF, changed_paths: [] as const }),
+			now: stamp(),
+		});
+		expect(done.record.lifecycle).toBe("done");
+		expect(done.record.attestations.some((item) => item.kind === "review")).toBe(false);
+	});
+
+	test("an accept without literal-user authority or without a reason is rejected with zero writes", () => {
+		parkAtBudget();
+		const before = readTaskRecordRaw(root, TASK).revision;
+		expect(() => decide("accept_residual_risk", { reason: "ok", kind: "review" })).toThrow(/literal-user|authority/i);
+		expect(() => decide("accept_residual_risk", { reason: "ok", kind: "qa" })).toThrow(/literal-user|authority/i);
+		expect(() => decide("accept_residual_risk", { reason: "   " })).toThrow(/reason/i);
+		expect(readTaskRecordRaw(root, TASK).revision).toBe(before);
+	});
+
+	test("a repeated security boundary offers no residual-risk exit", () => {
+		const security = (id: string) =>
+			reviewFinding({
+				id,
+				acceptance_id: null,
+				anchor: anchorForEvidence(BOUNDARY_SECURITY_EVIDENCE as never),
+				evidence: BOUNDARY_SECURITY_EVIDENCE,
+			});
+		toReview(stamp());
+		requestReviewRework([security("sec-1")], stamp());
+		toReview(stamp());
+		const parked = requestReviewRework([security("sec-2")], stamp());
+		expect(parked.record.findings.find((f) => f.kind === "replan_required")?.replan_cause).toBe(
+			"repeated_security_boundary",
+		);
+		execFileSync("git", ["add", "-A"], { cwd: root });
+		const before = readTaskRecordRaw(root, TASK).revision;
+		expect(() => decide("accept_residual_risk", { reason: "accepted" })).toThrow(/budget exhaustion/);
+		expect(readTaskRecordRaw(root, TASK).revision).toBe(before);
+	});
+
+	test("accept_residual_risk is rejected when no boundary is open", () => {
+		toReview(stamp());
+		const before = readTaskRecordRaw(root, TASK).revision;
+		expect(() => decide("accept_residual_risk", { reason: "nothing to accept" })).toThrow(/budget exhaustion/);
+		expect(readTaskRecordRaw(root, TASK).revision).toBe(before);
 	});
 });

@@ -1,0 +1,23 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "review-convergence-s4-planner-acceptance",
+  "owner": "user",
+  "goal": "Make Planner Specs declare their threat model and supported environment and write acceptance as enumerated negative cases with focused verification descriptors.",
+  "acceptance": [
+    {
+      "id": "RC-S4-A1",
+      "assertion": "Meet S4 in docs/specs/review-convergence.spec.md: the imm-planner contract and its dist mirror require a threat model and supported environment declaration for Specs with external input, require concrete enumerated negative cases instead of absolute any-malformed-input clauses, and require focused test-file descriptors rather than whole suites.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/explicit-phase-entry-planner-contract.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/review-convergence-s4-planner-acceptance.intent.json",
+    "docs/specs/review-convergence.spec.md",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/skills/imm-planner/SKILL.md",
+    "tests/explicit-phase-entry-planner-contract.test.ts",
+    "tests/skill-dist-consistency.test.ts"
+  ],
+  "risk": "routine",
+  "revision": 1
+}

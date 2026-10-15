@@ -10,6 +10,7 @@ import {
 	REDUCED_MUTATION_BRAND,
 	type AuthorityAuditDescriptor,
 	type ReducedTaskMutation,
+	type ReviewRevisionIdentityV1,
 	type TaskAction,
 	type TaskFinding,
 	type TaskIntentRefV3,
@@ -138,6 +139,7 @@ function appendHistory(
 	from: string,
 	detail: string | null,
 	audit: AuthorityAuditDescriptor | null,
+	reviewRevision?: ReviewRevisionIdentityV1,
 ): void {
 	if (record.history.some((entry) => entry.id === action.event_id))
 		throw new KernelInvariantError([
@@ -151,6 +153,7 @@ function appendHistory(
 		to_state: string;
 		reason: string;
 		authority?: AuthorityAuditDescriptor;
+		review_revision?: ReviewRevisionIdentityV1;
 	} = {
 		id: action.event_id,
 		at: action.at,
@@ -166,6 +169,7 @@ function appendHistory(
 		),
 	};
 	if (audit) entry.authority = { ...audit };
+	if (reviewRevision) entry.review_revision = { ...reviewRevision };
 	record.history.push(entry as (typeof record.history)[number]);
 }
 
@@ -184,6 +188,7 @@ function hasPrivilegedKind(action: TaskAction): boolean {
 		action.type === "approve_breaking_intent_revision" ||
 		action.type === "request_rework" ||
 		action.type === "authorize_rework" ||
+		action.type === "accept_residual_risk" ||
 		action.type === "stop" ||
 		action.type === "resolve_user_decision"
 	);
@@ -213,9 +218,15 @@ export function findingsDigestV2(findings: TaskFinding[]): string {
 /**
  * Rework rounds one Review run may demand before the Kernel pauses the task for
  * a human decision. Ordinary defects return to execution without a user gate,
- * but an unbounded repair/review cycle is not progress either.
+ * but an unbounded repair/review cycle is not progress either. The literal user
+ * may extend it with `authorize_rework` rounds; the grant is cumulative and
+ * persisted as `review_round_budget_extension`.
  */
 export const REVIEW_REWORK_ROUND_BUDGET = 5;
+
+export function effectiveReviewRoundBudget(record: TaskRecord): number {
+	return REVIEW_REWORK_ROUND_BUDGET + (record.review_round_budget_extension ?? 0);
+}
 
 export function reduceTask(
 	recordRaw: TaskRecord,
@@ -568,6 +579,23 @@ export function reduceTask(
 					"request_rework requires review, qa, or user authority",
 				]);
 			const round = reviewRound(record);
+			// The reviewed revision is audit data for the next round's delta, not
+			// authority: it is legal only on Review rework and, on a v4 record, must
+			// name the Enrollment base exactly as an approval does. Its absence is a
+			// legacy record and never blocks.
+			if (action.review_revision) {
+				if (authorityAudit.authority_kind !== "review")
+					throw new KernelInvariantError([
+						`${authorityAudit.authority_kind} rework cannot carry a review revision`,
+					]);
+				if (
+					record.contract === "assurance_kernel/task_record/v4" &&
+					action.review_revision.base_head !== record.git_base_head
+				)
+					throw new KernelInvariantError([
+						"review_revision.base_head must equal the Enrollment git_base_head",
+					]);
+			}
 			// An anchor is authority: it decides whether this claim inherits an
 			// existing refutation. The Kernel recomputes it from the finding's own
 			// evidence, so a caller cannot bind one claim's identity to another
@@ -649,7 +677,7 @@ export function reduceTask(
 			const parkForReplan =
 				authorityAudit.authority_kind === "review" &&
 				(disputed !== undefined ||
-					(hasEffectiveBlockingNow && effectiveBlockingRounds >= REVIEW_REWORK_ROUND_BUDGET));
+					(hasEffectiveBlockingNow && effectiveBlockingRounds >= effectiveReviewRoundBudget(record)));
 			if (!parkForReplan) {
 				record.artifact_state = "active";
 				record.intent_ref.path = `docs/plans/${record.task_id}.intent.json`;
@@ -687,10 +715,14 @@ export function reduceTask(
 					acceptance_id: disputed?.acceptance_id ?? null,
 					source: "kernel" as const,
 					review_round: round,
+					replan_cause:
+						disputed !== undefined
+							? ("repeated_security_boundary" as const)
+							: ("budget_exhausted" as const),
 					summary:
 						disputed !== undefined
 							? "Review returned the same security boundary twice; a durable replan is required."
-							: `Review exhausted its ${REVIEW_REWORK_ROUND_BUDGET}-round rework budget; a durable replan is required.`,
+							: `Review exhausted its ${effectiveReviewRoundBudget(record)}-round rework budget; a durable replan is required.`,
 				};
 				if (findingIds.has(boundary.id))
 					throw new KernelInvariantError([
@@ -698,7 +730,14 @@ export function reduceTask(
 					]);
 				record.findings.push(boundary);
 			}
-			appendHistory(record, action, from, `review_round_${round}`, authorityAudit);
+			appendHistory(
+				record,
+				action,
+				from,
+				`review_round_${round}`,
+				authorityAudit,
+				action.review_revision,
+			);
 			break;
 		}
 		case "authorize_rework": {
@@ -718,9 +757,72 @@ export function reduceTask(
 					"authorize_rework requires an open replan boundary",
 				]);
 			for (const finding of open) finding.status = "resolved";
+			// The grant is cumulative so the budget is a single derivable number;
+			// a legacy caller without `rounds` grants exactly one further round.
+			record.review_round_budget_extension =
+				(record.review_round_budget_extension ?? 0) + (action.rounds ?? 1);
 			record.artifact_state = "active";
 			record.intent_ref.path = `docs/plans/${record.task_id}.intent.json`;
 			appendHistory(record, action, from, open.map((finding) => finding.id).join(","), authorityAudit);
+			break;
+		}
+		case "accept_residual_risk": {
+			// A parked record has already restored its artifacts for replan, so the
+			// exit cannot require a frozen snapshot; the open budget boundary below
+			// is the real gate and completion re-freezes through the normal path.
+			if (record.lifecycle !== "active")
+				throw new KernelInvariantError([
+					`cannot accept residual risk while lifecycle is ${record.lifecycle}`,
+				]);
+			if (authorityAudit?.authority_kind !== "user")
+				throw new KernelInvariantError([
+					"accept_residual_risk requires literal-user authority",
+				]);
+			const boundaries = record.findings.filter(
+				(finding) => finding.kind === "replan_required" && finding.status === "open",
+			);
+			// Only a budget exhaustion offers this exit. A boundary without a
+			// recorded cause predates the field and a repeated security boundary is
+			// a dispute about the design: both stay replan or stop only.
+			if (
+				boundaries.length === 0 ||
+				boundaries.some((finding) => finding.replan_cause !== "budget_exhausted")
+			)
+				throw new KernelInvariantError([
+					"accept_residual_risk requires an open replan boundary caused by budget exhaustion",
+				]);
+			if (record.findings.some((finding) => finding.kind === "unresolved_user_decision" && finding.status === "open"))
+				throw new KernelInvariantError([
+					"accept_residual_risk cannot settle a task with an open user decision",
+				]);
+			const accepted = record.findings.filter(
+				(finding) =>
+					finding.kind === "blocking" &&
+					finding.source === "review" &&
+					finding.status === "open",
+			);
+			if (accepted.length === 0)
+				throw new KernelInvariantError([
+					"accept_residual_risk requires at least one open blocking Review finding",
+				]);
+			for (const finding of boundaries) finding.status = "resolved";
+			for (const finding of accepted) finding.status = "accepted_risk";
+			record.residual_risk_acceptance = {
+				intent_revision: record.intent_snapshot.revision,
+				intent_content_hash: record.intent_ref.content_hash,
+				diff_hash: diffHash,
+				finding_ids: accepted.map((finding) => finding.id),
+				reason: action.reason,
+				actor_id: action.actor_id,
+				accepted_at: action.at,
+			};
+			appendHistory(
+				record,
+				action,
+				from,
+				`accepted_risk:${accepted.map((finding) => finding.id).join(",")}\n${action.reason}`,
+				authorityAudit,
+			);
 			break;
 		}
 		case "complete": {

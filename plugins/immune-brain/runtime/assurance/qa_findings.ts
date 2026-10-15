@@ -19,6 +19,14 @@ export function qaEvidenceFreshnessId(snapshotDigest: string): string {
 	return `qa-evidence-freshness-${digest16}-${attemptRef(snapshotDigest)}`;
 }
 
+/** Summary prefix that marks a baseline failure also present at `base_head`. */
+export const PRE_EXISTING_BASELINE_PREFIX = "pre-existing baseline failure:";
+
+/** Digest-scoped id for a project baseline check finding; `acceptance_id` stays null. */
+export function qaBaselineFindingId(checkId: string, snapshotDigest: string): string {
+	return `qa-baseline-${checkId}-${attemptRef(snapshotDigest)}`;
+}
+
 function attemptRef(snapshotDigest: string): string {
 	const digest8 = snapshotDigest.slice("sha256:".length, "sha256:".length + 8);
 	return `${digest8}-${randomUUID().slice(0, 6)}`;
