@@ -1,0 +1,35 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "review-convergence-s2-budget-exhaustion",
+  "owner": "user",
+  "goal": "Replace the one-round pass-through at an exhausted Review rework budget with one literal-user decision offering three exits: grant N more rounds, accept remaining Review findings as residual risk, or replan.",
+  "acceptance": [
+    {
+      "id": "RC-S2-A1",
+      "assertion": "Meet S2 in docs/specs/review-convergence.spec.md: from a record parked by budget exhaustion, authorize_rework with rounds N (1-5) parks again only after N further blocking rounds; accept_residual_risk with literal-user authority and a non-empty reason resolves the boundary, moves open blocking Review findings to accepted_risk, and permits completion only when QA and acceptance obligations are met; the same action from review, qa, or parent authority, without a reason, or on a repeated-security-boundary dispute is rejected with zero writes; Claude and Pi present the same three exits; an unattended batch parks instead of choosing an exit; records without the new fields parse and behave unchanged.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-canary-rework-authority.test.ts\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/pi-canary-user-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/review-convergence-s2-budget-exhaustion.intent.json",
+    "docs/specs/review-convergence.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/authorization_operation.ts",
+    "plugins/immune-brain/runtime/claude/interaction.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/kernel/application.ts",
+    "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+    "plugins/immune-brain/runtime/kernel/completion.ts",
+    "plugins/immune-brain/runtime/kernel/reducer.ts",
+    "plugins/immune-brain/runtime/kernel/types.ts",
+    "plugins/immune-brain/runtime/kernel/validation.ts",
+    "tests/claude-host-authority.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/kernel-canary-rework-authority.test.ts",
+    "tests/pi-canary-user-authority.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}
