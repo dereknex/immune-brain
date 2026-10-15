@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -66,6 +67,21 @@ describe("Code Quality Guard contract", () => {
 		expect(standards).toContain("docs/reference/code-quality-guard.md");
 		expect(standards).toContain(rule.standards);
 		expect(standards).toContain("concrete correctness, regression, security, or significant maintenance risk in the reviewed change");
+	});
+
+	it("delivers exit-preserving and requested test-first evidence in the Executor mirror", () => {
+		const source = read("plugins/immune-brain/runtime/prompts/executor.md");
+		expect(read("plugins/immune-brain/dist/role-prompts/executor.md")).toBe(source);
+		for (const rule of ["pipefail", "full log", "business-assertion red", "corresponding green", "generated output"]) {
+			expect(source).toContain(rule);
+		}
+	});
+
+	it.each([0, 7])("keeps producer exit %s through truncated display", exit => {
+		const result = spawnSync("bash", ["-o", "pipefail", "-c", '(printf "first\\nlast\\n"; exit "$1") | tail -1', "check", String(exit)], { encoding: "utf8" });
+		expect(result.error).toBeUndefined();
+		expect(result.status).toBe(exit);
+		expect(result.stdout).toBe("last\n");
 	});
 
 	it("documents standalone repair and current user-facing boundaries", () => {

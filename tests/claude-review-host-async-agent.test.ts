@@ -152,6 +152,34 @@ describe("claude review host: dispatch envelope shape", () => {
 		expect(reviewRequest().maxTurns).toBe(24);
 	});
 
+	test("a released reservation cannot be settled by old dispatches while its fresh successor can", () => {
+		const root = mkdtempSync(join(tmpdir(), "imm-review-recovery-"));
+		try {
+			const file = join(root, "review.jsonl");
+			writeFileSync(file, transcriptLine(RECORDED_AGENT_ID, VERDICT), { mode: 0o600 });
+			const host = new ClaudeReviewHost(new FileHookEventLog(root));
+			const old = host.prepareReview(reviewRequest());
+			const oldPrompt = (old.dispatch as { prompt: string }).prompt;
+			host.releaseReview(old);
+			const fresh = host.prepareReview({ ...reviewRequest(), operationId: `${OPERATION}-fresh` });
+			observeDispatch(host, {
+				sessionId: RECORDED_SESSION, agentId: RECORDED_AGENT_ID,
+				envelope: { ...RECORDED_LAUNCH_ENVELOPE, outputFile: file, prompt: oldPrompt }, prompt: oldPrompt,
+			});
+			expect(host.consumeReview(old).ok).toBe(false);
+			expect(host.consumeReview(fresh).ok).toBe(false);
+			const prompt = (fresh.dispatch as { prompt: string }).prompt;
+			const freshAgent = `${RECORDED_AGENT_ID}-fresh`;
+			const freshFile = join(root, "fresh.jsonl");
+			writeFileSync(freshFile, transcriptLine(freshAgent, VERDICT), { mode: 0o600 });
+			observeDispatch(host, {
+				sessionId: RECORDED_SESSION, agentId: freshAgent,
+				envelope: { ...RECORDED_LAUNCH_ENVELOPE, agentId: freshAgent, outputFile: freshFile, prompt }, prompt,
+			});
+			expect(host.consumeReview(fresh)).toEqual({ ok: true, receipt: { actorId: `claude:${freshAgent}`, result: VERDICT } });
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
 	test("the exact envelope settles a reservation dispatched unchanged", () => {
 		const root = mkdtempSync(join(tmpdir(), "imm-review-host-"));
 		try {

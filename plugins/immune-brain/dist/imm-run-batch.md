@@ -46,6 +46,13 @@ batch state transition: the shared `startBatch` driver in
 `runtime/unattended/` owns every batch transition, and each child is still
 enrolled, assured, and settled by the Kernel under an ordinary TaskRecord.
 
+A `batch_lane_unreadable` observation means unknown state, not lost ownership or
+completion. Read contract mismatches and escaped scope/flag details as causes,
+not permission to widen scope. Revalidate the original task/run and use existing
+fresh-authorization recovery before considering retirement. For provider or
+Review interruptions follow [Decisions and Recovery](imm-run.md#decisions-and-recovery);
+Herdr idle/done is only a session signal, never terminal Kernel proof.
+
 A successful child Enrollment returns a `running` report with `handoff.role`
 `executor`; the child remains `enrolled`. The Parent implements that TaskIntent
 in the current foreground conversation, stages only its scoped changes, and
