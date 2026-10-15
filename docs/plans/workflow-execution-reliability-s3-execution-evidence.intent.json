@@ -1,0 +1,33 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "workflow-execution-reliability-s3-execution-evidence",
+  "owner": "user",
+  "goal": "Deliver bounded Executor and Parent evidence/recovery contracts, without new execution machinery, under S3 of docs/specs/workflow-execution-reliability.spec.md.",
+  "acceptance": [
+    {
+      "id": "S3-AC1",
+      "assertion": "Source E2; meet S3 and SCN-3 in docs/specs/workflow-execution-reliability.spec.md: the delivered Executor source and mirror require real command exit preservation and business-assertion red/green when test-first is requested. A local executable pipeline control reports nonzero for a failing producer after display truncation and zero for a passing producer. This proves shell behavior and contract delivery, not model obedience.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/code-quality-guard-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S3-AC2",
+      "assertion": "Source E7; meet S3 in docs/specs/workflow-execution-reliability.spec.md: delivered recovery handoffs distinguish provider interruption from Review budget exhaustion, preserve fresh QA and require the exact returned recovery action without continuing a dispatched reviewer. Protocol controls keep invalid/old dispatches rejected and valid new reservations accepted. Advisory inspection uses attestations[].advisory_findings rather than a new archive.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-subagent-dispatch-observability-contract.test.ts\",\n      \"tests/claude-review-host-async-agent.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/workflow-execution-reliability-handoff.md",
+    "docs/plans/workflow-execution-reliability-s3-execution-evidence.intent.json",
+    "docs/specs/workflow-execution-reliability.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-run-batch.md",
+    "plugins/immune-brain/dist/imm-run.md",
+    "plugins/immune-brain/dist/role-prompts/executor.md",
+    "plugins/immune-brain/runtime/prompts/executor.md",
+    "tests/claude-review-host-async-agent.test.ts",
+    "tests/code-quality-guard-contract.test.ts",
+    "tests/pi-subagent-dispatch-observability-contract.test.ts"
+  ],
+  "risk": "routine",
+  "revision": 1
+}
