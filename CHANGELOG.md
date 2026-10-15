@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.5.0
+
+### Minor Changes
+
+- [`e0ca9da`](https://github.com/dereknex/immune-brain/commit/e0ca9dac3deaf096165bff7360f1a068ffa06fa6) Thanks [@dereknex](https://github.com/dereknex)! - Continue explicitly bound Pi and Claude runs through implementation, assurance and bounded repair. Parent entries select the complete plan with dependency/scope scheduling and same-Host serial fallback; Child entries stay isolated. Preserve critical and repair native gates, integrated delivery proof and final verification before Parent completion.
+
+- [#245](https://github.com/dereknex/immune-brain/pull/245) [`c0954ab`](https://github.com/dereknex/immune-brain/commit/c0954ab1093d0d1fd3f56289bd9cb7369fb26ea0) Thanks [@dereknex](https://github.com/dereknex)! - Converge Review rework instead of letting it run to the budget. A Review rework verdict now carries only blocking findings, each naming a concrete input and an observable wrong result and staying inside the declared threat model; advisory notes are archived on pass and kept out of Executor work. From the third Review round a new blocking finding is admitted only when it touches the latest rework delta or crosses a security, data-loss or authority boundary, using a durably persisted per-round review revision. When the rework budget is exhausted the Host now asks one literal-user question with three exits: grant 1 to 5 more rounds, accept the remaining Review findings as residual risk with a reason, or replan. Deterministic QA always runs the project-declared baseline read from the Enrollment base tree and discloses a check that fails identically at `base_head` instead of blocking on it. Planner Specs declare their threat model and supported environment and write acceptance as enumerated negative cases with focused verification descriptors.
+
 ## 5.4.0
 
 ### Minor Changes
