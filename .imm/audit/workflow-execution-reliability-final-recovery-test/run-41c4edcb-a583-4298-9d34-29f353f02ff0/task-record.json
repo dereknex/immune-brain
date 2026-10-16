@@ -1,0 +1,83 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "workflow-execution-reliability-final-recovery-test",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "workflow-execution-reliability-final-recovery-test",
+    "goal": "Restore the original #246 final-verification goal by correcting the stale native repair round-trip test to preserve the current native authorization boundary: settled repair integration must reject without a new gate and succeed only through the existing ClaudeRuntime Parent entry after acceptance. Preserve original delivery and audit assertions, final HEAD verification, and existing repair preparation coverage. No production changes, history rewrites, push or publication.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "The existing native repair recovery round-trip proves that a newly settled repair cannot integrate through an ungated direct call; the ClaudeRuntime Parent seam opens a fresh native confirmation, then integrates the repair and runs the recorded final commands on the integrated HEAD. Original delivery and audit evidence remain unchanged and existing repair preparation tests still pass.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/goal-driven-run-recovery.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/workflow-execution-reliability-final-recovery-test.intent.json",
+      "tests/goal-driven-run-recovery.test.ts"
+    ],
+    "risk": "routine",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/workflow-execution-reliability-final-recovery-test.intent.json",
+    "content_hash": "sha256:fac92b0a5a1e3e9fe570b29093b352bba0483df6064b961406679bbdc7684045"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:fac92b0a5a1e3e9fe570b29093b352bba0483df6064b961406679bbdc7684045",
+  "git_base_head": "05b3be79db9878d8377fdb5ef976141d70797bf5",
+  "attestations": [
+    {
+      "id": "approval-qa-a584de00",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:fac92b0a5a1e3e9fe570b29093b352bba0483df6064b961406679bbdc7684045",
+      "diff_hash": "sha256:549d848cfde7834b36c95ae88a849ce1bc808b899ec52b65cdc0ad6f79ddbcb8",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:e177ccca1f79de50adf70f0ae6cb78e26e7c9b12a1d004999ad4e41b1f731a0f",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:e177ccca1f79de50adf70f0ae6cb78e26e7c9b12a1d004999ad4e41b1f731a0f"
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:workflow-execution-reliability-final-recovery-test:2026-10-16T04:03:23.811Z",
+      "at": "2026-10-16T04:03:23.811Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-execution-reliability-final-recovery-test.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-execution-reliability-final-recovery-test:2026-10-16T04:03:36.339Z",
+      "at": "2026-10-16T04:03:36.339Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-a584de00\naction_v2_sha256:db8740b024d0be5a531bd5ac222549a6a803f9933920c86baa620d34796df046",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-16T04:03:36.340Z"
+      }
+    },
+    {
+      "id": "complete:workflow-execution-reliability-final-recovery-test:2026-10-16T04:03:37.313Z",
+      "at": "2026-10-16T04:03:37.313Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:25a60da409c26391bdbda703a6cc1ab7de44eb530f80d005d8610cd90d2b5817"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "workflow-execution-reliability-final-recovery-test",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:workflow-execution-reliability-final-recovery-test:2026-10-16T04:03:37.313Z",
+  "final_record_hash": "sha256:51b8b6ab4d83445a3b245e3ac547a1aff872c356307a164069facf85549929e6",
+  "terminalized_at": "2026-10-16T04:03:37.313Z"
+}
