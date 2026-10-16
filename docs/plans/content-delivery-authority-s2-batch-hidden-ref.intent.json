@@ -1,0 +1,36 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "content-delivery-authority-s2-batch-hidden-ref",
+  "owner": "user",
+  "goal": "Make unattended batches never commit to, create or switch a user-visible branch: preflight has one dirt rule and no side effect, and batch progress and Lane integration live on a hidden ref with results applied to the working tree, under S2 of docs/specs/content-delivery-authority.spec.md.",
+  "acceptance": [
+    {
+      "id": "S2-AC1",
+      "assertion": "Sources E4, U4; meet S2, SCN-2 and D9 in docs/specs/content-delivery-authority.spec.md: preflight never commits; a rejected preflight leaves HEAD, branch, index and git log unchanged; dirt outside every unsettled child's scope (including docs/specs, docs/plans, .imm/audit and a settled child's paths) does not block; dirt inside an unsettled child's scope blocks with the named paths.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-run.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S2-AC2",
+      "assertion": "Sources E6, U3, T2; meet D10 in docs/specs/content-delivery-authority.spec.md: a batch with serial and Lane children advances only refs/imm/batches/<batch_id>; the user's checked-out branch, HEAD and index never move; each integrated Lane's scoped delta appears in the working tree; a conflicting local edit on those paths parks that child with the named paths; under Git integration auto each applied delta is committed through the S3 settle commit with only its scoped paths.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\",\n      \"tests/unattended-batch-integration.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/content-delivery-authority-batch-hidden-ref.md",
+    "docs/plans/content-delivery-authority-s2-batch-hidden-ref.intent.json",
+    "docs/specs/content-delivery-authority.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-run-batch.md",
+    "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "tests/unattended-batch-integration.test.ts",
+    "tests/unattended-batch-lanes.test.ts",
+    "tests/unattended-batch-run.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

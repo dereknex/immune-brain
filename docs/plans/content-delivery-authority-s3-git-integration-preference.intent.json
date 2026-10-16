@@ -1,0 +1,44 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "content-delivery-authority-s3-git-integration-preference",
+  "owner": "user",
+  "goal": "Add the Git integration manual|auto preference, default manual, so the runtime writes no commit to the user's branch unless auto is declared, and auto adds a settle commit of exactly the settled scoped paths, superseding ADR 0023, under S3 of docs/specs/content-delivery-authority.spec.md.",
+  "acceptance": [
+    {
+      "id": "S3-AC1",
+      "assertion": "Sources U2, E5, T3; meet S3, SCN-4 and D8 in docs/specs/content-delivery-authority.spec.md: with no directive or Git integration: manual, Enrollment stages but does not commit its TaskIntent and Spec, unborn-HEAD in-scope dirt is claimed without a commit, and layout migration leaves its diff in the working tree; with auto the current precondition commits remain and settling done commits exactly the settled scoped paths and nothing else; an invalid value behaves as manual with a visible diagnostic; status reports the resolved mode; the confirmed empty root commit is unchanged in both modes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/git-integration-preference.test.ts\",\n      \"tests/enrollment-git-base.test.ts\",\n      \"tests/kernel-storage-layout-migration.test.ts\",\n      \"tests/workflow-autocommit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S3-AC2",
+      "assertion": "Sources U1, U2; meet D8 in docs/specs/content-delivery-authority.spec.md: ADR 0024 supersedes ADR 0023, every BASELINE.md copy and the configuration reference describe the preference instead of silent precondition commits, and packaged mirrors stay in sync.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dist-docs-sync-contract.test.ts\",\n      \"tests/git-integration-preference.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/content-delivery-authority-git-integration-preference.md",
+    "docs/adr/0023-silent-precondition-commit.md",
+    "docs/adr/0024-git-integration-preference.md",
+    "docs/plans/content-delivery-authority-s3-git-integration-preference.intent.json",
+    "docs/reference/immune-brain-config.md",
+    "docs/specs/content-delivery-authority.spec.md",
+    "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+    "plugins/immune-brain/BASELINE.md",
+    "plugins/immune-brain/dist/BASELINE.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+    "plugins/immune-brain/dist/imm-run.md",
+    "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts",
+    "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/git_integration_preference.ts",
+    "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts",
+    "plugins/immune-brain/skills/BASELINE.md",
+    "tests/enrollment-git-base.test.ts",
+    "tests/git-integration-preference.test.ts",
+    "tests/kernel-storage-layout-migration.test.ts",
+    "tests/workflow-autocommit.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}
