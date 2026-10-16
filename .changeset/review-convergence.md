@@ -1,5 +1,0 @@
----
-"immune-brain": minor
----
-
-Converge Review rework instead of letting it run to the budget. A Review rework verdict now carries only blocking findings, each naming a concrete input and an observable wrong result and staying inside the declared threat model; advisory notes are archived on pass and kept out of Executor work. From the third Review round a new blocking finding is admitted only when it touches the latest rework delta or crosses a security, data-loss or authority boundary, using a durably persisted per-round review revision. When the rework budget is exhausted the Host now asks one literal-user question with three exits: grant 1 to 5 more rounds, accept the remaining Review findings as residual risk with a reason, or replan. Deterministic QA always runs the project-declared baseline read from the Enrollment base tree and discloses a check that fails identically at `base_head` instead of blocking on it. Planner Specs declare their threat model and supported environment and write acceptance as enumerated negative cases with focused verification descriptors.
