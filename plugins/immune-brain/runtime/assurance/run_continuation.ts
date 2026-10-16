@@ -61,7 +61,10 @@ export type RunContinuationDecision = {
 	state: RunContinuationState;
 };
 
-export const UNCHANGED_CONTINUATION_LIMIT = 2;
+/** One nudge per unchanged progress digest; the next unchanged boundary pauses. */
+export const UNCHANGED_CONTINUATION_LIMIT = 1;
+/** Appended to every Stop block reason so a user-only wait is never answered by repeating the request. */
+export const USER_WAIT_GUIDANCE = "If the remaining step is an action only the user can perform, waiting for it is a valid stop: stop without repeating the request you already made.";
 
 export function bindRun(binding: RunBinding): RunContinuationState {
 	if (!binding.workspace || !binding.session_id ||

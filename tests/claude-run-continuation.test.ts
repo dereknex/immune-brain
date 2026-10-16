@@ -53,7 +53,7 @@ describe("Claude run continuation", () => {
 		const h = fixture(); try {
 			expect(await h.stop()).toBeNull(); await h.enter();
 			expect(JSON.parse((await h.stop())!)).toMatchObject({ decision: "block" });
-			await h.prompt("What remains?");
+			await h.prompt("What remains?"); writeFileSync(join(h.root, "value.txt"), "edited\n");
 			expect(JSON.parse((await h.stop())!)).toMatchObject({ decision: "block" });
 		} finally { h.dispose(); }
 	});
@@ -74,13 +74,22 @@ describe("Claude run continuation", () => {
 		} finally { h.dispose(); }
 	});
 
-	test("source edits count as progress; repeating unchanged observations pauses", async () => {
+	test("an unchanged digest blocks once then pauses; source edits block again", async () => {
 		const h = fixture(); try {
 			await h.enter(); expect(JSON.parse((await h.stop())!).decision).toBe("block");
 			writeFileSync(join(h.root, "value.txt"), "after\n");
 			expect(JSON.parse((await h.stop())!).decision).toBe("block");
-			expect(JSON.parse((await h.stop())!).decision).toBe("block");
 			expect(JSON.parse((await h.stop())!)).toMatchObject({ systemMessage: expect.stringContaining("no substantive progress") });
+		} finally { h.dispose(); }
+	});
+
+	test("the block reason says a user-only wait is a valid stop and must not repeat the request", async () => {
+		const h = fixture(); try {
+			await h.enter();
+			const reason = JSON.parse((await h.stop())!).reason as string;
+			expect(reason).toContain("only the user can perform");
+			expect(reason).toContain("valid stop");
+			expect(reason).toContain("without repeating the request");
 		} finally { h.dispose(); }
 	});
 
@@ -117,7 +126,6 @@ describe("Claude run continuation", () => {
 			expect(await h.hook({ hook_event_name: "Stop", stop_hook_active: true })).toBeNull();
 			expect(JSON.parse((await h.stop())!).decision).toBe("block");
 			expect(await h.stop(true)).toBeNull(); expect(await h.stop(true)).toBeNull();
-			expect(JSON.parse((await h.stop())!).decision).toBe("block");
 			expect(JSON.parse((await h.stop())!).systemMessage).toContain("no substantive progress");
 		} finally { h.dispose(); }
 	});

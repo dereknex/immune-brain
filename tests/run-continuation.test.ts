@@ -57,6 +57,7 @@ describe("goal-driven continuation", () => {
 		expect(first.next_action).toContain("stage task-owned");
 		const unchanged = decideRunContinuation(first.state, { ...o, boundary_id: "boundary-2" });
 		expect(unchanged.state.unchanged_observations).toBe(1);
+		expect(unchanged.action).toBe("pause");
 		const changed = decideRunContinuation(unchanged.state, { ...o, boundary_id: "boundary-3", source_digest: "edited-source" });
 		expect(changed.action).toBe("continue");
 		expect(changed.state.unchanged_observations).toBe(0);
@@ -71,6 +72,7 @@ describe("goal-driven continuation", () => {
 		const o = observation("boundary-2"); o.status.projection.record_revision = "status-only-revision";
 		const second = decideRunContinuation(first.state, o);
 		expect(second.state.unchanged_observations).toBe(1);
+		expect(second.action).toBe("pause");
 		expect(decideRunContinuation(second.state, observation("boundary-3")).action).toBe("pause");
 	});
 

@@ -15494,7 +15494,8 @@ init_batch_preflight();
 init_intent();
 init_storage();
 import { createHash as createHash22 } from "node:crypto";
-var UNCHANGED_CONTINUATION_LIMIT = 2;
+var UNCHANGED_CONTINUATION_LIMIT = 1;
+var USER_WAIT_GUIDANCE = "If the remaining step is an action only the user can perform, waiting for it is a valid stop: stop without repeating the request you already made.";
 function bindRun(binding) {
   if (!binding.workspace || !binding.session_id || (binding.kind === "task" ? !binding.task_id || !binding.run_id : !binding.initiative_slug || binding.batch_id !== null && !binding.batch_id || !binding.plan_digest))
     throw new Error("run continuation requires an exact session and committed run identity");
@@ -16440,7 +16441,7 @@ async function runContinuationHookOutput(payload, root = tmpdir6()) {
     }
     metadata.stop_blocks++;
     save(sessionId, root, metadata);
-    return JSON.stringify({ decision: "block", reason: `Explicit imm-run is bound to ${taskId}; Kernel settlement is incomplete. ${decision.next_action}. Continue the authorized Loop.` });
+    return JSON.stringify({ decision: "block", reason: `Explicit imm-run is bound to ${taskId}; Kernel settlement is incomplete. ${decision.next_action}. Continue the authorized Loop. ${USER_WAIT_GUIDANCE}` });
   } catch (error) {
     return warning(`continuation facts could not be verified: ${error instanceof Error ? error.message : String(error)}`);
   }

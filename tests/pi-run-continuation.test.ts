@@ -49,6 +49,7 @@ describe("Pi run continuation boundary", () => {
 			await h.enter();
 			expect(await h.settle()).toMatchObject({ continue: true });
 			await h.emit("input", { text: "What remains?", source: "interactive" });
+			writeFileSync(join(h.root, "value.txt"), "edited\n");
 			expect(await h.settle()).toMatchObject({ continue: true });
 		} finally { h.dispose(); }
 	});
@@ -57,7 +58,6 @@ describe("Pi run continuation boundary", () => {
 		const h = fixture(); try {
 			await h.enter(); expect(await h.settle()).toMatchObject({ continue: true });
 			writeFileSync(join(h.root, "value.txt"), "after\n");
-			expect(await h.settle()).toMatchObject({ continue: true });
 			expect(await h.settle()).toMatchObject({ continue: true });
 			expect(await h.settle()).toMatchObject({ entries: [{ customType: "immune-brain-run-paused", display: true }] });
 			expect(await h.settle()).toBeUndefined();

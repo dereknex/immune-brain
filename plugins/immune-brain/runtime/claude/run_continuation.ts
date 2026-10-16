@@ -6,7 +6,7 @@ import { projectTaskStatus } from "../assurance/coordinator";
 import { readTaskRecordRaw } from "../kernel/storage";
 import { recordParentRepair } from "../unattended/batch_git";
 import { readAnyBatchRunState } from "../unattended/batch_state";
-import { bindRun, decideRunContinuation, observeParentRun, parkFailedCriticalGate, releasesRunBinding, scopedSourceDigest,
+import { bindRun, decideRunContinuation, observeParentRun, parkFailedCriticalGate, releasesRunBinding, scopedSourceDigest, USER_WAIT_GUIDANCE,
 	type RunContinuationState, type ReviewContinuationState } from "../assurance/run_continuation";
 import { digestOfReviewerBytes } from "../assurance/review_mediation";
 import { recognizePhaseEntry } from "../assurance/phase_entry";
@@ -267,7 +267,7 @@ export async function runContinuationHookOutput(payload: Record<string, unknown>
 		}
 		metadata.stop_blocks++;
 		save(sessionId, root, metadata);
-		return JSON.stringify({ decision: "block", reason: `Explicit imm-run is bound to ${taskId}; Kernel settlement is incomplete. ${decision.next_action}. Continue the authorized Loop.` });
+		return JSON.stringify({ decision: "block", reason: `Explicit imm-run is bound to ${taskId}; Kernel settlement is incomplete. ${decision.next_action}. Continue the authorized Loop. ${USER_WAIT_GUIDANCE}` });
 	} catch (error) {
 		return warning(`continuation facts could not be verified: ${error instanceof Error ? error.message : String(error)}`);
 	}

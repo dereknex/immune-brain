@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "content-delivery-authority-s4-stop-hook-single-nudge",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:content-delivery-authority-s4-stop-hook-single-nudge:2026-10-16T07:14:40.011Z",
+  "final_record_hash": "sha256:1f7869920e23c8da99bd57caf24b4c207e644c76fe22c79a0f8c79eba01f996b",
+  "terminalized_at": "2026-10-16T07:14:40.011Z"
+}
