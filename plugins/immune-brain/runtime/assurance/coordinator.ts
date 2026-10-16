@@ -21,6 +21,7 @@ import type { ConfirmationReferenceSource } from "./host_port";
 import { buildRoleDelegationPacket, STATIC_REVIEW_RULES } from "../role_prompt_bridge";
 import { projectAssurance, type AssuranceProjectionResult } from "../kernel/assurance_projection";
 import { taskStatusIdentity } from "../workspace_scope";
+import { pluginSourceSkewWarning, type PluginSourceSkewWarning } from "../plugin_source_skew";
 import type { TaskIntentIdentityToken } from "../kernel/intent_token_registry";
 import { scopeAdditionsFromHistory } from "../kernel/intent";
 import type { AssuranceHostPort, HostReviewReservation } from "./host_port";
@@ -366,30 +367,35 @@ export interface AssuranceRecovery {
 }
 
 export interface StatusProjectionWarning {
-	code: "unstaged_scope_paths";
+	code: "unstaged_scope_paths" | PluginSourceSkewWarning["code"];
 	paths: string[];
 	message: string;
 }
 export type StatusProjectionResult = AssuranceProjectionResult & { warnings?: StatusProjectionWarning[] };
 /**
  * The read-only status projection both Hosts return from their status Tool.
- * Unstaged or untracked in-scope paths come back as a warning beside the
+ * Unstaged or untracked in-scope paths, and a loaded plugin build that differs
+ * from this workspace's own plugin source, come back as warnings beside the
  * projection instead of replacing it. Every path that freezes a snapshot or
  * binds authority keeps projecting through the refusing delivery identity.
  */
-export async function projectTaskStatus(root: string, taskId: string): Promise<StatusProjectionResult> {
+export async function projectTaskStatus(root: string, taskId: string, loadedFrom?: string): Promise<StatusProjectionResult> {
 	let unstaged: string[] = [];
 	const result = await projectAssurance(root, taskId, (dir, record) => {
 		const identity = taskStatusIdentity(dir, record);
 		unstaged = identity.unstaged_scope_paths;
 		return identity;
 	});
-	if (result.error || unstaged.length === 0) return result;
-	return { ...result, warnings: [{
+	const warnings: StatusProjectionWarning[] = [];
+	if (!result.error && unstaged.length > 0) warnings.push({
 		code: "unstaged_scope_paths",
 		paths: unstaged,
 		message: `task scope contains unstaged or untracked changes: ${unstaged.join(", ")}; advance_assurance refuses until they are staged or removed`,
-	}] };
+	});
+	// Reported beside errors too: a stale loaded build is the likely cause of one.
+	const skew = pluginSourceSkewWarning(root, loadedFrom);
+	if (skew) warnings.push(skew);
+	return warnings.length === 0 ? result : { ...result, warnings };
 }
 
 /** Observation only; fresh Kernel facts remain the sole owner of the obligation. */

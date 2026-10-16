@@ -55,6 +55,13 @@ both affected hosts and recovery/replay branches. An async, return-type or
 exception-contract change requires checking every affected caller's await,
 cancellation and error propagation.
 
+Before Assurance, run the existing tests that call a changed entry or assert
+the changed contract, found by searching the tests for its exported names,
+including tests outside `scope_hint`. Focused acceptance descriptors do not run
+them, so a stale caller test otherwise surfaces only at final verification. A
+failing caller test outside the scope is a scope gap: add it through the Intent
+revision path before delivery, never leave it for final verification.
+
 Use the real producer for the success control where available. Derive rejection
 controls from a successful state, change only the target condition, and assert
 the intended rejection reason and required side effects. A control must fail
