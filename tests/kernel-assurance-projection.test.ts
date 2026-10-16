@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deriveAssuranceAuthorization, projectAssurance } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
@@ -282,6 +282,55 @@ describe("kernel assurance projection v3", () => {
 			}
 		}
 	});
+
+	for (const source of ["committed", "imported audit"] as const) {
+		for (const lifecycle of ["done", "stopped"] as const) {
+			test(`${source} ${lifecycle} projects settled evidence without rebinding the current checkout`, async () => {
+				const root = makeEnrolledRoot();
+				const consumer = mkdtempSync(join(tmpdir(), "assurance-terminal-consumer-"));
+				try {
+					freezeRecord(root);
+					seedAttestation(root, "qa");
+					seedAttestation(root, "review");
+					const signedDiff = diffOf(root).diff_hash;
+					terminalize(root, lifecycle);
+					const run = withKernelRead(root, (db) => readRunRowByTask(db, TASK))!;
+					const proofPath = auditRunTerminalProofPath(TASK, run.run_id);
+					const proof = readFileSync(join(root, proofPath), "utf8");
+					let checkout = root;
+					if (source === "imported audit") {
+						execFileSync("git", ["clone", "-q", "--local", root, consumer]);
+						cpSync(join(root, ".imm/audit"), join(consumer, ".imm/audit"), { recursive: true });
+						checkout = consumer;
+					}
+					// Neither a new absolute checkout path nor later edits reopen settled QA.
+					writeFileSync(join(checkout, "plugins/immune-brain/.pi-extension/owned.ts"), "later checkout content\n");
+					execFileSync("git", ["add", "plugins/immune-brain/.pi-extension/owned.ts"], { cwd: checkout });
+					expect(diffOf(checkout).diff_hash).not.toBe(signedDiff);
+					let liveDiffReads = 0;
+					const result = await projectAssurance(checkout, TASK, () => {
+						liveDiffReads += 1;
+						return diffOf(checkout);
+					});
+					expect(result.error).toBeNull();
+					expect(result.claim).toBeNull();
+					expect(result.projection).toMatchObject({
+						lifecycle,
+						completion_ready: lifecycle === "done",
+						next_obligation: "none",
+						fresh_acceptance_ids: ["A1", "A2"],
+						fresh_approval_kinds: ["qa", "review"],
+						stale_attestation_ids: [],
+					});
+					expect(liveDiffReads).toBe(0);
+					expect(readFileSync(join(checkout, proofPath), "utf8")).toBe(proof);
+				} finally {
+					rmSync(consumer, { recursive: true, force: true });
+					rmSync(root, { recursive: true, force: true });
+				}
+			});
+		}
+	}
 
 	test("a settled run projects its own evidence, never a stale flat pair", async () => {
 		const root = makeEnrolledRoot();

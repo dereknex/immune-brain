@@ -141,12 +141,11 @@ export async function captureBatchReconfirmation(root: string, record: BatchRunS
 		const capturedProof = JSON.parse(decode(capture(proofPath)));
 		if (!matchesLocalProof(settled.proof_json, capturedProof) || !matchesLocalProof(settled.proof_json, pair.proof)) refuse();
 		const identity = taskDeliveryIdentity(root, r);
-		const projection = await projectAssurance(root, child.task_id, (cwd, task) => {
-			if (task.contract !== "assurance_kernel/task_record/v4" || !task.git_base_head) refuse();
-			return taskDeliveryIdentity(cwd, task);
-		});
+		// Settlement status is historical; reconfirmation must also bind the current delivery.
+		if (!projectTask(r.intent_snapshot, r, identity.diff_hash, currentHash, identity.changed_paths, readRiskFloor(root)).complete) refuse();
+		const projection = await projectAssurance(root, child.task_id);
 		if (projection.error || projection.claim || projection.projection.run_id !== run || projection.projection.lifecycle !== "done" ||
-			!projection.projection.completion_ready || projection.projection.intent_content_hash !== currentHash || projection.projection.diff_hash !== identity.diff_hash ||
+			!projection.projection.completion_ready || projection.projection.intent_content_hash !== currentHash ||
 			!projection.projection.fresh_approval_kinds.includes("qa") ||
 			(projection.projection.risk !== "routine" && !projection.projection.fresh_approval_kinds.includes("review"))) refuse();
 		scope = r.intent_snapshot.scope_hint;

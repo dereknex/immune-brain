@@ -105,6 +105,9 @@ import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 import { readRunRowByTask, withKernelRead, withKernelTransaction } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 import { commitTerminalLocked, readWorkspaceStateRaw, retryStoreFollowUps, serializeWorkspace } from "../plugins/immune-brain/runtime/kernel/storage";
 import { createDefaultBatchGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
+import { parentConsolidationFixture } from "./fixtures/parent-consolidation";
+import { readParentConsolidationReceipt } from "../plugins/immune-brain/runtime/unattended/batch_state";
+import { parseDeliveryConsolidation } from "../plugins/immune-brain/runtime/unattended/parent_delivery_consolidation";
 
 /** Claim the workspace for a fixture task through the store. */
 /** Make the live owner run look foreign to an approved batch lineage. */
@@ -611,6 +614,34 @@ describe("acc-pi-batch-gate", () => {
 		expect(result.reason).toContain("branch refs/heads/imm/branch-preflight already exists");
 		expect(result.recovery_action).toContain("delete or rename the conflicting branch");
 		assertZeroWrites(fixture.root, fixture.head);
+	});
+
+	it.each(["accept", "decline", "cancel"] as const)("Pi explicitly confirms all three consolidation runs: %s", async decision => {
+		const f = parentConsolidationFixture(7); const audits = f.auditBytes(); let disclosed = "";
+		try {
+			const result = await executePiBatchOnce({ root: f.root, initiativeSlug: "native-parent", interactive: true,
+				readInitiative: f.reader, final_verification: ["bun verify.ts"], delivery_consolidation: f.selection,
+				confirmBatch: async input => { disclosed = input.details; return decision; },
+				batchTracker: { markTerminal: async () => { throw Error("failed verification cannot close Parent"); } } });
+			for (const identity of [f.s4, f.repair, f.final]) expect(disclosed).toContain(identity.run_id);
+			expect(disclosed).toContain(f.baseHead); expect(disclosed).toContain("delivery_diff_hash"); expect(disclosed).toContain("manifest");
+			expect(f.auditBytes()).toEqual(audits);
+			if (decision === "accept") {
+				expect(result).toMatchObject({ state: "native_parent", action: "repair", proof: { complete: false }, final_verification: { passed: false } });
+				expect(f.count()).toBe(1); expect(readParentConsolidationReceipt(f.root, "native-parent")!.commit).toBe(f.git("rev-parse", "HEAD"));
+			} else {
+				expect(result.state).toBe(decision === "cancel" ? "cancelled" : "rejected");
+				expect(f.git("rev-parse", "HEAD")).toBe(f.baseHead); expect(readParentConsolidationReceipt(f.root, "native-parent")).toBeNull();
+			}
+		} finally { rmSync(f.root, { recursive: true, force: true }); }
+	});
+	it("Pi rejects malformed consolidation selection before confirmation", async () => {
+		let gates = 0;
+		await expect(executePiBatchOnce({ root: "/not-a-repo", initiativeSlug: "native-parent", interactive: true,
+			delivery_consolidation: { task_id: "final", run_id: "run-final", source_runs: [], native_decision: "accept" } as any,
+			confirmBatch: async () => { gates++; return "accept"; } })).rejects.toThrow();
+		expect(gates).toBe(0);
+		expect(() => parseDeliveryConsolidation({ task_id: "final", run_id: "run-final", source_runs: [{ task_id: "final", run_id: "run-final" }] })).toThrow();
 	});
 
 	it("critical-only Parent returns a native single-task handoff without a batch gate or writes", async () => {
@@ -1623,11 +1654,11 @@ describe("lane mode parameters (parallel-batch-lanes)", () => {
 		return { cwd: root, mode: "tui", sessionManager: RUN_ENTRY_SESSION, ui: { custom: async () => { opened.count++; return "decline"; } } };
 	}
 
-	it("declares exactly initiative_slug, max_parallel and lane_offers", () => {
+	it("declares exactly the supported batch and explicit consolidation parameters", () => {
 		const tool = registerBatchTool({ readInitiative: async () => createBatchFixture("lane-schema").observation }) as unknown as {
 			parameters: { properties: Record<string, unknown>; required?: string[] };
 		};
-		expect(Object.keys(tool.parameters.properties)).toEqual(["initiative_slug", "max_parallel", "lane_offers", "final_verification", "lane_instruction", "lane_revision"]);
+		expect(Object.keys(tool.parameters.properties)).toEqual(["initiative_slug", "max_parallel", "lane_offers", "delivery_consolidation", "final_verification", "lane_instruction", "lane_revision"]);
 		expect(tool.parameters.required).toEqual(["initiative_slug"]);
 	});
 

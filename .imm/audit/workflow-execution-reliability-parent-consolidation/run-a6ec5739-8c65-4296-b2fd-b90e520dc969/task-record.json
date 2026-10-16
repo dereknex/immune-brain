@@ -1,0 +1,431 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "workflow-execution-reliability-parent-consolidation",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "workflow-execution-reliability-parent-consolidation",
+    "goal": "Implement and verify the complete native Parent consolidation designed in docs/specs/native-parent-delivery-consolidation.spec.md to finish #246. Preserve original settled S4 and retirement-repair records, give the final combined bytes fresh QA/Review under this task, and explicitly integrate both source runs plus this task itself through one native-confirmed, scope-bounded final delivery. Do not re-enroll settled sources, infer association from names, weaken dirty/path/identity checks, fabricate failed verification, modify Kernel core/store, publish or push. Ordinary batch/Lane/task routes stay unchanged. Supported inputs and negative cases are bounded by the Spec; existing source Intent/audit paths in scope are delivery inputs to preserve, not permission to rewrite them.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Source E1 in bound Spec. At the existing native Parent seam, a superseded batch with two selected settled source runs, different historical shared-bundle blobs, and this consolidation task itself integrates the exact newly reviewed final tree. Source audit bytes and prior commits remain unchanged. Missing, stopped or wrong run, changed Intent, modified audit, unselected dirty path and staged-byte drift reject. Original approvals are not treated as approval of a different final bundle. The new task scope covers all three deliveries so its own source/audit cannot recreate dirty_outside_scope.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-commit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Source E5 in bound Spec. Pi and Claude strictly parse and display the same explicit source-run/final-run/HEAD/tree contribution binding. Native acceptance permits only that effect; absent, declined or cancelled confirmation and a changed HEAD/digest after confirmation produce no unauthorized commit, final command or source association. Duplicate/self selections reject. Explicit recovery from commit-before-receipt interruption verifies the same commit and proof and does not duplicate Git effects.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/claude-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Source E4 in bound Spec. Whole-plan completion recognizes only proof-validated selected source contributions through the newly approved consolidation commit. Successful final verification binds the final integrated HEAD and contribution identities. Exit 7, stale HEAD, missing contribution and modified receipt keep Parent incomplete; replay makes no duplicate commit or tracker close. Existing non-consolidation batch recovery and completion remain protected.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/goal-driven-batch-run.test.ts\",\n      \"tests/batch-completion-verifier.test.ts\",\n      \"tests/batch-plan-reconfirmation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/native-parent-delivery-consolidation.md",
+      ".changeset/workflow-execution-reliability-integration.md",
+      ".changeset/workflow-execution-reliability-parent-retirement.md",
+      ".imm/audit/workflow-execution-reliability-parent-retirement-repair/run-2eb39d3a-919d-4049-a502-897b13a668db/task-record.json",
+      ".imm/audit/workflow-execution-reliability-parent-retirement-repair/run-2eb39d3a-919d-4049-a502-897b13a668db/terminal-proof.json",
+      ".imm/audit/workflow-execution-reliability-s4-integration-proof/run-1910b918-73be-4dee-9fb3-6ec21f33cb0c/task-record.json",
+      ".imm/audit/workflow-execution-reliability-s4-integration-proof/run-1910b918-73be-4dee-9fb3-6ec21f33cb0c/terminal-proof.json",
+      "docs/evidence/workflow-execution-reliability-host-check.md",
+      "docs/plans/workflow-execution-reliability-parent-consolidation.intent.json",
+      "docs/plans/workflow-execution-reliability-parent-retirement-repair.intent.json",
+      "docs/plans/workflow-execution-reliability-s4-integration-proof.intent.json",
+      "docs/specs/native-parent-delivery-consolidation.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run-batch.md",
+      "plugins/immune-brain/runtime/claude/interaction.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/parent_delivery_consolidation.ts",
+      "tests/batch-completion-verifier.test.ts",
+      "tests/batch-plan-reconfirmation.test.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/fixtures/goal-driven-run-historical-sources.json",
+      "tests/fixtures/parent-consolidation.ts",
+      "tests/goal-driven-batch-run.test.ts",
+      "tests/goal-driven-run-live-evidence.test.ts",
+      "tests/kernel-assurance-projection.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/unattended-batch-commit.test.ts"
+    ],
+    "risk": "material",
+    "revision": 3,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/workflow-execution-reliability-parent-consolidation.intent.json",
+    "content_hash": "sha256:95482a30eb88d0c6d2d540cbe7a58587e9b6f34b613fa4cefa844899e22d1e14"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:c5a6e838ccc4ddcc6cb5bd52bd4a9c9745734528d9c861f6342352f1eb067290",
+  "git_base_head": "bd8ad00118c727f4f5c4d80f35402c99e39d3a59",
+  "attestations": [
+    {
+      "id": "approval-qa-f6acf990",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:c02b1dabd5a4f9e24f2d491ec0180303af3e0abf0bc3940d003bcadd6cec022b",
+      "diff_hash": "sha256:3dc371767cde708a7f3053c2df701bf8797034acbf6ec1d87249691c2a114e24",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:bf970900cac0c371b8d17a64a559d53c14afc2bac3558ca4af4508e1b0180a6c",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:bf970900cac0c371b8d17a64a559d53c14afc2bac3558ca4af4508e1b0180a6c"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:bf970900cac0c371b8d17a64a559d53c14afc2bac3558ca4af4508e1b0180a6c"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:bf970900cac0c371b8d17a64a559d53c14afc2bac3558ca4af4508e1b0180a6c"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-815d84eb",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:c02b1dabd5a4f9e24f2d491ec0180303af3e0abf0bc3940d003bcadd6cec022b",
+      "diff_hash": "sha256:eb738dc44128408415286224917603274529481f635aa6d14b3838f75e957442",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:8bb6e804f509c5c9b89dc426d6d12c2cecbc937df708436a8aacea37c2793812",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:8bb6e804f509c5c9b89dc426d6d12c2cecbc937df708436a8aacea37c2793812"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:8bb6e804f509c5c9b89dc426d6d12c2cecbc937df708436a8aacea37c2793812"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:8bb6e804f509c5c9b89dc426d6d12c2cecbc937df708436a8aacea37c2793812"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-b4ca83a3",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:95482a30eb88d0c6d2d540cbe7a58587e9b6f34b613fa4cefa844899e22d1e14",
+      "diff_hash": "sha256:1d20818dcfd762f4ad721987ae4995b17b01ebeb9c0d05e9c8da1aaa4e41140a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:e8b139fcc98caf996f039dcbb371364a37e72a3a1eb4248d857d34e84d2b8b36",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e8b139fcc98caf996f039dcbb371364a37e72a3a1eb4248d857d34e84d2b8b36"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e8b139fcc98caf996f039dcbb371364a37e72a3a1eb4248d857d34e84d2b8b36"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e8b139fcc98caf996f039dcbb371364a37e72a3a1eb4248d857d34e84d2b8b36"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-f3dd9219",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:95482a30eb88d0c6d2d540cbe7a58587e9b6f34b613fa4cefa844899e22d1e14",
+      "diff_hash": "sha256:1d20818dcfd762f4ad721987ae4995b17b01ebeb9c0d05e9c8da1aaa4e41140a",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 immutable revision 的单一 parent、tree、manifest digest 和全部 blob identities；round-3 recovery guard 及其直接调用未发现阻断缺陷，新增回归覆盖确认前后 workspace/index drift，AC1–AC3 的 Kernel QA outcomes 均为 passed。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "bd8ad00118c727f4f5c4d80f35402c99e39d3a59",
+        "review_commit": "19c7e297bac5d8255137eb5bead6f8be7fce8d5f",
+        "review_tree": "6840c62e55ca62cb6093a0d4ca365f392e559513",
+        "manifest_digest": "sha256:f996c65cdf931c4e136edac48a3d55e0d62625817cfa483f27e93017733b999e"
+      },
+      "reviewer_verdict_sha256": "sha256:ee1367224a3943142e8d85ce18287e066a59dc3c90e58d3af29f3f685d604853"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-74e7dd4a93f9-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "恢复分支未在确认后严格复核 HEAD，可能在未经批准的新 HEAD 上执行 final commands 并持久化 source association。plugins/immune-brain/runtime/unattended/batch_git.ts 的 recovering 分支仅再次调用 verifyConsolidatedCommit；后者在 parent_delivery_consolidation.ts:210–212 只检查 consolidation commit 是 HEAD 的祖先，而非 HEAD 仍等于确认时的 commit。应在恢复确认后、任何 receipt 写入或命令执行前严格比较当前 HEAD 与确认绑定的 commit，并增加恢复过程中 HEAD 漂移的回归测试。",
+      "anchor": "sha256:8ced6a48b4eff26b3b708af172e1efa7979f691d38f59402f540fabd47da3c79",
+      "evidence": {
+        "trigger": "consolidation commit C 已成功，但 receipt.commit 仍为 null，尚无 final report；显式恢复请求将 C 绑定到 native confirmation，等待确认期间同一分支新增一个 empty commit D，然后用户接受 → fresh plan_digest 不变，祖先检查通过，最终 scoped snapshot 也不变，代码写入已完成的 receipt 并在未获本次确认授权的 HEAD D 上执行 final commands，违反 changed HEAD after confirmation 必须无 command/source-association effect 的要求。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:advanceNativeParent",
+          "plugins/immune-brain/runtime/unattended/parent_delivery_consolidation.ts:verifyConsolidatedCommit",
+          "plugins/immune-brain/runtime/workspace_scope.ts:captureGitTaskRevisionSnapshot（直接检查恢复校验使用的同一 delivery identity；该 unchanged helper 绑定 base 与 scoped bytes，不绑定当前 HEAD）",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:writeParentConsolidationReceipt/runFinalVerification"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-f1f7f4a21b04-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC2",
+      "source": "review",
+      "review_round": 2,
+      "summary": "恢复路径缺少完整工作区验证：确认期间新增 scope 外文件后，仍持久化贡献关联并执行最终命令。batch_git.ts:1032 的恢复分支仅调用 verifyConsolidatedCommit；parent_delivery_consolidation.ts:230–233 只比较 final scope 的快照，未复用初次 preparation 的全量 dirty-path 检查。应在恢复确认前后拒绝未批准的 tracked/untracked dirty 路径，并扩展现有恢复测试，断言拒绝时 receipt 不变且命令未执行。",
+      "anchor": "sha256:a834747d6dace513cb809d31fb93bfcacbdf1d7a0555390ce6e9098a37b27a7d",
+      "evidence": {
+        "trigger": "commit 已成功但 receipt.commit 仍为 null，在恢复确认期间新增未跟踪且位于 final scope 外的 unselected.txt → 恢复验证仍通过，batch_git.ts:1043 持久化贡献关联，1045 执行最终命令，而非拒绝未选择的 dirty path。直接依赖的未修改文件 workspace_scope.ts:615–624 只检查 scope 内的 unstaged/untracked 路径；未修改文件 batch_final_verification.ts:119–125 在 cleanBefore 为 false 时仍执行命令，仅将最终 passed 标为 false，因此不能阻止上述副作用。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_git.ts",
+          "plugins/immune-brain/runtime/unattended/parent_delivery_consolidation.ts",
+          "plugins/immune-brain/runtime/workspace_scope.ts",
+          "plugins/immune-brain/runtime/unattended/batch_final_verification.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "qa-AC2-a9176d89-34b493",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC2",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1, timed out) stdout=28B stderr=119296B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "revise_intent:workflow-execution-reliability-parent-consolidation:2026-10-16T01:37:31.015Z",
+      "at": "2026-10-16T01:37:31.015Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\nscope_added:tests/fixtures/parent-consolidation.ts\naction_v2_sha256:d21475d3a0fd0ab785706e4ab99fb8933cc4cc93c2d7145f6603d60faafb05f4"
+    },
+    {
+      "id": "freeze_artifacts:workflow-execution-reliability-parent-consolidation:2026-10-16T01:56:15.287Z",
+      "at": "2026-10-16T01:56:15.287Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-execution-reliability-parent-consolidation.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-execution-reliability-parent-consolidation:2026-10-16T02:05:12.276Z",
+      "at": "2026-10-16T02:05:12.276Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-f6acf990\naction_v2_sha256:a005ec31b425f990de815b074ddaaf9c460c16243b74e2775d40cd15e2384dd7",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-847f72263de70e1f",
+        "issued_at": "2026-10-16T02:05:12.276Z"
+      }
+    },
+    {
+      "id": "request_rework:workflow-execution-reliability-parent-consolidation:2026-10-16T02:07:19.457Z",
+      "at": "2026-10-16T02:07:19.457Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:dcfc2fecd315ddc6ca9945ab1a71513aba4e6d58bb53f9e4d51b6c7fabe671c1",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-c8dca271e17f8388",
+        "issued_at": "2026-10-16T02:07:19.457Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "bd8ad00118c727f4f5c4d80f35402c99e39d3a59",
+        "review_commit": "d0c8fb0df40eb07d244888a737aa7aaa8f3dc8c1",
+        "review_tree": "ac3883a22e1cf6f8b14faa3352eb8ecf2c611be6",
+        "manifest_digest": "sha256:28e72fda184daf87257f4425c4cc27e5db14ca4923bfca13c24691374b0f4b98"
+      }
+    },
+    {
+      "id": "resolve_finding:workflow-execution-reliability-parent-consolidation:2026-10-16T02:10:08.506Z",
+      "at": "2026-10-16T02:10:08.506Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-74e7dd4a93f9-1-review-1\naction_v2_sha256:c7b666297a85a187748a1bd8f910d60477ea9917390de15e8335cf61d449ae84"
+    },
+    {
+      "id": "freeze_artifacts:workflow-execution-reliability-parent-consolidation:2026-10-16T02:10:19.195Z",
+      "at": "2026-10-16T02:10:19.195Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-execution-reliability-parent-consolidation.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-execution-reliability-parent-consolidation:2026-10-16T02:17:27.568Z",
+      "at": "2026-10-16T02:17:27.568Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-815d84eb\naction_v2_sha256:969d6c2c10848fd6a1e5753550fc4dc43f0baff26df3a789a694c9f625d3f7a1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-3fbcf613830b9648",
+        "issued_at": "2026-10-16T02:17:27.568Z"
+      }
+    },
+    {
+      "id": "request_rework:workflow-execution-reliability-parent-consolidation:2026-10-16T02:23:06.797Z",
+      "at": "2026-10-16T02:23:06.797Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:4b59080dbe0abd425424d9362c3110a43d6df5ef4ab97273f52d744b4eb235c3",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-0384a18c5033838e",
+        "issued_at": "2026-10-16T02:23:06.798Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "bd8ad00118c727f4f5c4d80f35402c99e39d3a59",
+        "review_commit": "241c92a056b7ef984a9aad54efb11f0f27a75880",
+        "review_tree": "eb2453d42e4cb0ae1b2befbc8cc60753f209e5a8",
+        "manifest_digest": "sha256:18e07593f274845af925c6b04d53c81e1f8f910e916d3b048d8ff4963db89a49"
+      }
+    },
+    {
+      "id": "resolve_finding:workflow-execution-reliability-parent-consolidation:2026-10-16T02:27:11.432Z",
+      "at": "2026-10-16T02:27:11.432Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f1f7f4a21b04-1-review-1\naction_v2_sha256:82f8460ed43721c9bd6e5af6e1cba7d36074ad594de9650452cd2e60e421017e"
+    },
+    {
+      "id": "freeze_artifacts:workflow-execution-reliability-parent-consolidation:2026-10-16T02:27:27.164Z",
+      "at": "2026-10-16T02:27:27.164Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-execution-reliability-parent-consolidation.intent.json"
+    },
+    {
+      "id": "request_rework:workflow-execution-reliability-parent-consolidation:2026-10-16T02:42:18.849Z",
+      "at": "2026-10-16T02:42:18.849Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_3\naction_v2_sha256:fc4fc432d3e6a6e4a8f756188b39850a09b887a487abe1dc1105a8e3915dff19",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-45a74485673f92a0",
+        "issued_at": "2026-10-16T02:42:18.849Z"
+      }
+    },
+    {
+      "id": "revise_intent:workflow-execution-reliability-parent-consolidation:2026-10-16T02:47:04.062Z",
+      "at": "2026-10-16T02:47:04.062Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\naction_v2_sha256:5530f02cd04f1beb93c2a851f2c5bfedad404486f30106dc32d1f2d36ca5c7a6"
+    },
+    {
+      "id": "resolve_finding:workflow-execution-reliability-parent-consolidation:2026-10-16T02:51:04.812Z",
+      "at": "2026-10-16T02:51:04.812Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-AC2-a9176d89-34b493\naction_v2_sha256:6cb14e0b61984ba11c6db925878ebc13014e34e1004e10fcc369d435806e55d1"
+    },
+    {
+      "id": "freeze_artifacts:workflow-execution-reliability-parent-consolidation:2026-10-16T02:51:14.571Z",
+      "at": "2026-10-16T02:51:14.571Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-execution-reliability-parent-consolidation.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-execution-reliability-parent-consolidation:2026-10-16T02:59:04.404Z",
+      "at": "2026-10-16T02:59:04.404Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-b4ca83a3\naction_v2_sha256:177c8edb2087e6bd005ddc4d4503889cb9d4006643e5ef2e0c481cfe8aba7305",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-83804a0864cd0dd9",
+        "issued_at": "2026-10-16T02:59:04.404Z"
+      }
+    },
+    {
+      "id": "record_approval:workflow-execution-reliability-parent-consolidation:2026-10-16T03:02:34.876Z",
+      "at": "2026-10-16T03:02:34.876Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-f3dd9219\naction_v2_sha256:82f315e7204793707b2dd821358b52f3628b1fe2d44215a98e738c96494e3b74",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-42e5afeb51d25383",
+        "issued_at": "2026-10-16T03:02:34.876Z"
+      }
+    },
+    {
+      "id": "complete:workflow-execution-reliability-parent-consolidation:2026-10-16T03:02:37.228Z",
+      "at": "2026-10-16T03:02:37.228Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:1d2080aed0a20a0f5a7c7296be33e0452b0f0078080fd96809c50102a2b231b4"
+    }
+  ]
+}

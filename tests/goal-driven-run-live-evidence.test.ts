@@ -5,7 +5,7 @@ import { parseTaskRecord } from "../plugins/immune-brain/runtime/kernel/validati
 
 const sha256 = (bytes: string | Buffer) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 // A release version bump rewrites the plugin version constant only, so source identity masks it.
-const releaseNeutralSource = (path: string) => readFileSync(path, "utf8").replace(/PLUGIN_VERSION = "\d+\.\d+\.\d+"/g, 'PLUGIN_VERSION = "<release>"');
+const releaseNeutralSource = (source: string) => source.replace(/PLUGIN_VERSION = "\d+\.\d+\.\d+"/g, 'PLUGIN_VERSION = "<release>"');
 const scenarios = ["parent_dependencies_and_independent_branch", "ordinary_failure_and_review", "successor_handoff", "integration_and_final", "serial_fallback", "isolated_child_prerequisite", "status_preserves_binding", "explicit_cancellation", "critical_and_descendant", "final_failure_and_repair"];
 
 test("both actual Hosts preserve matching unattended scenario and Kernel delivery evidence", () => {
@@ -16,7 +16,15 @@ test("both actual Hosts preserve matching unattended scenario and Kernel deliver
  expect(report.capture.native_inputs).toBe("scripted-fixture-test-user");
  const intent = JSON.parse(readFileSync("docs/plans/goal-driven-run.intent.json", "utf8"));
  const sourcePaths = intent.scope_hint.filter((path: string) => path.startsWith("plugins/immune-brain/") && /\.(ts|mjs|md|json)$/.test(path));
- for (const path of sourcePaths) expect(report.source_sha256[path]).toBe(sha256(releaseNeutralSource(path)));
+ // Historical captures bind measured bytes, not later changes to live source.
+ const historical = JSON.parse(readFileSync("tests/fixtures/goal-driven-run-historical-sources.json", "utf8"));
+ expect(historical.contract).toBe("immune_brain/goal_driven_run_historical_sources/v1");
+ expect(historical.source_revision).toMatch(/^[a-f0-9]{40}$/);
+ expect(Object.keys(historical.sources).sort()).toEqual([...sourcePaths].sort());
+ for (const path of sourcePaths) {
+  expect(typeof historical.sources[path]).toBe("string");
+  expect(report.source_sha256[path]).toBe(sha256(releaseNeutralSource(historical.sources[path])));
+ }
  expect(report.hosts.map((host: any) => host.host).sort()).toEqual(["claude-code", "pi"]);
  for (const host of report.hosts) {
   expect(host.version).toMatch(/^\d+\.\d+\.\d+/);

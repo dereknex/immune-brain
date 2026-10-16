@@ -3,7 +3,9 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { commitBatchChild } from "../plugins/immune-brain/runtime/unattended/batch_git";
+import { advanceNativeParent, observeParentCompletion, commitBatchChild } from "../plugins/immune-brain/runtime/unattended/batch_git";
+import { parentConsolidationFixture } from "./fixtures/parent-consolidation";
+import { readParentConsolidationReceipt } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { buildCandidate } from "../plugins/immune-brain/runtime/unattended/batch_integration";
 import { verify } from "../scripts/verify-batch-completion";
 import { readSecureProjectBytes, readSecureProjectFile } from "../plugins/immune-brain/runtime/kernel/storage";
@@ -95,6 +97,24 @@ function check(root: string, batch: string, before: ReturnType<typeof snapshot>,
 }
 
 describe("batch completion verifier", () => {
+	test.each([0, 7])("consolidated Parent binds final result to composition and HEAD (exit %s)", async code => {
+		const f = parentConsolidationFixture(code);
+		try {
+			await advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined, async () => null, f.selection);
+			expect(await observeParentCompletion(f.root, "native-parent", ["s4"])).toMatchObject({ complete: !code,
+				final_passed: !code, integrated_task_ids: ["s4"], missing_task_ids: [] });
+			const path = join(f.root, ".imm/state/batches/native-parent.native.report.json");
+			const bytes = readFileSync(path, "utf8"); const report = JSON.parse(bytes);
+			report.consolidation_digest = `sha256:${"0".repeat(64)}`; writeFileSync(path, JSON.stringify(report));
+			expect((await observeParentCompletion(f.root, "native-parent", ["s4"])).complete).toBe(false);
+			writeFileSync(path, bytes);
+			f.git("commit", "--allow-empty", "-m", "later HEAD is not verified");
+			expect(await observeParentCompletion(f.root, "native-parent", ["s4"])).toMatchObject({ complete: false, final_passed: false });
+			const receipt = readParentConsolidationReceipt(f.root, "native-parent")!;
+			receipt.envelope.runs.pop(); writeFileSync(join(f.root, ".imm/state/batches/native-parent.consolidation.json"), JSON.stringify(receipt));
+			await expect(observeParentCompletion(f.root, "native-parent", ["s4"])).rejects.toThrow();
+		} finally { rmSync(f.root, { recursive: true, force: true }); }
+	}, 30_000);
 	test("accepts a runner-produced chain and rejects each contradiction", async () => {
 		const fx = await fixture();
 		try {

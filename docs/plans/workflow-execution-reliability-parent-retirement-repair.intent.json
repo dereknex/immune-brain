@@ -1,0 +1,22 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "workflow-execution-reliability-parent-retirement-repair",
+  "owner": "user",
+  "goal": "Repair the delivered-only Parent recovery gap observed while resuming #246: a retired superseded batch must not suppress native settled-delivery integration and final verification. Preserve S4 settlement, historical batch bytes, native confirmation, current-delivery checks and successful final-HEAD proof; do not re-enroll completed children. Bounded supported input: repository-owned validated batch/Kernel records and trusted workspace; no new storage format or authority model.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Source: user repair request and observeNativeParent in runtime/unattended/batch_git.ts. At tests/unattended-batch-commit.test.ts, a delivered-only Parent with superseded batch history reaches native integration and final verification, preserving retired bytes and prior commits. Absent, declined or cancelled native confirmation has no commit/command effect; exit 7 keeps Parent incomplete; successful proof binds integrated HEAD and replay makes no duplicate commit. Active batches and effective completed batches retain their existing route; missing delivery or changed identity is not accepted.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-commit.test.ts\",\n      \"tests/goal-driven-batch-run.test.ts\",\n      \"tests/batch-plan-reconfirmation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/workflow-execution-reliability-parent-retirement.md",
+    "docs/plans/workflow-execution-reliability-parent-retirement-repair.intent.json",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "tests/unattended-batch-commit.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

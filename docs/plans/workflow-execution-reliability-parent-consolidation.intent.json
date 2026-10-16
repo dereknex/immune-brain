@@ -1,0 +1,61 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "workflow-execution-reliability-parent-consolidation",
+  "goal": "Implement and verify the complete native Parent consolidation designed in docs/specs/native-parent-delivery-consolidation.spec.md to finish #246. Preserve original settled S4 and retirement-repair records, give the final combined bytes fresh QA/Review under this task, and explicitly integrate both source runs plus this task itself through one native-confirmed, scope-bounded final delivery. Do not re-enroll settled sources, infer association from names, weaken dirty/path/identity checks, fabricate failed verification, modify Kernel core/store, publish or push. Ordinary batch/Lane/task routes stay unchanged. Supported inputs and negative cases are bounded by the Spec; existing source Intent/audit paths in scope are delivery inputs to preserve, not permission to rewrite them.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Source E1 in bound Spec. At the existing native Parent seam, a superseded batch with two selected settled source runs, different historical shared-bundle blobs, and this consolidation task itself integrates the exact newly reviewed final tree. Source audit bytes and prior commits remain unchanged. Missing, stopped or wrong run, changed Intent, modified audit, unselected dirty path and staged-byte drift reject. Original approvals are not treated as approval of a different final bundle. The new task scope covers all three deliveries so its own source/audit cannot recreate dirty_outside_scope.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-commit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Source E5 in bound Spec. Pi and Claude strictly parse and display the same explicit source-run/final-run/HEAD/tree contribution binding. Native acceptance permits only that effect; absent, declined or cancelled confirmation and a changed HEAD/digest after confirmation produce no unauthorized commit, final command or source association. Duplicate/self selections reject. Explicit recovery from commit-before-receipt interruption verifies the same commit and proof and does not duplicate Git effects.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/claude-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Source E4 in bound Spec. Whole-plan completion recognizes only proof-validated selected source contributions through the newly approved consolidation commit. Successful final verification binds the final integrated HEAD and contribution identities. Exit 7, stale HEAD, missing contribution and modified receipt keep Parent incomplete; replay makes no duplicate commit or tracker close. Existing non-consolidation batch recovery and completion remain protected.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/goal-driven-batch-run.test.ts\",\n      \"tests/batch-completion-verifier.test.ts\",\n      \"tests/batch-plan-reconfirmation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/native-parent-delivery-consolidation.md",
+    ".changeset/workflow-execution-reliability-integration.md",
+    ".changeset/workflow-execution-reliability-parent-retirement.md",
+    ".imm/audit/workflow-execution-reliability-parent-retirement-repair/run-2eb39d3a-919d-4049-a502-897b13a668db/task-record.json",
+    ".imm/audit/workflow-execution-reliability-parent-retirement-repair/run-2eb39d3a-919d-4049-a502-897b13a668db/terminal-proof.json",
+    ".imm/audit/workflow-execution-reliability-s4-integration-proof/run-1910b918-73be-4dee-9fb3-6ec21f33cb0c/task-record.json",
+    ".imm/audit/workflow-execution-reliability-s4-integration-proof/run-1910b918-73be-4dee-9fb3-6ec21f33cb0c/terminal-proof.json",
+    "docs/evidence/workflow-execution-reliability-host-check.md",
+    "docs/plans/workflow-execution-reliability-parent-consolidation.intent.json",
+    "docs/plans/workflow-execution-reliability-parent-retirement-repair.intent.json",
+    "docs/plans/workflow-execution-reliability-s4-integration-proof.intent.json",
+    "docs/specs/native-parent-delivery-consolidation.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-run-batch.md",
+    "plugins/immune-brain/runtime/claude/interaction.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/unattended/parent_delivery_consolidation.ts",
+    "tests/batch-completion-verifier.test.ts",
+    "tests/batch-plan-reconfirmation.test.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/fixtures/goal-driven-run-historical-sources.json",
+    "tests/fixtures/parent-consolidation.ts",
+    "tests/goal-driven-batch-run.test.ts",
+    "tests/goal-driven-run-live-evidence.test.ts",
+    "tests/kernel-assurance-projection.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/unattended-batch-commit.test.ts"
+  ],
+  "risk": "material",
+  "revision": 3,
+  "owner": "user"
+}

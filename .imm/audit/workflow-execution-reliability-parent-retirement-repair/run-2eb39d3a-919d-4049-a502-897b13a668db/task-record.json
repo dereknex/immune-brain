@@ -1,0 +1,303 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "workflow-execution-reliability-parent-retirement-repair",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "workflow-execution-reliability-parent-retirement-repair",
+    "goal": "Repair the delivered-only Parent recovery gap observed while resuming #246: a retired superseded batch must not suppress native settled-delivery integration and final verification. Preserve S4 settlement, historical batch bytes, native confirmation, current-delivery checks and successful final-HEAD proof; do not re-enroll completed children. Bounded supported input: repository-owned validated batch/Kernel records and trusted workspace; no new storage format or authority model.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Source: user repair request and observeNativeParent in runtime/unattended/batch_git.ts. At tests/unattended-batch-commit.test.ts, a delivered-only Parent with superseded batch history reaches native integration and final verification, preserving retired bytes and prior commits. Absent, declined or cancelled native confirmation has no commit/command effect; exit 7 keeps Parent incomplete; successful proof binds integrated HEAD and replay makes no duplicate commit. Active batches and effective completed batches retain their existing route; missing delivery or changed identity is not accepted.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-commit.test.ts\",\n      \"tests/goal-driven-batch-run.test.ts\",\n      \"tests/batch-plan-reconfirmation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/workflow-execution-reliability-parent-retirement.md",
+      "docs/plans/workflow-execution-reliability-parent-retirement-repair.intent.json",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "tests/unattended-batch-commit.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/workflow-execution-reliability-parent-retirement-repair.intent.json",
+    "content_hash": "sha256:8ffe18fe5c07c0621989fa5314a76b152081d90105e14f6c2baa4095e6769357"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:8ffe18fe5c07c0621989fa5314a76b152081d90105e14f6c2baa4095e6769357",
+  "git_base_head": "bd8ad00118c727f4f5c4d80f35402c99e39d3a59",
+  "attestations": [
+    {
+      "id": "approval-qa-ad75ee6c",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8ffe18fe5c07c0621989fa5314a76b152081d90105e14f6c2baa4095e6769357",
+      "diff_hash": "sha256:3fca7db13652e003c2227fabda07f1cb149c593fa5704c9ebd9f58c254d0be95",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:eafc0f1cca01d97ca4ac80851f352d4b2593400dde7ad0d68ca6e0294ea0925a",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:eafc0f1cca01d97ca4ac80851f352d4b2593400dde7ad0d68ca6e0294ea0925a"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-09e56d6b",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8ffe18fe5c07c0621989fa5314a76b152081d90105e14f6c2baa4095e6769357",
+      "diff_hash": "sha256:9269555c2bbe71319a266d9f5404b222bfaf561eed8a9f6c01ed7b6ecb24fa0d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:18d89a60b9a74932eda3bc9f211187d265b1fe94a8ade8861c6f19c639cd2f47",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:18d89a60b9a74932eda3bc9f211187d265b1fe94a8ade8861c6f19c639cd2f47"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-9ea552db",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8ffe18fe5c07c0621989fa5314a76b152081d90105e14f6c2baa4095e6769357",
+      "diff_hash": "sha256:4edb0d13bc2d57935b27fbeb29badc4c23a53d07dfc485044e81d584864c2731",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:e411d9670d4079801952d88ea226a41e24884a779fc682206006b26c65012e44",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:e411d9670d4079801952d88ea226a41e24884a779fc682206006b26c65012e44"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-cab60220",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8ffe18fe5c07c0621989fa5314a76b152081d90105e14f6c2baa4095e6769357",
+      "diff_hash": "sha256:4edb0d13bc2d57935b27fbeb29badc4c23a53d07dfc485044e81d584864c2731",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 immutable revision 的单一 parent、tree 和 manifest_digest，读完全部变更 diff，并检查本轮 delta 与直接调用链；未发现阻断问题。新增确认覆盖仍有 critical task 未完成时的 delivery integration，拒绝及取消路径保持无 commit/command effect；采用 Kernel 已通过的 QA 结果，未重跑测试。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "bd8ad00118c727f4f5c4d80f35402c99e39d3a59",
+        "review_commit": "c7940ef7ea6011560e6d01d22315d49bfa38e635",
+        "review_tree": "188e7d841aa315a29c7e430af65bf14bb85b4e9b",
+        "manifest_digest": "sha256:68cb13eb54fa5d1fbfb7be046ef3ec0babe89378d9fca4a313f503bca77986fb"
+      },
+      "reviewer_verdict_sha256": "sha256:9352e71c556da1735bf0d6640085911aa4a0627a364e5ec6a2dd61751bbfb43b"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-ddf9226e0267-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Native-effect authorization gap: batch_git.ts:930-934 now routes superseded history into advanceNativeParent, but its confirmation guard at line 990 requires nonempty commands. With omitted or empty final_verification, lines 1005-1009 commit settled deliveries without invoking the native gate. The unchanged direct caller kernel_ports.ts:869-872 was inspected to trace this route: it forwards optional final_verification and relies on that gate to reject reuse-only execution. Require confirmation before previously unauthorized integration independently of whether final commands exist, and extend tests/unattended-batch-commit.test.ts to cover omitted and empty commands with absent, declined, and cancelled confirmation.",
+      "anchor": "sha256:7cf3eefe73981a8ac03131f6980e88ee5e6b8b963cb68bc0e384f5a257473c2f",
+      "evidence": {
+        "trigger": "A delivered-only Parent has superseded batch history, an uncommitted settled delivery, and no native final report; start_unattended_batch omits final_verification or supplies [] → advanceNativeParent skips the confirmation callback and creates a Git commit, including on a reuse-only continuation that must not open a gate.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:startPreparedBatch",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:observeNativeParent",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:advanceNativeParent",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:commitBatchChild"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-15252b19bcea-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_git.ts:993–1008：部分 delivery 尚未 settled 时，runsNow 为 false 会跳过 native confirmation，但后续仍提交已 settled 的 delivery。应将 integration 的确认与能否立即运行 final verification 分开，任何 integration commit 前都必须取得确认；补充 superseded history 下一个已 settled task 加一个尚未 settled critical task 的无 gate、declined、cancelled 回归测试，并同步生成 dist。",
+      "anchor": "sha256:099322d0918e9fa0d6507c4c0c98ad42bc3478209efea68988e490d5c90a8416",
+      "evidence": {
+        "trigger": "可信 workspace 中，Parent 有 superseded batch history、已 settled done 但尚未 integrated 的 task A，以及尚未 settled 的 critical task B，工作区变化均属于 A → observeNativeParent 返回 integrate，missing_task_ids 为 [A, B] 而 integrateIds 为 [A]，missing.every(...) 为 false，因此完全不调用 gate；随后 integration 循环调用 commitBatchChild 提交 A，即使 gate 缺失或本应拒绝、取消，也已经改变 Git HEAD，违反无确认不得产生 commit effect 的 invariant。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:observeNativeParent",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:advanceNativeParent",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:commitBatchChild"
+        ],
+        "violated": {
+          "kind": "security_boundary",
+          "ref": "native confirmation before Parent delivery integration commits"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:workflow-execution-reliability-parent-retirement-repair:2026-10-15T16:06:00.045Z",
+      "at": "2026-10-15T16:06:00.045Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-execution-reliability-parent-retirement-repair.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-execution-reliability-parent-retirement-repair:2026-10-15T16:08:08.580Z",
+      "at": "2026-10-15T16:08:08.580Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ad75ee6c\naction_v2_sha256:648368e423605ac32576b14d716388fb8628ec67498b5d5e38409d0e2f153e93",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-e6280bd98625701f",
+        "issued_at": "2026-10-15T16:08:08.580Z"
+      }
+    },
+    {
+      "id": "request_rework:workflow-execution-reliability-parent-retirement-repair:2026-10-15T16:09:49.543Z",
+      "at": "2026-10-15T16:09:49.543Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:549a8cda86ce69db0871c8fa24e7e7bfa7be610d1fdc55dd0c8dbab6137e934a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-a86b7d6c21844c3a",
+        "issued_at": "2026-10-15T16:09:49.544Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "bd8ad00118c727f4f5c4d80f35402c99e39d3a59",
+        "review_commit": "ad56fb5113c34c0e6beae82c321a0aeb2838619c",
+        "review_tree": "93d2b9afc82311e84644693b13ad2cbc76a092c1",
+        "manifest_digest": "sha256:496f84f099fce76d93b94d3d36e5d41102aa8701fc8eced0a7cd2a4c50181528"
+      }
+    },
+    {
+      "id": "resolve_finding:workflow-execution-reliability-parent-retirement-repair:2026-10-15T16:14:03.870Z",
+      "at": "2026-10-15T16:14:03.870Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-ddf9226e0267-1-review-1\naction_v2_sha256:5ec3a87570d5daa613483e4047694aa080bb4bac4daa3bbba171d3b984f18207"
+    },
+    {
+      "id": "freeze_artifacts:workflow-execution-reliability-parent-retirement-repair:2026-10-15T16:14:16.709Z",
+      "at": "2026-10-15T16:14:16.709Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-execution-reliability-parent-retirement-repair.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-execution-reliability-parent-retirement-repair:2026-10-15T16:16:21.260Z",
+      "at": "2026-10-15T16:16:21.260Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-09e56d6b\naction_v2_sha256:6323060f468d071d96c057cf35f249b382304a3e10c1d8da01de8abc660d4c18",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-3e1a02de300343cf",
+        "issued_at": "2026-10-15T16:16:21.260Z"
+      }
+    },
+    {
+      "id": "request_rework:workflow-execution-reliability-parent-retirement-repair:2026-10-15T16:17:53.899Z",
+      "at": "2026-10-15T16:17:53.899Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:1a93bc973f1cb378de1dc2edf8f5dfec8e650bee4392a9fc550ca4f70ff9e769",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-57d42da6e87ac839",
+        "issued_at": "2026-10-15T16:17:53.899Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "bd8ad00118c727f4f5c4d80f35402c99e39d3a59",
+        "review_commit": "00c498b24094d0325a0609aabf418069d3cd2f96",
+        "review_tree": "076b468543de4b7078db73d2915fb7b0f976f0da",
+        "manifest_digest": "sha256:c01a75b53d9fc67c2fa60667f8bbe9f17b66eca763f1d2b443f8d168d6861656"
+      }
+    },
+    {
+      "id": "resolve_finding:workflow-execution-reliability-parent-retirement-repair:2026-10-15T16:21:38.885Z",
+      "at": "2026-10-15T16:21:38.885Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-15252b19bcea-1-review-1\naction_v2_sha256:636acb233cc1040d73e56768c9b5d3ecc25f3d00a80aa5d5007252d1e2b30b8d"
+    },
+    {
+      "id": "freeze_artifacts:workflow-execution-reliability-parent-retirement-repair:2026-10-15T16:21:46.288Z",
+      "at": "2026-10-15T16:21:46.288Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-execution-reliability-parent-retirement-repair.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-execution-reliability-parent-retirement-repair:2026-10-15T16:23:56.658Z",
+      "at": "2026-10-15T16:23:56.658Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-9ea552db\naction_v2_sha256:10c43a8ae4a5eeedd578afdb55694b0d60970f00594c46ac04e8df055df8e50d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-6c9f4c0362294343",
+        "issued_at": "2026-10-15T16:23:56.658Z"
+      }
+    },
+    {
+      "id": "record_approval:workflow-execution-reliability-parent-retirement-repair:2026-10-15T16:25:28.676Z",
+      "at": "2026-10-15T16:25:28.676Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-cab60220\naction_v2_sha256:f5a3b5d2edb423b1ac0b34e6ecbffd1d2efe1a073b75366d0c145af26c674386",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-63651e59da1f955c",
+        "issued_at": "2026-10-15T16:25:28.676Z"
+      }
+    },
+    {
+      "id": "complete:workflow-execution-reliability-parent-retirement-repair:2026-10-15T16:25:29.770Z",
+      "at": "2026-10-15T16:25:29.770Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:55aba796e0e7428dd13005996e01021a172fc008c3f871fde082d5a5d49817ad"
+    }
+  ]
+}
