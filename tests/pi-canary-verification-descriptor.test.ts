@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { assertDeliveryClean, DeliveryWorkspaceError, materializeDeliveryWorkspace, removeTaskOwnedTree, writeDeliveryTree } from "../plugins/immune-brain/runtime/assurance/delivery_workspace";
 import { captureGitTaskRevisionSnapshot } from "../plugins/immune-brain/runtime/workspace_scope";
-import { parseVerificationDescriptor, canonicalDescriptorBytes, resolveVerificationCommand, assertCommandIdentity, runFixedVerification, findingsDigest } from "../plugins/immune-brain/.pi-extension/pi-canary-verification";
+import { parseVerificationDescriptor, canonicalDescriptorBytes, resolveVerificationCommand, assertCommandIdentity, runFixedVerification, findingsDigest, VERIFICATION_DESCRIPTOR_BOUNDS } from "../plugins/immune-brain/.pi-extension/pi-canary-verification";
 import { VerificationCleanupError, verificationPath } from "../plugins/immune-brain/runtime/assurance/verification";
 
 const command = (overrides = {}) => ({ executable: "bun", argv: ["-e", "1"], cwd: ".", timeout_ms: 30000, max_output_bytes: 8192, ...overrides });
@@ -527,8 +527,11 @@ describe("delivery workspace materialization", () => {
 			try {
 				for (const [key, value] of Object.entries(env)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
 				if (withPath) process.env.PATH = withPath(process.env.PATH ?? "", path);
-				const c = good({ argv: ["-e", "console.log(JSON.stringify(process.env))"] }).command;
+				// A hosted runner's environment exceeds the 8 KiB descriptor default, so the
+				// probe must carry the largest bound the contract allows.
+				const c = good({ argv: ["-e", "console.log(JSON.stringify(process.env))"], max_output_bytes: VERIFICATION_DESCRIPTOR_BOUNDS.max_output_bytes }).command;
 				const result = await runFixedVerification(root, c, resolveVerificationCommand(root, c, path), { path });
+				if (result.output_limited) throw new Error("child environment probe exceeded the descriptor output bound");
 				return { path, env: JSON.parse(result.stdout) as Record<string, string | undefined> };
 			} finally {
 				for (const [key, value] of saved) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
