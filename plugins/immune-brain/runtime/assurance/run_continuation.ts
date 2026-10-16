@@ -116,7 +116,7 @@ export async function observeParentRun(binding: RunBinding & { kind: "parent" },
 		if (!facts || facts.plan_digest !== binding.plan_digest) throw new Error("native Parent plan identity changed");
 		let nextAction = ["verify", "repair"].includes(facts.action) ?
 			`Call start_unattended_batch for ${binding.initiative_slug} with final_verification ${JSON.stringify(binding.final_verification ?? facts.native?.final_verification.results.map(result => result.command) ?? [])}; if it fails, diagnose and canonically prepare/validate the stable original-goal repair before fresh native Enrollment` : facts.next_action;
-		let runnable = ["verify", "repair", "integrate"].includes(facts.action) || (facts.action === "enroll" && facts.task_id !== null);
+		let runnable = ["verify", "repair"].includes(facts.action) || (facts.action === "enroll" && facts.task_id !== null);
 		let running = false;
 		let taskProgress: unknown = null;
 		if (facts.action === "drive" && facts.task_id) {

@@ -38,10 +38,12 @@ the ordinary ordered child list, final commands, budget and plan digest through
 its native confirmation, and issues one Kernel Batch Authorization for ordinary
 Slices. Normal successors of a critical Slice retain ordinary authorization;
 the complete Parent dependency graph still prevents their execution until the
-critical delivery is settled and integrated. Critical Slices consume no batch slot:
-when ready, invoke single-task native Enrollment, drive their Loop, then re-enter
-the Parent tool to scope-bound commit their settled delivery and resume ordinary
-work. Independent branches keep progressing while one branch is blocked. The extension mints no capability and owns no
+critical delivery is settled. Critical Slices consume no batch slot: when ready,
+invoke single-task native Enrollment, drive their Loop, then re-enter the Parent
+tool to resume ordinary work. A Slice settled `done` with an unchanged TaskIntent
+is delivered wherever its bytes live (any commit, the index or the working
+tree); the runtime makes no commit for it and the user may commit however they
+prefer. Independent branches keep progressing while one branch is blocked. The extension mints no capability and owns no
 batch state transition: the shared `startBatch` driver in
 `runtime/unattended/` owns every batch transition, and each child is still
 enrolled, assured, and settled by the Kernel under an ordinary TaskRecord.
@@ -65,45 +67,26 @@ failures return to bounded repair in this Loop. Repeated failures use the existi
 coordinator correction limits, retaining failure history and counters.
 
 A batch `completed` flag proves only the ordinary child driver finished. Parent
-success requires all necessary Slices settled with current Intent evidence,
-commits integrated into the final branch, recorded final commands passing on that
-exact HEAD, and all separately enrolled repairs integrated. The integration Slice
+success requires all necessary Slices and separately enrolled repairs settled
+`done` with current Intent evidence, and recorded final commands passing on the
+current scoped content of those Slices. A user commit, amend, branch switch or
+stash round trip with equal content keeps that pass; an in-scope edit after it
+needs a rerun. The integration Slice
 owns cross-Slice verification and repair scope before its settlement. On a later
 final failure, restore a recoverable local environment and retry the recorded
 commands; otherwise diagnose, author and validate the smallest repair TaskIntent
 for the original goal, then open a fresh single-task native Enrollment without
 chat pre-confirmation. Settled Slices retain their evidence. Track only an observed
-repair run, integrate its settled delivery, and rerun final verification. Parent
+repair run and rerun final verification once it settles. Parent
 Issue closure waits for this whole-plan proof; a tracker failure reports the local
 proof and one synchronization recovery action.
 
-A critical-only or delivered-only Parent starts no batch, but its first run of
-caller-supplied final commands executes outside Host permission. Before any
-settled-delivery commit or command runs, the current Host opens its native
-confirmation listing those exact commands; a decline, cancellation or missing
-gate leaves no Git or command effect. Recorded commands rerun under that earlier
+A critical-only or delivered-only Parent starts no batch and makes no commit, but
+its first run of caller-supplied final commands executes outside Host permission.
+Before any command runs, the current Host opens its native confirmation listing
+those exact commands; a decline, cancellation or missing gate leaves no command
+effect. A Parent whose final commands are already recorded needs no gate. Recorded commands rerun under that earlier
 confirmation, and changed commands need a fresh explicit Parent entry.
-
-### Consolidating settled deliveries
-
-When several settled deliveries remain in one checkout and share generated files,
-prepare one material/critical consolidation TaskIntent covering the complete final
-composition, source Intent/audit inputs, and its own implementation. Preserve the
-source audits and give the combined bytes fresh QA and independent Review.
-After that task settles, pass `delivery_consolidation` to the same Parent tool:
-`{ task_id, run_id, source_runs: [{ task_id, run_id }, ...] }`. Select exact original
-Parent contributions and any standalone repair explicitly; task-name similarity
-is not association. This route is for native Parents, not active ordinary batches.
-
-The native gate discloses all selected runs, proof hashes, final delivery digest,
-branch/HEAD, path/blob manifest and final commands. Acceptance authorizes one
-scope-bounded final-task commit. Sources retain historical approvals; the new
-Review approves the final combination. An interrupted commit leaves a pending
-receipt: recover with the same selection and fresh native confirmation, verifying
-the exact commit before recording contributions. Re-entry after integration uses
-the verified receipt; final verification must bind that composition and current
-HEAD before Parent closure. A mismatch preserves evidence and stops, not a scope
-widening or permission bypass.
 
 After diagnostics pass, the Parent advances Kernel QA and dispatches any reserved
 foreground Review once using the exact returned `agent_params`, then submits its
@@ -125,8 +108,7 @@ QA repair do not park the batch; genuine budget/authority stops remain fail-clos
 Batch execution never pushes a ref, opens or updates a pull request, resolves a
 user decision, or creates, switches, or deletes a Git worktree. Its sole Git
 effect is the batch branch `imm/<initiative-slug>` plus scope-bounded delivery
-commits: one per child, or one explicitly confirmed final composition on the native
-Parent consolidation route.
+commits, one per ordinary child; a native Parent writes no Git effect.
 
 ### Parallel Batch Opt-In
 

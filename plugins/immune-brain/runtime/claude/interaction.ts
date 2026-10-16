@@ -91,9 +91,8 @@ export interface NativeConfirmationInput {
 		excluded: Array<{ task_id: string; slice_id: string; reason: string }>;
 		budget?: { max_children: number; qa_failure_limit: number };
 		final_verification?: string[];
-		/** Present only for a native Parent: no batch is started, only these commits and final commands run. */
-		parent_final_verification?: { integrate_task_ids: string[];
-			delivery_consolidation?: import("../unattended/parent_delivery_consolidation").ConsolidationReceipt };
+		/** Present only for a native Parent: no batch is started and no commit is made, only the final commands run. */
+		parent_final_verification?: Record<string, never>;
 		/** Present only when the run uses Lanes. */
 		lane_mode?: {
 			max_parallel: number;

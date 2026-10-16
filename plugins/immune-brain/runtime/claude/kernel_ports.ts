@@ -1,6 +1,5 @@
 import { stagePlanningArtifactTransition, type VerdictAuthority } from "../assurance/verdict_authority";
 export { ensureReviewRevision as ensureClaudeReviewRevision } from "../assurance/verdict_authority";
-import { parseDeliveryConsolidation, type DeliveryConsolidation } from "../unattended/parent_delivery_consolidation";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
@@ -834,7 +833,7 @@ export class ClaudeRuntime {
 	async startUnattendedBatch(
 		initiativeSlug: string,
 		meta: ToolMeta,
-		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; delivery_consolidation?: DeliveryConsolidation; lane_instruction?: LaneInstructionRequest; lane_revision?: LaneRevisionRequest } = {},
+		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest; lane_revision?: LaneRevisionRequest } = {},
 	): Promise<ClaudeBatchStartResult> {
 		let commit: string | undefined;
 		try {
@@ -849,12 +848,11 @@ export class ClaudeRuntime {
 
 	private async startPreparedBatch(
 		initiativeSlug: string, meta: ToolMeta,
-		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; delivery_consolidation?: DeliveryConsolidation; lane_instruction?: LaneInstructionRequest; lane_revision?: LaneRevisionRequest },
+		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest; lane_revision?: LaneRevisionRequest },
 		onCommit: (commit: string | undefined) => void,
 	): Promise<ClaudeBatchStartResult> {
 		throwIfCancelled(meta.signal);
 		const reuseOnly = options.reuseOnly === true;
-		const consolidation = parseDeliveryConsolidation(options.delivery_consolidation);
 		const probe = probeHost(this.env, process.platform, this.hostVersion);
 		if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
 		// A reuse-only continuation never opens a gate, so it needs no confirmation port.
@@ -884,8 +882,7 @@ export class ClaudeRuntime {
 							children: effects.children,
 							excluded: [],
 							final_verification: effects.final_commands,
-							parent_final_verification: { integrate_task_ids: effects.integrate_task_ids,
-							...(effects.delivery_consolidation ? { delivery_consolidation: effects.delivery_consolidation } : {}) },
+							parent_final_verification: {},
 						},
 						signal: meta.signal,
 					});
@@ -902,7 +899,7 @@ export class ClaudeRuntime {
 					}
 					return batchReason("confirmation_failed", err instanceof Error ? err.message : String(err));
 				}
-			}, consolidation);
+			});
 		if (native) return native;
 		// 1. Host-independent batch preflight: claim ownership, branch
 		// availability, working-tree cleanliness against the authorized scope,

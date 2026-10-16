@@ -367,23 +367,26 @@ export interface AssuranceRecovery {
 }
 
 export interface StatusProjectionWarning {
-	code: "unstaged_scope_paths" | PluginSourceSkewWarning["code"];
+	code: "unstaged_scope_paths" | "out_of_scope_paths" | PluginSourceSkewWarning["code"];
 	paths: string[];
 	message: string;
 }
 export type StatusProjectionResult = AssuranceProjectionResult & { warnings?: StatusProjectionWarning[] };
 /**
  * The read-only status projection both Hosts return from their status Tool.
- * Unstaged or untracked in-scope paths, and a loaded plugin build that differs
+ * Unstaged or untracked in-scope paths, out-of-scope staged or dirty paths, and
+ * a loaded plugin build that differs
  * from this workspace's own plugin source, come back as warnings beside the
  * projection instead of replacing it. Every path that freezes a snapshot or
  * binds authority keeps projecting through the refusing delivery identity.
  */
 export async function projectTaskStatus(root: string, taskId: string, loadedFrom?: string): Promise<StatusProjectionResult> {
 	let unstaged: string[] = [];
+	let outOfScope: string[] = [];
 	const result = await projectAssurance(root, taskId, (dir, record) => {
 		const identity = taskStatusIdentity(dir, record);
 		unstaged = identity.unstaged_scope_paths;
+		outOfScope = identity.out_of_scope_paths;
 		return identity;
 	});
 	const warnings: StatusProjectionWarning[] = [];
@@ -391,6 +394,11 @@ export async function projectTaskStatus(root: string, taskId: string, loadedFrom
 		code: "unstaged_scope_paths",
 		paths: unstaged,
 		message: `task scope contains unstaged or untracked changes: ${unstaged.join(", ")}; advance_assurance refuses until they are staged or removed`,
+	});
+	if (!result.error && outOfScope.length > 0) warnings.push({
+		code: "out_of_scope_paths",
+		paths: outOfScope,
+		message: `paths outside the task scope are staged or changed: ${outOfScope.join(", ")}; they are not part of this task's identity, and a frozen Review or QA snapshot refuses them until they are unstaged or reverted`,
 	});
 	// Reported beside errors too: a stale loaded build is the likely cause of one.
 	const skew = pluginSourceSkewWarning(root, loadedFrom);
@@ -460,6 +468,22 @@ export type AssuranceAdvanceResult = AssuranceRecoveryFields & (
 	| { state: "blocked"; reason: string; code?: "verdict_invalid" }
 	| { state: "completed" }
 	| { state: "stopped" });
+
+/**
+ * D7: a settled Task is delivered by its scoped content, not by a commit. A
+ * Host's completion report names that content identity and leaves Git to the user.
+ */
+export interface AssuranceDelivery {
+	content_hash: string;
+	note: string;
+}
+
+export function deliveryOf(diffHash: string): AssuranceDelivery {
+	return {
+		content_hash: diffHash,
+		note: `Changes are in the working tree with scoped content hash ${diffHash}; commit however you prefer.`,
+	};
+}
 
 export type AssuranceSubmitReviewResult = AssuranceRecoveryFields & (
 	| { state: "rework"; operation: "review"; operation_id: string; summary: string }

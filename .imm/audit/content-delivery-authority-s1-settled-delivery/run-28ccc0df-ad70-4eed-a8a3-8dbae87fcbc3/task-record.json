@@ -1,0 +1,243 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "content-delivery-authority-s1-settled-delivery",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "content-delivery-authority-s1-settled-delivery",
+    "goal": "Make a Slice settled done with an unchanged TaskIntent count as delivered regardless of Git state, remove the native Parent integrate gate, retire delivery consolidation, and report the settled content hash, under S1 of docs/specs/content-delivery-authority.spec.md.",
+    "acceptance": [
+      {
+        "id": "S1-AC1",
+        "assertion": "Sources E1, E2, E3, E8, U1, U4; meet S1, SCN-1, D1, D2, D5, D6 and D7 in docs/specs/content-delivery-authority.spec.md: with botline-shaped fixtures (a critical settled Slice whose bytes are in a user-made commit; a settled Slice left staged beside an out-of-scope staged path), observeParentCompletion reports it delivered, a dependent Slice's prerequisite check passes, native Parent proceeds with no integrate action, gate or runtime commit, and the read-only status identity returns the out-of-scope path as a warning. Negative controls: a stopped Task, a revised TaskIntent hash, and an unsettled Task are not delivered; frozen Review snapshots still refuse envelope escape. Completion text states the scoped content hash and that the user may commit however they prefer.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/goal-driven-batch-run.test.ts\",\n      \"tests/managed-task-snapshot-isolation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S1-AC2",
+        "assertion": "Sources U1, U5, T1; meet D3 and D4 in docs/specs/content-delivery-authority.spec.md: native final verification binds the scoped content identity over required scopes; a user commit, amend or stash round trip with equal content keeps it passed, an in-scope edit after verification makes it stale; a legacy head-bound report stays valid only while HEAD matches. The delivery_consolidation parameter, module, receipts and contract text are gone from both Hosts' tool surfaces and existing consolidation files are ignored.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-completion-verifier.test.ts\",\n      \"tests/unattended-batch-commit.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/goal-driven-run-recovery.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/content-delivery-authority-settled-delivery.md",
+      "docs/plans/content-delivery-authority-s1-settled-delivery.intent.json",
+      "docs/specs/content-delivery-authority.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run-batch.md",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/assurance/run_continuation.ts",
+      "plugins/immune-brain/runtime/claude/interaction.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/unattended/batch_final_verification.ts",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/parent_delivery_consolidation.ts",
+      "plugins/immune-brain/runtime/workspace_scope.ts",
+      "tests/batch-completion-verifier.test.ts",
+      "tests/batch-retro-201.test.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/fixtures/goal-driven-run-historical-sources.json",
+      "tests/fixtures/parent-consolidation.ts",
+      "tests/fixtures/settled-delivery.ts",
+      "tests/goal-driven-batch-run.test.ts",
+      "tests/goal-driven-run-recovery.test.ts",
+      "tests/managed-task-snapshot-isolation.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/skill-mode-consolidation.test.ts",
+      "tests/unattended-batch-commit.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 3,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/content-delivery-authority-s1-settled-delivery.intent.json",
+    "content_hash": "sha256:4d967c2e4c1c858ca30832f312485b3351bb005520725469a35fb1f91773f465"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:e4d9bf84a0b8f4ae4901c823d5caf79acea0ba16dea6c9fb06aaf730640386bb",
+  "git_base_head": "d5e63db10c6cf237b64cbdc9ace9e13c8ae8f5d2",
+  "attestations": [
+    {
+      "id": "approval-qa-67893820",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:4d967c2e4c1c858ca30832f312485b3351bb005520725469a35fb1f91773f465",
+      "diff_hash": "sha256:9d3ff60f95bf8adc3fa6f36c0016b25d257c146e16cdb5399fb946b9c397b39c",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:a124a25504763d3171f3d610cd1ffae03893102dfcc9fc7a7be3cf79a7ddeb1b",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S1-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:a124a25504763d3171f3d610cd1ffae03893102dfcc9fc7a7be3cf79a7ddeb1b"
+        },
+        {
+          "acceptance_id": "S1-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:a124a25504763d3171f3d610cd1ffae03893102dfcc9fc7a7be3cf79a7ddeb1b"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-960b6406",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:4d967c2e4c1c858ca30832f312485b3351bb005520725469a35fb1f91773f465",
+      "diff_hash": "sha256:9d3ff60f95bf8adc3fa6f36c0016b25d257c146e16cdb5399fb946b9c397b39c",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (single parent d5e63db, tree 12b3175). Delivery now derives from settled done plus an unchanged Intent hash, the native integrate action, gate and commit are removed, final verification binds the scoped content identity with a legacy HEAD fallback, consolidation is retired on both Hosts and in the bundle, and status warns on out-of-scope paths while frozen snapshots still refuse them. The agreed seams cover SCN-1 and its negative controls.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "d5e63db10c6cf237b64cbdc9ace9e13c8ae8f5d2",
+        "review_commit": "58635c07be03ed8aa05cbee01b45676f991ec08d",
+        "review_tree": "12b31751a8de3e07a9102406218526eb390588ea",
+        "manifest_digest": "sha256:eb267b68a4fe08a270b2e98074caf9923744f2e870ebff0338ff8295a83cb1eb"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-d72ccb648be2-1-review-1",
+          "acceptance_id": "S1-AC1",
+          "summary": "The D7 completion report gives the content hash and a commit-however-you-prefer note but not the changed paths D7 names, and only the Claude Host adds it; Pi advance_assurance completion is unchanged.",
+          "anchor": "sha256:ce91827d63c57c3b7bbad2d36de8f16bd676a9bba65e33cc25cc4418fdbf8195",
+          "evidence": {
+            "trigger": "A Task reaches state completed through Claude advance_assurance or submit_review: the delivery field has content_hash and note but no changed_paths. The same completion on Pi carries no delivery note. The AC text names only the hash and note, and the Pi completion path (imm-canary-work.ts) is outside scope_hint.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/claude/mcp_server.ts:withCompletionDelivery",
+              "plugins/immune-brain/runtime/assurance/coordinator.ts:deliveryOf"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S1-AC1"
+            }
+          }
+        },
+        {
+          "id": "review-d72ccb648be2-2-review-2",
+          "acceptance_id": "S1-AC1",
+          "summary": "The updated imm-run-batch.md says the runtime makes no commit for a settled Slice, but in an ordinary batch both Hosts still call integrateSettledCriticalSlices, which commits settled critical Slices.",
+          "anchor": "sha256:de129f5076cb91d227e14f5742a71a371be4b4b96d2a808cfd21bb628b2ffbed",
+          "evidence": {
+            "trigger": "An ordinary batch with a critical Slice settled done is re-entered through start_unattended_batch: integrateSettledCriticalSlices calls commitBatchChild and lands a runtime commit, contrary to the doc sentence. The native Parent path is unaffected, and batch-branch commits appear to be S2 scope, so this is a documentation accuracy gap until S2.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/claude/kernel_ports.ts:startPreparedBatch",
+              "plugins/immune-brain/runtime/unattended/batch_git.ts:integrateSettledCriticalSlices",
+              "plugins/immune-brain/dist/imm-run-batch.md"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S1-AC1"
+            }
+          }
+        },
+        {
+          "id": "review-d72ccb648be2-3-review-3",
+          "acceptance_id": "S1-AC2",
+          "summary": "The Task set used to build content-bound scopes differs between the writer and the reader.",
+          "anchor": "sha256:72504ff7e187c1fb7a2164ae32c9b6df664369a5f4fc1601af2b869fe365d936",
+          "evidence": {
+            "trigger": "advanceNativeParent writes content_identity over Parent Tasks plus native repair_tasks. observeParentCompletion recomputes it over allTaskIds, which also includes repair_tasks from any batch record of the same slug. When a batch record carries a repair Task the native report lacks, the scope unions differ, so a passed content-bound report never holds and final_passed stays false.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/unattended/batch_git.ts:advanceNativeParent",
+              "plugins/immune-brain/runtime/unattended/batch_git.ts:deliveryScopes",
+              "plugins/immune-brain/runtime/unattended/batch_git.ts:observeParentCompletion"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S1-AC2"
+            }
+          }
+        },
+        {
+          "id": "review-d72ccb648be2-4-review-4",
+          "acceptance_id": "S1-AC2",
+          "summary": "No test pins that an existing .consolidation.json or a legacy consolidation_digest is ignored; the behavior holds only because the reader and validation were deleted.",
+          "anchor": "sha256:0bd5b2031573273fe99707cf3a129753dbdde60dd0b87a53df5a55ab2ef6ca7d",
+          "evidence": {
+            "trigger": "A workspace keeps .imm/state/batches/<slug>.consolidation.json, or a native report that still carries consolidation_digest: completion ignores both today, but no assertion would catch a reintroduced reader.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/unattended/batch_state.ts:validateNativeParentReport",
+              "plugins/immune-brain/runtime/unattended/batch_git.ts:observeParentCompletion"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S1-AC2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:b8a24f097e988258269ba7f4192ad7ade9e25cca4bd1a96d5a6fd476dda28d4d"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "revise_intent:content-delivery-authority-s1-settled-delivery:2026-10-16T07:42:18.501Z",
+      "at": "2026-10-16T07:42:18.501Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\nscope_added:plugins/immune-brain/runtime/unattended/batch_final_verification.ts\nscope_added:tests/batch-retro-201.test.ts\naction_v2_sha256:5ee16fb452a276477ee610601ff80239d1bb78141ac7b649c6df2f44ebaa18f8"
+    },
+    {
+      "id": "revise_intent:content-delivery-authority-s1-settled-delivery:2026-10-16T07:50:24.425Z",
+      "at": "2026-10-16T07:50:24.425Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\nscope_added:tests/fixtures/settled-delivery.ts\naction_v2_sha256:c3b36ae7f9ae99fd436fa0725952b4d0a0c9d98cde11361708f19e3b2f52937b"
+    },
+    {
+      "id": "freeze_artifacts:content-delivery-authority-s1-settled-delivery:2026-10-16T08:07:46.567Z",
+      "at": "2026-10-16T08:07:46.567Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/content-delivery-authority-s1-settled-delivery.intent.json"
+    },
+    {
+      "id": "record_approval:content-delivery-authority-s1-settled-delivery:2026-10-16T08:11:24.458Z",
+      "at": "2026-10-16T08:11:24.458Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-67893820\naction_v2_sha256:d45ef8a53fd744be15991cf35e120b86b82f3e722889c0d3692828d3981694ba",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-16T08:11:24.458Z"
+      }
+    },
+    {
+      "id": "record_approval:content-delivery-authority-s1-settled-delivery:2026-10-16T08:14:10.072Z",
+      "at": "2026-10-16T08:14:10.072Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-960b6406\naction_v2_sha256:3c256c68ebda2cb82c1a0e335cb808bd07f7312af9c15d3172ef63a9e6d4686a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-16T08:14:10.073Z"
+      }
+    },
+    {
+      "id": "complete:content-delivery-authority-s1-settled-delivery:2026-10-16T08:14:12.156Z",
+      "at": "2026-10-16T08:14:12.156Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:ff4aaaaa3643d95182dfb7d23fae6ad17a11489cdf62c64991151787b435dcf8"
+    }
+  ]
+}

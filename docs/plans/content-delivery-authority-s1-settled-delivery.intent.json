@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "content-delivery-authority-s1-settled-delivery",
-  "owner": "user",
   "goal": "Make a Slice settled done with an unchanged TaskIntent count as delivered regardless of Git state, remove the native Parent integrate gate, retire delivery consolidation, and report the settled content hash, under S1 of docs/specs/content-delivery-authority.spec.md.",
   "acceptance": [
     {
@@ -28,6 +27,7 @@
     "plugins/immune-brain/runtime/claude/interaction.ts",
     "plugins/immune-brain/runtime/claude/kernel_ports.ts",
     "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/unattended/batch_final_verification.ts",
     "plugins/immune-brain/runtime/unattended/batch_git.ts",
     "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts",
     "plugins/immune-brain/runtime/unattended/batch_runner.ts",
@@ -35,9 +35,11 @@
     "plugins/immune-brain/runtime/unattended/parent_delivery_consolidation.ts",
     "plugins/immune-brain/runtime/workspace_scope.ts",
     "tests/batch-completion-verifier.test.ts",
+    "tests/batch-retro-201.test.ts",
     "tests/claude-batch-authority.test.ts",
     "tests/fixtures/goal-driven-run-historical-sources.json",
     "tests/fixtures/parent-consolidation.ts",
+    "tests/fixtures/settled-delivery.ts",
     "tests/goal-driven-batch-run.test.ts",
     "tests/goal-driven-run-recovery.test.ts",
     "tests/managed-task-snapshot-isolation.test.ts",
@@ -46,5 +48,6 @@
     "tests/unattended-batch-commit.test.ts"
   ],
   "risk": "critical",
-  "revision": 1
+  "revision": 3,
+  "owner": "user"
 }

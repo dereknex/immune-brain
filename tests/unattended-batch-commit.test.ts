@@ -30,9 +30,6 @@ import type { BatchPlanChild } from "../plugins/immune-brain/runtime/unattended/
 import { readAuditTaskPair, recoverKernelStoreFollowUps, readSettledTaskEvidence, revisionForContent } from "../plugins/immune-brain/runtime/kernel/storage";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
-import { parentConsolidationFixture } from "./fixtures/parent-consolidation";
-import { readParentConsolidationReceipt, writeParentConsolidationReceipt } from "../plugins/immune-brain/runtime/unattended/batch_state";
-import { parseDeliveryConsolidation } from "../plugins/immune-brain/runtime/unattended/parent_delivery_consolidation";
 
 // Commit-safety fixtures script settlement; explicitly model Parent-ready turns.
 async function finishScriptedHandoffs(input: StartBatchInput, report: Awaited<ReturnType<typeof startBatch>>) {
@@ -214,23 +211,10 @@ describe("Lane Parent delivery proof", () => {
 			record.commits = [landed.commit]; record.final_verification_result = await runFinalVerification(repo.root, ["bun --version"]);
 			writeBatchLaneRunState(repo.root, record);
 			expect((await observeParentCompletion(repo.root, "lane-parent", [taskId])).complete).toBe(true);
+			// Settlement is delivery (content-delivery-authority D1): commit candidates and producer files are not authority.
 			record.children[0]!.commit = predecessor; record.commits = [predecessor]; writeBatchLaneRunState(repo.root, record);
-			await expect(observeParentCompletion(repo.root, "lane-parent", [taskId])).rejects.toThrow("candidate differs");
-			record.children[0]!.commit = landed.commit; record.commits = [landed.commit]; writeBatchLaneRunState(repo.root, record);
-			const producerPath = join(lane, ".imm/state/batches/commits/lane-proof-lane-child.json");
-			const producerBytes = readFileSync(producerPath);
 			rmSync(join(lane, ".imm/state/batches/commits"), { recursive: true });
-			await expect(observeParentCompletion(repo.root, "lane-parent", [taskId])).rejects.toThrow("production evidence");
-			mkdirSync(join(lane, ".imm/state/batches/commits"), { recursive: true }); writeFileSync(producerPath, producerBytes);
-			await createDefaultBatchGitPort().retainLaneEvidence!({ root: repo.root, taskId, batchId: record.batch_id, branch: "main",
-				lane: { path: lane, base_head: base, lane_commit: produced.commit, integrated_commit: landed.commit } });
-			git(repo.root, ["worktree", "remove", "--force", lane]);
-			git(repo.root, ["branch", "-D", "lane"]); git(repo.root, ["reflog", "expire", "--expire=now", "--all"]);
-			git(repo.root, ["gc", "--prune=now"]);
-			record.children[0]!.state = "released"; writeBatchLaneRunState(repo.root, record);
 			expect((await observeParentCompletion(repo.root, "lane-parent", [taskId])).complete).toBe(true);
-			record.children[0]!.commit = predecessor; record.commits = [predecessor]; writeBatchLaneRunState(repo.root, record);
-			await expect(observeParentCompletion(repo.root, "lane-parent", [taskId])).rejects.toThrow("candidate differs");
 		} finally { rmSync(repo.root, { recursive: true, force: true }); rmSync(lane, { recursive: true, force: true }); }
 	});
 });
@@ -312,7 +296,7 @@ describe("native Parent completion without ordinary grants", () => {
 		{ history: false, command: "bun --version", passed: true },
 		{ history: true, command: "bun --version", passed: true },
 		{ history: true, command: "bun -e process.exitCode=7", passed: false },
-	])("integrates and replays delivered-only Parent: history=$history, passed=$passed", async ({ history, command, passed }) => {
+	])("verifies and replays delivered-only Parent without a commit: history=$history, passed=$passed", async ({ history, command, passed }) => {
 		const repo = initGitRepo();
 		try {
 			const paths = ["src/delivered.ts", "docs/plans/delivered.intent.json", "docs/plans/archive/delivered.intent.json"];
@@ -333,24 +317,19 @@ describe("native Parent completion without ordinary grants", () => {
 			const gate: NativeParentGate = async (effects) => { disclosed.push(effects); return null; };
 			const result = await advanceNativeParent(repo.root, "native-parent", [command], reader, undefined, gate);
 			expect(disclosed).toEqual([{ initiative_slug: "native-parent", plan_digest: expect.stringMatching(/^sha256:/),
-				children: [{ task_id: "delivered", slice_id: "S1" }], integrate_task_ids: ["delivered"], final_commands: [command] }]);
+				children: [{ task_id: "delivered", slice_id: "S1" }], final_commands: [command] }]);
 			expect(result).toMatchObject({ state: "native_parent", action: passed ? "complete" : "repair", proof: { complete: passed },
 				final_verification: { passed, results: [{ command, exit_code: passed ? 0 : 7 }] } });
-			expect(git(repo.root, ["log", "-1", "--format=%B"])).toContain("Immune-Brain-Task: delivered");
-			expect(git(repo.root, ["log", "-1", "--format=%B"])).not.toContain("Immune-Brain-Batch:");
-			const head = git(repo.root, ["rev-parse", "HEAD"]);
-			expect(result?.final_verification?.head).toBe(head);
+			expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(baseline);
 			expect((await advanceNativeParent(repo.root, "native-parent", undefined, reader))?.action).toBe(passed ? "complete" : "repair");
-			expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(head);
-			expect(spawnSync("git", ["-C", repo.root, "merge-base", "--is-ancestor", baseline, "HEAD"]).status).toBe(0);
+			expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(baseline);
 			expect(historyBytes()).toEqual(beforeHistory);
 			expect(readBatchRunState(repo.root, "native-parent")).toBeNull();
 			expect((await observeParentCompletion(repo.root, "native-parent", ["delivered"])).complete).toBe(passed);
+			// The user may carry the bytes in any history; equal scoped content keeps the verification (D3).
 			git(repo.root, ["checkout", "--orphan", "unrelated-history"]);
-			git(repo.root, ["rm", "-r", "--cached", "."]); git(repo.root, ["add", "."]); git(repo.root, ["commit", "-m", "copied bytes without delivery history"]);
-			expect(spawnSync("git", ["-C", repo.root, "merge-base", "--is-ancestor", head, "HEAD"]).status).toBe(1);
-			await expect(lookupBatchCommit({ root: repo.root, taskId: "delivered", batchId: null })).rejects.toThrow("diverged");
-			await expect(observeParentCompletion(repo.root, "native-parent", ["delivered"])).rejects.toThrow("diverged");
+			git(repo.root, ["add", "."]); git(repo.root, ["commit", "-m", "user-owned commit of the delivered bytes"]);
+			expect((await observeParentCompletion(repo.root, "native-parent", ["delivered"])).complete).toBe(passed);
 		} finally { rmSync(repo.root, { recursive: true, force: true }); }
 	});
 	it.each([false, true].flatMap(history => [false, true].flatMap(remainingCritical =>
@@ -382,7 +361,9 @@ describe("native Parent completion without ordinary grants", () => {
 				const historyBytes = history ? seedParentHistory(repo.root, baseline, intent, paths) : () => [];
 				const beforeHistory = historyBytes();
 				const result = await advanceNativeParent(repo.root, "native-parent", commands, reader, undefined, gate);
-				expect(result).toMatchObject({ state: expect.stringMatching(/^(rejected|cancelled)$/) });
+				// Only new final commands need the native gate; settled delivery itself opens none (D2).
+				if (commands?.length && !remainingCritical) expect(result).toMatchObject({ state: expect.stringMatching(/^(rejected|cancelled)$/) });
+				else expect(result).toMatchObject({ state: "native_parent", action: remainingCritical ? "enroll" : "verify" });
 				expect(historyBytes()).toEqual(beforeHistory);
 				expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(baseline);
 				expect(existsSync(join(repo.root, "ran.txt"))).toBe(false);
@@ -425,6 +406,8 @@ describe("native Parent completion without ordinary grants", () => {
 			process.env.GDR_COMPLETION_TEST_FAILURE = "1";
 			const failed = await advanceNativeParent(repo.root, "native-parent", commands, reader, undefined, async () => null);
 			expect(failed?.final_verification?.passed).toBe(false);
+			// The user commits the settled bytes in their own way; the head-bound batch record below binds that HEAD.
+			git(repo.root, ["add", "-A"]); git(repo.root, ["commit", "-m", "user commit"]);
 			const head = git(repo.root, ["rev-parse", "HEAD"]); const now = new Date().toISOString();
 			const batch = prepareBatchRunState({ batch_id: "completion-replay", initiative_slug: "native-parent", base_head: baseline,
 				branch: "main", plan_digest: `sha256:${"c".repeat(64)}`, confirmation_time: now, now,
@@ -449,179 +432,6 @@ describe("native Parent completion without ordinary grants", () => {
 			if (previous === undefined) delete process.env.GDR_COMPLETION_TEST_FAILURE; else process.env.GDR_COMPLETION_TEST_FAILURE = previous;
 			rmSync(repo.root, { recursive: true, force: true });
 		}
-	});
-});
-
-describe("explicit settled-delivery consolidation", () => {
-	it.each([0, 7])("integrates three reviewed deliveries once, preserving source proofs (exit %s)", async (code) => {
-		const f = parentConsolidationFixture(code);
-		try {
-			const history = seedConsolidationHistory(f);
-			const sourceBytes = f.auditBytes(); const previousHistory = history();
-			const disclosures: NativeParentEffects[] = [];
-			const result = await advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined,
-				async effects => { disclosures.push(effects); return null; }, f.selection);
-			expect(result).toMatchObject({ action: code ? "repair" : "complete", proof: { complete: !code }, final_verification: { passed: !code } });
-			expect(disclosures).toHaveLength(1); expect(disclosures[0]!.delivery_consolidation?.envelope.runs).toHaveLength(3);
-			expect(new Set([f.s4.revision.review_tree, f.repair.revision.review_tree, f.final.revision.review_tree]).size).toBe(3);
-			expect(f.auditBytes()).toEqual(sourceBytes); expect(history()).toEqual(previousHistory);
-			expect(f.count()).toBe(1); const head = f.git("rev-parse", "HEAD");
-			expect(f.git("rev-parse", "HEAD^")).toBe(f.baseHead);
-			expect(readFileSync(join(f.root, "src/bundle.js"), "utf8")).toBe("new-reviewed-composed-bundle\n");
-			expect((await observeParentCompletion(f.root, "native-parent", ["s4"])).complete).toBe(!code);
-			if (!code) {
-				await advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined, async () => { throw Error("no repeat gate"); }, f.selection);
-				expect(f.count()).toBe(1); expect(f.git("rev-parse", "HEAD")).toBe(head);
-			}
-			const receipt = readParentConsolidationReceipt(f.root, "native-parent")!;
-			writeFileSync(join(f.root, ".imm/state/batches/native-parent.consolidation.json"), JSON.stringify({ ...receipt, digest: `sha256:${"0".repeat(64)}` }));
-			await expect(observeParentCompletion(f.root, "native-parent", ["s4"])).rejects.toThrow("digest");
-		} finally { rmSync(f.root, { recursive: true, force: true }); }
-	});
-	function seedConsolidationHistory(f: ReturnType<typeof parentConsolidationFixture>) {
-		const task = JSON.parse(readFileSync(join(f.root, "docs/plans/s4.intent.json"), "utf8"));
-		const now = new Date().toISOString();
-		const state = prepareBatchRunState({ batch_id: "old-consolidation", initiative_slug: "native-parent", base_head: f.baseHead,
-			branch: "main", plan_digest: `sha256:${"c".repeat(64)}`, confirmation_time: now, now, budget: { max_children: 1, qa_failure_limit: 2 },
-			children: [{ task_id: "s4", slice_id: "S4", blocked_by: [], status: "already_settled", risk: "material", intent_path: "docs/plans/s4.intent.json",
-				intent_revision: 1, intent_content_hash: canonicalIntentHash(task), scope_hint: task.scope_hint, reason: null, exclusion: null }] });
-		state.batch_state = "superseded"; writeBatchRunState(f.root, state);
-		return () => readFileSync(join(f.root, ".imm/state/batches/old-consolidation.json"));
-	}
-	it.each(["absent", "decline", "cancel"])("leaves no association, command or commit on %s gate", async decision => {
-		const f = parentConsolidationFixture();
-		try {
-			const index = readFileSync(join(f.root, ".git/index")); const audits = f.auditBytes();
-			const gate: NativeParentGate | undefined = decision === "absent" ? undefined : async () => ({
-				state: decision === "cancel" ? "cancelled" : "rejected", reason: decision, recovery_action: "wait" });
-			const result = await advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined, gate, f.selection);
-			expect(result?.state).toBe(decision === "cancel" ? "cancelled" : "rejected");
-			expect(f.git("rev-parse", "HEAD")).toBe(f.baseHead); expect(readFileSync(join(f.root, ".git/index"))).toEqual(index);
-			expect(f.auditBytes()).toEqual(audits); expect(readParentConsolidationReceipt(f.root, "native-parent")).toBeNull();
-			expect(existsSync(join(f.root, ".imm/state/verification-count"))).toBe(false);
-		} finally { rmSync(f.root, { recursive: true, force: true }); }
-	});
-	it.each(["wrong-run", "changed-intent", "audit", "outside", "staged-drift"])("rejects %s before confirmation", async fault => {
-		const f = parentConsolidationFixture(); let gates = 0;
-		try {
-			if (fault === "wrong-run") f.selection.source_runs[0]!.run_id = "run-wrong";
-			if (fault === "changed-intent") {
-				const path = join(f.root, "docs/plans/s4.intent.json"); const intent = JSON.parse(readFileSync(path, "utf8"));
-				intent.goal += " changed"; writeFileSync(path, JSON.stringify(intent)); f.git("add", "docs/plans");
-			}
-			if (fault === "audit") writeFileSync(join(f.root, ".imm/audit/s4", f.s4.run_id, "task-record.json"), "{}\n");
-			if (fault === "outside") writeFileSync(join(f.root, "unselected.txt"), "not authorized");
-			if (fault === "staged-drift") { writeFileSync(join(f.root, "src/bundle.js"), "not reviewed"); f.git("add", "src"); }
-			await expect(advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined,
-				async () => { gates++; return null; }, f.selection)).rejects.toThrow();
-			expect(gates).toBe(0); expect(f.git("rev-parse", "HEAD")).toBe(f.baseHead);
-		} finally { rmSync(f.root, { recursive: true, force: true }); }
-	});
-	it.each(["HEAD", "bytes", "plan"])("revalidates %s after native acceptance", async fault => {
-		const f = parentConsolidationFixture();
-		try {
-			const reader = async () => ({ ...await f.reader(), tasks: [{ task_id: "s4", slice_id: "S4", blocked_by: changed ? ["other"] : [] }] });
-			let changed = false;
-			await expect(advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], reader, undefined, async () => {
-				if (fault === "HEAD") f.git("commit", "--allow-empty", "-m", "external unrelated change");
-				if (fault === "bytes") { writeFileSync(join(f.root, "src/bundle.js"), "changed after gate"); f.git("add", "src"); }
-				if (fault === "plan") changed = true;
-				return null;
-			}, f.selection)).rejects.toThrow();
-			expect(readParentConsolidationReceipt(f.root, "native-parent")).toBeNull();
-			expect(existsSync(join(f.root, ".imm/state/verification-count"))).toBe(false);
-		} finally { rmSync(f.root, { recursive: true, force: true }); }
-	});
-	it("recovers commit-before-receipt only through a new exact native confirmation", async () => {
-		const f = parentConsolidationFixture();
-		try {
-			await advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined, async () => null, f.selection);
-			const head = f.git("rev-parse", "HEAD"); const receipt = readParentConsolidationReceipt(f.root, "native-parent")!;
-			writeParentConsolidationReceipt(f.root, { ...receipt, commit: null });
-			rmSync(join(f.root, ".imm/state/batches/native-parent.native.report.json"));
-			// A crash can precede both ordinary production evidence and the final consolidation receipt.
-			rmSync(join(f.root, ".imm/state/batches/commits/native-task-consolidation.json"));
-			const refused = await advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined,
-				async () => ({ state: "cancelled", reason: "cancel", recovery_action: "wait" }), f.selection);
-			expect(refused?.state).toBe("cancelled"); expect(readParentConsolidationReceipt(f.root, "native-parent")!.commit).toBeNull();
-			const result = await advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined, async () => null, f.selection);
-			expect(result).toMatchObject({ action: "complete", proof: { complete: true } });
-			expect(f.git("rev-parse", "HEAD")).toBe(head); expect(f.count()).toBe(2);
-		} finally { rmSync(f.root, { recursive: true, force: true }); }
-	}, 30_000);
-	it.each(["HEAD", "bytes", "branch", "plan", "audit"])("revalidates recovery %s before associating sources or running commands", async fault => {
-		const f = parentConsolidationFixture();
-		try {
-			await advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined, async () => null, f.selection);
-			const receipt = readParentConsolidationReceipt(f.root, "native-parent")!;
-			writeParentConsolidationReceipt(f.root, { ...receipt, commit: null });
-			const receiptPath = join(f.root, ".imm/state/batches/native-parent.consolidation.json");
-			const reportPath = join(f.root, ".imm/state/batches/native-parent.native.report.json");
-			rmSync(reportPath);
-			rmSync(join(f.root, ".imm/state/batches/commits/native-task-consolidation.json"));
-			const pending = readFileSync(receiptPath);
-			let changed = false;
-			const reader = async () => ({ ...await f.reader(), tasks: [{ task_id: "s4", slice_id: "S4", blocked_by: changed ? ["other"] : [] }] });
-			await expect(advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], reader, undefined, async () => {
-				if (fault === "HEAD") f.git("commit", "--allow-empty", "-m", "advance during recovery confirmation");
-				if (fault === "bytes") { writeFileSync(join(f.root, "src/bundle.js"), "changed during recovery"); f.git("add", "src"); }
-				if (fault === "branch") f.git("checkout", "-b", "changed-during-recovery");
-				if (fault === "plan") changed = true;
-				if (fault === "audit") writeFileSync(join(f.root, ".imm/audit/s4", f.s4.run_id, "task-record.json"), "{}\n");
-				return null;
-			}, f.selection)).rejects.toThrow();
-			expect(readFileSync(receiptPath)).toEqual(pending);
-			expect(existsSync(reportPath)).toBe(false);
-			expect(f.count()).toBe(1);
-		} finally { rmSync(f.root, { recursive: true, force: true }); }
-	}, 30_000);
-	it.each(["before", "during"].flatMap(when => ["untracked", "tracked", "staged", "index-flags"].map(fault => ({ when, fault }))))(
-		"rejects $fault workspace drift $when recovery confirmation", async ({ when, fault }) => {
-		const f = parentConsolidationFixture();
-		try {
-			await advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined, async () => null, f.selection);
-			const receipt = readParentConsolidationReceipt(f.root, "native-parent")!;
-			writeParentConsolidationReceipt(f.root, { ...receipt, commit: null });
-			const receiptPath = join(f.root, ".imm/state/batches/native-parent.consolidation.json");
-			const reportPath = join(f.root, ".imm/state/batches/native-parent.native.report.json");
-			rmSync(reportPath);
-			rmSync(join(f.root, ".imm/state/batches/commits/native-task-consolidation.json"));
-			const pending = readFileSync(receiptPath);
-			const drift = () => {
-				if (fault === "untracked") writeFileSync(join(f.root, "unselected.txt"), "not approved");
-				else if (fault === "index-flags") f.git("update-index", "--skip-worktree", ".gitignore");
-				else {
-					writeFileSync(join(f.root, ".gitignore"), readFileSync(join(f.root, ".gitignore"), "utf8") + "\n# unrelated change\n");
-					if (fault === "staged") f.git("add", ".gitignore");
-				}
-			};
-			if (when === "before") drift();
-			let gates = 0;
-			await expect(advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined, async () => {
-				gates++; if (when === "during") drift(); return null;
-			}, f.selection)).rejects.toThrow();
-			expect(gates).toBe(when === "before" ? 0 : 1);
-			expect(readFileSync(receiptPath)).toEqual(pending);
-			expect(existsSync(reportPath)).toBe(false);
-			expect(f.count()).toBe(1);
-		} finally { rmSync(f.root, { recursive: true, force: true }); }
-	}, 30_000);
-	it("refuses to omit a remaining original contribution even when the final scope covers its bytes", async () => {
-		const f = parentConsolidationFixture(); let gates = 0;
-		try {
-			const reader = async () => ({ ...await f.reader(), tasks: [{ task_id: "s4", slice_id: "S4", blocked_by: [] },
-				{ task_id: "repair", slice_id: "S5", blocked_by: ["s4"] }] });
-			const selection = { ...f.selection, source_runs: [f.selection.source_runs[0]!] };
-			await expect(advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], reader, undefined,
-				async () => { gates++; return null; }, selection)).rejects.toThrow("every remaining original");
-			expect(gates).toBe(0); expect(f.git("rev-parse", "HEAD")).toBe(f.baseHead);
-		} finally { rmSync(f.root, { recursive: true, force: true }); }
-	});
-	it("rejects duplicate, self and extra-field selections", () => {
-		const source = { task_id: "source", run_id: "run-source" };
-		for (const input of [{ ...source, source_runs: [source] }, { task_id: "final", run_id: "run-final", source_runs: [source, source] },
-			{ task_id: "final", run_id: "run-final", source_runs: [source], native_decision: "accept" }])
-			expect(() => parseDeliveryConsolidation(input)).toThrow();
 	});
 });
 

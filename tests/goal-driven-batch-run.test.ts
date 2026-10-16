@@ -3,7 +3,9 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { observeParentCompletion } from "../plugins/immune-brain/runtime/unattended/batch_git";
+import { advanceNativeParent, observeParentCompletion, type NativeParentGate } from "../plugins/immune-brain/runtime/unattended/batch_git";
+import { deliveryHash, settledDeliveryFixture } from "./fixtures/settled-delivery";
+import { withCompletionDelivery } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 import { prepareBatchRunState, prepareBatchLaneRunState, writeBatchRunState, writeBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
@@ -221,5 +223,67 @@ describe("Parent completion and final verification", () => {
    expect(report.results[0]!.exit_code).not.toBe(0);
    expect(await Bun.file(join(root, "base.txt")).text()).toBe("base\n");
   } finally { rmSync(root, { recursive: true, force: true }); }
+ });
+});
+
+// Spec content-delivery-authority S1, SCN-1, D1, D2, D5: settled `done` with an
+// unchanged TaskIntent is delivered wherever its bytes live; Git is the user's.
+describe("settled is delivered", () => {
+ const commitCount = (f: ReturnType<typeof settledDeliveryFixture>) => Number(f.git("rev-list", "--count", "HEAD"));
+ const noGate: NativeParentGate = async () => { throw new Error("no native gate may open for settled delivery"); };
+
+ it("a critical delivery in a user-made commit unblocks its dependent with no integrate action, gate or runtime commit", async () => {
+  const f = settledDeliveryFixture();
+  try {
+   f.settle("s5"); f.git("add", f.source.s5); f.git("commit", "-qm", "my own message, no trailer");
+   const commits = commitCount(f); const head = f.git("rev-parse", "HEAD");
+   expect(await observeParentCompletion(f.root, "parent", ["s5"])).toMatchObject({ integrated_task_ids: ["s5"], missing_task_ids: [] });
+   await expect(assertIsolatedTaskPrerequisites(f.root, "s6")).resolves.toBeUndefined();
+   const facts = await observeNativeParent(f.root, "parent", f.reader);
+   expect(facts).toMatchObject({ action: "enroll", task_id: "s6" });
+   expect(facts!.next_action).toContain("Enrollment for s6");
+   await advanceNativeParent(f.root, "parent", undefined, f.reader, undefined, noGate);
+   expect(commitCount(f)).toBe(commits); expect(f.git("rev-parse", "HEAD")).toBe(head);
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+ });
+
+ it("a delivery left staged beside an out-of-scope staged path is delivered", async () => {
+  const f = settledDeliveryFixture();
+  try {
+   f.settle("s5"); f.git("add", f.source.s5); f.git("commit", "-qm", "s5");
+   f.settle("s6"); writeFileSync(join(f.root, "docs/plans/elsewhere.intent.json"), "{}\n");
+   f.git("add", f.source.s6, "docs/plans/elsewhere.intent.json");
+   const commits = commitCount(f);
+   expect(await observeParentCompletion(f.root, "parent", ["s5", "s6"])).toMatchObject({ integrated_task_ids: ["s5", "s6"], missing_task_ids: [] });
+   expect(commitCount(f)).toBe(commits);
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+ });
+
+ // D7: the completion names the settled scoped content hash and leaves Git to the user.
+ it("a completion report states the settled content hash and that the user may commit however they prefer", () => {
+  const f = settledDeliveryFixture();
+  try {
+   f.settle("s5");
+   expect(withCompletionDelivery("s5", { state: "completed" }, f.root)).toEqual({ state: "completed", delivery: {
+    content_hash: deliveryHash("s5"),
+    note: `Changes are in the working tree with scoped content hash ${deliveryHash("s5")}; commit however you prefer.` } });
+   expect(withCompletionDelivery("s5", { state: "rework" }, f.root)).toEqual({ state: "rework" });
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+ });
+
+ it.each([
+  ["stopped", (f: ReturnType<typeof settledDeliveryFixture>) => { f.settle("s5", "stopped"); }],
+  ["unsettled", (f: ReturnType<typeof settledDeliveryFixture>) => { f.settle("s5", "active"); }],
+  ["revised TaskIntent", (f: ReturnType<typeof settledDeliveryFixture>) => {
+   f.settle("s5");
+   writeFileSync(join(f.root, "docs/plans/s5.intent.json"), JSON.stringify({ ...f.intents.s5, goal: "Deliver s5 differently", revision: 2 }, null, 2) + "\n");
+  }],
+ ] as const)("a %s Task is not delivered and keeps its dependent blocked", async (_label, arrange) => {
+  const f = settledDeliveryFixture();
+  try {
+   arrange(f);
+   expect(await observeParentCompletion(f.root, "parent", ["s5"])).toMatchObject({ integrated_task_ids: [], missing_task_ids: ["s5"] });
+   await expect(assertIsolatedTaskPrerequisites(f.root, "s6")).rejects.toThrow("prerequisites are not integrated: s5");
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
  });
 });

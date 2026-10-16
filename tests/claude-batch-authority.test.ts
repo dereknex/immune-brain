@@ -20,8 +20,6 @@ import { ClaudeRuntime, type ToolMeta } from "../plugins/immune-brain/runtime/cl
 import { runContinuationHookOutput } from "../plugins/immune-brain/runtime/claude/run_continuation";
 import { readBatchRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
-import { parentConsolidationFixture } from "./fixtures/parent-consolidation";
-import { readParentConsolidationReceipt } from "../plugins/immune-brain/runtime/unattended/batch_state";
 // Delivery QA has no node_modules; use host seams only when the real package is absent.
 try { await import("typebox"); } catch {
 	const optional = Symbol("optional");
@@ -929,7 +927,7 @@ describe("acc-claude-batch-gate", () => {
 		expect(batchTool).toBeDefined();
 		expect(batchTool?.annotations).toEqual({ destructiveHint: true });
 		expect(batchTool?.inputSchema.required).toEqual(["initiative_slug"]);
-		expect(Object.keys(batchTool?.inputSchema.properties ?? {})).toEqual(["initiative_slug", "max_parallel", "lane_offers", "delivery_consolidation", "final_verification", "lane_instruction", "lane_revision"]);
+		expect(Object.keys(batchTool?.inputSchema.properties ?? {})).toEqual(["initiative_slug", "max_parallel", "lane_offers", "final_verification", "lane_instruction", "lane_revision"]);
 	});
 
 	it("rejects on non-interactive Claude Code session with unsupported_host error code", async () => {
@@ -1256,40 +1254,6 @@ describe("acc-claude-batch-fail-closed", () => {
 		expect(result.reason).toContain("branch preflight failed");
 		expect(result.recovery_action).toContain("delete or rename the conflicting branch");
 		expect(existsSync(join(fixture.root, ".imm", "state", "batch"))).toBe(false);
-	});
-
-	it.each(["accept", "decline", "cancel"] as const)("Claude confirms the same three-run composed delivery: %s", async decision => {
-		const f = parentConsolidationFixture(7); const audits = f.auditBytes(); let disclosed = "";
-		try {
-			const runtime = createMcpRuntime({ cwd: f.root, env: ENV, interactive: true, readInitiative: f.reader,
-				requestConfirmation: async input => { disclosed = elicitationParams(input).message; return { decision, requestId: "consolidation-confirmation" }; },
-				batchTracker: { markTerminal: async () => { throw Error("failed verification cannot close Parent"); } } });
-			runtime.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-			const result = await runtime.callTool("start_unattended_batch", { initiative_slug: "native-parent",
-				final_verification: ["bun verify.ts"], delivery_consolidation: f.selection }, { toolCallId: "consolidation-gate" });
-			for (const identity of [f.s4, f.repair, f.final]) expect(disclosed).toContain(identity.run_id);
-			expect(disclosed).toContain(f.baseHead); expect(disclosed).toContain("delivery_diff_hash"); expect(disclosed).toContain("manifest");
-			expect(f.auditBytes()).toEqual(audits);
-			if (decision === "accept") {
-				expect(result).toMatchObject({ state: "native_parent", action: "repair", proof: { complete: false }, final_verification: { passed: false } });
-				expect(f.count()).toBe(1); expect(readParentConsolidationReceipt(f.root, "native-parent")!.commit).toBe(f.git("rev-parse", "HEAD"));
-			} else {
-				expect(result.state).toBe(decision === "cancel" ? "cancelled" : "rejected");
-				expect(f.git("rev-parse", "HEAD")).toBe(f.baseHead); expect(readParentConsolidationReceipt(f.root, "native-parent")).toBeNull();
-			}
-		} finally { rmSync(f.root, { recursive: true, force: true }); }
-	});
-	it("Claude rejects malformed consolidation before native confirmation", async () => {
-		let gates = 0;
-		const runtime = createMcpRuntime({ cwd: "/not-a-repo", env: ENV, interactive: true,
-			requestConfirmation: async () => { gates++; return { decision: "accept", requestId: "never" }; } });
-		runtime.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-		await expect(runtime.callTool("start_unattended_batch", { initiative_slug: "native-parent",
-			delivery_consolidation: { task_id: "final", run_id: "run-final", source_runs: [], native_decision: "accept" } },
-			{ toolCallId: "invalid-consolidation" })).rejects.toThrow();
-		expect(gates).toBe(0);
-		const schema = listMcpTools().find(tool => tool.name === "start_unattended_batch")!.inputSchema.properties;
-		expect(schema).toHaveProperty("delivery_consolidation");
 	});
 
 	it("critical-only Parent returns a native task handoff without an empty batch grant", async () => {
