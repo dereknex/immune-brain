@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, cpSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -39,6 +40,30 @@ const REJECTED = [
 ];
 const SKILLS = publicSkillNames();
 
+function withPackageFixture<T>(run: (root: string) => T): T {
+  const root = mkdtempSync(join(tmpdir(), "claude-package-"));
+  try {
+    cpSync(join(ROOT, "package.json"), join(root, "package.json"));
+    cpSync(PLUGIN_ROOT, join(root, "plugins/immune-brain"), { recursive: true });
+    return run(root);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function packageInputs() {
+  const files = spawnSync("git", ["ls-files", "-z", "--", "package.json", "plugins/immune-brain"], { cwd: ROOT, encoding: "utf8" });
+  expect(files.status).toBe(0);
+  const index = spawnSync("git", ["rev-parse", "--git-path", "index"], { cwd: ROOT, encoding: "utf8" });
+  expect(index.status).toBe(0);
+  const paths = files.stdout.split("\0").filter(Boolean);
+  expect(paths.length).toBeGreaterThan(0);
+  return [...paths, index.stdout.trim()].map(path => {
+    const file = resolve(ROOT, path);
+    return [path, statSync(file, { bigint: true }).mtimeNs.toString(), createHash("sha256").update(readFileSync(file)).digest("hex")];
+  });
+}
+
 describe("claude host package", () => {
   it("ships one versioned Pi+Claude allowlist and rejects undeclared hosts", () => {
     const version = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8")).version;
@@ -50,9 +75,13 @@ describe("claude host package", () => {
       "plugins/immune-brain/runtime/plugin_version.ts",
     ]);
     const missing = mkdtempSync(join(tmpdir(), "missing-plugin-"));
-    writeFileSync(join(missing, "package.json"), JSON.stringify({ version: "0.0.1" }) + "\n");
-    expect(() => validateManifests(missing)).toThrow(/plugin.json/);
-    expect(() => stampPluginManifest(missing)).toThrow(/plugin.json/);
+    try {
+      writeFileSync(join(missing, "package.json"), JSON.stringify({ version: "0.0.1" }) + "\n");
+      expect(() => validateManifests(missing)).toThrow(/plugin.json/);
+      expect(() => stampPluginManifest(missing)).toThrow(/plugin.json/);
+    } finally {
+      rmSync(missing, { recursive: true, force: true });
+    }
     for (const path of REQUIRED) expect({ path, exists: existsSync(resolve(ROOT, path)) }).toEqual({ path, exists: true });
     for (const path of REJECTED) expect({ path, exists: existsSync(resolve(ROOT, path)) }).toEqual({ path, exists: false });
     const mcp = JSON.parse(readFileSync(resolve(PLUGIN_ROOT, ".mcp.json"), "utf8"));
@@ -99,71 +128,105 @@ describe("claude host package", () => {
   });
 
   it("builds a self-contained Node stdio server and answers initialize", () => {
-    const built = buildClaudePlugin(ROOT);
-    expect(existsSync(built.out)).toBe(true);
-    const source = readFileSync(built.out, "utf8");
-    expect(source).not.toContain("CLAUDE_PLUGIN_ROOT}/../");
-    expect(source).not.toContain("Content-Length");
-    const body = JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "test", version: "0" } },
-    });
-    const child = spawnSync("node", [built.out], {
-      cwd: ROOT,
-      encoding: "utf8",
-      input: `${body}\n`,
-      timeout: 5000,
-    });
-    expect(child.error).toBeUndefined();
-    expect(child.stdout).toContain("claude-code");
-    expect(child.stdout).toContain("tools");
+    const before = packageInputs();
+    withPackageFixture(root => {
+      const built = buildClaudePlugin(root);
+      expect(existsSync(built.out)).toBe(true);
+      const source = readFileSync(built.out, "utf8");
+      expect(source).not.toContain("CLAUDE_PLUGIN_ROOT}/../");
+      expect(source).not.toContain("Content-Length");
+      const body = JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "test", version: "0" } },
+      });
+      const child = spawnSync("node", [built.out], {
+        cwd: root,
+        encoding: "utf8",
+        input: `${body}\n`,
+        timeout: 5000,
+      });
+      expect(child.error).toBeUndefined();
+      expect(child.stdout).toContain("claude-code");
+      expect(child.stdout).toContain("tools");
 
-    // Rejects malformed JSON with -32700 Parse error
-    const parseErr = spawnSync("node", [built.out], {
-      cwd: ROOT,
-      encoding: "utf8",
-      input: "not json\n",
-      timeout: 5000,
-    });
-    expect(parseErr.stdout).toContain("-32700");
+      // Rejects malformed JSON with -32700 Parse error
+      const parseErr = spawnSync("node", [built.out], {
+        cwd: root,
+        encoding: "utf8",
+        input: "not json\n",
+        timeout: 5000,
+      });
+      expect(parseErr.stdout).toContain("-32700");
 
-    // Rejects non-object JSON with -32600 Invalid Request
-    const nonObj = spawnSync("node", [built.out], {
-      cwd: ROOT,
-      encoding: "utf8",
-      input: "null\n42\n",
-      timeout: 5000,
-    });
-    expect(nonObj.stdout).toContain("-32600");
+      // Rejects non-object JSON with -32600 Invalid Request
+      const nonObj = spawnSync("node", [built.out], {
+        cwd: root,
+        encoding: "utf8",
+        input: "null\n42\n",
+        timeout: 5000,
+      });
+      expect(nonObj.stdout).toContain("-32600");
 
-    // Rejects missing or wrong jsonrpc version
-    const wrongRpc = spawnSync("node", [built.out], {
-      cwd: ROOT,
-      encoding: "utf8",
-      input: JSON.stringify({ id: 1, method: "tools/list" }) + "\n" + JSON.stringify({ jsonrpc: "1.0", id: 2, method: "tools/list" }) + "\n",
-      timeout: 5000,
-    });
-    expect(wrongRpc.stdout).toContain("-32600");
+      // Rejects missing or wrong jsonrpc version
+      const wrongRpc = spawnSync("node", [built.out], {
+        cwd: root,
+        encoding: "utf8",
+        input: JSON.stringify({ id: 1, method: "tools/list" }) + "\n" + JSON.stringify({ jsonrpc: "1.0", id: 2, method: "tools/list" }) + "\n",
+        timeout: 5000,
+      });
+      expect(wrongRpc.stdout).toContain("-32600");
 
-    // Rejects invalid id types (e.g. object or boolean)
-    const invalidId = spawnSync("node", [built.out], {
-      cwd: ROOT,
-      encoding: "utf8",
-      input: JSON.stringify({ jsonrpc: "2.0", id: { bad: true }, method: "tools/list" }) + "\n",
-      timeout: 5000,
-    });
-    expect(invalidId.stdout).toContain("-32600");
+      // Rejects invalid id types (e.g. object or boolean)
+      const invalidId = spawnSync("node", [built.out], {
+        cwd: root,
+        encoding: "utf8",
+        input: JSON.stringify({ jsonrpc: "2.0", id: { bad: true }, method: "tools/list" }) + "\n",
+        timeout: 5000,
+      });
+      expect(invalidId.stdout).toContain("-32600");
 
-    // Rejects notification-form tools/call (no id)
-    const notifyCall = spawnSync("node", [built.out], {
-      cwd: ROOT,
-      encoding: "utf8",
-      input: JSON.stringify({ jsonrpc: "2.0", method: "tools/call", params: { name: "status" } }) + "\n",
-      timeout: 5000,
+      // Rejects notification-form tools/call (no id)
+      const notifyCall = spawnSync("node", [built.out], {
+        cwd: root,
+        encoding: "utf8",
+        input: JSON.stringify({ jsonrpc: "2.0", method: "tools/call", params: { name: "status" } }) + "\n",
+        timeout: 5000,
+      });
+      expect(notifyCall.stdout).toContain("-32600");
     });
-    expect(notifyCall.stdout).toContain("-32600");
+    expect(packageInputs()).toEqual(before);
+  });
+  it.each([
+    "plugins/immune-brain/agents/immune-brain-reviewer.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+  ])("preserves %s drift before and after an independent build", output => {
+    const before = packageInputs();
+    withPackageFixture(drifted => {
+      const file = join(drifted, output);
+      const drift = `drift\n${readFileSync(file, "utf8")}`;
+      writeFileSync(file, drift);
+      expect(() => checkClaudePlugin(drifted)).toThrow(/drifted/);
+      withPackageFixture(independent => buildClaudePlugin(independent));
+      expect(() => checkClaudePlugin(drifted)).toThrow(/drifted/);
+      expect(readFileSync(file, "utf8")).toBe(drift);
+    });
+    expect(packageInputs()).toEqual(before);
+  });
+
+  it.each([false, true])("cleans its disposable package tree when callback throws: %s", fail => {
+    let fixture = "";
+    const run = () => withPackageFixture(root => {
+      fixture = root;
+      expect(existsSync(join(root, "package.json"))).toBe(true);
+      if (fail) throw new Error("fixture failure control");
+    });
+    if (fail) expect(run).toThrow("fixture failure control");
+    else run();
+    expect(fixture).not.toBe("");
+    expect(existsSync(fixture)).toBe(false);
+    expect(existsSync(join(ROOT, "package.json"))).toBe(true);
   });
 
   it("keeps Pi package installation and lists privileged MCP tools", async () => {

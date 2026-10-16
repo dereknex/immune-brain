@@ -88,14 +88,20 @@ describe("native repair recovery round trip", () => {
    host.observe({ ...context, type: "PostToolUse", toolName: AGENT_TOOL, result: JSON.stringify(verdict) });
    host.observe({ ...context, type: "SubagentStop", agent: REVIEWER_AGENT });
    expect((await runtime.submitReview(task, verdict) as any).state).toBe("completed");
-   const complete = await advanceNativeParent(root, "repair-parent");
-   expect(inputs.filter(input => input.batchDetails?.parent_final_verification)).toHaveLength(2); // recorded commands rerun under the earlier confirmation
+   // Integrating the newly settled repair is a new delivery effect: an ungated direct call is refused without side effects.
+   const settledHead = git("rev-parse", "HEAD"), gatesBefore = gates;
+   expect(await advanceNativeParent(root, "repair-parent")).toMatchObject({ state: "rejected" });
+   expect(gates).toBe(gatesBefore);
+   expect(git("rev-parse", "HEAD")).toBe(settledHead);
+   const complete = await finalCall();
+   expect(inputs.at(-1)).toMatchObject({ operation: "start_unattended_batch", initiativeSlug: "repair-parent",
+    batchDetails: { parent_final_verification: { integrate_task_ids: expect.arrayContaining([task]) } } });
    expect(complete).toMatchObject({ action: "complete", proof: { complete: true } });
    expect(complete?.final_verification?.head).toBe(git("rev-parse", "HEAD"));
    expect(complete?.final_verification?.passed).toBe(true);
    expect(JSON.stringify(readAuditTaskPair(root, "original"))).toBe(originalBytes);
    expect(readFileSync(join(root, "delivered.txt"), "utf8")).toBe("done\n");
-   expect(gates).toBe(5);
+   expect(gates).toBe(6); // original enroll, final decline/accept, repair enroll decline/accept, repair integration
   } finally { await runtime.shutdown(); rmSync(root, { recursive: true, force: true }); }
  }, 60000);
 });

@@ -29,6 +29,9 @@ import type { InitiativeObservationReader } from "./types";
 import { readTaskIntent, observeEnrollmentTaskIntent } from "../kernel/intent";
 import { classifyBatchLineage, expectedBatchHead, readActiveClaimTaskId as findActiveClaimForCriticalIntegration, findExistingActiveBatch, findSettledBatchRecord } from "./batch_preflight";
 export { classifyBatchLineage, type BatchLineage } from "./batch_preflight";
+import { observeConsolidatedDeliveries, prepareDeliveryConsolidation, verifyConsolidatedCommit, consolidationDigest,
+	parseDeliveryConsolidation, type DeliveryConsolidation, type ConsolidationReceipt } from "./parent_delivery_consolidation";
+import { readParentConsolidationReceipt, writeParentConsolidationReceipt } from "./batch_state";
 
 export type BatchGitPreflightRejectReason =
 	| "batch_branch_exists"
@@ -131,7 +134,7 @@ export function runBatchGitPreflight(input: {
 		return {
 			ok: false,
 			reason: "dirty_working_tree",
-			message: `unsupported index flags (assume-unchanged/skip-worktree) detected: ${flaggedPreflight.join(", ")}`,
+			message: `unsupported index flags (assume-unchanged/skip-worktree) detected: ${scopeRefusal("unsupported_index_flags", flaggedPreflight).message}`,
 		};
 	}
 
@@ -248,7 +251,17 @@ function hasBoundaryWhitespace(path: string): boolean {
 	return path.split("/").some((segment) => segment.trim() !== segment || segment.length === 0);
 }
 
-function getUnsupportedIndexFlags(root: string): string[] {
+function scopeRefusal(cause: string, entries: Array<{ path: string; flags?: string[] }>): Error {
+	const included: typeof entries = [];
+	for (const entry of entries.slice(0, 24)) {
+		const candidate = { cause, entries: [...included, entry], omitted: entries.length - included.length - 1 };
+		if (Buffer.byteLength(`dirty_outside_scope: ${JSON.stringify(candidate)}`) > 4096) break;
+		included.push(entry);
+	}
+	return new Error(`dirty_outside_scope: ${JSON.stringify({ cause, entries: included, omitted: entries.length - included.length })}`);
+}
+
+function getUnsupportedIndexFlags(root: string): Array<{ path: string; flags: string[] }> {
 	const result = spawnSync("git", ["-C", root, "ls-files", "-v", "-z", "--"], {
 		encoding: "utf8",
 		stdio: ["ignore", "pipe", "pipe"],
@@ -257,12 +270,15 @@ function getUnsupportedIndexFlags(root: string): string[] {
 		throw new Error("failed to inspect index flags via git ls-files -v");
 	}
 	const entries = result.stdout.split("\0").filter((e) => e.length > 0);
-	const flagged: string[] = [];
+	const flagged: Array<{ path: string; flags: string[] }> = [];
 	for (const entry of entries) {
 		const tag = entry[0];
 		// Reject h (assume-unchanged), S (skip-worktree), and s (both flags combined) (Finding 1)
 		if (tag === "h" || tag === "S" || tag === "s") {
-			flagged.push(entry.slice(2));
+			flagged.push({ path: entry.slice(2), flags: [
+				...(tag === "h" || tag === "s" ? ["assume-unchanged"] : []),
+				...(tag === "S" || tag === "s" ? ["skip-worktree"] : []),
+			] });
 		}
 	}
 	return flagged;
@@ -544,7 +560,7 @@ export async function commitBatchChild(input: {
 	// 3b. Reject unsupported index flags before scope inspection (Finding 2)
 	const flaggedCommit = getUnsupportedIndexFlags(root);
 	if (flaggedCommit.length > 0) {
-		throw new Error("dirty_outside_scope");
+		throw scopeRefusal("unsupported_index_flags", flaggedCommit);
 	}
 
 	// 4. Identify changed paths and verify they are strictly within scope envelope + .imm/audit/<task-id>/** (Finding 2 & 4)
@@ -552,7 +568,7 @@ export async function commitBatchChild(input: {
 	const outsideScope = changedPaths.filter((p) => !isPathAllowedForChild(p, taskId, scopeHint));
 	if (outsideScope.length > 0) {
 		// Nothing is committed
-		throw new Error("dirty_outside_scope");
+		throw scopeRefusal("changed_paths", outsideScope.map(path => ({ path })));
 	}
 
 	// 5. Stage only paths needing an update, preserving already-staged deletions/renames (Finding 2)
@@ -582,7 +598,7 @@ export async function commitBatchChild(input: {
 	const stagedOutside = staged.filter((p) => !isPathAllowedForChild(p, taskId, scopeHint));
 	if (stagedOutside.length > 0) {
 		spawnSync("git", ["-C", root, "reset", "--quiet"], { stdio: ["ignore", "ignore", "ignore"] });
-		throw new Error("dirty_outside_scope");
+		throw scopeRefusal("staged_paths", stagedOutside.map(path => ({ path })));
 	}
 	const record = authoritative as {
 		contract?: string;
@@ -642,7 +658,7 @@ export async function commitBatchChild(input: {
 	const committedDelta = getCommittedDeltaPaths(root);
 	const deltaOutside = committedDelta.filter((p) => !isPathAllowedForChild(p, taskId, scopeHint));
 	if (deltaOutside.length > 0) {
-		throw new Error("dirty_outside_scope");
+		throw scopeRefusal("committed_paths", deltaOutside.map(path => ({ path })));
 	}
 
 	// 9. Persist durable commit evidence before returning (Finding 1)
@@ -883,8 +899,11 @@ export async function observeParentCompletion(root: string, initiativeSlug: stri
 	const native = readNativeParentFinalReport(root, initiativeSlug);
 	const allTaskIds = [...new Set([...requiredTaskIds, ...records.flatMap(record => record.repair_tasks?.map(task => task.task_id) ?? []),
 		...(native?.repair_tasks?.map(task => task.task_id) ?? [])])];
+	const consolidation = await observeConsolidatedDeliveries(root, initiativeSlug, requiredTaskIds);
+	const consolidatedIds = consolidation?.envelope.runs.map(run => run.task_id) ?? [];
 	const integrated: string[] = [];
 	for (const taskId of allTaskIds) {
+		if (consolidatedIds.includes(taskId)) { integrated.push(taskId); continue; }
 		const settled = readSettledTaskEvidence(root, taskId);
 		if (!settled || settled.proof.terminal_lifecycle !== "done") continue;
 		const current = readTaskIntent(root, taskId, settled.record.intent_ref.path);
@@ -902,11 +921,11 @@ export async function observeParentCompletion(root: string, initiativeSlug: stri
 		}
 	}
 	const missing = allTaskIds.filter(taskId => !integrated.includes(taskId));
-	const finalPassed = (native?.final_verification.passed === true && native.final_verification.head === head &&
+	const finalPassed = (consolidation ? native?.consolidation_digest === consolidation.digest : !readParentConsolidationReceipt(root, initiativeSlug)) && ((native?.final_verification.passed === true && native.final_verification.head === head &&
 		JSON.stringify([...native.task_ids].sort()) === JSON.stringify([...requiredTaskIds].sort())) || records.some(record => {
 		const final = record.final_verification_result;
 		return record.batch_state === "completed" && final?.passed === true && final.head === head;
-	});
+	}));
 	return { complete: missing.length === 0 && finalPassed, integrated_task_ids: integrated,
 		missing_task_ids: missing, final_passed: finalPassed, head,
 		reason: missing.length ? `Required delivery is absent: ${missing.join(", ")}`
@@ -915,7 +934,10 @@ export async function observeParentCompletion(root: string, initiativeSlug: stri
 
 /** A critical-only/delivered-only Parent needs native task gates and final observations, never an empty grant. */
 export async function observeNativeParent(root: string, initiativeSlug: string, readInitiative?: InitiativeObservationReader, blockedNativeTasks: readonly string[] = []) {
-	if (findExistingActiveBatch(root, initiativeSlug) || findSettledBatchRecord(root, initiativeSlug)) return null;
+	if (findExistingActiveBatch(root, initiativeSlug)) return null;
+	const settled = findSettledBatchRecord(root, initiativeSlug);
+	// Retirement preserves history but no longer owns the Parent's remaining delivery.
+	if (settled && settled.batch_state !== "superseded") return null;
 	const parent = await (readInitiative ?? (await import("./batch_plan")).observeInitiative)(root, initiativeSlug);
 	// An empty Parent is not a native Parent; the batch path reports its own empty-set refusal.
 	if (parent.tasks.length === 0) return null;
@@ -954,6 +976,7 @@ export interface NativeParentEffects {
 	/** Settled deliveries that will be committed before the final commands run. */
 	integrate_task_ids: string[];
 	final_commands: string[];
+	delivery_consolidation?: ConsolidationReceipt;
 }
 
 export type NativeParentRefusal = { state: "rejected" | "cancelled" | "blocked"; reason: string; recovery_action: string };
@@ -962,26 +985,91 @@ export type NativeParentRefusal = { state: "rejected" | "cancelled" | "blocked";
 export type NativeParentGate = (effects: NativeParentEffects) => Promise<NativeParentRefusal | null>;
 
 export async function advanceNativeParent(root: string, initiativeSlug: string, commands?: string[], readInitiative?: InitiativeObservationReader,
-	tracker?: import("./batch_runner").BatchTrackerPort, gate?: NativeParentGate) {
+	tracker?: import("./batch_runner").BatchTrackerPort, gate?: NativeParentGate, consolidationInput?: DeliveryConsolidation) {
 	let facts = await observeNativeParent(root, initiativeSlug, readInitiative);
-	if (!facts) return null;
-	const recordedCommands = facts.native?.final_verification.results.map(result => result.command);
+	if (!facts) {
+		if (consolidationInput) throw new Error("delivery consolidation is available only for a native Parent");
+		return null;
+	}
+	let consolidatedNow = false;
+	const selection = parseDeliveryConsolidation(consolidationInput);
+	let receipt = readParentConsolidationReceipt(root, initiativeSlug);
+	if (receipt && selection && JSON.stringify(receipt.envelope.selection) !== JSON.stringify(selection))
+		throw new Error("consolidation source/final run selection changed");
+	if (selection && !receipt?.commit) {
+		if (facts.action === "drive" || facts.proof.missing_task_ids.some(id => !selection.source_runs.some(source => source.task_id === id)))
+			throw new Error("consolidation must cover every remaining original Parent delivery with no active owner");
+		const finalCommands = commands ?? receipt?.envelope.final_commands;
+		if (!finalCommands?.length) throw new Error("consolidation requires explicit final verification commands");
+		const currentHead = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+		const recovering = receipt && receipt.envelope.head !== currentHead;
+		if (recovering) {
+			receipt = { ...receipt!, commit: currentHead };
+			await verifyConsolidatedCommit(root, receipt);
+			if (facts.plan_digest !== receipt.envelope.plan_digest || JSON.stringify(finalCommands) !== JSON.stringify(receipt.envelope.final_commands))
+				throw new Error("consolidation recovery plan/commands changed");
+		} else {
+			const envelope = await prepareDeliveryConsolidation(root, initiativeSlug, facts.plan_digest,
+				facts.parent.tasks.map(task => task.task_id), selection, finalCommands);
+			const prepared: ConsolidationReceipt = { contract: "assurance_kernel/parent_delivery_consolidation/v1",
+				envelope, digest: consolidationDigest(envelope), commit: null };
+			if (receipt && receipt.digest !== prepared.digest) throw new Error("pending consolidation changed; preserve receipt and diagnose drift");
+			receipt = prepared;
+		}
+		const accepted = receipt!;
+		const refused = gate ? await gate({ initiative_slug: initiativeSlug, plan_digest: accepted.digest,
+			children: facts.parent.tasks.map(task => ({ task_id: task.task_id, slice_id: task.slice_id })),
+			integrate_task_ids: accepted.envelope.runs.map(run => run.task_id), final_commands: finalCommands,
+			delivery_consolidation: accepted }) : { state: "rejected" as const,
+				reason: "Parent delivery consolidation requires native confirmation", recovery_action: "retry through a fresh native gate in the current Host" };
+		if (refused) return refused;
+		const fresh = await observeNativeParent(root, initiativeSlug, readInitiative);
+		if (!fresh || fresh.plan_digest !== accepted.envelope.plan_digest || fresh.action === "drive")
+			throw new Error("Parent plan/owner changed during consolidation confirmation");
+		const confirmedHead = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
+		if (confirmedHead.status !== 0 || confirmedHead.stdout.trim() !== (accepted.commit ?? accepted.envelope.head))
+			throw new Error("consolidation HEAD changed during confirmation");
+		if (recovering) await verifyConsolidatedCommit(root, accepted);
+		else {
+			const rechecked = await prepareDeliveryConsolidation(root, initiativeSlug, fresh.plan_digest,
+				fresh.parent.tasks.map(task => task.task_id), selection, finalCommands);
+			if (consolidationDigest(rechecked) !== accepted.digest) throw new Error("consolidation HEAD/tree/identity changed during confirmation");
+			writeParentConsolidationReceipt(root, accepted);
+			const committed = await commitBatchChild({ root, taskId: selection.task_id, batchId: null,
+				expectedHead: accepted.envelope.head, branch: accepted.envelope.branch });
+			receipt = { ...accepted, commit: committed.commit };
+			await verifyConsolidatedCommit(root, receipt);
+		}
+		writeParentConsolidationReceipt(root, receipt!);
+		// Final commands run only after the approved composed commit and all source proofs were verified.
+		const final = await runFinalVerification(root, finalCommands);
+		writeNativeParentFinalReport(root, { contract: "assurance_kernel/parent_final_report/v1", initiative_slug: initiativeSlug,
+			task_ids: facts.parent.tasks.map(task => task.task_id), final_verification: final,
+			consolidation_digest: receipt!.digest, repair_tasks: facts.native?.repair_tasks });
+		consolidatedNow = true;
+		facts = await observeNativeParent(root, initiativeSlug, readInitiative);
+		if (!facts) throw new Error("Parent disappeared after delivery consolidation");
+	}
+	if (receipt && !receipt.commit && !selection)
+		throw new Error("pending delivery consolidation requires its exact source/final run selection through a fresh native entry");
+	const recordedCommands = facts.native?.final_verification.results.map(result => result.command)
+		?? (receipt?.commit ? receipt.envelope.final_commands : undefined);
 	if (commands && recordedCommands && JSON.stringify(commands) !== JSON.stringify(recordedCommands))
 		throw new Error("Parent final commands changed; start a fresh explicit Parent entry");
-	// Caller-supplied final commands run in this process outside Host permission, so their first
-	// execution (and the Git effects that precede it in the same call) needs the literal user's
-	// native confirmation of the exact commands. Recorded commands were bound by that confirmation.
-	if (commands?.length && !recordedCommands) {
+	// New settled-delivery commits need confirmation even without commands; recorded commands
+	// authorize their replay, not integration of a later delivery.
+	if (facts.action === "integrate" || (commands?.length && !recordedCommands)) {
 		const integrateIds = [...facts.parent.tasks.map(task => task.task_id), ...(facts.native?.repair_tasks?.map(task => task.task_id) ?? [])]
 			.filter(taskId => readSettledTaskEvidence(root, taskId)?.proof.terminal_lifecycle === "done" && !facts!.proof.integrated_task_ids.includes(taskId));
 		const missing = facts.proof.missing_task_ids;
 		const runsNow = (["verify", "repair"].includes(facts.action) && missing.length === 0) ||
 			(facts.action === "integrate" && missing.every(taskId => integrateIds.includes(taskId)));
-		if (runsNow) {
+		if (facts.action === "integrate" || runsNow) {
 			const refused: NativeParentRefusal | null = gate ? await gate({ initiative_slug: initiativeSlug, plan_digest: facts.plan_digest,
 				children: facts.parent.tasks.map(task => ({ task_id: task.task_id, slice_id: task.slice_id })),
-				integrate_task_ids: facts.action === "integrate" ? integrateIds : [], final_commands: commands }) :
-				{ state: "rejected", reason: "Parent final verification commands require native confirmation before execution",
+				integrate_task_ids: facts.action === "integrate" ? integrateIds : [],
+				final_commands: runsNow ? recordedCommands ?? commands ?? [] : [] }) :
+				{ state: "rejected", reason: "Parent delivery integration and final verification require native confirmation before execution",
 					recovery_action: "retry through a fresh native gate in the current Host" };
 			if (refused) return refused;
 		}
@@ -995,12 +1083,13 @@ export async function advanceNativeParent(root: string, initiativeSlug: string, 
 		facts = await observeNativeParent(root, initiativeSlug, readInitiative);
 		if (!facts) throw new Error("Parent plan changed while integrating native deliveries");
 	}
-	if (["verify", "repair"].includes(facts.action) && facts.proof.missing_task_ids.length === 0) {
+	if (!consolidatedNow && ["verify", "repair"].includes(facts.action) && facts.proof.missing_task_ids.length === 0) {
 		const finalCommands = recordedCommands ?? commands;
 		if (finalCommands) {
 			const final = await runFinalVerification(root, finalCommands);
 			writeNativeParentFinalReport(root, { contract: "assurance_kernel/parent_final_report/v1", initiative_slug: initiativeSlug,
-				task_ids: facts.parent.tasks.map(task => task.task_id), final_verification: final, repair_tasks: facts.native?.repair_tasks });
+				task_ids: facts.parent.tasks.map(task => task.task_id), final_verification: final, repair_tasks: facts.native?.repair_tasks,
+				...(receipt?.commit ? { consolidation_digest: receipt.digest } : {}) });
 			facts = await observeNativeParent(root, initiativeSlug, readInitiative);
 			if (!facts) throw new Error("Parent plan changed during final verification");
 		}

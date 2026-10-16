@@ -236,8 +236,10 @@ function projectHistoricalTerminal(
 	};
 }
 
-function projectHistoricalTerminalV3(
-	record: TaskRecordV3,
+// Terminal proof validates historical settlement, not the caller's live checkout.
+// Current integrated delivery remains independently checked by the batch boundary.
+function projectSettledTerminal(
+	record: TaskRecordV3 | TaskRecord,
 	recordRevision: string,
 	workspaceRevision: string,
 ): AssuranceProjection {
@@ -423,13 +425,7 @@ export async function projectAssurance(
 					error: null,
 					claim: null,
 					projection: {
-						...projectFromRecord(
-							committed.record,
-							committed.revision,
-							workspace.revision,
-							diffProvider(root, committed.record),
-							readRiskFloor(root),
-						),
+						...projectSettledTerminal(committed.record, committed.revision, workspace.revision),
 						run_id: committedRunId,
 					},
 				};
@@ -448,20 +444,12 @@ export async function projectAssurance(
 					claim: null,
 					projection: projectHistoricalTerminal(auditPair.record, auditPair.recordRevision, workspace.revision),
 				};
-			if (auditPair.record.contract === "assurance_kernel/task_record/v3")
-				return {
-					contract: "assurance_kernel/assurance_projection/v1",
-					task_id: taskId,
-					error: null,
-					claim: null,
-					projection: projectHistoricalTerminalV3(auditPair.record, auditPair.recordRevision, workspace.revision),
-				};
 			return {
 				contract: "assurance_kernel/assurance_projection/v1",
 				task_id: taskId,
 				error: null,
 				claim: null,
-				projection: projectFromRecord(auditPair.record, auditPair.recordRevision, workspace.revision, diffProvider(root, auditPair.record), readRiskFloor(root)),
+				projection: projectSettledTerminal(auditPair.record, auditPair.recordRevision, workspace.revision),
 			};
 		}
 		if (read.record.task_id !== taskId)

@@ -1018,4 +1018,42 @@ describe("status projection through the real Kernel", () => {
   expect(status.error).toContain("contains unsupported index flags: src/work.ts (skip-worktree)");
   expect(status.warnings).toBeUndefined();
  });
+
+ // A plugin root with a manifest and the generated Claude bundle standing in for its build.
+ const pluginRoot = (dir: string, build: string) => {
+  mkdirSync(join(dir, ".claude-plugin"), { recursive: true });
+  writeFileSync(join(dir, ".claude-plugin/plugin.json"), "{}\n");
+  mkdirSync(join(dir, "dist/claude"), { recursive: true });
+  writeFileSync(join(dir, "dist/claude/mcp-server.mjs"), build);
+  mkdirSync(join(dir, "runtime/kernel"), { recursive: true });
+  return join(dir, "runtime/kernel");
+ };
+
+ test("status warns when the loaded plugin build differs from the workspace plugin source, also beside an error", async () => {
+  const f = authorityFixture();
+  pluginRoot(join(f.root, "plugins/immune-brain"), "workspace build\n");
+  const installed = mkdtempSync(join(tmpdir(), "installed-plugin-")); authorityRoots.push(installed);
+  const loadedFrom = pluginRoot(installed, "older build\n");
+
+  const status = await projectTaskStatus(f.root, f.taskId, loadedFrom);
+  expect(status.warnings?.map((w) => w.code)).toEqual(["loaded_plugin_differs_from_workspace"]);
+  expect(status.warnings?.[0]?.message).toContain("reload the Host with the workspace plugin");
+
+  f.git("update-index", "--skip-worktree", "src/work.ts");
+  const failed = await projectTaskStatus(f.root, f.taskId, loadedFrom);
+  expect(failed.error).toContain("unsupported index flags");
+  expect(failed.warnings?.map((w) => w.code)).toEqual(["loaded_plugin_differs_from_workspace"]);
+ });
+
+ test("status stays silent when the workspace plugin is loaded, the builds match, or the workspace is not the plugin source", async () => {
+  const f = authorityFixture();
+  const workspaceRuntime = pluginRoot(join(f.root, "plugins/immune-brain"), "same build\n");
+  const installed = mkdtempSync(join(tmpdir(), "installed-plugin-")); authorityRoots.push(installed);
+  const sameBuild = pluginRoot(installed, "same build\n");
+  expect((await projectTaskStatus(f.root, f.taskId, workspaceRuntime)).warnings).toBeUndefined();
+  expect((await projectTaskStatus(f.root, f.taskId, sameBuild)).warnings).toBeUndefined();
+
+  const other = authorityFixture();
+  expect((await projectTaskStatus(other.root, other.taskId, sameBuild)).warnings).toBeUndefined();
+ });
 });

@@ -92,7 +92,8 @@ export interface NativeConfirmationInput {
 		budget?: { max_children: number; qa_failure_limit: number };
 		final_verification?: string[];
 		/** Present only for a native Parent: no batch is started, only these commits and final commands run. */
-		parent_final_verification?: { integrate_task_ids: string[] };
+		parent_final_verification?: { integrate_task_ids: string[];
+			delivery_consolidation?: import("../unattended/parent_delivery_consolidation").ConsolidationReceipt };
 		/** Present only when the run uses Lanes. */
 		lane_mode?: {
 			max_parallel: number;

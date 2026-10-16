@@ -1,13 +1,12 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "workflow-execution-reliability-s4-integration-proof",
-  "owner": "user",
   "goal": "Close integrated whole-plan regression and actual installed-Claude validation under S4 of docs/specs/workflow-execution-reliability.spec.md; do not claim complete delivery while required manual SCN-5 remains unobserved.",
   "acceptance": [
     {
       "id": "S4-AC1",
       "assertion": "Source E5; meet S4 and SCN-4 in docs/specs/workflow-execution-reliability.spec.md: integrated Parent and isolated Child cases retain native boundaries, critical successors remain part of the Parent goal, and final-failure/repair cases reject incomplete delivery or failed final verification and require successful proof on the integrated HEAD. This descriptor proves automated regression only; required manual SCN-5 and final integration verification remain separate closure obligations.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/goal-driven-run-contract.test.ts\",\n      \"tests/goal-driven-run-recovery.test.ts\",\n      \"tests/goal-driven-batch-run.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/goal-driven-run-contract.test.ts\",\n      \"tests/goal-driven-run-recovery.test.ts\",\n      \"tests/goal-driven-batch-run.test.ts\",\n      \"tests/goal-driven-run-live-evidence.test.ts\",\n      \"tests/kernel-assurance-projection.test.ts\",\n      \"tests/unattended-batch-commit.test.ts\",\n      \"tests/batch-plan-reconfirmation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
     }
   ],
   "scope_hint": [
@@ -19,19 +18,26 @@
     "plugins/immune-brain/dist/imm-run-batch.md",
     "plugins/immune-brain/dist/imm-run.md",
     "plugins/immune-brain/dist/role-prompts/executor.md",
+    "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
     "plugins/immune-brain/runtime/prompts/executor.md",
     "plugins/immune-brain/runtime/unattended/batch_git.ts",
     "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts",
+    "tests/batch-plan-reconfirmation.test.ts",
     "tests/claude-host-package.test.ts",
     "tests/claude-review-host-async-agent.test.ts",
     "tests/code-quality-guard-contract.test.ts",
+    "tests/fixtures/goal-driven-run-historical-sources.json",
     "tests/goal-driven-batch-run.test.ts",
     "tests/goal-driven-run-contract.test.ts",
+    "tests/goal-driven-run-live-evidence.test.ts",
     "tests/goal-driven-run-recovery.test.ts",
+    "tests/kernel-assurance-projection.test.ts",
     "tests/pi-subagent-dispatch-observability-contract.test.ts",
     "tests/unattended-batch-commit.test.ts",
     "tests/unattended-batch-lanes.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 4,
+  "owner": "user"
 }

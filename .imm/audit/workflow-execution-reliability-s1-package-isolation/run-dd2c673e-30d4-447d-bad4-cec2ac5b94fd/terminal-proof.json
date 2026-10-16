@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "workflow-execution-reliability-s1-package-isolation",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:workflow-execution-reliability-s1-package-isolation:2026-10-15T09:34:17.343Z",
+  "final_record_hash": "sha256:24e1ce15b7e6c01d48c92285706602c97864934b9444957419ad1a1e39bf9408",
+  "terminalized_at": "2026-10-15T09:34:17.343Z"
+}

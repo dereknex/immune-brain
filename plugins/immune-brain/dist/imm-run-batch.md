@@ -46,6 +46,13 @@ batch state transition: the shared `startBatch` driver in
 `runtime/unattended/` owns every batch transition, and each child is still
 enrolled, assured, and settled by the Kernel under an ordinary TaskRecord.
 
+A `batch_lane_unreadable` observation means unknown state, not lost ownership or
+completion. Read contract mismatches and escaped scope/flag details as causes,
+not permission to widen scope. Revalidate the original task/run and use existing
+fresh-authorization recovery before considering retirement. For provider or
+Review interruptions follow [Decisions and Recovery](imm-run.md#decisions-and-recovery);
+Herdr idle/done is only a session signal, never terminal Kernel proof.
+
 A successful child Enrollment returns a `running` report with `handoff.role`
 `executor`; the child remains `enrolled`. The Parent implements that TaskIntent
 in the current foreground conversation, stages only its scoped changes, and
@@ -77,6 +84,27 @@ confirmation listing those exact commands; a decline, cancellation or missing
 gate leaves no Git or command effect. Recorded commands rerun under that earlier
 confirmation, and changed commands need a fresh explicit Parent entry.
 
+### Consolidating settled deliveries
+
+When several settled deliveries remain in one checkout and share generated files,
+prepare one material/critical consolidation TaskIntent covering the complete final
+composition, source Intent/audit inputs, and its own implementation. Preserve the
+source audits and give the combined bytes fresh QA and independent Review.
+After that task settles, pass `delivery_consolidation` to the same Parent tool:
+`{ task_id, run_id, source_runs: [{ task_id, run_id }, ...] }`. Select exact original
+Parent contributions and any standalone repair explicitly; task-name similarity
+is not association. This route is for native Parents, not active ordinary batches.
+
+The native gate discloses all selected runs, proof hashes, final delivery digest,
+branch/HEAD, path/blob manifest and final commands. Acceptance authorizes one
+scope-bounded final-task commit. Sources retain historical approvals; the new
+Review approves the final combination. An interrupted commit leaves a pending
+receipt: recover with the same selection and fresh native confirmation, verifying
+the exact commit before recording contributions. Re-entry after integration uses
+the verified receipt; final verification must bind that composition and current
+HEAD before Parent closure. A mismatch preserves evidence and stops, not a scope
+widening or permission bypass.
+
 After diagnostics pass, the Parent advances Kernel QA and dispatches any reserved
 foreground Review once using the exact returned `agent_params`, then submits its
 structured verdict. An open Review reservation stays with that Host invocation;
@@ -96,8 +124,9 @@ QA repair do not park the batch; genuine budget/authority stops remain fail-clos
 
 Batch execution never pushes a ref, opens or updates a pull request, resolves a
 user decision, or creates, switches, or deletes a Git worktree. Its sole Git
-effect is the batch branch `imm/<initiative-slug>` plus one scope-bounded commit
-per completed child.
+effect is the batch branch `imm/<initiative-slug>` plus scope-bounded delivery
+commits: one per child, or one explicitly confirmed final composition on the native
+Parent consolidation route.
 
 ### Parallel Batch Opt-In
 

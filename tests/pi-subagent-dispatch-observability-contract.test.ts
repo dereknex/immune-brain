@@ -80,4 +80,10 @@ test("canonical Loop contract describes direct QA and Parent-mediated Review ver
 	expect(contract).toContain("advance_assurance");
 	expect(contract).toMatch(/foreground|前台/i);
 	expect(contract).toMatch(/submit_review|structured verdict/);
+	for (const statement of ["Provider quota", "Review budget exhaustion", "fresh QA", "recovery_action", "attestations[].advisory_findings"]) {
+		expect(contract).toContain(statement);
+	}
+	const batch = read("plugins/immune-brain/dist/imm-run-batch.md");
+	expect(batch).toContain("batch_lane_unreadable");
+	expect(batch).toContain("Decisions and Recovery");
 });

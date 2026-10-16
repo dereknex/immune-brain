@@ -229,14 +229,19 @@ export function laneRuntimeContractRefusal(root: string, executorRuntime?: strin
 	return `${RUNTIME_CONTRACT_MISMATCH}: coordinator runtime ${runningRuntimeSource()} and Lane runtime ${lane.path} disagree (${differences.join("; ")}); load the same runtime on both sides before starting the batch`;
 }
 
-/**
- * A Lane whose Kernel state exists but that this runtime refuses to read is a
- * contract mismatch, not a lost Lane: one side was upgraded under the batch.
- */
-function laneUnreadableReason(error: string): string {
-	return /contract must equal|unknown field|schema version .* incompatible|unknown contract/i.test(error)
-		? `${LANE_CONTRACT_MISMATCH}: ${error}`
-		: "batch_lane_lost";
+function laneUnreadableReason(error: string, taskId: string, runId: string | null | undefined): string {
+	const category = /contract must equal|unknown field|schema version .* incompatible|unknown contract/i.test(error)
+		? LANE_CONTRACT_MISMATCH : "batch_lane_unreadable";
+	// Persist identity and stage, never arbitrary parser/IO exception bytes.
+	return `${category}: ${JSON.stringify({ stage: "project_task", task_id: taskId, run_id: runId ?? null })}`;
+}
+
+async function readLaneProjection(input: StartBatchInput, path: string, taskId: string) {
+	try {
+		return await input.kernel.projectTask(path, taskId);
+	} catch (error) {
+		return { error: error instanceof Error ? error.message : String(error) } as Awaited<ReturnType<StartBatchInput["kernel"]["projectTask"]>>;
+	}
 }
 
 /** The branch the Lane for a child must sit on. */
@@ -792,9 +797,11 @@ export async function runLaneBatch(
 				if (!child.lane?.run_id)
 					return laneReport(record, "parked Lane has no recorded run identity; inspect it without re-enrolling", LANE_NEEDS_HUMAN_NEXT_ACTION);
 				const facts = lanes.inspectLane(input.root, child.lane.path);
-				const fresh = await input.kernel.projectTask(child.lane.path, child.task_id);
+				const fresh = await readLaneProjection(input, child.lane.path, child.task_id);
+				if (fresh.error !== null)
+					return laneReport(record, laneUnreadableReason(fresh.error, child.task_id, child.lane.run_id), LANE_NEEDS_HUMAN_NEXT_ACTION);
 				if (!facts.exists || !facts.same_repository || !facts.is_worktree_root || facts.branch !== child.lane.branch ||
-					fresh.error !== null || fresh.projection.run_id !== child.lane.run_id ||
+					fresh.projection.run_id !== child.lane.run_id ||
 					fresh.projection.open_user_decision_count > 0 || fresh.projection.replan_required_ids.length > 0)
 					return laneReport(record, "parked Lane identity or decision is unresolved", LANE_NEEDS_HUMAN_NEXT_ACTION);
 				const state = fresh.projection.lifecycle === "done" && fresh.projection.completion_ready ?
@@ -1004,8 +1011,9 @@ export async function runLaneBatch(
 				task_id: taskId,
 				batch: { registry: input.registry, capability: input.capability, binding: { batch_id: record.batch_id, expected_head: lane.base_head } },
 			});
-			const fresh = await input.kernel.projectTask(lane.path, taskId);
-			if (fresh.error !== null || !fresh.projection.run_id || fresh.claim?.task_id !== taskId)
+			const fresh = await readLaneProjection(input, lane.path, taskId);
+			if (fresh.error !== null) throw new Error(laneUnreadableReason(fresh.error, taskId, lane.run_id));
+			if (!fresh.projection.run_id || fresh.claim?.task_id !== taskId)
 				throw new Error("enrolled Lane has no observable owned run");
 			record.children = record.children.map((c) => (c.task_id === taskId ? { ...c, state: "enrolled", reason: null, lane: { ...lane, run_id: fresh.projection.run_id } } : c));
 			persist();
@@ -1025,14 +1033,9 @@ export async function runLaneBatch(
 	// Nothing is inferred from terminal text; only Kernel facts move a child.
 	for (const child of [...record.children]) {
 		if ((child.state !== "lane_admitted" && child.state !== "enrolled") || !child.lane) continue;
-		let fresh: Awaited<ReturnType<StartBatchInput["kernel"]["projectTask"]>>;
-		try {
-			fresh = await input.kernel.projectTask(child.lane.path, child.task_id);
-		} catch (error) {
-			fresh = { error: error instanceof Error ? error.message : String(error) } as unknown as typeof fresh;
-		}
+		const fresh = await readLaneProjection(input, child.lane.path, child.task_id);
 		if (fresh.error !== null) {
-			parkChild(child.task_id, laneUnreadableReason(String(fresh.error)));
+			parkChild(child.task_id, laneUnreadableReason(fresh.error, child.task_id, child.lane.run_id));
 			continue;
 		}
 		if (child.lane.run_id && fresh.projection.run_id !== child.lane.run_id) {
@@ -1269,8 +1272,11 @@ export async function runLaneBatch(
 			});
 			continue;
 		}
-		const fresh = await input.kernel.projectTask(child.lane.path, child.task_id);
-		if (fresh.error !== null) continue;
+		const fresh = await readLaneProjection(input, child.lane.path, child.task_id);
+		if (fresh.error !== null) {
+			parkChild(child.task_id, laneUnreadableReason(fresh.error, child.task_id, child.lane.run_id));
+			continue;
+		}
 		handoffs.push({
 			role: "executor",
 			task_id: child.task_id,

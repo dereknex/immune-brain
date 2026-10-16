@@ -1,0 +1,132 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "workflow-execution-reliability-s2-lane-diagnostics",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "workflow-execution-reliability-s2-lane-diagnostics",
+    "goal": "Make Lane read and scope refusals actionable without changing authority, while preserving existing authorized same-run recovery under S2 of docs/specs/workflow-execution-reliability.spec.md.",
+    "acceptance": [
+      {
+        "id": "S2-AC1",
+        "assertion": "Source E3; meet S2 and SCN-2 in docs/specs/workflow-execution-reliability.spec.md: an injected projection read failure is classified as unreadable, contract mismatch remains distinct and missing ownership parks without declaring completion. Matching active/done runs resume only after the existing fresh authorization; absent authorization, wrong run, changed plan and retired batch do not enroll or commit another run.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S2-AC2",
+        "assertion": "Source E4; meet S2 in docs/specs/workflow-execution-reliability.spec.md: out-of-scope and unsupported-index-flag commit refusals stay fail-closed and expose bounded escaped cause, relative path and applicable flag details. Newline/tab filenames and oversized lists are safely encoded with explicit omitted counts; raw verifier output, exception stacks, environment and file contents are not persisted.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-commit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/workflow-execution-reliability-diagnostics.md",
+      "docs/plans/workflow-execution-reliability-s2-lane-diagnostics.intent.json",
+      "docs/specs/workflow-execution-reliability.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "tests/unattended-batch-commit.test.ts",
+      "tests/unattended-batch-lanes.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/workflow-execution-reliability-s2-lane-diagnostics.intent.json",
+    "content_hash": "sha256:d2c525800e7e9f088df4eb37e3be4a36943c0b7ba9ea3cc8b5e09f3ebb90eddc"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:d2c525800e7e9f088df4eb37e3be4a36943c0b7ba9ea3cc8b5e09f3ebb90eddc",
+  "git_base_head": "1ec9eb2b4a0d74f8b49207491541f4234aa7342e",
+  "attestations": [
+    {
+      "id": "approval-qa-2597ce81",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d2c525800e7e9f088df4eb37e3be4a36943c0b7ba9ea3cc8b5e09f3ebb90eddc",
+      "diff_hash": "sha256:0d3c89f05a7ed6a1dd5e5401dc754072d3273500ad2ad4e3e520e44acba8a14e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:66a34fa53959bf0b6454620e669d8221d4b66649c790b6e4f9d7469ba5364bc5",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S2-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:66a34fa53959bf0b6454620e669d8221d4b66649c790b6e4f9d7469ba5364bc5"
+        },
+        {
+          "acceptance_id": "S2-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:66a34fa53959bf0b6454620e669d8221d4b66649c790b6e4f9d7469ba5364bc5"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-06393ce4",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d2c525800e7e9f088df4eb37e3be4a36943c0b7ba9ea3cc8b5e09f3ebb90eddc",
+      "diff_hash": "sha256:0d3c89f05a7ed6a1dd5e5401dc754072d3273500ad2ad4e3e520e44acba8a14e",
+      "actor_id": "parent-mediated-review",
+      "summary": "Verified manifest digest, revision parent/tree and all six complete file diffs; no blocking correctness, security or regression findings. Reviewed safe diagnostic encoding and existing same-run authorization controls; relied on embedded Kernel QA outcomes without rerunning tests.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "1ec9eb2b4a0d74f8b49207491541f4234aa7342e",
+        "review_commit": "811dac5a40b9f3f803e404272ddcfae349cfeac1",
+        "review_tree": "a7c33f6ee06cc40bade5876c67e21aaef3a1dce2",
+        "manifest_digest": "sha256:ec2cbf2120040bb5f02748b3d8394a1a15551a772c3d7d75f6c8d2f000568415"
+      },
+      "reviewer_verdict_sha256": "sha256:624e9b6141a19708c572fcda0b2ad2d608447c1a3ef7ef226511c51f7b0f5c56"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:workflow-execution-reliability-s2-lane-diagnostics:2026-10-15T09:41:58.092Z",
+      "at": "2026-10-15T09:41:58.092Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-execution-reliability-s2-lane-diagnostics.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-execution-reliability-s2-lane-diagnostics:2026-10-15T09:42:52.250Z",
+      "at": "2026-10-15T09:42:52.250Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2597ce81\naction_v2_sha256:803eccf80e2691a464c15020b8c29c0fb008612c0475b43abf0588614ccba98b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-5fedce8788ec08d6",
+        "issued_at": "2026-10-15T09:42:52.250Z"
+      }
+    },
+    {
+      "id": "record_approval:workflow-execution-reliability-s2-lane-diagnostics:2026-10-15T09:54:26.494Z",
+      "at": "2026-10-15T09:54:26.494Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-06393ce4\naction_v2_sha256:10afd639c28ca7d7a9268d06ba5bf36a561479b3fa347201d1f96d5fce725b2c",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-5244a9d40f7a7ed6",
+        "issued_at": "2026-10-15T09:54:26.494Z"
+      }
+    },
+    {
+      "id": "complete:workflow-execution-reliability-s2-lane-diagnostics:2026-10-15T09:54:27.577Z",
+      "at": "2026-10-15T09:54:27.577Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:7947e2ed05cab3086fbc96615c8b4d3ad075b4698197db09395e849f5951bdfb"
+    }
+  ]
+}

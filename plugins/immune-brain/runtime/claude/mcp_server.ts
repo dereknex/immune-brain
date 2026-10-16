@@ -21,6 +21,7 @@ import { readRunToolSession, runContinuationHookOutput } from "./run_continuatio
 import { ClaudeRuntime, type ToolMeta } from "./kernel_ports";
 import { parseLaneInstruction, parseLaneOffers, parseMaxParallel, resolveLaneParallel } from "../unattended/batch_lanes";
 import { parseFinalVerification } from "../unattended/batch_final_verification";
+import { consolidationSchema, parseDeliveryConsolidation } from "../unattended/parent_delivery_consolidation";
 import { parseLaneRevision, REVISION_DELEGATION_TEXT } from "../unattended/batch_delegation";
 import type { AssuranceCoordinatorPorts } from "../assurance/coordinator";
 import { parseReworkChoice, reworkExitLines, type ReworkChoice } from "../kernel/assurance_projection";
@@ -65,6 +66,7 @@ export function listMcpTools() {
 											additionalProperties: false,
 										},
 									},
+									delivery_consolidation: consolidationSchema,
 									final_verification: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 8 },
 									lane_instruction: {
 										type: "object",
@@ -204,10 +206,12 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				const laneRevision = parseLaneRevision(args.lane_revision);
 				const maxParallel = resolveLaneParallel(options.cwd ?? process.cwd(), initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction ?? laneRevision);
 				const finalVerification = parseFinalVerification(args.final_verification);
+				const deliveryConsolidation = parseDeliveryConsolidation(args.delivery_consolidation);
 				return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
 					...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
 					...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),
 					...(finalVerification !== undefined ? { final_verification: finalVerification } : {}),
+					...(deliveryConsolidation !== undefined ? { delivery_consolidation: deliveryConsolidation } : {}),
 					...(laneInstruction !== undefined ? { lane_instruction: laneInstruction } : {}),
 					...(laneRevision !== undefined ? { lane_revision: laneRevision } : {}),
 				});
@@ -499,6 +503,7 @@ export function elicitationParams(input: NativeConfirmationInput) {
 				b.parent_final_verification.integrate_task_ids.length > 0
 					? `Settled deliveries committed first (${b.parent_final_verification.integrate_task_ids.length}):\n${b.parent_final_verification.integrate_task_ids.map((id) => `  - ${id}`).join("\n")}`
 					: null,
+				b.parent_final_verification.delivery_consolidation ? `Explicit reviewed delivery consolidation:\n${JSON.stringify(b.parent_final_verification.delivery_consolidation, null, 2)}` : null,
 				`Final verification commands run in this workspace outside Host permission:\n${(b.final_verification ?? []).map((command) => `  - ${command}`).join("\n")}`,
 			].filter(Boolean);
 			return {

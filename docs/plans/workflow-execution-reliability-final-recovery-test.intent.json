@@ -1,0 +1,19 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "workflow-execution-reliability-final-recovery-test",
+  "goal": "Restore the original #246 final-verification goal by correcting the stale native repair round-trip test to preserve the current native authorization boundary: settled repair integration must reject without a new gate and succeed only through the existing ClaudeRuntime Parent entry after acceptance. Preserve original delivery and audit assertions, final HEAD verification, and existing repair preparation coverage. No production changes, history rewrites, push or publication.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "The existing native repair recovery round-trip proves that a newly settled repair cannot integrate through an ungated direct call; the ClaudeRuntime Parent seam opens a fresh native confirmation, then integrates the repair and runs the recorded final commands on the integrated HEAD. Original delivery and audit evidence remain unchanged and existing repair preparation tests still pass.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/goal-driven-run-recovery.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/workflow-execution-reliability-final-recovery-test.intent.json",
+    "tests/goal-driven-run-recovery.test.ts"
+  ],
+  "risk": "routine",
+  "revision": 1,
+  "owner": "user"
+}

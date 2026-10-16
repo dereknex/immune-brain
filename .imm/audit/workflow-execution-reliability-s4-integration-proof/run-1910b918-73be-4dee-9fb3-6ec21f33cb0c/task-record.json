@@ -1,0 +1,176 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "workflow-execution-reliability-s4-integration-proof",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "workflow-execution-reliability-s4-integration-proof",
+    "goal": "Close integrated whole-plan regression and actual installed-Claude validation under S4 of docs/specs/workflow-execution-reliability.spec.md; do not claim complete delivery while required manual SCN-5 remains unobserved.",
+    "acceptance": [
+      {
+        "id": "S4-AC1",
+        "assertion": "Source E5; meet S4 and SCN-4 in docs/specs/workflow-execution-reliability.spec.md: integrated Parent and isolated Child cases retain native boundaries, critical successors remain part of the Parent goal, and final-failure/repair cases reject incomplete delivery or failed final verification and require successful proof on the integrated HEAD. This descriptor proves automated regression only; required manual SCN-5 and final integration verification remain separate closure obligations.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/goal-driven-run-contract.test.ts\",\n      \"tests/goal-driven-run-recovery.test.ts\",\n      \"tests/goal-driven-batch-run.test.ts\",\n      \"tests/goal-driven-run-live-evidence.test.ts\",\n      \"tests/kernel-assurance-projection.test.ts\",\n      \"tests/unattended-batch-commit.test.ts\",\n      \"tests/batch-plan-reconfirmation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/workflow-execution-reliability-integration.md",
+      "docs/evidence/workflow-execution-reliability-host-check.md",
+      "docs/plans/workflow-execution-reliability-s4-integration-proof.intent.json",
+      "docs/specs/workflow-execution-reliability.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run-batch.md",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/dist/role-prompts/executor.md",
+      "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+      "plugins/immune-brain/runtime/prompts/executor.md",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts",
+      "tests/batch-plan-reconfirmation.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/claude-review-host-async-agent.test.ts",
+      "tests/code-quality-guard-contract.test.ts",
+      "tests/fixtures/goal-driven-run-historical-sources.json",
+      "tests/goal-driven-batch-run.test.ts",
+      "tests/goal-driven-run-contract.test.ts",
+      "tests/goal-driven-run-live-evidence.test.ts",
+      "tests/goal-driven-run-recovery.test.ts",
+      "tests/kernel-assurance-projection.test.ts",
+      "tests/pi-subagent-dispatch-observability-contract.test.ts",
+      "tests/unattended-batch-commit.test.ts",
+      "tests/unattended-batch-lanes.test.ts"
+    ],
+    "risk": "material",
+    "revision": 4,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/workflow-execution-reliability-s4-integration-proof.intent.json",
+    "content_hash": "sha256:9d291962258ccd34801f362a97f9ed6b0f191325a5d08550c5e702294e62a29a"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:8ff98e32914fb6a1344f90d2bcaf78b0808041724378ea65a08f810968863b36",
+  "git_base_head": "bd8ad00118c727f4f5c4d80f35402c99e39d3a59",
+  "attestations": [
+    {
+      "id": "approval-qa-4e5544f9",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:9d291962258ccd34801f362a97f9ed6b0f191325a5d08550c5e702294e62a29a",
+      "diff_hash": "sha256:d49af276609f1a6815bc750ae5e40257d69d0aec1b8a1d98fa06a5f61febccf6",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:8ca57afa33f903a41b4843554955c247201c87d0cdca6b8e04b9446340e12f63",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S4-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:8ca57afa33f903a41b4843554955c247201c87d0cdca6b8e04b9446340e12f63"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-8d164735",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:9d291962258ccd34801f362a97f9ed6b0f191325a5d08550c5e702294e62a29a",
+      "diff_hash": "sha256:d49af276609f1a6815bc750ae5e40257d69d0aec1b8a1d98fa06a5f61febccf6",
+      "actor_id": "parent-mediated-review",
+      "summary": "已验证 revision 的唯一 parent、tree、manifest digest 和全部九个变更路径；历史 fixture 的 33 份源码与声明的 Git revision 及原始 capture hashes 一致。终态投影不再绑定当前 checkout，reconfirmation 仍独立验证当前交付、审批和风险要求，未发现阻断缺陷。采用 Kernel 提供的通过结果，未重跑验证；本次批准不代表最终 Parent HEAD 验证或整项 Initiative 已完成。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "bd8ad00118c727f4f5c4d80f35402c99e39d3a59",
+        "review_commit": "09c5be690a81de88e56b3d4ee011d0ffc1097f7d",
+        "review_tree": "0d9c775a3269d2e490fce07ad14a1caeae341839",
+        "manifest_digest": "sha256:c1b47b1b0f1b00609836d0b4102b9568be631d8d5e467f3e955b02490ddbe76d"
+      },
+      "reviewer_verdict_sha256": "sha256:f74ad80afad9c14f6be3078077a3a7477a9f88c6e5d59ecaefc9d312ecfe968e"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:workflow-execution-reliability-s4-integration-proof:2026-10-15T11:00:23.911Z",
+      "at": "2026-10-15T11:00:23.911Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:76de8e085476411f7aca6ee0c795a07abe484c54d9bd0596bacaaf1261f87132",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-5f521471dde1ca36",
+        "issued_at": "2026-10-15T11:00:24.265Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:workflow-execution-reliability-s4-integration-proof:2026-10-15T12:05:16.316Z",
+      "at": "2026-10-15T12:05:16.316Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\naction_v2_sha256:9896aad5441d4942c32e6a5c03d2c3b13b55c858b9800b766d5d74d4d1656a07",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-e35a6cb0a2f08810",
+        "issued_at": "2026-10-15T12:05:16.762Z"
+      }
+    },
+    {
+      "id": "revise_intent:workflow-execution-reliability-s4-integration-proof:2026-10-15T14:40:52.462Z",
+      "at": "2026-10-15T14:40:52.462Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_4\nscope_added:plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts\nscope_added:tests/batch-plan-reconfirmation.test.ts\naction_v2_sha256:41c8dc53b7383a8e0180aa2d478d60f18a93a7e2fff376dc6bb62a9d42b0f312"
+    },
+    {
+      "id": "freeze_artifacts:workflow-execution-reliability-s4-integration-proof:2026-10-15T15:01:29.025Z",
+      "at": "2026-10-15T15:01:29.025Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-execution-reliability-s4-integration-proof.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-execution-reliability-s4-integration-proof:2026-10-15T15:04:33.612Z",
+      "at": "2026-10-15T15:04:33.612Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-4e5544f9\naction_v2_sha256:154fa66f1746662205718f12b382b14968f85ffe7c46c9baa2e1f7098648f763",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-54385c5a1ddbf077",
+        "issued_at": "2026-10-15T15:04:33.612Z"
+      }
+    },
+    {
+      "id": "record_approval:workflow-execution-reliability-s4-integration-proof:2026-10-15T15:49:50.572Z",
+      "at": "2026-10-15T15:49:50.572Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-8d164735\naction_v2_sha256:0b5a993273a8b0edadd9cd64d669d14ee91b8b4be499b70900c09a0ead7ab8a4",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-c057a65068034ba1",
+        "issued_at": "2026-10-15T15:49:50.572Z"
+      }
+    },
+    {
+      "id": "complete:workflow-execution-reliability-s4-integration-proof:2026-10-15T15:49:51.840Z",
+      "at": "2026-10-15T15:49:51.840Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:cb4920cf8b949018219fa348509b222cc272d65b7cb1329fc504d66b1aca274b"
+    }
+  ]
+}

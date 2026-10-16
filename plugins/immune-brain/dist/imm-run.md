@@ -286,9 +286,13 @@ is recorded as a separate follow-up rather than resolved here.
   Scope/authority exceptions still use their existing native gates. A committed
   QA result is honored; an interrupted precommit QA run produces no approval.
   Do not rerun fresh QA simply because Review was interrupted.
-- Malformed or stale reviewer output is not a verdict. Keep the existing
-  reservation only if the Host reports it valid; use its exact recovery action.
-  Do not fabricate a pass or blindly redispatch Review.
+- Provider quota or interruption is not Review budget exhaustion. Preserve
+  fresh QA and follow the Host's exact `recovery_action`; an unchanged envelope
+  returned by `advance_assurance` alone does not authorize redispatch of an
+  already-dispatched reservation. Malformed or stale reviewer output is not a
+  verdict. Keep a reservation only if the Host reports it valid; obtain a new
+  one only through its supported recovery. If the returned action cannot clear
+  the observed fault, report that concrete Host blocker rather than loop.
 - Missing tools, credentials, invalid projections, or repeated unchanged failures
   stop with a concrete cause. Cancellation performs no decision write and is not
   task termination. Explicit task stop uses its native authority gate.
@@ -299,6 +303,10 @@ Reviewers are read-only and bound to the frozen snapshot. They cannot edit files
 write planning artifacts, mutate Kernel state, or settle decisions. Report all
 substantiated blockers in one round, tied to acceptance or a concrete regression;
 separate optional advice from blockers. Suggestions alone do not justify rework.
+Inspect archived pass advice in `attestations[].advisory_findings`, not only
+record-level `findings`. Cite its record/attestation before claiming it is
+archived; session-only notes are not durable evidence. Reuse this storage rather
+than creating another advisory archive.
 Use the returned verdict schema exactly, including omission of unsupported fields.
 A Review pass verdict's approval must carry `inspected_paths`: an array of
 unique repository-relative path strings listing every path of the reviewed

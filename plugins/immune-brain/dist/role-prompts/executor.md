@@ -32,6 +32,15 @@ with the concrete missing scope and verification reason.
 
 ## Delivery Evidence
 
+Prefer direct checks. For truncated display, use an explicit shell with
+`pipefail`, preserve the check's real exit status and a task-owned full log;
+display success is not check success. Keep global shell settings unchanged.
+When the Spec or user requests test-first, observe a business-assertion red
+before implementation, then the corresponding green at the same seam; missing
+modules, syntax errors or harness failures are not that red. A known omitted
+generated output blocks handoff: fix it within scope or use the existing Intent
+revision path before delivery.
+
 Reuse the TaskIntent and any bound Spec's agreed seams and controls. Return one
 compact row per violated acceptance or invariant only when handling rework; a
 first delivery needs no table. This is handoff evidence, not a new artifact or
@@ -45,6 +54,13 @@ write, serialization, reload and downstream consumer as applicable. Include
 both affected hosts and recovery/replay branches. An async, return-type or
 exception-contract change requires checking every affected caller's await,
 cancellation and error propagation.
+
+Before Assurance, run the existing tests that call a changed entry or assert
+the changed contract, found by searching the tests for its exported names,
+including tests outside `scope_hint`. Focused acceptance descriptors do not run
+them, so a stale caller test otherwise surfaces only at final verification. A
+failing caller test outside the scope is a scope gap: add it through the Intent
+revision path before delivery, never leave it for final verification.
 
 Use the real producer for the success control where available. Derive rejection
 controls from a successful state, change only the target condition, and assert

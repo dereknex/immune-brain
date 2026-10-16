@@ -30,6 +30,9 @@ import type { BatchPlanChild } from "../plugins/immune-brain/runtime/unattended/
 import { readAuditTaskPair, recoverKernelStoreFollowUps, readSettledTaskEvidence, revisionForContent } from "../plugins/immune-brain/runtime/kernel/storage";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
+import { parentConsolidationFixture } from "./fixtures/parent-consolidation";
+import { readParentConsolidationReceipt, writeParentConsolidationReceipt } from "../plugins/immune-brain/runtime/unattended/batch_state";
+import { parseDeliveryConsolidation } from "../plugins/immune-brain/runtime/unattended/parent_delivery_consolidation";
 
 // Commit-safety fixtures script settlement; explicitly model Parent-ready turns.
 async function finishScriptedHandoffs(input: StartBatchInput, report: Awaited<ReturnType<typeof startBatch>>) {
@@ -233,6 +236,25 @@ describe("Lane Parent delivery proof", () => {
 });
 
 describe("native Parent completion without ordinary grants", () => {
+	function seedParentHistory(root: string, base: string, intent: Record<string, unknown>, paths: string[],
+		state: ReturnType<typeof prepareBatchRunState>["batch_state"] = "superseded") {
+		const now = new Date().toISOString();
+		const record = prepareBatchRunState({ batch_id: "prior-parent", initiative_slug: "native-parent", base_head: base,
+			branch: "main", plan_digest: `sha256:${"c".repeat(64)}`, confirmation_time: now, now,
+			budget: { max_children: 1, qa_failure_limit: 2 }, children: [{ task_id: "delivered", slice_id: "S1", blocked_by: [],
+				status: "already_settled", risk: "material", intent_path: "docs/plans/delivered.intent.json", intent_revision: 1,
+				intent_content_hash: canonicalIntentHash(parseTaskIntentV1(intent)), scope_hint: paths, reason: null, exclusion: null }] });
+		record.batch_state = state;
+		if (state === "completed") {
+			record.children[0]!.state = "committed"; record.children[0]!.commit = base; record.commits = [base];
+		}
+		writeBatchRunState(root, record);
+		if (state === "superseded") writeBatchRunReport(root, { contract: "assurance_kernel/batch_run_report/v1", batch_id: record.batch_id,
+			initiative_slug: record.initiative_slug, batch_state: state, children: record.children, commits: record.commits,
+			reason: "retired after plan revision", next_action: "preserve settled children", created_at: now });
+		return () => readdirSync(join(root, ".imm/state/batches")).filter(name => name.startsWith("prior-parent.")).sort()
+			.map(name => [name, readFileSync(join(root, ".imm/state/batches", name))]);
+	}
 	it.each(["fast_forward", "diverged", "wrong_branch"])("checks native Enrollment precondition lineage: %s", async (movement) => {
 		const repo = initGitRepo();
 		try {
@@ -286,7 +308,11 @@ describe("native Parent completion without ordinary grants", () => {
 			expect(readBatchRunState(repo.root, "native-parent")).toBeNull();
 		} finally { rmSync(repo.root, { recursive: true, force: true }); }
 	});
-	it("integrates a delivered-only Parent, verifies it and replays without a new commit or empty grant", async () => {
+	it.each([
+		{ history: false, command: "bun --version", passed: true },
+		{ history: true, command: "bun --version", passed: true },
+		{ history: true, command: "bun -e process.exitCode=7", passed: false },
+	])("integrates and replays delivered-only Parent: history=$history, passed=$passed", async ({ history, command, passed }) => {
 		const repo = initGitRepo();
 		try {
 			const paths = ["src/delivered.ts", "docs/plans/delivered.intent.json", "docs/plans/archive/delivered.intent.json"];
@@ -301,19 +327,25 @@ describe("native Parent completion without ordinary grants", () => {
 			const reader = async () => ({ initiative_slug: "native-parent", carrier: "local" as const, tasks: [
 				{ task_id: "delivered", slice_id: "S1", blocked_by: [] },
 			] });
+			const historyBytes = history ? seedParentHistory(repo.root, baseline, intent, paths) : () => [];
+			const beforeHistory = historyBytes();
 			const disclosed: NativeParentEffects[] = [];
 			const gate: NativeParentGate = async (effects) => { disclosed.push(effects); return null; };
-			const result = await advanceNativeParent(repo.root, "native-parent", ["bun --version"], reader, undefined, gate);
+			const result = await advanceNativeParent(repo.root, "native-parent", [command], reader, undefined, gate);
 			expect(disclosed).toEqual([{ initiative_slug: "native-parent", plan_digest: expect.stringMatching(/^sha256:/),
-				children: [{ task_id: "delivered", slice_id: "S1" }], integrate_task_ids: ["delivered"], final_commands: ["bun --version"] }]);
-			expect(result).toMatchObject({ state: "native_parent", action: "complete", proof: { complete: true } });
+				children: [{ task_id: "delivered", slice_id: "S1" }], integrate_task_ids: ["delivered"], final_commands: [command] }]);
+			expect(result).toMatchObject({ state: "native_parent", action: passed ? "complete" : "repair", proof: { complete: passed },
+				final_verification: { passed, results: [{ command, exit_code: passed ? 0 : 7 }] } });
 			expect(git(repo.root, ["log", "-1", "--format=%B"])).toContain("Immune-Brain-Task: delivered");
 			expect(git(repo.root, ["log", "-1", "--format=%B"])).not.toContain("Immune-Brain-Batch:");
 			const head = git(repo.root, ["rev-parse", "HEAD"]);
-			expect((await advanceNativeParent(repo.root, "native-parent", undefined, reader))?.action).toBe("complete");
+			expect(result?.final_verification?.head).toBe(head);
+			expect((await advanceNativeParent(repo.root, "native-parent", undefined, reader))?.action).toBe(passed ? "complete" : "repair");
 			expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(head);
+			expect(spawnSync("git", ["-C", repo.root, "merge-base", "--is-ancestor", baseline, "HEAD"]).status).toBe(0);
+			expect(historyBytes()).toEqual(beforeHistory);
 			expect(readBatchRunState(repo.root, "native-parent")).toBeNull();
-			expect((await observeParentCompletion(repo.root, "native-parent", ["delivered"])).complete).toBe(true);
+			expect((await observeParentCompletion(repo.root, "native-parent", ["delivered"])).complete).toBe(passed);
 			git(repo.root, ["checkout", "--orphan", "unrelated-history"]);
 			git(repo.root, ["rm", "-r", "--cached", "."]); git(repo.root, ["add", "."]); git(repo.root, ["commit", "-m", "copied bytes without delivery history"]);
 			expect(spawnSync("git", ["-C", repo.root, "merge-base", "--is-ancestor", head, "HEAD"]).status).toBe(1);
@@ -321,7 +353,9 @@ describe("native Parent completion without ordinary grants", () => {
 			await expect(observeParentCompletion(repo.root, "native-parent", ["delivered"])).rejects.toThrow("diverged");
 		} finally { rmSync(repo.root, { recursive: true, force: true }); }
 	});
-	it("opens no Git or command effect for a delivered-only Parent without an accepting native gate", async () => {
+	it.each([false, true].flatMap(history => [false, true].flatMap(remainingCritical =>
+		[undefined, [], ["bun marker.ts"]].map(commands => ({ history, remainingCritical, commands })))))(
+		"opens no Git or command effect without accepting gate (history=$history, critical=$remainingCritical, commands=$commands)", async ({ history, remainingCritical, commands }) => {
 		for (const gate of [undefined, async () => ({ state: "rejected" as const, reason: "native interaction declined", recovery_action: "wait" }),
 			async () => ({ state: "cancelled" as const, reason: "native interaction cancelled", recovery_action: "wait" })]) {
 			const repo = initGitRepo();
@@ -332,20 +366,44 @@ describe("native Parent completion without ordinary grants", () => {
 				mkdirSync(join(repo.root, "docs/plans/archive"));
 				writeFileSync(join(repo.root, "docs/plans/archive/delivered.intent.json"), JSON.stringify(intent));
 				writeFileSync(join(repo.root, "marker.ts"), "require('node:fs').writeFileSync('ran.txt', 'ran');\n");
+				if (remainingCritical) {
+					const criticalPath = writeTaskIntent(repo.root, "critical", "remaining critical task", ["src/critical.ts"]);
+					const critical = JSON.parse(readFileSync(join(repo.root, criticalPath), "utf8"));
+					critical.risk = "critical"; writeFileSync(join(repo.root, criticalPath), JSON.stringify(critical));
+				}
 				git(repo.root, ["add", "docs/plans", "marker.ts"]); git(repo.root, ["commit", "-m", "plan"]);
 				const baseline = git(repo.root, ["rev-parse", "HEAD"]);
 				writeChildAudit(repo.root, "delivered", "done", baseline, intent);
 				mkdirSync(join(repo.root, "src")); writeFileSync(join(repo.root, "src/delivered.ts"), "export const delivered = true;\n");
 				const reader = async () => ({ initiative_slug: "native-parent", carrier: "local" as const, tasks: [
 					{ task_id: "delivered", slice_id: "S1", blocked_by: [] },
+					...(remainingCritical ? [{ task_id: "critical", slice_id: "S2", blocked_by: ["delivered"] }] : []),
 				] });
-				const result = await advanceNativeParent(repo.root, "native-parent", ["bun marker.ts"], reader, undefined, gate);
+				const historyBytes = history ? seedParentHistory(repo.root, baseline, intent, paths) : () => [];
+				const beforeHistory = historyBytes();
+				const result = await advanceNativeParent(repo.root, "native-parent", commands, reader, undefined, gate);
 				expect(result).toMatchObject({ state: expect.stringMatching(/^(rejected|cancelled)$/) });
+				expect(historyBytes()).toEqual(beforeHistory);
 				expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(baseline);
 				expect(existsSync(join(repo.root, "ran.txt"))).toBe(false);
 				expect((await observeNativeParent(repo.root, "native-parent", reader))?.native).toBeNull();
 			} finally { rmSync(repo.root, { recursive: true, force: true }); }
 		}
+	});
+	it.each(["running", "needs_human", "completed", "failed", "budget_stopped", "rejected"] as const)("retains existing batch route for %s history", async (state) => {
+		const repo = initGitRepo();
+		try {
+			const snapshot = seedParentHistory(repo.root, repo.baseHead, {
+				contract: "assurance_kernel/task_intent/v1", task_id: "delivered", owner: "user", goal: "delivered",
+				scope_hint: ["src/delivered.ts"], risk: "material", revision: 1,
+				acceptance: [{ id: "AC1", assertion: "delivered", verification: "bun test" }],
+			}, ["src/delivered.ts"], state);
+			const before = snapshot();
+			const observed = await observeNativeParent(repo.root, "native-parent", async () => { throw new Error("existing batch must own routing"); });
+			expect(observed).toBeNull();
+			expect(snapshot()).toEqual(before);
+			expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(repo.baseHead);
+		} finally { rmSync(repo.root, { recursive: true, force: true }); }
 	});
 	it("returns the current successful Parent observation while preserving the first failed terminal report", async () => {
 		const repo = initGitRepo(); const previous = process.env.GDR_COMPLETION_TEST_FAILURE;
@@ -391,6 +449,179 @@ describe("native Parent completion without ordinary grants", () => {
 			if (previous === undefined) delete process.env.GDR_COMPLETION_TEST_FAILURE; else process.env.GDR_COMPLETION_TEST_FAILURE = previous;
 			rmSync(repo.root, { recursive: true, force: true });
 		}
+	});
+});
+
+describe("explicit settled-delivery consolidation", () => {
+	it.each([0, 7])("integrates three reviewed deliveries once, preserving source proofs (exit %s)", async (code) => {
+		const f = parentConsolidationFixture(code);
+		try {
+			const history = seedConsolidationHistory(f);
+			const sourceBytes = f.auditBytes(); const previousHistory = history();
+			const disclosures: NativeParentEffects[] = [];
+			const result = await advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined,
+				async effects => { disclosures.push(effects); return null; }, f.selection);
+			expect(result).toMatchObject({ action: code ? "repair" : "complete", proof: { complete: !code }, final_verification: { passed: !code } });
+			expect(disclosures).toHaveLength(1); expect(disclosures[0]!.delivery_consolidation?.envelope.runs).toHaveLength(3);
+			expect(new Set([f.s4.revision.review_tree, f.repair.revision.review_tree, f.final.revision.review_tree]).size).toBe(3);
+			expect(f.auditBytes()).toEqual(sourceBytes); expect(history()).toEqual(previousHistory);
+			expect(f.count()).toBe(1); const head = f.git("rev-parse", "HEAD");
+			expect(f.git("rev-parse", "HEAD^")).toBe(f.baseHead);
+			expect(readFileSync(join(f.root, "src/bundle.js"), "utf8")).toBe("new-reviewed-composed-bundle\n");
+			expect((await observeParentCompletion(f.root, "native-parent", ["s4"])).complete).toBe(!code);
+			if (!code) {
+				await advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined, async () => { throw Error("no repeat gate"); }, f.selection);
+				expect(f.count()).toBe(1); expect(f.git("rev-parse", "HEAD")).toBe(head);
+			}
+			const receipt = readParentConsolidationReceipt(f.root, "native-parent")!;
+			writeFileSync(join(f.root, ".imm/state/batches/native-parent.consolidation.json"), JSON.stringify({ ...receipt, digest: `sha256:${"0".repeat(64)}` }));
+			await expect(observeParentCompletion(f.root, "native-parent", ["s4"])).rejects.toThrow("digest");
+		} finally { rmSync(f.root, { recursive: true, force: true }); }
+	});
+	function seedConsolidationHistory(f: ReturnType<typeof parentConsolidationFixture>) {
+		const task = JSON.parse(readFileSync(join(f.root, "docs/plans/s4.intent.json"), "utf8"));
+		const now = new Date().toISOString();
+		const state = prepareBatchRunState({ batch_id: "old-consolidation", initiative_slug: "native-parent", base_head: f.baseHead,
+			branch: "main", plan_digest: `sha256:${"c".repeat(64)}`, confirmation_time: now, now, budget: { max_children: 1, qa_failure_limit: 2 },
+			children: [{ task_id: "s4", slice_id: "S4", blocked_by: [], status: "already_settled", risk: "material", intent_path: "docs/plans/s4.intent.json",
+				intent_revision: 1, intent_content_hash: canonicalIntentHash(task), scope_hint: task.scope_hint, reason: null, exclusion: null }] });
+		state.batch_state = "superseded"; writeBatchRunState(f.root, state);
+		return () => readFileSync(join(f.root, ".imm/state/batches/old-consolidation.json"));
+	}
+	it.each(["absent", "decline", "cancel"])("leaves no association, command or commit on %s gate", async decision => {
+		const f = parentConsolidationFixture();
+		try {
+			const index = readFileSync(join(f.root, ".git/index")); const audits = f.auditBytes();
+			const gate: NativeParentGate | undefined = decision === "absent" ? undefined : async () => ({
+				state: decision === "cancel" ? "cancelled" : "rejected", reason: decision, recovery_action: "wait" });
+			const result = await advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined, gate, f.selection);
+			expect(result?.state).toBe(decision === "cancel" ? "cancelled" : "rejected");
+			expect(f.git("rev-parse", "HEAD")).toBe(f.baseHead); expect(readFileSync(join(f.root, ".git/index"))).toEqual(index);
+			expect(f.auditBytes()).toEqual(audits); expect(readParentConsolidationReceipt(f.root, "native-parent")).toBeNull();
+			expect(existsSync(join(f.root, ".imm/state/verification-count"))).toBe(false);
+		} finally { rmSync(f.root, { recursive: true, force: true }); }
+	});
+	it.each(["wrong-run", "changed-intent", "audit", "outside", "staged-drift"])("rejects %s before confirmation", async fault => {
+		const f = parentConsolidationFixture(); let gates = 0;
+		try {
+			if (fault === "wrong-run") f.selection.source_runs[0]!.run_id = "run-wrong";
+			if (fault === "changed-intent") {
+				const path = join(f.root, "docs/plans/s4.intent.json"); const intent = JSON.parse(readFileSync(path, "utf8"));
+				intent.goal += " changed"; writeFileSync(path, JSON.stringify(intent)); f.git("add", "docs/plans");
+			}
+			if (fault === "audit") writeFileSync(join(f.root, ".imm/audit/s4", f.s4.run_id, "task-record.json"), "{}\n");
+			if (fault === "outside") writeFileSync(join(f.root, "unselected.txt"), "not authorized");
+			if (fault === "staged-drift") { writeFileSync(join(f.root, "src/bundle.js"), "not reviewed"); f.git("add", "src"); }
+			await expect(advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined,
+				async () => { gates++; return null; }, f.selection)).rejects.toThrow();
+			expect(gates).toBe(0); expect(f.git("rev-parse", "HEAD")).toBe(f.baseHead);
+		} finally { rmSync(f.root, { recursive: true, force: true }); }
+	});
+	it.each(["HEAD", "bytes", "plan"])("revalidates %s after native acceptance", async fault => {
+		const f = parentConsolidationFixture();
+		try {
+			const reader = async () => ({ ...await f.reader(), tasks: [{ task_id: "s4", slice_id: "S4", blocked_by: changed ? ["other"] : [] }] });
+			let changed = false;
+			await expect(advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], reader, undefined, async () => {
+				if (fault === "HEAD") f.git("commit", "--allow-empty", "-m", "external unrelated change");
+				if (fault === "bytes") { writeFileSync(join(f.root, "src/bundle.js"), "changed after gate"); f.git("add", "src"); }
+				if (fault === "plan") changed = true;
+				return null;
+			}, f.selection)).rejects.toThrow();
+			expect(readParentConsolidationReceipt(f.root, "native-parent")).toBeNull();
+			expect(existsSync(join(f.root, ".imm/state/verification-count"))).toBe(false);
+		} finally { rmSync(f.root, { recursive: true, force: true }); }
+	});
+	it("recovers commit-before-receipt only through a new exact native confirmation", async () => {
+		const f = parentConsolidationFixture();
+		try {
+			await advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined, async () => null, f.selection);
+			const head = f.git("rev-parse", "HEAD"); const receipt = readParentConsolidationReceipt(f.root, "native-parent")!;
+			writeParentConsolidationReceipt(f.root, { ...receipt, commit: null });
+			rmSync(join(f.root, ".imm/state/batches/native-parent.native.report.json"));
+			// A crash can precede both ordinary production evidence and the final consolidation receipt.
+			rmSync(join(f.root, ".imm/state/batches/commits/native-task-consolidation.json"));
+			const refused = await advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined,
+				async () => ({ state: "cancelled", reason: "cancel", recovery_action: "wait" }), f.selection);
+			expect(refused?.state).toBe("cancelled"); expect(readParentConsolidationReceipt(f.root, "native-parent")!.commit).toBeNull();
+			const result = await advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined, async () => null, f.selection);
+			expect(result).toMatchObject({ action: "complete", proof: { complete: true } });
+			expect(f.git("rev-parse", "HEAD")).toBe(head); expect(f.count()).toBe(2);
+		} finally { rmSync(f.root, { recursive: true, force: true }); }
+	}, 30_000);
+	it.each(["HEAD", "bytes", "branch", "plan", "audit"])("revalidates recovery %s before associating sources or running commands", async fault => {
+		const f = parentConsolidationFixture();
+		try {
+			await advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined, async () => null, f.selection);
+			const receipt = readParentConsolidationReceipt(f.root, "native-parent")!;
+			writeParentConsolidationReceipt(f.root, { ...receipt, commit: null });
+			const receiptPath = join(f.root, ".imm/state/batches/native-parent.consolidation.json");
+			const reportPath = join(f.root, ".imm/state/batches/native-parent.native.report.json");
+			rmSync(reportPath);
+			rmSync(join(f.root, ".imm/state/batches/commits/native-task-consolidation.json"));
+			const pending = readFileSync(receiptPath);
+			let changed = false;
+			const reader = async () => ({ ...await f.reader(), tasks: [{ task_id: "s4", slice_id: "S4", blocked_by: changed ? ["other"] : [] }] });
+			await expect(advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], reader, undefined, async () => {
+				if (fault === "HEAD") f.git("commit", "--allow-empty", "-m", "advance during recovery confirmation");
+				if (fault === "bytes") { writeFileSync(join(f.root, "src/bundle.js"), "changed during recovery"); f.git("add", "src"); }
+				if (fault === "branch") f.git("checkout", "-b", "changed-during-recovery");
+				if (fault === "plan") changed = true;
+				if (fault === "audit") writeFileSync(join(f.root, ".imm/audit/s4", f.s4.run_id, "task-record.json"), "{}\n");
+				return null;
+			}, f.selection)).rejects.toThrow();
+			expect(readFileSync(receiptPath)).toEqual(pending);
+			expect(existsSync(reportPath)).toBe(false);
+			expect(f.count()).toBe(1);
+		} finally { rmSync(f.root, { recursive: true, force: true }); }
+	}, 30_000);
+	it.each(["before", "during"].flatMap(when => ["untracked", "tracked", "staged", "index-flags"].map(fault => ({ when, fault }))))(
+		"rejects $fault workspace drift $when recovery confirmation", async ({ when, fault }) => {
+		const f = parentConsolidationFixture();
+		try {
+			await advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined, async () => null, f.selection);
+			const receipt = readParentConsolidationReceipt(f.root, "native-parent")!;
+			writeParentConsolidationReceipt(f.root, { ...receipt, commit: null });
+			const receiptPath = join(f.root, ".imm/state/batches/native-parent.consolidation.json");
+			const reportPath = join(f.root, ".imm/state/batches/native-parent.native.report.json");
+			rmSync(reportPath);
+			rmSync(join(f.root, ".imm/state/batches/commits/native-task-consolidation.json"));
+			const pending = readFileSync(receiptPath);
+			const drift = () => {
+				if (fault === "untracked") writeFileSync(join(f.root, "unselected.txt"), "not approved");
+				else if (fault === "index-flags") f.git("update-index", "--skip-worktree", ".gitignore");
+				else {
+					writeFileSync(join(f.root, ".gitignore"), readFileSync(join(f.root, ".gitignore"), "utf8") + "\n# unrelated change\n");
+					if (fault === "staged") f.git("add", ".gitignore");
+				}
+			};
+			if (when === "before") drift();
+			let gates = 0;
+			await expect(advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined, async () => {
+				gates++; if (when === "during") drift(); return null;
+			}, f.selection)).rejects.toThrow();
+			expect(gates).toBe(when === "before" ? 0 : 1);
+			expect(readFileSync(receiptPath)).toEqual(pending);
+			expect(existsSync(reportPath)).toBe(false);
+			expect(f.count()).toBe(1);
+		} finally { rmSync(f.root, { recursive: true, force: true }); }
+	}, 30_000);
+	it("refuses to omit a remaining original contribution even when the final scope covers its bytes", async () => {
+		const f = parentConsolidationFixture(); let gates = 0;
+		try {
+			const reader = async () => ({ ...await f.reader(), tasks: [{ task_id: "s4", slice_id: "S4", blocked_by: [] },
+				{ task_id: "repair", slice_id: "S5", blocked_by: ["s4"] }] });
+			const selection = { ...f.selection, source_runs: [f.selection.source_runs[0]!] };
+			await expect(advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], reader, undefined,
+				async () => { gates++; return null; }, selection)).rejects.toThrow("every remaining original");
+			expect(gates).toBe(0); expect(f.git("rev-parse", "HEAD")).toBe(f.baseHead);
+		} finally { rmSync(f.root, { recursive: true, force: true }); }
+	});
+	it("rejects duplicate, self and extra-field selections", () => {
+		const source = { task_id: "source", run_id: "run-source" };
+		for (const input of [{ ...source, source_runs: [source] }, { task_id: "final", run_id: "run-final", source_runs: [source, source] },
+			{ task_id: "final", run_id: "run-final", source_runs: [source], native_decision: "accept" }])
+			expect(() => parseDeliveryConsolidation(input)).toThrow();
 	});
 });
 
@@ -956,6 +1187,43 @@ describe("acc-batch-scope-bounded-commit", () => {
 		expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(repo.baseHead);
 	});
 
+	it.each(["rogue.ts", "rogue\n\t\".ts"])("reports escaped changed/staged scope paths without writes: %s", async rogue => {
+		const taskId = "task-safe-diagnostics";
+		writeChildAudit(repo.root, taskId, "done", repo.baseHead);
+		writeFileSync(join(repo.root, rogue), "PRIVATE_FILE_CONTENT");
+		git(repo.root, ["add", "--", rogue]);
+		const index = readFileSync(join(repo.root, ".git/index"));
+		let reason = "";
+		try {
+			await commitBatchChild({ root: repo.root, taskId, batchId: "batch-diag", expectedHead: repo.baseHead });
+		} catch (error) { reason = (error as Error).message; }
+		expect(reason).toStartWith("dirty_outside_scope: ");
+		const detail = JSON.parse(reason.slice("dirty_outside_scope: ".length));
+		expect(detail.cause).toBe("changed_paths");
+		expect(detail.entries).toContainEqual({ path: rogue });
+		expect(detail.omitted).toBe(0);
+		expect(reason).not.toContain("\n");
+		expect(reason).not.toContain("PRIVATE_FILE_CONTENT");
+		expect(readFileSync(join(repo.root, ".git/index"))).toEqual(index);
+		expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(repo.baseHead);
+	});
+
+	it("bounds large scope diagnostics and reports omitted entries", async () => {
+		const taskId = "task-bounded-diagnostics";
+		writeChildAudit(repo.root, taskId, "done", repo.baseHead);
+		for (let n = 0; n < 32; n++) writeFileSync(join(repo.root, `${"界".repeat(70)}-${n}.txt`), "private");
+		let reason = "";
+		try {
+			await commitBatchChild({ root: repo.root, taskId, batchId: "batch-diag", expectedHead: repo.baseHead });
+		} catch (error) { reason = (error as Error).message; }
+		expect(reason).toStartWith("dirty_outside_scope: ");
+		const detail = JSON.parse(reason.slice("dirty_outside_scope: ".length));
+		expect(detail.entries.length).toBeLessThan(24);
+		expect(detail.entries.length + detail.omitted).toBe(32);
+		expect(detail.omitted).toBeGreaterThan(0);
+		expect(Buffer.byteLength(reason)).toBeLessThanOrEqual(4096);
+	});
+
 	it("Finding 4: rejects files with trailing whitespace as dirty_outside_scope", async () => {
 		const taskId = "task-trailing-space";
 		const authorizedIntent = {
@@ -1051,7 +1319,7 @@ describe("acc-batch-scope-bounded-commit", () => {
 				batchId: "batch-assume-1",
 				expectedHead: baseNow,
 			}),
-		).rejects.toThrow("dirty_outside_scope");
+		).rejects.toThrow('"flags":["assume-unchanged"]');
 	});
 
 	it("Finding 1: rejects hidden out-of-scope modification carrying combined flags (tag s) as dirty_outside_scope", async () => {
@@ -1086,7 +1354,7 @@ describe("acc-batch-scope-bounded-commit", () => {
 				batchId: "batch-s-1",
 				expectedHead: baseNow,
 			}),
-		).rejects.toThrow("dirty_outside_scope");
+		).rejects.toThrow('"flags":["assume-unchanged","skip-worktree"]');
 	});
 
 	it("Finding 2: commits scoped staged deletion and staged rename without pathspec errors", async () => {

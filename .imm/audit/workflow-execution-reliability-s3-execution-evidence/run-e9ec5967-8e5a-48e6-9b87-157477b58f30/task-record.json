@@ -1,0 +1,102 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "workflow-execution-reliability-s3-execution-evidence",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "workflow-execution-reliability-s3-execution-evidence",
+    "goal": "Deliver bounded Executor and Parent evidence/recovery contracts, without new execution machinery, under S3 of docs/specs/workflow-execution-reliability.spec.md.",
+    "acceptance": [
+      {
+        "id": "S3-AC1",
+        "assertion": "Source E2; meet S3 and SCN-3 in docs/specs/workflow-execution-reliability.spec.md: the delivered Executor source and mirror require real command exit preservation and business-assertion red/green when test-first is requested. A local executable pipeline control reports nonzero for a failing producer after display truncation and zero for a passing producer. This proves shell behavior and contract delivery, not model obedience.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/code-quality-guard-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S3-AC2",
+        "assertion": "Source E7; meet S3 in docs/specs/workflow-execution-reliability.spec.md: delivered recovery handoffs distinguish provider interruption from Review budget exhaustion, preserve fresh QA and require the exact returned recovery action without continuing a dispatched reviewer. Protocol controls keep invalid/old dispatches rejected and valid new reservations accepted. Advisory inspection uses attestations[].advisory_findings rather than a new archive.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-subagent-dispatch-observability-contract.test.ts\",\n      \"tests/claude-review-host-async-agent.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/workflow-execution-reliability-handoff.md",
+      "docs/plans/workflow-execution-reliability-s3-execution-evidence.intent.json",
+      "docs/specs/workflow-execution-reliability.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run-batch.md",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/dist/role-prompts/executor.md",
+      "plugins/immune-brain/runtime/prompts/executor.md",
+      "tests/claude-review-host-async-agent.test.ts",
+      "tests/code-quality-guard-contract.test.ts",
+      "tests/pi-subagent-dispatch-observability-contract.test.ts"
+    ],
+    "risk": "routine",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/workflow-execution-reliability-s3-execution-evidence.intent.json",
+    "content_hash": "sha256:720f14d60e302ac352f41b2ff0beb70a8d0b3af408062dc4f351a9ca28e64bbc"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:720f14d60e302ac352f41b2ff0beb70a8d0b3af408062dc4f351a9ca28e64bbc",
+  "git_base_head": "15637abd3b97b741fb6ba9c0148d924d511da2a5",
+  "attestations": [
+    {
+      "id": "approval-qa-2009a4d2",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:720f14d60e302ac352f41b2ff0beb70a8d0b3af408062dc4f351a9ca28e64bbc",
+      "diff_hash": "sha256:ea2b15c5f5e7ad04af61dbf63164bc0bc5e6c5797e37c3fed11214dbdcb996c6",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:5dd3668bf2d3ab98b48a888875f37f0a964059313f1975bcc13fee7668655a4d",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S3-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:5dd3668bf2d3ab98b48a888875f37f0a964059313f1975bcc13fee7668655a4d"
+        },
+        {
+          "acceptance_id": "S3-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:5dd3668bf2d3ab98b48a888875f37f0a964059313f1975bcc13fee7668655a4d"
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:workflow-execution-reliability-s3-execution-evidence:2026-10-15T10:28:00.180Z",
+      "at": "2026-10-15T10:28:00.180Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-execution-reliability-s3-execution-evidence.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-execution-reliability-s3-execution-evidence:2026-10-15T10:28:04.772Z",
+      "at": "2026-10-15T10:28:04.772Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2009a4d2\naction_v2_sha256:776f3fd5e59df4b9cf086c10acc8e43d545c7fa6e460b6d01f4ac2ad5a210690",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d41d98f65cb784d8",
+        "issued_at": "2026-10-15T10:28:04.772Z"
+      }
+    },
+    {
+      "id": "complete:workflow-execution-reliability-s3-execution-evidence:2026-10-15T10:28:05.899Z",
+      "at": "2026-10-15T10:28:05.899Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:83c5b1697493934675ad63dbf6fa6259bfd3c3f03749dea0b42b372aff6a25d5"
+    }
+  ]
+}
