@@ -1,5 +1,23 @@
 # Changelog
 
+## 5.5.1
+
+### Patch Changes
+
+- [#252](https://github.com/dereknex/immune-brain/pull/252) [`01392f1`](https://github.com/dereknex/immune-brain/commit/01392f19c279aae23135df9126691d1557b27175) Thanks [@dereknex](https://github.com/dereknex)! - Allow native Parent finalization to explicitly consolidate settled original and repair runs under a freshly assured final TaskIntent. Bind native confirmation, scope-bounded commit recovery and whole-plan completion to the reviewed composed bytes and preserved source proofs.
+
+- [#252](https://github.com/dereknex/immune-brain/pull/252) [`01392f1`](https://github.com/dereknex/immune-brain/commit/01392f19c279aae23135df9126691d1557b27175) Thanks [@dereknex](https://github.com/dereknex)! - Distinguish unreadable Lane projections from lost runs, retain safe task/run context, and preserve existing fresh-authorization recovery. Include bounded escaped path and index-flag details in scope commit refusals without retaining raw exceptions or file contents.
+
+- [#252](https://github.com/dereknex/immune-brain/pull/252) [`01392f1`](https://github.com/dereknex/immune-brain/commit/01392f19c279aae23135df9126691d1557b27175) Thanks [@dereknex](https://github.com/dereknex)! - Require a fresh native Parent confirmation before a newly settled repair is integrated, so an ungated direct integration is refused without side effects and the recorded final commands run only after the accepted integration. Original delivery and audit evidence stay unchanged.
+
+- [#252](https://github.com/dereknex/immune-brain/pull/252) [`01392f1`](https://github.com/dereknex/immune-brain/commit/01392f19c279aae23135df9126691d1557b27175) Thanks [@dereknex](https://github.com/dereknex)! - Clarify Executor exit-preserving checks, requested business red/green and generated-output completeness. Keep Parent recovery bound to host instructions and original Lane identity, distinguish provider interruption from Review budget exhaustion, and inspect existing attestation advisories. Add shell and reservation protocol controls without new execution machinery.
+
+- [#252](https://github.com/dereknex/immune-brain/pull/252) [`01392f1`](https://github.com/dereknex/immune-brain/commit/01392f19c279aae23135df9126691d1557b27175) Thanks [@dereknex](https://github.com/dereknex)! - Preserve the original measured sources for historical whole-plan host evidence, so later workflow changes do not invalidate or rewrite previous captures. Keep current-source integration checks and actual development-host validation separate from historical evidence. Project validated terminal Lane records from their settled evidence instead of rebinding their QA to the coordinator checkout path; retain live identity checks for active tasks and independent integrated-delivery checks.
+
+- [#252](https://github.com/dereknex/immune-brain/pull/252) [`01392f1`](https://github.com/dereknex/immune-brain/commit/01392f19c279aae23135df9126691d1557b27175) Thanks [@dereknex](https://github.com/dereknex)! - Isolate Claude package build and smoke tests in disposable copies so tests cannot rewrite real package inputs or conceal generated-output drift.
+
+- [#252](https://github.com/dereknex/immune-brain/pull/252) [`01392f1`](https://github.com/dereknex/immune-brain/commit/01392f19c279aae23135df9126691d1557b27175) Thanks [@dereknex](https://github.com/dereknex)! - Allow a delivered-only Parent to resume native integration and final verification after its stale batch has been retired. Require native confirmation for each new delivery integration even when final commands are absent or other critical tasks remain unsettled. Preserve retired batch evidence, without changing active or effective completed batch routing.
+
 ## 5.5.0
 
 ### Minor Changes
