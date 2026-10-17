@@ -925,7 +925,11 @@ export async function observeParentCompletion(root: string, initiativeSlug: stri
 			: finalPassed ? null : "Final verification has not passed on the delivered content" };
 }
 
-/** A critical-only/delivered-only Parent needs native task gates and final observations, never an empty grant. */
+/**
+ * A Parent whose every Task is already settled needs only final observations,
+ * never an empty grant. A critical Task is an ordinary batch child (run-entry
+ * decision hosting D5), so an unsettled one keeps the Parent on the batch path.
+ */
 export async function observeNativeParent(root: string, initiativeSlug: string, readInitiative?: InitiativeObservationReader, blockedNativeTasks: readonly string[] = []) {
 	if (findExistingActiveBatch(root, initiativeSlug)) return null;
 	const settled = findSettledBatchRecord(root, initiativeSlug);
@@ -936,7 +940,7 @@ export async function observeNativeParent(root: string, initiativeSlug: string, 
 	if (parent.tasks.length === 0) return null;
 	const intents = parent.tasks.map(task => ({ task, intent: readTaskTombstone(root, task.task_id)
 		? readTaskIntent(root, task.task_id) : observeEnrollmentTaskIntent(root, task.task_id) }));
-	if (intents.some(({ task, intent }) => intent.intent.risk !== "critical" && !readSettledTaskEvidence(root, task.task_id))) return null;
+	if (parent.tasks.some(task => !readSettledTaskEvidence(root, task.task_id))) return null;
 	const native = readNativeParentFinalReport(root, initiativeSlug);
 	const proof = await observeParentCompletion(root, initiativeSlug, parent.tasks.map(task => task.task_id));
 	const planDigest = `sha256:${createHash("sha256").update(JSON.stringify(intents.map(({ task, intent }) =>

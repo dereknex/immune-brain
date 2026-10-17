@@ -254,7 +254,7 @@ function createBatchFixture(slug = "demo-init"): {
 	};
 	writeFileSync(join(root, "docs", "plans", `${slug}-c2.intent.json`), `${JSON.stringify(intent2, null, 2)}\n`);
 
-	// Child 3: critical (must be excluded from batch)
+	// Child 3: critical (enrolled like any other child, Spec D5)
 	const intent3 = {
 		contract: "assurance_kernel/task_intent/v1",
 		task_id: `${slug}-c3`,
@@ -283,6 +283,11 @@ function createBatchFixture(slug = "demo-init"): {
 	};
 
 	return { root, head: updatedHead, observation };
+}
+
+// The foreground integration tests drive exactly the two non-critical children.
+function withoutCritical(observation: GithubInitiativeObservation): GithubInitiativeObservation {
+	return { ...observation, tasks: observation.tasks.filter((t) => !t.task_id.endsWith("-c3")) };
 }
 
 function jsonLineReader(output: PassThrough): () => Promise<Record<string, unknown>> {
@@ -544,7 +549,8 @@ describe("S2 batch preflight never commits", () => {
 				const record = JSON.parse(readFileSync(join(fixture.root, `.imm/state/batches/${result.batch_id}.json`), "utf8"));
 				expect(record.base_head).toBe(before);
 				expect(record.branch).toBe(`refs/imm/batches/${result.batch_id}`);
-				expect(record.children.map((child: any) => child.task_id)).toEqual([`${slug}-c1`, `${slug}-c2`]);
+				// The critical c3 is an ordinary batch child (run-entry decision hosting D5).
+				expect(record.children.map((child: any) => child.task_id)).toEqual([`${slug}-c1`, `${slug}-c3`, `${slug}-c2`]);
 				if (tracking === "tracked") {
 					// Resume reuses the authorization only against Git-tracked TaskIntents; an
 					// uncommitted intent is read for a fresh batch but not for reuse.
@@ -603,13 +609,13 @@ describe("batch foreground Executor integration", () => {
 		execFileSync("git", ["commit", "-qm", "material two-child fixture"], { cwd: fixture.root });
 		let confirmations = 0;
 		const client = createMcpRuntimeOnce({ ...withRunEntry(fixture.root), cwd: fixture.root, env: ENV, interactive: true,
-			readInitiative: async () => fixture.observation,
+			readInitiative: async () => withoutCritical(fixture.observation),
 			requestConfirmation: async () => ({ decision: "accept", requestId: `real-${++confirmations}` }),
 		});
 		client.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
 		const start = async (): Promise<any> => host === "claude"
 			? client.callTool("start_unattended_batch", { initiative_slug: slug })
-			: executePiBatchOnce({ root: fixture.root, initiativeSlug: slug, readInitiative: async () => fixture.observation,
+			: executePiBatchOnce({ root: fixture.root, initiativeSlug: slug, readInitiative: async () => withoutCritical(fixture.observation),
 				confirmBatch: async () => { confirmations++; return "accept"; } });
 		const { getSharedPiProgression } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
 		const { createPiAssuranceProgressionPorts } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
@@ -793,7 +799,7 @@ describe("batch foreground closeout", () => {
 			// Counts every phase entry admission the runtime asks for.
 			consumePhaseAdmission: (toolCallId, operation) => { admissions++; return entry.consumePhaseAdmission(toolCallId, operation); },
 			cwd: fixture.root, env: ENV, interactive: true,
-			readInitiative: async () => fixture.observation,
+			readInitiative: async () => withoutCritical(fixture.observation),
 			requestConfirmation: async () => ({ decision: "accept", requestId: `closeout-${++confirmations}` }),
 		});
 		client.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
@@ -857,7 +863,7 @@ describe("batch foreground closeout boundaries", () => {
 		execFileSync("git", ["commit", "-qm", "closeout fixture"], { cwd: fixture.root });
 		let confirmations = 0;
 		const client = createMcpRuntimeOnce({ ...withRunEntry(fixture.root), cwd: fixture.root, env: ENV, interactive: true,
-			readInitiative: async () => fixture.observation,
+			readInitiative: async () => withoutCritical(fixture.observation),
 			requestConfirmation: async () => ({ decision: "accept", requestId: `boundary-${++confirmations}` }),
 		});
 		client.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
@@ -1022,11 +1028,12 @@ describe("acc-claude-batch-gate", () => {
 		expect(params.message).toContain("Initiative: content-derive");
 		expect(params.message).toContain("Batch branch: imm/content-derive");
 		expect(params.message).toContain("Plan digest: sha256:");
-		expect(params.message).toContain("Ordered children (2):");
+		// A valid critical child is an ordinary batch child (run-entry decision hosting D5).
+		expect(params.message).toContain("Ordered children (3):");
 		expect(params.message).toContain("content-derive-c1");
 		expect(params.message).toContain("content-derive-c2");
-		expect(params.message).toContain("Excluded children (1):");
-		expect(params.message).toContain("content-derive-c3 (S3): critical");
+		expect(params.message).toContain("content-derive-c3 (S3) [risk: critical]");
+		expect(params.message).not.toContain("Excluded children");
 		expect(params.message).toContain("Budget: max_children=");
 		// Only the bounds that still exist are shown.
 		expect(params.message).not.toMatch(/expires|deadline/i);
@@ -1282,9 +1289,8 @@ describe("acc-claude-batch-fail-closed", () => {
 		expect(existsSync(join(fixture.root, ".imm", "state", "batch"))).toBe(false);
 	});
 
-	it("critical-only Parent returns a native task handoff without an empty batch grant", async () => {
+	it("critical-only Parent opens the ordinary batch gate instead of a native task handoff (D5)", async () => {
 		const fixture = createBatchFixture("empty-enrollable");
-		// All tasks are critical or non-enrollable
 		const observation: GithubInitiativeObservation = {
 			contract: "immune_brain/github_initiative_observation/v1",
 			initiative_id: "empty-enrollable",
@@ -1293,15 +1299,15 @@ describe("acc-claude-batch-fail-closed", () => {
 				{ task_id: "empty-enrollable-c3", slice_id: "S3", issue_number: 103, blocked_by: [] }, // c3 is critical
 			],
 		};
-		let confirmationOpened = false;
+		let confirmation = "";
 		const runtime = createMcpRuntime({
 			cwd: fixture.root,
 			env: ENV,
 			interactive: true,
 			readInitiative: async () => observation,
-			requestConfirmation: async () => {
-				confirmationOpened = true;
-				return { decision: "accept", requestId: "req-empty" };
+			requestConfirmation: async (input) => {
+				confirmation = elicitationParams(input as never).message;
+				return { decision: "decline", requestId: "req-empty" };
 			},
 		});
 		runtime.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
@@ -1312,9 +1318,8 @@ describe("acc-claude-batch-fail-closed", () => {
 			{ toolCallId: "toolu-empty" },
 		);
 
-		expect(confirmationOpened).toBe(false);
-		expect(result).toMatchObject({ state: "native_parent", action: "enroll", task_id: "empty-enrollable-c3", batch_id: null });
-		expect(result.next_action).toContain("native single-task Enrollment");
+		expect(confirmation).toContain("empty-enrollable-c3 (S3) [risk: critical]");
+		expect(result).toMatchObject({ state: "rejected" });
 		expect(existsSync(join(fixture.root, ".imm", "state", "batch"))).toBe(false);
 	});
 
@@ -1681,7 +1686,7 @@ describe("acc-claude-batch-fail-closed", () => {
 		expect(result.state).toBe("started");
 		expect(result.report).toBeDefined();
 		expect(result.report.batch_state).toBe("completed");
-		expect(result.report.commits.length).toBe(2);
+		expect(result.report.commits.length).toBe(3);
 		expect(result.report.children.every((c: { state: string }) => c.state === "committed")).toBe(true);
 	});
 
@@ -1930,11 +1935,14 @@ describe("lane mode parameters (parallel-batch-lanes)", () => {
 		const laneGates = { count: 0, details: [] as Array<Record<string, unknown>> };
 		try {
 			await laneRuntime(serial, serialGates).callTool("start_unattended_batch", { initiative_slug: "lane-confirm-serial" });
-			await laneRuntime(lane, laneGates).callTool("start_unattended_batch", { initiative_slug: "lane-confirm-lane", max_parallel: 1 });
+			await laneRuntime(serial, serialGates).callTool("start_unattended_batch", { initiative_slug: "lane-confirm-serial", max_parallel: 1 });
+			await laneRuntime(lane, laneGates).callTool("start_unattended_batch", { initiative_slug: "lane-confirm-lane", max_parallel: 2 });
+			// max_parallel 1 is the serial runner (run-entry decision hosting D7).
 			expect(serialGates.details[0]).not.toHaveProperty("lane_mode");
+			expect(serialGates.details[1]).not.toHaveProperty("lane_mode");
 			// laneRuntime runs under a live entry token; the Lane revision
 			// delegation choice is still collected by the gate (ADR 0025).
-			expect(laneGates.details[0]?.lane_mode).toMatchObject({ max_parallel: 1, offer_revision_delegation: true });
+			expect(laneGates.details[0]?.lane_mode).toMatchObject({ max_parallel: 2, offer_revision_delegation: true });
 			expect(Array.isArray((laneGates.details[0]?.lane_mode as { parallel_groups: unknown }).parallel_groups)).toBe(true);
 		} finally {
 			rmSync(serial.root, { recursive: true, force: true });
@@ -1942,8 +1950,8 @@ describe("lane mode parameters (parallel-batch-lanes)", () => {
 		}
 	});
 
-	for (const maxParallel of [1, 2]) it(`gives Claude Code and Pi the same lane-mode report for the same fixture at max_parallel ${maxParallel}`, async () => {
-		const slug = maxParallel === 1 ? "lane-parity-one" : "lane-parity-many";
+	for (const maxParallel of [2, 3]) it(`gives Claude Code and Pi the same lane-mode report for the same fixture at max_parallel ${maxParallel}`, async () => {
+		const slug = maxParallel === 2 ? "lane-parity-two" : "lane-parity-many";
 		const claudeFixture = createBatchFixture(slug);
 		const piFixture = createBatchFixture(slug);
 		try {
@@ -2048,7 +2056,7 @@ describe("lane resume without max_parallel (lane-followups)", () => {
 		try {
 			const client = claudeClient(fixture, gates);
 			await client.callTool("start_unattended_batch", { initiative_slug: slug, max_parallel: 2 });
-			const result: any = await client.callTool("start_unattended_batch", { initiative_slug: slug, max_parallel: 1, lane_offers: [] });
+			const result: any = await client.callTool("start_unattended_batch", { initiative_slug: slug, max_parallel: 3, lane_offers: [] });
 			expect(JSON.stringify(result)).toContain("batch_parallel_mismatch");
 		} finally {
 			rmSync(fixture.root, { recursive: true, force: true });

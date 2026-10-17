@@ -304,7 +304,7 @@ describe("unattended batch plan projection", () => {
 			expect(snapshotFiles(root)).toEqual(before);
 			expect(Object.fromEntries(first.children.map((child) => [child.task_id, child.status]))).toEqual({
 				base: "enrollable",
-				critical: "needs_human",
+				critical: "enrollable",
 				invalid: "needs_human",
 				malformed: "needs_human",
 				missing: "needs_human",
@@ -317,22 +317,26 @@ describe("unattended batch plan projection", () => {
 				unbound: "enrollable",
 			});
 			expect(first.children.find((child) => child.task_id === "final")?.blocked_by).toEqual(["base", "critical", "settled"]);
-			expect(first.enrollable.map((child) => child.task_id)).toEqual(["base", "unbound", "dependent", "final"]);
-			expect(first.enrollable.find(child => child.task_id === "final")!.blocked_by).toEqual(["base"]);
+			expect(first.enrollable.map((child) => child.task_id)).toEqual(["base", "critical", "unbound", "dependent", "final"]);
+			expect(first.enrollable.find(child => child.task_id === "final")!.blocked_by).toEqual(["base", "critical"]);
 			expect(first.children.find(child => child.task_id === "dependent")!.blocked_by).toEqual(["critical"]);
+			// The critical dependency is an ordinary batch edge now, not an external prerequisite.
+			expect(first.enrollable.find(child => child.task_id === "dependent")!.blocked_by).toEqual(["critical"]);
 			const expectedDigest = `sha256:${createHash("sha256").update(stableStringify(first.enrollable)).digest("hex")}`;
 			expect(first.plan_digest).toBe(expectedDigest);
 			expect(first.budget).toEqual({
-				max_children: 4,
+				max_children: 5,
 				qa_failure_limit: 2,
 			});
-			// Every fixture child shares `tests/**`, so none can start together: the
-			// projection serializes them and names who each one waits behind.
-			expect(first.parallel_groups).toEqual([["base"], ["unbound"], ["dependent"], ["final"]]);
+			// Every fixture child shares `tests/**`, so none can start together: each
+			// waits for every earlier Slice it does not already declare, so the
+			// S10 child runs last although it has no declared dependency.
+			expect(first.parallel_groups).toEqual([["base"], ["critical"], ["dependent"], ["final"], ["unbound"]]);
 			expect(first.scope_conflicts).toEqual([
-				{ task_id: "unbound", overlaps_with: ["base"] },
-				{ task_id: "dependent", overlaps_with: ["base", "unbound"] },
-				{ task_id: "final", overlaps_with: ["dependent", "unbound"] },
+				{ task_id: "critical", overlaps_with: ["base"] },
+				{ task_id: "unbound", overlaps_with: ["base", "critical", "dependent", "final"] },
+				{ task_id: "dependent", overlaps_with: ["base"] },
+				{ task_id: "final", overlaps_with: ["dependent"] },
 			]);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
@@ -392,9 +396,11 @@ describe("unattended batch plan projection", () => {
 			symlinkSync(join(root, "docs/plans/final.intent.json"), basePath);
 			await expect(projectBatchPlan(root, "batch", { confirmation_time: CONFIRMATION_TIME }, async () => twoTasks)).rejects.toThrow("symlink");
 
-			await expect(projectBatchPlan(root, "batch", { confirmation_time: CONFIRMATION_TIME }, async () => observation([
+			// A critical child is an ordinary enrollable child (D5).
+			const criticalOnly = await projectBatchPlan(root, "batch", { confirmation_time: CONFIRMATION_TIME }, async () => observation([
 				{ task_id: "critical", slice_id: "S1", issue_number: 1, blocked_by: [] },
-			]))).rejects.toThrow("no enrollable children");
+			]));
+			expect(criticalOnly.enrollable.map((child) => child.task_id)).toEqual(["critical"]);
 			await expect(projectBatchPlan(root, "batch", { confirmation_time: CONFIRMATION_TIME }, async () => observation([
 				{ task_id: "settled", slice_id: "S1", issue_number: 1, blocked_by: [] },
 			]))).rejects.toThrow("no enrollable children");

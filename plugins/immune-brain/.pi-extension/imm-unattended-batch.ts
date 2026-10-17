@@ -200,7 +200,7 @@ async function executePreparedPiBatch(
 	if (native) return native;
 	// A lane_offers-only call resumes the recorded lane batch; refused before any gate otherwise.
 	const resolvedParallel = resolveLaneParallel(root, initiativeSlug, options.max_parallel, options.lane_offers, options.lane_instruction ?? options.lane_revision);
-	if (resolvedParallel !== undefined) options = { ...options, max_parallel: resolvedParallel };
+	options = { ...options, max_parallel: resolvedParallel };
 
 	// 1. Host-independent batch preflight: claim ownership, branch availability,
 	// working-tree cleanliness against the authorized scope, recovery children,

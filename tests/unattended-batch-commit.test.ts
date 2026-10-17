@@ -276,7 +276,7 @@ describe("native Parent completion without ordinary grants", () => {
 			}
 		} finally { rmSync(repo.root, { recursive: true, force: true }); }
 	});
-	it("routes a critical-only Parent directly to one native task gate", async () => {
+	it("leaves a critical-only Parent to the batch path instead of a native task gate (D5)", async () => {
 		const repo = initGitRepo();
 		try {
 			writeTaskIntent(repo.root, "critical", "Goal for critical", ["src/critical.ts"]);
@@ -288,7 +288,8 @@ describe("native Parent completion without ordinary grants", () => {
 			] });
 			const before = git(repo.root, ["rev-parse", "HEAD"]);
 			const result = await advanceNativeParent(repo.root, "native-parent", ["bun --version"], reader);
-			expect(result).toMatchObject({ state: "native_parent", batch_id: null, action: "enroll", task_id: "critical" });
+			expect(result).toBeNull();
+			expect(await observeNativeParent(repo.root, "native-parent", reader)).toBeNull();
 			expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(before);
 			expect(readBatchRunState(repo.root, "native-parent")).toBeNull();
 		} finally { rmSync(repo.root, { recursive: true, force: true }); }
@@ -363,12 +364,16 @@ describe("native Parent completion without ordinary grants", () => {
 				const beforeHistory = historyBytes();
 				const result = await advanceNativeParent(repo.root, "native-parent", commands, reader, undefined, gate);
 				// Only new final commands need the native gate; settled delivery itself opens none (D2).
-				if (commands?.length && !remainingCritical) expect(result).toMatchObject({ state: expect.stringMatching(/^(rejected|cancelled)$/) });
-				else expect(result).toMatchObject({ state: "native_parent", action: remainingCritical ? "enroll" : "verify" });
+				// An unsettled critical Task keeps the Parent on the batch path (D5).
+				if (remainingCritical) expect(result).toBeNull();
+				else if (commands?.length) expect(result).toMatchObject({ state: expect.stringMatching(/^(rejected|cancelled)$/) });
+				else expect(result).toMatchObject({ state: "native_parent", action: "verify" });
 				expect(historyBytes()).toEqual(beforeHistory);
 				expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(baseline);
 				expect(existsSync(join(repo.root, "ran.txt"))).toBe(false);
-				expect((await observeNativeParent(repo.root, "native-parent", reader))?.native).toBeNull();
+				const observed = await observeNativeParent(repo.root, "native-parent", reader);
+				if (remainingCritical) expect(observed).toBeNull();
+				else expect(observed?.native).toBeNull();
 			} finally { rmSync(repo.root, { recursive: true, force: true }); }
 		}
 	});

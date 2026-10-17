@@ -518,9 +518,9 @@ describe("unattended batch contract text", () => {
 		}
 		expect(optIn).toContain("`critical`");
 
-		// Shipped restriction: a `critical` child is never enrollable. Asserted by
-		// running the projection, not by matching one branch's spelling — the
-		// classification gained a Spec-binding exclusion ahead of it.
+		// A valid `critical` child is enrollable like any other (run-entry decision
+		// hosting D5). Asserted by running the projection, not by matching one
+		// branch's spelling — the classification has a Spec-binding exclusion too.
 		const criticalRoot = mkdtempSync(join(tmpdir(), "imm-critical-child-"));
 		try {
 			mkdirSync(join(criticalRoot, "docs/plans"), { recursive: true });
@@ -559,10 +559,10 @@ describe("unattended batch contract text", () => {
 				}),
 			);
 			expect(plan.children.map((child) => [child.task_id, child.status, child.reason])).toEqual([
-				["critical-child", "needs_human", "critical"],
+				["critical-child", "enrollable", null],
 				["healthy-child", "enrollable", null],
 			]);
-			expect(plan.enrollable.map((child) => child.task_id)).toEqual(["healthy-child"]);
+			expect(plan.enrollable.map((child) => child.task_id)).toEqual(["critical-child", "healthy-child"]);
 		} finally {
 			rmSync(criticalRoot, { recursive: true, force: true });
 		}

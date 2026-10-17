@@ -24,6 +24,7 @@ import {
 	laneBranchName,
 	parseLaneOffers,
 	parseMaxParallel,
+	resolveLaneParallel,
 	runLaneBatch,
 	laneRejectionReport,
 	type LaneFacts,
@@ -716,6 +717,24 @@ describe("max_parallel 1 end to end through a real second worktree", () => {
 			const resumed = lanes(await startBatch(withoutParallel));
 			expect(resumed.max_parallel).toBe(1);
 			expect(resumed.batch_state).toBe("running");
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("treats a host max_parallel of 1 as absent: a serial batch with no Lane record (D7)", async () => {
+		const fx = fixture();
+		try {
+			const kernel = laneKernel();
+			const resolved = resolveLaneParallel(fx.repo, SLUG, parseMaxParallel(1), undefined);
+			expect(resolved).toBeUndefined();
+			expect(resolveLaneParallel(fx.repo, SLUG, parseMaxParallel(2), undefined)).toBe(2);
+			const { max_parallel: _omitted, ...serial } = request(fx, [child("task-a", "S1")], kernel);
+			const report = await startBatch({ ...serial, ...(resolved !== undefined ? { max_parallel: resolved } : {}) });
+			expect(report).not.toHaveProperty("max_parallel");
+			expect(readAnyBatchRunState(fx.repo, BATCH_ID)?.contract).toBe("assurance_kernel/batch_run_state/v1");
+			// Lane offers with nothing recorded to resume are still refused, not turned serial.
+			expect(() => resolveLaneParallel(fx.repo, "other-initiative", parseMaxParallel(1), [])).toThrow(/requires max_parallel/);
 		} finally {
 			fx.cleanup();
 		}

@@ -28,7 +28,7 @@ function repository() {
  return root;
 }
 
-function parentFixture(nativeRoot: boolean, nativeOnly = false) {
+function parentFixture(nativeRoot: boolean) {
  const root = repository();
  mkdirSync(join(root, "docs/plans"), { recursive: true }); mkdirSync(join(root, "docs/initiatives"), { recursive: true });
  writeFileSync(join(root, ".gitignore"), ".imm/\nimmune-brain-claude/\n");
@@ -40,7 +40,7 @@ function parentFixture(nativeRoot: boolean, nativeOnly = false) {
  const owner = make("root-task", nativeRoot ? "critical" : "material", "base.txt");
  const other = make("other-task", nativeRoot ? "material" : "critical", "other.txt");
  for (const intent of [owner, other]) writeFileSync(join(root, `docs/plans/${intent.task_id}.intent.json`), JSON.stringify(intent, null, 2) + "\n");
- writeFileSync(join(root, "docs/initiatives/parent.md"), nativeOnly ? "# Parent\n## S1: root\nTasks:\n- root-task\n" : "# Parent\n## S1: root\nTasks:\n- root-task\n## S2: other\nTasks:\n- other-task\n");
+ writeFileSync(join(root, "docs/initiatives/parent.md"), "# Parent\n## S1: root\nTasks:\n- root-task\n## S2: other\nTasks:\n- other-task\n");
  execFileSync("git", ["add", "."], { cwd: root });
  execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "plan"], { cwd: root });
  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
@@ -59,28 +59,33 @@ function parentFixture(nativeRoot: boolean, nativeOnly = false) {
    risk: child.risk, intent_path: `docs/plans/${child.task_id}.intent.json`, intent_revision: 1,
    intent_content_hash: canonicalIntentHash(child), scope_hint: child.scope_hint, reason: null, exclusion: null }],
  };
- if (!nativeOnly) {
-  if (nativeRoot) { const state = prepareBatchLaneRunState({ ...args, max_parallel: 4 }); state.batch_state = "running"; writeBatchLaneRunState(root, state); }
-  else { const state = prepareBatchRunState(args); state.batch_state = "running"; state.children[0]!.state = "enrolled"; writeBatchRunState(root, state); }
- }
+ if (nativeRoot) { const state = prepareBatchLaneRunState({ ...args, max_parallel: 4 }); state.batch_state = "running"; writeBatchLaneRunState(root, state); }
+ else { const state = prepareBatchRunState(args); state.batch_state = "running"; state.children[0]!.state = "enrolled"; writeBatchRunState(root, state); }
  return { root, binding: { kind: "parent" as const, workspace: root, session_id: "parent-session", initiative_slug: "parent",
   batch_id: args.batch_id, plan_digest: args.plan_digest } };
 }
 
 describe("native task transitions inside a Parent", () => {
  it.each([false, true])("Parent progress ignores timing/revision noise (native=%s)", async native => {
-  const h = parentFixture(native, native);
+  // A native Parent is one whose remaining work is already delivered (run-entry
+  // decision hosting D5): a critical Task alone no longer routes there.
+  const delivered = native ? settledDeliveryFixture() : null;
+  if (delivered) { delivered.settle("s5"); delivered.settle("s6"); delivered.git("add", "src"); delivered.git("commit", "-qm", "delivered"); }
+  const h = delivered
+   ? { root: delivered.root, binding: { kind: "parent" as const, workspace: delivered.root, session_id: "parent-session",
+    initiative_slug: "parent", batch_id: null as string | null, plan_digest: "" } }
+   : parentFixture(false);
   try {
    let binding: Parameters<typeof observeParentRun>[0] = h.binding;
-   if (native) {
-    const facts = await observeNativeParent(h.root, "parent");
+   if (delivered) {
+    const facts = await observeNativeParent(h.root, "parent", delivered.reader);
     if (!facts) throw new Error("native Parent fixture missing");
     binding = { ...h.binding, batch_id: null, plan_digest: facts.plan_digest };
    }
    const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: h.root, encoding: "utf8" }).trim();
    const final = (duration_ms: number) => ({ passed: false, head, results: [{ command: "bun --version", exit_code: 1, signal: null, passed: false, duration_ms }] });
    const write = (duration: number) => {
-    if (native) writeNativeParentFinalReport(h.root, { contract: "assurance_kernel/parent_final_report/v1", initiative_slug: "parent", task_ids: ["root-task"], final_verification: final(duration) });
+    if (native) writeNativeParentFinalReport(h.root, { contract: "assurance_kernel/parent_final_report/v1", initiative_slug: "parent", task_ids: ["s5", "s6"], final_verification: final(duration) });
     else { const record = readBatchRunState(h.root, h.binding.batch_id)!; record.children[0]!.reason = `unchanged outcome observed in ${duration}ms`; writeBatchRunState(h.root, record); }
    };
    write(10); const first = await observeParentRun(binding, "one");
@@ -239,10 +244,9 @@ describe("settled is delivered", () => {
    const commits = commitCount(f); const head = f.git("rev-parse", "HEAD");
    expect(await observeParentCompletion(f.root, "parent", ["s5"])).toMatchObject({ integrated_task_ids: ["s5"], missing_task_ids: [] });
    await expect(assertIsolatedTaskPrerequisites(f.root, "s6")).resolves.toBeUndefined();
-   const facts = await observeNativeParent(f.root, "parent", f.reader);
-   expect(facts).toMatchObject({ action: "enroll", task_id: "s6" });
-   expect(facts!.next_action).toContain("Enrollment for s6");
-   await advanceNativeParent(f.root, "parent", undefined, f.reader, undefined, noGate);
+   // The unsettled critical s6 is batch work now, not a native Parent step (D5).
+   expect(await observeNativeParent(f.root, "parent", f.reader)).toBeNull();
+   expect(await advanceNativeParent(f.root, "parent", undefined, f.reader, undefined, noGate)).toBeNull();
    expect(commitCount(f)).toBe(commits); expect(f.git("rev-parse", "HEAD")).toBe(head);
   } finally { rmSync(f.root, { recursive: true, force: true }); }
  });

@@ -33,14 +33,13 @@ confirmation.
 
 Invoking it authorizes only a user-confirmed batch of already-planned child
 TaskIntents. The Host projects the batch plan from the Initiative's published
-children, lists every `critical` child as a native-confirmation exception, renders
-the ordinary ordered child list, final commands, budget and plan digest through
-its native confirmation, and issues one Kernel Batch Authorization for ordinary
-Slices. Normal successors of a critical Slice retain ordinary authorization;
-the complete Parent dependency graph still prevents their execution until the
-critical delivery is settled. Critical Slices consume no batch slot: when ready,
-invoke single-task native Enrollment, drive their Loop, then re-enter the Parent
-tool to resume ordinary work. A Slice settled `done` with an unchanged TaskIntent
+children, renders the ordered child list with each child's risk, final commands,
+budget and plan digest through its native confirmation, and issues one Kernel
+Batch Authorization for every enrollable Slice. A valid `critical` child is
+enrolled like any other: it keeps its own TaskRecord, full Assurance, a per-child
+bounded commit, and the runner never pushes. Children whose scopes overlap run in
+Slice order: a later overlapping child starts only after the earlier one is done,
+and when the earlier one parks, the later one is skipped with it. A Slice settled `done` with an unchanged TaskIntent
 is delivered wherever its bytes live (any commit, the index or the working
 tree); the runtime makes no commit for it and the user may commit however they
 prefer. Independent branches keep progressing while one branch is blocked. The extension mints no capability and owns no
@@ -81,7 +80,7 @@ repair run and rerun final verification once it settles. Parent
 Issue closure waits for this whole-plan proof; a tracker failure reports the local
 proof and one synchronization recovery action.
 
-A critical-only or delivered-only Parent starts no batch and makes no commit, but
+A delivered-only Parent starts no batch and makes no commit, but
 its first run of caller-supplied final commands executes outside Host permission.
 Before any command runs, the current Host opens its native confirmation listing
 those exact commands; a decline, cancellation or missing gate leaves no command
@@ -117,7 +116,8 @@ native Parent writes no Git effect.
 
 Lane mode uses the optional `max_parallel` parameter of `start_unattended_batch`,
 selected by the Parent before native confirmation; without Lane supervision the
-confirmed run stays Managed serial on this Host. `max_parallel` is a positive integer; the
+confirmed run stays Managed serial on this Host. A `max_parallel` of 1 is the same
+as omitting it: the batch runs serially, not in Lane mode. `max_parallel` is a positive integer; the
 Standalone Hosts expose the same optional `lane_offers` list, each entry naming a
 `task_id` and an absolute `path` of an already existing Git worktree. The runner
 admits an offered Lane only when it shares the coordinator repository, is not the
@@ -179,7 +179,7 @@ backed up first under `.imm/state/batches/restores/`, and the backup is recorded
 in the batch record and report as `restores`. If any change has another origin,
 or is staged or deleted, no file is touched and the refusal names it; never
 stage such changes to get past the refusal. A resume with a different
-`max_parallel` is refused with `batch_parallel_mismatch`. A Lane holds no batch
+`max_parallel` above 1 is refused with `batch_parallel_mismatch`. A Lane holds no batch
 state and its Host session never re-enters the batch.
 
 #### Lane Preferences

@@ -1,0 +1,191 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "batch-critical-ordering",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "batch-critical-ordering",
+    "goal": "Unattended batches enroll valid critical children like any other child, order overlapping children by Slice position so a later overlapping child starts only after the earlier one is done, and treat max_parallel of 1 or less as the serial runner (Spec D5, D7, D8).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "A batch plan classifies a valid critical child as enrollable, a child blocked only by a critical child is no longer blocked, and a Parent whose remaining work is already delivered still settles through native_parent while a critical-only Parent no longer does.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-plan.test.ts\",\n      \"tests/unattended-batch-integration.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "With children A then B whose scopes overlap and no declared dependency, B is not startable while A is pending, in flight, parked or failed, and becomes startable once A is done; disjoint children are unaffected.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-schedule.test.ts\",\n      \"tests/unattended-batch-run.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "max_parallel 1 starts a serial batch with no Lane record; max_parallel 0, a negative or a non-integer value is still rejected; max_parallel 2 still starts a Lane batch.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/run-entry-decision-hosting-batch-ordering.md",
+      "docs/agents/issue-tracker.md",
+      "docs/plans/batch-critical-ordering.intent.json",
+      "docs/specs/run-entry-decision-hosting.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run-batch.md",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_schedule.ts",
+      "plugins/immune-brain/runtime/unattended/types.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/goal-driven-batch-run.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/unattended-batch-commit.test.ts",
+      "tests/unattended-batch-integration.test.ts",
+      "tests/unattended-batch-lanes.test.ts",
+      "tests/unattended-batch-plan.test.ts",
+      "tests/unattended-batch-run.test.ts",
+      "tests/unattended-batch-schedule.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/batch-critical-ordering.intent.json",
+    "content_hash": "sha256:a0d834a76c0f72469a81aaf27951563d07beb0abda16a3eba912051da0124722"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:00af2df79bb034efeae55fdb1e0db6ddaa167dbd1af081c7ac0f26ff69a7d0ea",
+  "git_base_head": "235058d983dd9547457740b54a98f44d1388f6cc",
+  "attestations": [
+    {
+      "id": "approval-qa-a031c337",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:a0d834a76c0f72469a81aaf27951563d07beb0abda16a3eba912051da0124722",
+      "diff_hash": "sha256:4024c85d4c268d0dc09f24cf8008eee37e733c01fee3a8c272835bb4fde25291",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:43f26428e1c050149bdae076076597c3e07ccb4ca762530c8bda0c2efb74c2e0",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:43f26428e1c050149bdae076076597c3e07ccb4ca762530c8bda0c2efb74c2e0"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:43f26428e1c050149bdae076076597c3e07ccb4ca762530c8bda0c2efb74c2e0"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:43f26428e1c050149bdae076076597c3e07ccb4ca762530c8bda0c2efb74c2e0"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-725a0811",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:a0d834a76c0f72469a81aaf27951563d07beb0abda16a3eba912051da0124722",
+      "diff_hash": "sha256:4024c85d4c268d0dc09f24cf8008eee37e733c01fee3a8c272835bb4fde25291",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance checks out: commit 20041660 has the single parent 235058d and tree e4c2ccf. Critical children now enroll as normal children and native_parent only takes delivered-only Parents (AC1). Overlapping children wait in Slice order, and children behind a parked child are skipped in both the serial and Lane runners (AC2). max_parallel 1 now runs the serial runner and is still validated first by parseMaxParallel (AC3). The source changes and the bundled dist output match, and tests cover each acceptance.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "235058d983dd9547457740b54a98f44d1388f6cc",
+        "review_commit": "20041660df0ca0c26eaa4c9d2b534ad51fafb3c5",
+        "review_tree": "e4c2ccf67c5eee586a7edc00d673980c48f1090f",
+        "manifest_digest": "sha256:95cd0605cc0114c07b72fb17c475296862688d85cf4920fc18b468e158a6f65f"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-cefb46841b17-1-review-1",
+          "acceptance_id": "AC3",
+          "summary": "resolveLaneParallel now treats max_parallel 1 as absent before it checks for a resume. A call with max_parallel 1 plus lane_offers therefore resumes a recorded Lane batch at that batch's own max_parallel instead of being refused with batch_parallel_mismatch. This is documented, but no test pins it.",
+          "anchor": "sha256:39eb354a67edcb2591d882f957cad58adbe7217247b6804d7b892626b2baab65",
+          "evidence": {
+            "trigger": "An active Lane batch is recorded with max_parallel 2, and start_unattended_batch is called with max_parallel 1 and lane_offers → it resumes at max_parallel 2 instead of reporting batch_parallel_mismatch.",
+            "caller_chain": [
+              "plugins/immune-brain/dist/claude/mcp-server.mjs#start_unattended_batch",
+              "plugins/immune-brain/runtime/unattended/batch_lanes.ts#resolveLaneParallel"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC3"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:f488e21491e0ce9ae6427de59edcbad66bae3ca9d0ac3b604a42968ad86cd36a"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:batch-critical-ordering:2026-10-17T16:15:49.095Z",
+      "at": "2026-10-17T16:15:49.095Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:07d4f5494332a73308538ad41a766eb81e940fdbdc5b2a55c7821a1e6cd4c75d",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-0e69d8418959450a",
+        "issued_at": "2026-10-17T16:15:51.719Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:batch-critical-ordering:2026-10-17T16:38:54.821Z",
+      "at": "2026-10-17T16:38:54.821Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-critical-ordering.intent.json"
+    },
+    {
+      "id": "record_approval:batch-critical-ordering:2026-10-17T16:39:53.717Z",
+      "at": "2026-10-17T16:39:53.717Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-a031c337\naction_v2_sha256:56255ac46b486886de4b675ff8f19286875c73f8015ae7befedf84e36ed1a438",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-17T16:39:53.718Z"
+      }
+    },
+    {
+      "id": "record_approval:batch-critical-ordering:2026-10-17T16:41:36.065Z",
+      "at": "2026-10-17T16:41:36.065Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-725a0811\naction_v2_sha256:b301a5ec6b76371783b058bc5b425f55c6f8067762160f852d52b54e92f34d91",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-17T16:41:36.066Z"
+      }
+    },
+    {
+      "id": "complete:batch-critical-ordering:2026-10-17T16:41:38.060Z",
+      "at": "2026-10-17T16:41:38.060Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:05b610058dfa6f9511986d601006f5d451156fe4cc7b47e663560b6fc411b80f"
+    }
+  ]
+}

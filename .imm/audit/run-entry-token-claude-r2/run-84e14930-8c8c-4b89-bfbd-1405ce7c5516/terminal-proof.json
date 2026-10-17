@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "run-entry-token-claude-r2",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:run-entry-token-claude-r2:2026-10-17T12:51:25.353Z",
+  "final_record_hash": "sha256:a28f40a8faaf95ef9abb329533af0322fe0f83a4cc7b7826e36e52ccde54e44a",
+  "terminalized_at": "2026-10-17T12:51:25.353Z"
+}

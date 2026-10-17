@@ -185,17 +185,6 @@ export async function projectBatchPlan(
 			const read = preparing
 				? observeEnrollmentTaskIntent(root, task.task_id)
 				: observeTaskIntent(root, task.task_id, intentPath);
-			if (read.intent.risk === "critical") {
-				children.push({
-					...child,
-					status: "needs_human",
-					reason: "critical",
-					intent_path: read.intent_ref.path,
-					intent_revision: read.intent_ref.revision,
-					intent_content_hash: read.content_hash,
-				});
-				continue;
-			}
 			const binding = inspectSpecBinding(read.intent);
 			if (!binding.ok) {
 				children.push({
@@ -228,7 +217,7 @@ export async function projectBatchPlan(
 		if (child.status !== "enrollable") continue;
 		if (directDependencies.get(child.task_id)!.some((id) => {
 			const status = childById.get(id)!.status;
-			return status === "already_owned" || (status === "needs_human" && childById.get(id)!.reason !== "critical") || status === "blocked";
+			return status === "already_owned" || status === "needs_human" || status === "blocked";
 		})) {
 			child.status = "blocked";
 			child.reason = "dependency_unavailable";
@@ -258,6 +247,7 @@ export async function projectBatchPlan(
 		...projectParallelGroups(
 			enrollable.map((child) => ({
 				task_id: child.task_id,
+				slice_id: childById.get(child.task_id)!.slice_id,
 				blocked_by: child.blocked_by,
 				scope_hint: scopeHints.get(child.task_id)!,
 			})),

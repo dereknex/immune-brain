@@ -35,7 +35,7 @@ import {
 import { isBatchRef } from "./batch_ref";
 import { classifyBatchLineage, expectedBatchHead, findExistingActiveBatch, porcelainEntries, readActiveClaimTaskId, unsettledChildScopes } from "./batch_preflight";
 import { restoreProvableLaneLeaks } from "./batch_leak_restore";
-import { startableChildren } from "./batch_schedule";
+import { blockedByParked, startableChildren } from "./batch_schedule";
 import {
 	type AnyBatchRunStateRecord,
 	type BatchLaneChildRun,
@@ -73,11 +73,12 @@ const TASK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const MAX_LANE_OFFERS = 64;
 const MAX_PATH_LENGTH = 4096;
 
-/** A positive safe integer, or undefined when the parameter is absent. */
 /**
  * `lane_offers` without `max_parallel` is a resume of a recorded lane batch: the
  * recorded `max_parallel` applies. Without a recorded active lane batch there is
- * nothing to resume, so the call is refused before any gate opens.
+ * nothing to resume, so the call is refused before any gate opens. A
+ * `max_parallel` of 1 or less is treated as absent (run-entry decision hosting
+ * D7): one Lane at a time is the serial runner, not Lane mode.
  */
 export function resolveLaneParallel(
 	root: string,
@@ -86,6 +87,7 @@ export function resolveLaneParallel(
 	laneOffers: unknown,
 	laneInstruction?: unknown,
 ): number | undefined {
+	if (maxParallel !== undefined && maxParallel <= 1) maxParallel = undefined;
 	if (maxParallel !== undefined || (laneOffers === undefined && laneInstruction === undefined)) return maxParallel;
 	const lookup = findExistingActiveBatch(root, initiativeSlug);
 	if (lookup === null || lookup.corrupt || !isLaneBatchRecord(lookup.record))
@@ -93,6 +95,7 @@ export function resolveLaneParallel(
 	return lookup.record.max_parallel;
 }
 
+/** A positive safe integer, or undefined when the parameter is absent. */
 export function parseMaxParallel(value: unknown): number | undefined {
 	if (value === undefined || value === null) return undefined;
 	if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0)
@@ -465,7 +468,7 @@ function consumedSlots(record: BatchLaneRunStateRecord): number {
  * the coordinator. A child whose scope cannot be read is treated as overlapping
  * everything, so an unreadable intent serializes instead of running in parallel.
  */
-function scopeOfChild(root: string, child: { task_id: string; intent_path: string | null }): string[] {
+export function scopeOfChild(root: string, child: { task_id: string; intent_path: string | null }): string[] {
 	try {
 		return [...readTaskIntent(root, child.task_id, child.intent_path ?? undefined).intent.scope_hint];
 	} catch {
@@ -476,6 +479,7 @@ function scopeOfChild(root: string, child: { task_id: string; intent_path: strin
 function scheduleView(input: StartBatchInput, record: BatchLaneRunStateRecord) {
 	return record.children.map((child) => ({
 		task_id: child.task_id,
+		slice_id: child.slice_id,
 		state: child.state,
 		blocked_by: child.blocked_by,
 		scope_hint: scopeOfChild(input.root, input.children.find((c) => c.task_id === child.task_id) ?? { task_id: child.task_id, intent_path: null }),
@@ -1299,6 +1303,9 @@ export async function runLaneBatch(
 		});
 	}
 	handoffs.push(...releaseHandoffs(input, record, lanes));
+	const blocked = blockedByParked(scheduleView(input, record));
+	record.children = record.children.map((child) => blocked.has(child.task_id)
+		? { ...child, state: "skipped_blocked", reason: `dependency ${blocked.get(child.task_id)} parked` } : child);
 	const inFlight = record.children.filter((c) => IN_FLIGHT.has(c.state));
 	const startable = startableChildren(scheduleView(input, record), limit);
 	const overBudget = consumedSlots(record) >= record.budget.max_children;

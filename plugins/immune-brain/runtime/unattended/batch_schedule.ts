@@ -33,6 +33,8 @@ const DONE_STATES: ReadonlySet<ScheduleChildState> = new Set(["committed", "inte
 
 export interface ScheduleChild {
 	task_id: string;
+	/** Slice position for implicit scope ordering; absent, list order stands in. */
+	slice_id?: string;
 	state: ScheduleChildState;
 	blocked_by: string[];
 	scope_hint: string[];
@@ -123,6 +125,67 @@ export function projectScopeOverlap(children: readonly PlanScheduleChild[]): Sco
 	return { contract: "assurance_kernel/intent_scope_overlap/v1", overlaps, ...projectParallelGroups(children) };
 }
 
+const SLICE_ORDER = new Intl.Collator("en", { numeric: true });
+
+/**
+ * Implicit dependencies from overlapping scopes (run-entry decision hosting
+ * D8): when two children's scopes overlap, the later one in Slice order waits
+ * for the earlier one. A child with no `slice_id` keeps its list position. An
+ * edge that would reverse a declared dependency is left out, so the declared
+ * order always wins and no cycle forms; one a declared dependency already
+ * implies is left out too. Children are given with their declared
+ * `blocked_by` closure, as a batch plan and record carry it.
+ */
+export function implicitScopeDependencies(
+	children: ReadonlyArray<Pick<ScheduleChild, "task_id" | "slice_id" | "blocked_by" | "scope_hint">>,
+): Map<string, string[]> {
+	const ordered = children
+		.map((child, index) => ({ child, index }))
+		.sort((left, right) =>
+			left.child.slice_id !== undefined && right.child.slice_id !== undefined
+				? SLICE_ORDER.compare(left.child.slice_id, right.child.slice_id) || left.index - right.index
+				: left.index - right.index)
+		.map(({ child }) => child);
+	const implicit = new Map<string, string[]>();
+	for (let later = 0; later < ordered.length; later += 1) {
+		const child = ordered[later]!;
+		const earlier = ordered.slice(0, later).filter((other) => !other.blocked_by.includes(child.task_id)
+			&& !child.blocked_by.includes(other.task_id) && scopesOverlap(child.scope_hint, other.scope_hint));
+		implicit.set(child.task_id, earlier.map((other) => other.task_id));
+	}
+	return implicit;
+}
+
+const PARKED_STATES = new Set(["needs_human", "skipped_blocked"]);
+
+/**
+ * Pending children that can never start because a child they wait on, through
+ * declared or implicit (`implicitScopeDependencies`) edges, is parked; each
+ * maps to the parked child that blocks it. The runners skip them as they skip
+ * declared dependents, so a parked child never leaves a later overlapping
+ * child pending forever.
+ */
+export function blockedByParked(
+	children: ReadonlyArray<Pick<ScheduleChild, "task_id" | "slice_id" | "blocked_by" | "scope_hint"> & { state: string }>,
+): Map<string, string> {
+	const implicit = implicitScopeDependencies(children);
+	const blocker = new Map<string, string>();
+	for (const child of children) if (PARKED_STATES.has(child.state)) blocker.set(child.task_id, child.task_id);
+	const blocked = new Map<string, string>();
+	for (let changed = true; changed;) {
+		changed = false;
+		for (const child of children) {
+			if (child.state !== "pending" || blocker.has(child.task_id)) continue;
+			const parked = [...child.blocked_by, ...implicit.get(child.task_id)!].find((id) => blocker.has(id));
+			if (parked === undefined) continue;
+			blocker.set(child.task_id, blocker.get(parked)!);
+			blocked.set(child.task_id, blocker.get(parked)!);
+			changed = true;
+		}
+	}
+	return blocked;
+}
+
 function positiveLimit(maxParallel: number): number {
 	if (maxParallel === Number.POSITIVE_INFINITY) return maxParallel;
 	if (!Number.isSafeInteger(maxParallel) || maxParallel <= 0)
@@ -132,21 +195,23 @@ function positiveLimit(maxParallel: number): number {
 
 /**
  * The children that may start now, in record order. A pending child starts when
- * every dependency is done, its scope is disjoint from every in-flight child and
- * from every child already chosen in this call, and the in-flight count stays
- * below `maxParallel`. With `maxParallel` 1 and nothing in flight this is
- * exactly the serial runner's choice: the first pending child whose
+ * every dependency is done, every earlier child its scope overlaps is done
+ * (`implicitScopeDependencies`), its scope is disjoint from every in-flight
+ * child and from every child already chosen in this call, and the in-flight
+ * count stays below `maxParallel`. With `maxParallel` 1 and nothing in flight
+ * this is exactly the serial runner's choice: the first pending child whose
  * dependencies are done.
  */
 export function startableChildren(children: readonly ScheduleChild[], maxParallel: number): string[] {
 	const limit = positiveLimit(maxParallel);
 	const done = new Set(children.filter((child) => DONE_STATES.has(child.state)).map((child) => child.task_id));
 	const occupied = children.filter((child) => IN_FLIGHT_STATES.has(child.state));
+	const implicit = implicitScopeDependencies(children);
 	const startable: string[] = [];
 	for (const child of children) {
 		if (occupied.length >= limit) break;
 		if (child.state !== "pending") continue;
-		if (!child.blocked_by.every((id) => done.has(id))) continue;
+		if (![...child.blocked_by, ...implicit.get(child.task_id)!].every((id) => done.has(id))) continue;
 		if (occupied.some((other) => scopesOverlap(child.scope_hint, other.scope_hint))) continue;
 		startable.push(child.task_id);
 		occupied.push(child);
@@ -156,16 +221,18 @@ export function startableChildren(children: readonly ScheduleChild[], maxParalle
 
 export interface PlanScheduleChild {
 	task_id: string;
+	slice_id?: string;
 	blocked_by: string[];
 	scope_hint: string[];
 }
 
 /**
- * Project a plan's enrollable children into start waves. Each wave is the
- * largest set that is ready (every dependency in an earlier wave) and pairwise
- * scope-disjoint, chosen in plan order. A child that was ready but left out of
- * a wave because its scope overlaps a member of that wave is reported once with
- * every child it overlapped, so a confirmation can say why it serializes.
+ * Project a plan's enrollable children into start waves. Each wave is every
+ * child whose declared and implicit scope dependencies all sit in earlier
+ * waves; implicit ones already keep overlapping children apart, so a wave is
+ * pairwise scope-disjoint. Each child with an implicit dependency is reported
+ * once with the earlier children it waits for, so a confirmation can say why
+ * it serializes.
  */
 export function projectParallelGroups(children: readonly PlanScheduleChild[]): {
 	parallel_groups: BatchPlanParallelGroups;
@@ -174,21 +241,11 @@ export function projectParallelGroups(children: readonly PlanScheduleChild[]): {
 	const remaining = [...children];
 	const placed = new Set<string>();
 	const groups: BatchPlanParallelGroups = [];
-	const conflicts = new Map<string, Set<string>>();
+	const implicit = implicitScopeDependencies(children);
 	while (remaining.length) {
-		const ready = remaining.filter((child) => child.blocked_by.every((id) => placed.has(id)));
-		if (!ready.length) throw new Error("Initiative Task dependencies must form an acyclic graph");
-		const wave: PlanScheduleChild[] = [];
-		for (const child of ready) {
-			const overlapped = wave.filter((member) => scopesOverlap(child.scope_hint, member.scope_hint));
-			if (overlapped.length) {
-				const known = conflicts.get(child.task_id) ?? new Set<string>();
-				for (const member of overlapped) known.add(member.task_id);
-				conflicts.set(child.task_id, known);
-				continue;
-			}
-			wave.push(child);
-		}
+		const wave = remaining.filter((child) =>
+			[...child.blocked_by, ...implicit.get(child.task_id)!].every((id) => placed.has(id)));
+		if (!wave.length) throw new Error("Initiative Task dependencies must form an acyclic graph");
 		groups.push(wave.map((child) => child.task_id));
 		for (const child of wave) {
 			placed.add(child.task_id);
@@ -196,7 +253,7 @@ export function projectParallelGroups(children: readonly PlanScheduleChild[]): {
 		}
 	}
 	const scopeConflicts = children
-		.filter((child) => conflicts.has(child.task_id))
-		.map((child) => ({ task_id: child.task_id, overlaps_with: [...conflicts.get(child.task_id)!].sort() }));
+		.filter((child) => implicit.get(child.task_id)!.length > 0)
+		.map((child) => ({ task_id: child.task_id, overlaps_with: [...implicit.get(child.task_id)!].sort() }));
 	return { parallel_groups: groups, scope_conflicts: scopeConflicts };
 }

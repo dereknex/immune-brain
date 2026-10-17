@@ -12306,6 +12306,38 @@ function scopesOverlap(left, right) {
     return rightPrefixes.some((other) => prefixOverlaps(prefix, other));
   });
 }
+function implicitScopeDependencies(children) {
+  const ordered = children.map((child, index) => ({ child, index })).sort((left, right) => left.child.slice_id !== undefined && right.child.slice_id !== undefined ? SLICE_ORDER.compare(left.child.slice_id, right.child.slice_id) || left.index - right.index : left.index - right.index).map(({ child }) => child);
+  const implicit = new Map;
+  for (let later = 0;later < ordered.length; later += 1) {
+    const child = ordered[later];
+    const earlier = ordered.slice(0, later).filter((other) => !other.blocked_by.includes(child.task_id) && !child.blocked_by.includes(other.task_id) && scopesOverlap(child.scope_hint, other.scope_hint));
+    implicit.set(child.task_id, earlier.map((other) => other.task_id));
+  }
+  return implicit;
+}
+function blockedByParked(children) {
+  const implicit = implicitScopeDependencies(children);
+  const blocker = new Map;
+  for (const child of children)
+    if (PARKED_STATES.has(child.state))
+      blocker.set(child.task_id, child.task_id);
+  const blocked = new Map;
+  for (let changed = true;changed; ) {
+    changed = false;
+    for (const child of children) {
+      if (child.state !== "pending" || blocker.has(child.task_id))
+        continue;
+      const parked = [...child.blocked_by, ...implicit.get(child.task_id)].find((id) => blocker.has(id));
+      if (parked === undefined)
+        continue;
+      blocker.set(child.task_id, blocker.get(parked));
+      blocked.set(child.task_id, blocker.get(parked));
+      changed = true;
+    }
+  }
+  return blocked;
+}
 function positiveLimit(maxParallel) {
   if (maxParallel === Number.POSITIVE_INFINITY)
     return maxParallel;
@@ -12317,13 +12349,14 @@ function startableChildren(children, maxParallel) {
   const limit = positiveLimit(maxParallel);
   const done = new Set(children.filter((child) => DONE_STATES.has(child.state)).map((child) => child.task_id));
   const occupied = children.filter((child) => IN_FLIGHT_STATES.has(child.state));
+  const implicit = implicitScopeDependencies(children);
   const startable = [];
   for (const child of children) {
     if (occupied.length >= limit)
       break;
     if (child.state !== "pending")
       continue;
-    if (!child.blocked_by.every((id) => done.has(id)))
+    if (![...child.blocked_by, ...implicit.get(child.task_id)].every((id) => done.has(id)))
       continue;
     if (occupied.some((other) => scopesOverlap(child.scope_hint, other.scope_hint)))
       continue;
@@ -12336,33 +12369,21 @@ function projectParallelGroups(children) {
   const remaining = [...children];
   const placed = new Set;
   const groups = [];
-  const conflicts = new Map;
+  const implicit = implicitScopeDependencies(children);
   while (remaining.length) {
-    const ready = remaining.filter((child) => child.blocked_by.every((id) => placed.has(id)));
-    if (!ready.length)
+    const wave = remaining.filter((child) => [...child.blocked_by, ...implicit.get(child.task_id)].every((id) => placed.has(id)));
+    if (!wave.length)
       throw new Error("Initiative Task dependencies must form an acyclic graph");
-    const wave = [];
-    for (const child of ready) {
-      const overlapped = wave.filter((member) => scopesOverlap(child.scope_hint, member.scope_hint));
-      if (overlapped.length) {
-        const known = conflicts.get(child.task_id) ?? new Set;
-        for (const member of overlapped)
-          known.add(member.task_id);
-        conflicts.set(child.task_id, known);
-        continue;
-      }
-      wave.push(child);
-    }
     groups.push(wave.map((child) => child.task_id));
     for (const child of wave) {
       placed.add(child.task_id);
       remaining.splice(remaining.indexOf(child), 1);
     }
   }
-  const scopeConflicts = children.filter((child) => conflicts.has(child.task_id)).map((child) => ({ task_id: child.task_id, overlaps_with: [...conflicts.get(child.task_id)].sort() }));
+  const scopeConflicts = children.filter((child) => implicit.get(child.task_id).length > 0).map((child) => ({ task_id: child.task_id, overlaps_with: [...implicit.get(child.task_id)].sort() }));
   return { parallel_groups: groups, scope_conflicts: scopeConflicts };
 }
-var IN_FLIGHT_STATES, DONE_STATES, WILDCARD;
+var IN_FLIGHT_STATES, DONE_STATES, WILDCARD, SLICE_ORDER, PARKED_STATES;
 var init_batch_schedule = __esm(() => {
   IN_FLIGHT_STATES = new Set([
     "lane_admitted",
@@ -12372,6 +12393,8 @@ var init_batch_schedule = __esm(() => {
   ]);
   DONE_STATES = new Set(["committed", "integrated", "released"]);
   WILDCARD = /[*?[\]{}!]/;
+  SLICE_ORDER = new Intl.Collator("en", { numeric: true });
+  PARKED_STATES = new Set(["needs_human", "skipped_blocked"]);
 });
 
 // plugins/immune-brain/runtime/unattended/batch_plan.ts
@@ -12509,17 +12532,6 @@ async function projectBatchPlan(root, initiativeSlug, input, readInitiative = ob
     const intentPath = `docs/plans/${task.task_id}.intent.json`;
     try {
       const read = preparing ? observeEnrollmentTaskIntent(root, task.task_id) : observeTaskIntent(root, task.task_id, intentPath);
-      if (read.intent.risk === "critical") {
-        children.push({
-          ...child,
-          status: "needs_human",
-          reason: "critical",
-          intent_path: read.intent_ref.path,
-          intent_revision: read.intent_ref.revision,
-          intent_content_hash: read.content_hash
-        });
-        continue;
-      }
       const binding = inspectSpecBinding(read.intent);
       if (!binding.ok) {
         children.push({
@@ -12554,7 +12566,7 @@ async function projectBatchPlan(root, initiativeSlug, input, readInitiative = ob
       continue;
     if (directDependencies.get(child.task_id).some((id) => {
       const status = childById.get(id).status;
-      return status === "already_owned" || status === "needs_human" && childById.get(id).reason !== "critical" || status === "blocked";
+      return status === "already_owned" || status === "needs_human" || status === "blocked";
     })) {
       child.status = "blocked";
       child.reason = "dependency_unavailable";
@@ -12581,6 +12593,7 @@ async function projectBatchPlan(root, initiativeSlug, input, readInitiative = ob
     budget: budget(input, enrollable.length),
     ...projectParallelGroups(enrollable.map((child) => ({
       task_id: child.task_id,
+      slice_id: childById.get(child.task_id).slice_id,
       blocked_by: child.blocked_by,
       scope_hint: scopeHints.get(child.task_id)
     })))
@@ -13262,7 +13275,7 @@ async function observeNativeParent(root, initiativeSlug, readInitiative, blocked
   if (parent.tasks.length === 0)
     return null;
   const intents = parent.tasks.map((task) => ({ task, intent: readTaskTombstone(root, task.task_id) ? readTaskIntent(root, task.task_id) : observeEnrollmentTaskIntent(root, task.task_id) }));
-  if (intents.some(({ task, intent }) => intent.intent.risk !== "critical" && !readSettledTaskEvidence(root, task.task_id)))
+  if (parent.tasks.some((task) => !readSettledTaskEvidence(root, task.task_id)))
     return null;
   const native = readNativeParentFinalReport(root, initiativeSlug);
   const proof = await observeParentCompletion(root, initiativeSlug, parent.tasks.map((task) => task.task_id));
@@ -17213,6 +17226,8 @@ var TASK_ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var MAX_LANE_OFFERS = 64;
 var MAX_PATH_LENGTH = 4096;
 function resolveLaneParallel(root, initiativeSlug, maxParallel, laneOffers, laneInstruction) {
+  if (maxParallel !== undefined && maxParallel <= 1)
+    maxParallel = undefined;
   if (maxParallel !== undefined || laneOffers === undefined && laneInstruction === undefined)
     return maxParallel;
   const lookup = findExistingActiveBatch(root, initiativeSlug);
@@ -17492,6 +17507,7 @@ function scopeOfChild(root, child) {
 function scheduleView(input, record) {
   return record.children.map((child) => ({
     task_id: child.task_id,
+    slice_id: child.slice_id,
     state: child.state,
     blocked_by: child.blocked_by,
     scope_hint: scopeOfChild(input.root, input.children.find((c) => c.task_id === child.task_id) ?? { task_id: child.task_id, intent_path: null })
@@ -18181,6 +18197,8 @@ async function runLaneBatch(input, persisted) {
     });
   }
   handoffs.push(...releaseHandoffs(input, record, lanes));
+  const blocked = blockedByParked(scheduleView(input, record));
+  record.children = record.children.map((child) => blocked.has(child.task_id) ? { ...child, state: "skipped_blocked", reason: `dependency ${blocked.get(child.task_id)} parked` } : child);
   const inFlight = record.children.filter((c) => IN_FLIGHT.has(c.state));
   const startable = startableChildren(scheduleView(input, record), limit);
   const overBudget = consumedSlots(record) >= record.budget.max_children;
@@ -18209,6 +18227,7 @@ async function runLaneBatch(input, persisted) {
 }
 
 // plugins/immune-brain/runtime/unattended/batch_runner.ts
+init_batch_schedule();
 init_batch_state();
 init_backend_claim();
 init_batch_plan();
@@ -18292,9 +18311,18 @@ function requireFreshProjection(result, taskId) {
     throw new Error(`cannot reconcile Kernel projection for ${taskId}: ${result.error}`);
   return result;
 }
-async function nextEnrollableChild(record, kernel) {
+async function nextEnrollableChild(input, record) {
+  const view = record.children.map((child) => ({
+    ...child,
+    scope_hint: scopeOfChild(input.root, input.children.find((c) => c.task_id === child.task_id) ?? { task_id: child.task_id, intent_path: null })
+  }));
+  const blocked = blockedByParked(view);
+  record.children = record.children.map((child) => blocked.has(child.task_id) ? { ...child, state: "skipped_blocked", reason: `dependency ${blocked.get(child.task_id)} parked` } : child);
+  const implicit = implicitScopeDependencies(view);
+  const kernel = input.kernel;
   for (const child of record.children) {
-    if (child.state !== "pending" || record.children.some((other) => child.blocked_by.includes(other.task_id) && other.state !== "committed"))
+    const waitsFor = [...child.blocked_by, ...implicit.get(child.task_id)];
+    if (child.state !== "pending" || record.children.some((other) => waitsFor.includes(other.task_id) && other.state !== "committed"))
       continue;
     if (kernel.canStartTask && !await kernel.canStartTask(child.task_id))
       continue;
@@ -18649,10 +18677,10 @@ async function startBatchLocked(input) {
   }
   let head = expectedBatchHead(record);
   while (record.batch_state === "running") {
-    const child = await nextEnrollableChild(record, input.kernel);
+    const child = await nextEnrollableChild(input, record);
     if (!child) {
       if (record.children.some((candidate) => candidate.state === "pending"))
-        return reportFor(record, "Remaining children await Parent prerequisites", "Execute dependency-ready critical Slices through native single-task Enrollment, then continue this intact batch authorization");
+        return reportFor(record, "Remaining children await Parent prerequisites", "Deliver the remaining prerequisite Tasks outside this batch, then continue this intact batch authorization");
       record.batch_state = record.children.some((c) => c.state === "needs_human" || c.state === "skipped_blocked") ? "needs_human" : "completed";
       persist();
       break;

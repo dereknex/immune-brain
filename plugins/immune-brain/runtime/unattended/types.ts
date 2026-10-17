@@ -32,7 +32,6 @@ export type BatchPlanChildStatus =
  * names every path the TaskIntent has to add.
  */
 export type BatchPlanChildReason =
-	| "critical"
 	| "invalid_intent"
 	| "dependency_unavailable"
 	| "spec_binding_missing"

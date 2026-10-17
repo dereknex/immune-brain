@@ -31,7 +31,8 @@ import {
 import { isBatchRef, liveBatchHead } from "./batch_ref";
 import { readGitHead } from "../kernel/pi_canary_prepare";
 import { classifyBatchLineage, expectedBatchHead, findSettledBatchRecord, unsettledChildScopes } from "./batch_preflight";
-import { laneRejectionReport, runLaneBatch, type LaneOffer } from "./batch_lanes";
+import { laneRejectionReport, runLaneBatch, scopeOfChild, type LaneOffer } from "./batch_lanes";
+import { blockedByParked, implicitScopeDependencies } from "./batch_schedule";
 import {
 	type BatchRunStateRecord,
 	type BatchChildRun,
@@ -245,10 +246,23 @@ function requireFreshProjection<T extends AssuranceProjectionResult>(
 	return result as T & { error: null };
 }
 
-/** Next pending child whose direct dependents are all committed. */
-async function nextEnrollableChild(record: BatchRunStateRecord, kernel: BatchRunnerKernelPort): Promise<BatchChildRun | null> {
+/**
+ * Next pending child whose dependencies are all committed, counting the
+ * implicit ones that overlapping scopes add in Slice order.
+ */
+async function nextEnrollableChild(input: StartBatchInput, record: BatchRunStateRecord): Promise<BatchChildRun | null> {
+	const view = record.children.map((child) => ({
+		...child,
+		scope_hint: scopeOfChild(input.root, input.children.find((c) => c.task_id === child.task_id) ?? { task_id: child.task_id, intent_path: null }),
+	}));
+	const blocked = blockedByParked(view);
+	record.children = record.children.map((child) => blocked.has(child.task_id)
+		? { ...child, state: "skipped_blocked", reason: `dependency ${blocked.get(child.task_id)} parked` } : child);
+	const implicit = implicitScopeDependencies(view);
+	const kernel = input.kernel;
 	for (const child of record.children) {
-		if (child.state !== "pending" || record.children.some(other => child.blocked_by.includes(other.task_id) && other.state !== "committed")) continue;
+		const waitsFor = [...child.blocked_by, ...implicit.get(child.task_id)!];
+		if (child.state !== "pending" || record.children.some(other => waitsFor.includes(other.task_id) && other.state !== "committed")) continue;
 		if (kernel.canStartTask && !await kernel.canStartTask(child.task_id)) continue;
 		return child;
 	}
@@ -759,10 +773,10 @@ async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport>
 	let head = expectedBatchHead(record);
 
 	while (record.batch_state === "running") {
-		const child = await nextEnrollableChild(record, input.kernel);
+		const child = await nextEnrollableChild(input, record);
 		if (!child) {
 			if (record.children.some(candidate => candidate.state === "pending"))
-				return reportFor(record, "Remaining children await Parent prerequisites", "Execute dependency-ready critical Slices through native single-task Enrollment, then continue this intact batch authorization");
+				return reportFor(record, "Remaining children await Parent prerequisites", "Deliver the remaining prerequisite Tasks outside this batch, then continue this intact batch authorization");
 			record.batch_state = record.children.some(
 				(c) => c.state === "needs_human" || c.state === "skipped_blocked",
 			)

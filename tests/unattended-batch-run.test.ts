@@ -93,6 +93,30 @@ function child(taskId: string, sliceId: string, blockedBy: string[] = []): Batch
 	};
 }
 
+/**
+ * Publishes and commits each child's TaskIntent so the runner can read its
+ * scope for implicit ordering; an unreadable scope overlaps every other one.
+ */
+function publishScopedIntents(root: string, scopes: Record<string, string[]>): (...args: string[]) => string {
+	mkdirSync(join(root, "docs/plans"), { recursive: true });
+	for (const [taskId, scope] of Object.entries(scopes)) {
+		writeFileSync(join(root, `docs/plans/${taskId}.intent.json`), JSON.stringify({
+			contract: "assurance_kernel/task_intent/v1", task_id: taskId, owner: "user", revision: 1,
+			goal: taskId, risk: "routine", scope_hint: scope,
+			acceptance: [{ id: "acc-1", assertion: taskId, verification: "bun test tests/example.test.ts" }],
+		}));
+	}
+	const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8", env: {
+		...process.env, GIT_AUTHOR_NAME: "test", GIT_AUTHOR_EMAIL: "test@example.test",
+		GIT_COMMITTER_NAME: "test", GIT_COMMITTER_EMAIL: "test@example.test",
+	} }).trim();
+	git("init", "-q", "-b", "main");
+	git("config", "core.hooksPath", "/dev/null");
+	git("add", "docs/plans");
+	git("commit", "-qm", "intents");
+	return git;
+}
+
 function tempRoot(): string {
 	return mkdtempSync(join(tmpdir(), "imm-batch-run-"));
 }
@@ -1349,6 +1373,11 @@ describe("startBatch state machine", () => {
 		const root = tempRoot();
 		try {
 			const a = child("task-a", "S1"), c = child("task-c", "S3", ["task-a"]), b = child("task-b", "S2");
+			// task-d declares no dependency, but its scope overlaps task-a's, so it waits on task-a (D8).
+			const d = child("task-d", "S4");
+			const git = publishScopedIntents(root, {
+				"task-a": ["src/a/**"], "task-b": ["src/b/**"], "task-c": ["src/a/**"], "task-d": ["src/a/shared.ts"],
+			});
 			const kernel = scriptedKernel({ "task-a": [{ state: "stopped" }], "task-b": [{ state: "completed" }] });
 			const stopped = new Set<string>();
 			const advance = kernel.advanceTask.bind(kernel), project = kernel.projectTask.bind(kernel);
@@ -1357,11 +1386,24 @@ describe("startBatch state machine", () => {
 			} return result; };
 			kernel.projectTask = async (root, id) => { const fresh = await project(root, id); return stopped.has(id)
 				? { ...fresh, claim: null, projection: { ...fresh.projection, lifecycle: "stopped", completion_ready: false } } : fresh; };
-			const report = await startBatch(input(root, [a, b, c], kernel));
+			const evidence = new Map<string, string>();
+			kernel.commitChild = async (_root, taskId, batchId) => {
+				git("commit", "--allow-empty", "-qm", taskId);
+				kernel.commits.push({ task_id: taskId, batch_id: batchId });
+				evidence.set(taskId, git("rev-parse", "HEAD"));
+				return { commit: evidence.get(taskId)! };
+			};
+			kernel.lookupBatchCommit = async (_root, taskId) => evidence.has(taskId) ? { commit: evidence.get(taskId)! } : null;
+			const request = input(root, [a, b, c, d], kernel, { base_head: git("rev-parse", "HEAD") });
+			git("checkout", "-qb", prepareBatchRunState(request).branch!);
+			const report = await startBatch(request);
 			expect(report.batch_state).toBe("needs_human");
 			expect(report.children.find(child => child.task_id === "task-b")?.state).toBe("committed");
 			expect(report.children.find(child => child.task_id === "task-a")?.state).toBe("needs_human");
 			expect(report.children.find(child => child.task_id === "task-c")?.state).toBe("skipped_blocked");
+			expect(report.children.find(child => child.task_id === "task-d")).toMatchObject({
+				state: "skipped_blocked", reason: "dependency task-a parked",
+			});
 			expect(kernel.commits.map(commit => commit.task_id)).toEqual(["task-b"]);
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});

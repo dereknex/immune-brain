@@ -484,11 +484,12 @@ describe("acc-pi-batch-gate", () => {
 		expect(conf.summary).toContain("Initiative: content-derive");
 		expect(conf.summary).toContain("Batch branch: imm/content-derive");
 		expect(conf.summary).toContain("Plan digest: sha256:");
-		expect(conf.details).toContain("Ordered children (2):");
+		// A valid critical child is an ordinary batch child (run-entry decision hosting D5).
+		expect(conf.details).toContain("Ordered children (3):");
 		expect(conf.details).toContain("content-derive-c1 (S1) [risk: routine]");
 		expect(conf.details).toContain("content-derive-c2 (S2) [risk: material]");
-		expect(conf.details).toContain("Excluded children:");
-		expect(conf.details).toContain("content-derive-c3 (S3): critical");
+		expect(conf.details).toContain("content-derive-c3 (S3) [risk: critical]");
+		expect(conf.details).not.toContain("Excluded children:");
 	});
 
 	it("rejects fail-closed with zero writes when confirmation port is missing or invalid", async () => {
@@ -623,7 +624,7 @@ describe("acc-pi-batch-gate", () => {
 		assertZeroWrites(fixture.root, fixture.head);
 	});
 
-	it("critical-only Parent returns a native single-task handoff without a batch gate or writes", async () => {
+	it("critical-only Parent opens the ordinary batch gate instead of a native single-task handoff (D5)", async () => {
 		const fixture = createBatchFixture("empty-enrollable");
 		const observation: GithubInitiativeObservation = {
 			contract: "immune_brain/github_initiative_observation/v1",
@@ -633,21 +634,20 @@ describe("acc-pi-batch-gate", () => {
 				{ task_id: "empty-enrollable-c3", slice_id: "S3", issue_number: 103, blocked_by: [] },
 			],
 		};
-		let dialogOpened = false;
+		let details = "";
 
 		const result = await executePiUnattendedBatch({
 			root: fixture.root,
 			initiativeSlug: "empty-enrollable",
 			readInitiative: async () => observation,
-			confirmBatch: async () => {
-				dialogOpened = true;
-				return "accept";
+			confirmBatch: async (confirmation) => {
+				details = confirmation.details;
+				return "decline";
 			},
 		});
 
-		expect(dialogOpened).toBe(false);
-		expect(result).toMatchObject({ state: "native_parent", action: "enroll", task_id: "empty-enrollable-c3", batch_id: null });
-		expect(result.next_action).toContain("native single-task Enrollment");
+		expect(details).toContain("empty-enrollable-c3 (S3) [risk: critical]");
+		expect(result.state).toBe("rejected");
 		assertZeroWrites(fixture.root, fixture.head, "empty-enrollable");
 	});
 
@@ -710,7 +710,7 @@ describe("acc-pi-batch-gate", () => {
 		expect(result.batch_id).toMatch(/^batch-accept-run-[0-9a-f-]{36}$/);
 		expect(result.report).toBeDefined();
 		expect(result.report.batch_state).toBe("completed");
-		expect(result.report.commits.length).toBe(2);
+		expect(result.report.commits.length).toBe(3);
 	});
 
 	it("an answer given after any delay is accepted and the authorization it issues carries no expiry", async () => {
@@ -1683,7 +1683,7 @@ describe("lane mode parameters (parallel-batch-lanes)", () => {
 
 	it("shows max_parallel and the parallel groups in the confirmation only in lane mode", async () => {
 		const confirmations: Array<{ summary: string; details: string }> = [];
-		for (const maxParallel of [undefined, 1] as const) {
+		for (const maxParallel of [undefined, 1, 2] as const) {
 			const fixture = createBatchFixture(`lane-confirm-${maxParallel ?? "serial"}`);
 			await executePiUnattendedBatch({
 				root: fixture.root,
@@ -1693,10 +1693,13 @@ describe("lane mode parameters (parallel-batch-lanes)", () => {
 				confirmBatch: async (details) => { confirmations.push(details); return "decline"; },
 			});
 		}
-		const [serial, lane] = confirmations;
-		expect(serial!.summary).not.toContain("Lane mode");
-		expect(serial!.details).not.toContain("Parallel groups");
-		expect(lane!.summary).toContain("Lane mode: max_parallel=1");
+		// max_parallel 1 is the serial runner (run-entry decision hosting D7).
+		const [serial, one, lane] = confirmations;
+		for (const confirmation of [serial!, one!]) {
+			expect(confirmation.summary).not.toContain("Lane mode");
+			expect(confirmation.details).not.toContain("Parallel groups");
+		}
+		expect(lane!.summary).toContain("Lane mode: max_parallel=2");
 		expect(lane!.details).toContain("Parallel groups (");
 	});
 });

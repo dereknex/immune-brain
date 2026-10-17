@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
+	blockedByParked,
 	projectParallelGroups,
 	scopesOverlap,
 	startableChildren,
@@ -110,11 +111,15 @@ describe("startable children", () => {
 
 	it("yields exactly the serial runner's choice when max_parallel is 1", () => {
 		// Reference: the serial runner's `nextEnrollableChild`, copied as the oracle.
+		// A child also waits for every earlier child sharing its scope that it
+		// is not itself a declared dependency of (D8).
 		const serialNext = (children: ScheduleChild[]): string[] => {
+			const waitsFor = (candidate: ScheduleChild, index: number) => children.filter((other, otherIndex) =>
+				candidate.blocked_by.includes(other.task_id) || (otherIndex < index && !other.blocked_by.includes(candidate.task_id)
+					&& other.scope_hint[0] === candidate.scope_hint[0]));
 			const next = children.find(
-				(candidate) =>
-					candidate.state === "pending" &&
-					children.every((other) => !candidate.blocked_by.includes(other.task_id) || other.state === "committed"),
+				(candidate, index) =>
+					candidate.state === "pending" && waitsFor(candidate, index).every((other) => other.state === "committed"),
 			);
 			return next ? [next.task_id] : [];
 		};
@@ -131,6 +136,31 @@ describe("startable children", () => {
 			});
 			expect(startableChildren(children, 1)).toEqual(serialNext(children));
 		}
+	});
+
+	it("holds a later overlapping child until the earlier one in Slice order is done (D8)", () => {
+		// B is listed first but is the later Slice; no declared dependency links them.
+		const pair = (state: ScheduleChildState): ScheduleChild[] => [
+			{ ...child("b", ["runtime/shared.ts"]), slice_id: "S10" },
+			{ ...child("a", ["runtime/shared.ts"], state), slice_id: "S2" },
+		];
+		expect(startableChildren(pair("pending"), 4)).toEqual(["a"]);
+		for (const state of ["enrolled", "lane_admitted", "settled", "lane_committed", "needs_human", "skipped_blocked"] as const)
+			expect(startableChildren(pair(state), 4), state).toEqual([]);
+		for (const state of ["committed", "integrated", "released"] as const)
+			expect(startableChildren(pair(state), 4), state).toEqual(["b"]);
+		// Disjoint children are unaffected by each other's state.
+		const disjoint: ScheduleChild[] = [
+			{ ...child("b", ["docs/b.md"]), slice_id: "S10" },
+			{ ...child("a", ["runtime/a.ts"], "needs_human"), slice_id: "S2" },
+		];
+		expect(startableChildren(disjoint, 4)).toEqual(["b"]);
+		// A declared dependency keeps its own direction: no implicit reverse edge.
+		const declared: ScheduleChild[] = [
+			{ ...child("b", ["runtime/shared.ts"]), slice_id: "S1" },
+			{ ...child("a", ["runtime/shared.ts"], "pending", ["b"]), slice_id: "S2" },
+		];
+		expect(startableChildren(declared, 4)).toEqual(["b"]);
 	});
 
 	it("starts nothing for a serial run while a child is enrolled", () => {
@@ -175,3 +205,16 @@ describe("plan parallel groups", () => {
 		).toThrow("acyclic");
 	});
 });
+
+describe("blockedByParked (run-entry decision hosting D8)", () => {
+	it("skips a later overlapping child, and its dependents, behind a parked one; a disjoint child stays", () => {
+		const blocked = blockedByParked([
+			{ ...child("a", ["src/a/**"], "needs_human"), slice_id: "S1" },
+			{ ...child("b", ["src/b/**"]), slice_id: "S2" },
+			{ ...child("c", ["src/a/x.ts"]), slice_id: "S3" },
+			{ ...child("d", ["docs/**"], "pending", ["c"]), slice_id: "S4" },
+		]);
+		expect(Object.fromEntries(blocked)).toEqual({ c: "a", d: "a" });
+	});
+});
+

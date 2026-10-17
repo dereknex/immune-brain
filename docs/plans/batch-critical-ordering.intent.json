@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "batch-critical-ordering",
-  "owner": "user",
   "goal": "Unattended batches enroll valid critical children like any other child, order overlapping children by Slice position so a later overlapping child starts only after the earlier one is done, and treat max_parallel of 1 or less as the serial runner (Spec D5, D7, D8).",
   "acceptance": [
     {
@@ -22,9 +21,12 @@
   ],
   "scope_hint": [
     ".changeset/run-entry-decision-hosting-batch-ordering.md",
+    "docs/agents/issue-tracker.md",
     "docs/plans/batch-critical-ordering.intent.json",
     "docs/specs/run-entry-decision-hosting.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
     "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-run-batch.md",
     "plugins/immune-brain/runtime/unattended/batch_git.ts",
     "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
     "plugins/immune-brain/runtime/unattended/batch_plan.ts",
@@ -32,12 +34,18 @@
     "plugins/immune-brain/runtime/unattended/batch_runner.ts",
     "plugins/immune-brain/runtime/unattended/batch_schedule.ts",
     "plugins/immune-brain/runtime/unattended/types.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/goal-driven-batch-run.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/unattended-batch-commit.test.ts",
     "tests/unattended-batch-integration.test.ts",
     "tests/unattended-batch-lanes.test.ts",
     "tests/unattended-batch-plan.test.ts",
     "tests/unattended-batch-run.test.ts",
-    "tests/unattended-batch-schedule.test.ts"
+    "tests/unattended-batch-schedule.test.ts",
+    "tests/unattended-contracts.test.ts"
   ],
   "risk": "critical",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

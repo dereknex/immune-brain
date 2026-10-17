@@ -1,0 +1,473 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "run-entry-token-claude-r2",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "run-entry-token-claude-r2",
+    "goal": "On Claude Code, a literal-user imm-run entry mints a session- and workspace-bound entry token. Enrollment and unattended batch start keep one native gate per entry, because a same-uid model write can forge the token; under a live token stale batch retirement and same-Host recovery open no gate. A confirmed batch start prints a non-blocking execution manifest, and the token is invalidated by session exit, workspace change or a Stop-boundary pause (Spec D1-D4, D6, D11; ADR 0025).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "After a UserPromptSubmit carrying a literal imm-run entry, enroll and start_unattended_batch each open exactly one native gate, and a declined gate claims nothing even with a live token; a later retire_stale_batch under that token completes with no elicitation/create request and records a confirmation_ref of kind entry_token still bound to the plan digest; a rework-exit confirmation still opens elicitation with its exits.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-phase-entry-gate.test.ts\",\n      \"tests/batch-stale-disposition.test.ts\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/claude-native-elicitation-promotion.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Each of these is refused with no Kernel mutation: an authority tool call with no prior literal entry; a call whose session id differs from the minting session; a call after SessionEnd; a call from a different workspace realpath; a call after the run paused at the Stop boundary; a tool argument that supplies a token or native_decision field.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/phase-entry.test.ts\",\n      \"tests/claude-phase-entry-gate.test.ts\",\n      \"tests/claude-run-continuation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "A confirmed start_unattended_batch result carries a manifest listing every child's task id, risk, scope summary and verification commands; a lane-mode batch dialog under a live token still offers the Lane revision delegation choice; and the token stays live across a same-session continuation until the bound run is terminal.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-run-continuation.test.ts\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/claude-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/run-entry-decision-hosting-claude-token.md",
+      "docs/adr/0025-run-entry-decision-hosting.md",
+      "docs/plans/run-entry-token-claude-r2.intent.json",
+      "docs/specs/run-entry-decision-hosting.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/hooks/hooks.json",
+      "plugins/immune-brain/runtime/assurance/phase_entry.ts",
+      "plugins/immune-brain/runtime/claude/interaction.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/lane_guard.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/claude/run_continuation.ts",
+      "plugins/immune-brain/runtime/unattended/batch_disposition.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "tests/batch-plan-reconfirmation.test.ts",
+      "tests/batch-stale-disposition.test.ts",
+      "tests/breaking-intent-revision-gate.test.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/claude-native-elicitation-promotion.test.ts",
+      "tests/claude-phase-entry-gate.test.ts",
+      "tests/claude-phase-entry-skill-gate.test.ts",
+      "tests/claude-run-continuation.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/phase-entry.test.ts",
+      "tests/unattended-batch-run.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/run-entry-token-claude-r2.intent.json",
+    "content_hash": "sha256:c62e380a3222897f4ea086b8371820d763a3ad8f81a00f8ecb4b03d1c8372a4b"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:c1986f412b6c08510ec8121109168674b8544fc85f443ae1541660161ad1072d",
+  "git_base_head": "ab8999f2f1c17d41bf71bda0ebcdd632893d24f8",
+  "attestations": [
+    {
+      "id": "approval-qa-8a3f9c60",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c1986f412b6c08510ec8121109168674b8544fc85f443ae1541660161ad1072d",
+      "diff_hash": "sha256:e3938fe40055f2d5591bbd91e76dffef440ee78810ca5dcdda9c4187295bc9e7",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:0638ddf9fed3b0c32f7692549bb62e665da3e5b837819dfdc93903068e1fd240",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:0638ddf9fed3b0c32f7692549bb62e665da3e5b837819dfdc93903068e1fd240"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:0638ddf9fed3b0c32f7692549bb62e665da3e5b837819dfdc93903068e1fd240"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:0638ddf9fed3b0c32f7692549bb62e665da3e5b837819dfdc93903068e1fd240"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-99d8def7",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:c62e380a3222897f4ea086b8371820d763a3ad8f81a00f8ecb4b03d1c8372a4b",
+      "diff_hash": "sha256:cb988ac2fcc17cb800a419576f7bd22306a3cd2578dbe6ddf3e80121b918f6dd",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:773f0b3796120e6a9e0fce460e3779ad36ca3831f60e30152091d7b57d3cd183",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:773f0b3796120e6a9e0fce460e3779ad36ca3831f60e30152091d7b57d3cd183"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:773f0b3796120e6a9e0fce460e3779ad36ca3831f60e30152091d7b57d3cd183"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:773f0b3796120e6a9e0fce460e3779ad36ca3831f60e30152091d7b57d3cd183"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-f0a58809",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:c62e380a3222897f4ea086b8371820d763a3ad8f81a00f8ecb4b03d1c8372a4b",
+      "diff_hash": "sha256:4df291ceec6cd885496e1bba26d0938f78a5af7e488e773549baf3f83d25ab1e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:b69e8a65d765d69d8e48f1d2782b4015793a4008f943145744c4e59b1413a745",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:b69e8a65d765d69d8e48f1d2782b4015793a4008f943145744c4e59b1413a745"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:b69e8a65d765d69d8e48f1d2782b4015793a4008f943145744c4e59b1413a745"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:b69e8a65d765d69d8e48f1d2782b4015793a4008f943145744c4e59b1413a745"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-3708b189",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:c62e380a3222897f4ea086b8371820d763a3ad8f81a00f8ecb4b03d1c8372a4b",
+      "diff_hash": "sha256:4df291ceec6cd885496e1bba26d0938f78a5af7e488e773549baf3f83d25ab1e",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (5affcab, only parent ab8999f, tree 95c97c8). The round-3 delta is test-only. It adds an end-to-end retire seam test (literal UserPromptSubmit, then PreToolUse admission, then tools/call: zero gates and a claude-entry ref bound to the plan digest) plus its no-entry negative. It also adds a Stop-pause denial test for retire/enroll/batch while the token is live, a token survive-then-spent-on-settle test, and a check that the lane gate still offers revision delegation. The tests match the runtime in lane_guard, mcp_server, kernel_ports and run_continuation, and the dist bundle mirrors the source.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "ab8999f2f1c17d41bf71bda0ebcdd632893d24f8",
+        "review_commit": "5affcabf32ce6dd1820046b6aeb01aed29e65f63",
+        "review_tree": "95c97c8b263cc321d98c8906d00dec9a7285a125",
+        "manifest_digest": "sha256:85f11d8bf731f34f89e4b1dedc6deaf404de55c088012221f616d26c42516229"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-59ecdea70cc2-1-review-1",
+          "acceptance_id": "AC2",
+          "summary": "Only the run_continuation PreToolUse hook enforces the Stop-boundary pause refusal. consumePhaseAdmission and requireRunEntry do not check the pause, and the new pause test asserts only the hook denial, not a tools/call refusal. The ADR describes this refusal as run_entry_required, but the hook's deny reason starts with 'Run paused:'.",
+          "anchor": "sha256:280562f70f2e6b7c21c2afb69b483cd0abee6991cdbac726ee35ad13f469e763",
+          "evidence": {
+            "trigger": "Run paused at the Stop boundary with a live entry token, and the phase-entry PreToolUse hook has written an admission for retire_stale_batch → the tools/call side would still accept that admission if the continuation hook's deny were bypassed. Claude Code's PreToolUse deny blocks the call today, so there is no observable wrong result now; only defense in depth is missing.",
+            "caller_chain": [
+              "tests/claude-run-continuation.test.ts",
+              "plugins/immune-brain/runtime/claude/run_continuation.ts#runContinuationHookOutput",
+              "plugins/immune-brain/runtime/claude/lane_guard.ts#consumePhaseAdmission",
+              "plugins/immune-brain/runtime/claude/mcp_server.ts#requireRunEntry"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:9d4ea136ce77b641d2b2c17e9776f76e1808c4ba6e119790f1aeddf7b42670b7"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-427bf02f53f7-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "A token-backed retire_stale_batch never records a confirmation_ref, so it records none of kind entry_token bound to the plan digest. The new claude-entry- reference kind is reachable only from a unit test.",
+      "anchor": "sha256:7f1007076ae2286b358ce380387b2b8a86dbb652c3b59db90c1a311c3dd0ce14",
+      "evidence": {
+        "trigger": "A literal /imm-run mints a live token, then the model calls retire_stale_batch on a drifted batch. ClaudeRuntime.confirm returns {decision:'accept', requestId:'entry-token:<uuid>'}, and the gate returns {kind:'confirmed', request_id}. runtime/unattended/batch_disposition.ts retireStaleBatch, an unchanged file read because it is the state owner the changed caller kernel_ports.ts retireStaleBatch delegates to, discards request_id. It writes {...record, batch_state:'superseded'} and a report, and neither carries a confirmation_ref. The plan-digest-bound reference of kind entry_token that AC1 and Spec D2 require is never computed or persisted. confirmationRef() in interaction.ts, the only place the 'claude-entry-' kind is produced, has no caller on the retire path; git grep shows its only callers are kernel_ports.ts:448 (gate, which ENTRY_TOKEN_OPERATIONS never routes to with a token) and kernel_ports.ts:1097 (batch start, which keeps the native gate). The delivered test in tests/batch-stale-disposition.test.ts asserts only state==='retired' and gates===0. tests/claude-phase-entry-gate.test.ts checks the confirmationRef helper in isolation. No test shows that a retirement records the reference. Fix: bind and persist a confirmation_ref (kind entry_token, covering the plan digest) on the token-backed retirement, and add a test that reads it back from the retired record or report.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/mcp_server.ts#createMcpRuntime.retire_stale_batch",
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts#ClaudeRuntime.retireStaleBatch",
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts#ClaudeRuntime.confirm",
+          "plugins/immune-brain/runtime/unattended/batch_disposition.ts#retireStaleBatch",
+          "plugins/immune-brain/runtime/claude/interaction.ts#confirmationRef"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-52ea76ea464c-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC2",
+      "source": "review",
+      "review_round": 2,
+      "summary": "No delivered test covers the AC2 case 'a call after the run paused at the Stop boundary'. Nothing pins that retire_stale_batch, the one operation a live token now lets skip the native gate, is refused with no Kernel mutation once the run is paused.",
+      "anchor": "sha256:cbddb8e14c15c56584336bcdbb896f5aee8dec438da9058247835e05a339404e",
+      "evidence": {
+        "trigger": "Session with a live minted token → Stop hook pauses the run (decideRunContinuation returns pause, or stop_blocks reaches 7) → PreToolUse plus tools/call retire_stale_batch under the same token. Today the refusal rests only on retire_stale_batch being in NATIVE_OPERATIONS and on the missing correlation in requireRunEntry. No test exercises either step, so removing retire_stale_batch from NATIVE_OPERATIONS would let a paused run retire a batch with no gate and the suite would still pass. The only existing pause test (claude-run-continuation 'a failed native gate...') covers a PostToolUseFailure pause and enroll only.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/run_continuation.ts:runContinuationHookOutput(Stop → metadata.paused)",
+          "plugins/immune-brain/runtime/claude/run_continuation.ts:runContinuationHookOutput(PreToolUse NATIVE_OPERATIONS deny)",
+          "plugins/immune-brain/runtime/claude/mcp_server.ts:requireRunEntry",
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.confirm(ENTRY_TOKEN_OPERATIONS bypass)",
+          "tests/claude-phase-entry-gate.test.ts",
+          "tests/claude-run-continuation.test.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-52ea76ea464c-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "The token-backed retire_stale_batch is never tested at the seam AC1 names: a literal UserPromptSubmit, then the PreToolUse admission, then tools/call. The only test injects ToolMeta.entryToken straight into ClaudeRuntime, and the RETIRE hook constant in claude-phase-entry-gate.test.ts is declared but never used.",
+      "anchor": "sha256:33fcacec5714b04e7a1f099ef2f1603a4f2a3eb62dda9f5405ace387387e5817",
+      "evidence": {
+        "trigger": "UserPromptSubmit '/imm-run <slug>' → phaseEntryGateHookOutput writes a v2 admission for retire_stale_batch → handleJsonRpc tools/call retire_stale_batch. None of these new pieces is exercised end to end: the GATED_MCP_TOOL regex extension, the token carried in the admission, the workspace check in requireRunEntry, and passing entryToken into ToolMeta for retire. Also untested is the new refusal of retire_stale_batch with no prior entry, which tools/call accepted before this change. A regression that drops the token from the admission, or skips requireRunEntry for retire, would either reopen elicitation or retire with no entry, and the suite would still pass. batch-stale-disposition.test.ts only checks ClaudeRuntime.retireStaleBatch with a hand-supplied entryToken.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/lane_guard.ts:recordPhaseEntryPrompt",
+          "plugins/immune-brain/runtime/claude/lane_guard.ts:phaseEntryGateHookOutput",
+          "plugins/immune-brain/runtime/claude/lane_guard.ts:consumePhaseAdmission",
+          "plugins/immune-brain/runtime/claude/mcp_server.ts:requireRunEntry(retire_stale_batch)",
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.retireStaleBatch",
+          "tests/claude-phase-entry-gate.test.ts",
+          "tests/batch-stale-disposition.test.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-52ea76ea464c-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC3",
+      "source": "review",
+      "review_round": 2,
+      "summary": "No test pins the AC3 token lifetime: still live after a same-session Stop continuation, spent once the bound run settles. The lane-mode dialog under a live token is opened in tests, but no test asserts that it still offers Lane revision delegation.",
+      "anchor": "sha256:7d447fae216fec8d15de844358449fffb9f425f6c67a10b343c618f9ab300afa",
+      "evidence": {
+        "trigger": "Live token → Stop hook returns block (continuation) → next retire_stale_batch must still be admitted. Bound run settles → runContinuationHookOutput calls revokeEntryToken(spent) → next retire_stale_batch must be refused. Neither transition is tested at the hook level: revokeEntryToken is never called in any test, and only the pure reducer line in phase-entry.test.ts is checked. A regression that revokes on every Stop, or never revokes on settle, would pass. The claude-batch-authority lane tests run under a minted token but assert only lane_mode.max_parallel and parallel_groups, never offer_revision_delegation.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/run_continuation.ts:runContinuationHookOutput(settled → revokeEntryToken)",
+          "plugins/immune-brain/runtime/claude/lane_guard.ts:revokeEntryToken",
+          "plugins/immune-brain/runtime/assurance/phase_entry.ts:reducePhaseEntryLog",
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.confirm(start_unattended_batch lane gate)",
+          "tests/claude-run-continuation.test.ts",
+          "tests/claude-batch-authority.test.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC3"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:run-entry-token-claude-r2:2026-10-17T12:25:56.527Z",
+      "at": "2026-10-17T12:25:56.527Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/run-entry-token-claude-r2.intent.json"
+    },
+    {
+      "id": "record_approval:run-entry-token-claude-r2:2026-10-17T12:28:39.087Z",
+      "at": "2026-10-17T12:28:39.087Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-8a3f9c60\naction_v2_sha256:68efd6145628cb0c2d9c7494b6817192af3571a5bbe69f9c209f509419ac013c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-17T12:28:39.087Z"
+      }
+    },
+    {
+      "id": "request_rework:run-entry-token-claude-r2:2026-10-17T12:30:53.480Z",
+      "at": "2026-10-17T12:30:53.480Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:16dcaeff3f555b4bf1de5bab45fa4481ab406774ce5013fe54084a94940adad3",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-17T12:30:53.481Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "ab8999f2f1c17d41bf71bda0ebcdd632893d24f8",
+        "review_commit": "4e908e9ab9cee3a1da98136cbbaf73e01353fb28",
+        "review_tree": "7882a64f48803f0b83d6e7fb3ddcc69193462541",
+        "manifest_digest": "sha256:9c0e1b11a66223ee0d081f13449196a4442acd811bc0eeae56f4957466c0e2fd"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:run-entry-token-claude-r2:2026-10-17T12:34:35.496Z",
+      "at": "2026-10-17T12:34:35.496Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:9340581c10a14ef05940efd45ec86aa94797a64cee328cc2d873e5984c3a7f32",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-706806738ce4fcbd",
+        "issued_at": "2026-10-17T12:34:39.046Z"
+      }
+    },
+    {
+      "id": "resolve_finding:run-entry-token-claude-r2:2026-10-17T12:34:45.985Z",
+      "at": "2026-10-17T12:34:45.985Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-427bf02f53f7-1-review-1\naction_v2_sha256:b1001691d8c19f3f500ea61ef451e2eba5805fb6fe2566e2ce8088926153005a"
+    },
+    {
+      "id": "freeze_artifacts:run-entry-token-claude-r2:2026-10-17T12:34:53.140Z",
+      "at": "2026-10-17T12:34:53.140Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/run-entry-token-claude-r2.intent.json"
+    },
+    {
+      "id": "record_approval:run-entry-token-claude-r2:2026-10-17T12:37:39.777Z",
+      "at": "2026-10-17T12:37:39.777Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-99d8def7\naction_v2_sha256:c7c39bb4a201ff0d51249b9e65086773375d48e55c0840e3895dc72aef3a15eb",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-17T12:37:39.777Z"
+      }
+    },
+    {
+      "id": "request_rework:run-entry-token-claude-r2:2026-10-17T12:40:10.017Z",
+      "at": "2026-10-17T12:40:10.017Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:85eba4131fa36e793ebcc9852261ba68d04ea2497e0a781a0007f5ef9aba0762",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-17T12:40:10.017Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "ab8999f2f1c17d41bf71bda0ebcdd632893d24f8",
+        "review_commit": "c949546310e9c781625e78db5c5ce64a029edcc8",
+        "review_tree": "2292a91da4b3d03d1a8fba703380c8bd4e05aa84",
+        "manifest_digest": "sha256:f8c9375a0d72fd8581a28230ef42cd944cd47502a9077d9dc019663babb1201a"
+      }
+    },
+    {
+      "id": "resolve_finding:run-entry-token-claude-r2:2026-10-17T12:46:53.942Z",
+      "at": "2026-10-17T12:46:53.942Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-52ea76ea464c-1-review-1\naction_v2_sha256:144fad86f5fb482c5aa2006e7f98b797a0b859bee7514af3ecddecbaa78cd394"
+    },
+    {
+      "id": "resolve_finding:run-entry-token-claude-r2:2026-10-17T12:46:55.357Z",
+      "at": "2026-10-17T12:46:55.357Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-52ea76ea464c-2-review-2\naction_v2_sha256:4b6be21226690cac90ea213185684c3a7115f677b600d9bf76407d7df2c95e4f"
+    },
+    {
+      "id": "resolve_finding:run-entry-token-claude-r2:2026-10-17T12:46:56.736Z",
+      "at": "2026-10-17T12:46:56.736Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-52ea76ea464c-3-review-3\naction_v2_sha256:242318077204a4a0520c2f369eb0dbce6732985cad126315f7c1a1fad50588f9"
+    },
+    {
+      "id": "freeze_artifacts:run-entry-token-claude-r2:2026-10-17T12:47:00.550Z",
+      "at": "2026-10-17T12:47:00.550Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/run-entry-token-claude-r2.intent.json"
+    },
+    {
+      "id": "record_approval:run-entry-token-claude-r2:2026-10-17T12:49:53.387Z",
+      "at": "2026-10-17T12:49:53.387Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-f0a58809\naction_v2_sha256:f8c13178cf588494f514286e5a458ed9a93b0bdfb4586916463a5f00bcf51423",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-17T12:49:53.387Z"
+      }
+    },
+    {
+      "id": "record_approval:run-entry-token-claude-r2:2026-10-17T12:51:23.481Z",
+      "at": "2026-10-17T12:51:23.481Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-3708b189\naction_v2_sha256:b88fd2fe3299f43aad15b3ab6f74bde214e2fec6736c5db4013ac60a11389126",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-17T12:51:23.481Z"
+      }
+    },
+    {
+      "id": "complete:run-entry-token-claude-r2:2026-10-17T12:51:25.353Z",
+      "at": "2026-10-17T12:51:25.353Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:1d239ff0c8f29581e2b0cdc85fff57dc1a71b77ed02239ce7e0122e98c456222"
+    }
+  ]
+}
