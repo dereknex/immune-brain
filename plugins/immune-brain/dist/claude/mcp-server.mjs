@@ -4921,6 +4921,20 @@ function pathsDirtyAgainst(root, commit) {
     return [...new Set([...splitZ(tracked), ...splitZ(untracked)])];
   });
 }
+function ignoredPaths(root, paths) {
+  if (paths.length === 0)
+    return [];
+  const result = spawnSync4("git", ["-C", root, "check-ignore", "-z", "--stdin"], {
+    encoding: "utf8",
+    input: `${paths.join("\x00")}\x00`,
+    stdio: ["pipe", "pipe", "pipe"]
+  });
+  if (result.status === 1)
+    return [];
+  if (result.status !== 0)
+    throw new Error(`failed to check ignore rules: ${result.stderr.trim() || "git check-ignore failed"}`);
+  return splitZ(result.stdout);
+}
 function buildScopedCommit(root, input) {
   return withTemporaryIndex(root, input.parent, (env) => {
     if (input.paths.length > 0)
@@ -12905,6 +12919,11 @@ async function commitBatchChild(input) {
   if (settled.record.task_id !== taskId || settled.proof.task_id !== taskId) {
     throw new Error(`cannot commit child ${taskId}: audit task id mismatch`);
   }
+  const auditPaths = settled.runId === null ? auditEvidencePaths(root, taskId) : { record: auditRunRecordPath(taskId, settled.runId), proof: auditRunTerminalProofPath(taskId, settled.runId) };
+  const ignoredAudit = ignoredPaths(root, [auditPaths.record, auditPaths.proof]);
+  if (ignoredAudit.length > 0) {
+    throw new Error(`audit_evidence_ignored: cannot commit child ${taskId}: .gitignore ignores ${ignoredAudit.join(", ")}`);
+  }
   const authoritative = settled.runId === null ? auditPair.record : settled.record;
   const intentSnapshot = authoritative.intent_snapshot;
   const goal = typeof intentSnapshot.goal === "string" ? intentSnapshot.goal : "";
@@ -13760,6 +13779,11 @@ var init_batch_reasons = __esm(() => {
       reason: "branch preflight failed: working tree has changes outside the authorized child scope",
       recovery_action: "commit or unstage changes outside the active task scope, then retry in the current Host"
     },
+    audit_evidence_ignored: {
+      state: "rejected",
+      reason: (detail) => `batch preflight failed: .gitignore ignores terminal audit evidence, so a child commit would silently drop it: ${detail}`,
+      recovery_action: "keep .imm/audit/ tracked (ignore .imm/state/ instead of .imm/, or write .imm/* followed by !.imm/audit/), commit the .gitignore change, then retry in the current Host"
+    },
     empty_enrollable_set: {
       state: "rejected",
       reason: "empty enrollable child set: no enrollable child tasks found in the initiative plan",
@@ -13952,7 +13976,7 @@ var init_batch_leak_restore = __esm(() => {
 // plugins/immune-brain/runtime/unattended/batch_preflight.ts
 import { existsSync as existsSync12, readdirSync as readdirSync8, readFileSync as readFileSync18 } from "node:fs";
 import { randomUUID as randomUUID8 } from "node:crypto";
-import { join as join19 } from "node:path";
+import { dirname as dirname13, join as join19 } from "node:path";
 import { spawnSync as spawnSync15 } from "node:child_process";
 function batchRejection(key, detail = "") {
   const resolved = batchReason(key, detail);
@@ -14402,6 +14426,15 @@ async function projectPreflight(options, preparing) {
   });
   if (!planSurface.ok)
     return reject(planSurface.key, planSurface.detail);
+  const auditProbes = planSurface.surface.recovery_children.flatMap((child) => [auditRunRecordPath(child.task_id, "run-preflight"), auditRunTerminalProofPath(child.task_id, "run-preflight")]);
+  let ignoredAudit;
+  try {
+    ignoredAudit = ignoredPaths(root, auditProbes);
+  } catch {
+    return reject("git_status_unreadable");
+  }
+  if (ignoredAudit.length > 0)
+    return reject("audit_evidence_ignored", [...new Set(ignoredAudit.map((path) => dirname13(dirname13(path))))].join(", "));
   if (!isResuming && statusEntries.length > 0) {
     const scopes = unsettledChildScopes(root, planSurface.surface.recovery_children.filter((child) => child.intent_path !== null));
     const blocking = statusEntries.filter(({ path }) => !isWorkflowAuthoringPath(path) && scopes.some((scope) => pathMatchesScope(path, scope)));
@@ -14601,6 +14634,7 @@ var init_batch_preflight = __esm(() => {
   init_pi_canary_prepare();
   init_intent();
   init_batch_ref();
+  init_storage_paths();
   init_batch_git();
   init_storage();
   init_workspace_scope();
@@ -14823,7 +14857,7 @@ function enrollmentNonce() {
 // plugins/immune-brain/runtime/claude/review_host.ts
 import { createHash as createHash20 } from "node:crypto";
 import { constants as constants7, fstatSync as fstatSync4, lstatSync as lstatSync14, mkdirSync as mkdirSync10, openSync as openSync7, readdirSync as readdirSync9, readSync, realpathSync as realpathSync14, rmSync as rmSync9, writeSync, closeSync as closeSync7 } from "node:fs";
-import { dirname as dirname13, join as join20 } from "node:path";
+import { dirname as dirname14, join as join20 } from "node:path";
 import { tmpdir as tmpdir5 } from "node:os";
 var REVIEWER_AGENT = "immune-brain-reviewer";
 var CLAUDE_REVIEWER_AGENT = "immune-brain:immune-brain-reviewer";
@@ -15006,7 +15040,7 @@ class FileHookEventLog {
   }
   append(event) {
     const path = hookEventPath(event.sessionId, this.root);
-    return appendPrivate(path, dirname13(path), `${JSON.stringify(event)}
+    return appendPrivate(path, dirname14(path), `${JSON.stringify(event)}
 `);
   }
   list(sessionId) {

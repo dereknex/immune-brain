@@ -914,6 +914,27 @@ describe("acc-batch-scope-bounded-commit", () => {
 		expect(committedFiles).toContain(".imm/audit/task-settled-1/terminal-proof.json");
 	});
 
+	it.each([
+		["the checked-out branch", undefined],
+		["the batch's hidden ref", batchRefName("batch-123")],
+	])("refuses with audit_evidence_ignored before any Git write when .gitignore drops the audit pair on %s", async (_kind, branch) => {
+		const taskId = "task-ignored-audit";
+		writeFileSync(join(repo.root, ".gitignore"), ".imm/\n");
+		git(repo.root, ["commit", "-qam", "ignore all of .imm"]);
+		const head = git(repo.root, ["rev-parse", "HEAD"]);
+		if (branch) git(repo.root, ["update-ref", branch, head]);
+		writeChildAudit(repo.root, taskId, "done", head);
+		mkdirSync(join(repo.root, "src"), { recursive: true });
+		writeFileSync(join(repo.root, "src", `${taskId}.ts`), "export const x = 1;\n");
+		const before = { head, index: readFileSync(join(repo.root, ".git", "index")), refs: git(repo.root, ["for-each-ref"]) };
+
+		await expect(commitBatchChild({ root: repo.root, taskId, batchId: "batch-123", expectedHead: head, branch }))
+			.rejects.toThrow(`audit_evidence_ignored: cannot commit child ${taskId}: .gitignore ignores .imm/audit/${taskId}/task-record.json`);
+		expect({ head: git(repo.root, ["rev-parse", "HEAD"]), index: readFileSync(join(repo.root, ".git", "index")), refs: git(repo.root, ["for-each-ref"]) })
+			.toEqual(before);
+		expect(existsSync(join(repo.root, ".imm", "state", "batches", "commits"))).toBe(false);
+	});
+
 	it("Finding 1: rejects out-of-scope files even if the on-disk intent file was modified to widen scope_hint", async () => {
 		const taskId = "task-tamper-intent";
 		const authorizedIntent = {

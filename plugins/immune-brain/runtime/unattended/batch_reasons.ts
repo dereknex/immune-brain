@@ -21,6 +21,7 @@ export type BatchReasonKey =
 	| "authorized_scope_underivable"
 	| "working_tree_unstaged"
 	| "working_tree_out_of_scope"
+	| "audit_evidence_ignored"
 	| "empty_enrollable_set"
 	| "plan_projection_failed"
 	| "confirmation_port_unavailable"
@@ -102,6 +103,11 @@ export const BATCH_REASONS: Readonly<Record<BatchReasonKey, BatchReasonSpec>> = 
 		state: "rejected",
 		reason: "branch preflight failed: working tree has changes outside the authorized child scope",
 		recovery_action: "commit or unstage changes outside the active task scope, then retry in the current Host",
+	},
+	audit_evidence_ignored: {
+		state: "rejected",
+		reason: (detail: string) => `batch preflight failed: .gitignore ignores terminal audit evidence, so a child commit would silently drop it: ${detail}`,
+		recovery_action: "keep .imm/audit/ tracked (ignore .imm/state/ instead of .imm/, or write .imm/* followed by !.imm/audit/), commit the .gitignore change, then retry in the current Host",
 	},
 	empty_enrollable_set: {
 		state: "rejected",

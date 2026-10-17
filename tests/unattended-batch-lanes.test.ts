@@ -93,7 +93,7 @@ function fixture(scripts: Record<string, string> = {}, scopes: Record<string, st
 	const repo = join(dir, "repo");
 	mkdirSync(repo);
 	git(repo, "init", "-q", "-b", "main");
-	writeFileSync(join(repo, ".gitignore"), ".imm/\n");
+	writeFileSync(join(repo, ".gitignore"), ".imm/state/\n");
 	writeFileSync(join(repo, "base.txt"), "base\n");
 	mkdirSync(join(repo, "docs/plans"), { recursive: true });
 	for (const taskId of ["task-a", "task-b", "task-c"])
@@ -915,7 +915,7 @@ function laneGitWithAudit(): BatchRunnerGitPort {
 			mkdirSync(dir, { recursive: true });
 			writeFileSync(join(dir, "task-record.json"), "{}\n");
 			writeFileSync(join(dir, "terminal-proof.json"), "{}\n");
-			git(root, "add", "-f", ".imm/audit");
+			git(root, "add", ".imm/audit");
 			return base.commitChild(...args);
 		},
 	};
@@ -1113,13 +1113,13 @@ describe("lane release", () => {
 			const dir = join(fx.repo, ".imm/audit/task-a/run-1");
 			mkdirSync(dir, { recursive: true });
 			writeFileSync(join(dir, "task-record.json"), "{}\n");
-			git(fx.repo, "add", "-f", ".imm/audit");
+			git(fx.repo, "add", ".imm/audit");
 			git(fx.repo, "commit", "-q", "-m", "half a pair");
 			const half = git(fx.repo, "rev-parse", "HEAD");
 			expect(port.auditReachable({ root: fx.repo, head: half, task_id: "task-a" })).toBe(false);
 
 			writeFileSync(join(dir, "terminal-proof.json"), "{}\n");
-			git(fx.repo, "add", "-f", ".imm/audit");
+			git(fx.repo, "add", ".imm/audit");
 			git(fx.repo, "commit", "-q", "-m", "whole pair");
 			const whole = git(fx.repo, "rev-parse", "HEAD");
 			expect(port.auditReachable({ root: fx.repo, head: whole, task_id: "task-a" })).toBe(true);
@@ -1427,7 +1427,7 @@ describe("Child Issue closure after integration (#197)", () => {
 					terminal_lifecycle: "done", terminal_event_id: `ev-${taskId}`, final_record_hash: `sha256:${"c".repeat(64)}`,
 					terminalized_at: "2026-10-10T00:00:00.000Z",
 				})}\n`);
-				git(root, "add", "-f", ".imm/audit");
+				git(root, "add", ".imm/audit");
 				return base.commitChild(...args);
 			},
 		};

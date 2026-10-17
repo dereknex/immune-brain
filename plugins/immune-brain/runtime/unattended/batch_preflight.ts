@@ -12,7 +12,7 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 import { LITERAL_USER_ACTOR_ID } from "../kernel/actor_identity";
@@ -20,7 +20,8 @@ import { readBackendClaim } from "../kernel/backend_claim";
 import { computeBatchPlanDigest, type BatchAuthorizationBinding } from "../kernel/batch_authority";
 import { readGitHead } from "../kernel/pi_canary_prepare";
 import { readTaskIntent, observeEnrollmentTaskIntent } from "../kernel/intent";
-import { isBatchRef, readBatchRef } from "./batch_ref";
+import { ignoredPaths, isBatchRef, readBatchRef } from "./batch_ref";
+import { auditRunRecordPath, auditRunTerminalProofPath } from "../kernel/storage_paths";
 import { isWorkflowAuthoringPath } from "./batch_git";
 import { readTaskRecordRaw, readSettledTaskEvidence, readWorkspaceStateRaw, enrollmentEventIdFor, reconcileKernelAuthority } from "../kernel/storage";
 import type { TaskRecord } from "../kernel/types";
@@ -721,6 +722,18 @@ async function projectPreflight(
 	});
 	if (!planSurface.ok)
 		return reject(planSurface.key, planSurface.detail);
+	// Each child's commit carries its terminal audit pair; an ignored pair would be
+	// dropped without error and then refused at integration, after the work ran.
+	const auditProbes = planSurface.surface.recovery_children.flatMap((child) =>
+		[auditRunRecordPath(child.task_id, "run-preflight"), auditRunTerminalProofPath(child.task_id, "run-preflight")]);
+	let ignoredAudit: string[];
+	try {
+		ignoredAudit = ignoredPaths(root, auditProbes);
+	} catch {
+		return reject("git_status_unreadable");
+	}
+	if (ignoredAudit.length > 0)
+		return reject("audit_evidence_ignored", [...new Set(ignoredAudit.map((path) => dirname(dirname(path))))].join(", "));
 	if (!isResuming && statusEntries.length > 0) {
 		// One dirt rule (D9): only dirt inside a not-yet-settled child's scope blocks.
 		const scopes = unsettledChildScopes(root, planSurface.surface.recovery_children.filter((child) => child.intent_path !== null));
