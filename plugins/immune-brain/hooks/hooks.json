@@ -1,5 +1,5 @@
 {
-  "description": "Observe Claude Code Review and session lifecycle for Immune-Brain, keep a batch Lane's file edits inside its Lane, require a literal-user phase entry before Enrollment, batch start or the imm-run Skill, and announce an active Managed task without resuming it. Hooks never mint authority.",
+  "description": "Observe Claude Code Review and session lifecycle for Immune-Brain, keep a batch Lane's file edits inside its Lane, require a literal-user phase entry before Enrollment, batch start, batch retirement or the imm-run Skill, and announce an active Managed task without resuming it. Authority comes only from a literal-user entry or a native gate.",
   "hooks": {
     "PreToolUse": [
       {

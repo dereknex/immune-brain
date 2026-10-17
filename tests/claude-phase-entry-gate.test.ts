@@ -4,6 +4,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
+import { runContinuationHookOutput } from "../plugins/immune-brain/runtime/claude/run_continuation";
+import { confirmationRef, entryTokenRequestId } from "../plugins/immune-brain/runtime/claude/interaction";
 import { createMcpRuntime, handleJsonRpc } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { readActiveClaimTaskId } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/unattended/types";
@@ -11,6 +13,7 @@ import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtim
 const ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
 const ENROLL = "mcp__plugin_immune-brain_immune-brain__enroll";
 const BATCH = "mcp__plugin_immune-brain_immune-brain__start_unattended_batch";
+const RETIRE = "mcp__plugin_immune-brain_immune-brain__retire_stale_batch";
 const RECOVERY = "ask the user to enter imm-run in the current Host";
 const roots: string[] = [];
 
@@ -52,18 +55,19 @@ function workspace(taskIds: string[]): string {
  * PreToolUse hook functions write the private store, and the MCP runtime
  * consumes it through `handleJsonRpc`. Only the store location is a fixture.
  */
-async function session(taskIds: string[], extra: Parameters<typeof createMcpRuntime>[0] = {}) {
+async function session(taskIds: string[], extra: Parameters<typeof createMcpRuntime>[0] = {}, decision: "accept" | "decline" = "accept") {
 	const cwd = workspace(taskIds);
 	const store = mkdtempSync(join(tmpdir(), "imm-phase-store-"));
 	roots.push(store);
 	const base = { session_id: "gate-session", cwd };
 	const locations = { root: store, home: store };
+	const confirmations: string[] = [];
 	let gateCalls = 0;
 	let consumed = 0;
 	let rpcId = 1;
 	const mcp = createMcpRuntime({
 		cwd, env: ENV,
-		requestConfirmation: async ({ operation }) => { gateCalls++; return { decision: "accept", requestId: `gate-${operation}-${gateCalls}` }; },
+		requestConfirmation: async ({ operation }) => { gateCalls++; confirmations.push(operation); return { decision, requestId: `gate-${operation}-${gateCalls}` }; },
 		consumePhaseAdmission: (toolCallId: string, operation: GatedTool) => {
 			const admitted = consumePhaseAdmission(toolCallId, operation, store);
 			if (admitted) consumed++;
@@ -77,12 +81,15 @@ async function session(taskIds: string[], extra: Parameters<typeof createMcpRunt
 	}, mcp);
 	return {
 		cwd,
+		store,
 		gateCalls: () => gateCalls,
+		confirmations: () => confirmations,
 		consumed: () => consumed,
-		prompt: (prompt: string) => recordPhaseEntryPrompt({ hook_event_name: "UserPromptSubmit", prompt, ...base }, locations),
-		hook: (tool_name: string, tool_use_id: string) =>
-			phaseEntryGateHookOutput({ hook_event_name: "PreToolUse", tool_name, tool_input: {}, tool_use_id, ...base }, locations),
-		call: (name: GatedTool, args: Record<string, unknown>, toolUseId: string) =>
+		prompt: (prompt: string, at: Partial<typeof base> = {}) => recordPhaseEntryPrompt({ hook_event_name: "UserPromptSubmit", prompt, ...base, ...at }, locations),
+		hook: (tool_name: string, tool_use_id: string, at: Partial<typeof base> = {}) =>
+			phaseEntryGateHookOutput({ hook_event_name: "PreToolUse", tool_name, tool_input: {}, tool_use_id, ...base, ...at }, locations),
+		endSession: () => runContinuationHookOutput({ hook_event_name: "SessionEnd", ...base }, store),
+		call: (name: GatedTool | "status", args: Record<string, unknown>, toolUseId: string) =>
 			handleJsonRpc({ jsonrpc: "2.0", id: rpcId++, method: "tools/call", params: { name, arguments: args, _meta: { "claudecode/toolUseId": toolUseId } } }, mcp),
 	};
 }
@@ -110,6 +117,53 @@ describe("Claude phase entry gate: enroll", () => {
 		expect(reply?.error).toBeUndefined();
 		expect(s.gateCalls()).toBe(1);
 		expect(readActiveClaimTaskId(s.cwd)).toBe("gate-a");
+	});
+
+	test("a live entry token alone never starts work: enroll still opens the gate, and a decline claims nothing", async () => {
+		// The token sits in a same-uid cache file a model could write by hand
+		// (ADR 0025 Context), so it must not replace the gate on starting work.
+		const s = await session(["gate-a"], {}, "decline");
+		s.prompt("/imm-run gate-a");
+		expect(s.hook(ENROLL, "toolu_forged")).toBeNull();
+		await s.call("enroll", { task_id: "gate-a" }, "toolu_forged");
+		expect(s.confirmations()).toEqual(["enroll"]);
+		expect(readActiveClaimTaskId(s.cwd)).toBeNull();
+	});
+
+	test("a supplied entry_token or native_decision argument refuses with no Kernel mutation", async () => {
+		const s = await session(["gate-a"]);
+		s.prompt("/imm-run gate-a");
+		for (const [field, id] of [["entry_token", "toolu_t"], ["native_decision", "toolu_n"]] as const) {
+			expect(s.hook(ENROLL, id)).toBeNull();
+			const reply = await s.call("enroll", { task_id: "gate-a", [field]: "accept" }, id);
+			expect(reply?.error?.message).toContain(`${field} cannot be supplied`);
+		}
+		expect(readActiveClaimTaskId(s.cwd)).toBeNull();
+		expect(s.gateCalls()).toBe(0);
+	});
+
+	test("another session's entry, a SessionEnd, a spent token and another workspace all refuse", async () => {
+		const s = await session(["gate-a"]);
+		// Minted by one session, called from another.
+		s.prompt("/imm-run gate-a", { session_id: "other-session" });
+		expectHookDenial(s.hook(ENROLL, "toolu_s"));
+		expectRunEntryRequired(await s.call("enroll", { task_id: "gate-a" }, "toolu_s"));
+		// SessionEnd drops the token the hook already admitted.
+		s.prompt("/imm-run gate-a");
+		expect(s.hook(ENROLL, "toolu_e")).toBeNull();
+		await s.endSession();
+		expectRunEntryRequired(await s.call("enroll", { task_id: "gate-a" }, "toolu_e"));
+		expectHookDenial(s.hook(ENROLL, "toolu_e2"));
+		// A token minted in another workspace does not authorize this one.
+		const elsewhere = mkdtempSync(join(tmpdir(), "imm-phase-elsewhere-"));
+		roots.push(elsewhere);
+		s.prompt("/imm-run gate-a", { cwd: elsewhere });
+		expect(s.hook(ENROLL, "toolu_w")).toBeNull();
+		const reply = await s.call("enroll", { task_id: "gate-a" }, "toolu_w");
+		expect(reply?.error?.data?.reason_code).toBe("run_entry_required");
+		expect(reply?.error?.message).toContain("workspace other than");
+		expect(readActiveClaimTaskId(s.cwd)).toBeNull();
+		expect(s.gateCalls()).toBe(0);
 	});
 
 	test("the run entry stays live for a later Slice after ordinary prompts", async () => {
@@ -194,6 +248,18 @@ describe("Claude phase entry gate: enroll", () => {
 	});
 });
 
+describe("Claude entry token confirmation reference", () => {
+	test("a token-backed reference is of kind entry and still binds the plan digest and intent hash", () => {
+		const ref = (requestId: string, extra: { planDigest?: string; intentContentHash?: string } = {}) =>
+			confirmationRef({ connectionId: "s", toolCallId: "t", requestId, operation: "retire_stale_batch", ...extra });
+		const token = entryTokenRequestId("token-1");
+		expect(ref(token, { planDigest: "p1" })).toStartWith("claude-entry-");
+		expect(ref("elicitation-1", { planDigest: "p1" })).toStartWith("claude-confirm-");
+		expect(ref(token, { planDigest: "p1" })).not.toBe(ref(token, { planDigest: "p2" }));
+		expect(ref(token, { intentContentHash: "h1" })).not.toBe(ref(token, { intentContentHash: "h2" }));
+	});
+});
+
 describe("Claude phase entry gate: start_unattended_batch", () => {
 	const slug = "gate-init";
 	const observation: GithubInitiativeObservation = {
@@ -224,7 +290,7 @@ describe("Claude phase entry gate: start_unattended_batch", () => {
 		expect(readActiveClaimTaskId(s.cwd)).toBeNull();
 	});
 
-	test("one admitted start opens the gate once, and the batch enrolls its child without another admission", async () => {
+	test("one admitted start opens the gate once, returns the manifest, and the batch enrolls its child without another admission", async () => {
 		const b = batchOptions();
 		const s = await session([`${slug}-c1`], b.options);
 		s.prompt(`/imm-run ${slug}`);
@@ -232,6 +298,10 @@ describe("Claude phase entry gate: start_unattended_batch", () => {
 		const reply = await s.call("start_unattended_batch", { initiative_slug: slug }, "toolu_b");
 		expect(reply?.error).toBeUndefined();
 		expect(s.gateCalls()).toBe(1);
+		const result = JSON.parse((reply?.result as { content: Array<{ text: string }> }).content[0].text);
+		expect(result.manifest).toEqual({
+			children: [{ task_id: `${slug}-c1`, slice_id: "S1", risk: "routine", scope: [...intentFor(`${slug}-c1`).scope_hint].sort(), verification: ["bun test"] }],
+		});
 		// The batch's own child Enrollment is authorized by the batch, not by the
 		// phase entry gate: exactly one admission was consumed for the whole run.
 		expect(s.consumed()).toBe(1);

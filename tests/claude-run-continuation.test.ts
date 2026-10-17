@@ -1,10 +1,12 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
-import { recordPhaseEntryPrompt } from "../plugins/immune-brain/runtime/claude/lane_guard";
+import * as coordinator from "../plugins/immune-brain/runtime/assurance/coordinator";
+import { NO_PHASE_ENTRY } from "../plugins/immune-brain/runtime/assurance/phase_entry";
+import { consumePhaseAdmission, phaseEntryGateHookOutput, readPhaseEntryState, recordPhaseEntryPrompt } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import { readRunToolSession, runContinuationHookOutput } from "../plugins/immune-brain/runtime/claude/run_continuation";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 
@@ -136,6 +138,45 @@ describe("Claude run continuation", () => {
 			expect(JSON.parse((await h.hook({ hook_event_name: "Stop", cwd: tmpdir() }))!).systemMessage).toContain("workspace changed");
 			expect(await h.stop()).toBeNull();
 		} finally { h.dispose(); }
+	});
+
+	test("a Stop-boundary pause refuses retire_stale_batch and the native gates even while the entry token is live", async () => {
+		const h = fixture(); try {
+			await h.enter();
+			expect(JSON.parse((await h.stop())!).decision).toBe("block");
+			expect(JSON.parse((await h.stop())!).systemMessage).toContain("no substantive progress");
+			// The pause, not the token, decides: the token is still live here.
+			expect(readPhaseEntryState("hook-session", h.root)?.token).toBeTruthy();
+			for (const operation of ["retire_stale_batch", "enroll", "start_unattended_batch"]) {
+				const denial = JSON.parse((await h.hook({ hook_event_name: "PreToolUse", ...h.tool(operation) }))!);
+				expect(denial).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
+				expect(denial.hookSpecificOutput.permissionDecisionReason).toStartWith("Run paused: ");
+			}
+		} finally { h.dispose(); }
+	});
+
+	test("the entry token survives a same-session Stop continuation and is spent when the bound run settles", async () => {
+		const h = fixture();
+		const retire = (tool_use_id: string) => phaseEntryGateHookOutput({ hook_event_name: "PreToolUse",
+			tool_name: "mcp__plugin_immune-brain_immune-brain__retire_stale_batch", tool_input: {}, tool_use_id,
+			session_id: "hook-session", cwd: h.root }, { root: h.root });
+		const projection = spyOn(coordinator, "projectTaskStatus");
+		try {
+			await h.enter();
+			const token = readPhaseEntryState("hook-session", h.root)?.token;
+			expect(token).toBeTruthy();
+			expect(JSON.parse((await h.stop())!).decision).toBe("block");
+			expect(readPhaseEntryState("hook-session", h.root)).toMatchObject({ run_live: true, token });
+			expect(retire("tool-live")).toBeNull();
+			expect(consumePhaseAdmission("tool-live", "retire_stale_batch", h.root)).toMatchObject({ entry_token: token });
+			// The Kernel now reports the bound run terminal: the next Stop settles it.
+			const live = await coordinator.projectTaskStatus(h.root, "slice-a");
+			projection.mockResolvedValue({ ...live, claim: null, projection: { ...live.projection, lifecycle: "done", completion_ready: true } });
+			expect(await h.stop()).toBeNull();
+			expect(readPhaseEntryState("hook-session", h.root)).toEqual(NO_PHASE_ENTRY);
+			expect(JSON.parse(retire("tool-spent")!)).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
+			expect(consumePhaseAdmission("tool-spent", "retire_stale_batch", h.root)).toBe(false);
+		} finally { projection.mockRestore(); h.dispose(); }
 	});
 
 	test("SessionEnd removes continuation without settling Kernel authority", async () => {

@@ -59,9 +59,10 @@ import type { TaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/types"
 // `start_unattended_batch`. These tests exercise what lies behind it, so the
 // session records a real run entry and each gated call is admitted through the
 // real hook; tests/claude-phase-entry-gate.test.ts owns the refusals.
-function withRunEntry(): { consumePhaseAdmission: (toolCallId: string, operation: GatedTool) => boolean } {
+function withRunEntry(workspace?: string): { consumePhaseAdmission: (toolCallId: string, operation: GatedTool) => ReturnType<typeof consumePhaseAdmission> } {
 	const root = mkdtempSync(join(tmpdir(), "imm-phase-entry-"));
-	const session = { session_id: "phase-entry-test-session", cwd: root };
+	// The entry token binds the workspace the entry was typed in (ADR 0025).
+	const session = { session_id: "phase-entry-test-session", cwd: workspace ?? root };
 	recordPhaseEntryPrompt({ hook_event_name: "UserPromptSubmit", prompt: "/imm-run", ...session }, { root, home: root });
 	return {
 		consumePhaseAdmission(toolCallId, operation) {
@@ -76,7 +77,7 @@ function withRunEntry(): { consumePhaseAdmission: (toolCallId: string, operation
 	};
 }
 function createMcpRuntime(options: Parameters<typeof createMcpRuntimeUngated>[0] = {}) {
-	return createMcpRuntimeUngated({ ...withRunEntry(), ...options });
+	return createMcpRuntimeUngated({ ...withRunEntry(options.cwd), ...options });
 }
 
 const ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };

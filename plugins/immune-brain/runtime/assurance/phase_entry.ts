@@ -1,7 +1,9 @@
 // Host-neutral phase entry: which literal user input enters planning or
 // execution, the per-session entry state, and whether an operation is admitted.
 // Pure: a Host supplies the alias reader and owns where the state is stored.
-// A live entry mints no authority; it only lets the existing native gate open.
+// ADR 0025: a literal run entry mints the session's entry token, which stands in
+// for the native gate of the run-internal authority operations. Only the Host
+// input event writes it; no tool call or tool argument can.
 
 export type PhaseEntry = "plan" | "run";
 
@@ -64,20 +66,41 @@ export function recognizePhaseEntry(text: string, readAlias: AliasReader): Phase
 
 export interface PhaseEntryState {
 	run_live: boolean;
+	/** The entry token the live run entry minted; null without one, or for a pre-token log line. */
+	token: string | null;
+	/** The workspace realpath the token is bound to. */
+	workspace: string | null;
 }
 
-export const NO_PHASE_ENTRY: PhaseEntryState = { run_live: false };
+export const NO_PHASE_ENTRY: PhaseEntryState = { run_live: false, token: null, workspace: null };
 
-/** One literal prompt: a run entry goes live, a plan entry revokes it. */
-export function applyPrompt(state: PhaseEntryState, entry: PhaseEntry | null): PhaseEntryState {
-	if (entry === "run") return { run_live: true };
-	if (entry === "plan") return { run_live: false };
+/** What a literal run entry mints: one token bound to the entry's workspace. */
+export interface EntryTokenMint {
+	token: string;
+	workspace: string;
+}
+
+/** Why a live token stops admitting before a new literal entry. */
+export type EntryTokenRevocation = "spent";
+
+/** One literal prompt: a run entry goes live with its token, a plan entry revokes it. */
+export function applyPrompt(state: PhaseEntryState, entry: PhaseEntry | null, mint?: EntryTokenMint): PhaseEntryState {
+	if (entry === "run") return { run_live: true, token: mint?.token ?? null, workspace: mint?.workspace ?? null };
+	if (entry === "plan") return NO_PHASE_ENTRY;
 	return state;
 }
 
-export function phaseEntryLogLine(entry: PhaseEntry | null): string {
+export function phaseEntryLogLine(entry: PhaseEntry | null, mint?: EntryTokenMint): string {
+	if (entry === "run" && mint) return `${JSON.stringify({ v: 2, entry, token: mint.token, workspace: mint.workspace })}\n`;
 	return `${JSON.stringify({ v: 1, entry })}\n`;
 }
+
+/** The line that ends a token when its bound run is terminal. */
+export function entryRevocationLogLine(reason: EntryTokenRevocation): string {
+	return `${JSON.stringify({ v: 2, revoked: reason })}\n`;
+}
+
+const nonEmpty = (value: unknown): value is string => typeof value === "string" && value.length > 0;
 
 /** Folds a session's entry log. Any malformed line makes the whole log unreadable. */
 export function reducePhaseEntryLog(text: string): PhaseEntryState | null {
@@ -87,15 +110,21 @@ export function reducePhaseEntryLog(text: string): PhaseEntryState | null {
 		let record: unknown;
 		try { record = JSON.parse(line); } catch { return null; }
 		if (!record || typeof record !== "object") return null;
-		const { v, entry } = record as { v?: unknown; entry?: unknown };
-		if (v !== 1 || (entry !== null && entry !== "plan" && entry !== "run")) return null;
-		state = applyPrompt(state, entry);
+		const { v, entry, token, workspace, revoked } = record as Record<string, unknown>;
+		if (v === 1) {
+			if (entry !== null && entry !== "plan" && entry !== "run") return null;
+			state = applyPrompt(state, entry);
+		} else if (v === 2 && revoked === "spent" && entry === undefined) {
+			state = NO_PHASE_ENTRY;
+		} else if (v === 2 && entry === "run" && nonEmpty(token) && nonEmpty(workspace)) {
+			state = applyPrompt(state, entry, { token, workspace });
+		} else return null;
 	}
 	return state;
 }
 
 export type PhaseOperation =
-	| { kind: "tool"; name: "enroll" | "start_unattended_batch" }
+	| { kind: "tool"; name: "enroll" | "start_unattended_batch" | "retire_stale_batch" }
 	| { kind: "skill"; skill: keyof typeof PACKAGED };
 
 export type PhaseAdmission =
@@ -108,8 +137,8 @@ function refuse(reason_code: typeof RUN_ENTRY_REQUIRED | typeof PHASE_ENTRY_REQU
 
 /**
  * Whether the session's entry state admits one operation. `state` is null when
- * the store could not be read, which refuses `enroll`, `start_unattended_batch`
- * and the `imm-run` Skill. The Planner and Brainstorm Skills are never refused.
+ * the store could not be read, which refuses `enroll`, `start_unattended_batch`,
+ * `retire_stale_batch` and the `imm-run` Skill. The Planner and Brainstorm Skills are never refused.
  */
 export function admitPhaseOperation(operation: PhaseOperation, state: PhaseEntryState | null): PhaseAdmission {
 	if (operation.kind === "tool") {

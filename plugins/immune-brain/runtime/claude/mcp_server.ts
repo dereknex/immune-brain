@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { readActiveClaimTaskId } from "../unattended/batch_preflight";
 import { isTerminalBatchState, readAnyBatchRunState } from "../unattended/batch_state";
@@ -16,7 +16,7 @@ import {
 	type NativeConfirmationPort,
 } from "./interaction";
 import { ClaudeReviewHost, FileHookEventLog, parseHookStdin } from "./review_host";
-import { activeTaskHookOutput, consumePhaseAdmission, laneGuardHookOutput, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "./lane_guard";
+import { activeTaskHookOutput, consumePhaseAdmission, laneGuardHookOutput, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool, type PhaseAdmissionGrant } from "./lane_guard";
 import { readRunToolSession, runContinuationHookOutput } from "./run_continuation";
 import { ClaudeRuntime, type ToolMeta } from "./kernel_ports";
 import { parseLaneInstruction, parseLaneOffers, parseMaxParallel, resolveLaneParallel } from "../unattended/batch_lanes";
@@ -37,8 +37,8 @@ export const TOOLS = [
 	{ name: "revise_intent", description: "Apply a compatible TaskIntent revision.", privileged: false },
 	{ name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
 	{ name: "stop", description: "Stop the active task with literal-user authority.", privileged: true },
-	{ name: "start_unattended_batch", description: "Start an unattended serial batch run for an Initiative after native confirmation.", privileged: true },
-	{ name: "retire_stale_batch", description: "Retire an Initiative's parked or drifted batch record to the terminal superseded state after native confirmation.", privileged: true },
+	{ name: "start_unattended_batch", description: "Start an unattended serial batch run for an Initiative under the literal-user imm-run entry.", privileged: true },
+	{ name: "retire_stale_batch", description: "Retire an Initiative's parked or drifted batch record to the terminal superseded state under the literal-user imm-run entry.", privileged: true },
 	{ name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false },
 	{ name: "resolve_finding", description: "Resolve one open blocking or advisory finding whose cause is fixed and verified.", privileged: false },
 	{ name: "refute_finding", description: "Refute one open finding by binding the fresh passing QA attestation that contradicts it.", privileged: false },
@@ -126,10 +126,11 @@ export interface McpRuntimeOptions {
 	batchGit?: import("../unattended/batch_git").BatchRunnerGitPort;
 	readInitiative?: import("../unattended/types").InitiativeObservationReader;
 	/**
-	 * Takes the admission the PreToolUse hook wrote for one `enroll` or
-	 * `start_unattended_batch` call. Defaults to the private file store.
+	 * Takes the admission the PreToolUse hook wrote for one `enroll`,
+	 * `start_unattended_batch` or `retire_stale_batch` call. Defaults to the
+	 * private file store. `true` is an admission without an entry token.
 	 */
-	consumePhaseAdmission?: (toolCallId: string, operation: GatedTool) => boolean;
+	consumePhaseAdmission?: (toolCallId: string, operation: GatedTool) => boolean | PhaseAdmissionGrant;
 }
 
 /**
@@ -170,14 +171,28 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 	const consumeAdmission = options.consumePhaseAdmission ?? ((toolCallId: string, operation: GatedTool) => consumePhaseAdmission(toolCallId, operation));
 	// The phase entry gate, before any preparation or native dialog. The hook
 	// decided on the session's literal entry; no admission for this exact call
-	// means no hook saw it, which refuses.
+	// means no hook saw it, which refuses. ADR 0025: the admission carries the
+	// session's entry token, which stands in for the native gate only in the
+	// workspace the token was minted for.
 	let hookSessionId: string | null = null;
-	const requireRunEntry = (operation: GatedTool, toolCallId: string) => {
-		const correlated = readRunToolSession(toolCallId, operation, options.cwd ?? process.cwd());
+	const requireRunEntry = (operation: GatedTool, toolCallId: string): string | undefined => {
+		const workspace = options.cwd ?? process.cwd();
+		const correlated = readRunToolSession(toolCallId, operation, workspace);
 		if (!options.consumePhaseAdmission && !correlated)
 			throw new NativeAuthorityError("run_entry_required", "Enrollment needs exact Hook session and workspace correlation");
-		if (consumeAdmission(toolCallId, operation)) { hookSessionId = correlated ?? hookSessionId; return; }
-		throw new NativeAuthorityError("run_entry_required", `${operation} needs a literal-user imm-run entry in this session`);
+		const grant = consumeAdmission(toolCallId, operation);
+		if (!grant) throw new NativeAuthorityError("run_entry_required", `${operation} needs a literal-user imm-run entry in this session`);
+		hookSessionId = correlated ?? hookSessionId;
+		if (grant === true || !grant.entry_token) return undefined;
+		let current: string | null = null;
+		try { current = realpathSync(workspace); } catch { /* an unresolvable workspace refuses */ }
+		if (!current || grant.workspace !== current)
+			throw new NativeAuthorityError("run_entry_required", `${operation} runs in a workspace other than the one imm-run was entered in`);
+		return grant.entry_token;
+	};
+	const refuseSuppliedAuthority = (args: Record<string, unknown>) => {
+		if ("native_decision" in args) throw new Error("native_decision cannot be supplied in tool arguments");
+		if ("entry_token" in args) throw new Error("entry_token cannot be supplied in tool arguments");
 	};
 	return {
 		runtime,
@@ -199,19 +214,20 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 			if (name === "start_unattended_batch") {
 				const initiativeSlug = String(args.initiative_slug ?? "");
 				if (!initiativeSlug) throw new Error("initiative_slug is required");
-				if ("native_decision" in args) throw new Error("native_decision cannot be supplied in tool arguments");
+				refuseSuppliedAuthority(args);
 				if (!negotiatedVersion) throw new NativeAuthorityError("unsupported_host", "Claude Code version is unavailable");
 				if (!negotiatedInteractive) {
 					throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
 				}
 				const probe = probeHost(options.env ?? process.env, process.platform, negotiatedVersion);
 				if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
-				requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
+				const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
 				const toolMeta: ToolMeta = {
 					sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
 					toolCallId: meta.toolCallId ?? `call-${name}`,
 					taskId: initiativeSlug,
 					initiativeSlug,
+					...(entryToken ? { entryToken } : {}),
 					interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
 					signal: meta.signal,
 				};
@@ -232,18 +248,20 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 			if (name === "retire_stale_batch") {
 				const initiativeSlug = String(args.initiative_slug ?? "");
 				if (!initiativeSlug) throw new Error("initiative_slug is required");
-				if ("native_decision" in args) throw new Error("native_decision cannot be supplied in tool arguments");
+				refuseSuppliedAuthority(args);
 				if (!negotiatedVersion) throw new NativeAuthorityError("unsupported_host", "Claude Code version is unavailable");
 				if (!negotiatedInteractive) {
 					throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
 				}
 				const probe = probeHost(options.env ?? process.env, process.platform, negotiatedVersion);
 				if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
+				const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
 				const toolMeta: ToolMeta = {
 					sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
 					toolCallId: meta.toolCallId ?? `call-${name}`,
 					taskId: initiativeSlug,
 					initiativeSlug,
+					...(entryToken ? { entryToken } : {}),
 					interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
 					signal: meta.signal,
 				};
@@ -251,7 +269,7 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 			}
 			const taskId = String(args.task_id ?? "");
 			if (!taskId) throw new Error("task_id is required");
-			if ("native_decision" in args) throw new Error("native_decision cannot be supplied in tool arguments");
+			refuseSuppliedAuthority(args);
 			// Read-only status must stay usable without trusted Host evidence, so it
 			// is dispatched before the capability probe rejects unversioned hosts.
 			if (name === "status") return { plugin_version: PLUGIN_VERSION, ...(await runtime.status(taskId)) };
@@ -274,8 +292,8 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				signal: meta.signal,
 			};
 			if (name === "enroll") {
-				requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
-				return runtime.enroll(taskId, toolMeta);
+				const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
+				return runtime.enroll(taskId, entryToken ? { ...toolMeta, entryToken } : toolMeta);
 			}
 			if (name === "advance_assurance") return withCompletionDelivery(taskId, await runtime.advance(taskId, toolMeta.signal, toolMeta), options.cwd);
 			if (name === "submit_review") {

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	admitPhaseOperation,
 	applyPrompt,
+	entryRevocationLogLine,
 	NO_PHASE_ENTRY,
 	packagedPhaseSkill,
 	phaseEntryLogLine,
@@ -27,8 +28,11 @@ const readAlias = (name: string) => ALIASES[name] ?? null;
 const recognize = (text: string) => recognizePhaseEntry(text, readAlias);
 
 function after(...entries: Array<PhaseEntry | null>): PhaseEntryState {
-	return entries.reduce(applyPrompt, NO_PHASE_ENTRY);
+	return entries.reduce((state, entry) => applyPrompt(state, entry), NO_PHASE_ENTRY);
 }
+
+const LIVE = { run_live: true, token: null, workspace: null };
+const MINT = { token: "token-1", workspace: "/work/repo" };
 
 describe("phase entry recognition", () => {
 	test("packaged names enter their phase, bare or prefixed, with or without arguments", () => {
@@ -93,13 +97,26 @@ describe("phase entry recognition", () => {
 
 describe("phase entry state", () => {
 	test("a run entry stays live across later prompts", () => {
-		expect(after("run", null, null)).toEqual({ run_live: true });
+		expect(after("run", null, null)).toEqual(LIVE);
 	});
 
 	test("a later plan entry revokes the run entry; a later run entry restores it", () => {
-		expect(after("run", null, "plan")).toEqual({ run_live: false });
-		expect(after("run", "plan", null)).toEqual({ run_live: false });
-		expect(after("run", "plan", "run")).toEqual({ run_live: true });
+		expect(after("run", null, "plan")).toEqual(NO_PHASE_ENTRY);
+		expect(after("run", "plan", null)).toEqual(NO_PHASE_ENTRY);
+		expect(after("run", "plan", "run")).toEqual(LIVE);
+	});
+
+	test("a run entry's token survives later prompts until a plan entry, a newer entry or its spend", () => {
+		const minted = applyPrompt(NO_PHASE_ENTRY, "run", MINT);
+		expect(minted).toEqual({ run_live: true, ...MINT });
+		expect(applyPrompt(minted, null)).toEqual(minted);
+		expect(applyPrompt(minted, "plan")).toEqual(NO_PHASE_ENTRY);
+		expect(applyPrompt(minted, "run", { ...MINT, token: "token-2" }).token).toBe("token-2");
+		const log = [phaseEntryLogLine("run", MINT), phaseEntryLogLine(null)].join("");
+		expect(reducePhaseEntryLog(log)).toEqual(minted);
+		expect(reducePhaseEntryLog(log + entryRevocationLogLine("spent"))).toEqual(NO_PHASE_ENTRY);
+		for (const line of [{ v: 2, entry: "run", token: "", workspace: "/w" }, { v: 2, entry: "run", token: "t" }, { v: 2, revoked: "paused" }, { v: 2, entry: "run", revoked: "spent" }])
+			expect(reducePhaseEntryLog(`${JSON.stringify(line)}\n`)).toBeNull();
 	});
 
 	test("the log folds to the same state and any malformed line is unreadable", () => {
@@ -112,17 +129,18 @@ describe("phase entry state", () => {
 		expect(reducePhaseEntryLog(`${JSON.stringify({ v: 1 })}\n`)).toBeNull();
 		expect(reducePhaseEntryLog("null\n")).toBeNull();
 		// A line written before the state lost its plan flag still reduces.
-		expect(reducePhaseEntryLog(`${JSON.stringify({ v: 1, entry: "plan" })}\n${JSON.stringify({ v: 1, entry: "run" })}\n`)).toEqual({ run_live: true });
+		expect(reducePhaseEntryLog(`${JSON.stringify({ v: 1, entry: "plan" })}\n${JSON.stringify({ v: 1, entry: "run" })}\n`)).toEqual(LIVE);
 	});
 });
 
 describe("phase entry admission", () => {
 	const enroll = { kind: "tool", name: "enroll" } as const;
 	const batch = { kind: "tool", name: "start_unattended_batch" } as const;
+	const retire = { kind: "tool", name: "retire_stale_batch" } as const;
 	const skill = (name: "imm-run" | "imm-planner" | "imm-brainstorm") => ({ kind: "skill", skill: name }) as const;
 
-	test("enroll and batch start need a live run entry", () => {
-		for (const operation of [enroll, batch]) {
+	test("enroll, batch start and batch retirement need a live run entry", () => {
+		for (const operation of [enroll, batch, retire]) {
 			expect(admitPhaseOperation(operation, after("run"))).toEqual({ ok: true });
 			expect(admitPhaseOperation(operation, after("run", null, null))).toEqual({ ok: true });
 			for (const state of [NO_PHASE_ENTRY, after(null), after("plan"), after("run", "plan"), null]) {

@@ -1,0 +1,36 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "run-entry-auto-recovery",
+  "owner": "user",
+  "goal": "Within one imm-run entry the run recovers by itself: both continuation hooks allow two native-operation failures before pausing, the agent applies and commits alone a deterministic preflight fix before retrying, and the packaged Loop contract states the retry rules and the remaining user stops (Spec D9, D10).",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "On each Host the first and second native-operation failure under one entry token leave the run live and native tools admitted; the third pauses the run and denies native tools; a new literal entry resets the count.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-run-continuation.test.ts\",\n      \"tests/pi-run-continuation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "The packaged imm-run contracts and BASELINE state that a literal entry needs no gate or chat confirmation, that only side-effect-free rejections are retried at most twice after rerunning preflight, that plan_changed, head_moved and claim conflicts are never retried, that a deterministic preflight fix is committed alone and listed in the manifest, and that push, PR, credentials, breaking intent revision and rework exits still stop for the user.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/explicit-phase-entry-run-contract.test.ts\",\n      \"tests/baseline-packaging-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/run-entry-decision-hosting-auto-recovery.md",
+    "docs/plans/run-entry-auto-recovery.intent.json",
+    "docs/specs/run-entry-decision-hosting.spec.md",
+    "plugins/immune-brain/.pi-extension/pi-run-continuation.ts",
+    "plugins/immune-brain/BASELINE.md",
+    "plugins/immune-brain/dist/BASELINE.md",
+    "plugins/immune-brain/dist/imm-run-batch.md",
+    "plugins/immune-brain/dist/imm-run.md",
+    "plugins/immune-brain/runtime/claude/run_continuation.ts",
+    "plugins/immune-brain/skills/BASELINE.md",
+    "tests/baseline-packaging-contract.test.ts",
+    "tests/claude-run-continuation.test.ts",
+    "tests/explicit-phase-entry-run-contract.test.ts",
+    "tests/pi-run-continuation.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

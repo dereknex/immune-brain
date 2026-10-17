@@ -38,9 +38,10 @@ import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend
 // `start_unattended_batch`. These tests exercise what lies behind it, so the
 // session records a real run entry and each gated call is admitted through the
 // real hook; tests/claude-phase-entry-gate.test.ts owns the refusals.
-function withRunEntry(): { consumePhaseAdmission: (toolCallId: string, operation: GatedTool) => boolean } {
+function withRunEntry(workspace?: string): { consumePhaseAdmission: (toolCallId: string, operation: GatedTool) => ReturnType<typeof consumePhaseAdmission> } {
 	const root = mkdtempSync(join(tmpdir(), "imm-phase-entry-"));
-	const session = { session_id: "phase-entry-test-session", cwd: root };
+	// The entry token binds the workspace the entry was typed in (ADR 0025).
+	const session = { session_id: "phase-entry-test-session", cwd: workspace ?? root };
 	recordPhaseEntryPrompt({ hook_event_name: "UserPromptSubmit", prompt: "/imm-run", ...session }, { root, home: root });
 	return {
 		consumePhaseAdmission(toolCallId, operation) {
@@ -55,7 +56,7 @@ function withRunEntry(): { consumePhaseAdmission: (toolCallId: string, operation
 	};
 }
 function createMcpRuntime(options: Parameters<typeof createMcpRuntimeUngated>[0] = {}) {
-	return createMcpRuntimeUngated({ ...withRunEntry(), ...options });
+	return createMcpRuntimeUngated({ ...withRunEntry(options.cwd), ...options });
 }
 
 const TASK = "phase3-task";
@@ -977,6 +978,7 @@ describe("claude host authority", () => {
 		taskId: string,
 		cause: "security" | "budget",
 		confirm: (input: { reworkExits?: unknown; operation: string }) => Record<string, unknown>,
+		entryToken?: string,
 	) {
 		const fixture = authorityFixtureRoot(taskId);
 		const offered: unknown[] = [];
@@ -990,7 +992,10 @@ describe("claude host authority", () => {
 				return { decision: "accept", requestId: `nested-${input.operation}`, ...confirm(input as never) } as never;
 			},
 		});
-		const meta = (toolCallId: string): ToolMeta => ({ taskId, sessionId: "s", toolCallId, requiresUserInteraction: true, interactive: true, permissionMode: "manual" });
+		const meta = (toolCallId: string): ToolMeta => ({
+			taskId, sessionId: "s", toolCallId, requiresUserInteraction: true, interactive: true, permissionMode: "manual",
+			...(entryToken ? { entryToken } : {}),
+		});
 		await runtime.enroll(taskId, meta("enroll"));
 		// Enrollment goes through the same confirmation port; only the rework gate is under test.
 		offered.length = 0;
@@ -1071,6 +1076,13 @@ describe("claude host authority", () => {
 			accept_residual_risk: false,
 			replan: true,
 		});
+	});
+
+	test("an entry token does not stand in for the replan exits: the gate still offers them", async () => {
+		const parked = await parkedForReplan("exits-token", "security", () => ({ reworkChoice: { exit: "replan" } }), "token-1");
+		await parked.runtime.authorize(parked.taskId, "request_authorization", parked.meta("authorize"));
+		expect(parked.offered).toHaveLength(1);
+		expect(parked.offered[0]).toMatchObject({ replan: true });
 	});
 
 	test("choosing replan writes nothing and leaves the boundary open", async () => {
@@ -1687,7 +1699,7 @@ describe("hook entry writes only for active work", () => {
 			hook_event_name: "PreToolUse", cwd: root, session_id: "hook-work-session",
 			tool_name: "mcp__plugin_immune-brain_immune-brain__enroll", tool_use_id: "hook-entry-admission",
 		}, { root: store })).toBeNull();
-		expect(consumePhaseAdmission("hook-entry-admission", "enroll", store)).toBe(true);
+		expect(consumePhaseAdmission("hook-entry-admission", "enroll", store)).toMatchObject({ entry_token: expect.any(String) });
 	});
 });
 

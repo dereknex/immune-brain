@@ -126,6 +126,17 @@ export interface NativeConfirmationResult {
 
 export type NativeConfirmationPort = (input: NativeConfirmationInput) => Promise<NativeConfirmationResult>;
 
+/** ADR 0025: the request id an entry token stands in for, in place of an elicitation's. */
+export const ENTRY_TOKEN_REQUEST_PREFIX = "entry-token:";
+export function entryTokenRequestId(token: string): string {
+	return `${ENTRY_TOKEN_REQUEST_PREFIX}${token}`;
+}
+
+/**
+ * The Kernel-bound reference of one confirmation. A reference backed by an
+ * entry token rather than an elicitation is named `claude-entry-` so the
+ * record shows which kind of literal-user act it binds.
+ */
 export function confirmationRef(input: {
 	connectionId: string;
 	toolCallId: string;
@@ -138,7 +149,8 @@ export function confirmationRef(input: {
 	bindingDigest?: string;
 	planDigest?: string;
 }): string {
-	return `claude-confirm-${createHash("sha256")
+	const kind = input.requestId.startsWith(ENTRY_TOKEN_REQUEST_PREFIX) ? "entry" : "confirm";
+	return `claude-${kind}-${createHash("sha256")
 		.update(`${input.connectionId}\0${input.toolCallId}\0${input.requestId}\0${input.operation}\0${input.taskId ?? ""}\0${input.initiativeSlug ?? ""}\0${input.intentRevision ?? ""}\0${input.intentContentHash ?? ""}\0${input.bindingDigest ?? ""}\0${input.planDigest ?? ""}`)
 		.digest("hex")
 		.slice(0, 16)}`;

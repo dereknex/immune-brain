@@ -14,6 +14,10 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { confirmationRef, entryTokenRequestId } from "../plugins/immune-brain/runtime/claude/interaction";
+import { ClaudeRuntime } from "../plugins/immune-brain/runtime/claude/kernel_ports";
+import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
+import { createMcpRuntime, handleJsonRpc } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { batchStatePath } from "../plugins/immune-brain/runtime/kernel/storage_paths";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
@@ -288,6 +292,119 @@ describe("stale batch disposition", () => {
 		expect(reportRecord.next_action).toContain("imm-run");
 		// The retired authorization grants no handoff to the children it never ran.
 		expect(reportRecord.handoff).toBeUndefined();
+	});
+
+	it("under an entry token the Claude runtime retires with no native gate (ADR 0025)", async () => {
+		const r = repo();
+		write(r, serialRecord(r));
+		let gates = 0;
+		const runtime = new ClaudeRuntime({
+			cwd: r.root,
+			env: { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" },
+			interactive: true,
+			permissionMode: "manual",
+			requestConfirmation: async () => { gates++; return { decision: "accept", requestId: "gate" }; },
+		});
+		const result = await runtime.retireStaleBatch(SLUG, {
+			sessionId: "s", toolCallId: "toolu_r", requiresUserInteraction: true, interactive: true, permissionMode: "manual",
+			entryToken: "token-1",
+		});
+		expect(result.state).toBe("retired");
+		expect(gates).toBe(0);
+		// The retirement records the entry-token act, bound to the retired plan digest.
+		const retirement = (Object.values(reports(r))[0] as { retirement?: { confirmation_ref: string; plan_digest: string } }).retirement;
+		expect(retirement?.confirmation_ref).toMatch(/^claude-entry-[0-9a-f]{16}$/);
+		expect(retirement?.plan_digest).toBe(PLAN_DIGEST);
+		expect(retirement?.confirmation_ref).toBe(confirmationRef({
+			connectionId: "s",
+			toolCallId: "toolu_r",
+			requestId: entryTokenRequestId("token-1"),
+			operation: "retire_stale_batch",
+			initiativeSlug: SLUG,
+			planDigest: PLAN_DIGEST,
+		}));
+	});
+
+	it("a gate-confirmed Claude retirement records a claude-confirm reference", async () => {
+		const r = repo();
+		write(r, serialRecord(r));
+		const runtime = new ClaudeRuntime({
+			cwd: r.root,
+			env: { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" },
+			interactive: true,
+			permissionMode: "manual",
+			requestConfirmation: async () => ({ decision: "accept", requestId: "gate" }),
+		});
+		const result = await runtime.retireStaleBatch(SLUG, {
+			sessionId: "s", toolCallId: "toolu_r", requiresUserInteraction: true, interactive: true, permissionMode: "manual",
+		});
+		expect(result.state).toBe("retired");
+		const retirement = (Object.values(reports(r))[0] as { retirement?: { confirmation_ref: string } }).retirement;
+		expect(retirement?.confirmation_ref).toMatch(/^claude-confirm-[0-9a-f]{16}$/);
+	});
+
+	/**
+	 * The host seam end to end: a literal UserPromptSubmit mints the token, the
+	 * PreToolUse hook writes the admission, and tools/call consumes it. Only the
+	 * private store location is a fixture.
+	 */
+	async function seamSession(r: Repo) {
+		const store = mkdtempSync(join(tmpdir(), "imm-retire-store-"));
+		roots.push(store);
+		const base = { session_id: "retire-seam-session", cwd: r.root };
+		let gates = 0;
+		const mcp = createMcpRuntime({
+			cwd: r.root,
+			env: { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" },
+			requestConfirmation: async () => { gates++; return { decision: "accept", requestId: "gate" }; },
+			consumePhaseAdmission: (toolCallId: string, operation: GatedTool) => consumePhaseAdmission(toolCallId, operation, store),
+		});
+		await handleJsonRpc({
+			jsonrpc: "2.0", id: 1, method: "initialize",
+			params: { protocolVersion: "2025-06-18", clientInfo: { name: "claude-code", version: "2.1.236" }, capabilities: { elicitation: {} } },
+		}, mcp);
+		return {
+			gates: () => gates,
+			prompt: (prompt: string) => recordPhaseEntryPrompt({ hook_event_name: "UserPromptSubmit", prompt, ...base }, { root: store, home: store }),
+			hook: (toolUseId: string) => phaseEntryGateHookOutput({
+				hook_event_name: "PreToolUse", tool_name: "mcp__plugin_immune-brain_immune-brain__retire_stale_batch",
+				tool_input: {}, tool_use_id: toolUseId, ...base,
+			}, { root: store, home: store }),
+			retire: (toolUseId: string) => handleJsonRpc({
+				jsonrpc: "2.0", id: 2, method: "tools/call",
+				params: { name: "retire_stale_batch", arguments: { initiative_slug: SLUG }, _meta: { "claudecode/toolUseId": toolUseId } },
+			}, mcp),
+		};
+	}
+
+	it("a literal imm-run entry retires through the hook admission and tools/call with no gate, recording an entry reference", async () => {
+		const r = repo();
+		write(r, serialRecord(r));
+		const s = await seamSession(r);
+		expect(s.prompt(`/imm-run ${SLUG}`)).toBe(true);
+		expect(s.hook("toolu_retire")).toBeNull();
+		const reply = await s.retire("toolu_retire");
+		expect(reply?.error).toBeUndefined();
+		expect(JSON.parse((reply?.result as { content: Array<{ text: string }> }).content[0].text).state).toBe("retired");
+		expect(s.gates()).toBe(0);
+		const retirement = (Object.values(reports(r))[0] as { retirement?: { confirmation_ref: string; plan_digest: string } }).retirement;
+		expect(retirement?.confirmation_ref).toMatch(/^claude-entry-[0-9a-f]{16}$/);
+		expect(retirement?.plan_digest).toBe(PLAN_DIGEST);
+	});
+
+	it("with no literal entry the hook denies and tools/call refuses retirement with no write", async () => {
+		const r = repo();
+		write(r, serialRecord(r));
+		const before = bytes(r);
+		const s = await seamSession(r);
+		s.prompt("retire the old batch");
+		const denial = JSON.parse(s.hook("toolu_retire")!) as { hookSpecificOutput: { permissionDecision: string } };
+		expect(denial.hookSpecificOutput.permissionDecision).toBe("deny");
+		const reply = await s.retire("toolu_retire");
+		expect(reply?.error?.data?.reason_code).toBe("run_entry_required");
+		expect(s.gates()).toBe(0);
+		expect(bytes(r).equals(before)).toBe(true);
+		expect(reports(r)).toEqual({});
 	});
 
 	it("retires a drifted lane record and writes a lane report without handoffs", async () => {

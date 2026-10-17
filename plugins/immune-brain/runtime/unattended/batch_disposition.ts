@@ -181,6 +181,8 @@ export async function retireStaleBatch<HostRejection>(options: {
 	initiative_slug: string;
 	now: string;
 	gate: (facts: StaleBatchFacts) => Promise<BatchGateDecision<HostRejection>>;
+	/** Binds the confirmed act to the retired plan digest; the reference is kept on the report. */
+	confirmationRef?: (input: { batch_id: string; plan_digest: string; request_id: string }) => string;
 }): Promise<RetireStaleBatchOutcome<HostRejection>> {
 	const { root, initiative_slug: initiativeSlug, now } = options;
 	const lookup = readStaleBatchLookup(root, initiativeSlug);
@@ -218,6 +220,18 @@ export async function retireStaleBatch<HostRejection>(options: {
 	const reason = record.children.some((child) => inFlightStates.has(child.state))
 		? RETIRE_REASON + RETIRE_REASON_ENDED_OUTSIDE
 		: RETIRE_REASON;
+	const retirement = options.confirmationRef
+		? {
+				retirement: {
+					confirmation_ref: options.confirmationRef({
+						batch_id: record.batch_id,
+						plan_digest: record.plan_digest,
+						request_id: decision.request_id,
+					}),
+					plan_digest: record.plan_digest,
+				},
+			}
+		: {};
 	const stored = replaceAnyBatchRunState(root, expected, retired, () => {
 		if (!readSecureProjectBytes(root, batchStatePath(record.batch_id)).equals(expected))
 			throw new Error("batch state changed before the disposition was applied");
@@ -234,6 +248,7 @@ export async function retireStaleBatch<HostRejection>(options: {
 					commits: stored.commits,
 					reason,
 					handoffs: [],
+					...retirement,
 					next_action: RETIRE_NEXT_ACTION,
 					created_at: now,
 				} satisfies BatchLaneRunReport)
@@ -245,6 +260,7 @@ export async function retireStaleBatch<HostRejection>(options: {
 					children: stored.children,
 					commits: stored.commits,
 					reason,
+					...retirement,
 					next_action: RETIRE_NEXT_ACTION,
 					created_at: now,
 				} satisfies BatchRunReport);

@@ -1,0 +1,32 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "run-entry-token-pi",
+  "owner": "user",
+  "goal": "On Pi, a literal-user imm-run input (never extension-sourced input) mints the same entry token so Enrollment, batch start, stale batch retirement and same-Host recovery run with no authority dialog, print the same manifest, and lose authority on session exit, workspace change or pause (Spec D1-D4, D6).",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "After a literal imm-run input, Pi enroll, start_unattended_batch and retire_stale_batch complete without requestAuthorityDialog and record a confirmation_ref of kind entry_token bound to the same intent hash or plan digest; a rework-exit choice still opens its dialog.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-phase-entry-gate.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Each of these is refused with no Kernel mutation: input with source extension that names imm-run; a call with no prior entry; a call from another session; a call after session shutdown; a call from another workspace; a call after the run paused.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-phase-entry-gate.test.ts\",\n      \"tests/pi-run-continuation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/run-entry-decision-hosting-pi-token.md",
+    "docs/plans/run-entry-token-pi.intent.json",
+    "docs/specs/run-entry-decision-hosting.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-interaction.ts",
+    "plugins/immune-brain/.pi-extension/pi-run-continuation.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/pi-phase-entry-gate.test.ts",
+    "tests/pi-run-continuation.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

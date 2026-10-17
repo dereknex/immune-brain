@@ -5,11 +5,14 @@
 // configured.
 //
 // Phase entry gate: UserPromptSubmit records which literal prompt entered
-// planning or execution; PreToolUse denies `enroll`, `start_unattended_batch`
-// and the `imm-run` Skill without a live run entry, and otherwise leaves an
-// admission the tool handler consumes by tool-use id. A model Skill call for
+// planning or execution, and a run entry mints the session's entry token (ADR
+// 0025); PreToolUse denies `enroll`, `start_unattended_batch`,
+// `retire_stale_batch` and the `imm-run` Skill without a live run entry, and
+// otherwise leaves an admission carrying that token, which the tool handler
+// consumes by tool-use id. A model Skill call for
 // `imm-planner` or `imm-brainstorm` is never denied and changes no entry state.
-import { lstatSync, rmSync } from "node:fs";
+import { lstatSync, realpathSync, rmSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { laneWriteRefusal } from "../unattended/lane_workspace";
@@ -18,6 +21,7 @@ import { releasesRunBinding } from "../assurance/run_continuation";
 import { readAliasFile } from "../assurance/alias_file";
 import {
 	admitPhaseOperation,
+	entryRevocationLogLine,
 	NO_PHASE_ENTRY,
 	packagedPhaseSkill,
 	phaseEntryLogLine,
@@ -27,16 +31,26 @@ import {
 	reducePhaseEntryLog,
 	RUN_ENTRY_REQUIRED,
 	type AliasReader,
-	type PhaseEntry,
+	type EntryTokenRevocation,
 	type PhaseEntryState,
 	type PhaseOperation,
 } from "../assurance/phase_entry";
 import { appendPrivate, cacheDir, ensurePrivateDir, ownedByUs, readPrivate, sessionHash } from "./review_host";
 
 const FILE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
-const GATED_MCP_TOOL = /^mcp__.*immune-brain.*__(enroll|start_unattended_batch)$/;
+const GATED_MCP_TOOL = /^mcp__.*immune-brain.*__(enroll|start_unattended_batch|retire_stale_batch)$/;
 
-export type GatedTool = "enroll" | "start_unattended_batch";
+export type GatedTool = "enroll" | "start_unattended_batch" | "retire_stale_batch";
+
+/**
+ * A consumed admission. `entry_token` is the live token the hook saw for this
+ * call, with the workspace it is bound to; null for an entry recorded before
+ * tokens, which still needs the native gate.
+ */
+export interface PhaseAdmissionGrant {
+	entry_token: string | null;
+	workspace: string | null;
+}
 
 /** Where the phase entry gate keeps its private files and finds user aliases. */
 export interface PhaseEntryLocations {
@@ -132,12 +146,22 @@ function dropPrivate(path: string): void {
  * drops the log: an earlier entry must not outlive a line the store never saw,
  * so the session is back to no entry.
  */
-function appendPhaseEntry(sessionId: string, entry: PhaseEntry | null, root: string, locations: PhaseEntryLocations): boolean {
+function appendPhaseEntry(sessionId: string, line: string, root: string, locations: PhaseEntryLocations): boolean {
 	const path = entryLogPath(sessionId, root);
 	let recorded = false;
-	try { recorded = (locations.append ?? appendPrivate)(path, cacheDir(root), phaseEntryLogLine(entry)); } catch { /* an unwritten line drops the log */ }
+	try { recorded = (locations.append ?? appendPrivate)(path, cacheDir(root), line); } catch { /* an unwritten line drops the log */ }
 	if (!recorded) dropPrivate(path);
 	return recorded;
+}
+
+/** SessionEnd: the session's entry and its token end with it. */
+export function dropPhaseEntryLog(sessionId: string, root = tmpdir()): void {
+	if (sessionId) dropPrivate(entryLogPath(sessionId, root));
+}
+
+/** The bound run is terminal: the token stops admitting until a new literal entry. */
+export function revokeEntryToken(sessionId: string, reason: EntryTokenRevocation, root = tmpdir()): void {
+	if (sessionId && readPhaseEntryState(sessionId, root)?.token) appendPhaseEntry(sessionId, entryRevocationLogLine(reason), root, {});
 }
 
 /**
@@ -151,7 +175,10 @@ export function recordPhaseEntryPrompt(payload: Record<string, unknown>, locatio
 	const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
 	const recognized = recognizePhaseEntry(prompt, claudeAliasReader(cwdOf(payload), locations.home ?? homedir()));
 	const entry = releasesRunBinding(prompt, recognized === "plan" ? "planner" : null) ? "plan" : recognized;
-	return appendPhaseEntry(sessionId, entry, locations.root ?? tmpdir(), locations);
+	let workspace: string | null = null;
+	if (entry === "run") { try { workspace = realpathSync(cwdOf(payload)); } catch { /* no workspace, no token */ } }
+	const line = phaseEntryLogLine(entry, workspace ? { token: randomUUID(), workspace } : undefined);
+	return appendPhaseEntry(sessionId, line, locations.root ?? tmpdir(), locations);
 }
 
 function gatedOperation(payload: Record<string, unknown>): PhaseOperation | null {
@@ -177,8 +204,9 @@ export function phaseEntryGateHookOutput(payload: Record<string, unknown>, locat
 	if (!operation) return null;
 	if (operation.kind === "skill" && operation.skill !== "imm-run") return null;
 	const root = locations.root ?? tmpdir();
+	const sessionId = sessionIdOf(payload);
 	let state: PhaseEntryState | null = null;
-	try { state = readPhaseEntryState(sessionIdOf(payload), root, locations.read); } catch { /* an unreadable store refuses */ }
+	try { state = readPhaseEntryState(sessionId, root, locations.read); } catch { /* an unreadable store refuses */ }
 	const admission = admitPhaseOperation(operation, state);
 	if (!admission.ok) return denyPreToolUse(phaseRefusalMessage(admission));
 	if (operation.kind === "skill") return null;
@@ -186,7 +214,8 @@ export function phaseEntryGateHookOutput(payload: Record<string, unknown>, locat
 	let recorded = false;
 	try {
 		recorded = toolUseId !== ""
-			&& (locations.append ?? appendPrivate)(admissionPath(toolUseId, root), cacheDir(root), `${JSON.stringify({ v: 1, operation: operation.name })}\n`);
+			&& (locations.append ?? appendPrivate)(admissionPath(toolUseId, root), cacheDir(root),
+				`${JSON.stringify({ v: 2, operation: operation.name, session_id: sessionId, entry_token: state?.token ?? null })}\n`);
 	} catch { /* an admission that could not be written refuses */ }
 	if (recorded) return null;
 	return denyPreToolUse(
@@ -198,9 +227,11 @@ export function phaseEntryGateHookOutput(payload: Record<string, unknown>, locat
  * Tool side: take the admission the hook wrote for this exact call. One use;
  * absent, unreadable or written for another operation all refuse. The hook may
  * run more than once for one call (two enabled copies of the plugin), so
- * repeated identical admissions count as one.
+ * repeated identical admissions count as one. A token admission is re-read
+ * against the session's entry state, so a token revoked, replaced or ended
+ * between the hook and the call no longer admits.
  */
-export function consumePhaseAdmission(toolUseId: string, operation: GatedTool, root = tmpdir()): boolean {
+export function consumePhaseAdmission(toolUseId: string, operation: GatedTool, root = tmpdir()): PhaseAdmissionGrant | false {
 	if (!toolUseId || !ensurePrivateDir(cacheDir(root))) return false;
 	const path = admissionPath(toolUseId, root);
 	let text: string | undefined;
@@ -209,12 +240,18 @@ export function consumePhaseAdmission(toolUseId: string, operation: GatedTool, r
 	dropPrivate(path);
 	const lines = text.split("\n").filter(Boolean);
 	if (lines.length === 0) return false;
-	return lines.every((line) => {
-		try {
-			const record = JSON.parse(line) as { v?: unknown; operation?: unknown } | null;
-			return record?.v === 1 && record.operation === operation;
-		} catch {
-			return false;
-		}
-	});
+	const records: Array<{ session_id: string; entry_token: string | null }> = [];
+	for (const line of lines) {
+		let record: { v?: unknown; operation?: unknown; session_id?: unknown; entry_token?: unknown } | null;
+		try { record = JSON.parse(line); } catch { return false; }
+		if (record?.v !== 2 || record.operation !== operation || typeof record.session_id !== "string" || !record.session_id ||
+			!(record.entry_token === null || (typeof record.entry_token === "string" && record.entry_token))) return false;
+		records.push({ session_id: record.session_id, entry_token: record.entry_token });
+	}
+	const [first] = records;
+	if (!records.every((record) => record.session_id === first.session_id && record.entry_token === first.entry_token)) return false;
+	let state: PhaseEntryState | null = null;
+	try { state = readPhaseEntryState(first.session_id, root); } catch { /* an unreadable store refuses */ }
+	if (!state?.run_live || state.token !== first.entry_token) return false;
+	return { entry_token: state.token, workspace: state.workspace };
 }

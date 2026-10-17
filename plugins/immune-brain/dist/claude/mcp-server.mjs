@@ -14649,8 +14649,8 @@ var init_batch_preflight = __esm(() => {
 // plugins/immune-brain/runtime/claude/mcp_server.ts
 init_batch_preflight();
 init_batch_state();
-import { randomUUID as randomUUID11 } from "node:crypto";
-import { existsSync as existsSync17, readdirSync as readdirSync10 } from "node:fs";
+import { randomUUID as randomUUID12 } from "node:crypto";
+import { existsSync as existsSync17, readdirSync as readdirSync10, realpathSync as realpathSync18 } from "node:fs";
 import { join as join28 } from "node:path";
 import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
@@ -14747,18 +14747,26 @@ function recognizePhaseEntry(text, readAlias) {
     return null;
   return ALIAS_TARGETS[[...targets][0]] ?? null;
 }
-var NO_PHASE_ENTRY = { run_live: false };
-function applyPrompt(state, entry) {
+var NO_PHASE_ENTRY = { run_live: false, token: null, workspace: null };
+function applyPrompt(state, entry, mint) {
   if (entry === "run")
-    return { run_live: true };
+    return { run_live: true, token: mint?.token ?? null, workspace: mint?.workspace ?? null };
   if (entry === "plan")
-    return { run_live: false };
+    return NO_PHASE_ENTRY;
   return state;
 }
-function phaseEntryLogLine(entry) {
+function phaseEntryLogLine(entry, mint) {
+  if (entry === "run" && mint)
+    return `${JSON.stringify({ v: 2, entry, token: mint.token, workspace: mint.workspace })}
+`;
   return `${JSON.stringify({ v: 1, entry })}
 `;
 }
+function entryRevocationLogLine(reason) {
+  return `${JSON.stringify({ v: 2, revoked: reason })}
+`;
+}
+var nonEmpty = (value) => typeof value === "string" && value.length > 0;
 function reducePhaseEntryLog(text) {
   let state = NO_PHASE_ENTRY;
   for (const line of text.split(`
@@ -14773,10 +14781,17 @@ function reducePhaseEntryLog(text) {
     }
     if (!record || typeof record !== "object")
       return null;
-    const { v, entry } = record;
-    if (v !== 1 || entry !== null && entry !== "plan" && entry !== "run")
+    const { v, entry, token, workspace, revoked } = record;
+    if (v === 1) {
+      if (entry !== null && entry !== "plan" && entry !== "run")
+        return null;
+      state = applyPrompt(state, entry);
+    } else if (v === 2 && revoked === "spent" && entry === undefined) {
+      state = NO_PHASE_ENTRY;
+    } else if (v === 2 && entry === "run" && nonEmpty(token) && nonEmpty(workspace)) {
+      state = applyPrompt(state, entry, { token, workspace });
+    } else
       return null;
-    state = applyPrompt(state, entry);
   }
   return state;
 }
@@ -14847,8 +14862,13 @@ function evaluateNativeGate(input) {
     return { ok: false, error: new NativeAuthorityError("interaction_not_opened", "native interaction returned no decision") };
   return { ok: true };
 }
+var ENTRY_TOKEN_REQUEST_PREFIX = "entry-token:";
+function entryTokenRequestId(token) {
+  return `${ENTRY_TOKEN_REQUEST_PREFIX}${token}`;
+}
 function confirmationRef(input) {
-  return `claude-confirm-${createHash19("sha256").update(`${input.connectionId}\x00${input.toolCallId}\x00${input.requestId}\x00${input.operation}\x00${input.taskId ?? ""}\x00${input.initiativeSlug ?? ""}\x00${input.intentRevision ?? ""}\x00${input.intentContentHash ?? ""}\x00${input.bindingDigest ?? ""}\x00${input.planDigest ?? ""}`).digest("hex").slice(0, 16)}`;
+  const kind = input.requestId.startsWith(ENTRY_TOKEN_REQUEST_PREFIX) ? "entry" : "confirm";
+  return `claude-${kind}-${createHash19("sha256").update(`${input.connectionId}\x00${input.toolCallId}\x00${input.requestId}\x00${input.operation}\x00${input.taskId ?? ""}\x00${input.initiativeSlug ?? ""}\x00${input.intentRevision ?? ""}\x00${input.intentContentHash ?? ""}\x00${input.bindingDigest ?? ""}\x00${input.planDigest ?? ""}`).digest("hex").slice(0, 16)}`;
 }
 function enrollmentNonce() {
   return randomUUID9();
@@ -15444,7 +15464,8 @@ function parseHookStdin(raw) {
 
 // plugins/immune-brain/runtime/claude/lane_guard.ts
 init_lane_workspace();
-import { lstatSync as lstatSync15, rmSync as rmSync10 } from "node:fs";
+import { lstatSync as lstatSync15, realpathSync as realpathSync15, rmSync as rmSync10 } from "node:fs";
+import { randomUUID as randomUUID10 } from "node:crypto";
 import { homedir, tmpdir as tmpdir6 } from "node:os";
 import { join as join21 } from "node:path";
 
@@ -15829,7 +15850,7 @@ function readAliasFile(path, maxBytes = MAX_ALIAS_BYTES) {
 
 // plugins/immune-brain/runtime/claude/lane_guard.ts
 var FILE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
-var GATED_MCP_TOOL = /^mcp__.*immune-brain.*__(enroll|start_unattended_batch)$/;
+var GATED_MCP_TOOL = /^mcp__.*immune-brain.*__(enroll|start_unattended_batch|retire_stale_batch)$/;
 function denyPreToolUse(reason) {
   return JSON.stringify({
     hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason }
@@ -15902,15 +15923,23 @@ function dropPrivate(path) {
       rmSync10(path, { force: true });
   } catch {}
 }
-function appendPhaseEntry(sessionId, entry, root, locations) {
+function appendPhaseEntry(sessionId, line, root, locations) {
   const path = entryLogPath(sessionId, root);
   let recorded = false;
   try {
-    recorded = (locations.append ?? appendPrivate)(path, cacheDir(root), phaseEntryLogLine(entry));
+    recorded = (locations.append ?? appendPrivate)(path, cacheDir(root), line);
   } catch {}
   if (!recorded)
     dropPrivate(path);
   return recorded;
+}
+function dropPhaseEntryLog(sessionId, root = tmpdir6()) {
+  if (sessionId)
+    dropPrivate(entryLogPath(sessionId, root));
+}
+function revokeEntryToken(sessionId, reason, root = tmpdir6()) {
+  if (sessionId && readPhaseEntryState(sessionId, root)?.token)
+    appendPhaseEntry(sessionId, entryRevocationLogLine(reason), root, {});
 }
 function recordPhaseEntryPrompt(payload, locations = {}) {
   if (payload.hook_event_name !== "UserPromptSubmit")
@@ -15921,7 +15950,14 @@ function recordPhaseEntryPrompt(payload, locations = {}) {
   const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
   const recognized = recognizePhaseEntry(prompt, claudeAliasReader(cwdOf(payload), locations.home ?? homedir()));
   const entry = releasesRunBinding(prompt, recognized === "plan" ? "planner" : null) ? "plan" : recognized;
-  return appendPhaseEntry(sessionId, entry, locations.root ?? tmpdir6(), locations);
+  let workspace = null;
+  if (entry === "run") {
+    try {
+      workspace = realpathSync15(cwdOf(payload));
+    } catch {}
+  }
+  const line = phaseEntryLogLine(entry, workspace ? { token: randomUUID10(), workspace } : undefined);
+  return appendPhaseEntry(sessionId, line, locations.root ?? tmpdir6(), locations);
 }
 function gatedOperation(payload) {
   const toolName = String(payload.tool_name ?? "");
@@ -15942,9 +15978,10 @@ function phaseEntryGateHookOutput(payload, locations = {}) {
   if (operation.kind === "skill" && operation.skill !== "imm-run")
     return null;
   const root = locations.root ?? tmpdir6();
+  const sessionId = sessionIdOf(payload);
   let state = null;
   try {
-    state = readPhaseEntryState(sessionIdOf(payload), root, locations.read);
+    state = readPhaseEntryState(sessionId, root, locations.read);
   } catch {}
   const admission = admitPhaseOperation(operation, state);
   if (!admission.ok)
@@ -15954,7 +15991,7 @@ function phaseEntryGateHookOutput(payload, locations = {}) {
   const toolUseId = typeof payload.tool_use_id === "string" ? payload.tool_use_id : "";
   let recorded = false;
   try {
-    recorded = toolUseId !== "" && (locations.append ?? appendPrivate)(admissionPath(toolUseId, root), cacheDir(root), `${JSON.stringify({ v: 1, operation: operation.name })}
+    recorded = toolUseId !== "" && (locations.append ?? appendPrivate)(admissionPath(toolUseId, root), cacheDir(root), `${JSON.stringify({ v: 2, operation: operation.name, session_id: sessionId, entry_token: state?.token ?? null })}
 `);
   } catch {}
   if (recorded)
@@ -15978,14 +16015,28 @@ function consumePhaseAdmission(toolUseId, operation, root = tmpdir6()) {
 `).filter(Boolean);
   if (lines.length === 0)
     return false;
-  return lines.every((line) => {
+  const records = [];
+  for (const line of lines) {
+    let record;
     try {
-      const record = JSON.parse(line);
-      return record?.v === 1 && record.operation === operation;
+      record = JSON.parse(line);
     } catch {
       return false;
     }
-  });
+    if (record?.v !== 2 || record.operation !== operation || typeof record.session_id !== "string" || !record.session_id || !(record.entry_token === null || typeof record.entry_token === "string" && record.entry_token))
+      return false;
+    records.push({ session_id: record.session_id, entry_token: record.entry_token });
+  }
+  const [first] = records;
+  if (!records.every((record) => record.session_id === first.session_id && record.entry_token === first.entry_token))
+    return false;
+  let state = null;
+  try {
+    state = readPhaseEntryState(first.session_id, root);
+  } catch {}
+  if (!state?.run_live || state.token !== first.entry_token)
+    return false;
+  return { entry_token: state.token, workspace: state.workspace };
 }
 
 // plugins/immune-brain/runtime/claude/run_continuation.ts
@@ -15993,8 +16044,8 @@ init_coordinator();
 init_storage();
 init_batch_git();
 init_batch_state();
-import { existsSync as existsSync13, realpathSync as realpathSync15, lstatSync as lstatSync16, rmSync as rmSync11, renameSync as renameSync6, openSync as openSync9, fstatSync as fstatSync6, readSync as readSync3, closeSync as closeSync9 } from "node:fs";
-import { randomUUID as randomUUID10 } from "node:crypto";
+import { existsSync as existsSync13, realpathSync as realpathSync16, lstatSync as lstatSync16, rmSync as rmSync11, renameSync as renameSync6, openSync as openSync9, fstatSync as fstatSync6, readSync as readSync3, closeSync as closeSync9 } from "node:fs";
+import { randomUUID as randomUUID11 } from "node:crypto";
 import { join as join22 } from "node:path";
 import { tmpdir as tmpdir7 } from "node:os";
 
@@ -16083,7 +16134,7 @@ async function submitMediatedReview(coordinator, ctx, taskId, verdictInput, insp
 // plugins/immune-brain/runtime/claude/run_continuation.ts
 import { homedir as homedir2 } from "node:os";
 var MCP_TOOL = /^mcp__.*immune-brain.*__(\w+)$/;
-var NATIVE_OPERATIONS = new Set(["enroll", "start_unattended_batch", "request_authorization", "approve_breaking_intent_revision", "stop"]);
+var NATIVE_OPERATIONS = new Set(["enroll", "start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "stop"]);
 var MAX_METADATA_BYTES = 256 * 1024;
 var blank = () => ({
   state: null,
@@ -16143,7 +16194,7 @@ function readMetadata(sessionId, root) {
 }
 function save(sessionId, root, value) {
   const path = statePath2(sessionId, root);
-  const temporary = `${path}.${randomUUID10()}`;
+  const temporary = `${path}.${randomUUID11()}`;
   if (!appendPrivate(temporary, cacheDir(root), JSON.stringify(value) + `
 `))
     throw new Error("continuation metadata could not be written");
@@ -16163,13 +16214,13 @@ async function observeNativeFailure(metadata, correlation, root, reason) {
 }
 function readRunToolSession(toolId, operation, workspace, root = tmpdir7()) {
   const record = readLast(callPath(toolId, root));
-  if (!record || record.operation !== operation || record.tool_use_id !== toolId || record.workspace !== realpathSync15(workspace) || typeof record.session_id !== "string" || !record.session_id || !readPhaseEntryState(record.session_id, root)?.run_live)
+  if (!record || record.operation !== operation || record.tool_use_id !== toolId || record.workspace !== realpathSync16(workspace) || typeof record.session_id !== "string" || !record.session_id || !readPhaseEntryState(record.session_id, root)?.run_live)
     return null;
   return record.session_id;
 }
 function selectedClaudeParent(toolId, workspace, slug, root = tmpdir7()) {
   const call = readLast(callPath(toolId, root));
-  if (!call || call.workspace !== realpathSync15(workspace) || !["advance_assurance", "submit_review"].includes(call.operation) || !readPhaseEntryState(call.session_id, root)?.run_live)
+  if (!call || call.workspace !== realpathSync16(workspace) || !["advance_assurance", "submit_review"].includes(call.operation) || !readPhaseEntryState(call.session_id, root)?.run_live)
     return false;
   const state = readMetadata(call.session_id, root).state;
   return state?.binding.kind === "parent" && state.binding.workspace === call.workspace && state.binding.initiative_slug === slug;
@@ -16241,10 +16292,11 @@ async function runContinuationHookOutput(payload, root = tmpdir7()) {
   const sessionId = typeof payload.session_id === "string" ? payload.session_id : "";
   if (!sessionId)
     return null;
-  const workspace = realpathSync15(typeof payload.cwd === "string" && payload.cwd ? payload.cwd : process.cwd());
+  const workspace = realpathSync16(typeof payload.cwd === "string" && payload.cwd ? payload.cwd : process.cwd());
   const event = String(payload.hook_event_name ?? "");
   if (event === "SessionEnd") {
     drop(statePath2(sessionId, root), root);
+    dropPhaseEntryLog(sessionId, root);
     return null;
   }
   if (event === "UserPromptSubmit") {
@@ -16423,6 +16475,8 @@ async function runContinuationHookOutput(payload, root = tmpdir7()) {
     }
     const decision = decideRunContinuation(metadata.state, observation);
     if (decision.action === "unbound" || decision.action === "settled") {
+      if (decision.action === "settled")
+        revokeEntryToken(sessionId, "spent", root);
       drop(statePath2(sessionId, root), root);
       return null;
     }
@@ -17023,7 +17077,7 @@ init_runtime_contracts();
 init_batch_final_verification();
 import { spawnSync as spawnSync17 } from "node:child_process";
 import { createHash as createHash23 } from "node:crypto";
-import { existsSync as existsSync14, realpathSync as realpathSync16 } from "node:fs";
+import { existsSync as existsSync14, realpathSync as realpathSync17 } from "node:fs";
 import { isAbsolute as isAbsolute8, join as join25 } from "node:path";
 import { readFileSync as readFileSync20 } from "node:fs";
 
@@ -17291,14 +17345,14 @@ function commonDir(root) {
   if (result.status !== 0 || !result.stdout)
     return null;
   try {
-    return realpathSync16(result.stdout);
+    return realpathSync17(result.stdout);
   } catch {
     return null;
   }
 }
 function resolveRealPath(path) {
   try {
-    return realpathSync16(path);
+    return realpathSync17(path);
   } catch {
     return null;
   }
@@ -19066,6 +19120,16 @@ async function retireStaleBatch(options) {
   const retired = { ...record, batch_state: "superseded" };
   const inFlightStates = record.contract === "assurance_kernel/batch_run_state/v2" ? LANE_IN_FLIGHT : SERIAL_IN_FLIGHT;
   const reason = record.children.some((child) => inFlightStates.has(child.state)) ? RETIRE_REASON + RETIRE_REASON_ENDED_OUTSIDE : RETIRE_REASON;
+  const retirement = options.confirmationRef ? {
+    retirement: {
+      confirmation_ref: options.confirmationRef({
+        batch_id: record.batch_id,
+        plan_digest: record.plan_digest,
+        request_id: decision.request_id
+      }),
+      plan_digest: record.plan_digest
+    }
+  } : {};
   const stored = replaceAnyBatchRunState(root, expected, retired, () => {
     if (!readSecureProjectBytes(root, batchStatePath(record.batch_id)).equals(expected))
       throw new Error("batch state changed before the disposition was applied");
@@ -19080,6 +19144,7 @@ async function retireStaleBatch(options) {
     commits: stored.commits,
     reason,
     handoffs: [],
+    ...retirement,
     next_action: RETIRE_NEXT_ACTION,
     created_at: now
   }) : writeBatchRunReport(root, {
@@ -19090,6 +19155,7 @@ async function retireStaleBatch(options) {
     children: stored.children,
     commits: stored.commits,
     reason,
+    ...retirement,
     next_action: RETIRE_NEXT_ACTION,
     created_at: now
   });
@@ -19164,6 +19230,32 @@ function throwIfCancelled(signal) {
   if (signal?.aborted)
     throw new NativeAuthorityError("user_cancelled", "Tool call was cancelled");
 }
+var ENTRY_TOKEN_OPERATIONS = new Set(["retire_stale_batch"]);
+function manifestVerification(verification) {
+  try {
+    const command = JSON.parse(verification).command;
+    if (typeof command?.executable === "string" && Array.isArray(command.argv))
+      return [command.executable, ...command.argv.map(String)].join(" ");
+  } catch {}
+  return verification;
+}
+function runEntryManifest(root, children) {
+  return {
+    children: children.map((child) => {
+      let intent = null;
+      try {
+        intent = readTaskIntentForRecord(root, child.task_id).intent;
+      } catch {}
+      return {
+        task_id: child.task_id,
+        slice_id: child.slice_id,
+        risk: child.risk ?? intent?.risk ?? "unknown",
+        scope: intent ? [...intent.scope_hint] : [],
+        verification: intent ? [...new Set(intent.acceptance.map((item) => manifestVerification(item.verification)))] : []
+      };
+    })
+  };
+}
 
 class ClaudeRuntime {
   host;
@@ -19230,6 +19322,13 @@ class ClaudeRuntime {
     this.app ??= createCanaryApplication(this.mutationRegistry);
     return { registry: this.mutationRegistry, app: this.app };
   }
+  async confirm(input, meta) {
+    if (meta.entryToken && ENTRY_TOKEN_OPERATIONS.has(input.operation) && !input.reworkExits)
+      return { decision: "accept", requestId: entryTokenRequestId(meta.entryToken) };
+    if (!this.requestConfirmation)
+      throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
+    return this.requestConfirmation(input);
+  }
   async gate(operation, meta, binding = {}) {
     throwIfCancelled(meta.signal);
     const probe = probeHost(this.env, process.platform, this.hostVersion);
@@ -19240,9 +19339,7 @@ class ClaudeRuntime {
       throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
     if (!isPrivilegedOperation(operation))
       throw new Error(`unsupported native operation ${operation}`);
-    if (!this.requestConfirmation)
-      throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
-    const result = await this.requestConfirmation({ operation, taskId: meta.taskId, toolCallId: meta.toolCallId, signal: meta.signal, ...binding });
+    const result = await this.confirm({ operation, taskId: meta.taskId, toolCallId: meta.toolCallId, signal: meta.signal, ...binding }, meta);
     throwIfCancelled(meta.signal);
     const gate = evaluateNativeGate({ operation, interactive, decision: result.decision });
     if (!gate.ok)
@@ -19624,6 +19721,7 @@ class ClaudeRuntime {
       throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
     if (!reuseOnly && !this.requestConfirmation)
       throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
+    let manifestChildren = null;
     await integrateSettledCriticalSlices(this.cwd, initiativeSlug, this.readInitiative);
     const completed = await completedParentReport(this.cwd, initiativeSlug, this.readInitiative, this.batchTracker);
     if (completed)
@@ -19632,7 +19730,8 @@ class ClaudeRuntime {
       if (reuseOnly)
         return batchReason("confirmation_port_unavailable");
       try {
-        const confirmation = await this.requestConfirmation({
+        manifestChildren = effects.children;
+        const confirmation = await this.confirm({
           operation: "start_unattended_batch",
           initiativeSlug,
           toolCallId: meta.toolCallId,
@@ -19646,7 +19745,7 @@ class ClaudeRuntime {
             parent_final_verification: {}
           },
           signal: meta.signal
-        });
+        }, meta);
         if (meta.signal?.aborted)
           return batchReason("cancelled_before_execution");
         if (confirmation.decision === "accept")
@@ -19714,8 +19813,9 @@ class ClaudeRuntime {
             }
           };
         let confirmationResult;
+        manifestChildren = facts.children;
         try {
-          confirmationResult = await this.requestConfirmation({
+          confirmationResult = await this.confirm({
             operation: "start_unattended_batch",
             initiativeSlug,
             toolCallId: meta.toolCallId,
@@ -19750,7 +19850,7 @@ class ClaudeRuntime {
               } : {}
             },
             signal: meta.signal
-          });
+          }, meta);
         } catch (err) {
           if (meta.signal?.aborted)
             return { kind: "host_rejection", value: batchReason("cancelled_before_execution") };
@@ -19866,7 +19966,8 @@ class ClaudeRuntime {
     return {
       state: "started",
       batch_id: batchId,
-      report
+      report,
+      ...manifestChildren ? { manifest: runEntryManifest(this.cwd, manifestChildren) } : {}
     };
   }
   async retireStaleBatch(initiativeSlug, meta) {
@@ -19874,7 +19975,7 @@ class ClaudeRuntime {
     const probe = probeHost(this.env, process.platform, this.hostVersion);
     if (!probe.ok)
       throw new NativeAuthorityError("unsupported_host", probe.reason);
-    if (!this.requestConfirmation)
+    if (!this.requestConfirmation && !meta.entryToken)
       throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
     const outcome = await retireStaleBatch({
       root: this.cwd,
@@ -19883,7 +19984,7 @@ class ClaudeRuntime {
       gate: async (facts) => {
         let confirmationResult;
         try {
-          confirmationResult = await this.requestConfirmation({
+          confirmationResult = await this.confirm({
             operation: "retire_stale_batch",
             initiativeSlug,
             toolCallId: meta.toolCallId,
@@ -19903,7 +20004,7 @@ class ClaudeRuntime {
               }))
             },
             signal: meta.signal
-          });
+          }, meta);
         } catch (err) {
           if (meta.signal?.aborted)
             return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
@@ -19937,7 +20038,15 @@ class ClaudeRuntime {
         if (confirmationResult.decision !== "accept")
           return { kind: "host_rejection", value: batchReason("confirmation_no_decision") };
         return { kind: "confirmed", request_id: confirmationResult.requestId };
-      }
+      },
+      confirmationRef: ({ request_id, plan_digest }) => confirmationRef({
+        connectionId: meta.sessionId,
+        toolCallId: meta.toolCallId,
+        requestId: request_id,
+        operation: "retire_stale_batch",
+        initiativeSlug,
+        planDigest: plan_digest
+      })
     });
     if (outcome.outcome === "host_rejection")
       return outcome.value;
@@ -19962,8 +20071,8 @@ var TOOLS = [
   { name: "revise_intent", description: "Apply a compatible TaskIntent revision.", privileged: false },
   { name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
   { name: "stop", description: "Stop the active task with literal-user authority.", privileged: true },
-  { name: "start_unattended_batch", description: "Start an unattended serial batch run for an Initiative after native confirmation.", privileged: true },
-  { name: "retire_stale_batch", description: "Retire an Initiative's parked or drifted batch record to the terminal superseded state after native confirmation.", privileged: true },
+  { name: "start_unattended_batch", description: "Start an unattended serial batch run for an Initiative under the literal-user imm-run entry.", privileged: true },
+  { name: "retire_stale_batch", description: "Retire an Initiative's parked or drifted batch record to the terminal superseded state under the literal-user imm-run entry.", privileged: true },
   { name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false },
   { name: "resolve_finding", description: "Resolve one open blocking or advisory finding whose cause is fixed and verified.", privileged: false },
   { name: "refute_finding", description: "Refute one open finding by binding the fresh passing QA attestation that contradicts it.", privileged: false }
@@ -20051,18 +20160,33 @@ function createMcpRuntime(options = {}) {
   });
   let negotiatedVersion;
   let negotiatedInteractive = false;
-  const connectionId = randomUUID11();
+  const connectionId = randomUUID12();
   const consumeAdmission = options.consumePhaseAdmission ?? ((toolCallId, operation) => consumePhaseAdmission(toolCallId, operation));
   let hookSessionId = null;
   const requireRunEntry = (operation, toolCallId) => {
-    const correlated = readRunToolSession(toolCallId, operation, options.cwd ?? process.cwd());
+    const workspace = options.cwd ?? process.cwd();
+    const correlated = readRunToolSession(toolCallId, operation, workspace);
     if (!options.consumePhaseAdmission && !correlated)
       throw new NativeAuthorityError("run_entry_required", "Enrollment needs exact Hook session and workspace correlation");
-    if (consumeAdmission(toolCallId, operation)) {
-      hookSessionId = correlated ?? hookSessionId;
+    const grant = consumeAdmission(toolCallId, operation);
+    if (!grant)
+      throw new NativeAuthorityError("run_entry_required", `${operation} needs a literal-user imm-run entry in this session`);
+    hookSessionId = correlated ?? hookSessionId;
+    if (grant === true || !grant.entry_token)
       return;
-    }
-    throw new NativeAuthorityError("run_entry_required", `${operation} needs a literal-user imm-run entry in this session`);
+    let current = null;
+    try {
+      current = realpathSync18(workspace);
+    } catch {}
+    if (!current || grant.workspace !== current)
+      throw new NativeAuthorityError("run_entry_required", `${operation} runs in a workspace other than the one imm-run was entered in`);
+    return grant.entry_token;
+  };
+  const refuseSuppliedAuthority = (args) => {
+    if ("native_decision" in args)
+      throw new Error("native_decision cannot be supplied in tool arguments");
+    if ("entry_token" in args)
+      throw new Error("entry_token cannot be supplied in tool arguments");
   };
   return {
     runtime,
@@ -20086,8 +20210,7 @@ function createMcpRuntime(options = {}) {
         const initiativeSlug = String(args.initiative_slug ?? "");
         if (!initiativeSlug)
           throw new Error("initiative_slug is required");
-        if ("native_decision" in args)
-          throw new Error("native_decision cannot be supplied in tool arguments");
+        refuseSuppliedAuthority(args);
         if (!negotiatedVersion)
           throw new NativeAuthorityError("unsupported_host", "Claude Code version is unavailable");
         if (!negotiatedInteractive) {
@@ -20096,12 +20219,13 @@ function createMcpRuntime(options = {}) {
         const probe = probeHost(options.env ?? process.env, process.platform, negotiatedVersion);
         if (!probe.ok)
           throw new NativeAuthorityError("unsupported_host", probe.reason);
-        requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
+        const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
         const toolMeta = {
           sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
           toolCallId: meta.toolCallId ?? `call-${name}`,
           taskId: initiativeSlug,
           initiativeSlug,
+          ...entryToken ? { entryToken } : {},
           interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
           signal: meta.signal
         };
@@ -20122,8 +20246,7 @@ function createMcpRuntime(options = {}) {
         const initiativeSlug = String(args.initiative_slug ?? "");
         if (!initiativeSlug)
           throw new Error("initiative_slug is required");
-        if ("native_decision" in args)
-          throw new Error("native_decision cannot be supplied in tool arguments");
+        refuseSuppliedAuthority(args);
         if (!negotiatedVersion)
           throw new NativeAuthorityError("unsupported_host", "Claude Code version is unavailable");
         if (!negotiatedInteractive) {
@@ -20132,11 +20255,13 @@ function createMcpRuntime(options = {}) {
         const probe = probeHost(options.env ?? process.env, process.platform, negotiatedVersion);
         if (!probe.ok)
           throw new NativeAuthorityError("unsupported_host", probe.reason);
+        const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
         const toolMeta = {
           sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
           toolCallId: meta.toolCallId ?? `call-${name}`,
           taskId: initiativeSlug,
           initiativeSlug,
+          ...entryToken ? { entryToken } : {},
           interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
           signal: meta.signal
         };
@@ -20145,8 +20270,7 @@ function createMcpRuntime(options = {}) {
       const taskId = String(args.task_id ?? "");
       if (!taskId)
         throw new Error("task_id is required");
-      if ("native_decision" in args)
-        throw new Error("native_decision cannot be supplied in tool arguments");
+      refuseSuppliedAuthority(args);
       if (name === "status")
         return { plugin_version: PLUGIN_VERSION, ...await runtime.status(taskId) };
       if (!negotiatedVersion)
@@ -20165,8 +20289,8 @@ function createMcpRuntime(options = {}) {
         signal: meta.signal
       };
       if (name === "enroll") {
-        requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
-        return runtime.enroll(taskId, toolMeta);
+        const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
+        return runtime.enroll(taskId, entryToken ? { ...toolMeta, entryToken } : toolMeta);
       }
       if (name === "advance_assurance")
         return withCompletionDelivery(taskId, await runtime.advance(taskId, toolMeta.signal, toolMeta), options.cwd);

@@ -1,0 +1,52 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "run-entry-token-claude",
+  "goal": "On Claude Code, a literal-user imm-run entry mints a session- and workspace-bound entry token that authorizes Enrollment, unattended batch start, stale batch retirement and same-Host recovery with no native gate, prints a non-blocking execution manifest, and is invalidated by session exit, workspace change or a Stop-boundary pause (Spec D1-D4, D6, D11).",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "After a UserPromptSubmit carrying a literal imm-run entry, enroll, start_unattended_batch and retire_stale_batch complete without any elicitation/create request and record a confirmation_ref of kind entry_token while still binding the intent hash or plan digest; a rework-exit confirmation still opens elicitation.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-native-elicitation-promotion.test.ts\",\n      \"tests/claude-phase-entry-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Each of these is refused with no Kernel mutation: an authority tool call with no prior literal entry; a call whose session id differs from the minting session; a call after SessionEnd; a call from a different workspace realpath; a call after the run paused at the Stop boundary; a tool argument that supplies a token or native_decision field.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/phase-entry.test.ts\",\n      \"tests/claude-phase-entry-gate.test.ts\",\n      \"tests/claude-run-continuation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "A token-backed start_unattended_batch result carries a manifest listing every child's task id, risk, scope summary and verification commands, and the token stays live across a same-session continuation until the bound run is terminal.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-run-continuation.test.ts\",\n      \"tests/unattended-batch-run.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/run-entry-decision-hosting-claude-token.md",
+    "docs/adr/0025-run-entry-decision-hosting.md",
+    "docs/plans/run-entry-token-claude.intent.json",
+    "docs/specs/run-entry-decision-hosting.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/hooks/hooks.json",
+    "plugins/immune-brain/runtime/assurance/phase_entry.ts",
+    "plugins/immune-brain/runtime/claude/interaction.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/lane_guard.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/claude/run_continuation.ts",
+    "tests/batch-plan-reconfirmation.test.ts",
+    "tests/batch-stale-disposition.test.ts",
+    "tests/breaking-intent-revision-gate.test.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/claude-host-authority.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/claude-native-elicitation-promotion.test.ts",
+    "tests/claude-phase-entry-gate.test.ts",
+    "tests/claude-phase-entry-skill-gate.test.ts",
+    "tests/claude-run-continuation.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/phase-entry.test.ts",
+    "tests/unattended-batch-run.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 2,
+  "owner": "user"
+}

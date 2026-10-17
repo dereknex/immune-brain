@@ -11,11 +11,11 @@ import { bindRun, decideRunContinuation, observeParentRun, parkFailedCriticalGat
 import { digestOfReviewerBytes } from "../assurance/review_mediation";
 import { recognizePhaseEntry } from "../assurance/phase_entry";
 import { homedir } from "node:os";
-import { readPhaseEntryState, claudeAliasReader } from "./lane_guard";
+import { readPhaseEntryState, claudeAliasReader, dropPhaseEntryLog, revokeEntryToken } from "./lane_guard";
 import { appendPrivate, cacheDir, ensurePrivateDir, ownedByUs, readPrivate, sessionHash } from "./review_host";
 
 const MCP_TOOL = /^mcp__.*immune-brain.*__(\w+)$/;
-const NATIVE_OPERATIONS = new Set(["enroll", "start_unattended_batch", "request_authorization", "approve_breaking_intent_revision", "stop"]);
+const NATIVE_OPERATIONS = new Set(["enroll", "start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "stop"]);
 const MAX_METADATA_BYTES = 256 * 1024;
 interface Correlation { session_id: string; workspace: string; tool_use_id: string; operation: string; task_id: string | null }
 interface ContinuationMetadata {
@@ -143,7 +143,8 @@ export async function runContinuationHookOutput(payload: Record<string, unknown>
 	if (!sessionId) return null;
 	const workspace = realpathSync(typeof payload.cwd === "string" && payload.cwd ? payload.cwd : process.cwd());
 	const event = String(payload.hook_event_name ?? "");
-	if (event === "SessionEnd") { drop(statePath(sessionId, root), root); return null; }
+	// ADR 0025: the entry token ends with its session.
+	if (event === "SessionEnd") { drop(statePath(sessionId, root), root); dropPhaseEntryLog(sessionId, root); return null; }
 	if (event === "UserPromptSubmit") {
 		const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
 		const entry = recognizePhaseEntry(prompt, claudeAliasReader(workspace, homedir()));
@@ -257,7 +258,11 @@ export async function runContinuationHookOutput(payload: Record<string, unknown>
 				review: metadata.review, recovery_action: metadata.recovery_action ?? undefined };
 		}
 		const decision = decideRunContinuation(metadata.state, observation);
-		if (decision.action === "unbound" || decision.action === "settled") { drop(statePath(sessionId, root), root); return null; }
+		if (decision.action === "unbound" || decision.action === "settled") {
+			// A terminal bound run spends its entry token; the next run needs a new literal entry.
+			if (decision.action === "settled") revokeEntryToken(sessionId, "spent", root);
+			drop(statePath(sessionId, root), root); return null;
+		}
 		if (decision.action === "wait") { metadata.state = decision.state; save(sessionId, root, metadata); return null; }
 		if (decision.state.progress_digest !== metadata.state.progress_digest || payload.stop_hook_active !== true) metadata.stop_blocks = 0;
 		metadata.state = decision.state;

@@ -89,10 +89,13 @@ import { observeInitiative } from "../unattended/batch_plan";
 import {
 	confirmationRef,
 	enrollmentNonce,
+	entryTokenRequestId,
 	evaluateNativeGate,
 	isPrivilegedOperation,
 	NativeAuthorityError,
+	type NativeConfirmationInput,
 	type NativeConfirmationPort,
+	type NativeConfirmationResult,
 	type NativeDecision,
 	type PrivilegedOperation,
 } from "./interaction";
@@ -262,13 +265,56 @@ export interface ClaudeRuntimeOptions {
 	readInitiative?: InitiativeObservationReader;
 }
 
+/** ADR 0025: the run-internal authority operations a live entry token authorizes. */
+// ADR 0025: Enrollment and batch start keep their native gate; a token only spares the run-internal steps.
+const ENTRY_TOKEN_OPERATIONS = new Set(["retire_stale_batch"]);
+
+/** One child of a confirmed batch start, as the Loop prints it before working. */
+export interface RunEntryManifestChild {
+	task_id: string;
+	slice_id: string;
+	risk: string;
+	scope: string[];
+	verification: string[];
+}
+
+/** The non-blocking execution manifest a confirmed batch start returns (Spec D6). */
+export interface RunEntryManifest {
+	children: RunEntryManifestChild[];
+}
+
+function manifestVerification(verification: string): string {
+	try {
+		const command = (JSON.parse(verification) as { command?: { executable?: unknown; argv?: unknown } }).command;
+		if (typeof command?.executable === "string" && Array.isArray(command.argv))
+			return [command.executable, ...command.argv.map(String)].join(" ");
+	} catch { /* a plain command string */ }
+	return verification;
+}
+
+function runEntryManifest(root: string, children: ReadonlyArray<{ task_id: string; slice_id: string; risk?: string }>): RunEntryManifest {
+	return {
+		children: children.map((child) => {
+			let intent: Awaited<ReturnType<typeof readTaskIntent>>["intent"] | null = null;
+			try { intent = readTaskIntentForRecord(root, child.task_id).intent; } catch { /* listed without its intent */ }
+			return {
+				task_id: child.task_id,
+				slice_id: child.slice_id,
+				risk: child.risk ?? intent?.risk ?? "unknown",
+				scope: intent ? [...intent.scope_hint] : [],
+				verification: intent ? [...new Set(intent.acceptance.map((item) => manifestVerification(item.verification)))] : [],
+			};
+		}),
+	};
+}
+
 /**
  * The Claude Host's own failure envelopes for a batch start; the shared
  * authorization flow passes them through untouched.
  */
 type ClaudeBatchStartResult =
 	| NonNullable<Awaited<ReturnType<typeof advanceNativeParent>>>
-	| { state: "started"; batch_id: string; report: BatchRunReport }
+	| { state: "started"; batch_id: string; report: BatchRunReport; manifest?: RunEntryManifest }
 	| { state: "retired"; batch_id: string; report: BatchRunReport | BatchLaneRunReport }
 	| { state: "rejected"; reason: string; recovery_action: string }
 	| { state: "cancelled"; reason: string; recovery_action: string }
@@ -364,6 +410,19 @@ export class ClaudeRuntime {
 		return { registry: this.mutationRegistry, app: this.app };
 	}
 
+	/**
+	 * ADR 0025: a live entry token is the literal-user act for the run-internal
+	 * authority operations, so they open no dialog. A request that collects a
+	 * user choice (rework exits) still goes to the native gate.
+	 */
+	private async confirm(input: NativeConfirmationInput, meta: ToolMeta): Promise<NativeConfirmationResult> {
+		if (meta.entryToken && ENTRY_TOKEN_OPERATIONS.has(input.operation) && !input.reworkExits)
+			return { decision: "accept", requestId: entryTokenRequestId(meta.entryToken) };
+		if (!this.requestConfirmation)
+			throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
+		return this.requestConfirmation(input);
+	}
+
 	private async gate(operation: string, meta: ToolMeta, binding: {
 		risk?: string;
 		intentRevision?: number;
@@ -380,9 +439,7 @@ export class ClaudeRuntime {
 		if (!isPrivilegedOperation(operation)) throw new Error(`unsupported native operation ${operation}`);
 		// The text is table-owned; only the form (a thrown native error rather than
 		// a returned envelope) is this Host's.
-		if (!this.requestConfirmation)
-			throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
-		const result = await this.requestConfirmation({ operation, taskId: meta.taskId, toolCallId: meta.toolCallId, signal: meta.signal, ...binding });
+		const result = await this.confirm({ operation, taskId: meta.taskId, toolCallId: meta.toolCallId, signal: meta.signal, ...binding }, meta);
 		throwIfCancelled(meta.signal);
 		const gate = evaluateNativeGate({ operation, interactive, decision: result.decision });
 		if (!gate.ok) throw gate.error;
@@ -856,6 +913,7 @@ export class ClaudeRuntime {
 		// a returned envelope) is this Host's.
 		if (!reuseOnly && !this.requestConfirmation)
 			throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
+		let manifestChildren: ReadonlyArray<{ task_id: string; slice_id: string; risk?: string }> | null = null;
 
 		await integrateSettledCriticalSlices(this.cwd, initiativeSlug, this.readInitiative);
 		const completed = await completedParentReport(this.cwd, initiativeSlug, this.readInitiative, this.batchTracker);
@@ -865,7 +923,8 @@ export class ClaudeRuntime {
 				// A continuation never opens a gate; unconfirmed commands wait for a fresh explicit entry.
 				if (reuseOnly) return batchReason("confirmation_port_unavailable");
 				try {
-					const confirmation = await this.requestConfirmation!({
+					manifestChildren = effects.children;
+					const confirmation = await this.confirm({
 						operation: "start_unattended_batch",
 						initiativeSlug,
 						toolCallId: meta.toolCallId,
@@ -879,7 +938,7 @@ export class ClaudeRuntime {
 							parent_final_verification: {},
 						},
 						signal: meta.signal,
-					});
+					}, meta);
 					if (meta.signal?.aborted) return batchReason("cancelled_before_execution");
 					if (confirmation.decision === "accept") return null;
 					if (confirmation.decision === "cancel") return batchReason("confirmation_cancelled");
@@ -951,8 +1010,9 @@ export class ClaudeRuntime {
 				// The gate settles only on the literal user's answer or the caller's
 				// cancellation signal.
 				let confirmationResult: { decision: NativeDecision; requestId: string; delegateRevisions?: boolean };
+				manifestChildren = facts.children;
 				try {
-					confirmationResult = await this.requestConfirmation!({
+					confirmationResult = await this.confirm({
 						operation: "start_unattended_batch",
 						initiativeSlug,
 						toolCallId: meta.toolCallId,
@@ -991,7 +1051,7 @@ export class ClaudeRuntime {
 								: {}),
 						},
 						signal: meta.signal,
-					});
+					}, meta);
 				} catch (err) {
 					if (meta.signal?.aborted)
 						return { kind: "host_rejection", value: batchReason("cancelled_before_execution") };
@@ -1114,6 +1174,7 @@ export class ClaudeRuntime {
 			state: "started",
 			batch_id: batchId,
 			report,
+			...(manifestChildren ? { manifest: runEntryManifest(this.cwd, manifestChildren) } : {}),
 		};
 	}
 
@@ -1127,8 +1188,8 @@ export class ClaudeRuntime {
 		throwIfCancelled(meta.signal);
 		const probe = probeHost(this.env, process.platform, this.hostVersion);
 		if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
-		// The disposition always opens a gate, so it needs a confirmation port.
-		if (!this.requestConfirmation)
+		// Without an entry token the disposition opens a gate, so it needs a confirmation port.
+		if (!this.requestConfirmation && !meta.entryToken)
 			throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
 		const outcome = await retireStaleBatch<ClaudeBatchStartResult>({
 			root: this.cwd,
@@ -1137,7 +1198,7 @@ export class ClaudeRuntime {
 			gate: async (facts) => {
 				let confirmationResult: { decision: NativeDecision; requestId: string; delegateRevisions?: boolean };
 				try {
-					confirmationResult = await this.requestConfirmation!({
+					confirmationResult = await this.confirm({
 						operation: "retire_stale_batch",
 						initiativeSlug,
 						toolCallId: meta.toolCallId,
@@ -1157,7 +1218,7 @@ export class ClaudeRuntime {
 							})),
 						},
 						signal: meta.signal,
-					});
+					}, meta);
 				} catch (err) {
 					if (meta.signal?.aborted)
 						return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
@@ -1191,6 +1252,15 @@ export class ClaudeRuntime {
 					return { kind: "host_rejection", value: batchReason("confirmation_no_decision") };
 				return { kind: "confirmed", request_id: confirmationResult.requestId };
 			},
+			confirmationRef: ({ request_id, plan_digest }) =>
+				confirmationRef({
+					connectionId: meta.sessionId,
+					toolCallId: meta.toolCallId,
+					requestId: request_id,
+					operation: "retire_stale_batch",
+					initiativeSlug,
+					planDigest: plan_digest,
+				}),
 		});
 		if (outcome.outcome === "host_rejection") return outcome.value;
 		if (outcome.outcome === "rejected") return outcome.rejection;
@@ -1203,6 +1273,8 @@ export interface ToolMeta {
 	toolCallId: string;
 	taskId: string;
 	initiativeSlug?: string;
+	/** ADR 0025: the live entry token the phase entry hook admitted for this call. */
+	entryToken?: string;
 	requiresUserInteraction?: boolean;
 	permissionMode?: PermissionMode;
 	interactive?: boolean;

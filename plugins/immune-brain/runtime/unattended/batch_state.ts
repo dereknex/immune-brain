@@ -862,9 +862,16 @@ export interface BatchRunReport {
 	final_verification?: import("./batch_final_verification").FinalVerificationReport;
 	/** Latest Parent synchronization observation; does not replace delivery evidence. */
 	tracker?: { status: string; message: string };
+	/** The literal-user act that retired this batch, bound to its plan digest (ADR 0025). */
+	retirement?: BatchRetirement;
 	/** The single next action for the operator. */
 	next_action: string;
 	created_at: string;
+}
+
+export interface BatchRetirement {
+	confirmation_ref: string;
+	plan_digest: string;
 }
 
 /**
@@ -901,6 +908,7 @@ export interface BatchLaneRunReport {
 	lane_instruction?: { task_id: string; kind: LaneIntervention["kind"]; accepted: boolean; reason: string | null };
 	/** Restored Lane leaks with their backup location (see BatchLaneRunStateRecord.restores). */
 	restores?: import("./batch_leak_restore").LaneLeakRestore[];
+	retirement?: BatchRetirement;
 	next_action: string;
 	created_at: string;
 }

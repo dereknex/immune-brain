@@ -1,0 +1,43 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "batch-critical-ordering",
+  "owner": "user",
+  "goal": "Unattended batches enroll valid critical children like any other child, order overlapping children by Slice position so a later overlapping child starts only after the earlier one is done, and treat max_parallel of 1 or less as the serial runner (Spec D5, D7, D8).",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "A batch plan classifies a valid critical child as enrollable, a child blocked only by a critical child is no longer blocked, and a Parent whose remaining work is already delivered still settles through native_parent while a critical-only Parent no longer does.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-plan.test.ts\",\n      \"tests/unattended-batch-integration.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "With children A then B whose scopes overlap and no declared dependency, B is not startable while A is pending, in flight, parked or failed, and becomes startable once A is done; disjoint children are unaffected.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-schedule.test.ts\",\n      \"tests/unattended-batch-run.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "max_parallel 1 starts a serial batch with no Lane record; max_parallel 0, a negative or a non-integer value is still rejected; max_parallel 2 still starts a Lane batch.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/run-entry-decision-hosting-batch-ordering.md",
+    "docs/plans/batch-critical-ordering.intent.json",
+    "docs/specs/run-entry-decision-hosting.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "plugins/immune-brain/runtime/unattended/batch_schedule.ts",
+    "plugins/immune-brain/runtime/unattended/types.ts",
+    "tests/unattended-batch-integration.test.ts",
+    "tests/unattended-batch-lanes.test.ts",
+    "tests/unattended-batch-plan.test.ts",
+    "tests/unattended-batch-run.test.ts",
+    "tests/unattended-batch-schedule.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}
