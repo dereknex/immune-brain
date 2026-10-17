@@ -5,6 +5,7 @@ import { join, relative, resolve, sep } from "node:path";
 import { readSecureProjectBytes } from "../plugins/immune-brain/runtime/kernel/storage";
 import { parseTaskRecord } from "../plugins/immune-brain/runtime/kernel/validation";
 import { parseTaskTombstone } from "../plugins/immune-brain/runtime/kernel/backend_claim";
+import { batchRefName, isBatchRef } from "../plugins/immune-brain/runtime/unattended/batch_ref";
 import { parseBatchLaneRunState, parseBatchRunState, type BatchLaneRunReport, type BatchRunReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { pathMatchesScope } from "../plugins/immune-brain/runtime/workspace_scope";
 
@@ -75,8 +76,13 @@ export function verify(root: string, batch: string, afterCapture?: (path: string
 	// Lane children integrate in settle order, so their plan order need not equal the commit order.
 	const done = lane ? ["integrated", "released"] : ["committed"];
 	if (state.children.some((child) => !done.includes(child.state) || !child.commit) || new Set(state.commits).size !== state.commits.length || (lane ? [...state.children.map((child) => child.commit)].sort().join() !== [...state.commits].sort().join() : state.children.map((child) => child.commit).join() !== state.commits.join())) fail("commit_order_mismatch");
-	const branch = git(root, ["symbolic-ref", "--short", "HEAD"]).trim();
-	const head = oid(git(root, ["rev-parse", "--verify", "-q", "HEAD"]).trim());
+	// A hidden-ref batch owns refs/imm/batches/<batch_id> and never moves the user's HEAD;
+	// a batch recorded before that keeps its checked-out `imm/<slug>` branch as the lineage.
+	const hidden = isBatchRef(state.branch);
+	const lineageTip = (): { branch: string; head: string } => hidden
+		? { branch: state.branch!, head: oid(git(root, ["rev-parse", "--verify", "-q", state.branch!]).trim()) }
+		: { branch: git(root, ["symbolic-ref", "--short", "HEAD"]).trim(), head: oid(git(root, ["rev-parse", "--verify", "-q", "HEAD"]).trim()) };
+	const { branch, head } = lineageTip();
 	// An adopted commit is the user's own work on the batch branch: the chain may
 	// step over it, but only as a recorded descendant of the head it moved from.
 	const follow = (from: string): string => {
@@ -90,7 +96,7 @@ export function verify(root: string, batch: string, afterCapture?: (path: string
 		return current;
 	};
 	const lastCommit = state.commits.at(-1);
-	if (branch !== (state.branch ?? `imm/${state.initiative_slug}`) || !lastCommit || head !== follow(oid(lastCommit))) fail("lineage_mismatch");
+	if (branch !== (hidden ? batchRefName(batch) : state.branch ?? `imm/${state.initiative_slug}`) || !lastCommit || head !== follow(oid(lastCommit))) fail("lineage_mismatch");
 	let parent = oid(state.base_head);
 	const consumed: Array<{ path: string; raw: Buffer }> = [{ path: statePath, raw: stateRaw }, { path: inside(root, `.imm/state/batches/${batch}.report.json`), raw: reportRaw }];
 	const children = [];
@@ -139,8 +145,7 @@ export function verify(root: string, batch: string, afterCapture?: (path: string
 		parent = commit;
 		if (index !== state.commits.indexOf(commit)) fail("commit_order_mismatch");
 	}
-	const againBranch = git(root, ["symbolic-ref", "--short", "HEAD"]).trim();
-	const againHead = oid(git(root, ["rev-parse", "--verify", "-q", "HEAD"]).trim());
+	const { branch: againBranch, head: againHead } = lineageTip();
 	if (againBranch !== branch || againHead !== head || consumed.some((item) => !bytes(root, item.path).equals(item.raw))) fail("unstable_evidence");
 	return { contract: "immune_brain/batch_completion_observation/v1", batch_id: batch, complete: true, batch_state: state.batch_state, report_state: report.batch_state, children, code: null };
 }

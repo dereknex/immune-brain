@@ -1,0 +1,412 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "content-delivery-authority-s2-batch-hidden-ref",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "content-delivery-authority-s2-batch-hidden-ref",
+    "goal": "Make unattended batches never commit to, create or switch a user-visible branch: preflight has one dirt rule and no side effect, and batch progress and Lane integration live on a hidden ref with results applied to the working tree, under S2 of docs/specs/content-delivery-authority.spec.md.",
+    "acceptance": [
+      {
+        "id": "S2-AC1",
+        "assertion": "Sources E4, U4; meet S2, SCN-2 and D9 in docs/specs/content-delivery-authority.spec.md: preflight never commits; a rejected preflight leaves HEAD, branch, index and git log unchanged; dirt outside every unsettled child's scope (including docs/specs, docs/plans, .imm/audit and a settled child's paths) does not block; dirt inside an unsettled child's scope blocks with the named paths.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-run.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S2-AC2",
+        "assertion": "Sources E6, U3, T2; meet D10 in docs/specs/content-delivery-authority.spec.md: a batch with serial and Lane children advances only refs/imm/batches/<batch_id>; the user's checked-out branch, HEAD and index never move; each integrated Lane's scoped delta appears in the working tree; a conflicting local edit on those paths parks that child with the named paths; under Git integration auto each applied delta is committed through the S3 settle commit with only its scoped paths.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\",\n      \"tests/unattended-batch-integration.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/content-delivery-authority-batch-hidden-ref.md",
+      "docs/agents/pi-batch-acceptance.md",
+      "docs/plans/content-delivery-authority-s2-batch-hidden-ref.intent.json",
+      "docs/specs/content-delivery-authority.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run-batch.md",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/unattended/batch_disposition.ts",
+      "plugins/immune-brain/runtime/unattended/batch_final_verification.ts",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_leak_restore.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts",
+      "plugins/immune-brain/runtime/unattended/batch_ref.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "scripts/verify-batch-completion.ts",
+      "tests/batch-completion-verifier.test.ts",
+      "tests/batch-delegation-gate.test.ts",
+      "tests/batch-plan-reconfirmation.test.ts",
+      "tests/batch-stale-disposition.test.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/pi-batch-acceptance-integration.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/unattended-batch-commit.test.ts",
+      "tests/unattended-batch-integration.test.ts",
+      "tests/unattended-batch-lanes.test.ts",
+      "tests/unattended-batch-run.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 4,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/content-delivery-authority-s2-batch-hidden-ref.intent.json",
+    "content_hash": "sha256:725e8745da93671df7e122d108345e29f8bde0b93102dd0d00dad33706804f52"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:8237ba9c47da7393b0aff5d9b852fe8edcdf965561bd3c908a19fd90d270d7d2",
+  "git_base_head": "21cbcf4aa4f3101f3593c774d25b6385643246f8",
+  "attestations": [
+    {
+      "id": "approval-qa-580873de",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:725e8745da93671df7e122d108345e29f8bde0b93102dd0d00dad33706804f52",
+      "diff_hash": "sha256:6c19b129d3dcf14b6a11fdbb953b010988ecab2ea9b2d1735a9f6a699f3a3ae4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:f4d14ffc7f321c2f98f3d900129bc71d2e06a23da78e5b512a42e46ce6eab4ab",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S2-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:f4d14ffc7f321c2f98f3d900129bc71d2e06a23da78e5b512a42e46ce6eab4ab"
+        },
+        {
+          "acceptance_id": "S2-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:f4d14ffc7f321c2f98f3d900129bc71d2e06a23da78e5b512a42e46ce6eab4ab"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-ed4b2453",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:725e8745da93671df7e122d108345e29f8bde0b93102dd0d00dad33706804f52",
+      "diff_hash": "sha256:615123d8ee8ae8900f2a47491b7ff55cfbe1185addb6c74c3094e331373a5c7b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:dd4e3a5ae0554ece5f594ef023e841711fdf480a7bbfca73c1bd74e0482835f5",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S2-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:dd4e3a5ae0554ece5f594ef023e841711fdf480a7bbfca73c1bd74e0482835f5"
+        },
+        {
+          "acceptance_id": "S2-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:dd4e3a5ae0554ece5f594ef023e841711fdf480a7bbfca73c1bd74e0482835f5"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-1cfd8767",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:725e8745da93671df7e122d108345e29f8bde0b93102dd0d00dad33706804f52",
+      "diff_hash": "sha256:8e6923d883fe23e0ce3f2d689e78f108363c97b93dcfd97fca434f19bf318b67",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:7da6164792b40de510ae08e7a12cfa9c83e4acc9b01aeb8f696f99ea861e74ca",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S2-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:7da6164792b40de510ae08e7a12cfa9c83e4acc9b01aeb8f696f99ea861e74ca"
+        },
+        {
+          "acceptance_id": "S2-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:7da6164792b40de510ae08e7a12cfa9c83e4acc9b01aeb8f696f99ea861e74ca"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-777082b5",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:725e8745da93671df7e122d108345e29f8bde0b93102dd0d00dad33706804f52",
+      "diff_hash": "sha256:8e6923d883fe23e0ce3f2d689e78f108363c97b93dcfd97fca434f19bf318b67",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (single-parent commit 2705756 on base 21cbcf4, tree 9907705). The round-3 delta makes laneOrigin skip integrated or released Lanes of a hidden-ref batch, so their delivered bytes are no longer treated as a leak and restored. It is consistent with the source, the dist bundle wiring and a control-plus-negative test. Hidden-ref advance, scoped delta apply and conflict parking, and the preflight no-commit and scope-only blocking behavior meet S2-AC1 and S2-AC2.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "21cbcf4aa4f3101f3593c774d25b6385643246f8",
+        "review_commit": "2705756a67ee07d0bfd15de666923aa868a0a6fd",
+        "review_tree": "99077059f5125b46e9ed1e647b25fc4ce1ee5255",
+        "manifest_digest": "sha256:466bb36e3e0709a84c6cfc5b46191df6012262c53683801333355da9b46654b6"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-d6f4a3c78382-1-review-1",
+          "acceptance_id": "S2-AC2",
+          "summary": "commitAppliedDelta swallows every error, including unexpected ones, when committing an applied Lane delta under Git integration auto. Delivery is unaffected, but the failure is silent. Consider recording the refusal in the batch report.",
+          "anchor": "sha256:9dfabbc1af8d01c173eb7d2d603e729abd650548bdebc84237577a1004dbac3d",
+          "evidence": {
+            "trigger": "Git integration is auto and the settle commit throws, for example because a pre-commit state is refused. The ref moves and the delta stays uncommitted in the working tree, and no report or diagnostic says so.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+              "commitAppliedDelta",
+              "integrateGuardedLaneCommit"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S2-AC2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:073dd5e8e174df72a719202c037859da08200505cf95d2aefa07e950f008c825"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-82e033ec3346-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S2-AC2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The S2-AC2 behaviors that are new in this diff have no test at the agreed Lane seam. These are: Lane hidden-ref integration, applying the scoped delta to the working tree, parking on a conflicting local edit with named paths, and the auto-mode settle commit of the applied delta. The seam files tests/unattended-batch-lanes.test.ts and tests/unattended-batch-integration.test.ts are unchanged in the revision, and their verification descriptor is the only evidence the intent names for S2-AC2. Add tests at that seam that pin the cases listed in the trigger.",
+      "anchor": "sha256:b508d82d67a39a565aea848697aaee3ebf7b5f644bafdb3f399b514ccb037b18",
+      "evidence": {
+        "trigger": "S2-AC2's descriptor runs only tests/unattended-batch-lanes.test.ts and tests/unattended-batch-integration.test.ts. Both are unchanged and call integrateGuardedLaneCommit/integrateLaneCommit with legacy branch names, so they exercise only the legacy ff-only path. The revision tests contain no reference to applyDeltaToWorkingTree, checkDeltaApplies, 'local edits on', commitAppliedDelta or settleCommitSubject. No test makes fastForwardToCandidate (batch_integration.ts) take its hidden-ref branch with a Lane delta. So a regression is invisible to the acceptance check in each of these cases. (a) A Lane delta lands in the working tree while HEAD, branch and index stay put and only refs/imm/batches/<id> moves. (b) A local edit on a delta path makes applyDeltaToWorkingTree return conflicts, so batch_integration_conflict is raised naming those paths and neither the working tree nor the ref changes. (c) Under Git integration auto, commitAppliedDelta commits only the applied paths through the settle commit. (d) A retried apply after an interruption between the apply and the ref move is idempotent. The only related assertion is a status listing in tests/pi-batch-acceptance-integration.test.ts, which does not cover the conflict, named-path or auto-commit outcomes. These cases are a missing test for the acceptance, not a cosmetic gap.",
+        "caller_chain": [
+          "tests/unattended-batch-integration.test.ts",
+          "tests/unattended-batch-lanes.test.ts",
+          "plugins/immune-brain/runtime/unattended/batch_integration.ts:integrateGuardedLaneCommit",
+          "plugins/immune-brain/runtime/unattended/batch_integration.ts:fastForwardToCandidate",
+          "plugins/immune-brain/runtime/unattended/batch_integration.ts:commitAppliedDelta",
+          "plugins/immune-brain/runtime/unattended/batch_ref.ts:applyDeltaToWorkingTree"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S2-AC2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-0f45b7927578-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S2-AC2",
+      "source": "review",
+      "review_round": 2,
+      "summary": "On a hidden-ref Lane batch, the next reconcile tick's Lane leak-restore treats the delta applied from an integrated Lane as a Lane leak and removes it from the user's working tree, undoing the delivery the hidden-ref integration just wrote.",
+      "anchor": "sha256:9f7165f554e6b577ea486ec7f1ce3cda865ddfcbafe83149f9bbf141e65f5d8b",
+      "evidence": {
+        "trigger": "A hidden-ref Lane batch (record.branch = refs/imm/batches/<id>) with Git integration manual integrates Lane A, so fastForwardToCandidate applies task-c.txt to the user's working tree and moves the ref. The user's tree has no other dirt. On the next runLaneBatch tick with a persisted record, batch_lanes.ts calls porcelainEntries(root) and gets [{?? task-c.txt}]. restoreProvableLaneLeaks → planLaneLeakRestore → laneOrigin finds a match because the file's blob equals the Lane A commit's blob (record.children[].lane is retained after integration and the Lane branch still holds the commit). The plan is 'provable', so the file is renamed into .imm/state/batches/restores/... and the delivery disappears from the working tree. A modified file (' M') is reverted with `git restore --source=HEAD`. The ref says integrated, but the delivery is gone from the working tree, which contradicts 'each integrated Lane's scoped delta appears in the working tree'. I reproduced this against the revision's runtime files: applyDeltaToWorkingTree wrote task-c.txt, then restoreProvableLaneLeaks returned kind 'restored' and the file was no longer in the tree. batch_preflight.ts also reads this provable plan as clean (statusEntries = []) on resume. The change adds no hidden-ref guard to the leak-restore path. None of the delivered Lane tests cross a second tick after a hidden-ref integration: tests/unattended-batch-integration.test.ts only calls integrateGuardedLaneCommit once, and tests/unattended-batch-lanes.test.ts is unchanged.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts (runLaneBatch: restoreProvableLaneLeaks call on persisted re-entry)",
+          "plugins/immune-brain/runtime/unattended/batch_leak_restore.ts (planLaneLeakRestore, laneOrigin, restoreProvableLaneLeaks)",
+          "plugins/immune-brain/runtime/unattended/batch_integration.ts (fastForwardToCandidate hidden branch)",
+          "plugins/immune-brain/runtime/unattended/batch_ref.ts (applyDeltaToWorkingTree)",
+          "plugins/immune-brain/runtime/unattended/batch_preflight.ts (projectPreflight: planLaneLeakRestore provable → statusEntries cleared)"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S2-AC2"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "revise_intent:content-delivery-authority-s2-batch-hidden-ref:2026-10-16T13:07:17.076Z",
+      "at": "2026-10-16T13:07:17.076Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\nscope_added:plugins/immune-brain/runtime/unattended/batch_disposition.ts\nscope_added:plugins/immune-brain/runtime/unattended/batch_final_verification.ts\nscope_added:plugins/immune-brain/runtime/unattended/batch_git.ts\nscope_added:plugins/immune-brain/runtime/unattended/batch_leak_restore.ts\nscope_added:plugins/immune-brain/runtime/unattended/batch_reasons.ts\nscope_added:plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts\nscope_added:plugins/immune-brain/runtime/unattended/batch_ref.ts\nscope_added:tests/batch-completion-verifier.test.ts\nscope_added:tests/batch-delegation-gate.test.ts\nscope_added:tests/batch-plan-reconfirmation.test.ts\nscope_added:tests/batch-stale-disposition.test.ts\nscope_added:tests/claude-batch-authority.test.ts\nscope_added:tests/pi-batch-authority.test.ts\nscope_added:tests/unattended-batch-commit.test.ts\nscope_added:tests/unattended-contracts.test.ts\naction_v2_sha256:d9d44623bb06a70f7787d158b6a78405180913757e1caeeb8ba6cf130485248a"
+    },
+    {
+      "id": "approve_breaking_intent_revision:content-delivery-authority-s2-batch-hidden-ref:2026-10-16T15:32:48.354Z",
+      "at": "2026-10-16T15:32:48.354Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\naction_v2_sha256:34a89538af1511b8200c2b66ce334e24465c2b1b725d3b4cd8490bdc628477c0",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-dfc0f0e282744bc0",
+        "issued_at": "2026-10-16T15:32:51.899Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:content-delivery-authority-s2-batch-hidden-ref:2026-10-16T15:35:26.235Z",
+      "at": "2026-10-16T15:35:26.235Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_4\naction_v2_sha256:7651abd329e10cd00a181bc7dee5f336bdf10c8be61d71c6f8829bb8bb97642a",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-61ac864c5fa0ce87",
+        "issued_at": "2026-10-16T15:35:29.777Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:content-delivery-authority-s2-batch-hidden-ref:2026-10-16T15:47:28.723Z",
+      "at": "2026-10-16T15:47:28.723Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/content-delivery-authority-s2-batch-hidden-ref.intent.json"
+    },
+    {
+      "id": "record_approval:content-delivery-authority-s2-batch-hidden-ref:2026-10-16T15:48:18.898Z",
+      "at": "2026-10-16T15:48:18.898Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-580873de\naction_v2_sha256:84ae5792b437e61e8a781466ae5be4fffe139412a62a9a7cdf4f29c31055123c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-16T15:48:18.898Z"
+      }
+    },
+    {
+      "id": "request_rework:content-delivery-authority-s2-batch-hidden-ref:2026-10-16T15:50:54.375Z",
+      "at": "2026-10-16T15:50:54.375Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:88b8b96011f604e07ab2de0544d7fa9078124a76e4ca0d61509f33082760872a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-16T15:50:54.375Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "21cbcf4aa4f3101f3593c774d25b6385643246f8",
+        "review_commit": "0bf7773191ee5091c167589274d2d1901afb9f8c",
+        "review_tree": "7509c515b133be11ba2cfcba1526eeef8d42cbc0",
+        "manifest_digest": "sha256:a18d32dfc1d5216be8f27836cbb4fe9733abf1a234e2409d5e30d9946ed1647b"
+      }
+    },
+    {
+      "id": "resolve_finding:content-delivery-authority-s2-batch-hidden-ref:2026-10-16T15:52:50.158Z",
+      "at": "2026-10-16T15:52:50.158Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-82e033ec3346-1-review-1\naction_v2_sha256:f13a53f73baf5a33b53f5bcaedb64a0712654d2b9334cbb467029edcc177be21"
+    },
+    {
+      "id": "freeze_artifacts:content-delivery-authority-s2-batch-hidden-ref:2026-10-16T15:52:55.100Z",
+      "at": "2026-10-16T15:52:55.100Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/content-delivery-authority-s2-batch-hidden-ref.intent.json"
+    },
+    {
+      "id": "record_approval:content-delivery-authority-s2-batch-hidden-ref:2026-10-16T15:53:48.992Z",
+      "at": "2026-10-16T15:53:48.992Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ed4b2453\naction_v2_sha256:400eb1b74ea3aa5286211ceab17f612c26a188ea68b1458759d84f216c4bd3bd",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-16T15:53:48.992Z"
+      }
+    },
+    {
+      "id": "request_rework:content-delivery-authority-s2-batch-hidden-ref:2026-10-16T15:56:59.664Z",
+      "at": "2026-10-16T15:56:59.664Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:4d81661ca2e15ec8a1a6dbe317bf2a6cc5c825669d2c78dd6e153bfe3ca03cd2",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-16T15:56:59.664Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "21cbcf4aa4f3101f3593c774d25b6385643246f8",
+        "review_commit": "7424a66b21b8a909e75b15ebeeb19fb9eeff7a6d",
+        "review_tree": "17abd28e18544256dac604768e250ea8946b37dc",
+        "manifest_digest": "sha256:eee3ab1e1d946358b7b39f957dc22c6d25f43315f54ca702aa6907c32b810ba9"
+      }
+    },
+    {
+      "id": "resolve_finding:content-delivery-authority-s2-batch-hidden-ref:2026-10-16T16:04:50.024Z",
+      "at": "2026-10-16T16:04:50.024Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-0f45b7927578-1-review-1\naction_v2_sha256:e309715ec07253830fef66695eb388d9f431c98d4e154a3e6951882204e7033c"
+    },
+    {
+      "id": "freeze_artifacts:content-delivery-authority-s2-batch-hidden-ref:2026-10-16T16:04:54.722Z",
+      "at": "2026-10-16T16:04:54.722Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/content-delivery-authority-s2-batch-hidden-ref.intent.json"
+    },
+    {
+      "id": "record_approval:content-delivery-authority-s2-batch-hidden-ref:2026-10-16T16:05:47.439Z",
+      "at": "2026-10-16T16:05:47.439Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-1cfd8767\naction_v2_sha256:953cb209d5927c50a4633cca341058bec4a2c8286e7c0bbce3e70cfedb29ff95",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-16T16:05:47.439Z"
+      }
+    },
+    {
+      "id": "record_approval:content-delivery-authority-s2-batch-hidden-ref:2026-10-16T16:10:54.489Z",
+      "at": "2026-10-16T16:10:54.489Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-777082b5\naction_v2_sha256:5dbddc83d3827dcce51e93d10f7f6b1f01b6f6c60d92644de7995abd22eea8bf",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-16T16:10:54.489Z"
+      }
+    },
+    {
+      "id": "complete:content-delivery-authority-s2-batch-hidden-ref:2026-10-16T16:10:56.585Z",
+      "at": "2026-10-16T16:10:56.585Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:96c7f5c7b718898fb3d097953e4d585dadd4935aae54c01276a15f0394ae9dcf"
+    }
+  ]
+}

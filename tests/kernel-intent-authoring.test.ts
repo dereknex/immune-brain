@@ -125,8 +125,10 @@ for (const refused of [false, true]) {
 			const evidence = ".imm/audit/legacy-v3/MEMORY.md";
 			writeFileSync(join(root, evidence), "baseline evidence\n");
 			writeFileSync(join(root, "notes.txt"), "baseline notes\n");
+			// The migration commit is Git integration: auto behavior (ADR 0024).
+			writeFileSync(join(root, "AGENTS.md"), "- Git integration: auto\n");
 			git(root, ["add", "-f", "--", evidence]);
-			git(root, ["add", "--", "notes.txt"]);
+			git(root, ["add", "--", "notes.txt", "AGENTS.md"]);
 			git(root, ["commit", "-qm", "author migration baseline"]);
 			const inspectGit = (...args: string[]) => {
 				const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });

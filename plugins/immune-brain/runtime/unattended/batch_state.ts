@@ -7,7 +7,6 @@ import { dirname, join } from "node:path";
 import { readSecureProjectFile, readSecureProjectBytes, withKernelStoreLock } from "../kernel/storage";
 import { parseFinalVerification, parseFinalVerificationReport } from "./batch_final_verification";
 import type { BatchPlanChild } from "./types";
-import { parseConsolidationReceipt } from "./parent_delivery_consolidation";
 
 export type BatchRunState =
 	| "prepared"
@@ -954,6 +953,7 @@ function reportPath(batchId: string): string {
  * after a fresh literal-user confirmation. */
 export interface NativeParentFinalReport {
 	contract: "assurance_kernel/parent_final_report/v1";
+	/** Legacy binding from retired delivery consolidation; ignored when read, never written. */
 	consolidation_digest?: string;
 	initiative_slug: string;
 	task_ids: string[];
@@ -971,8 +971,6 @@ function validateNativeParentReport(report: NativeParentFinalReport) {
 		new Set(report.task_ids).size !== report.task_ids.length || report.task_ids.some(id => typeof id !== "string" || !BATCH_ID_PATTERN.test(id)))
 		throw new Error("invalid Parent final observation");
 	validateBatchId(report.initiative_slug);
-	if (report.consolidation_digest !== undefined && !/^sha256:[a-f0-9]{64}$/.test(report.consolidation_digest))
-		throw new Error("invalid final consolidation binding");
 	validateRepairTasks({ repair_tasks: report.repair_tasks });
 	parseFinalVerificationReport(report.final_verification);
 }
@@ -985,24 +983,6 @@ export function readNativeParentFinalReport(root: string, slug: string): NativeP
 	validateNativeParentReport(report);
 	if (report.initiative_slug !== slug) throw new Error("Parent final observation identity changed");
 	return report;
-}
-
-export function readParentConsolidationReceipt(root: string, slug: string): import("./parent_delivery_consolidation").ConsolidationReceipt | null {
-	validateBatchId(slug);
-	const path = `.imm/state/batches/${slug}.consolidation.json`;
-	if (!existsSync(join(root, path))) return null;
-	const receipt = parseConsolidationReceipt(JSON.parse(readSecureProjectFile(root, path)));
-	if (receipt.envelope.initiative_slug !== slug) throw new Error("consolidation receipt Parent mismatch");
-	return receipt;
-}
-
-export function writeParentConsolidationReceipt(root: string, receipt: import("./parent_delivery_consolidation").ConsolidationReceipt): void {
-	parseConsolidationReceipt(receipt);
-	validateBatchId(receipt.envelope.initiative_slug);
-	withKernelStoreLock(root, () => {
-		ensureSecureDirectory(root, join(".imm", "state", "batches"));
-		writeFileAtomically(root, `.imm/state/batches/${receipt.envelope.initiative_slug}.consolidation.json`, JSON.stringify(receipt, null, 2) + "\n");
-	});
 }
 
 export function writeNativeParentFinalReport(root: string, report: NativeParentFinalReport): void {

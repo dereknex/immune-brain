@@ -342,7 +342,7 @@ describe("status identity tolerates what a frozen snapshot refuses", () => {
 			writeFileSync(join(root, "task.ts"), "export const task = 'staged';\n");
 			git(root, ["add", "task.ts"]);
 			for (const record of records(root)) {
-				expect(taskStatusIdentity(root, record)).toEqual({ ...taskDeliveryIdentity(root, record), unstaged_scope_paths: [] });
+				expect(taskStatusIdentity(root, record)).toEqual({ ...taskDeliveryIdentity(root, record), unstaged_scope_paths: [], out_of_scope_paths: [] });
 			}
 		} finally {
 			rmSync(root, { recursive: true, force: true });
@@ -359,10 +359,30 @@ describe("status identity tolerates what a frozen snapshot refuses", () => {
 			writeFileSync(join(root, "new.ts"), "export const added = true;\n");
 			writeFileSync(join(root, "outside.ts"), "export const outside = 'dirty';\n");
 			records(root).forEach((record, index) => {
-				expect(taskStatusIdentity(root, record)).toEqual({ ...staged[index], unstaged_scope_paths: ["new.ts", "task.ts"] });
+				expect(taskStatusIdentity(root, record)).toEqual({ ...staged[index], unstaged_scope_paths: ["new.ts", "task.ts"], out_of_scope_paths: [] });
 				expect(() => taskDeliveryIdentity(root, record)).toThrow(
 					/task scope contains unstaged or untracked changes: new\.ts, task\.ts/,
 				);
+			});
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	// Spec content-delivery-authority D6: the botline S6 shape, a settled scope
+	// staged beside an out-of-scope staged path, reads with a warning; a frozen
+	// snapshot still refuses the envelope escape.
+	test("an out-of-scope staged path is a status warning and still refuses a frozen snapshot", () => {
+		const root = repo();
+		try {
+			writeFileSync(join(root, "task.ts"), "export const task = 'staged';\n");
+			git(root, ["add", "task.ts"]);
+			const clean = records(root).map((record) => taskStatusIdentity(root, record));
+			writeFileSync(join(root, "outside.ts"), "export const outside = 'staged';\n");
+			git(root, ["add", "outside.ts"]);
+			records(root).forEach((record, index) => {
+				expect(taskStatusIdentity(root, record)).toEqual({ ...clean[index], out_of_scope_paths: ["outside.ts"] });
+				expect(() => taskDeliveryIdentity(root, record)).toThrow(/outside the authorization envelope: outside\.ts/);
 			});
 		} finally {
 			rmSync(root, { recursive: true, force: true });

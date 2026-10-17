@@ -12,6 +12,7 @@ import {
 	classifyBatchLineage,
 	type NativeParentEffects, type NativeParentGate,
 } from "../plugins/immune-brain/runtime/unattended/batch_git";
+import { batchRefName } from "../plugins/immune-brain/runtime/unattended/batch_ref";
 import { integrateLaneCommit } from "../plugins/immune-brain/runtime/unattended/batch_integration";
 import { runFinalVerification } from "../plugins/immune-brain/runtime/unattended/batch_final_verification";
 import { expectedBatchHead } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
@@ -30,9 +31,6 @@ import type { BatchPlanChild } from "../plugins/immune-brain/runtime/unattended/
 import { readAuditTaskPair, recoverKernelStoreFollowUps, readSettledTaskEvidence, revisionForContent } from "../plugins/immune-brain/runtime/kernel/storage";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
-import { parentConsolidationFixture } from "./fixtures/parent-consolidation";
-import { readParentConsolidationReceipt, writeParentConsolidationReceipt } from "../plugins/immune-brain/runtime/unattended/batch_state";
-import { parseDeliveryConsolidation } from "../plugins/immune-brain/runtime/unattended/parent_delivery_consolidation";
 
 // Commit-safety fixtures script settlement; explicitly model Parent-ready turns.
 async function finishScriptedHandoffs(input: StartBatchInput, report: Awaited<ReturnType<typeof startBatch>>) {
@@ -214,23 +212,10 @@ describe("Lane Parent delivery proof", () => {
 			record.commits = [landed.commit]; record.final_verification_result = await runFinalVerification(repo.root, ["bun --version"]);
 			writeBatchLaneRunState(repo.root, record);
 			expect((await observeParentCompletion(repo.root, "lane-parent", [taskId])).complete).toBe(true);
+			// Settlement is delivery (content-delivery-authority D1): commit candidates and producer files are not authority.
 			record.children[0]!.commit = predecessor; record.commits = [predecessor]; writeBatchLaneRunState(repo.root, record);
-			await expect(observeParentCompletion(repo.root, "lane-parent", [taskId])).rejects.toThrow("candidate differs");
-			record.children[0]!.commit = landed.commit; record.commits = [landed.commit]; writeBatchLaneRunState(repo.root, record);
-			const producerPath = join(lane, ".imm/state/batches/commits/lane-proof-lane-child.json");
-			const producerBytes = readFileSync(producerPath);
 			rmSync(join(lane, ".imm/state/batches/commits"), { recursive: true });
-			await expect(observeParentCompletion(repo.root, "lane-parent", [taskId])).rejects.toThrow("production evidence");
-			mkdirSync(join(lane, ".imm/state/batches/commits"), { recursive: true }); writeFileSync(producerPath, producerBytes);
-			await createDefaultBatchGitPort().retainLaneEvidence!({ root: repo.root, taskId, batchId: record.batch_id, branch: "main",
-				lane: { path: lane, base_head: base, lane_commit: produced.commit, integrated_commit: landed.commit } });
-			git(repo.root, ["worktree", "remove", "--force", lane]);
-			git(repo.root, ["branch", "-D", "lane"]); git(repo.root, ["reflog", "expire", "--expire=now", "--all"]);
-			git(repo.root, ["gc", "--prune=now"]);
-			record.children[0]!.state = "released"; writeBatchLaneRunState(repo.root, record);
 			expect((await observeParentCompletion(repo.root, "lane-parent", [taskId])).complete).toBe(true);
-			record.children[0]!.commit = predecessor; record.commits = [predecessor]; writeBatchLaneRunState(repo.root, record);
-			await expect(observeParentCompletion(repo.root, "lane-parent", [taskId])).rejects.toThrow("candidate differs");
 		} finally { rmSync(repo.root, { recursive: true, force: true }); rmSync(lane, { recursive: true, force: true }); }
 	});
 });
@@ -312,7 +297,7 @@ describe("native Parent completion without ordinary grants", () => {
 		{ history: false, command: "bun --version", passed: true },
 		{ history: true, command: "bun --version", passed: true },
 		{ history: true, command: "bun -e process.exitCode=7", passed: false },
-	])("integrates and replays delivered-only Parent: history=$history, passed=$passed", async ({ history, command, passed }) => {
+	])("verifies and replays delivered-only Parent without a commit: history=$history, passed=$passed", async ({ history, command, passed }) => {
 		const repo = initGitRepo();
 		try {
 			const paths = ["src/delivered.ts", "docs/plans/delivered.intent.json", "docs/plans/archive/delivered.intent.json"];
@@ -333,24 +318,19 @@ describe("native Parent completion without ordinary grants", () => {
 			const gate: NativeParentGate = async (effects) => { disclosed.push(effects); return null; };
 			const result = await advanceNativeParent(repo.root, "native-parent", [command], reader, undefined, gate);
 			expect(disclosed).toEqual([{ initiative_slug: "native-parent", plan_digest: expect.stringMatching(/^sha256:/),
-				children: [{ task_id: "delivered", slice_id: "S1" }], integrate_task_ids: ["delivered"], final_commands: [command] }]);
+				children: [{ task_id: "delivered", slice_id: "S1" }], final_commands: [command] }]);
 			expect(result).toMatchObject({ state: "native_parent", action: passed ? "complete" : "repair", proof: { complete: passed },
 				final_verification: { passed, results: [{ command, exit_code: passed ? 0 : 7 }] } });
-			expect(git(repo.root, ["log", "-1", "--format=%B"])).toContain("Immune-Brain-Task: delivered");
-			expect(git(repo.root, ["log", "-1", "--format=%B"])).not.toContain("Immune-Brain-Batch:");
-			const head = git(repo.root, ["rev-parse", "HEAD"]);
-			expect(result?.final_verification?.head).toBe(head);
+			expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(baseline);
 			expect((await advanceNativeParent(repo.root, "native-parent", undefined, reader))?.action).toBe(passed ? "complete" : "repair");
-			expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(head);
-			expect(spawnSync("git", ["-C", repo.root, "merge-base", "--is-ancestor", baseline, "HEAD"]).status).toBe(0);
+			expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(baseline);
 			expect(historyBytes()).toEqual(beforeHistory);
 			expect(readBatchRunState(repo.root, "native-parent")).toBeNull();
 			expect((await observeParentCompletion(repo.root, "native-parent", ["delivered"])).complete).toBe(passed);
+			// The user may carry the bytes in any history; equal scoped content keeps the verification (D3).
 			git(repo.root, ["checkout", "--orphan", "unrelated-history"]);
-			git(repo.root, ["rm", "-r", "--cached", "."]); git(repo.root, ["add", "."]); git(repo.root, ["commit", "-m", "copied bytes without delivery history"]);
-			expect(spawnSync("git", ["-C", repo.root, "merge-base", "--is-ancestor", head, "HEAD"]).status).toBe(1);
-			await expect(lookupBatchCommit({ root: repo.root, taskId: "delivered", batchId: null })).rejects.toThrow("diverged");
-			await expect(observeParentCompletion(repo.root, "native-parent", ["delivered"])).rejects.toThrow("diverged");
+			git(repo.root, ["add", "."]); git(repo.root, ["commit", "-m", "user-owned commit of the delivered bytes"]);
+			expect((await observeParentCompletion(repo.root, "native-parent", ["delivered"])).complete).toBe(passed);
 		} finally { rmSync(repo.root, { recursive: true, force: true }); }
 	});
 	it.each([false, true].flatMap(history => [false, true].flatMap(remainingCritical =>
@@ -382,7 +362,9 @@ describe("native Parent completion without ordinary grants", () => {
 				const historyBytes = history ? seedParentHistory(repo.root, baseline, intent, paths) : () => [];
 				const beforeHistory = historyBytes();
 				const result = await advanceNativeParent(repo.root, "native-parent", commands, reader, undefined, gate);
-				expect(result).toMatchObject({ state: expect.stringMatching(/^(rejected|cancelled)$/) });
+				// Only new final commands need the native gate; settled delivery itself opens none (D2).
+				if (commands?.length && !remainingCritical) expect(result).toMatchObject({ state: expect.stringMatching(/^(rejected|cancelled)$/) });
+				else expect(result).toMatchObject({ state: "native_parent", action: remainingCritical ? "enroll" : "verify" });
 				expect(historyBytes()).toEqual(beforeHistory);
 				expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(baseline);
 				expect(existsSync(join(repo.root, "ran.txt"))).toBe(false);
@@ -425,6 +407,8 @@ describe("native Parent completion without ordinary grants", () => {
 			process.env.GDR_COMPLETION_TEST_FAILURE = "1";
 			const failed = await advanceNativeParent(repo.root, "native-parent", commands, reader, undefined, async () => null);
 			expect(failed?.final_verification?.passed).toBe(false);
+			// The user commits the settled bytes in their own way; the head-bound batch record below binds that HEAD.
+			git(repo.root, ["add", "-A"]); git(repo.root, ["commit", "-m", "user commit"]);
 			const head = git(repo.root, ["rev-parse", "HEAD"]); const now = new Date().toISOString();
 			const batch = prepareBatchRunState({ batch_id: "completion-replay", initiative_slug: "native-parent", base_head: baseline,
 				branch: "main", plan_digest: `sha256:${"c".repeat(64)}`, confirmation_time: now, now,
@@ -452,184 +436,25 @@ describe("native Parent completion without ordinary grants", () => {
 	});
 });
 
-describe("explicit settled-delivery consolidation", () => {
-	it.each([0, 7])("integrates three reviewed deliveries once, preserving source proofs (exit %s)", async (code) => {
-		const f = parentConsolidationFixture(code);
-		try {
-			const history = seedConsolidationHistory(f);
-			const sourceBytes = f.auditBytes(); const previousHistory = history();
-			const disclosures: NativeParentEffects[] = [];
-			const result = await advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined,
-				async effects => { disclosures.push(effects); return null; }, f.selection);
-			expect(result).toMatchObject({ action: code ? "repair" : "complete", proof: { complete: !code }, final_verification: { passed: !code } });
-			expect(disclosures).toHaveLength(1); expect(disclosures[0]!.delivery_consolidation?.envelope.runs).toHaveLength(3);
-			expect(new Set([f.s4.revision.review_tree, f.repair.revision.review_tree, f.final.revision.review_tree]).size).toBe(3);
-			expect(f.auditBytes()).toEqual(sourceBytes); expect(history()).toEqual(previousHistory);
-			expect(f.count()).toBe(1); const head = f.git("rev-parse", "HEAD");
-			expect(f.git("rev-parse", "HEAD^")).toBe(f.baseHead);
-			expect(readFileSync(join(f.root, "src/bundle.js"), "utf8")).toBe("new-reviewed-composed-bundle\n");
-			expect((await observeParentCompletion(f.root, "native-parent", ["s4"])).complete).toBe(!code);
-			if (!code) {
-				await advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined, async () => { throw Error("no repeat gate"); }, f.selection);
-				expect(f.count()).toBe(1); expect(f.git("rev-parse", "HEAD")).toBe(head);
-			}
-			const receipt = readParentConsolidationReceipt(f.root, "native-parent")!;
-			writeFileSync(join(f.root, ".imm/state/batches/native-parent.consolidation.json"), JSON.stringify({ ...receipt, digest: `sha256:${"0".repeat(64)}` }));
-			await expect(observeParentCompletion(f.root, "native-parent", ["s4"])).rejects.toThrow("digest");
-		} finally { rmSync(f.root, { recursive: true, force: true }); }
-	});
-	function seedConsolidationHistory(f: ReturnType<typeof parentConsolidationFixture>) {
-		const task = JSON.parse(readFileSync(join(f.root, "docs/plans/s4.intent.json"), "utf8"));
-		const now = new Date().toISOString();
-		const state = prepareBatchRunState({ batch_id: "old-consolidation", initiative_slug: "native-parent", base_head: f.baseHead,
-			branch: "main", plan_digest: `sha256:${"c".repeat(64)}`, confirmation_time: now, now, budget: { max_children: 1, qa_failure_limit: 2 },
-			children: [{ task_id: "s4", slice_id: "S4", blocked_by: [], status: "already_settled", risk: "material", intent_path: "docs/plans/s4.intent.json",
-				intent_revision: 1, intent_content_hash: canonicalIntentHash(task), scope_hint: task.scope_hint, reason: null, exclusion: null }] });
-		state.batch_state = "superseded"; writeBatchRunState(f.root, state);
-		return () => readFileSync(join(f.root, ".imm/state/batches/old-consolidation.json"));
-	}
-	it.each(["absent", "decline", "cancel"])("leaves no association, command or commit on %s gate", async decision => {
-		const f = parentConsolidationFixture();
-		try {
-			const index = readFileSync(join(f.root, ".git/index")); const audits = f.auditBytes();
-			const gate: NativeParentGate | undefined = decision === "absent" ? undefined : async () => ({
-				state: decision === "cancel" ? "cancelled" : "rejected", reason: decision, recovery_action: "wait" });
-			const result = await advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined, gate, f.selection);
-			expect(result?.state).toBe(decision === "cancel" ? "cancelled" : "rejected");
-			expect(f.git("rev-parse", "HEAD")).toBe(f.baseHead); expect(readFileSync(join(f.root, ".git/index"))).toEqual(index);
-			expect(f.auditBytes()).toEqual(audits); expect(readParentConsolidationReceipt(f.root, "native-parent")).toBeNull();
-			expect(existsSync(join(f.root, ".imm/state/verification-count"))).toBe(false);
-		} finally { rmSync(f.root, { recursive: true, force: true }); }
-	});
-	it.each(["wrong-run", "changed-intent", "audit", "outside", "staged-drift"])("rejects %s before confirmation", async fault => {
-		const f = parentConsolidationFixture(); let gates = 0;
-		try {
-			if (fault === "wrong-run") f.selection.source_runs[0]!.run_id = "run-wrong";
-			if (fault === "changed-intent") {
-				const path = join(f.root, "docs/plans/s4.intent.json"); const intent = JSON.parse(readFileSync(path, "utf8"));
-				intent.goal += " changed"; writeFileSync(path, JSON.stringify(intent)); f.git("add", "docs/plans");
-			}
-			if (fault === "audit") writeFileSync(join(f.root, ".imm/audit/s4", f.s4.run_id, "task-record.json"), "{}\n");
-			if (fault === "outside") writeFileSync(join(f.root, "unselected.txt"), "not authorized");
-			if (fault === "staged-drift") { writeFileSync(join(f.root, "src/bundle.js"), "not reviewed"); f.git("add", "src"); }
-			await expect(advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined,
-				async () => { gates++; return null; }, f.selection)).rejects.toThrow();
-			expect(gates).toBe(0); expect(f.git("rev-parse", "HEAD")).toBe(f.baseHead);
-		} finally { rmSync(f.root, { recursive: true, force: true }); }
-	});
-	it.each(["HEAD", "bytes", "plan"])("revalidates %s after native acceptance", async fault => {
-		const f = parentConsolidationFixture();
-		try {
-			const reader = async () => ({ ...await f.reader(), tasks: [{ task_id: "s4", slice_id: "S4", blocked_by: changed ? ["other"] : [] }] });
-			let changed = false;
-			await expect(advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], reader, undefined, async () => {
-				if (fault === "HEAD") f.git("commit", "--allow-empty", "-m", "external unrelated change");
-				if (fault === "bytes") { writeFileSync(join(f.root, "src/bundle.js"), "changed after gate"); f.git("add", "src"); }
-				if (fault === "plan") changed = true;
-				return null;
-			}, f.selection)).rejects.toThrow();
-			expect(readParentConsolidationReceipt(f.root, "native-parent")).toBeNull();
-			expect(existsSync(join(f.root, ".imm/state/verification-count"))).toBe(false);
-		} finally { rmSync(f.root, { recursive: true, force: true }); }
-	});
-	it("recovers commit-before-receipt only through a new exact native confirmation", async () => {
-		const f = parentConsolidationFixture();
-		try {
-			await advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined, async () => null, f.selection);
-			const head = f.git("rev-parse", "HEAD"); const receipt = readParentConsolidationReceipt(f.root, "native-parent")!;
-			writeParentConsolidationReceipt(f.root, { ...receipt, commit: null });
-			rmSync(join(f.root, ".imm/state/batches/native-parent.native.report.json"));
-			// A crash can precede both ordinary production evidence and the final consolidation receipt.
-			rmSync(join(f.root, ".imm/state/batches/commits/native-task-consolidation.json"));
-			const refused = await advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined,
-				async () => ({ state: "cancelled", reason: "cancel", recovery_action: "wait" }), f.selection);
-			expect(refused?.state).toBe("cancelled"); expect(readParentConsolidationReceipt(f.root, "native-parent")!.commit).toBeNull();
-			const result = await advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined, async () => null, f.selection);
-			expect(result).toMatchObject({ action: "complete", proof: { complete: true } });
-			expect(f.git("rev-parse", "HEAD")).toBe(head); expect(f.count()).toBe(2);
-		} finally { rmSync(f.root, { recursive: true, force: true }); }
-	}, 30_000);
-	it.each(["HEAD", "bytes", "branch", "plan", "audit"])("revalidates recovery %s before associating sources or running commands", async fault => {
-		const f = parentConsolidationFixture();
-		try {
-			await advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined, async () => null, f.selection);
-			const receipt = readParentConsolidationReceipt(f.root, "native-parent")!;
-			writeParentConsolidationReceipt(f.root, { ...receipt, commit: null });
-			const receiptPath = join(f.root, ".imm/state/batches/native-parent.consolidation.json");
-			const reportPath = join(f.root, ".imm/state/batches/native-parent.native.report.json");
-			rmSync(reportPath);
-			rmSync(join(f.root, ".imm/state/batches/commits/native-task-consolidation.json"));
-			const pending = readFileSync(receiptPath);
-			let changed = false;
-			const reader = async () => ({ ...await f.reader(), tasks: [{ task_id: "s4", slice_id: "S4", blocked_by: changed ? ["other"] : [] }] });
-			await expect(advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], reader, undefined, async () => {
-				if (fault === "HEAD") f.git("commit", "--allow-empty", "-m", "advance during recovery confirmation");
-				if (fault === "bytes") { writeFileSync(join(f.root, "src/bundle.js"), "changed during recovery"); f.git("add", "src"); }
-				if (fault === "branch") f.git("checkout", "-b", "changed-during-recovery");
-				if (fault === "plan") changed = true;
-				if (fault === "audit") writeFileSync(join(f.root, ".imm/audit/s4", f.s4.run_id, "task-record.json"), "{}\n");
-				return null;
-			}, f.selection)).rejects.toThrow();
-			expect(readFileSync(receiptPath)).toEqual(pending);
-			expect(existsSync(reportPath)).toBe(false);
-			expect(f.count()).toBe(1);
-		} finally { rmSync(f.root, { recursive: true, force: true }); }
-	}, 30_000);
-	it.each(["before", "during"].flatMap(when => ["untracked", "tracked", "staged", "index-flags"].map(fault => ({ when, fault }))))(
-		"rejects $fault workspace drift $when recovery confirmation", async ({ when, fault }) => {
-		const f = parentConsolidationFixture();
-		try {
-			await advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined, async () => null, f.selection);
-			const receipt = readParentConsolidationReceipt(f.root, "native-parent")!;
-			writeParentConsolidationReceipt(f.root, { ...receipt, commit: null });
-			const receiptPath = join(f.root, ".imm/state/batches/native-parent.consolidation.json");
-			const reportPath = join(f.root, ".imm/state/batches/native-parent.native.report.json");
-			rmSync(reportPath);
-			rmSync(join(f.root, ".imm/state/batches/commits/native-task-consolidation.json"));
-			const pending = readFileSync(receiptPath);
-			const drift = () => {
-				if (fault === "untracked") writeFileSync(join(f.root, "unselected.txt"), "not approved");
-				else if (fault === "index-flags") f.git("update-index", "--skip-worktree", ".gitignore");
-				else {
-					writeFileSync(join(f.root, ".gitignore"), readFileSync(join(f.root, ".gitignore"), "utf8") + "\n# unrelated change\n");
-					if (fault === "staged") f.git("add", ".gitignore");
-				}
-			};
-			if (when === "before") drift();
-			let gates = 0;
-			await expect(advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined, async () => {
-				gates++; if (when === "during") drift(); return null;
-			}, f.selection)).rejects.toThrow();
-			expect(gates).toBe(when === "before" ? 0 : 1);
-			expect(readFileSync(receiptPath)).toEqual(pending);
-			expect(existsSync(reportPath)).toBe(false);
-			expect(f.count()).toBe(1);
-		} finally { rmSync(f.root, { recursive: true, force: true }); }
-	}, 30_000);
-	it("refuses to omit a remaining original contribution even when the final scope covers its bytes", async () => {
-		const f = parentConsolidationFixture(); let gates = 0;
-		try {
-			const reader = async () => ({ ...await f.reader(), tasks: [{ task_id: "s4", slice_id: "S4", blocked_by: [] },
-				{ task_id: "repair", slice_id: "S5", blocked_by: ["s4"] }] });
-			const selection = { ...f.selection, source_runs: [f.selection.source_runs[0]!] };
-			await expect(advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], reader, undefined,
-				async () => { gates++; return null; }, selection)).rejects.toThrow("every remaining original");
-			expect(gates).toBe(0); expect(f.git("rev-parse", "HEAD")).toBe(f.baseHead);
-		} finally { rmSync(f.root, { recursive: true, force: true }); }
-	});
-	it("rejects duplicate, self and extra-field selections", () => {
-		const source = { task_id: "source", run_id: "run-source" };
-		for (const input of [{ ...source, source_runs: [source] }, { task_id: "final", run_id: "run-final", source_runs: [source, source] },
-			{ task_id: "final", run_id: "run-final", source_runs: [source], native_decision: "accept" }])
-			expect(() => parseDeliveryConsolidation(input)).toThrow();
-	});
-});
-
-describe("acc-batch-branch-preflight", () => {
+describe("acc-batch-hidden-ref-preflight", () => {
 	let repo: { root: string; baseHead: string };
+	const BATCH_ID = "batch-preflight-1";
+	const REF = `refs/imm/batches/${BATCH_ID}`;
+	const refExists = () => spawnSync("git", ["-C", repo.root, "rev-parse", "--verify", "--quiet", REF]).status === 0;
+	const preflight = (extra: { blocking_scopes?: string[] } = {}) =>
+		runBatchGitPreflight({ root: repo.root, initiative_slug: "my-initiative", base_head: repo.baseHead, batch_id: BATCH_ID, ...extra });
+	const userState = () => ({
+		branch: git(repo.root, ["symbolic-ref", "--short", "HEAD"]),
+		head: git(repo.root, ["rev-parse", "HEAD"]),
+		index: readFileSync(join(repo.root, ".git", "index")).toString("hex"),
+	});
 
 	beforeEach(() => {
 		repo = initGitRepo();
+		writeFileSync(join(repo.root, "owned.txt"), "committed\n");
+		git(repo.root, ["add", "owned.txt"]);
+		git(repo.root, ["commit", "-m", "add owned"]);
+		repo.baseHead = git(repo.root, ["rev-parse", "HEAD"]);
 	});
 
 	afterEach(() => {
@@ -637,25 +462,51 @@ describe("acc-batch-branch-preflight", () => {
 	});
 
 	it.each([
-		["modified tracked files", () => writeFileSync(join(repo.root, ".gitignore"), ".imm/state/\n# dirty modification\n")],
-		["untracked non-ignored files", () => writeFileSync(join(repo.root, "untracked.txt"), "hello")],
-	])("rejects with dirty_working_tree when working tree has %s", (_kind, dirty) => {
+		["modified tracked files", () => writeFileSync(join(repo.root, "owned.txt"), "dirty\n")],
+		["untracked non-ignored files", () => writeFileSync(join(repo.root, "owned-new.txt"), "hello")],
+	])("rejects with dirty_working_tree when %s lie inside an unsettled child's scope", (_kind, dirty) => {
 		dirty();
-		const currentBranch = git(repo.root, ["symbolic-ref", "--short", "HEAD"]);
-
-		const res = runBatchGitPreflight({
-			root: repo.root,
-			initiative_slug: "my-initiative",
-			base_head: repo.baseHead,
-		});
-
+		const before = userState();
+		const res = preflight({ blocking_scopes: ["owned*.txt"] });
 		expect(res.ok).toBe(false);
-		if (!res.ok) {
-			expect(res.reason).toBe("dirty_working_tree");
-		}
+		if (!res.ok) expect(res.reason).toBe("dirty_working_tree");
+		expect(userState()).toEqual(before);
+		expect(refExists()).toBe(false);
 		expect(existsSync(join(repo.root, ".imm", "state", "batches"))).toBe(false);
-		expect(git(repo.root, ["symbolic-ref", "--short", "HEAD"])).toBe(currentBranch);
-		expect(() => git(repo.root, ["rev-parse", "--verify", "refs/heads/imm/my-initiative"])).toThrow();
+	});
+
+	it("treats dirt outside every unsettled child's scope as the user's own and creates the hidden ref", () => {
+		writeFileSync(join(repo.root, "owned.txt"), "user's own edit\n");
+		writeFileSync(join(repo.root, "scratch.txt"), "user's untracked file\n");
+		const before = userState();
+		const res = preflight({ blocking_scopes: ["src/**"] });
+		expect(res.ok).toBe(true);
+		if (res.ok) expect(res.branch).toBe(REF);
+		expect(git(repo.root, ["rev-parse", REF])).toBe(repo.baseHead);
+		expect(userState()).toEqual(before);
+		expect(readFileSync(join(repo.root, "owned.txt"), "utf8")).toBe("user's own edit\n");
+	});
+
+	it("Finding 2: an in-scope untracked file is still blocking when status.showUntrackedFiles=no", () => {
+		git(repo.root, ["config", "status.showUntrackedFiles", "no"]);
+		writeFileSync(join(repo.root, "owned-hidden.txt"), "hello");
+		const res = preflight({ blocking_scopes: ["owned*.txt"] });
+		expect(res.ok).toBe(false);
+		if (!res.ok) expect(res.reason).toBe("dirty_working_tree");
+		expect(refExists()).toBe(false);
+	});
+
+	it.each([
+		["assume-unchanged", ["--assume-unchanged"]],
+		["combined assume-unchanged and skip-worktree (tag s)", ["--skip-worktree", "--assume-unchanged"]],
+	])("Finding 1/2: an in-scope file carrying %s flags blocks instead of hiding dirt", (_kind, flags) => {
+		for (const flag of flags) git(repo.root, ["update-index", flag, "owned.txt"]);
+		const before = userState();
+		const res = preflight({ blocking_scopes: ["owned.txt"] });
+		expect(res.ok).toBe(false);
+		if (!res.ok) expect(res.reason).toBe("dirty_working_tree");
+		expect(userState()).toEqual(before);
+		expect(refExists()).toBe(false);
 	});
 
 	it("rejects with uncommitted_head when repository has zero commits", () => {
@@ -666,6 +517,7 @@ describe("acc-batch-branch-preflight", () => {
 				root: emptyDir,
 				initiative_slug: "my-initiative",
 				base_head: "0".repeat(40),
+				batch_id: BATCH_ID,
 			});
 			expect(res.ok).toBe(false);
 			if (!res.ok) {
@@ -677,75 +529,10 @@ describe("acc-batch-branch-preflight", () => {
 		}
 	});
 
-	it("Finding 2: rejects with dirty_working_tree when repo has status.showUntrackedFiles=no and untracked files exist", () => {
-		git(repo.root, ["config", "status.showUntrackedFiles", "no"]);
-		writeFileSync(join(repo.root, "hidden-untracked.txt"), "hello");
-		const currentBranch = git(repo.root, ["symbolic-ref", "--short", "HEAD"]);
-
-		const res = runBatchGitPreflight({
-			root: repo.root,
-			initiative_slug: "my-initiative-hidden",
-			base_head: repo.baseHead,
-		});
-
-		expect(res.ok).toBe(false);
-		if (!res.ok) {
-			expect(res.reason).toBe("dirty_working_tree");
-		}
-		expect(existsSync(join(repo.root, ".imm", "state", "batches"))).toBe(false);
-		expect(git(repo.root, ["symbolic-ref", "--short", "HEAD"])).toBe(currentBranch);
-		expect(() => git(repo.root, ["rev-parse", "--verify", "refs/heads/imm/my-initiative-hidden"])).toThrow();
-	});
-
-	it("Finding 2: rejects with dirty_working_tree when repo has assume-unchanged files", () => {
-		writeFileSync(join(repo.root, "tracked.txt"), "hello");
-		git(repo.root, ["add", "tracked.txt"]);
-		git(repo.root, ["commit", "-m", "add tracked"]);
-		git(repo.root, ["update-index", "--assume-unchanged", "tracked.txt"]);
-
-		const currentBranch = git(repo.root, ["symbolic-ref", "--short", "HEAD"]);
-		const res = runBatchGitPreflight({
-			root: repo.root,
-			initiative_slug: "my-initiative-assume",
-			base_head: git(repo.root, ["rev-parse", "HEAD"]),
-		});
-
-		expect(res.ok).toBe(false);
-		if (!res.ok) {
-			expect(res.reason).toBe("dirty_working_tree");
-		}
-		expect(existsSync(join(repo.root, ".imm", "state", "batches"))).toBe(false);
-		expect(git(repo.root, ["symbolic-ref", "--short", "HEAD"])).toBe(currentBranch);
-	});
-
-	it("Finding 1: rejects with dirty_working_tree when repo has combined assume-unchanged and skip-worktree flags (tag s)", () => {
-		writeFileSync(join(repo.root, "combined.txt"), "hello");
-		git(repo.root, ["add", "combined.txt"]);
-		git(repo.root, ["commit", "-m", "add combined"]);
-		git(repo.root, ["update-index", "--skip-worktree", "combined.txt"]);
-		git(repo.root, ["update-index", "--assume-unchanged", "combined.txt"]);
-
-		const currentBranch = git(repo.root, ["symbolic-ref", "--short", "HEAD"]);
-		const res = runBatchGitPreflight({
-			root: repo.root,
-			initiative_slug: "my-initiative-combined",
-			base_head: git(repo.root, ["rev-parse", "HEAD"]),
-		});
-
-		expect(res.ok).toBe(false);
-		expect(res.reason).toBe("dirty_working_tree");
-		expect(existsSync(join(repo.root, ".imm", "state", "batches"))).toBe(false);
-		expect(git(repo.root, ["symbolic-ref", "--short", "HEAD"])).toBe(currentBranch);
-	});
-
 	it("Finding 5: rejects with not_a_git_repository when root is not a git directory", () => {
 		const nonGit = mkdtempSync(join(tmpdir(), "non-git-"));
 		try {
-			const res = runBatchGitPreflight({
-				root: nonGit,
-				initiative_slug: "my-initiative",
-				base_head: repo.baseHead,
-			});
+			const res = runBatchGitPreflight({ root: nonGit, initiative_slug: "my-initiative", base_head: repo.baseHead, batch_id: BATCH_ID });
 			expect(res.ok).toBe(false);
 			if (!res.ok) {
 				expect(res.reason).toBe("not_a_git_repository");
@@ -759,11 +546,7 @@ describe("acc-batch-branch-preflight", () => {
 	it("Finding 5: rejects with not_repository_root when root is a subdirectory of a git repo", () => {
 		const subDir = join(repo.root, "sub", "dir");
 		mkdirSync(subDir, { recursive: true });
-		const res = runBatchGitPreflight({
-			root: subDir,
-			initiative_slug: "my-initiative",
-			base_head: repo.baseHead,
-		});
+		const res = runBatchGitPreflight({ root: subDir, initiative_slug: "my-initiative", base_head: repo.baseHead, batch_id: BATCH_ID });
 		expect(res.ok).toBe(false);
 		if (!res.ok) {
 			expect(res.reason).toBe("not_repository_root");
@@ -771,57 +554,35 @@ describe("acc-batch-branch-preflight", () => {
 		expect(existsSync(join(subDir, ".imm"))).toBe(false);
 	});
 
-	it("Finding 2: post-checkout hook failure is bypassed via core.hooksPath=/dev/null during preflight", () => {
+	it("rejects with batch_branch_exists when the batch's hidden ref already holds a different commit, and accepts the same commit as a retry", () => {
+		git(repo.root, ["update-ref", REF, repo.baseHead]);
+		const retry = preflight();
+		expect(retry.ok).toBe(true);
+		git(repo.root, ["update-ref", REF, git(repo.root, ["rev-parse", "HEAD^"])]);
+		const before = userState();
+		const res = preflight();
+		expect(res.ok).toBe(false);
+		if (!res.ok) expect(res.reason).toBe("batch_branch_exists");
+		expect(git(repo.root, ["rev-parse", REF])).toBe(git(repo.root, ["rev-parse", "HEAD^"]));
+		expect(userState()).toEqual(before);
+	});
+
+	it("on passing preflight creates only the hidden ref and never checks out, commits or runs hooks", () => {
 		const hooksDir = join(repo.root, ".git", "hooks");
 		mkdirSync(hooksDir, { recursive: true });
-		const hookFile = join(hooksDir, "post-checkout");
-		writeFileSync(hookFile, "#!/bin/sh\nexit 1\n");
-		spawnSync("chmod", ["+x", hookFile]);
-
-		const res = runBatchGitPreflight({
-			root: repo.root,
-			initiative_slug: "my-initiative-post-checkout",
-			base_head: repo.baseHead,
-		});
-
+		const marker = join(repo.root, "hook-ran");
+		for (const hook of ["post-checkout", "pre-commit", "post-commit", "reference-transaction"]) {
+			writeFileSync(join(hooksDir, hook), `#!/bin/sh\n: > "${marker}"\nexit 1\n`);
+			spawnSync("chmod", ["+x", join(hooksDir, hook)]);
+		}
+		const before = userState();
+		const res = preflight();
 		expect(res.ok).toBe(true);
-		if (res.ok) {
-			expect(res.branch).toBe("imm/my-initiative-post-checkout");
-		}
-		expect(git(repo.root, ["symbolic-ref", "--short", "HEAD"])).toBe("imm/my-initiative-post-checkout");
-	});
-
-	it("rejects with batch_branch_exists when refs/heads/imm/<initiative-slug> already exists", () => {
-		git(repo.root, ["branch", "imm/my-initiative", repo.baseHead]);
-		const currentBranch = git(repo.root, ["symbolic-ref", "--short", "HEAD"]);
-
-		const res = runBatchGitPreflight({
-			root: repo.root,
-			initiative_slug: "my-initiative",
-			base_head: repo.baseHead,
-		});
-
-		expect(res.ok).toBe(false);
-		if (!res.ok) {
-			expect(res.reason).toBe("batch_branch_exists");
-		}
-		expect(git(repo.root, ["symbolic-ref", "--short", "HEAD"])).toBe(currentBranch);
-		expect(existsSync(join(repo.root, ".imm", "state", "batches"))).toBe(false);
-	});
-
-	it("on passing preflight creates and switches to imm/<initiative-slug> from base_head", () => {
-		const res = runBatchGitPreflight({
-			root: repo.root,
-			initiative_slug: "my-initiative",
-			base_head: repo.baseHead,
-		});
-
-		expect(res.ok).toBe(true);
-		if (res.ok) {
-			expect(res.branch).toBe("imm/my-initiative");
-		}
-		expect(git(repo.root, ["symbolic-ref", "--short", "HEAD"])).toBe("imm/my-initiative");
-		expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(repo.baseHead);
+		if (res.ok) expect(res.branch).toBe(REF);
+		expect(git(repo.root, ["rev-parse", REF])).toBe(repo.baseHead);
+		expect(userState()).toEqual(before);
+		expect(existsSync(marker)).toBe(false);
+		expect(() => git(repo.root, ["rev-parse", "--verify", "refs/heads/imm/my-initiative"])).toThrow();
 	});
 });
 
@@ -1639,6 +1400,19 @@ describe("acc-batch-scope-bounded-commit", () => {
 	});
 });
 
+/**
+ * A batch recorded before the hidden ref owned its progress keeps its checked-out
+ * `imm/<slug>` branch; resume must still read that lineage. The branch is created
+ * by hand here because the runtime no longer creates or switches branches.
+ */
+function legacyBranchPreflight(input: { root: string; initiative_slug: string; base_head: string }) {
+	const branch = `imm/${input.initiative_slug}`;
+	if (spawnSync("git", ["-C", input.root, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).status === 0)
+		return { ok: false as const, reason: "batch_branch_exists" };
+	git(input.root, ["checkout", "-q", "-b", branch, input.base_head]);
+	return { ok: true as const, branch };
+}
+
 describe("batch runner integration: branch and scope-bounded commit", () => {
 	let repo: { root: string; baseHead: string };
 
@@ -1671,7 +1445,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 				batch_id: batchId,
 				initiative_slug: slug,
 				plan_digest: planDigest,
-				branch: `imm/${slug}`,
+				branch: batchRefName(batchId),
 				base_head: repo.baseHead,
 				budget: { max_children: 5, qa_failure_limit: 3 },
 				actor_id: "user",
@@ -1698,7 +1472,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 		};
 	}
 
-	it("executes full batch: passing preflight creates branch, settled children advance lineage", async () => {
+	it("executes full batch: passing preflight creates the hidden ref, settled children advance lineage without moving the user's branch", async () => {
 		const slug = "feature-flow";
 		const taskA = "task-a";
 		const taskB = "task-b";
@@ -1797,11 +1571,13 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 		expect(report.batch_state).toBe("completed");
 		expect(report.commits).toHaveLength(2);
 
-		expect(git(repo.root, ["symbolic-ref", "--short", "HEAD"])).toBe(`imm/${slug}`);
+		expect(git(repo.root, ["symbolic-ref", "--short", "HEAD"])).toBe("main");
+		expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(repo.baseHead);
 
 		const stateRecord = readBatchRunState(repo.root, "batch-flow-1");
 		expect(stateRecord).not.toBeNull();
-		expect(stateRecord!.branch).toBe(`imm/${slug}`);
+		expect(stateRecord!.branch).toBe(batchRefName("batch-flow-1"));
+		expect(git(repo.root, ["rev-parse", stateRecord!.branch])).toBe(report.commits[1]!);
 		expect(stateRecord!.commits).toHaveLength(2);
 
 		const commitB = report.commits[1]!;
@@ -1813,7 +1589,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 		expect(git(repo.root, ["log", "-n", "1", "--format=%B", commitB])).toContain("imm(task-b): Task B goal");
 	});
 
-	it("stops batch as failed with dirty_outside_scope when a child produces out-of-scope changes", async () => {
+	it("leaves a child's out-of-scope file as the user's own: delivered commit excludes it and the batch completes", async () => {
 		const slug = "leak-flow";
 		const taskA = "task-leak-a";
 
@@ -1879,14 +1655,18 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 		const input = makeBatchInput(children, kernel, slug, "batch-leak-1");
 		const report = await finishScriptedHandoffs(input, await startBatch(input));
 
-		expect(report.batch_state).toBe("failed");
-		expect(report.reason).toContain("dirty_outside_scope");
-		expect(report.commits).toHaveLength(0);
-
+		expect(report.batch_state).toBe("completed");
+		expect(report.commits).toHaveLength(1);
+		// Only the child's scope reaches the hidden ref; the stray file stays in the working tree, uncommitted.
+		const delivered = git(repo.root, ["diff-tree", "-r", "--name-only", "--no-commit-id", report.commits[0]!]).split("\n");
+		expect(delivered).toContain("src/a.ts");
+		expect(delivered).not.toContain("unscoped.txt");
+		expect(readFileSync(join(repo.root, "unscoped.txt"), "utf8")).toBe("leak\n");
 		expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(repo.baseHead);
+		expect(git(repo.root, ["symbolic-ref", "--short", "HEAD"])).toBe("main");
 	});
 
-	it("terminates as rejected when branch already exists before startBatch, leaving zero batch state files", async () => {
+	it("terminates as rejected when the batch's hidden ref already holds another commit, leaving zero batch state files", async () => {
 		const slug = "exist-flow";
 		const taskA = "task-exist-a";
 		const intentPathA = writeTaskIntent(repo.root, taskA, "Goal", [`docs/plans/${taskA}.intent.json`]);
@@ -1895,7 +1675,8 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 		git(repo.root, ["commit", "-m", "add intent file"]);
 		repo.baseHead = git(repo.root, ["rev-parse", "HEAD"]);
 
-		git(repo.root, ["branch", `imm/${slug}`, repo.baseHead]);
+		const foreignTip = git(repo.root, ["commit-tree", git(repo.root, ["rev-parse", "HEAD^{tree}"]), "-p", repo.baseHead, "-m", "foreign tip"]);
+		git(repo.root, ["update-ref", batchRefName("batch-exist-1"), foreignTip]);
 		const originalBranch = git(repo.root, ["symbolic-ref", "--short", "HEAD"]);
 
 		const children: BatchPlanChild[] = [
@@ -1945,6 +1726,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 		expect(existsSync(join(repo.root, ".imm", "state", "batches", "batch-exist-1.report.json"))).toBe(false);
 
 		expect(git(repo.root, ["symbolic-ref", "--short", "HEAD"])).toBe(originalBranch);
+		expect(git(repo.root, ["rev-parse", batchRefName("batch-exist-1")])).toBe(foreignTip);
 	});
 
 	it("Finding 3: resumeBatch refuses external HEAD drift before commit lookup without writes", async () => {
@@ -1973,7 +1755,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 		];
 
 		// First: run preflight to create branch
-		runBatchGitPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
+		legacyBranchPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
 
 		// Settle taskA in audit and create its commit
 		mkdirSync(join(repo.root, "src"), { recursive: true });
@@ -2085,7 +1867,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			},
 		];
 
-		runBatchGitPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
+		legacyBranchPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
 
 		// Settle taskA in audit with authorized scope strictly src/a.ts
 		writeChildAudit(repo.root, taskA, "done", repo.baseHead, {
@@ -2209,7 +1991,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 		git(repo.root, ["branch", branch, repo.baseHead]);
 		const branchCommitBefore = git(repo.root, ["rev-parse", `refs/heads/${branch}`]);
 
-		const res = runBatchGitPreflight({
+		const res = legacyBranchPreflight({
 			root: repo.root,
 			initiative_slug: slug,
 			base_head: repo.baseHead,
@@ -2247,7 +2029,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			},
 		];
 
-		runBatchGitPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
+		legacyBranchPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
 
 		writeChildAudit(repo.root, taskA, "done", repo.baseHead, {
 			contract: "assurance_kernel/task_intent/v1",
@@ -2357,7 +2139,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			},
 		];
 
-		runBatchGitPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
+		legacyBranchPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
 
 		// Settle and commit taskA
 		mkdirSync(join(repo.root, "src"), { recursive: true });
@@ -2475,7 +2257,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			},
 		];
 
-		runBatchGitPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
+		legacyBranchPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
 
 		// Settle and commit taskA
 		mkdirSync(join(repo.root, "src"), { recursive: true });
@@ -2595,7 +2377,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			},
 		];
 
-		runBatchGitPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
+		legacyBranchPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
 
 		// Settle taskA in audit; do NOT commit it yet (before settlement)
 		mkdirSync(join(repo.root, "src"), { recursive: true });
@@ -2703,7 +2485,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			},
 		];
 
-		runBatchGitPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
+		legacyBranchPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
 
 		mkdirSync(join(repo.root, "src"), { recursive: true });
 		writeFileSync(join(repo.root, "src", "a.ts"), "content\n");
@@ -2816,7 +2598,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			},
 		];
 
-		runBatchGitPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
+		legacyBranchPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
 
 		mkdirSync(join(repo.root, "src"), { recursive: true });
 		writeFileSync(join(repo.root, "src", "a.ts"), "content\n");
@@ -2944,7 +2726,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			},
 		];
 
-		runBatchGitPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
+		legacyBranchPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
 
 		mkdirSync(join(repo.root, "src"), { recursive: true });
 		writeFileSync(join(repo.root, "src", "a.ts"), "content a\n");
@@ -3082,7 +2864,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			},
 		];
 
-		runBatchGitPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
+		legacyBranchPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
 
 		mkdirSync(join(repo.root, "src"), { recursive: true });
 		writeFileSync(join(repo.root, "src", "a.ts"), "content a\n");
@@ -3320,7 +3102,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			},
 		];
 
-		runBatchGitPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
+		legacyBranchPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
 
 		// History rewrite after the initial check, while child A is enrolled: the
 		// recorded base is no longer an ancestor of HEAD.
@@ -3415,7 +3197,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			},
 		];
 
-		runBatchGitPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
+		legacyBranchPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
 
 		// Same-SHA branch switch while child A is enrolled
 		git(repo.root, ["checkout", "-b", "decoy-enrolled"]);
@@ -3523,7 +3305,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			},
 		];
 
-		runBatchGitPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
+		legacyBranchPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
 
 		// Commit A with durable evidence, then crash before committed-persist:
 		// state still shows settled with commits [] and no external HEAD movement.
@@ -3645,7 +3427,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			risk: "material",
 			revision: 1,
 		};
-		runBatchGitPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
+		legacyBranchPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
 		writeChildAudit(repo.root, taskId, "done", repo.baseHead, intent);
 		mkdirSync(join(repo.root, "src"), { recursive: true });
 		writeFileSync(join(repo.root, "src", "allowed.ts"), "allowed\n");
@@ -3672,7 +3454,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 	it("review round 14: evidence-direct lookup is not shadowed by a later goal mentioning the marker", async () => {
 		const slug = "shadow-flow";
 		const taskA = "task-shadow-a";
-		runBatchGitPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
+		legacyBranchPreflight({ root: repo.root, initiative_slug: slug, base_head: repo.baseHead });
 
 		const intentA = {
 			contract: "assurance_kernel/task_intent/v1",
@@ -3726,7 +3508,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 		expect(foundB!.commit).toBe(shaB);
 	});
 
-	it("review round 15: preflight rejects a hidden dirty out-of-scope submodule (submodule.ignore=all)", () => {
+	it("review round 15: preflight sees a hidden dirty submodule (submodule.ignore=all) only when an unsettled child owns it", () => {
 		const srcRepo = mkdtempSync(join(tmpdir(), "sub-src-"));
 		try {
 			git(srcRepo, ["init", "-q"]);
@@ -3744,15 +3526,20 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			// Dirty the submodule's tracked content; hidden by ignore=all
 			writeFileSync(join(repo.root, "vendor", "sub", "f.txt"), "2\n");
 
-			const res = runBatchGitPreflight({
-				root: repo.root,
-				initiative_slug: "sub-hidden-a",
-				base_head: baseNow,
+			// Dirt in a submodule no unsettled child owns is the user's own.
+			const outside = runBatchGitPreflight({
+				root: repo.root, initiative_slug: "sub-hidden-a", base_head: baseNow, batch_id: "batch-sub-a", blocking_scopes: ["src/**"],
 			});
-			expect(res.ok).toBe(false);
-			if (!res.ok) {
-				expect(res.reason).toBe("dirty_working_tree");
+			expect(outside.ok).toBe(true);
+
+			const owned = runBatchGitPreflight({
+				root: repo.root, initiative_slug: "sub-hidden-b", base_head: baseNow, batch_id: "batch-sub-b", blocking_scopes: ["vendor/sub"],
+			});
+			expect(owned.ok).toBe(false);
+			if (!owned.ok) {
+				expect(owned.reason).toBe("dirty_working_tree");
 			}
+			expect(spawnSync("git", ["-C", repo.root, "rev-parse", "--verify", "--quiet", "refs/imm/batches/batch-sub-b"]).status).not.toBe(0);
 			expect(existsSync(join(repo.root, ".imm", "state", "batches"))).toBe(false);
 		} finally {
 			rmSync(srcRepo, { recursive: true, force: true });
@@ -3775,7 +3562,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			const baseNow = git(repo.root, ["rev-parse", "HEAD"]);
 			git(repo.root, ["config", "submodule.vendor/sub.ignore", "all"]);
 
-			runBatchGitPreflight({ root: repo.root, initiative_slug: slug, base_head: baseNow });
+			legacyBranchPreflight({ root: repo.root, initiative_slug: slug, base_head: baseNow });
 
 			// In-scope change plus a hidden dirty out-of-scope submodule
 			const taskId = "task-sub-hidden";
@@ -3821,7 +3608,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 			git(repo.root, ["commit", "-qm", "add submodule"]);
 			const baseNow = git(repo.root, ["rev-parse", "HEAD"]);
 
-			runBatchGitPreflight({ root: repo.root, initiative_slug: slug, base_head: baseNow });
+			legacyBranchPreflight({ root: repo.root, initiative_slug: slug, base_head: baseNow });
 
 			// Scope INCLUDES the submodule; the child modifies tracked content
 			// inside it without committing there, plus an in-scope parent file.

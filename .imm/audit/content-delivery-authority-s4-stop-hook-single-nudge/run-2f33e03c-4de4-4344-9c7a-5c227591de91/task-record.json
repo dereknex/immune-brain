@@ -1,0 +1,123 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "content-delivery-authority-s4-stop-hook-single-nudge",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "content-delivery-authority-s4-stop-hook-single-nudge",
+    "goal": "Make the Stop continuation hook nudge at most once per unchanged progress digest and then pause, telling the agent that waiting on a user-only action is a valid stop, under S4 of docs/specs/content-delivery-authority.spec.md.",
+    "acceptance": [
+      {
+        "id": "S4-AC1",
+        "assertion": "Sources E7, U4; meet S4, SCN-3 and D11 in docs/specs/content-delivery-authority.spec.md: on both Hosts an unchanged progress digest blocks once and the next unchanged stop pauses; a changed digest blocks again; the block reason says that waiting on a user-only action is a valid stop and must not repeat the request.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/run-continuation.test.ts\",\n      \"tests/claude-run-continuation.test.ts\",\n      \"tests/pi-run-continuation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/content-delivery-authority-stop-hook-single-nudge.md",
+      "docs/plans/content-delivery-authority-s4-stop-hook-single-nudge.intent.json",
+      "docs/specs/content-delivery-authority.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/assurance/run_continuation.ts",
+      "plugins/immune-brain/runtime/claude/run_continuation.ts",
+      "tests/claude-run-continuation.test.ts",
+      "tests/pi-run-continuation.test.ts",
+      "tests/run-continuation.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/content-delivery-authority-s4-stop-hook-single-nudge.intent.json",
+    "content_hash": "sha256:8e9a2b87e3130fac17db46562c58f0843de70fcde01fc31a614ac4a8c697bf21"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:8e9a2b87e3130fac17db46562c58f0843de70fcde01fc31a614ac4a8c697bf21",
+  "git_base_head": "31e1bd66425abcef508540d4f8a915c4d569a546",
+  "attestations": [
+    {
+      "id": "approval-qa-d3b2de51",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8e9a2b87e3130fac17db46562c58f0843de70fcde01fc31a614ac4a8c697bf21",
+      "diff_hash": "sha256:ec8ad30d44fef73b8be861f2d760588e7cff870078da1374863ddbb5ce267ca2",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:d1fed7ac713de2ffd4cf0cc719c4460509bc55f0c6c610609dd14ffe51855983",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S4-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:d1fed7ac713de2ffd4cf0cc719c4460509bc55f0c6c610609dd14ffe51855983"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-1b38749c",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8e9a2b87e3130fac17db46562c58f0843de70fcde01fc31a614ac4a8c697bf21",
+      "diff_hash": "sha256:ec8ad30d44fef73b8be861f2d760588e7cff870078da1374863ddbb5ce267ca2",
+      "actor_id": "parent-mediated-review",
+      "summary": "UNCHANGED_CONTINUATION_LIMIT=1 makes an unchanged digest block once and then pause, while a changed digest resets the counter. The Claude block reason now carries the user-only-wait guidance. Tests pin all three behaviours on both Hosts, and the dist bundle matches the source.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "31e1bd66425abcef508540d4f8a915c4d569a546",
+        "review_commit": "5a24a397618bda8a2659c1402c152de4647196d2",
+        "review_tree": "19f7f637d7896aa8ef82e4ba80eb997b57e7f726",
+        "manifest_digest": "sha256:7fdb7fc416a3c54eb8ad2771f49a78044e1b6ab9aba5f39f5491dab18fc7b413"
+      },
+      "reviewer_verdict_sha256": "sha256:67177df90b0d4eb98aa66a315edffca73ba3d4e53554e49b6fb7b1761575570b"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:content-delivery-authority-s4-stop-hook-single-nudge:2026-10-16T07:13:30.069Z",
+      "at": "2026-10-16T07:13:30.069Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/content-delivery-authority-s4-stop-hook-single-nudge.intent.json"
+    },
+    {
+      "id": "record_approval:content-delivery-authority-s4-stop-hook-single-nudge:2026-10-16T07:13:44.994Z",
+      "at": "2026-10-16T07:13:44.994Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-d3b2de51\naction_v2_sha256:ce46592a74042e4772717123d00557a3186edec8fab2ce04617590f99d509d46",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-16T07:13:44.994Z"
+      }
+    },
+    {
+      "id": "record_approval:content-delivery-authority-s4-stop-hook-single-nudge:2026-10-16T07:14:38.561Z",
+      "at": "2026-10-16T07:14:38.561Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-1b38749c\naction_v2_sha256:028c6f153b9eea735423709798b38b4d70a7273a9560b9a95681d94aa4f3aec6",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-16T07:14:38.561Z"
+      }
+    },
+    {
+      "id": "complete:content-delivery-authority-s4-stop-hook-single-nudge:2026-10-16T07:14:40.011Z",
+      "at": "2026-10-16T07:14:40.011Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:9755e40dc9548bf8d3c051b02d8ca1bf83ad6d0aa1bf0d29d773f2e60de795ce"
+    }
+  ]
+}

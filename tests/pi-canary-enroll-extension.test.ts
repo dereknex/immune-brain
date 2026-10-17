@@ -290,7 +290,10 @@ describe("pi canary enroll extension", () => {
 	test("another worktree's terminal audit does not block enrollment before the intent check", async () => {
 		const root = makeRoot();
 		execFileSync("git", ["init", "-q"], { cwd: root });
-		execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-qm", "baseline"], { cwd: root });
+		// Committing the migrated audit is Git integration: auto behavior (ADR 0024).
+		writeFileSync(join(root, "AGENTS.md"), "- Git integration: auto\n");
+		execFileSync("git", ["add", "--", "AGENTS.md"], { cwd: root });
+		execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "baseline"], { cwd: root });
 		const ui = makeFakeUI(true);
 		// Another worktree's run of the same logical task settled and its audit
 		// reached this worktree, which has no run of its own. That evidence is not
@@ -669,6 +672,10 @@ describe("pi canary enroll handler integration", () => {
 			const root = mkdtempSync(join(tmpdir(), "s4-enroll-migration-"));
 			try {
 				makeEligibleRepo(root, TASK);
+				// The migration commit is Git integration: auto behavior (ADR 0024).
+				writeFileSync(join(root, "AGENTS.md"), "- Git integration: auto\n");
+				git(root, ["add", "--", "AGENTS.md"]);
+				git(root, ["commit", "-qm", "declare Git integration: auto"]);
 				const inspectGit = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" });
 				const before = inspectGit("rev-parse", "HEAD").trim();
 				const beforeAuthority = authoritySnapshot(root);

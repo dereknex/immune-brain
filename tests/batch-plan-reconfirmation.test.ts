@@ -87,6 +87,12 @@ function git(root: string, ...args: string[]): string {
 	// Only fixture commands suppress optional refresh; production calls inherit the actual Host environment.
 	return execFileSync("git", ["--no-optional-locks", "-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
+// The batch's commits live on its hidden ref; the user's HEAD and branch stay theirs.
+function batchTip(root: string, ref: string): string { return git(root, "rev-parse", ref); }
+function moveHiddenRefExternally(root: string, ref: string, parent: string): string {
+	const external = git(root, "commit-tree", git(root, "rev-parse", `${parent}^{tree}`), "-p", parent, "-m", "external batch ref movement");
+	git(root, "update-ref", ref, external); return external;
+}
 function put(root: string, path: string, value: unknown) {
 	writeFileSync(join(root, path), `${JSON.stringify(value, null, 2)}\n`);
 }
@@ -301,13 +307,15 @@ describe("bounded batch plan reconfirmation", () => {
 		for (const key of ["batch_id", "base_head", "branch", "created_at", "consecutive_qa_failures"] as const) expect(state[key]).toEqual(f.before[key]);
 		expect(state.budget).toEqual(f.before.budget);
 		expect(Date.parse(state.confirmation_time)).toBeGreaterThan(Date.parse(f.before.confirmation_time));
-		expect(git(f.root, "rev-parse", "HEAD")).toBe(state.commits[0]!);
-		expect(git(f.root, "rev-list", "--count", `${f.base}..HEAD`)).toBe("1");
-		expect(git(f.root, "show", "-s", "--format=%B", "HEAD")).toContain(`Immune-Brain-Batch: ${f.before.batch_id}`);
+		expect(batchTip(f.root, f.before.branch)).toBe(state.commits[0]!);
+		expect(git(f.root, "rev-list", "--count", `${f.base}..${f.before.branch}`)).toBe("1");
+		expect(git(f.root, "show", "-s", "--format=%B", f.before.branch)).toContain(`Immune-Brain-Batch: ${f.before.batch_id}`);
+		// The user's checked-out branch and HEAD never move.
+		expect(git(f.root, "rev-parse", "HEAD")).toBe(f.base);
 		expect(localRunId(f.root, f.task)).toBe(f.runId); expect(tree(f.root, ".imm/audit")).toEqual(auditBefore);
-		const bytes = readFileSync(join(f.root, f.path)); const head = git(f.root, "rev-parse", "HEAD");
+		const bytes = readFileSync(join(f.root, f.path)); const head = batchTip(f.root, f.before.branch);
 		const replay = await f.run(); expect(replay.report.handoff.task_id).toBe(`${f.slug}-c2`);
-		expect(f.gates()).toBe(2); expect(readFileSync(join(f.root, f.path))).toEqual(bytes); expect(git(f.root, "rev-parse", "HEAD")).toBe(head);
+		expect(f.gates()).toBe(2); expect(readFileSync(join(f.root, f.path))).toEqual(bytes); expect(batchTip(f.root, f.before.branch)).toBe(head);
 	}, 90000);
 
 	it("plan drift after recorded child progress gives a non-authorizing evidence-preserving disposition", async () => {
@@ -356,7 +364,7 @@ describe("bounded batch plan reconfirmation", () => {
 	it("independently refuses every invalid binding with exact nonempty authority/audit/index/ref bytes", async () => {
 		const f = await fixture("pi"), restore = restorePoint(f.root);
 		const row = withKernelRead(f.root, db => readRunRowByTask(db, f.task))!;
-		for (const failure of ["digest", "missing-baseline", "order", "task", "slice", "dependencies", "pending-intent", "foreign-run", "late-run", "stale-delivery", "dirty-unrelated", "head", "branch", "commits", "child-commit", "short-oid", "nonhex-oid", "commit-evidence", "proof-timestamp", "child-pre-v4", "child-missing-base"]) {
+		for (const failure of ["digest", "missing-baseline", "order", "task", "slice", "dependencies", "pending-intent", "foreign-run", "late-run", "stale-delivery", "dirty-unrelated", "ref-moved", "commits", "child-commit", "short-oid", "nonhex-oid", "commit-evidence", "proof-timestamp", "child-pre-v4", "child-missing-base"]) {
 		try {
 		const preflight = await projectBatchPreflight({ root: f.root, initiative_slug: f.slug });
 		expect(preflight.ok).toBe(true);
@@ -411,8 +419,7 @@ describe("bounded batch plan reconfirmation", () => {
 			}
 			case "stale-delivery": writeFileSync(join(f.root, "src/child-1.txt"), "changed after QA\n"); git(f.root, "add", "src/child-1.txt"); break;
 			case "dirty-unrelated": writeFileSync(join(f.root, "unrelated.txt"), "unrelated\n"); git(f.root, "add", "unrelated.txt"); break;
-			case "head": git(f.root, "commit", "--allow-empty", "--only", "-qm", "external HEAD movement"); break;
-			case "branch": git(f.root, "checkout", "-qb", "foreign"); break;
+			case "ref-moved": moveHiddenRefExternally(f.root, record.branch, f.base); break;
 			case "commits": record.commits = [f.base]; break;
 			case "child-commit": record.children[0] = { ...record.children[0]!, state: "committed", commit: f.base }; record.commits = [f.base]; break;
 			case "short-oid": record.base_head = "a".repeat(39); break;
@@ -447,7 +454,7 @@ describe("bounded batch plan reconfirmation", () => {
 
 	for (const host of ["pi", "claude"] as const) it(`${host}: each native refusal or drift cannot write or advance`, async () => {
 		const f = await fixture(host), restore = restorePoint(f.root);
-		for (const failure of ["decline", "cancel", "plan-drift", "state-drift", "evidence-drift", "head-drift", "branch-drift"]) {
+		for (const failure of ["decline", "cancel", "plan-drift", "state-drift", "evidence-drift", "ref-drift"]) {
 		let expected = snapshot(f.root);
 		f.answer(async () => {
 			if (failure === "decline" || failure === "cancel") return failure;
@@ -457,18 +464,17 @@ describe("bounded batch plan reconfirmation", () => {
 				const path = `.imm/audit/${f.task}/${f.runId}/terminal-proof.json`; const proof = JSON.parse(readFileSync(join(f.root, path), "utf8"));
 				put(f.root, path, { ...proof, terminal_event_id: "foreign-proof" });
 			}
-			if (failure === "head-drift") git(f.root, "commit", "--allow-empty", "--only", "-qm", "external answer-time HEAD");
-			if (failure === "branch-drift") git(f.root, "checkout", "-qb", "answer-time-branch");
+			if (failure === "ref-drift") moveHiddenRefExternally(f.root, f.before.branch, f.base);
 			expected = snapshot(f.root); return "accept";
 		});
 		try {
 			const result = await f.run().catch(error => ({ state: "rejected", reason: String(error) }));
 			expect(["rejected", "cancelled", "blocked"], failure).toContain(result.state);
 			expect(snapshot(f.root)).toEqual(expected); expect(f.state().plan_digest).toBe(f.before.plan_digest);
-			expect(git(f.root, "rev-list", "--count", `${f.base}..HEAD`)).toBe(failure === "head-drift" ? "1" : "0");
+			expect(git(f.root, "rev-list", "--count", `${f.base}..HEAD`)).toBe("0");
 		} finally { restore(); }
 		}
-		expect(f.gates()).toBe(8);
+		expect(f.gates()).toBe(7);
 	}, 90000);
 
 	for (const host of ["pi", "claude"] as const) it(`${host}: a foreign claim during native answer refuses without further writes`, async () => {
@@ -519,7 +525,7 @@ describe("bounded batch plan reconfirmation", () => {
 			}); expect(interrupted.state).toBe("rejected"); expect(commitCalls).toBe(1);
 			expect(f.state().children[0]!.state).toBe("settled"); expect(f.state().commits).toEqual([]);
 		} finally { fault.mockRestore(); }
-		const committedHead = git(f.root, "rev-parse", "HEAD"); expect(committedHead).not.toBe(f.base);
+		const committedHead = batchTip(f.root, f.before.branch); expect(committedHead).not.toBe(f.base);
 		expect(await lookupBatchCommit({ root: f.root, taskId: f.task, batchId: f.before.batch_id, expectedHead: f.base, branch: f.before.branch })).toEqual({ commit: committedHead });
 		const terminalRecord = readAuditTaskPair(f.root, f.task, f.runId)!.record;
 		if (terminalRecord.contract !== "assurance_kernel/task_record/v4") throw new Error("expected actual v4 settlement");
@@ -552,7 +558,7 @@ describe("bounded batch plan reconfirmation", () => {
 				const tree = git(f.root, "write-tree"), message = git(f.root, "show", "-s", "--format=%B", committedHead);
 				const author = git(f.root, "show", "-s", "--format=%an", committedHead);
 				const forged = git(f.root, "-c", `user.name=${author}`, "commit-tree", tree, "-p", f.base, "-m", message);
-				git(f.root, "update-ref", "HEAD", forged); put(f.root, evidencePath, { ...evidence, commit: forged });
+				git(f.root, "update-ref", f.before.branch, forged); put(f.root, evidencePath, { ...evidence, commit: forged });
 				const before = snapshot(f.root);
 				expect(ownUnpersistedBatchHead(f.root, f.state(), forged)).toBe(false);
 				expect((await f.run()).state).toBe("rejected"); expect(f.gates()).toBe(2);

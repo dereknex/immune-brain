@@ -2191,13 +2191,12 @@ describe("shared batch preflight projection", () => {
 		return files;
 	}
 
-	it("S3: commits the allowed set and preserves mixed index/worktree dirt outside it", async () => {
+	it("S2-AC1: a rejected preflight names only in-scope dirt and leaves HEAD, branch, index and log unchanged", async () => {
 		const root = fixture();
 		const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" });
 		try {
 			writeFileSync(join(root, "outside.txt"), "base");
 			git("add", "outside.txt"); git("commit", "-qm", "outside baseline");
-			const before = headOf(root);
 			mkdirSync(join(root, "src")); mkdirSync(join(root, "docs/specs"), { recursive: true });
 			mkdirSync(join(root, ".imm/audit"), { recursive: true });
 			writeFileSync(join(root, "src/task.ts"), "export const task = true;\n");
@@ -2206,23 +2205,41 @@ describe("shared batch preflight projection", () => {
 			writeFileSync(join(root, "docs/plans/draft.md"), "plan");
 			writeFileSync(join(root, "outside.txt"), "staged"); git("add", "outside.txt");
 			writeFileSync(join(root, "outside.txt"), "worktree");
-			const index = git("ls-files", "--stage", "--", "outside.txt");
+			const head = headOf(root); const branch = git("branch", "--show-current"); const log = git("log", "--format=%H");
+			const index = git("ls-files", "--stage"); const status = git("status", "--porcelain");
 			const staged = git("show", ":outside.txt"); const worktree = readFileSync(join(root, "outside.txt"));
 			const outcome = await prepareBatchPreflight({ root, initiative_slug: SLUG, now: NOW, readInitiative: readNextInitiative });
 			expect(outcome.ok).toBe(false);
-			if (outcome.ok) throw new Error("remaining paths must reject a fresh batch");
-			expect(outcome.reason).toBe("branch preflight failed: working tree is dirty: outside.txt");
-			expect(outcome.recovery_action).not.toContain("commit working");
-			expect(outcome.precondition_commit).toBe(headOf(root));
-			expect(git("rev-list", "--count", `${before}..HEAD`).trim()).toBe("1");
-			expect(git("show", "-s", "--format=%s", "HEAD").trim()).toBe(`chore(imm): commit batch preconditions for ${SLUG}`);
-			expect(git("diff", "--name-only", before, "HEAD").trim().split("\n").sort()).toEqual([
-				".imm/audit/precondition.txt", "docs/plans/draft.md", "docs/specs/draft.md", "src/task.ts",
-			]);
-			expect(git("ls-files", "--stage", "--", "outside.txt")).toBe(index);
+			if (outcome.ok) throw new Error("dirt inside an unsettled child's scope must reject a fresh batch");
+			expect(outcome.reason).toBe("branch preflight failed: working tree is dirty: src/task.ts");
+			expect(outcome).not.toHaveProperty("precondition_commit");
+			expect(headOf(root)).toBe(head);
+			expect(git("branch", "--show-current")).toBe(branch);
+			expect(git("log", "--format=%H")).toBe(log);
+			expect(git("ls-files", "--stage")).toBe(index);
+			expect(git("status", "--porcelain")).toBe(status);
 			expect(git("show", ":outside.txt")).toBe(staged);
 			expect(readFileSync(join(root, "outside.txt"))).toEqual(worktree);
 			expect(readdirSync(join(root, ".imm/state/batches"))).toEqual([]);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
+	it("S2-AC1: dirt outside every unsettled child's scope does not block and is never committed", async () => {
+		const root = fixture();
+		const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" });
+		try {
+			mkdirSync(join(root, "docs/specs"), { recursive: true }); mkdirSync(join(root, ".imm/audit"), { recursive: true });
+			writeFileSync(join(root, "outside.txt"), "untracked");
+			writeFileSync(join(root, "docs/specs/draft.md"), "draft");
+			writeFileSync(join(root, "docs/plans/draft.md"), "plan");
+			writeFileSync(join(root, ".imm/audit/precondition.txt"), "evidence");
+			const head = headOf(root); const branch = git("branch", "--show-current"); const status = git("status", "--porcelain");
+			const outcome = await prepareBatchPreflight({ root, initiative_slug: SLUG, now: NOW, readInitiative: readNextInitiative });
+			if (!outcome.ok) throw new Error(`out-of-scope dirt must not block: ${outcome.reason}`);
+			expect(outcome).not.toHaveProperty("precondition_commit");
+			expect(headOf(root)).toBe(head);
+			expect(git("branch", "--show-current")).toBe(branch);
+			expect(git("status", "--porcelain")).toBe(status);
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 

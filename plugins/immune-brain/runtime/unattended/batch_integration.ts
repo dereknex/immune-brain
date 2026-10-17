@@ -1,15 +1,19 @@
-// Lane integration for unattended batch runs: build the batch-branch candidate
-// for a Lane's commit, prove its identity against that commit, and fast-forward
-// the batch branch. Git plumbing only. The runtime never creates, switches or
-// deletes a Git worktree, never pushes, and never opens a pull request; the
-// only ref it moves is the batch branch it already owns, by fast-forward.
+// Lane integration for unattended batch runs: build the batch candidate for a
+// Lane's commit, prove its identity against that commit, apply its scoped delta
+// to the user's working tree, and advance the batch's hidden ref. Git plumbing
+// only. The runtime never creates, switches or deletes a Git worktree, never
+// pushes, never opens a pull request, and never moves the user's HEAD, branch or
+// index; the only ref it moves is the hidden ref the batch already owns.
 // Defined by docs/specs/parallel-batch-lanes.spec.md (Temporal sequence, step 2).
 import { spawnSync } from "node:child_process";
 import type { SnapshotDescriptor } from "../assurance/coordinator";
 import { runDeterministicQa } from "../assurance/qa";
 import { VerificationAbortedError, type VerificationDescriptor } from "../assurance/verification";
 import { parseTaskIntentV1 } from "../kernel/intent";
+import { commitWorkflowPaths, settleCommitSubject } from "../assurance/workflow_autocommit";
+import { readGitIntegrationPreference } from "../git_integration_preference";
 import { parseVerificationDescriptor } from "../verification_descriptor";
+import { applyDeltaToWorkingTree, changedPaths, isBatchRef, moveBatchRef, readBatchRef } from "./batch_ref";
 
 export type BatchIntegrationReason =
 	| "batch_integration_conflict"
@@ -156,18 +160,27 @@ export interface IntegrateLaneInput {
  */
 export function prepareLaneCandidate(input: IntegrateLaneInput): string {
 	const { root, branch, batch_head: head, lane_base: base, lane_commit: laneCommit } = input;
-	const currentBranch = git(root, ["symbolic-ref", "--short", "HEAD"]);
-	if (currentBranch.status !== 0 || currentBranch.stdout.trim() !== branch)
-		throw new BatchIntegrationError(
-			"batch_head_lineage_broken",
-			`batch_head_lineage_broken: current branch ${currentBranch.stdout.trim()} does not match expected branch ${branch}`,
-		);
-	const currentHead = git(root, ["rev-parse", "HEAD"]).stdout.trim();
-	if (currentHead !== head)
-		throw new BatchIntegrationError(
-			"batch_head_lineage_broken",
-			`batch_head_lineage_broken: current HEAD ${currentHead} does not match expected batch head ${head}`,
-		);
+	if (isBatchRef(branch)) {
+		const tip = readBatchRef(root, branch);
+		if (tip !== head)
+			throw new BatchIntegrationError(
+				"batch_head_lineage_broken",
+				`batch_head_lineage_broken: ${branch} is at ${tip ?? "nothing"}, expected batch head ${head}`,
+			);
+	} else {
+		const currentBranch = git(root, ["symbolic-ref", "--short", "HEAD"]);
+		if (currentBranch.status !== 0 || currentBranch.stdout.trim() !== branch)
+			throw new BatchIntegrationError(
+				"batch_head_lineage_broken",
+				`batch_head_lineage_broken: current branch ${currentBranch.stdout.trim()} does not match expected branch ${branch}`,
+			);
+		const currentHead = git(root, ["rev-parse", "HEAD"]).stdout.trim();
+		if (currentHead !== head)
+			throw new BatchIntegrationError(
+				"batch_head_lineage_broken",
+				`batch_head_lineage_broken: current HEAD ${currentHead} does not match expected batch head ${head}`,
+			);
+	}
 	if (singleParent(root, laneCommit) !== base)
 		throw new BatchIntegrationError(
 			"batch_head_lineage_broken",
@@ -188,8 +201,32 @@ export function prepareLaneCandidate(input: IntegrateLaneInput): string {
 	return candidate;
 }
 
-/** Fast-forward the batch branch, which the caller has checked out, to an accepted candidate. */
-export function fastForwardToCandidate(root: string, candidate: string): { commit: string } {
+/**
+ * Advance the batch to an accepted candidate. On a hidden ref the candidate's
+ * scoped delta is first written into the user's working tree, which refuses with
+ * the named paths when a local edit sits on one of them, and the ref then moves;
+ * HEAD and the index are untouched. The apply is idempotent, so a retry after an
+ * interruption between the two steps completes. A legacy branch is fast-forwarded.
+ */
+export function fastForwardToCandidate(
+	root: string,
+	candidate: string,
+	hidden?: { branch: string; from: string },
+): { commit: string; applied?: string[] } {
+	if (hidden && isBatchRef(hidden.branch)) {
+		const delta = applyDeltaToWorkingTree(root, hidden.from, candidate, changedPaths(root, hidden.from, candidate));
+		if (delta.conflicts.length > 0)
+			throw new BatchIntegrationError(
+				"batch_integration_conflict",
+				`batch_integration_conflict: local edits on ${delta.conflicts.join(", ")} would be overwritten by the lane delivery; the working tree and ${hidden.branch} are unchanged`,
+			);
+		try {
+			moveBatchRef(root, hidden.branch, hidden.from, candidate);
+		} catch (error) {
+			throw new BatchIntegrationError("batch_head_lineage_broken", error instanceof Error ? error.message : String(error));
+		}
+		return { commit: candidate, applied: delta.applied };
+	}
 	const moved = git(root, ["merge", "--ff-only", "--quiet", candidate]);
 	if (moved.status !== 0)
 		throw new BatchIntegrationError(
@@ -208,7 +245,8 @@ export function fastForwardToCandidate(root: string, candidate: string): { commi
  * descriptor rerun; the lane driver uses `integrateGuardedLaneCommit`.
  */
 export function integrateLaneCommit(input: IntegrateLaneInput): { commit: string } {
-	return fastForwardToCandidate(input.root, prepareLaneCandidate(input));
+	const { commit } = fastForwardToCandidate(input.root, prepareLaneCandidate(input), { branch: input.branch, from: input.batch_head });
+	return { commit };
 }
 
 /** A child whose intent descriptors the integration guard reruns on the candidate. */
@@ -350,7 +388,25 @@ export async function integrateGuardedLaneCommit(input: IntegrateGuardedInput): 
 		siblings: input.siblings,
 		signal: input.signal,
 	});
-	return fastForwardToCandidate(input.root, candidate);
+	const landed = fastForwardToCandidate(input.root, candidate, { branch: input.branch, from: input.batch_head });
+	commitAppliedDelta(input.root, input.child.task_id, landed.applied);
+	return { commit: landed.commit };
+}
+
+/**
+ * Under `Git integration: auto`, commit the delta just applied to the working
+ * tree through the same one-line settle commit D8 makes, with only those scoped
+ * paths. `manual` commits nothing. A refused commit never fails the integration:
+ * the ref has moved and the delta is in the working tree for the user to commit.
+ */
+function commitAppliedDelta(root: string, taskId: string, applied: string[] | undefined): void {
+	if (!applied || applied.length === 0) return;
+	try {
+		if (readGitIntegrationPreference(root).mode !== "auto") return;
+		commitWorkflowPaths(root, { paths: applied, subject: settleCommitSubject(taskId) });
+	} catch {
+		// Reported by the unchanged working tree state; settlement is unaffected.
+	}
 }
 
 /**
@@ -363,18 +419,21 @@ export function findIntegratedCandidate(input: {
 	root: string;
 	task_id: string;
 	batch_id: string;
+	/** The hidden ref the batch advances; absent for a legacy branch batch, searched through HEAD. */
+	branch?: string;
 	from_head: string;
 	lane_base: string;
 	lane_commit: string;
 }): string | null {
 	const { root, task_id: taskId, batch_id: batchId, from_head: from, lane_base: base, lane_commit: laneCommit } = input;
+	const tip = isBatchRef(input.branch) ? input.branch : "HEAD";
 	const listed = git(root, [
 		"log",
 		"--fixed-strings",
 		`--grep=imm(${taskId}):`,
 		// %(trailers) ends in a newline, so records are delimited by \x01, not by line.
 		"--format=%x01%H%x00%(trailers:key=Immune-Brain-Batch,valueonly)%x00%s",
-		`${from}..HEAD`,
+		`${from}..${tip}`,
 	]);
 	if (listed.status !== 0) throw new Error(`failed to search for integrated ${taskId}: ${listed.stderr.trim()}`);
 	const lane = changeIdentity(root, base, laneCommit);

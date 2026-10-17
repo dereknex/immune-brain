@@ -145,7 +145,9 @@ async function fixture(slug: string) {
 		},
 		statePath: (batchId: string) => join(root, ".imm/state/batches", `${batchId}.json`),
 		head: () => git(root, "rev-parse", "HEAD"),
-		commits: () => git(root, "rev-list", "--reverse", `${base}..HEAD`).split("\n").filter(Boolean),
+		// Batch progress lives on the hidden ref; the user's HEAD never moves (S2).
+		batchRef: () => git(root, "for-each-ref", "--format=%(refname)", "refs/imm/batches/").split("\n").filter(Boolean)[0] ?? "HEAD",
+		commits: () => git(root, "rev-list", "--reverse", `${base}..${git(root, "for-each-ref", "--format=%(refname)", "refs/imm/batches/").split("\n").filter(Boolean)[0] ?? "HEAD"}`).split("\n").filter(Boolean),
 		files: (commit: string) => git(root, "show", "--name-only", "--format=", commit).split("\n").filter(Boolean).sort(),
 		// Runs one fenced `sh` example from the operator runbook against this fixture.
 		runbook: (prefix: string, vars: Record<string, string>) => {
@@ -252,8 +254,10 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 		expect(f.commits()).toHaveLength(2);
 		expect(f.files(f.commits()[1]!).filter(path => !path.startsWith(".imm/audit/"))).toEqual(["src/child-2.txt"]);
 		expect(f.gates()).toBe(1);
-		expect(f.runbook("git status --porcelain", {}).stdout).toBe("");
-		expect(f.runbook("git log --format=%H", { "base-head": f.base }).stdout.trim().split("\n").reverse()).toEqual(third.report.commits);
+		// Applied deltas sit staged in the working tree; the batch committed nothing to the user's branch.
+		expect(git(f.root, "status", "--porcelain", "--untracked-files=all").split("\n").map(line => line.slice(3)).filter(path => !path.startsWith(".imm/audit/")).sort()).toEqual(["src/child-1.txt", "src/child-2.txt"]);
+		expect(f.head()).toBe(f.base);
+		expect(git(f.root, "rev-list", "--reverse", `${f.base}..${f.batchRef()}`).split("\n")).toEqual(third.report.commits);
 		const verified = f.runbook("bun scripts/verify-batch-completion.ts", { "batch-id": first.batch_id });
 		expect(verified.status).toBe(0);
 		expect(JSON.parse(verified.stdout)).toMatchObject({ complete: true, batch_state: "completed", report_state: "completed", code: null,
@@ -313,7 +317,7 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 		expect(before).not.toHaveProperty("authorization_expires_at");
 		expect(before.budget).not.toHaveProperty("deadline_at");
 		const evidence = () => ({ head: f.head(), index: git(f.root, "write-tree"),
-			audit: git(f.root, "rev-parse", `HEAD:.imm/audit/${f.tasks[0]}`) });
+			audit: git(f.root, "rev-parse", `${f.batchRef()}:.imm/audit/${f.tasks[0]}`) });
 		const kept = evidence();
 
 		// Thirty days later the single confirmation still binds: no gate opens.

@@ -32,7 +32,8 @@ import {
 	integrateGuardedLaneCommit,
 	type IntegrationCheckChild,
 } from "./batch_integration";
-import { classifyBatchLineage, expectedBatchHead, findExistingActiveBatch, porcelainEntries, readActiveClaimTaskId } from "./batch_preflight";
+import { isBatchRef } from "./batch_ref";
+import { classifyBatchLineage, expectedBatchHead, findExistingActiveBatch, porcelainEntries, readActiveClaimTaskId, unsettledChildScopes } from "./batch_preflight";
 import { restoreProvableLaneLeaks } from "./batch_leak_restore";
 import { startableChildren } from "./batch_schedule";
 import {
@@ -281,6 +282,7 @@ export interface BatchLaneGitPort {
 		root: string;
 		task_id: string;
 		batch_id: string;
+		branch?: string;
 		from_head: string;
 		lane_base: string;
 		lane_commit: string;
@@ -826,6 +828,8 @@ export async function runLaneBatch(
 			root: input.root,
 			initiative_slug: input.initiative_slug,
 			base_head: input.base_head,
+			batch_id: input.batch_id,
+			blocking_scopes: unsettledChildScopes(input.root, input.children),
 		});
 		if (!preflight.ok) return refuse(input, null, preflight.reason, preflight.message || "Correct the preflight condition and re-confirm.");
 		record = prepareBatchLaneRunState({
@@ -834,6 +838,7 @@ export async function runLaneBatch(
 			children: input.children,
 			plan_digest: input.plan_digest,
 			base_head: input.base_head,
+			branch: preflight.branch,
 			confirmation_time: input.confirmation_time,
 			budget: input.budget,
 			max_parallel: limit,
@@ -879,6 +884,7 @@ export async function runLaneBatch(
 			root: input.root,
 			task_id: child.task_id,
 			batch_id: record.batch_id,
+			...(record.branch ? { branch: record.branch } : {}),
 			from_head: expectedBatchHead(record),
 			lane_base: child.lane.base_head,
 			lane_commit: child.lane.lane_commit,
@@ -1240,7 +1246,12 @@ export async function runLaneBatch(
 	if (record.children.every((c) => c.state === "integrated" || c.state === "released")) {
 		// Full verification of the integrated batch branch, before the immutable
 		// completion report is written. A failure is reported, never rolled back.
-		const final = record.final_verification?.length ? await runFinalVerification(input.root, record.final_verification) : undefined;
+		// A hidden-ref batch leaves its delivery in the user's working tree, so the check is
+		// bound to the children's scoped content rather than to a clean tree at HEAD.
+		const final = record.final_verification?.length
+			? await runFinalVerification(input.root, record.final_verification,
+				isBatchRef(record.branch) ? { scopes: unsettledChildScopes(input.root, input.children) } : {})
+			: undefined;
 		record.batch_state = "completed";
 		if (final) record.final_verification_result = final;
 		persist();
@@ -1251,7 +1262,7 @@ export async function runLaneBatch(
 				? `all enrollable children integrated; final verification did not pass: ${final.results.filter((r) => !r.passed).map((r) => r.command).join(", ")}`
 				: "all enrollable children integrated",
 			final && !final.passed
-				? "Every child is integrated but the batch did not pass its final verification; inspect the failing commands on the batch branch. Integrated commits were not rolled back."
+				? "Every child is integrated but the batch did not pass its final verification; inspect the failing commands against the delivered content. Integrated commits were not rolled back."
 				: "",
 			{ handoffs: releaseHandoffs(input, record, lanes), refusals, tracker, instruction, revision, ...(final ? { final } : {}) },
 		);

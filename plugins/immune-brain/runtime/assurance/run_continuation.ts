@@ -61,7 +61,10 @@ export type RunContinuationDecision = {
 	state: RunContinuationState;
 };
 
-export const UNCHANGED_CONTINUATION_LIMIT = 2;
+/** One nudge per unchanged progress digest; the next unchanged boundary pauses. */
+export const UNCHANGED_CONTINUATION_LIMIT = 1;
+/** Appended to every Stop block reason so a user-only wait is never answered by repeating the request. */
+export const USER_WAIT_GUIDANCE = "If the remaining step is an action only the user can perform, waiting for it is a valid stop: stop without repeating the request you already made.";
 
 export function bindRun(binding: RunBinding): RunContinuationState {
 	if (!binding.workspace || !binding.session_id ||
@@ -113,7 +116,7 @@ export async function observeParentRun(binding: RunBinding & { kind: "parent" },
 		if (!facts || facts.plan_digest !== binding.plan_digest) throw new Error("native Parent plan identity changed");
 		let nextAction = ["verify", "repair"].includes(facts.action) ?
 			`Call start_unattended_batch for ${binding.initiative_slug} with final_verification ${JSON.stringify(binding.final_verification ?? facts.native?.final_verification.results.map(result => result.command) ?? [])}; if it fails, diagnose and canonically prepare/validate the stable original-goal repair before fresh native Enrollment` : facts.next_action;
-		let runnable = ["verify", "repair", "integrate"].includes(facts.action) || (facts.action === "enroll" && facts.task_id !== null);
+		let runnable = ["verify", "repair"].includes(facts.action) || (facts.action === "enroll" && facts.task_id !== null);
 		let running = false;
 		let taskProgress: unknown = null;
 		if (facts.action === "drive" && facts.task_id) {

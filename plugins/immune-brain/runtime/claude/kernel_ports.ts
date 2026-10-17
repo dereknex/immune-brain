@@ -1,6 +1,5 @@
 import { stagePlanningArtifactTransition, type VerdictAuthority } from "../assurance/verdict_authority";
 export { ensureReviewRevision as ensureClaudeReviewRevision } from "../assurance/verdict_authority";
-import { parseDeliveryConsolidation, type DeliveryConsolidation } from "../unattended/parent_delivery_consolidation";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
@@ -45,6 +44,7 @@ import {
 } from "../kernel/enrollment_authority";
 import { enrollmentScopeDisclosure, enrollTask } from "../kernel/enrollment";
 import { reconcileKernelAuthority, repairKernelAuthority } from "../kernel/storage";
+import { withSettleCommit } from "../assurance/workflow_autocommit";
 import { commitEnrollmentPreconditions, commitUnbornEnrollmentPreconditions, inspectEnrollmentGitBase, enrollmentGitBaseNotice, initializeEnrollmentGitBase, preconditionCommitNote } from "../assurance/enrollment_git_base";
 import { preparePiCanary, revalidatePiCanary } from "../kernel/pi_canary_prepare";
 import { runDeterministicQa } from "../assurance/qa";
@@ -423,12 +423,13 @@ export class ClaudeRuntime {
 			// In-scope changes that already exist are shown in the gate and only the
 			// ones shown are claimed as task work on confirmation.
 			const disclosure = enrollmentScopeDisclosure(this.cwd, taskId);
+			let claimedScopePaths: string[] = [];
 			const gate = await this.gate("enroll", { ...meta, taskId }, {
 				risk: intent.intent.risk,
 				intentRevision: preparation.intent?.revision,
 				intentContentHash: preparation.intent?.content_hash,
 				bindingDigest: preparation.digest,
-				gitBaseNotice: [enrollmentGitBaseNotice(gitBase), disclosure.notice].filter(Boolean).join("\n") || undefined,
+				gitBaseNotice: [enrollmentGitBaseNotice(gitBase, this.cwd), disclosure.notice].filter(Boolean).join("\n") || undefined,
 			});
 			const { unchanged } = await revalidatePiCanary(this.cwd, { task_id: taskId, now }, preparation);
 			if (!unchanged) throw new NativeAuthorityError("workspace_changed", "workspace changed after native confirmation");
@@ -442,6 +443,7 @@ export class ClaudeRuntime {
 				const late = commitUnbornEnrollmentPreconditions(this.cwd, { task_id: taskId, now }, preparation, meta.signal);
 				gitBaseNote += preconditionCommitNote(late.result);
 				preparation = late.preparation;
+				claimedScopePaths = late.claimed_scope_paths;
 			}
 			if (!preparation.intent) throw new Error("Enrollment requires a readable TaskIntent");
 			const nonce = enrollmentNonce();
@@ -455,7 +457,7 @@ export class ClaudeRuntime {
 				confirmation_ref: gate.confirmation_ref,
 				nonce,
 			};
-			return await enrollTask(this.cwd, this.enrollmentRegistry, { binding, now, disclosed_scope_paths: disclosure.paths });
+			return await enrollTask(this.cwd, this.enrollmentRegistry, { binding, now, disclosed_scope_paths: [...disclosure.paths, ...claimedScopePaths] });
 		} catch (error) {
 			if (!gitBaseNote) throw error;
 			// A native-gate error keeps its type and code; only the text grows.
@@ -470,7 +472,7 @@ export class ClaudeRuntime {
 	async advance(taskId: string, signal?: AbortSignal, meta?: ToolMeta) {
 		return this.closeOutBatchChild(
 			taskId,
-			await this.withTerminalTracker(taskId, await this.coordinator.advance(taskId, { cwd: this.cwd }, signal)),
+			withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(taskId, await this.coordinator.advance(taskId, { cwd: this.cwd }, signal)), signal),
 			meta,
 		);
 	}
@@ -478,10 +480,10 @@ export class ClaudeRuntime {
 	async submitReview(taskId: string, verdictInput: unknown, meta?: ToolMeta) {
 		return this.closeOutBatchChild(
 			taskId,
-			await this.withTerminalTracker(
+			withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(
 				taskId,
 				await submitClaudeReview(this.host, this.coordinator, { cwd: this.cwd }, taskId, verdictInput),
-			),
+			), meta?.signal),
 			meta,
 		);
 	}
@@ -834,27 +836,17 @@ export class ClaudeRuntime {
 	async startUnattendedBatch(
 		initiativeSlug: string,
 		meta: ToolMeta,
-		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; delivery_consolidation?: DeliveryConsolidation; lane_instruction?: LaneInstructionRequest; lane_revision?: LaneRevisionRequest } = {},
+		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest; lane_revision?: LaneRevisionRequest } = {},
 	): Promise<ClaudeBatchStartResult> {
-		let commit: string | undefined;
-		try {
-			const result = await this.startPreparedBatch(initiativeSlug, meta, options, (value) => { commit = value; });
-			if (commit && "reason" in result) result.reason += `; batch precondition commit ${commit} remains`;
-			return result;
-		} catch (error) {
-			if (commit && error instanceof Error) error.message += `; batch precondition commit ${commit} remains`;
-			throw error;
-		}
+		return this.startPreparedBatch(initiativeSlug, meta, options);
 	}
 
 	private async startPreparedBatch(
 		initiativeSlug: string, meta: ToolMeta,
-		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; delivery_consolidation?: DeliveryConsolidation; lane_instruction?: LaneInstructionRequest; lane_revision?: LaneRevisionRequest },
-		onCommit: (commit: string | undefined) => void,
+		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest; lane_revision?: LaneRevisionRequest },
 	): Promise<ClaudeBatchStartResult> {
 		throwIfCancelled(meta.signal);
 		const reuseOnly = options.reuseOnly === true;
-		const consolidation = parseDeliveryConsolidation(options.delivery_consolidation);
 		const probe = probeHost(this.env, process.platform, this.hostVersion);
 		if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
 		// A reuse-only continuation never opens a gate, so it needs no confirmation port.
@@ -884,8 +876,7 @@ export class ClaudeRuntime {
 							children: effects.children,
 							excluded: [],
 							final_verification: effects.final_commands,
-							parent_final_verification: { integrate_task_ids: effects.integrate_task_ids,
-							...(effects.delivery_consolidation ? { delivery_consolidation: effects.delivery_consolidation } : {}) },
+							parent_final_verification: {},
 						},
 						signal: meta.signal,
 					});
@@ -902,7 +893,7 @@ export class ClaudeRuntime {
 					}
 					return batchReason("confirmation_failed", err instanceof Error ? err.message : String(err));
 				}
-			}, consolidation);
+			});
 		if (native) return native;
 		// 1. Host-independent batch preflight: claim ownership, branch
 		// availability, working-tree cleanliness against the authorized scope,
@@ -916,7 +907,6 @@ export class ClaudeRuntime {
 			readInitiative: this.readInitiative ?? observeInitiative,
 			signal: meta.signal, reuseOnly,
 		});
-		onCommit(preflight.precondition_commit);
 		if (!preflight.ok) {
 			return {
 				state: preflight.state,

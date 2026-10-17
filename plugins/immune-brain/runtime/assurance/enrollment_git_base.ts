@@ -3,6 +3,7 @@ import { observeEnrollmentTaskIntent } from "../kernel/intent";
 import { inspectSpecBinding } from "../kernel/spec_binding";
 import { dirtyScopePaths } from "../workspace_scope";
 import { commitWorkflowPaths, identityEnv, type WorkflowCommitResult } from "./workflow_autocommit";
+import { readGitIntegrationPreference } from "../git_integration_preference";
 import { preparePiCanary, readGitHead, revalidatePiCanary, type PiCanaryPreparation, type PiCanaryPrepareInput } from "../kernel/pi_canary_prepare";
 import { reconcileKernelAuthority, withKernelStoreLock } from "../kernel/storage";
 
@@ -26,10 +27,14 @@ export function inspectEnrollmentGitBase(root: string): EnrollmentGitBase {
 	return { state: "unborn", branch };
 }
 
-export function enrollmentGitBaseNotice(base: EnrollmentGitBase): string | undefined {
-	return base.state === "unborn"
-		? `Git: create an empty initial commit on ${base.branch} before Enrollment; staged files and working tree remain unchanged. This commit remains if later Enrollment fails or is cancelled.`
-		: undefined;
+/** With `root`, the notice also says what happens to in-scope changes under the Git integration preference. */
+export function enrollmentGitBaseNotice(base: EnrollmentGitBase, root?: string): string | undefined {
+	if (base.state !== "unborn") return undefined;
+	const notice = `Git: create an empty initial commit on ${base.branch} before Enrollment; staged files and working tree remain unchanged. This commit remains if later Enrollment fails or is cancelled.`;
+	if (root === undefined) return notice;
+	return readGitIntegrationPreference(root).mode === "manual"
+		? `${notice} In-scope staged and untracked changes become task work without a commit (Git integration: manual).`
+		: `${notice} In-scope staged and untracked changes are then committed on top of it (Git integration: auto).`;
 }
 
 /** Subject of the commit Enrollment makes for its own preconditions. */
@@ -86,17 +91,36 @@ function freshEnrollmentAdmitted(root: string, taskId: string): boolean {
 	}
 }
 
+/** A precondition commit, or under `Git integration: manual` the paths staged instead. */
+export type EnrollmentPreconditionResult = WorkflowCommitResult | { committed: false; staged: string[] };
+
+/** Stage exactly the listed paths; no pathspec magic can widen the list. */
+function stagePaths(root: string, paths: readonly string[]): void {
+	execFileSync("git", ["add", "--", ...paths], {
+		cwd: root, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, GIT_LITERAL_PATHSPECS: "1" },
+	});
+}
+
 /**
- * Commit the Enrollment committable set when a precondition would fail, so the
- * preparation that follows binds the resulting HEAD. A clean set makes no
- * commit, and neither does an Enrollment an owner check would refuse anyway:
- * an owned workspace keeps its owner's undelivered work uncommitted. A refused
- * commit throws with Git's message.
+ * Satisfy the Enrollment preconditions when one would fail, so the preparation
+ * that follows binds the resulting state. Under `Git integration: auto` the
+ * committable set is committed; under `manual` (the default) the TaskIntent and
+ * its bound Spec are staged instead, which is all tracking requires, and no
+ * commit is written. A clean set changes nothing, and neither does an
+ * Enrollment an owner check would refuse anyway: an owned workspace keeps its
+ * owner's undelivered work untouched. A refused commit throws with Git's message.
  */
-export function commitEnrollmentPreconditions(root: string, taskId: string, signal?: AbortSignal, unbornScope = false): WorkflowCommitResult {
+export function commitEnrollmentPreconditions(root: string, taskId: string, signal?: AbortSignal, unbornScope = false): EnrollmentPreconditionResult {
 	return withKernelStoreLock(root, () => {
 		const paths = enrollmentCommittablePaths(root, taskId, unbornScope);
 		if (!paths || paths.length === 0 || !freshEnrollmentAdmitted(root, taskId)) return { committed: false };
+		if (readGitIntegrationPreference(root).mode === "manual") {
+			signal?.throwIfAborted();
+			// The unborn form's extra paths are in-scope task work: they are claimed, not staged.
+			const staged = unbornScope ? [] : paths;
+			if (staged.length > 0) stagePaths(root, staged);
+			return { committed: false, staged };
+		}
 		return commitWorkflowPaths(root, { paths, subject: enrollmentPreconditionSubject(taskId), signal });
 	});
 }
@@ -106,26 +130,43 @@ const withoutGit = ({ digest, git_base_head, git_error, ...owners }: PiCanaryPre
 
 /**
  * Unborn-HEAD path only, called after `initializeEnrollmentGitBase`: the scope
- * could not be compared with an unborn HEAD, so commit it now that a base
- * exists, in-scope edits included. The re-preparation must equal the confirmed
- * one in everything but the Git base, exactly as the empty base commit
- * requires; a TaskIntent or owner changed while the commit ran is refused, not
- * enrolled.
+ * could not be compared with an unborn HEAD. Under `Git integration: auto` it
+ * is committed now that a base exists, in-scope edits included. Under `manual`
+ * nothing is committed: the in-scope staged and untracked changes are returned
+ * as `claimed_scope_paths`, which the Host adds to the paths its confirmed gate
+ * disclosed, so they become task work exactly as the gate's notice said. The
+ * re-preparation after a commit must equal the confirmed one in everything but
+ * the Git base, exactly as the empty base commit requires; a TaskIntent or
+ * owner changed while the commit ran is refused, not enrolled.
  */
 export function commitUnbornEnrollmentPreconditions(
 	root: string, input: PiCanaryPrepareInput, confirmed: PiCanaryPreparation, signal?: AbortSignal,
-): { result: WorkflowCommitResult; preparation: PiCanaryPreparation } {
+): { result: EnrollmentPreconditionResult; preparation: PiCanaryPreparation; claimed_scope_paths: string[] } {
+	if (readGitIntegrationPreference(root).mode === "manual") {
+		signal?.throwIfAborted();
+		let claimed: string[] = [];
+		try {
+			if (freshEnrollmentAdmitted(root, input.task_id))
+				claimed = dirtyScopePaths(root, observeEnrollmentTaskIntent(root, input.task_id).intent.scope_hint, input.task_id);
+		} catch {
+			// The ordinary Enrollment checks report an unreadable scope themselves.
+		}
+		return { result: { committed: false, staged: [] }, preparation: confirmed, claimed_scope_paths: claimed };
+	}
 	const result = commitEnrollmentPreconditions(root, input.task_id, signal, true);
-	if (!result.committed) return { result, preparation: confirmed };
+	if (!result.committed) return { result, preparation: confirmed, claimed_scope_paths: [] };
 	const current = preparePiCanary(root, input);
 	if (current.git_base_head !== result.commit || JSON.stringify(withoutGit(current)) !== JSON.stringify(withoutGit(confirmed)))
 		throw new Error(`Workspace changed during the Enrollment precondition commit; retry Enrollment${preconditionCommitNote(result)}`);
-	return { result, preparation: current };
+	return { result, preparation: current, claimed_scope_paths: [] };
 }
 
-/** Suffix naming a precondition commit that outlives a failed or declined Enrollment. */
-export function preconditionCommitNote(result: WorkflowCommitResult): string {
-	return result.committed ? `; Enrollment precondition commit ${result.commit} remains` : "";
+/** Suffix naming a precondition commit, or staged preconditions, that outlive a failed or declined Enrollment. */
+export function preconditionCommitNote(result: EnrollmentPreconditionResult): string {
+	if (result.committed) return `; Enrollment precondition commit ${result.commit} remains`;
+	return "staged" in result && result.staged.length > 0
+		? `; Enrollment staged ${result.staged.join(", ")} without committing (Git integration: manual); they remain staged`
+		: "";
 }
 
 /** Called only after native confirmation. Never stages files or writes Git config. */

@@ -154,6 +154,22 @@ case "$command" in
   symbolic-ref) if [ -f "$committed.branch" ]; then printf '%s\\n' "imm/initiative-slug"; else printf '%s\\n' "main"; fi ;;
   show-ref) if [ ! -f "$committed.branch" ]; then exit 1; fi ;;
   checkout) : > "$committed.branch" ;;
+  update-ref)
+    # The hidden-ref plumbing: creation passes the all-zero old value, a move does not.
+    case "$*" in
+      *0000000000000000000000000000000000000000) ;;
+      *) : > "$committed" ;;
+    esac ;;
+  write-tree) printf '%s\\n' "3333333333333333333333333333333333333333" ;;
+  commit-tree)
+    printf '%s\\n' "${GUARD_COMMIT}"
+    while IFS= read -r line; do
+      case "$line" in
+        "Immune-Brain-Batch: "*) printf '%s\\n' "\${line#Immune-Brain-Batch: }" > "$committed.batch" ;;
+      esac
+    done ;;
+  diff) if [ ! -f "$committed" ]; then printf '${GUARD_CHANGED_PATH}\\000'; fi ;;
+  diff-tree) printf '${GUARD_CHANGED_PATH}\\000' ;;
   diff-files) if [ ! -f "$staged" ]; then printf '${GUARD_CHANGED_PATH}\\000'; fi ;;
   ls-files)
     case "$*" in
@@ -220,17 +236,18 @@ function driveSource(runtimeDir: string): string {
 	return `import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 const git = await import(${runtimePath("unattended/batch_git.ts")});
+const { batchRefName } = await import(${runtimePath("unattended/batch_ref.ts")});
 const { createBatchAuthorityRegistry, computeBatchPlanDigest } = await import(${runtimePath("kernel/batch_authority.ts")});
 const { prepareBatchRunState, writeBatchRunState } = await import(${runtimePath("unattended/batch_state.ts")});
 const { resumeBatch } = await import(${runtimePath("unattended/batch_runner.ts")});
 
 const [root, taskId, batchId, head, commit] = process.argv.slice(2);
 
-const preflight = git.runBatchGitPreflight({ root, initiative_slug: "initiative-slug", base_head: head });
+const preflight = git.runBatchGitPreflight({ root, initiative_slug: "initiative-slug", base_head: head, batch_id: batchId });
 if (!preflight.ok) throw new Error(\`preflight rejected: \${preflight.reason}\`);
-const committed = await git.commitBatchChild({ root, taskId, batchId, expectedHead: head });
+const committed = await git.commitBatchChild({ root, taskId, batchId, expectedHead: head, branch: batchRefName(batchId) });
 if (committed.commit !== commit) throw new Error(\`unexpected child commit \${committed.commit}\`);
-const adopted = await git.lookupBatchCommit({ root, taskId, batchId, expectedHead: head });
+const adopted = await git.lookupBatchCommit({ root, taskId, batchId, expectedHead: head, branch: batchRefName(batchId) });
 if (!adopted || adopted.commit !== commit) throw new Error("commit lookup did not adopt the child commit");
 
 const farFuture = "2099-01-01T00:00:00.000Z";
@@ -788,7 +805,9 @@ describe("unattended batch contract text", () => {
 
 			const subcommands = recordedInvocations(logPath).map(gitSubcommand);
 			// A drive that never reached the mutating Git effects would assert nothing.
-			for (const mutation of ["checkout", "add", "commit"]) expect(subcommands).toContain(mutation);
+			for (const mutation of ["update-ref", "add", "commit-tree"]) expect(subcommands).toContain(mutation);
+			// The user's branch, HEAD and index are never touched.
+			for (const forbidden of ["checkout", "commit", "switch", "reset"]) expect(subcommands).not.toContain(forbidden);
 			// The prohibition the contract states, over the vectors this runtime can
 			// actually produce: no push, no worktree mutation.
 			for (const forbidden of ["worktree", "push"]) expect(subcommands).not.toContain(forbidden);
@@ -840,19 +859,18 @@ describe("unattended batch contract text", () => {
 
 				const invocations = recordedInvocations(logPath);
 				const initialCommands = recordedInvocations(join(scratch, "initial.log")).map(gitSubcommand);
-				expect(initialCommands.filter((command) => command === "checkout")).toHaveLength(1);
+				expect(initialCommands.filter((command) => command === "checkout")).toHaveLength(0);
 				const completionCommands = scenario === "resume"
 					? invocations.slice(initialCommands.length).map(gitSubcommand) : initialCommands;
 				if (scenario === "resume") {
-					expect(initialCommands).not.toContain("commit");
-					expect(completionCommands).not.toContain("checkout");
+					expect(initialCommands).not.toContain("commit-tree");
 					expect(resumed.batch_id).toBe(initial.batch_id);
 				}
-				for (const mutation of ["add", "commit"]) {
+				for (const mutation of ["add", "commit-tree"]) {
 					expect(completionCommands.filter((command) => command === mutation)).toHaveLength(1);
 				}
 				// Inspect every actual Git vector, including calls an adapter might add
-				// around the runner. Shared checkout/add/commit are legitimate here.
+				// around the runner. The temporary-index add and commit-tree are legitimate here.
 				expect(invocations.filter((args) => ["worktree", "push"].includes(gitSubcommand(args)))).toEqual([]);
 			} finally {
 				rmSync(scratch, { recursive: true, force: true });

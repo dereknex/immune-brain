@@ -1409,6 +1409,20 @@ function runStorageLayoutMigration(root: string): KernelExecution {
 			}),
 			journal: journalFor("migrate", null, "ok", "command_ok", null, "Retry the original command."),
 		};
+	// Git integration: manual (ADR 0024): the diff is the user's to commit.
+	if (migration.outcome === "migration_uncommitted" && migration.affected_paths.length > 0)
+		return {
+			result: jsonResult({
+				contract: "assurance_kernel/migration_uncommitted/v1",
+				operation: "storage layout migration",
+				layout: "migration_uncommitted",
+				affected_paths: migration.affected_paths,
+				reason: migration.reason,
+				next_action: "commit the listed paths however you prefer, then rerun imm-kernel migrate --storage-layout",
+			}, 1),
+			journal: journalFor("migrate", null, "rejected", "source_invalid", null,
+				"Commit the listed paths, then rerun imm-kernel migrate --storage-layout."),
+		};
 	return {
 		result: errorResult(
 			"layout_migration_blocked",

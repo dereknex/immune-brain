@@ -21,9 +21,9 @@ import { readRunToolSession, runContinuationHookOutput } from "./run_continuatio
 import { ClaudeRuntime, type ToolMeta } from "./kernel_ports";
 import { parseLaneInstruction, parseLaneOffers, parseMaxParallel, resolveLaneParallel } from "../unattended/batch_lanes";
 import { parseFinalVerification } from "../unattended/batch_final_verification";
-import { consolidationSchema, parseDeliveryConsolidation } from "../unattended/parent_delivery_consolidation";
 import { parseLaneRevision, REVISION_DELEGATION_TEXT } from "../unattended/batch_delegation";
-import type { AssuranceCoordinatorPorts } from "../assurance/coordinator";
+import { deliveryOf, type AssuranceCoordinatorPorts } from "../assurance/coordinator";
+import { readSettledTaskEvidence } from "../kernel/storage";
 import { parseReworkChoice, reworkExitLines, type ReworkChoice } from "../kernel/assurance_projection";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
@@ -66,7 +66,6 @@ export function listMcpTools() {
 											additionalProperties: false,
 										},
 									},
-									delivery_consolidation: consolidationSchema,
 									final_verification: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 8 },
 									lane_instruction: {
 										type: "object",
@@ -131,6 +130,22 @@ export interface McpRuntimeOptions {
 	 * `start_unattended_batch` call. Defaults to the private file store.
 	 */
 	consumePhaseAdmission?: (toolCallId: string, operation: GatedTool) => boolean;
+}
+
+/**
+ * Content-delivery-authority D7: a completed Task names the scoped content hash
+ * its final attestation bound, and leaves committing to the user. Read from
+ * settled evidence after completion, so the shared coordinator result is unchanged.
+ */
+export function withCompletionDelivery<T>(taskId: string, result: T, root = process.cwd()): T {
+	if ((result as { state?: unknown })?.state !== "completed") return result;
+	try {
+		const record = readSettledTaskEvidence(root, taskId)?.record as { attestations?: Array<{ diff_hash?: unknown }> } | undefined;
+		const diffHash = record?.attestations?.at(-1)?.diff_hash;
+		return typeof diffHash === "string" ? { ...result, delivery: deliveryOf(diffHash) } : result;
+	} catch {
+		return result;
+	}
 }
 
 export function createMcpRuntime(options: McpRuntimeOptions = {}) {
@@ -206,12 +221,10 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				const laneRevision = parseLaneRevision(args.lane_revision);
 				const maxParallel = resolveLaneParallel(options.cwd ?? process.cwd(), initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction ?? laneRevision);
 				const finalVerification = parseFinalVerification(args.final_verification);
-				const deliveryConsolidation = parseDeliveryConsolidation(args.delivery_consolidation);
 				return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
 					...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
 					...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),
 					...(finalVerification !== undefined ? { final_verification: finalVerification } : {}),
-					...(deliveryConsolidation !== undefined ? { delivery_consolidation: deliveryConsolidation } : {}),
 					...(laneInstruction !== undefined ? { lane_instruction: laneInstruction } : {}),
 					...(laneRevision !== undefined ? { lane_revision: laneRevision } : {}),
 				});
@@ -264,10 +277,10 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
 				return runtime.enroll(taskId, toolMeta);
 			}
-			if (name === "advance_assurance") return runtime.advance(taskId, toolMeta.signal, toolMeta);
+			if (name === "advance_assurance") return withCompletionDelivery(taskId, await runtime.advance(taskId, toolMeta.signal, toolMeta), options.cwd);
 			if (name === "submit_review") {
 				// ADR 0017: an absent verdict is the receipt-bound submission.
-				return runtime.submitReview(taskId, Object.hasOwn(args, "verdict") ? args.verdict : undefined, toolMeta);
+				return withCompletionDelivery(taskId, await runtime.submitReview(taskId, Object.hasOwn(args, "verdict") ? args.verdict : undefined, toolMeta), options.cwd);
 			}
 			if (name === "revise_intent") {
 				if (!Object.hasOwn(args, "next_intent")) throw new Error("next_intent is required");
@@ -500,10 +513,6 @@ export function elicitationParams(input: NativeConfirmationInput) {
 				`Initiative: ${input.initiativeSlug ?? b.initiative_slug}`,
 				input.planDigest ? `Plan digest: ${input.planDigest}` : null,
 				`Parent Tasks (${b.children.length}):\n${b.children.map((c) => `  - ${c.task_id} (${c.slice_id})`).join("\n")}`,
-				b.parent_final_verification.integrate_task_ids.length > 0
-					? `Settled deliveries committed first (${b.parent_final_verification.integrate_task_ids.length}):\n${b.parent_final_verification.integrate_task_ids.map((id) => `  - ${id}`).join("\n")}`
-					: null,
-				b.parent_final_verification.delivery_consolidation ? `Explicit reviewed delivery consolidation:\n${JSON.stringify(b.parent_final_verification.delivery_consolidation, null, 2)}` : null,
 				`Final verification commands run in this workspace outside Host permission:\n${(b.final_verification ?? []).map((command) => `  - ${command}`).join("\n")}`,
 			].filter(Boolean);
 			return {

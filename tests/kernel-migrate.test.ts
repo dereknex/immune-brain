@@ -139,7 +139,9 @@ describe("storage-layout migration commits", () => {
 		execFileSync("git", ["-C", root, "init", "-q"]);
 		writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
 		writeFileSync(join(root, "notes.txt"), "baseline\n");
-		execFileSync("git", ["-C", root, "add", "--", ".gitignore", "notes.txt"]);
+		// The migration commit is Git integration: auto behavior (ADR 0024).
+		writeFileSync(join(root, "AGENTS.md"), "- Git integration: auto\n");
+		execFileSync("git", ["-C", root, "add", "--", ".gitignore", "notes.txt", "AGENTS.md"]);
 		execFileSync("git", ["-C", root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "baseline"]);
 		const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" });
 		const before = git("rev-parse", "HEAD").trim();

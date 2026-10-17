@@ -20,7 +20,6 @@ import {
 import { createBatchKernelPort } from "../runtime/unattended/batch_kernel_port";
 import { observeInitiative } from "../runtime/unattended/batch_plan";
 import { integrateSettledCriticalSlices, advanceNativeParent } from "../runtime/unattended/batch_git";
-import { parseDeliveryConsolidation, type DeliveryConsolidation } from "../runtime/unattended/parent_delivery_consolidation";
 
 import type { BatchRunnerGitPort } from "../runtime/unattended/batch_git";
 import type { InitiativeObservationReader } from "../runtime/unattended/types";
@@ -117,7 +116,6 @@ export interface PiBatchExecutionOptions {
 	lane_offers?: LaneOffer[];
 	/** Lane mode: the project's full verification commands, run once every child is integrated. */
 	final_verification?: string[];
-	delivery_consolidation?: DeliveryConsolidation;
 	/** Lane mode: one instruction for an idle Lane session, recorded before it is sent. */
 	lane_instruction?: LaneInstructionRequest;
 	/** Lane mode, ADR 0018: one breaking Intent revision the coordinator approves under the batch's grant. */
@@ -161,24 +159,15 @@ function piConfirmationRef(input: {
 export async function executePiUnattendedBatch(
 	options: PiBatchExecutionOptions,
 ): Promise<PiBatchExecutionResult> {
-	let commit: string | undefined;
-	try {
-		const result = await executePreparedPiBatch(options, (value) => { commit = value; });
-		if (commit && "reason" in result) result.reason += `; batch precondition commit ${commit} remains`;
-		return result;
-	} catch (error) {
-		if (commit && error instanceof Error) error.message += `; batch precondition commit ${commit} remains`;
-		throw error;
-	}
+	return executePreparedPiBatch(options);
 }
 
 async function executePreparedPiBatch(
-	options: PiBatchExecutionOptions, onCommit: (commit: string | undefined) => void,
+	options: PiBatchExecutionOptions,
 ): Promise<PiBatchExecutionResult> {
 	const { root, initiativeSlug, signal } = options;
 	const reuseOnly = options.reuseOnly === true;
 	const interactive = options.interactive ?? true;
-	const consolidation = parseDeliveryConsolidation(options.delivery_consolidation);
 
 	if (!reuseOnly && !interactive) return { state: "rejected", ...nonInteractiveRefusal() };
 	if (!reuseOnly && !options.confirmBatch) return batchReason("confirmation_port_unavailable");
@@ -195,9 +184,8 @@ async function executePreparedPiBatch(
 				decision = await options.confirmBatch({
 					title: `Authorize Parent Final Verification: ${effects.initiative_slug}`,
 					summary: `Initiative: ${effects.initiative_slug}\nPlan digest: ${effects.plan_digest}\nNo batch run is started.\nFinal verification commands run in this workspace outside Host permission:\n${effects.final_commands.map((command) => `  - ${command}`).join("\n")}`,
-					details: `Parent Tasks (${effects.children.length}):\n${effects.children.map((child) => `  - ${child.task_id} (${child.slice_id})`).join("\n")}${effects.integrate_task_ids.length > 0 ? `\n\nSettled deliveries committed first (${effects.integrate_task_ids.length}):\n${effects.integrate_task_ids.map((id) => `  - ${id}`).join("\n")}` : ""}`,
+					details: `Parent Tasks (${effects.children.length}):\n${effects.children.map((child) => `  - ${child.task_id} (${child.slice_id})`).join("\n")}`,
 					planDigest: effects.plan_digest,
-					...(effects.delivery_consolidation ? { details: JSON.stringify(effects, null, 2) } : {}),
 					signal,
 				});
 			} catch (err) {
@@ -208,7 +196,7 @@ async function executePreparedPiBatch(
 			if (decision === "decline") return batchReason("confirmation_declined");
 			if (decision !== "accept") return batchReason("confirmation_no_decision");
 			return null;
-		}, consolidation);
+		});
 	if (native) return native;
 	// A lane_offers-only call resumes the recorded lane batch; refused before any gate otherwise.
 	const resolvedParallel = resolveLaneParallel(root, initiativeSlug, options.max_parallel, options.lane_offers, options.lane_instruction ?? options.lane_revision);
@@ -226,7 +214,6 @@ async function executePreparedPiBatch(
 		readInitiative: options.readInitiative,
 		signal, reuseOnly,
 	});
-	onCommit(preflight.precondition_commit);
 	if (!preflight.ok) {
 		return { state: preflight.state, reason: preflight.reason, recovery_action: preflight.recovery_action };
 	}
@@ -491,11 +478,6 @@ export default function (
 			lane_offers: Type.Optional(Type.Array(
 				Type.Object({ task_id: Type.String(), path: Type.String() }, { additionalProperties: false }),
 			)),
-			delivery_consolidation: Type.Optional(Type.Object({
-				task_id: Type.String(), run_id: Type.String(), source_runs: Type.Array(Type.Object({
-					task_id: Type.String(), run_id: Type.String(),
-				}, { additionalProperties: false }), { minItems: 1, maxItems: 16 }),
-			}, { additionalProperties: false })),
 			final_verification: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 8 })),
 			lane_instruction: Type.Optional(Type.Object({
 				task_id: Type.String(),
@@ -510,7 +492,7 @@ export default function (
 		}, { additionalProperties: false }),
 		execute: async (
 			_toolCallId: string,
-			params: { initiative_slug: string; max_parallel?: number; lane_offers?: Array<{ task_id: string; path: string }>; final_verification?: string[]; delivery_consolidation?: unknown; lane_instruction?: unknown; lane_revision?: unknown },
+			params: { initiative_slug: string; max_parallel?: number; lane_offers?: Array<{ task_id: string; path: string }>; final_verification?: string[]; lane_instruction?: unknown; lane_revision?: unknown },
 			signal: AbortSignal | undefined,
 			_onUpdate: unknown,
 			ctx: ExtensionContext,
@@ -545,7 +527,6 @@ export default function (
 			const maxParallel = parseMaxParallel(params.max_parallel);
 			const laneOffers = parseLaneOffers(params.lane_offers);
 			const finalVerification = parseFinalVerification(params.final_verification);
-			const deliveryConsolidation = parseDeliveryConsolidation(params.delivery_consolidation);
 			const laneInstruction = parseLaneInstruction(params.lane_instruction);
 			const laneRevision = parseLaneRevision(params.lane_revision);
 
@@ -555,7 +536,6 @@ export default function (
 				...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
 				...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),
 				...(finalVerification !== undefined ? { final_verification: finalVerification } : {}),
-				...(deliveryConsolidation !== undefined ? { delivery_consolidation: deliveryConsolidation } : {}),
 				...(laneInstruction !== undefined ? { lane_instruction: laneInstruction } : {}),
 				...(laneRevision !== undefined ? { lane_revision: laneRevision } : {}),
 				interactive: ctx.mode === "tui",

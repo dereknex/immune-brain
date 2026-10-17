@@ -92,7 +92,13 @@ function assertNoEnvelopeEscape(
 	stagedPaths: readonly string[],
 	scope: string[],
 	taskId?: string,
+	outOfScope?: string[],
 ): void {
+	// A read-only status collects escaped paths for a warning; frozen snapshots refuse them.
+	const refuse = (paths: string[]) => {
+		if (!outOfScope) throw new Error(`task delivery contains paths outside the authorization envelope: ${paths.join(", ")}`);
+		outOfScope.splice(0, outOfScope.length, ...[...new Set([...outOfScope, ...paths])].sort(comparePaths));
+	};
 	const baseline = readEnrollmentBaseline(root);
 	const current = baseline ? captureGitWorkspaceSnapshot(root) : null;
 	if (baseline && !current) throw new Error("enrollment baseline cannot be compared because Git is unavailable");
@@ -100,8 +106,7 @@ function assertNoEnvelopeEscape(
 		.filter((path) => !isNonDeliveryPath(path) && !isOwnPlanningSidecar(path, taskId) && !isPlanningNoise(path, taskId) && !taskPathMatchesScope(path, scope))
 		.filter((path) => !baseline || baseline.dirty_files[path] !== current?.dirty_files[path])
 		.sort(comparePaths);
-	if (escaped.length > 0)
-		throw new Error(`task delivery contains paths outside the authorization envelope: ${escaped.join(", ")}`);
+	if (escaped.length > 0) refuse(escaped);
 	if (!baseline || !current) return;
 	const staged = new Set(stagedPaths);
 	const mixed = [...new Set([...Object.keys(baseline.dirty_files), ...Object.keys(current.dirty_files)])]
@@ -109,8 +114,7 @@ function assertNoEnvelopeEscape(
 		.filter((path) => !isOtherTaskSidecar(path, taskId) || staged.has(path))
 		.filter((path) => baseline.dirty_files[path] !== current.dirty_files[path])
 		.sort(comparePaths);
-	if (mixed.length > 0)
-		throw new Error(`task delivery contains paths outside the authorization envelope: ${mixed.join(", ")}`);
+	if (mixed.length > 0) refuse(mixed);
 }
 
 function isRuntimeAuthorityPath(path: string): boolean {
@@ -439,7 +443,7 @@ export function dirtyScopePaths(projectRoot: string, scopeHint: unknown, taskId?
 	);
 }
 
-function taskSnapshotOnce(root: string, scope: string[], taskId?: string, tolerated?: string[]): GitTaskSnapshot {
+function taskSnapshotOnce(root: string, scope: string[], taskId?: string, tolerated?: string[], outOfScope?: string[]): GitTaskSnapshot {
 	const repositoryRoot = git(root, ["rev-parse", "--show-toplevel"])?.trim();
 	const head = git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
 	if (!repositoryRoot || !head || !GIT_OBJECT_ID.test(head))
@@ -467,7 +471,7 @@ function taskSnapshotOnce(root: string, scope: string[], taskId?: string, tolera
 		"untracked task paths",
 	);
 	assertNoCaseFoldCollisions([...stagedPaths, ...unstagedPaths, ...untrackedPaths], "Git task paths");
-	assertNoEnvelopeEscape(root, stagedPaths, scope, taskId);
+	assertNoEnvelopeEscape(root, stagedPaths, scope, taskId, outOfScope);
 	const uncommittedInScope = [...new Set([...unstagedPaths, ...untrackedPaths])]
 		.filter((path) => taskPathMatchesScope(path, scope))
 		.sort(comparePaths);
@@ -507,6 +511,7 @@ export function captureGitTaskSnapshot(
 	scopeHint: unknown,
 	taskId?: string,
 	tolerated?: string[],
+	outOfScope?: string[],
 ): GitTaskSnapshot {
 	const requestedRoot = resolve(projectRoot);
 	const requestedStat = lstatSync(requestedRoot);
@@ -514,9 +519,9 @@ export function captureGitTaskSnapshot(
 		throw new Error("task snapshot root must be a real directory");
 	const root = realpathSync(requestedRoot);
 	const scope = assertCanonicalTaskScope(scopeHint);
-	const before = taskSnapshotOnce(root, scope, taskId, tolerated);
+	const before = taskSnapshotOnce(root, scope, taskId, tolerated, outOfScope);
 	gitTaskSnapshotTestHook?.();
-	const after = taskSnapshotOnce(root, scope, taskId, tolerated);
+	const after = taskSnapshotOnce(root, scope, taskId, tolerated, outOfScope);
 	if (JSON.stringify(after) !== JSON.stringify(before))
 		throw new Error("Git task snapshot changed while being captured");
 	return before;
@@ -574,6 +579,7 @@ function taskRevisionSnapshotOnce(
 	baseHead: string,
 	taskId?: string,
 	tolerated?: string[],
+	outOfScope?: string[],
 ): GitTaskRevisionSnapshot {
 	const repositoryRoot = git(root, ["rev-parse", "--show-toplevel"])?.trim();
 	const head = git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
@@ -609,7 +615,7 @@ function taskRevisionSnapshotOnce(
 		gitBytes(root, ["ls-files", "--others", "--exclude-standard", "-z", "--"]),
 		"untracked task revision paths",
 	);
-	assertNoEnvelopeEscape(root, stagedPaths, scope, taskId);
+	assertNoEnvelopeEscape(root, stagedPaths, scope, taskId, outOfScope);
 	const scopedStagedPaths = stagedPaths.filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope));
 	assertNoPreEnrollmentScopeChanges(root, scopedStagedPaths, taskId);
 	const scopedUnstagedPaths = unstagedPaths.filter((path) => taskPathMatchesScope(path, scope));
@@ -656,6 +662,7 @@ export function captureGitTaskRevisionSnapshot(
 	baseHead: unknown,
 	taskId?: string,
 	tolerated?: string[],
+	outOfScope?: string[],
 ): GitTaskRevisionSnapshot {
 	const requestedRoot = resolve(projectRoot);
 	const requestedStat = lstatSync(requestedRoot);
@@ -666,9 +673,9 @@ export function captureGitTaskRevisionSnapshot(
 		throw new Error("task revision base must be a Git commit id");
 	const scope = assertCanonicalTaskScope(scopeHint);
 	const normalizedBase = baseHead.toLowerCase();
-	const before = taskRevisionSnapshotOnce(root, scope, normalizedBase, taskId, tolerated);
+	const before = taskRevisionSnapshotOnce(root, scope, normalizedBase, taskId, tolerated, outOfScope);
 	gitTaskSnapshotTestHook?.();
-	const after = taskRevisionSnapshotOnce(root, scope, normalizedBase, taskId, tolerated);
+	const after = taskRevisionSnapshotOnce(root, scope, normalizedBase, taskId, tolerated, outOfScope);
 	if (JSON.stringify(after) !== JSON.stringify(before))
 		throw new Error("Git task revision changed while being captured");
 	return before;
@@ -723,32 +730,54 @@ export function taskDeliveryIdentity(
 
 /**
  * The delivery identity for a read-only status projection. Unstaged or
- * untracked in-scope paths do not refuse it: the identity is the staged one and
- * the paths are returned for a warning. Nothing may be frozen from this value;
- * every snapshot that is frozen goes through `taskDeliveryIdentity`, which
- * still refuses those paths.
+ * untracked in-scope paths and out-of-scope staged or dirty paths do not refuse
+ * it: the identity is the in-scope staged one and the paths are returned for a
+ * warning. Nothing may be frozen from this value; every snapshot that is frozen
+ * goes through `taskDeliveryIdentity`, which still refuses those paths.
  */
 export function taskStatusIdentity(
 	projectRoot: string,
 	record: TaskDeliveryRecord,
-): GitTaskDiffIdentity & { unstaged_scope_paths: string[] } {
+): GitTaskDiffIdentity & { unstaged_scope_paths: string[]; out_of_scope_paths: string[] } {
 	const unstaged: string[] = [];
+	const outOfScope: string[] = [];
 	const scope = record.intent_snapshot.scope_hint;
 	if (record.contract === "assurance_kernel/task_record/v4") {
 		if (!record.git_base_head) throw new Error("TaskRecord v4 is missing git_base_head");
-		const snapshot = captureGitTaskRevisionSnapshot(projectRoot, scope, record.git_base_head, record.task_id, unstaged);
+		const snapshot = captureGitTaskRevisionSnapshot(projectRoot, scope, record.git_base_head, record.task_id, unstaged, outOfScope);
 		return {
 			diff_hash: hashTaskSnapshot(snapshot),
 			changed_paths: Object.keys(snapshot.changed_paths).sort(comparePaths),
 			unstaged_scope_paths: unstaged,
+			out_of_scope_paths: outOfScope,
 		};
 	}
-	const snapshot = captureGitTaskSnapshot(projectRoot, scope, record.task_id, unstaged);
+	const snapshot = captureGitTaskSnapshot(projectRoot, scope, record.task_id, unstaged, outOfScope);
 	return {
 		diff_hash: hashTaskSnapshot(snapshot),
 		changed_paths: Object.keys(snapshot.staged_files).sort(comparePaths),
 		unstaged_scope_paths: unstaged,
+		out_of_scope_paths: outOfScope,
 	};
+}
+
+/**
+ * The scoped content identity of the working tree: the bytes of every tracked
+ * or untracked file matching the scopes, independent of HEAD, commits, the
+ * index or stashes. Equal bytes keep the identity across any user Git
+ * operation; an absent file contributes nothing, so committing a deletion is
+ * neutral too.
+ */
+export function scopedContentIdentity(projectRoot: string, scopes: readonly string[]): string {
+	const root = realpathSync(resolve(projectRoot));
+	const listed = git(root, ["ls-files", "--cached", "--others", "--exclude-standard", "-z", "--"]);
+	if (listed === null) throw new Error("cannot derive scoped content identity outside a Git workspace");
+	const entries = [...new Set(splitNull(listed))]
+		.filter((path) => !isNonDeliveryPath(path) && !isRuntimeAuthorityPath(path) && taskPathMatchesScope(path, [...scopes]))
+		.sort(comparePaths)
+		.map((path) => [path, fileFingerprint(root, path)] as const)
+		.filter(([, fingerprint]) => fingerprint !== "missing");
+	return hashTaskSnapshot({ kind: "scoped-content-v1", scopes: [...new Set(scopes)].sort(comparePaths), entries });
 }
 
 /** The same v4 identity for an immutable delivered commit, without touching the index. */

@@ -21,7 +21,7 @@ function input() {
 }
 
 describe("native repair recovery round trip", () => {
- it("requires a fresh gate, preserves original delivery, settles and integrates the repair before Parent success", async () => {
+ it("requires a fresh gate, preserves original delivery, settles the repair before Parent success", async () => {
   const root = mkdtempSync(join(tmpdir(), "gdr-repair-roundtrip-"));
   const git = (...args: string[]) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8" }).trim();
   const host = new ClaudeReviewHost(new MemoryHookEventLog());
@@ -57,7 +57,7 @@ describe("native repair recovery round trip", () => {
    decision = "accept";
    const failed = await finalCall();
    expect(inputs.at(-1)).toMatchObject({ operation: "start_unattended_batch", initiativeSlug: "repair-parent",
-    batchDetails: { final_verification: ["bun verify.ts"], parent_final_verification: { integrate_task_ids: ["original"] } } });
+    batchDetails: { final_verification: ["bun verify.ts"] } });
    expect(failed).toMatchObject({ action: "repair", proof: { complete: false } });
    const originalBytes = JSON.stringify(readAuditTaskPair(root, "original"));
    const prepared = prepareFinalRepairCandidate({ initiative_slug: "repair-parent", original_goal: original.goal,
@@ -88,20 +88,17 @@ describe("native repair recovery round trip", () => {
    host.observe({ ...context, type: "PostToolUse", toolName: AGENT_TOOL, result: JSON.stringify(verdict) });
    host.observe({ ...context, type: "SubagentStop", agent: REVIEWER_AGENT });
    expect((await runtime.submitReview(task, verdict) as any).state).toBe("completed");
-   // Integrating the newly settled repair is a new delivery effect: an ungated direct call is refused without side effects.
+   // A settled repair is delivered with no integrate gate or commit; recorded final commands replay without a new gate.
    const settledHead = git("rev-parse", "HEAD"), gatesBefore = gates;
-   expect(await advanceNativeParent(root, "repair-parent")).toMatchObject({ state: "rejected" });
+   const complete = await finalCall();
    expect(gates).toBe(gatesBefore);
    expect(git("rev-parse", "HEAD")).toBe(settledHead);
-   const complete = await finalCall();
-   expect(inputs.at(-1)).toMatchObject({ operation: "start_unattended_batch", initiativeSlug: "repair-parent",
-    batchDetails: { parent_final_verification: { integrate_task_ids: expect.arrayContaining([task]) } } });
    expect(complete).toMatchObject({ action: "complete", proof: { complete: true } });
    expect(complete?.final_verification?.head).toBe(git("rev-parse", "HEAD"));
    expect(complete?.final_verification?.passed).toBe(true);
    expect(JSON.stringify(readAuditTaskPair(root, "original"))).toBe(originalBytes);
    expect(readFileSync(join(root, "delivered.txt"), "utf8")).toBe("done\n");
-   expect(gates).toBe(6); // original enroll, final decline/accept, repair enroll decline/accept, repair integration
+   expect(gates).toBe(5); // original enroll, final decline/accept, repair enroll decline/accept
   } finally { await runtime.shutdown(); rmSync(root, { recursive: true, force: true }); }
  }, 60000);
 });

@@ -4,8 +4,8 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { advanceNativeParent, observeParentCompletion, commitBatchChild } from "../plugins/immune-brain/runtime/unattended/batch_git";
-import { parentConsolidationFixture } from "./fixtures/parent-consolidation";
-import { readParentConsolidationReceipt } from "../plugins/immune-brain/runtime/unattended/batch_state";
+import { settledDeliveryFixture } from "./fixtures/settled-delivery";
+import { writeNativeParentFinalReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { buildCandidate } from "../plugins/immune-brain/runtime/unattended/batch_integration";
 import { verify } from "../scripts/verify-batch-completion";
 import { readSecureProjectBytes, readSecureProjectFile } from "../plugins/immune-brain/runtime/kernel/storage";
@@ -97,24 +97,40 @@ function check(root: string, batch: string, before: ReturnType<typeof snapshot>,
 }
 
 describe("batch completion verifier", () => {
-	test.each([0, 7])("consolidated Parent binds final result to composition and HEAD (exit %s)", async code => {
-		const f = parentConsolidationFixture(code);
+	// Spec content-delivery-authority D3, D4: native final verification binds the
+	// scoped content of the delivered Tasks, never HEAD or a clean tree.
+	test("a content-bound final report survives user commit, amend and stash round trips and goes stale on an in-scope edit", async () => {
+		const f = settledDeliveryFixture();
+		const complete = async () => (await observeParentCompletion(f.root, "parent", ["s5", "s6"])).complete;
 		try {
-			await advanceNativeParent(f.root, "native-parent", ["bun verify.ts"], f.reader, undefined, async () => null, f.selection);
-			expect(await observeParentCompletion(f.root, "native-parent", ["s4"])).toMatchObject({ complete: !code,
-				final_passed: !code, integrated_task_ids: ["s4"], missing_task_ids: [] });
-			const path = join(f.root, ".imm/state/batches/native-parent.native.report.json");
-			const bytes = readFileSync(path, "utf8"); const report = JSON.parse(bytes);
-			report.consolidation_digest = `sha256:${"0".repeat(64)}`; writeFileSync(path, JSON.stringify(report));
-			expect((await observeParentCompletion(f.root, "native-parent", ["s4"])).complete).toBe(false);
-			writeFileSync(path, bytes);
-			f.git("commit", "--allow-empty", "-m", "later HEAD is not verified");
-			expect(await observeParentCompletion(f.root, "native-parent", ["s4"])).toMatchObject({ complete: false, final_passed: false });
-			const receipt = readParentConsolidationReceipt(f.root, "native-parent")!;
-			receipt.envelope.runs.pop(); writeFileSync(join(f.root, ".imm/state/batches/native-parent.consolidation.json"), JSON.stringify(receipt));
-			await expect(observeParentCompletion(f.root, "native-parent", ["s4"])).rejects.toThrow();
+			f.settle("s5"); f.settle("s6");
+			writeFileSync(join(f.root, "unrelated.txt"), "dirty and out of scope\n");
+			await advanceNativeParent(f.root, "parent", ["git --version"], f.reader, undefined, async () => null);
+			expect(await complete()).toBe(true);
+			f.git("add", "src"); f.git("commit", "-qm", "user commit");
+			expect(await complete()).toBe(true);
+			f.git("commit", "--amend", "-qm", "user amend");
+			expect(await complete()).toBe(true);
+			writeFileSync(join(f.root, f.source.s5), "export const s5 = 'edited';\n");
+			expect(await complete()).toBe(false);
+			f.git("stash", "-q");
+			expect(await complete()).toBe(true);
+			f.git("stash", "pop", "-q");
+			expect(await observeParentCompletion(f.root, "parent", ["s5", "s6"])).toMatchObject({ complete: false, final_passed: false,
+				reason: "Final verification has not passed on the delivered content" });
 		} finally { rmSync(f.root, { recursive: true, force: true }); }
 	}, 30_000);
+	test("a legacy head-bound final report stays valid only while HEAD matches", async () => {
+		const f = settledDeliveryFixture();
+		try {
+			f.settle("s5"); f.settle("s6"); f.git("add", "src"); f.git("commit", "-qm", "deliver");
+			writeNativeParentFinalReport(f.root, { contract: "assurance_kernel/parent_final_report/v1", initiative_slug: "parent", task_ids: ["s5", "s6"],
+				final_verification: { passed: true, head: f.git("rev-parse", "HEAD"), results: [{ command: "git --version", exit_code: 0, signal: null, passed: true, duration_ms: 1 }] } });
+			expect((await observeParentCompletion(f.root, "parent", ["s5", "s6"])).complete).toBe(true);
+			f.git("commit", "--allow-empty", "-qm", "later HEAD");
+			expect((await observeParentCompletion(f.root, "parent", ["s5", "s6"])).complete).toBe(false);
+		} finally { rmSync(f.root, { recursive: true, force: true }); }
+	});
 	test("accepts a runner-produced chain and rejects each contradiction", async () => {
 		const fx = await fixture();
 		try {

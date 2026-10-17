@@ -1,0 +1,26 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "content-delivery-authority-s4-stop-hook-single-nudge",
+  "owner": "user",
+  "goal": "Make the Stop continuation hook nudge at most once per unchanged progress digest and then pause, telling the agent that waiting on a user-only action is a valid stop, under S4 of docs/specs/content-delivery-authority.spec.md.",
+  "acceptance": [
+    {
+      "id": "S4-AC1",
+      "assertion": "Sources E7, U4; meet S4, SCN-3 and D11 in docs/specs/content-delivery-authority.spec.md: on both Hosts an unchanged progress digest blocks once and the next unchanged stop pauses; a changed digest blocks again; the block reason says that waiting on a user-only action is a valid stop and must not repeat the request.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/run-continuation.test.ts\",\n      \"tests/claude-run-continuation.test.ts\",\n      \"tests/pi-run-continuation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/content-delivery-authority-stop-hook-single-nudge.md",
+    "docs/plans/content-delivery-authority-s4-stop-hook-single-nudge.intent.json",
+    "docs/specs/content-delivery-authority.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/assurance/run_continuation.ts",
+    "plugins/immune-brain/runtime/claude/run_continuation.ts",
+    "tests/claude-run-continuation.test.ts",
+    "tests/pi-run-continuation.test.ts",
+    "tests/run-continuation.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

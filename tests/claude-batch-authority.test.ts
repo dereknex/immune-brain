@@ -20,8 +20,7 @@ import { ClaudeRuntime, type ToolMeta } from "../plugins/immune-brain/runtime/cl
 import { runContinuationHookOutput } from "../plugins/immune-brain/runtime/claude/run_continuation";
 import { readBatchRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
-import { parentConsolidationFixture } from "./fixtures/parent-consolidation";
-import { readParentConsolidationReceipt } from "../plugins/immune-brain/runtime/unattended/batch_state";
+import { buildScopedCommit, isBatchRef, moveBatchRef } from "../plugins/immune-brain/runtime/unattended/batch_ref";
 // Delivery QA has no node_modules; use host seams only when the real package is absent.
 try { await import("typebox"); } catch {
 	const optional = Symbol("optional");
@@ -90,6 +89,15 @@ afterAll(() => mock.restore());
 const { executePiUnattendedBatch: executePiBatchOnce } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
 import { projectAssurance } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 import { diffSnapshotOf } from "../plugins/immune-brain/runtime/claude/kernel_ports";
+
+// Test double for a batch child commit under the hidden-ref model (S2): built from the working
+// tree with Git plumbing so only the batch's own ref advances, never the fixture's HEAD or index.
+function commitOnBatchRef(root: string, head: string, branch: string | undefined, paths: string[], message: string): string {
+	if (!isBatchRef(branch)) throw new Error(`fixture expected a hidden batch ref, got ${branch ?? "no branch"}`);
+	const commit = buildScopedCommit(root, { parent: head, paths, message });
+	moveBatchRef(root, branch, head, commit);
+	return commit;
+}
 
 // Scripted authority fixtures have an explicit Parent-ready phase; the real
 // two-child regression below does not use these scripted Assurance wrappers.
@@ -317,13 +325,11 @@ for (const host of ["Pi", "Claude"] as const) {
 			};
 			const batchGit = {
 				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string) => {
+				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
 					const path = `docs/specs/${slug}-c1.spec.md`;
 					mkdirSync(join(fixture.root, "docs", "specs"), { recursive: true });
 					writeFileSync(join(fixture.root, path), "# Completed fixture\n");
-					execFileSync("git", ["add", path], { cwd: fixture.root });
-					execFileSync("git", ["commit", "-q", "-m", "child progress"], { cwd: fixture.root });
-					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					const commit = commitOnBatchRef(fixture.root, head, branch, [path], "child progress");
 					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
@@ -411,7 +417,14 @@ for (const host of ["Pi", "Claude"] as const) {
 			try {
 				const result = await fixture.run(async () => {
 					if (failure === "decline" || failure === "cancel") return failure;
-					if (failure === "head-drift") execFileSync("git", ["commit", "--allow-empty", "-q", "-m", "external drift"], { cwd: fixture.root });
+					if (failure === "head-drift") {
+						// The batch's head is its hidden ref: replace it with unrelated history. A commit on the
+						// user's own branch is not drift (see "keeps the authorization when the user commits").
+						const gitEnv = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
+						const emptyTree = execFileSync("git", ["mktree"], { cwd: fixture.root, input: "", encoding: "utf8" }).trim();
+						const unrelated = execFileSync("git", ["commit-tree", emptyTree, "-m", "external drift"], { cwd: fixture.root, encoding: "utf8", env: gitEnv }).trim();
+						execFileSync("git", ["update-ref", fixture.state.branch, unrelated], { cwd: fixture.root });
+					}
 					if (failure === "branch-drift") execFileSync("git", ["checkout", "-q", "-b", "foreign"], { cwd: fixture.root });
 					if (failure === "plan-drift") {
 						const path = join(fixture.root, "docs", "plans", `${fixture.slug}-c1.intent.json`);
@@ -457,47 +470,91 @@ for (const host of ["Pi", "Claude"] as const) {
 	});
 }
 
-describe("S3 batch precondition commits", () => {
+// D9 (content-delivery-authority S2): batch preflight never commits and never moves the user's
+// branch, HEAD or index. It blocks only on dirt inside a not-yet-settled child's scope.
+// Replaces the retired "S3 batch precondition commits" cases, which asserted a runtime-made
+// `chore(imm): commit batch preconditions` commit; SCN-2 is now covered here.
+describe("S2 batch preflight never commits", () => {
 	for (const host of ["claude", "pi"] as const) {
-		for (const scenario of ["clean", "decline", "cancel", "hook-refusal"] as const) it(`${host}: ${scenario} preserves the batch authority boundary`, async () => {
-			const slug = `s3-${host}-${scenario}`;
+		const startBatch = (fixture: ReturnType<typeof createBatchFixture>, slug: string, decision: "accept" | "decline" | "cancel", counter: { gates: number }) => {
+			if (host === "claude") {
+				const client = createMcpRuntimeOnce({ ...withRunEntry(), cwd: fixture.root, env: ENV, interactive: true,
+					readInitiative: async () => fixture.observation,
+					requestConfirmation: async () => { counter.gates++; return { decision, requestId: "s2-boundary" }; },
+				});
+				client.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
+				return client.callTool("start_unattended_batch", { initiative_slug: slug }) as Promise<any>;
+			}
+			return executePiBatchOnce({ root: fixture.root, initiativeSlug: slug, readInitiative: async () => fixture.observation,
+				confirmBatch: async () => { counter.gates++; return decision; } }) as Promise<any>;
+		};
+		for (const scenario of ["clean", "decline", "cancel", "failing-pre-commit-hook"] as const) it(`${host}: ${scenario} leaves the user's branch, index and unrelated dirt untouched`, async () => {
+			const slug = `s2-${host}-${scenario}`;
 			const fixture = createBatchFixture(slug);
 			const git = (...args: string[]) => execFileSync("git", args, { cwd: fixture.root, encoding: "utf8" });
 			try {
-				const before = git("rev-parse", "HEAD").trim();
-				if (scenario !== "clean") { mkdirSync(join(fixture.root, "docs/specs"), { recursive: true }); writeFileSync(join(fixture.root, "docs/specs/draft.md"), "draft"); }
-				if (scenario === "hook-refusal") {
+				mkdirSync(join(fixture.root, "unrelated"), { recursive: true });
+				if (scenario !== "clean") writeFileSync(join(fixture.root, "unrelated/notes.md"), "draft");
+				if (scenario === "failing-pre-commit-hook") {
 					git("config", "core.hooksPath", ".git/hooks");
 					const hook = join(fixture.root, ".git/hooks/pre-commit"); writeFileSync(hook, "#!/bin/sh\nexit 1\n");
 					execFileSync("chmod", ["+x", hook]);
 				}
-				let gates = 0;
-				const decision = scenario === "clean" ? "accept" : scenario === "cancel" ? "cancel" : "decline";
-				const client = createMcpRuntimeOnce({ ...withRunEntry(), cwd: fixture.root, env: ENV, interactive: true,
-					readInitiative: async () => fixture.observation,
-					requestConfirmation: async () => { gates++; return { decision, requestId: "s3-boundary" }; },
-				});
-				client.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-				const result: any = host === "claude" ? await client.callTool("start_unattended_batch", { initiative_slug: slug })
-					: await executePiBatchOnce({ root: fixture.root, initiativeSlug: slug, readInitiative: async () => fixture.observation,
-						confirmBatch: async () => { gates++; return decision; } });
-				const after = git("rev-parse", "HEAD").trim();
-				if (scenario === "clean") { expect(result.state).toBe("started"); expect(after).toBe(before); }
+				const before = git("rev-parse", "HEAD").trim();
+				const branchBefore = git("symbolic-ref", "HEAD").trim();
+				const indexBefore = git("diff", "--cached", "--name-only");
+				const counter = { gates: 0 };
+				const decision = scenario === "decline" ? "decline" : scenario === "cancel" ? "cancel" : "accept";
+				const result = await startBatch(fixture, slug, decision, counter);
+				expect(git("rev-parse", "HEAD").trim()).toBe(before);
+				expect(git("symbolic-ref", "HEAD").trim()).toBe(branchBefore);
+				expect(git("diff", "--cached", "--name-only")).toBe(indexBefore);
+				expect(git("branch", "--list", "imm/*").trim()).toBe("");
+				if (scenario !== "clean") expect(readFileSync(join(fixture.root, "unrelated/notes.md"), "utf8")).toBe("draft");
+				expect(counter.gates).toBe(1);
+				if (decision === "accept") expect(result.state).toBe("started");
 				else {
-					expect(result.state).toBe(scenario === "cancel" ? "cancelled" : "rejected");
+					expect(result.state).toBe(decision === "cancel" ? "cancelled" : "rejected");
 					expect(existsSync(join(fixture.root, ".imm/state/batches"))).toBe(false);
-					if (scenario === "hook-refusal") {
-						expect(gates).toBe(0); expect(after).toBe(before);
-						expect(result.reason).toContain("batch precondition commit failed");
-						expect(result.recovery_action).toBe("repair the reported Git precondition failure and retry the batch in the current Host");
-						expect(result.recovery_action).not.toMatch(/commit working changes|manual.*commit/i);
-					}
-					else { expect(gates).toBe(1); expect(after).not.toBe(before); expect(result.reason).toContain(after); }
 				}
 			} finally { rmSync(fixture.root, { recursive: true, force: true }); }
 		});
-		for (const tracking of ["tracked", "all-untracked", "mixed"] as const) it(`${host}: commits ${tracking} workflow/scope dirt before binding`, async () => {
-			const slug = `s3-${host}-${tracking}`;
+		for (const tracking of ["tracked", "all-untracked", "mixed"] as const) it(`${host}: ${tracking} intents with dirt outside every child scope start without a commit`, async () => {
+			const slug = `s2-${host}-${tracking}`;
+			const fixture = createBatchFixture(slug);
+			const git = (...args: string[]) => execFileSync("git", args, { cwd: fixture.root, encoding: "utf8" });
+			try {
+				const intentPath = `docs/plans/${slug}-c1.intent.json`;
+				const secondPath = `docs/plans/${slug}-c2.intent.json`;
+				writeFileSync(join(fixture.root, "outside.txt"), "base");
+				git("add", "outside.txt"); git("commit", "-qm", "fixture outside");
+				const untrackedIntents = tracking === "all-untracked" ? [intentPath, secondPath] : tracking === "mixed" ? [secondPath] : [];
+				if (untrackedIntents.length) { git("rm", "--cached", ...untrackedIntents); git("commit", "-qm", "untracked fixture intents"); }
+				const before = git("rev-parse", "HEAD").trim();
+				mkdirSync(join(fixture.root, ".imm/audit"), { recursive: true });
+				writeFileSync(join(fixture.root, ".imm/audit/evidence.txt"), "evidence");
+				writeFileSync(join(fixture.root, "outside.txt"), "locally edited");
+				const counter = { gates: 0 };
+				const result = await startBatch(fixture, slug, "accept", counter);
+				expect(result.state).toBe("started"); expect(counter.gates).toBe(1);
+				expect(git("rev-parse", "HEAD").trim()).toBe(before);
+				expect(git("diff", "--cached", "--name-only")).toBe("");
+				expect(readFileSync(join(fixture.root, "outside.txt"), "utf8")).toBe("locally edited");
+				const record = JSON.parse(readFileSync(join(fixture.root, `.imm/state/batches/${result.batch_id}.json`), "utf8"));
+				expect(record.base_head).toBe(before);
+				expect(record.branch).toBe(`refs/imm/batches/${result.batch_id}`);
+				expect(record.children.map((child: any) => child.task_id)).toEqual([`${slug}-c1`, `${slug}-c2`]);
+				if (tracking === "tracked") {
+					// Resume reuses the authorization only against Git-tracked TaskIntents; an
+					// uncommitted intent is read for a fresh batch but not for reuse.
+					const resumed = await startBatch(fixture, slug, "accept", counter);
+					expect(resumed.state).toBe("started"); expect(counter.gates).toBe(1);
+					expect(git("rev-parse", "HEAD").trim()).toBe(before);
+				}
+			} finally { rmSync(fixture.root, { recursive: true, force: true }); }
+		});
+		it(`${host}: dirt inside a not-yet-settled child's scope is rejected with no gate and no side effect`, async () => {
+			const slug = `s2-${host}-scope-dirt`;
 			const fixture = createBatchFixture(slug);
 			const git = (...args: string[]) => execFileSync("git", args, { cwd: fixture.root, encoding: "utf8" });
 			try {
@@ -505,48 +562,18 @@ describe("S3 batch precondition commits", () => {
 				const intent = JSON.parse(readFileSync(join(fixture.root, intentPath), "utf8"));
 				intent.scope_hint.push("src/");
 				writeFileSync(join(fixture.root, intentPath), `${JSON.stringify(intent, null, 2)}\n`);
-				const secondPath = `docs/plans/${slug}-c2.intent.json`;
-				const second = JSON.parse(readFileSync(join(fixture.root, secondPath), "utf8"));
-				second.scope_hint.push("lib/");
-				writeFileSync(join(fixture.root, secondPath), `${JSON.stringify(second, null, 2)}\n`);
-				writeFileSync(join(fixture.root, "outside.txt"), "base");
-				git("add", intentPath, secondPath, "outside.txt"); git("commit", "-qm", "fixture scope");
-				const untrackedIntents = tracking === "all-untracked" ? [intentPath, secondPath] : tracking === "mixed" ? [secondPath] : [];
-				if (untrackedIntents.length) { git("rm", "--cached", ...untrackedIntents); git("commit", "-qm", "untracked fixture intents"); }
-				const before = git("rev-parse", "HEAD").trim();
+				git("add", intentPath); git("commit", "-qm", "fixture scope");
 				mkdirSync(join(fixture.root, "src"));
-				mkdirSync(join(fixture.root, "lib"));
-				mkdirSync(join(fixture.root, ".imm/audit"), { recursive: true });
-				mkdirSync(join(fixture.root, "docs/specs"), { recursive: true });
 				writeFileSync(join(fixture.root, "src/task.ts"), "export const task = true;\n");
-				writeFileSync(join(fixture.root, "lib/second.ts"), "export const second = true;\n");
-				writeFileSync(join(fixture.root, ".imm/audit/precondition.txt"), "evidence");
-				writeFileSync(join(fixture.root, "docs/specs/draft.md"), "draft");
-				const indexBefore = git("ls-files", "--stage", "--", "outside.txt");
-				let gates = 0;
-				let boundHead = "";
-				const client = createMcpRuntimeOnce({ ...withRunEntry(), cwd: fixture.root, env: ENV, interactive: true,
-					readInitiative: async () => fixture.observation,
-					requestConfirmation: async () => { gates++; boundHead = git("rev-parse", "HEAD").trim(); return { decision: "accept", requestId: "s3" }; },
-				});
-				client.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-				const start = async (): Promise<any> => host === "claude"
-					? client.callTool("start_unattended_batch", { initiative_slug: slug })
-					: executePiBatchOnce({ root: fixture.root, initiativeSlug: slug, readInitiative: async () => fixture.observation,
-						confirmBatch: async () => { gates++; boundHead = git("rev-parse", "HEAD").trim(); return "accept"; } });
-				const result = await start();
-				const after = git("rev-parse", "HEAD").trim();
-				expect(git("rev-list", "--count", `${before}..${after}`).trim()).toBe("1");
-				expect(git("show", "-s", "--format=%s", "HEAD").trim()).toBe(`chore(imm): commit batch preconditions for ${slug}`);
-				expect(git("diff", "--name-only", before, after).trim().split("\n").sort()).toEqual([".imm/audit/precondition.txt", "docs/specs/draft.md", "lib/second.ts", "src/task.ts", ...untrackedIntents].sort());
-				expect(git("ls-files", "--stage", "--", "outside.txt")).toBe(indexBefore);
-				expect(readFileSync(join(fixture.root, "outside.txt"), "utf8")).toBe("base");
-					expect(result.state).toBe("started"); expect(gates).toBe(1); expect(boundHead).toBe(after);
-					const record = JSON.parse(readFileSync(join(fixture.root, `.imm/state/batches/${result.batch_id}.json`), "utf8"));
-					expect(record.base_head).toBe(after);
-					expect(record.children.map((child: any) => child.task_id)).toEqual([`${slug}-c1`, `${slug}-c2`]);
-					const resumed = await start(); expect(resumed.state).toBe("started");
-					expect(git("rev-parse", "HEAD").trim()).toBe(after); expect(gates).toBe(1);
+				const before = git("rev-parse", "HEAD").trim();
+				const counter = { gates: 0 };
+				const result = await startBatch(fixture, slug, "accept", counter);
+				expect(result.state).toBe("rejected"); expect(counter.gates).toBe(0);
+				expect(result.reason).toContain("src/task.ts");
+				expect(git("rev-parse", "HEAD").trim()).toBe(before);
+				expect(git("diff", "--cached", "--name-only")).toBe("");
+				expect(readFileSync(join(fixture.root, "src/task.ts"), "utf8")).toBe("export const task = true;\n");
+				expect(existsSync(join(fixture.root, ".imm/state/batches"))).toBe(false);
 			} finally { rmSync(fixture.root, { recursive: true, force: true }); }
 		});
 	}
@@ -929,7 +956,7 @@ describe("acc-claude-batch-gate", () => {
 		expect(batchTool).toBeDefined();
 		expect(batchTool?.annotations).toEqual({ destructiveHint: true });
 		expect(batchTool?.inputSchema.required).toEqual(["initiative_slug"]);
-		expect(Object.keys(batchTool?.inputSchema.properties ?? {})).toEqual(["initiative_slug", "max_parallel", "lane_offers", "delivery_consolidation", "final_verification", "lane_instruction", "lane_revision"]);
+		expect(Object.keys(batchTool?.inputSchema.properties ?? {})).toEqual(["initiative_slug", "max_parallel", "lane_offers", "final_verification", "lane_instruction", "lane_revision"]);
 	});
 
 	it("rejects on non-interactive Claude Code session with unsupported_host error code", async () => {
@@ -1052,11 +1079,9 @@ describe("acc-claude-batch-gate", () => {
 			},
 			batchGit: {
 				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string) => {
+				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
-					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
-					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "child commit");
 					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
@@ -1099,11 +1124,9 @@ describe("acc-claude-batch-gate", () => {
 			},
 			batchGit: {
 				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string) => {
+				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
-					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
-					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "child commit");
 					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
@@ -1256,40 +1279,6 @@ describe("acc-claude-batch-fail-closed", () => {
 		expect(result.reason).toContain("branch preflight failed");
 		expect(result.recovery_action).toContain("delete or rename the conflicting branch");
 		expect(existsSync(join(fixture.root, ".imm", "state", "batch"))).toBe(false);
-	});
-
-	it.each(["accept", "decline", "cancel"] as const)("Claude confirms the same three-run composed delivery: %s", async decision => {
-		const f = parentConsolidationFixture(7); const audits = f.auditBytes(); let disclosed = "";
-		try {
-			const runtime = createMcpRuntime({ cwd: f.root, env: ENV, interactive: true, readInitiative: f.reader,
-				requestConfirmation: async input => { disclosed = elicitationParams(input).message; return { decision, requestId: "consolidation-confirmation" }; },
-				batchTracker: { markTerminal: async () => { throw Error("failed verification cannot close Parent"); } } });
-			runtime.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-			const result = await runtime.callTool("start_unattended_batch", { initiative_slug: "native-parent",
-				final_verification: ["bun verify.ts"], delivery_consolidation: f.selection }, { toolCallId: "consolidation-gate" });
-			for (const identity of [f.s4, f.repair, f.final]) expect(disclosed).toContain(identity.run_id);
-			expect(disclosed).toContain(f.baseHead); expect(disclosed).toContain("delivery_diff_hash"); expect(disclosed).toContain("manifest");
-			expect(f.auditBytes()).toEqual(audits);
-			if (decision === "accept") {
-				expect(result).toMatchObject({ state: "native_parent", action: "repair", proof: { complete: false }, final_verification: { passed: false } });
-				expect(f.count()).toBe(1); expect(readParentConsolidationReceipt(f.root, "native-parent")!.commit).toBe(f.git("rev-parse", "HEAD"));
-			} else {
-				expect(result.state).toBe(decision === "cancel" ? "cancelled" : "rejected");
-				expect(f.git("rev-parse", "HEAD")).toBe(f.baseHead); expect(readParentConsolidationReceipt(f.root, "native-parent")).toBeNull();
-			}
-		} finally { rmSync(f.root, { recursive: true, force: true }); }
-	});
-	it("Claude rejects malformed consolidation before native confirmation", async () => {
-		let gates = 0;
-		const runtime = createMcpRuntime({ cwd: "/not-a-repo", env: ENV, interactive: true,
-			requestConfirmation: async () => { gates++; return { decision: "accept", requestId: "never" }; } });
-		runtime.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-		await expect(runtime.callTool("start_unattended_batch", { initiative_slug: "native-parent",
-			delivery_consolidation: { task_id: "final", run_id: "run-final", source_runs: [], native_decision: "accept" } },
-			{ toolCallId: "invalid-consolidation" })).rejects.toThrow();
-		expect(gates).toBe(0);
-		const schema = listMcpTools().find(tool => tool.name === "start_unattended_batch")!.inputSchema.properties;
-		expect(schema).toHaveProperty("delivery_consolidation");
 	});
 
 	it("critical-only Parent returns a native task handoff without an empty batch grant", async () => {
@@ -1481,9 +1470,8 @@ describe("acc-claude-batch-fail-closed", () => {
 		};
 		const batchGit = {
 			...createDefaultBatchGitPort(),
-			commitChild: async (_root, taskId) => {
-				execFileSync("git", ["commit", "--allow-empty", "-qm", `complete ${taskId}`], { cwd: fixture.root });
-				const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+			commitChild: async (_root, taskId, _batchId, head, branch) => {
+				const commit = commitOnBatchRef(fixture.root, head, branch, [], `complete ${taskId}`);
 				commits.set(taskId, commit);
 				return { commit };
 			},
@@ -1517,13 +1505,13 @@ describe("acc-claude-batch-fail-closed", () => {
 			const next = JSON.parse(readFileSync(join(fixture.root, ".imm/state/batches", `${second.batch_id}.json`), "utf8"));
 			expect(next.base_head).toBe(nextHead);
 			expect(next.children.map((child: { task_id: string }) => child.task_id)).toEqual([`${slug}-c2`]);
-			// A completed record cannot authorize moving an existing branch from
-			// another checkout or adopting a branch whose settled history was lost.
-			execFileSync("git", ["checkout", "-q", "main"], { cwd: fixture.root });
-			expect(runBatchGitPreflight({ root: fixture.root, initiative_slug: slug, base_head: fixture.head }).ok).toBe(false);
-			execFileSync("git", ["checkout", "-q", `imm/${slug}`], { cwd: fixture.root });
-			execFileSync("git", ["reset", "--hard", fixture.head], { cwd: fixture.root });
-			expect(runBatchGitPreflight({ root: fixture.root, initiative_slug: slug, base_head: fixture.head }).ok).toBe(false);
+			// Each round owns its own hidden ref and neither creates nor switches a user-visible branch;
+			// this replaces the retired imm/<slug> branch-reuse refusals (D10).
+			const refs = execFileSync("git", ["for-each-ref", "--format=%(refname)", "refs/imm/batches/"], { cwd: fixture.root, encoding: "utf8" }).trim().split("\n").sort();
+			expect(refs).toEqual([`refs/imm/batches/${first.batch_id}`, `refs/imm/batches/${second.batch_id}`].sort());
+			expect(next.branch).toBe(`refs/imm/batches/${second.batch_id}`);
+			expect(execFileSync("git", ["branch", "--list", "imm/*"], { cwd: fixture.root, encoding: "utf8" }).trim()).toBe("");
+			expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim()).toBe(nextHead);
 		} finally { rmSync(fixture.root, { recursive: true, force: true }); }
 	});
 
@@ -1671,11 +1659,9 @@ describe("acc-claude-batch-fail-closed", () => {
 			},
 			batchGit: {
 				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string) => {
+				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
-					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
-					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "child commit");
 					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
@@ -1756,11 +1742,9 @@ describe("acc-claude-batch-fail-closed", () => {
 			},
 			batchGit: {
 				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string) => {
+				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
-					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
-					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "child commit");
 					commitsByTask.set(taskId, commit);
 					return { commit };
 				},

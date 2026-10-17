@@ -1,0 +1,53 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "content-delivery-authority-s1-settled-delivery",
+  "goal": "Make a Slice settled done with an unchanged TaskIntent count as delivered regardless of Git state, remove the native Parent integrate gate, retire delivery consolidation, and report the settled content hash, under S1 of docs/specs/content-delivery-authority.spec.md.",
+  "acceptance": [
+    {
+      "id": "S1-AC1",
+      "assertion": "Sources E1, E2, E3, E8, U1, U4; meet S1, SCN-1, D1, D2, D5, D6 and D7 in docs/specs/content-delivery-authority.spec.md: with botline-shaped fixtures (a critical settled Slice whose bytes are in a user-made commit; a settled Slice left staged beside an out-of-scope staged path), observeParentCompletion reports it delivered, a dependent Slice's prerequisite check passes, native Parent proceeds with no integrate action, gate or runtime commit, and the read-only status identity returns the out-of-scope path as a warning. Negative controls: a stopped Task, a revised TaskIntent hash, and an unsettled Task are not delivered; frozen Review snapshots still refuse envelope escape. Completion text states the scoped content hash and that the user may commit however they prefer.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/goal-driven-batch-run.test.ts\",\n      \"tests/managed-task-snapshot-isolation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S1-AC2",
+      "assertion": "Sources U1, U5, T1; meet D3 and D4 in docs/specs/content-delivery-authority.spec.md: native final verification binds the scoped content identity over required scopes; a user commit, amend or stash round trip with equal content keeps it passed, an in-scope edit after verification makes it stale; a legacy head-bound report stays valid only while HEAD matches. The delivery_consolidation parameter, module, receipts and contract text are gone from both Hosts' tool surfaces and existing consolidation files are ignored.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-completion-verifier.test.ts\",\n      \"tests/unattended-batch-commit.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/goal-driven-run-recovery.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/content-delivery-authority-settled-delivery.md",
+    "docs/plans/content-delivery-authority-s1-settled-delivery.intent.json",
+    "docs/specs/content-delivery-authority.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-run-batch.md",
+    "plugins/immune-brain/dist/imm-run.md",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain/runtime/assurance/run_continuation.ts",
+    "plugins/immune-brain/runtime/claude/interaction.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/unattended/batch_final_verification.ts",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/unattended/parent_delivery_consolidation.ts",
+    "plugins/immune-brain/runtime/workspace_scope.ts",
+    "tests/batch-completion-verifier.test.ts",
+    "tests/batch-retro-201.test.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/fixtures/goal-driven-run-historical-sources.json",
+    "tests/fixtures/parent-consolidation.ts",
+    "tests/fixtures/settled-delivery.ts",
+    "tests/goal-driven-batch-run.test.ts",
+    "tests/goal-driven-run-recovery.test.ts",
+    "tests/managed-task-snapshot-isolation.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/skill-mode-consolidation.test.ts",
+    "tests/unattended-batch-commit.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 3,
+  "owner": "user"
+}

@@ -4,9 +4,13 @@
 // the completing tick runs exactly what the literal user saw at confirmation.
 // A failure marks the completion report as not passed; integrated commits are
 // never rolled back. Only exit status and timing are recorded, never output.
+// A native Parent binds the report to the scoped content identity of the
+// required Tasks' scopes instead of HEAD: Git is the user's carrier, so a
+// commit, amend or stash round trip with equal content keeps it passed.
 import { createHash } from "node:crypto";
 import { parseTaskIntentV1 } from "../kernel/intent";
 import { spawn, spawnSync } from "node:child_process";
+import { scopedContentIdentity } from "../workspace_scope";
 
 export const MAX_FINAL_VERIFICATION_COMMANDS = 8;
 const MAX_COMMAND_LENGTH = 512;
@@ -23,6 +27,8 @@ export interface FinalVerificationResult {
 export interface FinalVerificationReport {
 	passed: boolean;
 	head: string | null;
+	/** Present when the report is bound to scoped content rather than HEAD. */
+	content_identity?: string;
 	results: FinalVerificationResult[];
 }
 
@@ -44,6 +50,7 @@ export function parseFinalVerificationReport(value: unknown, commands?: readonly
 	if (!value || typeof value !== "object") throw new Error("invalid final verification result");
 	const report = value as FinalVerificationReport;
 	if (typeof report.passed !== "boolean" || !(report.head === null || typeof report.head === "string") ||
+		!(report.content_identity === undefined || typeof report.content_identity === "string") ||
 		!Array.isArray(report.results) || !report.results.length || report.results.some(result =>
 			!result || typeof result.command !== "string" || typeof result.passed !== "boolean" ||
 			!(result.exit_code === null || Number.isInteger(result.exit_code)) ||
@@ -85,11 +92,11 @@ export function prepareFinalRepairCandidate(input: {
 	failure: FinalVerificationReport; prior_repairs: number;
 }) {
 	const failure = parseFinalVerificationReport(input.failure);
-	if (failure.passed || !failure.head) throw new Error("repair candidate requires a failed final verification bound to a delivery HEAD");
+	if (failure.passed || (!failure.head && !failure.content_identity)) throw new Error("repair candidate requires a failed final verification bound to delivered content");
 	if (!failure.results.some(result => !result.passed)) throw new Error("reconcile the verification environment or delivery HEAD before preparing a code repair");
 	if (!Number.isInteger(input.prior_repairs) || input.prior_repairs < 0 || input.prior_repairs >= 2)
 		throw new Error("Parent coordinator correction budget exhausted");
-	const identity = createHash("sha256").update(JSON.stringify({ head: failure.head,
+	const identity = createHash("sha256").update(JSON.stringify({ head: failure.content_identity ?? failure.head,
 		results: failure.results.map(({ command, exit_code, signal }) => ({ command, exit_code, signal })) })).digest("hex");
 	const taskId = `${input.initiative_slug.slice(0, 96)}-repair-${identity.slice(0, 12)}`;
 	const candidate = parseTaskIntentV1({ contract: "assurance_kernel/task_intent/v1", task_id: taskId,
@@ -101,16 +108,25 @@ export function prepareFinalRepairCandidate(input: {
 					command: { executable, argv, cwd: ".", timeout_ms: 120000, max_output_bytes: 131072 },
 					environment: { prepare: null, writable_paths: [] } }, null, 2) + "\n" };
 		}) });
-	return { failure_id: `sha256:${identity}`, delivery_head: failure.head, candidate };
+	return { failure_id: `sha256:${identity}`, delivery_head: failure.content_identity ?? failure.head, candidate };
 }
 
 export async function runFinalVerification(
 	root: string,
 	commands: readonly string[],
-	options: { timeoutMs?: number } = {},
+	options: { timeoutMs?: number; scopes?: readonly string[] } = {},
 ): Promise<FinalVerificationReport> {
 	const verifiedCommands = parseFinalVerification([...commands])!;
 	const head = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
+	if (options.scopes) {
+		// Content-bound: no clean-tree, HEAD or commit requirement; only the scoped bytes must hold still.
+		const before = scopedContentIdentity(root, options.scopes);
+		const results: FinalVerificationResult[] = [];
+		for (const command of verifiedCommands) results.push(await runOne(root, command, options.timeoutMs ?? DEFAULT_TIMEOUT_MS));
+		const unchanged = scopedContentIdentity(root, options.scopes) === before;
+		return { passed: results.every(result => result.passed) && unchanged,
+			head: head.status === 0 ? head.stdout.trim() : null, content_identity: before, results };
+	}
 	const clean = () => {
 		const tracked = spawnSync("git", ["-C", root, "diff", "--quiet", "HEAD"]);
 		const untracked = spawnSync("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z"], { encoding: "utf8" });

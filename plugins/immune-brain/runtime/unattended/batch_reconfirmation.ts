@@ -8,6 +8,7 @@ import { auditRunDirPath, auditRunRecordPath, auditRunTerminalProofPath, batchCo
 import { taskDeliveryIdentity, taskCommitRevisionIdentity, pathMatchesScope } from "../workspace_scope";
 import { projectTask } from "../kernel/completion";
 import { readRiskFloor } from "../kernel/risk_floor";
+import { isBatchRef, liveBatchHead } from "./batch_ref";
 import { isTerminalBatchState, type BatchRunStateRecord } from "./batch_state";
 import type { BatchPlanChild } from "./types";
 
@@ -35,7 +36,7 @@ export function ownUnpersistedBatchHead(root: string, record: BatchRunStateRecor
 		const evidence = JSON.parse(decode(readSecureProjectBytes(root, batchCommitEvidencePath(record.batch_id, task))));
 		if (evidence.contract !== "assurance_kernel/batch_commit_evidence/v1" || evidence.batch_id !== record.batch_id ||
 			evidence.task_id !== task || evidence.commit !== head || evidence.parent_head !== record.base_head) return false;
-		if (git(root, ["symbolic-ref", "--short", "HEAD"]).trim() !== record.branch) return false;
+		if (!isBatchRef(record.branch) && git(root, ["symbolic-ref", "--short", "HEAD"]).trim() !== record.branch) return false;
 		const parents = git(root, ["rev-list", "--parents", "-n", "1", head]).trim().split(/\s+/).slice(1);
 		if (parents.length !== 1 || parents[0] !== record.base_head) return false;
 		const metadata = git(root, ["show", "-s", "--format=%an%x00%s%x00%(trailers:key=Immune-Brain-Batch,valueonly)", head]).split("\0");
@@ -56,7 +57,7 @@ export function ownUnpersistedBatchHead(root: string, record: BatchRunStateRecor
 			!pair.record.intent_snapshot.scope_hint.some(s => pathMatchesScope(path, s)))) return false;
 		const identity = taskCommitRevisionIdentity(root, pair.record.intent_snapshot.scope_hint, pair.record.git_base_head, head);
 		if (!projectTask(pair.record.intent_snapshot, pair.record, identity.diff_hash, pair.record.intent_ref.content_hash, identity.changed_paths, readRiskFloor(root)).complete) return false;
-		return git(root, ["rev-parse", "HEAD"]).trim() === head;
+		return liveBatchHead(root, record.branch) === head;
 	} catch { return false; }
 }
 
@@ -168,8 +169,8 @@ export async function captureBatchReconfirmation(root: string, record: BatchRunS
 	const flagsBytes = git(root, ["ls-files", "-v"]);
 	const flags = flagsBytes.split("\n").filter(Boolean);
 	if (flags.some(line => line[0] === "S" || line[0] !== line[0]?.toUpperCase())) refuse();
-	const head = () => git(root, ["rev-parse", "HEAD"]).trim();
-	const branch = () => git(root, ["symbolic-ref", "--short", "HEAD"]).trim();
+	const head = () => liveBatchHead(root, record.branch) ?? "";
+	const branch = () => isBatchRef(record.branch) ? record.branch : git(root, ["symbolic-ref", "--short", "HEAD"]).trim();
 	if (head() !== record.base_head || branch() !== record.branch) refuse();
 	const assertDeliveryUnchanged = () => {
 		for (const c of changed) {

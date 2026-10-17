@@ -353,6 +353,8 @@ describe("claude host authority", () => {
 		mkdirSync(join(root, "docs", "plans"), { recursive: true });
 		writeFileSync(join(root, "docs", "plans", `${taskId}.intent.json`), `${JSON.stringify(intent, null, 2)}\n`);
 		writeFileSync(join(root, "src", "task.ts"), "export const value = 1;\n");
+		// Enrollment commits only under Git integration: auto (ADR 0024).
+		writeFileSync(join(root, "AGENTS.md"), "- Git integration: auto\n");
 		// An unborn repository with the in-scope file already staged: the entry's
 		// empty initial commit makes that file dirty relative to the base, and
 		// Enrollment commits it. Here a Git hook refuses that commit, so

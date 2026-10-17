@@ -74,6 +74,7 @@ const {
 } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
 import { projectAssurance } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 import { diffSnapshotOf } from "../plugins/immune-brain/runtime/claude/kernel_ports";
+import { buildScopedCommit, isBatchRef, moveBatchRef } from "../plugins/immune-brain/runtime/unattended/batch_ref";
 
 // These authority fixtures script Assurance. Model the explicit Parent turn
 // between Tool returns. Nothing in this file runs real QA or real batch commits;
@@ -105,9 +106,15 @@ import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 import { readRunRowByTask, withKernelRead, withKernelTransaction } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 import { commitTerminalLocked, readWorkspaceStateRaw, retryStoreFollowUps, serializeWorkspace } from "../plugins/immune-brain/runtime/kernel/storage";
 import { createDefaultBatchGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
-import { parentConsolidationFixture } from "./fixtures/parent-consolidation";
-import { readParentConsolidationReceipt } from "../plugins/immune-brain/runtime/unattended/batch_state";
-import { parseDeliveryConsolidation } from "../plugins/immune-brain/runtime/unattended/parent_delivery_consolidation";
+
+// Test double for a batch child commit under the hidden-ref model (S2): built from the working
+// tree with Git plumbing so only the batch's own ref advances, never the fixture's HEAD or index.
+function commitOnBatchRef(root: string, head: string, branch: string | undefined, paths: string[], message: string): string {
+	if (!isBatchRef(branch)) throw new Error(`fixture expected a hidden batch ref, got ${branch ?? "no branch"}`);
+	const commit = buildScopedCommit(root, { parent: head, paths, message });
+	moveBatchRef(root, branch, head, commit);
+	return commit;
+}
 
 /** Claim the workspace for a fixture task through the store. */
 /** Make the live owner run look foreign to an approved batch lineage. */
@@ -616,34 +623,6 @@ describe("acc-pi-batch-gate", () => {
 		assertZeroWrites(fixture.root, fixture.head);
 	});
 
-	it.each(["accept", "decline", "cancel"] as const)("Pi explicitly confirms all three consolidation runs: %s", async decision => {
-		const f = parentConsolidationFixture(7); const audits = f.auditBytes(); let disclosed = "";
-		try {
-			const result = await executePiBatchOnce({ root: f.root, initiativeSlug: "native-parent", interactive: true,
-				readInitiative: f.reader, final_verification: ["bun verify.ts"], delivery_consolidation: f.selection,
-				confirmBatch: async input => { disclosed = input.details; return decision; },
-				batchTracker: { markTerminal: async () => { throw Error("failed verification cannot close Parent"); } } });
-			for (const identity of [f.s4, f.repair, f.final]) expect(disclosed).toContain(identity.run_id);
-			expect(disclosed).toContain(f.baseHead); expect(disclosed).toContain("delivery_diff_hash"); expect(disclosed).toContain("manifest");
-			expect(f.auditBytes()).toEqual(audits);
-			if (decision === "accept") {
-				expect(result).toMatchObject({ state: "native_parent", action: "repair", proof: { complete: false }, final_verification: { passed: false } });
-				expect(f.count()).toBe(1); expect(readParentConsolidationReceipt(f.root, "native-parent")!.commit).toBe(f.git("rev-parse", "HEAD"));
-			} else {
-				expect(result.state).toBe(decision === "cancel" ? "cancelled" : "rejected");
-				expect(f.git("rev-parse", "HEAD")).toBe(f.baseHead); expect(readParentConsolidationReceipt(f.root, "native-parent")).toBeNull();
-			}
-		} finally { rmSync(f.root, { recursive: true, force: true }); }
-	});
-	it("Pi rejects malformed consolidation selection before confirmation", async () => {
-		let gates = 0;
-		await expect(executePiBatchOnce({ root: "/not-a-repo", initiativeSlug: "native-parent", interactive: true,
-			delivery_consolidation: { task_id: "final", run_id: "run-final", source_runs: [], native_decision: "accept" } as any,
-			confirmBatch: async () => { gates++; return "accept"; } })).rejects.toThrow();
-		expect(gates).toBe(0);
-		expect(() => parseDeliveryConsolidation({ task_id: "final", run_id: "run-final", source_runs: [{ task_id: "final", run_id: "run-final" }] })).toThrow();
-	});
-
 	it("critical-only Parent returns a native single-task handoff without a batch gate or writes", async () => {
 		const fixture = createBatchFixture("empty-enrollable");
 		const observation: GithubInitiativeObservation = {
@@ -716,11 +695,9 @@ describe("acc-pi-batch-gate", () => {
 			},
 			batchGit: {
 				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string) => {
+				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
-					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
-					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "child commit");
 					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
@@ -755,11 +732,9 @@ describe("acc-pi-batch-gate", () => {
 			},
 			batchGit: {
 				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string) => {
+				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
-					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
-					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "child commit");
 					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
@@ -914,11 +889,9 @@ describe("acc-pi-batch-gate", () => {
 			},
 			batchGit: {
 				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string) => {
+				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
-					execFileSync("git", ["commit", "-q", "-m", "child commit 2"], { cwd: fixture.root });
-					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "child commit 2");
 					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
@@ -952,11 +925,9 @@ describe("acc-pi-batch-gate", () => {
 			},
 			batchGit: {
 				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string) => {
+				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
-					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
-					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "child commit");
 					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
@@ -999,11 +970,9 @@ describe("acc-pi-batch-gate", () => {
 			},
 			batchGit: {
 				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string) => {
+				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
-					execFileSync("git", ["commit", "-q", "-m", "child commit 2"], { cwd: fixture.root });
-					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "child commit 2");
 					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
@@ -1037,11 +1006,9 @@ describe("acc-pi-batch-gate", () => {
 			},
 			batchGit: {
 				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string) => {
+				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
-					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
-					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "child commit");
 					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
@@ -1106,11 +1073,9 @@ describe("acc-pi-batch-gate", () => {
 			},
 			batchGit: {
 				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string) => {
+				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
-					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
-					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "child commit");
 					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
@@ -1249,11 +1214,9 @@ describe("acc-pi-batch-gate", () => {
 			},
 			batchGit: {
 				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string) => {
+				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
-					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
-					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "child commit");
 					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
@@ -1329,11 +1292,9 @@ describe("acc-pi-batch-gate", () => {
 			},
 			batchGit: {
 				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string) => {
+				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
-					execFileSync("git", ["commit", "-q", "-m", "tool content commit"], { cwd: fixture.root });
-					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "tool content commit");
 					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
@@ -1399,11 +1360,9 @@ describe("settled-child resume preflight", () => {
 			},
 			batchGit: {
 				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string) => {
+				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
-					execFileSync("git", ["commit", "-q", "-m", "settled commit"], { cwd: fixture.root });
-					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "settled commit");
 					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
@@ -1474,11 +1433,9 @@ describe("batch authorization reuse (ADR-0005 Decision 1)", () => {
 			},
 			batchGit: {
 				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string) => {
+				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
-					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
-					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "child commit");
 					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
@@ -1509,11 +1466,9 @@ describe("batch authorization reuse (ADR-0005 Decision 1)", () => {
 			},
 			batchGit: {
 				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string) => {
+				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
-					execFileSync("git", ["commit", "-q", "-m", "child commit 2"], { cwd: fixture.root });
-					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "child commit 2");
 					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
@@ -1538,7 +1493,6 @@ describe("batch authorization reuse (ADR-0005 Decision 1)", () => {
 			return "accept";
 		});
 
-		if (resumed.state !== "started") console.log("BLOCKED2:", JSON.stringify(resumed).slice(0, 400));
 		expect(gates).toEqual([]);
 		expect(resumed.state).toBe("started");
 		expect(resumed.batch_id).toBe(batchId);
@@ -1569,15 +1523,19 @@ describe("batch authorization reuse (ADR-0005 Decision 1)", () => {
 		expect(rewritten.budget).not.toHaveProperty("deadline_at");
 	});
 
-	it("adopts a fast-forward commit on the batch branch and reuses the authorization with zero gates", async () => {
-		const { fixture, batchId } = await startRunningBatch("reuse-fast-forward");
+	// D10 (content-delivery-authority S2): the batch advances a hidden ref, so the user's own
+	// commits and amends on their branch neither move the batch nor need to be adopted.
+	// Replaces the retired "adopts a fast-forward commit on the batch branch" case.
+	it("keeps the authorization when the user commits and amends on their own branch", async () => {
+		const { fixture, batchId } = await startRunningBatch("reuse-user-commit");
 		writeFileSync(join(fixture.root, "outside.txt"), "external commit\n");
 		execFileSync("git", ["add", "outside.txt"], { cwd: fixture.root });
 		execFileSync("git", ["commit", "-q", "-m", "external commit"], { cwd: fixture.root });
-		const outsideHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+		execFileSync("git", ["commit", "-q", "--amend", "-m", "external commit, amended"], { cwd: fixture.root });
+		const userHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
 
 		const gates: string[] = [];
-		const resumed = await resumeBatch(fixture, "reuse-fast-forward", async (details) => {
+		const resumed = await resumeBatch(fixture, "reuse-user-commit", async (details) => {
 			gates.push(details.details);
 			return "accept";
 		});
@@ -1586,13 +1544,17 @@ describe("batch authorization reuse (ADR-0005 Decision 1)", () => {
 		expect(resumed.state).toBe("started");
 		expect(resumed.batch_id).toBe(batchId);
 		expect(resumed.report.batch_state).toBe("completed");
+		expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim()).toBe(userHead);
 		const stored = JSON.parse(readFileSync(join(fixture.root, ".imm", "state", "batches", `${batchId}.json`), "utf8"));
-		expect(stored.adopted_heads.some((adoption: { from: string; to: string }) => adoption.to === outsideHead)).toBe(true);
+		expect(stored.adopted_heads ?? []).toEqual([]);
 	});
 
-	it("demands a fresh gate when the HEAD lineage was rewritten, then fails closed on the drift", async () => {
-		const { fixture } = await startRunningBatch("reuse-head");
-		execFileSync("git", ["commit", "-q", "--amend", "-m", "rewritten commit"], { cwd: fixture.root });
+	it("demands a fresh gate when the hidden ref lineage was rewritten, then fails closed on the drift", async () => {
+		const { fixture, batchId } = await startRunningBatch("reuse-head");
+		const stored = JSON.parse(readFileSync(join(fixture.root, ".imm", "state", "batches", `${batchId}.json`), "utf8"));
+		const emptyTree = execFileSync("git", ["mktree"], { cwd: fixture.root, input: "", encoding: "utf8" }).trim();
+		const unrelated = execFileSync("git", ["commit-tree", emptyTree, "-m", "unrelated history"], { cwd: fixture.root, encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } }).trim();
+		execFileSync("git", ["update-ref", stored.branch, unrelated], { cwd: fixture.root });
 
 		const gates: string[] = [];
 		const resumed = await resumeBatch(fixture, "reuse-head", async (details) => {
@@ -1654,11 +1616,11 @@ describe("lane mode parameters (parallel-batch-lanes)", () => {
 		return { cwd: root, mode: "tui", sessionManager: RUN_ENTRY_SESSION, ui: { custom: async () => { opened.count++; return "decline"; } } };
 	}
 
-	it("declares exactly the supported batch and explicit consolidation parameters", () => {
+	it("declares exactly the supported batch parameters", () => {
 		const tool = registerBatchTool({ readInitiative: async () => createBatchFixture("lane-schema").observation }) as unknown as {
 			parameters: { properties: Record<string, unknown>; required?: string[] };
 		};
-		expect(Object.keys(tool.parameters.properties)).toEqual(["initiative_slug", "max_parallel", "lane_offers", "delivery_consolidation", "final_verification", "lane_instruction", "lane_revision"]);
+		expect(Object.keys(tool.parameters.properties)).toEqual(["initiative_slug", "max_parallel", "lane_offers", "final_verification", "lane_instruction", "lane_revision"]);
 		expect(tool.parameters.required).toEqual(["initiative_slug"]);
 	});
 

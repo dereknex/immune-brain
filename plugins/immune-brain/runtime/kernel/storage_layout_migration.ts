@@ -31,6 +31,7 @@ import {
 } from "./storage_paths";
 import { hasMigrationReceipt, importLegacyWorkspace } from "./sqlite_migration";
 import { commitWorkflowPaths, type WorkflowCommitResult } from "../assurance/workflow_autocommit";
+import { readGitIntegrationPreference } from "../git_integration_preference";
 
 export interface MigrationOutcome {
 	contract: "immune_brain/storage_layout_migration_result/v1";
@@ -198,17 +199,31 @@ function pendingCleanupPaths(root: string): string[] {
 	});
 }
 
-/** Consumers may commit an existing diff, but never initiate a conversion. */
+/** Why a migration diff stays in the working tree under `Git integration: manual`. */
+const MANUAL_MIGRATION_REASON = "Git integration: manual leaves the storage-layout migration diff in the working tree; commit the affected paths however you prefer, then retry";
+
+/**
+ * Consumers may commit an existing diff, but never initiate a conversion.
+ * Under `Git integration: manual` (the default) nothing is committed and the
+ * diff stays in the working tree.
+ */
 export function commitPendingMigrationDiff(root: string, signal?: AbortSignal): WorkflowCommitResult {
 	const inspection = inspectStorageLayout(root);
 	if (inspection.layout !== "migration_uncommitted") return { committed: false };
+	if (readGitIntegrationPreference(root).mode === "manual") return { committed: false };
 	return commitWorkflowPaths(root, { paths: inspection.dirty_affected_paths, subject: MIGRATION_SUBJECT, signal });
 }
 
-/** Preserve the importer's committed-evidence barrier, then commit its cleanup. */
+/**
+ * Preserve the importer's committed-evidence barrier, then commit its cleanup.
+ * Under `Git integration: manual` (the default) the conversion runs but writes
+ * no commit: its first pending diff is left in the working tree and reported
+ * as `migration_uncommitted` with the affected paths for the user to commit.
+ */
 export function migrateAndCommitLegacyLayout(root: string, signal?: AbortSignal): MigrationOutcome & { commits: string[] } {
 	const commits: string[] = [];
 	const affected = new Set<string>();
+	const manual = readGitIntegrationPreference(root).mode === "manual";
 	const commit = (paths: string[]) => {
 		const result = commitWorkflowPaths(root, { paths, subject: MIGRATION_SUBJECT, signal });
 		if (result.committed) {
@@ -223,6 +238,7 @@ export function migrateAndCommitLegacyLayout(root: string, signal?: AbortSignal)
 			signal?.throwIfAborted();
 			const migration = migrateLegacyLayout(root);
 			if (migration.outcome === "migration_uncommitted") {
+				if (manual) return { ...migration, reason: `${migration.reason ?? "the migration diff is uncommitted"}; ${MANUAL_MIGRATION_REASON}`, commits };
 				const tracked = execFileSync("git", ["-C", root, "ls-files", "-z", "--", ".imm"],
 					{ encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }).split("\0");
 				const evidence = new Set(migration.affected_paths);
@@ -233,6 +249,13 @@ export function migrateAndCommitLegacyLayout(root: string, signal?: AbortSignal)
 			}
 			if (migration.outcome !== "migrated" && migration.outcome !== "already_migrated")
 				return { ...migration, commits };
+			if (manual) {
+				const pending = [...new Set([...migration.affected_paths, ...pendingCleanupPaths(root)])].sort();
+				const after = inspectStorageLayout(root);
+				if (after.layout === "ready") return { ...migration, affected_paths: pending, reason: "storage layout is ready", commits };
+				return { contract: CONTRACT, outcome: "migration_uncommitted", affected_paths: pending, commits,
+					reason: MANUAL_MIGRATION_REASON };
+			}
 			commit([...migration.affected_paths, ...pendingCleanupPaths(root)]);
 			const after = inspectStorageLayout(root);
 			if (after.layout !== "ready") throw new Error(`storage layout is still ${after.layout}: ${after.reason ?? ""}`);
