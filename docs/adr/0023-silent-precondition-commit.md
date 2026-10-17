@@ -1,8 +1,15 @@
 ---
-status: accepted
+status: superseded
+superseded_by: docs/adr/0024-git-integration-preference.md
+retired_at: 2026-10-16
+reason: Runtime-made commits are now the opt-in `Git integration: auto` preference; the default `manual` writes no runtime commit to the user's branch.
 ---
 
 # Silent Precondition Commit
+
+This decision is superseded by [ADR 0024](0024-git-integration-preference.md).
+Under `Git integration: auto` the commits below still apply unchanged; under
+the default `manual` none of them is made outside batches.
 
 Accepted on 2026-10-13 by the repository owner (user decisions BR-4 and BR-5 in
 `docs/specs/run-only-gates.spec.md`), for Issue #231. It replaces the

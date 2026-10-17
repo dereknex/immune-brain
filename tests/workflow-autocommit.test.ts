@@ -3,7 +3,11 @@ import { execFileSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { commitWorkflowPaths } from "../plugins/immune-brain/runtime/assurance/workflow_autocommit";
+import { commitSettledDelivery, commitWorkflowPaths, settleCommitSubject, withSettleCommit } from "../plugins/immune-brain/runtime/assurance/workflow_autocommit";
+import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
+import { recoverKernelStoreFollowUps } from "../plugins/immune-brain/runtime/kernel/storage";
+import { taskStatusIdentity } from "../plugins/immune-brain/runtime/workspace_scope";
+import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 
 const SUBJECT = "chore(imm): commit Enrollment preconditions for demo-task";
 const roots: string[] = [];
@@ -332,5 +336,90 @@ describe("commitWorkflowPaths", () => {
 		expect(() => commitWorkflowPaths(root, { paths: ["src/a.ts"], subject: SUBJECT, signal: AbortSignal.abort() })).toThrow();
 		expect(() => commitWorkflowPaths(join(root, "src"), { paths: ["a.ts"], subject: SUBJECT })).toThrow(/repository root/);
 		expect(git(root, "rev-parse", "HEAD")).toBe(head);
+	});
+});
+
+describe("settle commit under the Git integration preference (ADR 0024, SCN-4)", () => {
+	const taskId = "settle-demo";
+	const intentPath = `docs/plans/${taskId}.intent.json`;
+	/**
+	 * A task settled `done` over a staged in-scope edit, beside staged and
+	 * unstaged out-of-scope dirt. The final attestation binds the real scoped
+	 * identity, as a settlement in the user's working tree does.
+	 */
+	function settled(mode: "auto" | "manual" | null) {
+		const root = repo();
+		const intent = parseTaskIntentV1({ contract: "assurance_kernel/task_intent/v1", task_id: taskId, owner: "user", goal: "settle",
+			risk: "routine", revision: 1, scope_hint: ["src/a.ts", intentPath],
+			acceptance: [{ id: "AC1", assertion: "settle", verification: "true" }] });
+		mkdirSync(join(root, "docs/plans"), { recursive: true });
+		writeFileSync(join(root, intentPath), `${JSON.stringify(intent, null, 2)}\n`);
+		writeFileSync(join(root, ".gitignore"), ".imm/\n");
+		if (mode) writeFileSync(join(root, "AGENTS.md"), `# Agent Instructions\n\n- Git integration: ${mode}\n`);
+		git(root, "add", "-A");
+		git(root, "commit", "-qm", "plan");
+		const base = git(root, "rev-parse", "HEAD");
+		writeFileSync(join(root, "src/a.ts"), "a1\n");
+		git(root, "add", "--", "src/a.ts");
+		writeFileSync(join(root, "other/staged.ts"), "s1\n");
+		git(root, "add", "--", "other/staged.ts");
+		writeFileSync(join(root, "other/loose.ts"), "l1\n");
+		const draft = { contract: "assurance_kernel/task_record/v4", task_id: taskId, intent_snapshot: intent,
+			intent_ref: { path: intentPath, content_hash: canonicalIntentHash(intent) }, git_base_head: base };
+		const diffHash = taskStatusIdentity(root, draft).diff_hash;
+		seedKernelRunForTest(root, { task_id: taskId, terminal: { lifecycle: "done" }, record: { ...draft,
+			lifecycle: "done", artifact_state: "frozen", baseline: `sha256:${"a".repeat(64)}`, findings: [], history: [],
+			attestations: [{ id: "qa-1", kind: "qa", authority_role: "qa", actor_id: "qa", task_revision: 1,
+				intent_content_hash: canonicalIntentHash(intent), diff_hash: diffHash, summary: "passed",
+				acceptance_results: [{ acceptance_id: "AC1", status: "passed", summary: "passed" }] }] } });
+		recoverKernelStoreFollowUps(root, taskId);
+		return { root, base };
+	}
+
+	test("auto commits exactly the settled scoped paths and leaves every other path untouched", () => {
+		const { root, base } = settled("auto");
+		const outside = [observed(root, "other/staged.ts"), observed(root, "other/loose.ts")];
+		const result = commitSettledDelivery(root, taskId);
+		expect(result).toMatchObject({ mode: "auto", committed: true, paths: ["src/a.ts"] });
+		expect(git(root, "rev-parse", "HEAD^")).toBe(base);
+		expect(git(root, "log", "-1", "--format=%s")).toBe(settleCommitSubject(taskId));
+		expect(git(root, "show", "--name-only", "--format=", "HEAD")).toBe("src/a.ts");
+		expect([observed(root, "other/staged.ts"), observed(root, "other/loose.ts")]).toEqual(outside);
+		// The seam a Host's completion result passes through carries the outcome once.
+		const completion = withSettleCommit(root, taskId, { state: "completed" });
+		expect(completion).toMatchObject({ state: "completed", settle_commit: { committed: false } });
+		expect(git(root, "rev-parse", "HEAD^")).toBe(base);
+	});
+
+	for (const mode of ["manual", null] as const) test(`${mode ? "manual" : "no directive"} commits nothing at settlement`, () => {
+		const { root, base } = settled(mode);
+		const status = statusLines(root);
+		expect(commitSettledDelivery(root, taskId)).toBeNull();
+		expect(withSettleCommit(root, taskId, { state: "completed" })).toEqual({ state: "completed" });
+		expect(git(root, "rev-parse", "HEAD")).toBe(base);
+		expect(statusLines(root)).toEqual(status);
+	});
+
+	test("auto never sweeps an in-scope edit made after settlement into the commit", () => {
+		const { root, base } = settled("auto");
+		writeFileSync(join(root, "src/a.ts"), "a2\n");
+		git(root, "add", "--", "src/a.ts");
+		expect(commitSettledDelivery(root, taskId)).toMatchObject({ committed: false, reason: expect.stringContaining("changed after settlement") });
+		expect(git(root, "rev-parse", "HEAD")).toBe(base);
+	});
+
+	test("auto makes no commit for content the user already committed", () => {
+		const { root } = settled("auto");
+		git(root, "commit", "-qm", "user commit", "--", "src/a.ts");
+		const head = git(root, "rev-parse", "HEAD");
+		expect(commitSettledDelivery(root, taskId)).toMatchObject({ committed: false });
+		expect(git(root, "rev-parse", "HEAD")).toBe(head);
+	});
+
+	test("a result that did not settle done passes through untouched", () => {
+		const { root, base } = settled("auto");
+		const review = { state: "review_ready" };
+		expect(withSettleCommit(root, taskId, review)).toBe(review);
+		expect(git(root, "rev-parse", "HEAD")).toBe(base);
 	});
 });

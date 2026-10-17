@@ -719,7 +719,8 @@ export default function (
 					+ state.unresolved_user_decision_ids.length
 					+ state.replan_required_ids.length;
 				const warnings = projection.warnings ?? [];
-				const status = { plugin_version: PLUGIN_VERSION, ...state, ...(warnings.length > 0 ? { warnings } : {}) };
+				const gitIntegration = projection.git_integration ? { git_integration: projection.git_integration } : {};
+				const status = { plugin_version: PLUGIN_VERSION, ...state, ...gitIntegration, ...(warnings.length > 0 ? { warnings } : {}) };
 				const details = {
 					state: "status",
 					operation: "status",
@@ -727,6 +728,7 @@ export default function (
 					lifecycle: state.lifecycle,
 					artifact_state: state.artifact_state,
 					task_state: state,
+					...gitIntegration,
 					...(warnings.length > 0 ? { warnings } : {}),
 					result: `${fresh}/${total} acceptance items fresh; ${blockers} blocker${blockers === 1 ? "" : "s"}${warnings.map((warning) => `; ${warning.message}`).join("")}`,
 					next_action: state.next_obligation,

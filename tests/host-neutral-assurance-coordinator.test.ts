@@ -986,7 +986,10 @@ describe("status projection through the real Kernel", () => {
   const status = await projectTaskStatus(f.root, f.taskId);
   expect(status.error).toBeNull();
   expect(status.warnings).toBeUndefined();
-  expect(status).toEqual(await refusing(f.root, f.taskId));
+  // Beside the refusing projection, status reports only the resolved Git integration preference (ADR 0024).
+  const { git_integration, ...projection } = status;
+  expect(git_integration).toEqual({ mode: "manual", source: null });
+  expect(projection).toEqual(await refusing(f.root, f.taskId));
  });
 
  test("an unstaged in-scope path keeps the projection and adds one warning; the refusing projection still fails", async () => {

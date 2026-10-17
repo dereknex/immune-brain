@@ -26,11 +26,20 @@ import {
 
 const roots: string[] = [];
 
-function tempRoot(initGit = true): string {
+/**
+ * A repository with one initial commit. `gitIntegration` commits a root
+ * AGENTS.md declaring that preference in it (ADR 0024); without one the
+ * repository resolves to `manual`, which never commits a migration.
+ */
+function tempRoot(initGit = true, gitIntegration?: "auto" | "manual"): string {
 	const root = mkdtempSync(join(tmpdir(), "imm-layout-"));
 	roots.push(root);
 	if (initGit) {
 		execFileSync("git", ["-C", root, "init", "-q"]);
+		if (gitIntegration) {
+			writeFileSync(join(root, "AGENTS.md"), `# Agent Instructions\n\n- Git integration: ${gitIntegration}\n`);
+			execFileSync("git", ["-C", root, "add", "--", "AGENTS.md"]);
+		}
 		execFileSync("git", [
 			"-C", root, "-c", "user.email=test@example.com",
 			"-c", "user.name=Test", "commit", "--allow-empty", "-q",
@@ -313,7 +322,7 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 	}
 
 	it("CLI automatically commits evidence before retiring sources and commits cleanup separately", () => {
-		const root = tempRoot();
+		const root = tempRoot(true, "auto");
 		const task = "s4-preserved-task";
 		writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
 		writeLegacyTerminalPair(root, task);
@@ -347,8 +356,30 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 		expect(inspectStorageLayout(root).layout).toBe("ready");
 	}, 30_000);
 
+	for (const declared of ["manual", undefined] as const) it(`CLI under ${declared ? "Git integration: manual" : "no Git integration directive"} leaves the migration diff in the working tree (SCN-4)`, () => {
+		const root = tempRoot(true, declared);
+		const task = "s3-manual-migration";
+		writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
+		writeLegacyTerminalPair(root, task);
+		const record = readFileSync(join(root, `.imm/tasks/${task}.json`));
+		commit(root, "legacy baseline");
+		const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" });
+		const before = git("rev-parse", "HEAD").trim();
+		const result = runKernelCommand(["migrate", "--storage-layout"], root);
+		const outcome = JSON.parse(result.stdout);
+		expect(git("rev-parse", "HEAD").trim()).toBe(before);
+		expect(result.returncode).toBe(1);
+		expect(outcome.layout).toBe("migration_uncommitted");
+		expect(outcome.reason).toContain("Git integration: manual");
+		expect(outcome.affected_paths).toContain(auditTaskRecordPath(task));
+		// The evidence is written, not committed, and the legacy source is not retired.
+		expect(readFileSync(join(root, auditTaskRecordPath(task)))).toEqual(record);
+		expect(existsSync(join(root, `.imm/tasks/${task}.json`))).toBe(true);
+		expect(gitDirty(root).some((line) => line.includes(auditTaskRecordPath(task).split("/").slice(0, 2).join("/")))).toBe(true);
+	}, 30_000);
+
 	it("CLI hook refusal preserves the only historical sources and leaves HEAD unchanged", () => {
-		const root = tempRoot();
+		const root = tempRoot(true, "auto");
 		writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
 		writeLegacyTerminalPair(root, "s4-hook-refused");
 		commit(root, "legacy baseline");
@@ -368,7 +399,7 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 
 	for (const layout of ["legacy", "v4"] as const) {
 		it(`CLI retries a refused ${layout} cleanup commit without losing paths or unrelated dirt`, () => {
-			const root = tempRoot();
+			const root = tempRoot(true, "auto");
 			const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" });
 			const task = "s4-cleanup-retry";
 			const source = layout === "legacy" ? `.imm/tasks/${task}.json` : `.imm/state/tasks/${task}.json`;
@@ -414,7 +445,7 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 
 	for (const evidenceCommitted of [false, true]) for (const refuseCleanup of [false, true]) {
 		it(`CLI commits modified tracked artifact sources with ${evidenceCommitted ? "committed" : "new"} evidence${refuseCleanup ? " and retries refusal" : ""}`, () => {
-			const root = tempRoot();
+			const root = tempRoot(true, "auto");
 			const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" });
 			mkdirSync(join(root, ".imm/memory"), { recursive: true });
 			writeFileSync(join(root, ".imm/memory/MEMORY.md"), "old\n");
@@ -816,7 +847,7 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 	});
 
 	it("migrates through the explicit claimless CLI entry point", async () => {
-		const root = tempRoot();
+		const root = tempRoot(true, "auto");
 		const baseHead = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 		writeLegacyV4Pair(root, "2026-08-14-015-old-task", baseHead);
 		writeFileSync(join(root, ".imm/state/workspace.json"), `${JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null })}\n`);
@@ -924,7 +955,7 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 	});
 
 	it("recovers a post-publication interruption through the CLI", async () => {
-		const root = tempRoot();
+		const root = tempRoot(true, "auto");
 		writeLegacyTerminalPair(root, "2026-08-14-019-old-task");
 		commit(root, "legacy evidence");
 		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
@@ -984,7 +1015,7 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 
 	for (const workspace of [".imm/state/workspace.json", ".imm/workspace.json"]) for (const refuseCleanup of [false, true]) {
 		it(`CLI retires cleared owner in ${workspace}${refuseCleanup ? " after refusal" : ""}`, () => {
-			const root = tempRoot();
+			const root = tempRoot(true, "auto");
 			const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" });
 			mkdirSync(dirname(join(root, workspace)), { recursive: true });
 			writeFileSync(join(root, workspace), JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: "old-task" }) + "\n");

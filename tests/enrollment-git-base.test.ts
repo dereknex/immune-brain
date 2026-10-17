@@ -47,8 +47,9 @@ const TASK_PATHS = [intentPath, specPath, "src/new.ts", "src/task.ts"];
  * dirt outside it. An unborn HEAD keeps the TaskIntent staged, which is what
  * the empty-base initialization requires; the in-scope edits there are
  * committed by the precondition commit, because the gate could not list them.
+ * The fixture declares `Git integration: auto` unless told otherwise.
  */
-function scopedFixture(base: "committed" | "unborn" = "committed", candidateId = taskId) {
+function scopedFixture(base: "committed" | "unborn" = "committed", candidateId = taskId, gitIntegration: "auto" | "manual" | null = "auto") {
 	const intentPath = `docs/plans/${candidateId}.intent.json`;
 	const specPath = `docs/specs/${candidateId}.spec.md`;
 	const root = mkdtempSync(join(tmpdir(), "imm-precondition-"));
@@ -62,7 +63,10 @@ function scopedFixture(base: "committed" | "unborn" = "committed", candidateId =
 	writeFileSync(join(root, "src/task.ts"), "export const value = 1;\n");
 	writeFileSync(join(root, "other/loose.txt"), "loose 0\n");
 	writeFileSync(join(root, "other/staged.txt"), "staged 0\n");
+	// The precondition commits these tests pin are the `auto` preference (ADR 0024).
+	if (gitIntegration) writeFileSync(join(root, "AGENTS.md"), `# Agent Instructions\n\n- Git integration: ${gitIntegration}\n`);
 	if (base === "committed") { git(root, "add", "-A"); git(root, "commit", "-qm", "base"); }
+	else if (gitIntegration) git(root, "add", "--", "AGENTS.md");
 	writeFileSync(join(root, intentPath), JSON.stringify({
 		contract: "assurance_kernel/task_intent/v1", task_id: candidateId, owner: "user", goal: "enroll over uncommitted planning artifacts",
 		risk: "routine", revision: 1, scope_hint: ["src", intentPath, specPath],
@@ -349,9 +353,41 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 		expect(git(root, "log", "-1", "--format=%s")).toBe(PRECONDITION_SUBJECT);
 		expect(committedPaths(root)).toEqual(TASK_PATHS);
 		expect(readTaskRecordRaw(root, taskId).record?.git_base_head).toBe(git(root, "rev-parse", "HEAD"));
-		expect(git(root, "diff", "--cached", "--name-only")).toBe("other/staged.txt");
+		// The staged AGENTS.md that declares the preference is outside the scope and stays staged.
+		expect(git(root, "diff", "--cached", "--name-only")).toBe("AGENTS.md\nother/staged.txt");
 		expect(readFileSync(join(root, "other/staged.txt"), "utf8")).toBe("staged 2\n");
 	});
+	for (const declared of ["manual", null] as const) {
+		const label = declared ? "Git integration: manual" : "no Git integration directive";
+		test(`${label}: Enrollment stages its TaskIntent and Spec, claims in-scope edits and writes no commit (SCN-4)`, async () => {
+			const root = scopedFixture("committed", taskId, declared);
+			const head = git(root, "rev-parse", "HEAD");
+			const before = outsideScope(root);
+			const result = await enroll(root, "accept");
+			expect(result.error).toBe("");
+			expect(result.prompts).toHaveLength(1);
+			expect(git(root, "rev-parse", "HEAD")).toBe(head);
+			expect(git(root, "diff", "--cached", "--name-only", "--", "docs").split("\n").sort()).toEqual([intentPath, specPath]);
+			expect(outsideScope(root)).toEqual(before);
+			const record = readTaskRecordRaw(root, taskId).record as Record<string, unknown> | undefined;
+			expect(record?.git_base_head).toBe(head);
+			expect(record?.lifecycle).toBe("active");
+		});
+		test(`${label}: an unborn HEAD gets only its confirmed empty root commit and in-scope dirt is claimed`, async () => {
+			const root = scopedFixture("unborn", taskId, declared);
+			const result = await enroll(root, "accept");
+			expect(result.error).toBe("");
+			expect(result.prompts).toHaveLength(1);
+			expect(result.prompts[0]).toMatch(/empty initial commit/i);
+			expect(result.prompts[0]).toMatch(/without a commit/i);
+			expect(git(root, "rev-list", "--count", "HEAD")).toBe("1");
+			expect(git(root, "ls-tree", "-r", "HEAD")).toBe("");
+			const record = readTaskRecordRaw(root, taskId).record as Record<string, unknown> | undefined;
+			expect(record?.git_base_head).toBe(git(root, "rev-parse", "HEAD"));
+			expect(record?.lifecycle).toBe("active");
+			expect(readFileSync(join(root, "other/staged.txt"), "utf8")).toBe("staged 2\n");
+		});
+	}
 	for (const decision of ["decline", "cancel"] as const) test(`${decision} after the precondition commit names the commit that remains and a retry adds none`, async () => {
 		const root = scopedFixture();
 		const result = await enroll(root, decision);

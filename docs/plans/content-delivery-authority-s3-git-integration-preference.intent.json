@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "content-delivery-authority-s3-git-integration-preference",
-  "owner": "user",
   "goal": "Add the Git integration manual|auto preference, default manual, so the runtime writes no commit to the user's branch unless auto is declared, and auto adds a settle commit of exactly the settled scoped paths, superseding ADR 0023, under S3 of docs/specs/content-delivery-authority.spec.md.",
   "acceptance": [
     {
@@ -22,23 +21,36 @@
     "docs/plans/content-delivery-authority-s3-git-integration-preference.intent.json",
     "docs/reference/immune-brain-config.md",
     "docs/specs/content-delivery-authority.spec.md",
+    "package.json",
+    "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
     "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
     "plugins/immune-brain/BASELINE.md",
     "plugins/immune-brain/dist/BASELINE.md",
     "plugins/immune-brain/dist/claude/mcp-server.mjs",
     "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
     "plugins/immune-brain/dist/imm-run.md",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
     "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts",
     "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts",
     "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/commands/kernel.ts",
     "plugins/immune-brain/runtime/git_integration_preference.ts",
     "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts",
     "plugins/immune-brain/skills/BASELINE.md",
+    "tests/claude-host-authority.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
     "tests/enrollment-git-base.test.ts",
     "tests/git-integration-preference.test.ts",
+    "tests/host-neutral-assurance-coordinator.test.ts",
+    "tests/kernel-intent-authoring.test.ts",
+    "tests/kernel-migrate.test.ts",
     "tests/kernel-storage-layout-migration.test.ts",
-    "tests/workflow-autocommit.test.ts"
+    "tests/pi-canary-enroll-extension.test.ts",
+    "tests/workflow-autocommit.test.ts",
+    "tests/workflow-effect-boundaries.test.ts"
   ],
   "risk": "critical",
-  "revision": 1
+  "revision": 3,
+  "owner": "user"
 }

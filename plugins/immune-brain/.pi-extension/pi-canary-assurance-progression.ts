@@ -46,7 +46,8 @@ export type {
 	ReviewTimingProfile,
 } from "../runtime/assurance/coordinator";
 
-import { AssuranceCoordinator, type AssuranceCoordinatorPorts, type HostContext, type AssuranceSubmitReviewResult } from "../runtime/assurance/coordinator";
+import { AssuranceCoordinator, type AssuranceAdvanceResult, type AssuranceCoordinatorPorts, type ForegroundToolUpdate, type HostContext, type AssuranceSubmitReviewResult, type ReviewSubmissionOptions } from "../runtime/assurance/coordinator";
+import { withSettleCommit } from "../runtime/assurance/workflow_autocommit";
 import type { AssuranceHostPort, HostReviewReservation, ReviewRequest } from "../runtime/assurance/host_port";
 import { submitMediatedReview, type ReviewObservation } from "../runtime/assurance/review_mediation";
 import { reservedAgentParams, promptDigest } from "./pi-canary-native-review";
@@ -139,6 +140,15 @@ export class AssuranceProgression extends AssuranceCoordinator {
 		(ports as AssuranceCoordinatorPorts).host = host;
 		super(ports as AssuranceCoordinatorPorts, ports.authorityOverrides);
 		this.piReviewHost = host;
+	}
+
+	/** Under `Git integration: auto` a settlement reached here also carries its settle commit (ADR 0024). */
+	override async advance(taskId: string, ctx: HostContext, signal?: AbortSignal, onUpdate?: (update: ForegroundToolUpdate) => void): Promise<AssuranceAdvanceResult> {
+		return withSettleCommit(ctx.cwd, taskId, await super.advance(taskId, ctx, signal, onUpdate), signal);
+	}
+
+	override async submitReview(taskId: string, ctx: HostContext, verdictInput: unknown, options?: ReviewSubmissionOptions): Promise<AssuranceSubmitReviewResult> {
+		return withSettleCommit(ctx.cwd, taskId, await super.submitReview(taskId, ctx, verdictInput, options));
 	}
 
 	/** ADR 0017: verdict-source resolution happens here, before the shared submit path. */

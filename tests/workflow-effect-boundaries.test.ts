@@ -203,42 +203,47 @@ describe("S2 exact effects and outbound research", () => {
 		expect(BASELINE).not.toContain("absolute bash sandbox");
 	});
 
-	test("the precondition commit is the one runtime commit without a separate grant, and it grants nothing else", () => {
+	test("the Git integration preference decides runtime commits, and they grant nothing else (ADR 0024)", () => {
 		const contract = flat(BASELINE);
 		for (const fragment of [
-			"A precondition commit is the one commit the runtime makes without a separate grant",
-			"When an `imm-run` precondition would fail only because paths are uncommitted, the runtime commits that precondition's committable set, an explicit path list, silently and continues",
-			"It runs Git hooks normally and grants no push, publication, history rewrite, or commit of any other path",
-			"A model never makes this commit itself and never asks the user to make it",
+			"The repository's `Git integration` preference decides whether the runtime writes commits on its own (ADR 0024)",
+			"`manual`, the default, writes none outside batches: Enrollment stages its TaskIntent and Spec, and migration leaves its diff for the user to commit however they prefer",
+			"`auto` keeps the precondition commits and commits each task's settled scoped paths when it settles `done`",
+			"Either way the runtime runs Git hooks normally and grants no push, publication, history rewrite, or commit of any other path",
+			"a model never makes these commits itself or asks the user to make one",
 			// Host Confirmation Boundary
-			"the Host commits the Enrollment committable set when an untracked TaskIntent would otherwise fail it",
-			"The set is the task's own TaskIntent and the Spec its binding names",
+			"Under `Git integration: manual` (the default) it stages them and makes no commit; under `auto` it commits them, and the native confirmation binds the HEAD that results",
+			"for the Enrollment set: the task's own TaskIntent and the Spec its binding names",
 			"In-scope changes that already exist are not committed: the Enrollment gate lists them and only the listed paths become task work on confirmation",
-			"The commit is silent, needs no separate confirmation, and the native confirmation binds the HEAD that results",
-			"When no precondition fails, no commit is made",
+			"When no precondition fails, nothing is staged or committed",
 			"Dirty paths outside the set are left as they are and do not block Enrollment",
-			"With an unborn HEAD the empty root commit comes first and this commit follows it",
+			"With an unborn HEAD the empty root commit comes first in both modes; `auto` commits the scope after it, and `manual` claims the in-scope staged and untracked changes as task work instead",
 			"A commit Git refuses fails Enrollment with Git's message and is never retried with hooks bypassed",
-			"if Enrollment is declined, cancelled or fails afterwards, report the remaining commit",
+			"if Enrollment is declined, cancelled or fails afterwards, report the commit or staged paths that remain",
 		]) {
 			expect(contract).toContain(fragment);
 		}
-		expect(contract.indexOf("the Host commits the Enrollment committable set")).toBeGreaterThan(contract.indexOf("### Host Confirmation Boundary"));
-		expect(contract.indexOf("the Host commits the Enrollment committable set")).toBeLessThan(contract.indexOf("## Parallel Read-Only Dispatch"));
+		expect(contract).not.toContain("A precondition commit is the one commit the runtime makes without a separate grant");
+		expect(contract).not.toContain("The commit is silent");
+		const enrollmentRule = contract.indexOf("the Host satisfies the precondition an untracked TaskIntent would otherwise fail");
+		expect(enrollmentRule).toBeGreaterThan(contract.indexOf("### Host Confirmation Boundary"));
+		expect(enrollmentRule).toBeLessThan(contract.indexOf("## Parallel Read-Only Dispatch"));
 		expect(flat(LOOP)).toContain(
-			"Staging grants no commit or push authority. The runtime commits an Enrollment precondition's committable set itself; never commit those paths by hand and never ask the user to",
+			"Staging grants no commit or push authority. The runtime satisfies an Enrollment precondition itself, staging or, under `Git integration: auto`, committing its set; never commit those paths by hand and never ask the user to",
 		);
 
-		const adr = flat(read("docs/adr/0023-silent-precondition-commit.md"));
+		const superseded = flat(read("docs/adr/0023-silent-precondition-commit.md"));
+		expect(superseded).toContain("status: superseded");
+		expect(superseded).toContain("superseded_by: docs/adr/0024-git-integration-preference.md");
+		const adr = flat(read("docs/adr/0024-git-integration-preference.md"));
 		for (const fragment of [
 			"status: accepted",
-			"It replaces the fail-closed outcome of the TaskIntent `enrollment-dirty-scope-fail-closed`",
-			"A commit is made only when a precondition would otherwise fail",
-			"The commit precedes the binding",
-			"`--no-verify`, `--amend`, `-a`, `git add -A` and `git add .` are never used",
-			"The Kernel refusal stays",
-			"In-scope work is claimed, not committed",
-			"no push, publication, history rewrite, or commit of a path outside the committable set",
+			"It supersedes [ADR 0023](0023-silent-precondition-commit.md)",
+			"Absent means `manual`",
+			"`manual` (the default) writes no runtime commit outside batches",
+			"`auto` keeps ADR 0023's commits and adds a settle commit",
+			"both Hosts commit exactly its settled scoped paths, and nothing else",
+			"the confirmed empty root commit for an unborn HEAD (ADR 0019)",
 		]) {
 			expect(adr).toContain(fragment);
 		}

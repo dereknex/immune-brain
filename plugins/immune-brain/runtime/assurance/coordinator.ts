@@ -6,6 +6,7 @@
 // structured verdict. No lifecycle work survives a Tool call except the
 // evidence reservation.
 
+import { readGitIntegrationPreference, type GitIntegrationMode, type GitIntegrationPreference } from "../git_integration_preference";
 import { createHash, randomUUID } from "node:crypto";
 import type { FindingEvidence, ReviewAdvisoryFindingV1, TaskFinding } from "../kernel/types";
 import { anchorForEvidence } from "../kernel/refutation";
@@ -367,16 +368,21 @@ export interface AssuranceRecovery {
 }
 
 export interface StatusProjectionWarning {
-	code: "unstaged_scope_paths" | "out_of_scope_paths" | PluginSourceSkewWarning["code"];
+	code: "unstaged_scope_paths" | "out_of_scope_paths" | "invalid_git_integration" | PluginSourceSkewWarning["code"];
 	paths: string[];
 	message: string;
 }
-export type StatusProjectionResult = AssuranceProjectionResult & { warnings?: StatusProjectionWarning[] };
+export type StatusProjectionResult = AssuranceProjectionResult & {
+	/** The resolved `Git integration` preference (ADR 0024); set by the status read only. */
+	git_integration?: { mode: GitIntegrationMode; source: GitIntegrationPreference["source"] };
+	warnings?: StatusProjectionWarning[];
+};
 /**
  * The read-only status projection both Hosts return from their status Tool.
  * Unstaged or untracked in-scope paths, out-of-scope staged or dirty paths, and
  * a loaded plugin build that differs
- * from this workspace's own plugin source, come back as warnings beside the
+ * from this workspace's own plugin source, and an invalid `Git integration`
+ * value, come back as warnings beside the
  * projection instead of replacing it. Every path that freezes a snapshot or
  * binds authority keeps projecting through the refusing delivery identity.
  */
@@ -403,7 +409,10 @@ export async function projectTaskStatus(root: string, taskId: string, loadedFrom
 	// Reported beside errors too: a stale loaded build is the likely cause of one.
 	const skew = pluginSourceSkewWarning(root, loadedFrom);
 	if (skew) warnings.push(skew);
-	return warnings.length === 0 ? result : { ...result, warnings };
+	const preference = readGitIntegrationPreference(root);
+	if (preference.diagnostic) warnings.push({ code: "invalid_git_integration", paths: preference.source ? [preference.source] : [], message: preference.diagnostic });
+	const git_integration = { mode: preference.mode, source: preference.source };
+	return warnings.length === 0 ? { ...result, git_integration } : { ...result, git_integration, warnings };
 }
 
 /** Observation only; fresh Kernel facts remain the sole owner of the obligation. */

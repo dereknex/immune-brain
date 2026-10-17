@@ -1,0 +1,269 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "content-delivery-authority-s3-git-integration-preference",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "content-delivery-authority-s3-git-integration-preference",
+    "goal": "Add the Git integration manual|auto preference, default manual, so the runtime writes no commit to the user's branch unless auto is declared, and auto adds a settle commit of exactly the settled scoped paths, superseding ADR 0023, under S3 of docs/specs/content-delivery-authority.spec.md.",
+    "acceptance": [
+      {
+        "id": "S3-AC1",
+        "assertion": "Sources U2, E5, T3; meet S3, SCN-4 and D8 in docs/specs/content-delivery-authority.spec.md: with no directive or Git integration: manual, Enrollment stages but does not commit its TaskIntent and Spec, unborn-HEAD in-scope dirt is claimed without a commit, and layout migration leaves its diff in the working tree; with auto the current precondition commits remain and settling done commits exactly the settled scoped paths and nothing else; an invalid value behaves as manual with a visible diagnostic; status reports the resolved mode; the confirmed empty root commit is unchanged in both modes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/git-integration-preference.test.ts\",\n      \"tests/enrollment-git-base.test.ts\",\n      \"tests/kernel-storage-layout-migration.test.ts\",\n      \"tests/workflow-autocommit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S3-AC2",
+        "assertion": "Sources U1, U2; meet D8 in docs/specs/content-delivery-authority.spec.md: ADR 0024 supersedes ADR 0023, every BASELINE.md copy and the configuration reference describe the preference instead of silent precondition commits, and packaged mirrors stay in sync.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dist-docs-sync-contract.test.ts\",\n      \"tests/git-integration-preference.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/content-delivery-authority-git-integration-preference.md",
+      "docs/adr/0023-silent-precondition-commit.md",
+      "docs/adr/0024-git-integration-preference.md",
+      "docs/plans/content-delivery-authority-s3-git-integration-preference.intent.json",
+      "docs/reference/immune-brain-config.md",
+      "docs/specs/content-delivery-authority.spec.md",
+      "package.json",
+      "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/BASELINE.md",
+      "plugins/immune-brain/dist/BASELINE.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts",
+      "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/commands/kernel.ts",
+      "plugins/immune-brain/runtime/git_integration_preference.ts",
+      "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts",
+      "plugins/immune-brain/skills/BASELINE.md",
+      "tests/claude-host-authority.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/enrollment-git-base.test.ts",
+      "tests/git-integration-preference.test.ts",
+      "tests/host-neutral-assurance-coordinator.test.ts",
+      "tests/kernel-intent-authoring.test.ts",
+      "tests/kernel-migrate.test.ts",
+      "tests/kernel-storage-layout-migration.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/workflow-autocommit.test.ts",
+      "tests/workflow-effect-boundaries.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 3,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/content-delivery-authority-s3-git-integration-preference.intent.json",
+    "content_hash": "sha256:7c5fd38f8fdaea94c5be4f8ab3209c82271b885c0d00ba31fb1a1762bb906d1f"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:96947e2df81d009504fc6a06729ea42a300089e5a7291a3ebed874b779a0ed18",
+  "git_base_head": "21cbcf4aa4f3101f3593c774d25b6385643246f8",
+  "attestations": [
+    {
+      "id": "approval-qa-cbd0f399",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:ed5dbcf30bcddfff85295501e27828838ccc537aeb5ba8b19c293a81e6a703eb",
+      "diff_hash": "sha256:ddb60f3be42744421be32c381605a6a96191462cb316a16911c7d6f54f1562f1",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:fb5490d4440e37fa9b03aff25e3b337cd40c5acb4149400933af3679ad8ab4b2",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S3-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:fb5490d4440e37fa9b03aff25e3b337cd40c5acb4149400933af3679ad8ab4b2"
+        },
+        {
+          "acceptance_id": "S3-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:fb5490d4440e37fa9b03aff25e3b337cd40c5acb4149400933af3679ad8ab4b2"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-54531afe",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:7c5fd38f8fdaea94c5be4f8ab3209c82271b885c0d00ba31fb1a1762bb906d1f",
+      "diff_hash": "sha256:ce13131399dadd2a6fcffd87cdb47f648868e3463df1c6b1e85025c9d22656af",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:75534efc13add5c0626c06fa0224483dad04868b27bca3a3f0f52d20e094ceae",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S3-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:75534efc13add5c0626c06fa0224483dad04868b27bca3a3f0f52d20e094ceae"
+        },
+        {
+          "acceptance_id": "S3-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:75534efc13add5c0626c06fa0224483dad04868b27bca3a3f0f52d20e094ceae"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-a15f3213",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:7c5fd38f8fdaea94c5be4f8ab3209c82271b885c0d00ba31fb1a1762bb906d1f",
+      "diff_hash": "sha256:ce13131399dadd2a6fcffd87cdb47f648868e3463df1c6b1e85025c9d22656af",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (single parent 21cbcf4, tree 40dbd29). The Git integration preference reader, manual staging and unborn claiming on Enrollment, the manual migration diff left in place, the auto settle commit gated on the settled diff_hash, the status git_integration field and invalid_git_integration warning, ADR 0024 superseding ADR 0023, and the byte-identical BASELINE and config mirrors all meet S3-AC1 and S3-AC2.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "21cbcf4aa4f3101f3593c774d25b6385643246f8",
+        "review_commit": "a0d8ddaa29c3176da9553ba39c3f0c99c0c46428",
+        "review_tree": "40dbd292b08cf745340f8742abc841bc367bf69c",
+        "manifest_digest": "sha256:eaa385c6b3da2269e340fcc8cc4907c2927d848c5adaf631ef7127ce3306cf09"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-710b15d57cff-1-review-1",
+          "acceptance_id": "S3-AC1",
+          "summary": "The auto settle commit is tested only through commitSettledDelivery and withSettleCommit, using a synthetic {state:'completed'} result and an attestation diff_hash seeded from taskStatusIdentity. No test settles a task done through either Host's real advance or submitReview path, so a break in the Host wiring would not be caught.",
+          "anchor": "sha256:3bddedee3c30e9ff34607b5fdf3bef2937409438977708924a23735d14724673",
+          "evidence": {
+            "trigger": "Under Git integration: auto, a regression that dropped withSettleCommit from ClaudeRuntime.advance/submitReview or AssuranceProgression.advance/submitReview → the real completion path makes no settle commit, yet tests/workflow-autocommit.test.ts still passes",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.advance",
+              "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts:AssuranceProgression.advance",
+              "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts:withSettleCommit",
+              "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts:commitSettledDelivery"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S3-AC1"
+            }
+          }
+        },
+        {
+          "id": "review-710b15d57cff-2-review-2",
+          "acceptance_id": "S3-AC1",
+          "summary": "Manual-mode stagePaths runs a plain 'git add' on the Enrollment set before the gate. If the bound Spec path is gitignored, Git refuses the add and the error is not caught, so Enrollment fails with a raw Git error rather than a stated precondition failure.",
+          "anchor": "sha256:e0dbc303f94c5a515280660180fb22003f48540014ae5a5f4bb0dbfcb50ea54e",
+          "evidence": {
+            "trigger": "Git integration: manual, an untracked TaskIntent, and a bound Spec path matched by .gitignore → git add exits non-zero and Enrollment throws before the gate",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.enroll",
+              "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts:commitEnrollmentPreconditions",
+              "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts:stagePaths"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S3-AC1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:575d9e5a4a4d9e274f707ea601ba8a7e09f168972bca055fec4e0e6e24082840"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:content-delivery-authority-s3-git-integration-preference:2026-10-16T10:01:20.075Z",
+      "at": "2026-10-16T10:01:20.075Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:c91046fcf42dba8e0d9e70500e14fe32d0b32bdf0c659bb9a4f2cc2e417b2f5c",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-b9e34146bc5c90b6",
+        "issued_at": "2026-10-16T10:02:03.791Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:content-delivery-authority-s3-git-integration-preference:2026-10-16T10:05:09.638Z",
+      "at": "2026-10-16T10:05:09.638Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/content-delivery-authority-s3-git-integration-preference.intent.json"
+    },
+    {
+      "id": "record_approval:content-delivery-authority-s3-git-integration-preference:2026-10-16T10:07:18.373Z",
+      "at": "2026-10-16T10:07:18.373Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-cbd0f399\naction_v2_sha256:dfc6071a003b1381f07144f864fb2e6eab25fe7f7f64c8b4c4de9452ae0632ac",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-16T10:07:18.373Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:content-delivery-authority-s3-git-integration-preference:2026-10-16T12:30:58.162Z",
+      "at": "2026-10-16T12:30:58.162Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\naction_v2_sha256:699ecf2d7d121aa1c1a0c48f84a287851fc1b858ea2b5575e5b9485ff44245de",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-a9ad88d0c9d03455",
+        "issued_at": "2026-10-16T12:31:48.154Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:content-delivery-authority-s3-git-integration-preference:2026-10-16T12:48:20.849Z",
+      "at": "2026-10-16T12:48:20.849Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/content-delivery-authority-s3-git-integration-preference.intent.json"
+    },
+    {
+      "id": "record_approval:content-delivery-authority-s3-git-integration-preference:2026-10-16T12:50:30.197Z",
+      "at": "2026-10-16T12:50:30.197Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-54531afe\naction_v2_sha256:7ce337565d2781f1536d56fc6202e145a85bc51fb7e1f479a10f9652ff2ffff1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-16T12:50:30.197Z"
+      }
+    },
+    {
+      "id": "record_approval:content-delivery-authority-s3-git-integration-preference:2026-10-16T12:53:01.597Z",
+      "at": "2026-10-16T12:53:01.597Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-a15f3213\naction_v2_sha256:9a48240d888fbba13b6f54a42320efeef1e4743f456c702c3a3550872cb79866",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-16T12:53:01.597Z"
+      }
+    },
+    {
+      "id": "complete:content-delivery-authority-s3-git-integration-preference:2026-10-16T12:53:03.984Z",
+      "at": "2026-10-16T12:53:03.984Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:42be2280436cdf7ccac11b44a02072b7bf0424cd4a6da7ae0894ed30974c9e03"
+    }
+  ]
+}

@@ -120,6 +120,32 @@ The reader fails closed:
 the declaration does not re-grade a task that is already enrolled. ADR 0023
 records the decision.
 
+## Git Integration
+
+One line in the tracked repository root `AGENTS.md`, else in the tracked root
+`CLAUDE.md`, decides whether the runtime writes commits to your branch on its
+own:
+
+```markdown
+- Git integration: manual
+```
+
+- `manual` is the default, used when the line is absent. The runtime writes no
+  commit outside batches. Enrollment stages its TaskIntent and Spec instead of
+  committing them; with an unborn HEAD, in-scope changes are claimed as task
+  work; storage-layout migration leaves its diff in the working tree and lists
+  the paths. A settled task is delivered without any commit: commit however you
+  prefer.
+- `auto` keeps the precondition commits of ADR 0023 and, when a task settles
+  `done`, commits exactly its settled scoped paths as
+  `imm(<task-id>): settled delivery`.
+- Any other value behaves as `manual`. The status Tool reports it as an
+  `invalid_git_integration` warning naming the file and the value.
+- The status Tool reports the resolved preference as `git_integration`.
+- The confirmed empty root commit for an unborn HEAD is made in both modes.
+
+ADR 0024 records the decision.
+
 ## Other Preferences
 
 - Set reply-language preferences as ordinary `AGENTS.md` communication

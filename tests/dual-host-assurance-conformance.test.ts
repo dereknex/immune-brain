@@ -3128,6 +3128,9 @@ describe("status stays readable with unstaged scope paths on both Hosts", () => 
 			expect(piStatus.warnings).toEqual([warning]);
 			expect(piStatus.task_state).toMatchObject({ lifecycle: "active", artifact_state: "active", next_obligation: "submit_assurance" });
 			expect(piStatus.result).toContain(warning.message);
+			// Both report the resolved Git integration preference (ADR 0024); the fixture declares none.
+			expect(claudeStatus.git_integration).toEqual({ mode: "manual", source: null });
+			expect(piStatus.git_integration).toEqual({ mode: "manual", source: null });
 
 			const refused = /task scope contains unstaged or untracked changes: src\/impl\.ts/;
 			// The MCP wire needs a negotiated Host version for a mutation, so the

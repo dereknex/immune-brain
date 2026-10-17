@@ -442,7 +442,7 @@ async function executeForegroundEnrollment(
 		}
 
 		const gitBase = await inspectEnrollmentGitBase(root);
-		const gitNotice = await enrollmentGitBaseNotice(gitBase);
+		const gitNotice = await enrollmentGitBaseNotice(gitBase, root);
 		const acceptanceDetails = taskIntent.intent.acceptance.length === 0
 			? "(none)"
 			: taskIntent.intent.acceptance
@@ -517,13 +517,16 @@ async function executeForegroundEnrollment(
 		signal.throwIfAborted();
 
 		preparation = await initializeEnrollmentGitBase(root, { task_id: taskId, now }, preparation, gitBase, signal);
+		let claimedScopePaths: string[] = [];
 		if (gitBase.state === "unborn") {
 			gitBaseNote += `; empty initial commit ${preparation.git_base_head} remains`;
-			// The scope could not be compared with an unborn HEAD; commit it now
-			// that a base exists and bind the HEAD that results.
+			// The scope could not be compared with an unborn HEAD. Under Git
+			// integration: auto it is committed now that a base exists; under
+			// manual its in-scope changes are claimed, as the gate's notice said.
 			const late = await commitUnbornEnrollmentPreconditions(root, { task_id: taskId, now }, preparation, signal);
 			gitBaseNote += preconditionCommitNote(late.result);
 			preparation = late.preparation;
+			claimedScopePaths = late.claimed_scope_paths;
 		}
 		if (!preparation.intent) throw new Error("Enrollment requires a readable TaskIntent");
 		signal.throwIfAborted();
@@ -548,7 +551,7 @@ async function executeForegroundEnrollment(
 			// zero writes, and once it accepts, commit is no longer cancellable.
 			const outcome = await enrollTask(root, registry, {
 				binding,
-				disclosed_scope_paths: disclosure.paths,
+				disclosed_scope_paths: [...disclosure.paths, ...claimedScopePaths],
 				now,
 				checkpoint: () => {
 					if (signal.aborted) return false;

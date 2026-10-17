@@ -44,6 +44,7 @@ import {
 } from "../kernel/enrollment_authority";
 import { enrollmentScopeDisclosure, enrollTask } from "../kernel/enrollment";
 import { reconcileKernelAuthority, repairKernelAuthority } from "../kernel/storage";
+import { withSettleCommit } from "../assurance/workflow_autocommit";
 import { commitEnrollmentPreconditions, commitUnbornEnrollmentPreconditions, inspectEnrollmentGitBase, enrollmentGitBaseNotice, initializeEnrollmentGitBase, preconditionCommitNote } from "../assurance/enrollment_git_base";
 import { preparePiCanary, revalidatePiCanary } from "../kernel/pi_canary_prepare";
 import { runDeterministicQa } from "../assurance/qa";
@@ -422,12 +423,13 @@ export class ClaudeRuntime {
 			// In-scope changes that already exist are shown in the gate and only the
 			// ones shown are claimed as task work on confirmation.
 			const disclosure = enrollmentScopeDisclosure(this.cwd, taskId);
+			let claimedScopePaths: string[] = [];
 			const gate = await this.gate("enroll", { ...meta, taskId }, {
 				risk: intent.intent.risk,
 				intentRevision: preparation.intent?.revision,
 				intentContentHash: preparation.intent?.content_hash,
 				bindingDigest: preparation.digest,
-				gitBaseNotice: [enrollmentGitBaseNotice(gitBase), disclosure.notice].filter(Boolean).join("\n") || undefined,
+				gitBaseNotice: [enrollmentGitBaseNotice(gitBase, this.cwd), disclosure.notice].filter(Boolean).join("\n") || undefined,
 			});
 			const { unchanged } = await revalidatePiCanary(this.cwd, { task_id: taskId, now }, preparation);
 			if (!unchanged) throw new NativeAuthorityError("workspace_changed", "workspace changed after native confirmation");
@@ -441,6 +443,7 @@ export class ClaudeRuntime {
 				const late = commitUnbornEnrollmentPreconditions(this.cwd, { task_id: taskId, now }, preparation, meta.signal);
 				gitBaseNote += preconditionCommitNote(late.result);
 				preparation = late.preparation;
+				claimedScopePaths = late.claimed_scope_paths;
 			}
 			if (!preparation.intent) throw new Error("Enrollment requires a readable TaskIntent");
 			const nonce = enrollmentNonce();
@@ -454,7 +457,7 @@ export class ClaudeRuntime {
 				confirmation_ref: gate.confirmation_ref,
 				nonce,
 			};
-			return await enrollTask(this.cwd, this.enrollmentRegistry, { binding, now, disclosed_scope_paths: disclosure.paths });
+			return await enrollTask(this.cwd, this.enrollmentRegistry, { binding, now, disclosed_scope_paths: [...disclosure.paths, ...claimedScopePaths] });
 		} catch (error) {
 			if (!gitBaseNote) throw error;
 			// A native-gate error keeps its type and code; only the text grows.
@@ -469,7 +472,7 @@ export class ClaudeRuntime {
 	async advance(taskId: string, signal?: AbortSignal, meta?: ToolMeta) {
 		return this.closeOutBatchChild(
 			taskId,
-			await this.withTerminalTracker(taskId, await this.coordinator.advance(taskId, { cwd: this.cwd }, signal)),
+			withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(taskId, await this.coordinator.advance(taskId, { cwd: this.cwd }, signal)), signal),
 			meta,
 		);
 	}
@@ -477,10 +480,10 @@ export class ClaudeRuntime {
 	async submitReview(taskId: string, verdictInput: unknown, meta?: ToolMeta) {
 		return this.closeOutBatchChild(
 			taskId,
-			await this.withTerminalTracker(
+			withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(
 				taskId,
 				await submitClaudeReview(this.host, this.coordinator, { cwd: this.cwd }, taskId, verdictInput),
-			),
+			), meta?.signal),
 			meta,
 		);
 	}

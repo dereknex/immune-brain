@@ -114,8 +114,9 @@ from the [batch contract](imm-run-batch.md#unattended-batch-opt-in).
    to the user. If a file mixes pre-existing user changes with task changes and
    the task-owned hunks cannot be isolated reliably, stop with that ownership
    conflict instead of staging the whole file. Staging grants no commit or push
-   authority. The runtime commits an Enrollment precondition's committable set
-   itself; never commit those paths by hand and never ask the user to. Complete the [Executor Delivery Evidence](role-prompts/executor.md#delivery-evidence)
+   authority. The runtime satisfies an Enrollment precondition itself, staging
+   or, under `Git integration: auto`, committing its set; never commit those
+   paths by hand and never ask the user to. Complete the [Executor Delivery Evidence](role-prompts/executor.md#delivery-evidence)
    table for rework only; a first delivery needs no table.
    Executor checks are diagnostic evidence, not a QA or Review approval.
 2. Call `advance_assurance` in the foreground and consume its direct terminal

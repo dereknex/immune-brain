@@ -6303,6 +6303,45 @@ var init_batch_state = __esm(() => {
   ]);
 });
 
+// plugins/immune-brain/runtime/git_integration_preference.ts
+import { spawnSync as spawnSync7 } from "node:child_process";
+import { readFileSync as readFileSync9 } from "node:fs";
+import { join as join7 } from "node:path";
+function tracked(root, path) {
+  return spawnSync7("git", ["ls-files", "--error-unmatch", "--", path], { cwd: root, stdio: "ignore" }).status === 0;
+}
+function readGitIntegrationPreference(root) {
+  for (const file of INSTRUCTION_FILES) {
+    if (!tracked(root, file))
+      continue;
+    let text;
+    try {
+      text = readFileSync9(join7(root, file), "utf8");
+    } catch {
+      continue;
+    }
+    for (const line of text.split(/\r?\n/)) {
+      const match = DIRECTIVE.exec(line);
+      if (!match)
+        continue;
+      const value = match[1].replace(/^`(.*)`$/, "$1").trim();
+      if (value === "manual" || value === "auto")
+        return { mode: value, source: file, diagnostic: null };
+      return {
+        mode: "manual",
+        source: file,
+        diagnostic: `${file} declares Git integration: ${JSON.stringify(value)}, which is neither manual nor auto; using manual`
+      };
+    }
+  }
+  return { mode: "manual", source: null, diagnostic: null };
+}
+var INSTRUCTION_FILES, DIRECTIVE;
+var init_git_integration_preference = __esm(() => {
+  INSTRUCTION_FILES = ["AGENTS.md", "CLAUDE.md"];
+  DIRECTIVE = /^\s*[-*]\s+Git integration:\s*(.*?)\s*$/i;
+});
+
 // plugins/immune-brain/runtime/verification_descriptor.ts
 import { isAbsolute as isAbsolute3 } from "node:path";
 function object(value, fields, label) {
@@ -6399,8 +6438,8 @@ var init_verification_descriptor = __esm(() => {
 // plugins/immune-brain/runtime/assurance/verification.ts
 import { createHash as createHash10, randomBytes } from "node:crypto";
 import { execFileSync as execFileSync3, spawn as spawn2 } from "node:child_process";
-import { accessSync, constants as constants4, readFileSync as readFileSync9, readdirSync as readdirSync3, realpathSync as realpathSync7, statSync as statSync3 } from "node:fs";
-import { delimiter, isAbsolute as isAbsolute4, join as join7, relative as relative3, resolve as resolve8, sep as sep4 } from "node:path";
+import { accessSync, constants as constants4, readFileSync as readFileSync10, readdirSync as readdirSync3, realpathSync as realpathSync7, statSync as statSync3 } from "node:fs";
+import { delimiter, isAbsolute as isAbsolute4, join as join8, relative as relative3, resolve as resolve8, sep as sep4 } from "node:path";
 function insideVerificationRoot(root, candidate) {
   const realRoot = realpathSync7(root);
   const real = realpathSync7(candidate);
@@ -6421,7 +6460,7 @@ function verificationEnvironment(path, processToken) {
 }
 function toolPath(name, path) {
   for (const dir of path.split(delimiter).filter(isAbsolute4)) {
-    const candidate = join7(dir, name);
+    const candidate = join8(dir, name);
     try {
       accessSync(candidate, constants4.X_OK);
       if (statSync3(candidate).isFile())
@@ -6437,7 +6476,7 @@ function identity(path) {
     const stat = statSync3(real);
     if (!stat.isFile())
       throw new Error("not a file");
-    return { path: real, invocation_path: path, dev: stat.dev, ino: stat.ino, content_hash: `sha256:${createHash10("sha256").update(readFileSync9(real)).digest("hex")}` };
+    return { path: real, invocation_path: path, dev: stat.dev, ino: stat.ino, content_hash: `sha256:${createHash10("sha256").update(readFileSync10(real)).digest("hex")}` };
   } catch {
     throw new VerificationDescriptorError("verification executable is unavailable or not executable");
   }
@@ -6496,7 +6535,7 @@ async function runFixedVerification(root, command, frozen, options) {
     };
     const procEnviron = (pid) => {
       try {
-        return readFileSync9(join7(procRoot, String(pid), "environ"), "utf8");
+        return readFileSync10(join8(procRoot, String(pid), "environ"), "utf8");
       } catch {
         return null;
       }
@@ -6504,7 +6543,7 @@ async function runFixedVerification(root, command, frozen, options) {
     const procSession = (entry) => {
       let stat;
       try {
-        stat = readFileSync9(join7(procRoot, entry, "stat"), "utf8");
+        stat = readFileSync10(join8(procRoot, entry, "stat"), "utf8");
       } catch (error) {
         if (error.code === "ENOENT")
           return null;
@@ -7690,12 +7729,12 @@ import {
   rmSync as rmSync5,
   writeFileSync as writeFileSync6,
   statSync as statSync4,
-  readFileSync as readFileSync10,
+  readFileSync as readFileSync11,
   realpathSync as realpathSync8,
   chmodSync as chmodSync2
 } from "node:fs";
 import { tmpdir as tmpdir2 } from "node:os";
-import { join as join8 } from "node:path";
+import { join as join9 } from "node:path";
 function bundleDigest(bundle) {
   return `sha256:${createHash12("sha256").update(JSON.stringify(bundle)).digest("hex")}`;
 }
@@ -7931,9 +7970,9 @@ function publishReviewRevision(root, snapshot, diffHash, taskId) {
     throw new Error("review revision base has invalid identity");
   if (!REVISION_DIFF_HASH.test(diffHash))
     throw new Error("review revision diff hash has invalid identity");
-  const indexDirectory = mkdtempSync2(join8(tmpdir2(), "imm-review-index-"));
+  const indexDirectory = mkdtempSync2(join9(tmpdir2(), "imm-review-index-"));
   try {
-    const indexFile = join8(indexDirectory, "index");
+    const indexFile = join9(indexDirectory, "index");
     const env = { GIT_INDEX_FILE: indexFile };
     gitEvidence(root, ["read-tree", snapshot.base_tree], env);
     for (const [path, entry] of Object.entries(snapshot.changed_paths)) {
@@ -8027,11 +8066,11 @@ function captureReviewManifest(root, input) {
   return manifest;
 }
 function writeNativeReviewEvidence(payload) {
-  const rawDirectory = mkdtempSync2(join8(tmpdir2(), "imm-canary-native-review-"));
+  const rawDirectory = mkdtempSync2(join9(tmpdir2(), "imm-canary-native-review-"));
   try {
     const directory = realpathSync8(rawDirectory);
     chmodSync2(directory, 493);
-    const path = join8(directory, "evidence.json");
+    const path = join9(directory, "evidence.json");
     writeFileSync6(path, JSON.stringify(payload), { encoding: "utf8", mode: 420, flag: "wx" });
     assertReviewArtifact(path);
     return {
@@ -8053,7 +8092,7 @@ function assertReviewArtifact(path) {
   }
   if (!stat.isFile() || stat.size === 0)
     throw new Error(`review evidence artifact is missing or empty: ${path}`);
-  const read = readFileSync10(targetPath, { encoding: "utf8" });
+  const read = readFileSync11(targetPath, { encoding: "utf8" });
   if (read.trim().length === 0)
     throw new Error(`review evidence artifact is empty: ${path}`);
 }
@@ -8079,7 +8118,7 @@ var init_review_evidence = __esm(() => {
 import { randomUUID as randomUUID4 } from "node:crypto";
 import { execFileSync as execFileSync5 } from "node:child_process";
 import { existsSync as existsSync5 } from "node:fs";
-import { join as join9, resolve as resolve9 } from "node:path";
+import { join as join10, resolve as resolve9 } from "node:path";
 function buildSnapshot(input) {
   return {
     contract: "assurance_kernel/assurance_snapshot/v2",
@@ -8242,7 +8281,7 @@ function stagePlanningArtifactTransition(root, record) {
     intentArchive,
     ...specActive ? [specActive, specActive.replace("docs/specs/", "docs/specs/archive/")] : []
   ];
-  const paths = candidates.filter((path) => existsSync5(join9(root, path)) || execFileSync5("git", ["ls-files", "--cached", "--", path], { cwd: root, encoding: "utf8" }).trim().length > 0);
+  const paths = candidates.filter((path) => existsSync5(join10(root, path)) || execFileSync5("git", ["ls-files", "--cached", "--", path], { cwd: root, encoding: "utf8" }).trim().length > 0);
   if (paths.length === 0)
     return;
   execFileSync5("git", ["add", "--", ...paths], {
@@ -8350,8 +8389,8 @@ var init_verdict_authority = __esm(() => {
 
 // plugins/immune-brain/runtime/role_prompt_bridge.ts
 import { createHash as createHash13 } from "node:crypto";
-import { existsSync as existsSync6, readFileSync as readFileSync11 } from "node:fs";
-import { join as join10, dirname as dirname6 } from "node:path";
+import { existsSync as existsSync6, readFileSync as readFileSync12 } from "node:fs";
+import { join as join11, dirname as dirname6 } from "node:path";
 import { fileURLToPath } from "node:url";
 function roleSpec(role) {
   const spec = INTERNAL_ROLE_PROMPTS[role];
@@ -8361,16 +8400,16 @@ function roleSpec(role) {
 }
 function rolePromptSearchDirs(moduleDir) {
   return [
-    join10(moduleDir, "..", "dist", "role-prompts"),
-    join10(moduleDir, "..", "role-prompts")
+    join11(moduleDir, "..", "dist", "role-prompts"),
+    join11(moduleDir, "..", "role-prompts")
   ];
 }
 function loadRolePrompt(role) {
   const spec = roleSpec(role);
   for (const dir of rolePromptSearchDirs(RUNTIME_DIR)) {
-    const path = join10(dir, spec.file);
+    const path = join11(dir, spec.file);
     if (existsSync6(path))
-      return readFileSync11(path, "utf8");
+      return readFileSync12(path, "utf8");
   }
   throw new Error(`internal role prompt is not packaged: ${role}`);
 }
@@ -8481,8 +8520,8 @@ var init_role_prompt_bridge = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/kernel/runtime_contracts.ts
-import { existsSync as existsSync7, readFileSync as readFileSync12 } from "node:fs";
-import { dirname as dirname7, join as join11, resolve as resolve10 } from "node:path";
+import { existsSync as existsSync7, readFileSync as readFileSync13 } from "node:fs";
+import { dirname as dirname7, join as join12, resolve as resolve10 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 function runningRuntimeSource() {
   try {
@@ -8493,15 +8532,15 @@ function runningRuntimeSource() {
 }
 function readRuntimeContracts(runtimeDir) {
   const candidates = [
-    join11(runtimeDir, RUNTIME_CONTRACTS_MANIFEST),
-    join11(runtimeDir, "kernel", RUNTIME_CONTRACTS_MANIFEST),
-    join11(runtimeDir, "runtime", "kernel", RUNTIME_CONTRACTS_MANIFEST),
-    join11(runtimeDir, "plugins", "immune-brain", "runtime", "kernel", RUNTIME_CONTRACTS_MANIFEST)
+    join12(runtimeDir, RUNTIME_CONTRACTS_MANIFEST),
+    join12(runtimeDir, "kernel", RUNTIME_CONTRACTS_MANIFEST),
+    join12(runtimeDir, "runtime", "kernel", RUNTIME_CONTRACTS_MANIFEST),
+    join12(runtimeDir, "plugins", "immune-brain", "runtime", "kernel", RUNTIME_CONTRACTS_MANIFEST)
   ];
   const path = candidates.find((candidate) => existsSync7(candidate));
   if (!path)
     return null;
-  const raw = JSON.parse(readFileSync12(path, "utf8"));
+  const raw = JSON.parse(readFileSync13(path, "utf8"));
   if (raw.contract !== "immune_brain/runtime_contracts/v1")
     throw new Error(`${path} is not an immune_brain/runtime_contracts/v1 manifest`);
   for (const key of KEYS) {
@@ -8530,12 +8569,12 @@ var init_runtime_contracts = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/plugin_source_skew.ts
-import { existsSync as existsSync8, readFileSync as readFileSync13, realpathSync as realpathSync9, statSync as statSync5 } from "node:fs";
-import { dirname as dirname8, join as join12 } from "node:path";
+import { existsSync as existsSync8, readFileSync as readFileSync14, realpathSync as realpathSync9, statSync as statSync5 } from "node:fs";
+import { dirname as dirname8, join as join13 } from "node:path";
 function pluginRootAbove(dir) {
   let current = dir;
   for (let level = 0;level < MAX_LEVELS; level++) {
-    if (existsSync8(join12(current, PLUGIN_MANIFEST)))
+    if (existsSync8(join13(current, PLUGIN_MANIFEST)))
       return current;
     const parent = dirname8(current);
     if (parent === current)
@@ -8545,17 +8584,17 @@ function pluginRootAbove(dir) {
   return null;
 }
 function sameBuild(a, b) {
-  const left = join12(a, BUILD_PROXY), right = join12(b, BUILD_PROXY);
+  const left = join13(a, BUILD_PROXY), right = join13(b, BUILD_PROXY);
   if (!existsSync8(left) || !existsSync8(right))
     return false;
   if (statSync5(left).size !== statSync5(right).size)
     return false;
-  return readFileSync13(left).equals(readFileSync13(right));
+  return readFileSync14(left).equals(readFileSync14(right));
 }
 function pluginSourceSkewWarning(root, loadedFrom = runningRuntimeSource()) {
   try {
-    const workspace = join12(root, WORKSPACE_PLUGIN_DIR);
-    if (!existsSync8(join12(workspace, PLUGIN_MANIFEST)))
+    const workspace = join13(root, WORKSPACE_PLUGIN_DIR);
+    if (!existsSync8(join13(workspace, PLUGIN_MANIFEST)))
       return null;
     const loaded = pluginRootAbove(loadedFrom);
     if (!loaded)
@@ -8575,17 +8614,17 @@ function pluginSourceSkewWarning(root, loadedFrom = runningRuntimeSource()) {
 var WORKSPACE_PLUGIN_DIR, PLUGIN_MANIFEST, BUILD_PROXY, MAX_LEVELS = 8;
 var init_plugin_source_skew = __esm(() => {
   init_runtime_contracts();
-  WORKSPACE_PLUGIN_DIR = join12("plugins", "immune-brain");
-  PLUGIN_MANIFEST = join12(".claude-plugin", "plugin.json");
-  BUILD_PROXY = join12("dist", "claude", "mcp-server.mjs");
+  WORKSPACE_PLUGIN_DIR = join13("plugins", "immune-brain");
+  PLUGIN_MANIFEST = join13(".claude-plugin", "plugin.json");
+  BUILD_PROXY = join13("dist", "claude", "mcp-server.mjs");
 });
 
 // plugins/immune-brain/runtime/unattended/lane_workspace.ts
-import { spawnSync as spawnSync7 } from "node:child_process";
+import { spawnSync as spawnSync8 } from "node:child_process";
 import { realpathSync as realpathSync10 } from "node:fs";
-import { basename, dirname as dirname9, isAbsolute as isAbsolute5, join as join13, relative as relative4, resolve as resolve11, sep as sep5 } from "node:path";
+import { basename, dirname as dirname9, isAbsolute as isAbsolute5, join as join14, relative as relative4, resolve as resolve11, sep as sep5 } from "node:path";
 function laneTaskOfWorkspace(root) {
-  const branch = spawnSync7("git", ["-C", root, "symbolic-ref", "--quiet", "--short", "HEAD"], {
+  const branch = spawnSync8("git", ["-C", root, "symbolic-ref", "--quiet", "--short", "HEAD"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"]
   });
@@ -8601,7 +8640,7 @@ function realpathOfNearest(path) {
   const suffix = [];
   for (;; ) {
     try {
-      return join13(realpathSync10(current), ...suffix.reverse());
+      return join14(realpathSync10(current), ...suffix.reverse());
     } catch {
       const parent = dirname9(current);
       if (parent === current)
@@ -8616,7 +8655,7 @@ function laneWriteRefusal(cwd, target) {
     return null;
   if (laneTaskOfWorkspace(cwd) === null)
     return null;
-  const top = spawnSync7("git", ["-C", cwd, "rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  const top = spawnSync8("git", ["-C", cwd, "rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
   if (top.status !== 0)
     return null;
   const laneRoot = realpathOfNearest((top.stdout ?? "").trim());
@@ -8763,7 +8802,11 @@ async function projectTaskStatus(root, taskId, loadedFrom) {
   const skew = pluginSourceSkewWarning(root, loadedFrom);
   if (skew)
     warnings.push(skew);
-  return warnings.length === 0 ? result : { ...result, warnings };
+  const preference = readGitIntegrationPreference(root);
+  if (preference.diagnostic)
+    warnings.push({ code: "invalid_git_integration", paths: preference.source ? [preference.source] : [], message: preference.diagnostic });
+  const git_integration = { mode: preference.mode, source: preference.source };
+  return warnings.length === 0 ? { ...result, git_integration } : { ...result, git_integration, warnings };
 }
 function deriveAssuranceRecovery(taskId, fresh, result, findings = []) {
   if (fresh.error || fresh.claim?.task_id !== taskId || fresh.projection.lifecycle !== "active")
@@ -9763,6 +9806,7 @@ function boundedAssuranceError(error) {
 }
 var TRACKER_PROJECTION_FAILURE, QA_STAGES, QA_OUTCOMES, QA_DRIFT_PATH_LIMIT = 64, QA_PREPARE_STDERR_TAIL_BYTES = 2048, QA_PREPARE_REPRODUCTION_NOTE = "a reproduction in the live worktree is not equivalent: this run used an isolated delivery with no worktree node_modules", QA_DRIFT_NOTE = "in-scope tracked content of the working directory differs from the frozen snapshot; see prepare_observation.drift_paths", QA_PREPARE_REASONS, QA_TAIL_CONTROL, QaPreparationError, QA_MIN_JOB_TIMEOUT_SECONDS, QA_MAX_JOB_TIMEOUT_SECONDS, QA_JOB_OVERHEAD_SECONDS, QA_JOB_TIMEOUT_SECONDS, QA_MAX_IDENTICAL_FAILURES = 2, REVIEW_TIMING_PROFILES, QUICK_REVIEW_MAX_ACCEPTANCE = 3, QUICK_REVIEW_MAX_FILES = 5, QUICK_REVIEW_MAX_BYTES, HEAVY_REVIEW_MIN_ACCEPTANCE = 9, HEAVY_REVIEW_MIN_BYTES, invocationRegistry;
 var init_coordinator = __esm(() => {
+  init_git_integration_preference();
   init_refutation();
   init_verification();
   init_verdict_authority();
@@ -9838,9 +9882,9 @@ var init_coordinator = __esm(() => {
 // plugins/immune-brain/runtime/assurance/delivery_workspace.ts
 import { execFileSync as execFileSync6 } from "node:child_process";
 import { createHash as createHash15 } from "node:crypto";
-import { chmodSync as chmodSync3, lstatSync as lstatSync10, mkdirSync as mkdirSync6, mkdtempSync as mkdtempSync3, readdirSync as readdirSync4, readFileSync as readFileSync14, readlinkSync as readlinkSync3, realpathSync as realpathSync11, rmSync as rmSync6 } from "node:fs";
+import { chmodSync as chmodSync3, lstatSync as lstatSync10, mkdirSync as mkdirSync6, mkdtempSync as mkdtempSync3, readdirSync as readdirSync4, readFileSync as readFileSync15, readlinkSync as readlinkSync3, realpathSync as realpathSync11, rmSync as rmSync6 } from "node:fs";
 import { tmpdir as tmpdir3 } from "node:os";
-import { dirname as dirname10, isAbsolute as isAbsolute6, join as join14, parse, relative as relative5, resolve as resolve12, sep as sep6 } from "node:path";
+import { dirname as dirname10, isAbsolute as isAbsolute6, join as join15, parse, relative as relative5, resolve as resolve12, sep as sep6 } from "node:path";
 function removeTaskOwnedTree(root) {
   const makeDirectoriesWritable = (path) => {
     let stat;
@@ -9855,7 +9899,7 @@ function removeTaskOwnedTree(root) {
       return;
     chmodSync3(path, stat.mode & 4095 | 448);
     for (const name of readdirSync4(path))
-      makeDirectoriesWritable(join14(path, name));
+      makeDirectoriesWritable(join15(path, name));
   };
   makeDirectoriesWritable(root);
   rmSync6(root, { recursive: true, force: true });
@@ -9905,7 +9949,7 @@ function resolvedSymlinkTarget(path) {
       current = dirname10(current);
       continue;
     }
-    const next = join14(current, part);
+    const next = join15(current, part);
     try {
       if (!lstatSync10(next).isSymbolicLink()) {
         current = next;
@@ -9928,7 +9972,7 @@ function resolvedSymlinkTarget(path) {
 function assertNoEscapingSymlinks(root, dir = root) {
   const realRoot = realpathSync11(root);
   for (const name of readdirSync4(dir)) {
-    const path = join14(dir, name);
+    const path = join15(dir, name);
     const stat = lstatSync10(path);
     if (stat.isSymbolicLink()) {
       assertInside(realRoot, resolvedSymlinkTarget(path), `symlink ${relative5(root, path)}`);
@@ -9938,28 +9982,28 @@ function assertNoEscapingSymlinks(root, dir = root) {
   }
 }
 function writeDeliveryTree(sourceRoot, snapshot) {
-  const indexDirectory = mkdtempSync3(join14(git2(sourceRoot, ["rev-parse", "--absolute-git-dir"]), "imm-delivery-index-"));
+  const indexDirectory = mkdtempSync3(join15(git2(sourceRoot, ["rev-parse", "--absolute-git-dir"]), "imm-delivery-index-"));
   try {
     git2(sourceRoot, ["read-tree", snapshot.base_tree], {
-      GIT_INDEX_FILE: join14(indexDirectory, "index"),
-      GIT_DIR: join14(sourceRoot, ".git")
+      GIT_INDEX_FILE: join15(indexDirectory, "index"),
+      GIT_DIR: join15(sourceRoot, ".git")
     });
     for (const [path, entry] of Object.entries(snapshot.changed_paths)) {
       if (entry.oid && entry.mode) {
         git2(sourceRoot, ["update-index", "--add", "--cacheinfo", `${entry.mode},${entry.oid},${path}`], {
-          GIT_INDEX_FILE: join14(indexDirectory, "index"),
-          GIT_DIR: join14(sourceRoot, ".git")
+          GIT_INDEX_FILE: join15(indexDirectory, "index"),
+          GIT_DIR: join15(sourceRoot, ".git")
         });
       } else {
         git2(sourceRoot, ["update-index", "--force-remove", "--", path], {
-          GIT_INDEX_FILE: join14(indexDirectory, "index"),
-          GIT_DIR: join14(sourceRoot, ".git")
+          GIT_INDEX_FILE: join15(indexDirectory, "index"),
+          GIT_DIR: join15(sourceRoot, ".git")
         });
       }
     }
     const next = git2(sourceRoot, ["write-tree"], {
-      GIT_INDEX_FILE: join14(indexDirectory, "index"),
-      GIT_DIR: join14(sourceRoot, ".git")
+      GIT_INDEX_FILE: join15(indexDirectory, "index"),
+      GIT_DIR: join15(sourceRoot, ".git")
     });
     assertTree(next);
     return next;
@@ -9971,7 +10015,7 @@ function workspaceFiles(root, dir = root, result = Object.create(null)) {
   if (dir === root)
     result["."] = `${lstatSync10(root).mode & 4095}:directory`;
   for (const name of readdirSync4(dir).sort()) {
-    const path = join14(dir, name), rel = relative5(root, path);
+    const path = join15(dir, name), rel = relative5(root, path);
     const stat = lstatSync10(path);
     if (stat.isSymbolicLink())
       result[rel] = `link:${stat.mode & 4095}:${readlinkSync3(path)}`;
@@ -9979,7 +10023,7 @@ function workspaceFiles(root, dir = root, result = Object.create(null)) {
       result[rel] = `${stat.mode & 4095}:directory`;
       workspaceFiles(root, path, result);
     } else if (stat.isFile())
-      result[rel] = `${stat.mode & 4095}:${createHash15("sha256").update(readFileSync14(path)).digest("hex")}`;
+      result[rel] = `${stat.mode & 4095}:${createHash15("sha256").update(readFileSync15(path)).digest("hex")}`;
     else
       throw new DeliveryWorkspaceError("delivery contains an unsupported filesystem entry");
   }
@@ -9999,7 +10043,7 @@ function assertDeliveryClean(root, tree, seal, writablePaths = []) {
   }
   if (seal === "[]") {
     for (const name of readdirSync4(root)) {
-      const stat = lstatSync10(join14(root, name));
+      const stat = lstatSync10(join15(root, name));
       if (!stat.isDirectory() || name !== ".git")
         throw new DeliveryWorkspaceError("delivery workspace was contaminated");
     }
@@ -10021,18 +10065,18 @@ function assertDeliveryClean(root, tree, seal, writablePaths = []) {
     if (!permitted)
       throw new DeliveryWorkspaceError("delivery undeclared output was contaminated");
     if (bytes.startsWith("link:")) {
-      assertInside(realpathSync11(root), resolvedSymlinkTarget(join14(root, path)), "generated symlink");
+      assertInside(realpathSync11(root), resolvedSymlinkTarget(join15(root, path)), "generated symlink");
     }
   }
 }
 function materializeDeliveryWorkspace(sourceRoot, tree) {
   assertTree(tree);
-  const dest = mkdtempSync3(join14(tmpdir3(), "imm-delivery-"));
+  const dest = mkdtempSync3(join15(tmpdir3(), "imm-delivery-"));
   const cleanup = () => removeTaskOwnedTree(dest);
   try {
     mkdirSync6(dest, { recursive: true });
     const commit = git2(sourceRoot, ["commit-tree", tree, "-m", `delivery ${tree}`], {
-      GIT_DIR: join14(sourceRoot, ".git"),
+      GIT_DIR: join15(sourceRoot, ".git"),
       GIT_AUTHOR_NAME: "Immune-Brain Assurance",
       GIT_AUTHOR_EMAIL: "assurance@immune-brain.local",
       GIT_AUTHOR_DATE: "1970-01-01T00:00:00 +0000",
@@ -10376,45 +10420,6 @@ var init_qa = __esm(() => {
   init_storage();
 });
 
-// plugins/immune-brain/runtime/git_integration_preference.ts
-import { spawnSync as spawnSync8 } from "node:child_process";
-import { readFileSync as readFileSync15 } from "node:fs";
-import { join as join15 } from "node:path";
-function tracked(root, path) {
-  return spawnSync8("git", ["ls-files", "--error-unmatch", "--", path], { cwd: root, stdio: "ignore" }).status === 0;
-}
-function readGitIntegrationPreference(root) {
-  for (const file of INSTRUCTION_FILES) {
-    if (!tracked(root, file))
-      continue;
-    let text;
-    try {
-      text = readFileSync15(join15(root, file), "utf8");
-    } catch {
-      continue;
-    }
-    for (const line of text.split(/\r?\n/)) {
-      const match = DIRECTIVE.exec(line);
-      if (!match)
-        continue;
-      const value = match[1].replace(/^`(.*)`$/, "$1").trim();
-      if (value === "manual" || value === "auto")
-        return { mode: value, source: file, diagnostic: null };
-      return {
-        mode: "manual",
-        source: file,
-        diagnostic: `${file} declares Git integration: ${JSON.stringify(value)}, which is neither manual nor auto; using manual`
-      };
-    }
-  }
-  return { mode: "manual", source: null, diagnostic: null };
-}
-var INSTRUCTION_FILES, DIRECTIVE;
-var init_git_integration_preference = __esm(() => {
-  INSTRUCTION_FILES = ["AGENTS.md", "CLAUDE.md"];
-  DIRECTIVE = /^\s*[-*]\s+Git integration:\s*(.*?)\s*$/i;
-});
-
 // plugins/immune-brain/runtime/assurance/workflow_autocommit.ts
 import { execFileSync as execFileSync7, spawnSync as spawnSync9 } from "node:child_process";
 import { accessSync as accessSync2, chmodSync as chmodSync4, constants as constants5, lstatSync as lstatSync11, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync4, readdirSync as readdirSync5, realpathSync as realpathSync12, rmSync as rmSync7, writeFileSync as writeFileSync7 } from "node:fs";
@@ -10625,6 +10630,44 @@ function commitWorkflowPaths(projectRoot, input) {
 }
 function settleCommitSubject(taskId) {
   return `imm(${taskId}): settled delivery`;
+}
+function commitSettledDelivery(projectRoot, taskId, signal) {
+  let root;
+  try {
+    root = realpathSync12(resolve13(projectRoot));
+    if (readGitIntegrationPreference(root).mode !== "auto")
+      return null;
+  } catch {
+    return null;
+  }
+  const skipped = (reason) => ({ mode: "auto", committed: false, reason });
+  try {
+    if (findResumableBatchSlugForTask(root, taskId))
+      return skipped("a batch child's delivery is committed by its batch");
+    const evidence = readSettledTaskEvidence(root, taskId);
+    const record = evidence?.record;
+    if (!evidence || !record || record.lifecycle !== "done")
+      return skipped("the task has no settled done evidence");
+    const settled = record.attestations?.at(-1)?.diff_hash;
+    const identity = taskStatusIdentity(root, record);
+    if (identity.unstaged_scope_paths.length > 0 || identity.diff_hash !== settled)
+      return skipped("the task's scoped content changed after settlement; nothing was committed");
+    if (identity.changed_paths.length === 0)
+      return skipped("the settled delivery changed no scoped path");
+    const result = commitWorkflowPaths(root, { paths: identity.changed_paths, subject: settleCommitSubject(taskId), signal });
+    return result.committed ? { mode: "auto", ...result } : skipped("the settled delivery is already committed");
+  } catch (error) {
+    return skipped(error instanceof Error ? error.message : String(error));
+  }
+}
+function withSettleCommit(root, taskId, result, signal) {
+  if (result === null || typeof result !== "object" || "settle_commit" in result)
+    return result;
+  const lifecycle = result.record?.lifecycle;
+  if (result.state !== "completed" && lifecycle !== "done")
+    return result;
+  const settle = commitSettledDelivery(root, taskId, signal);
+  return settle ? { ...result, settle_commit: settle } : result;
 }
 var splitNull2 = (output) => output.split("\x00").filter((entry) => entry.length > 0);
 var init_workflow_autocommit = __esm(() => {
@@ -16710,12 +16753,14 @@ function enrollCanaryTask(root, input, registry) {
 
 // plugins/immune-brain/runtime/claude/kernel_ports.ts
 init_storage();
+init_workflow_autocommit();
 
 // plugins/immune-brain/runtime/assurance/enrollment_git_base.ts
 init_intent();
 init_spec_binding();
 init_workspace_scope();
 init_workflow_autocommit();
+init_git_integration_preference();
 init_pi_canary_prepare();
 init_storage();
 import { execFileSync as execFileSync8, spawnSync as spawnSync16 } from "node:child_process";
@@ -16737,8 +16782,13 @@ function inspectEnrollmentGitBase(root) {
     throw new Error("Enrollment Git HEAD is invalid; only an absent branch can be initialized");
   return { state: "unborn", branch };
 }
-function enrollmentGitBaseNotice(base) {
-  return base.state === "unborn" ? `Git: create an empty initial commit on ${base.branch} before Enrollment; staged files and working tree remain unchanged. This commit remains if later Enrollment fails or is cancelled.` : undefined;
+function enrollmentGitBaseNotice(base, root) {
+  if (base.state !== "unborn")
+    return;
+  const notice = `Git: create an empty initial commit on ${base.branch} before Enrollment; staged files and working tree remain unchanged. This commit remains if later Enrollment fails or is cancelled.`;
+  if (root === undefined)
+    return notice;
+  return readGitIntegrationPreference(root).mode === "manual" ? `${notice} In-scope staged and untracked changes become task work without a commit (Git integration: manual).` : `${notice} In-scope staged and untracked changes are then committed on top of it (Git integration: auto).`;
 }
 function enrollmentPreconditionSubject(taskId) {
   return `chore(imm): commit Enrollment preconditions for ${taskId}`;
@@ -16772,26 +16822,51 @@ function freshEnrollmentAdmitted(root, taskId) {
     return false;
   }
 }
+function stagePaths(root, paths) {
+  execFileSync8("git", ["add", "--", ...paths], {
+    cwd: root,
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, GIT_LITERAL_PATHSPECS: "1" }
+  });
+}
 function commitEnrollmentPreconditions(root, taskId, signal, unbornScope = false) {
   return withKernelStoreLock(root, () => {
     const paths = enrollmentCommittablePaths(root, taskId, unbornScope);
     if (!paths || paths.length === 0 || !freshEnrollmentAdmitted(root, taskId))
       return { committed: false };
+    if (readGitIntegrationPreference(root).mode === "manual") {
+      signal?.throwIfAborted();
+      const staged = unbornScope ? [] : paths;
+      if (staged.length > 0)
+        stagePaths(root, staged);
+      return { committed: false, staged };
+    }
     return commitWorkflowPaths(root, { paths, subject: enrollmentPreconditionSubject(taskId), signal });
   });
 }
 var withoutGit = ({ digest, git_base_head, git_error, ...owners }) => owners;
 function commitUnbornEnrollmentPreconditions(root, input, confirmed, signal) {
+  if (readGitIntegrationPreference(root).mode === "manual") {
+    signal?.throwIfAborted();
+    let claimed = [];
+    try {
+      if (freshEnrollmentAdmitted(root, input.task_id))
+        claimed = dirtyScopePaths(root, observeEnrollmentTaskIntent(root, input.task_id).intent.scope_hint, input.task_id);
+    } catch {}
+    return { result: { committed: false, staged: [] }, preparation: confirmed, claimed_scope_paths: claimed };
+  }
   const result = commitEnrollmentPreconditions(root, input.task_id, signal, true);
   if (!result.committed)
-    return { result, preparation: confirmed };
+    return { result, preparation: confirmed, claimed_scope_paths: [] };
   const current = preparePiCanary(root, input);
   if (current.git_base_head !== result.commit || JSON.stringify(withoutGit(current)) !== JSON.stringify(withoutGit(confirmed)))
     throw new Error(`Workspace changed during the Enrollment precondition commit; retry Enrollment${preconditionCommitNote(result)}`);
-  return { result, preparation: current };
+  return { result, preparation: current, claimed_scope_paths: [] };
 }
 function preconditionCommitNote(result) {
-  return result.committed ? `; Enrollment precondition commit ${result.commit} remains` : "";
+  if (result.committed)
+    return `; Enrollment precondition commit ${result.commit} remains`;
+  return "staged" in result && result.staged.length > 0 ? `; Enrollment staged ${result.staged.join(", ")} without committing (Git integration: manual); they remain staged` : "";
 }
 function initializeEnrollmentGitBase(root, input, previous, base, signal) {
   const assertUnchanged = () => {
@@ -19166,12 +19241,13 @@ class ClaudeRuntime {
       const intent = await readTaskIntentForRecord(this.cwd, taskId);
       const gitBase = inspectEnrollmentGitBase(this.cwd);
       const disclosure = enrollmentScopeDisclosure(this.cwd, taskId);
+      let claimedScopePaths = [];
       const gate = await this.gate("enroll", { ...meta, taskId }, {
         risk: intent.intent.risk,
         intentRevision: preparation.intent?.revision,
         intentContentHash: preparation.intent?.content_hash,
         bindingDigest: preparation.digest,
-        gitBaseNotice: [enrollmentGitBaseNotice(gitBase), disclosure.notice].filter(Boolean).join(`
+        gitBaseNotice: [enrollmentGitBaseNotice(gitBase, this.cwd), disclosure.notice].filter(Boolean).join(`
 `) || undefined
       });
       const { unchanged } = await revalidatePiCanary(this.cwd, { task_id: taskId, now }, preparation);
@@ -19186,6 +19262,7 @@ class ClaudeRuntime {
         const late = commitUnbornEnrollmentPreconditions(this.cwd, { task_id: taskId, now }, preparation, meta.signal);
         gitBaseNote += preconditionCommitNote(late.result);
         preparation = late.preparation;
+        claimedScopePaths = late.claimed_scope_paths;
       }
       if (!preparation.intent)
         throw new Error("Enrollment requires a readable TaskIntent");
@@ -19200,7 +19277,7 @@ class ClaudeRuntime {
         confirmation_ref: gate.confirmation_ref,
         nonce
       };
-      return await enrollTask(this.cwd, this.enrollmentRegistry, { binding, now, disclosed_scope_paths: disclosure.paths });
+      return await enrollTask(this.cwd, this.enrollmentRegistry, { binding, now, disclosed_scope_paths: [...disclosure.paths, ...claimedScopePaths] });
     } catch (error) {
       if (!gitBaseNote)
         throw error;
@@ -19212,10 +19289,10 @@ class ClaudeRuntime {
     }
   }
   async advance(taskId, signal, meta) {
-    return this.closeOutBatchChild(taskId, await this.withTerminalTracker(taskId, await this.coordinator.advance(taskId, { cwd: this.cwd }, signal)), meta);
+    return this.closeOutBatchChild(taskId, withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(taskId, await this.coordinator.advance(taskId, { cwd: this.cwd }, signal)), signal), meta);
   }
   async submitReview(taskId, verdictInput, meta) {
-    return this.closeOutBatchChild(taskId, await this.withTerminalTracker(taskId, await submitClaudeReview(this.host, this.coordinator, { cwd: this.cwd }, taskId, verdictInput)), meta);
+    return this.closeOutBatchChild(taskId, withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(taskId, await submitClaudeReview(this.host, this.coordinator, { cwd: this.cwd }, taskId, verdictInput)), meta?.signal), meta);
   }
   async closeOutBatchChild(taskId, result, meta) {
     if (!meta || result === null || typeof result !== "object")
