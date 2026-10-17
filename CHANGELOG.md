@@ -1,5 +1,21 @@
 # Changelog
 
+## 5.6.0
+
+### Minor Changes
+
+- [#261](https://github.com/dereknex/immune-brain/pull/261) [`298a06a`](https://github.com/dereknex/immune-brain/commit/298a06a904a91f79a939cc564746d0e50c85a5f3) Thanks [@dereknex](https://github.com/dereknex)! - A batch never creates, switches or commits to a user-visible branch. Its progress lives on the hidden ref `refs/imm/batches/<batch_id>`, built with Git plumbing, so your HEAD, branch and index stay untouched; your own commits, amends and branch switches no longer interrupt a running batch. Batch preflight commits nothing, has no side effect when it rejects, and blocks only on dirty paths inside the scope of a child that has not settled. Batches recorded on the legacy `imm/<slug>` branch still resume.
+
+- [#261](https://github.com/dereknex/immune-brain/pull/261) [`298a06a`](https://github.com/dereknex/immune-brain/commit/298a06a904a91f79a939cc564746d0e50c85a5f3) Thanks [@dereknex](https://github.com/dereknex)! - Add the `Git integration: manual|auto` preference, read from the tracked root `AGENTS.md` or `CLAUDE.md` (ADR 0024, superseding ADR 0023). The default `manual` writes no runtime commit outside batches: Enrollment stages its TaskIntent and Spec instead of committing them, unborn-HEAD in-scope changes are claimed as task work, and storage-layout migration leaves its diff in the working tree with the affected paths listed. `auto` keeps the precondition commits and, when a task settles done, commits exactly its settled scoped paths as `imm(<task-id>): settled delivery`. An invalid value behaves as `manual` with an `invalid_git_integration` status warning, and both Hosts' status Tools report the resolved mode as `git_integration`. The confirmed empty root commit for an unborn HEAD is unchanged.
+
+- [#261](https://github.com/dereknex/immune-brain/pull/261) [`298a06a`](https://github.com/dereknex/immune-brain/commit/298a06a904a91f79a939cc564746d0e50c85a5f3) Thanks [@dereknex](https://github.com/dereknex)! - Settled delivery no longer depends on Git state. A Slice settled done with an unchanged TaskIntent counts as delivered whether its bytes are committed by the user, staged, or left in the working tree; the native Parent has no integrate action, gate, or runtime commit, and prerequisite checks follow settlement. Native Parent final verification binds the scoped content identity instead of a clean tree and HEAD, so equal content survives any user commit, amend, or stash. The `delivery_consolidation` parameter, module, and receipts are retired on both Hosts. Read-only `status` reports out-of-scope staged paths as warnings, and the Claude completion result states the settled content hash and that the user may commit however they prefer.
+
+### Patch Changes
+
+- [#263](https://github.com/dereknex/immune-brain/pull/263) [`ab8999f`](https://github.com/dereknex/immune-brain/commit/ab8999f2f1c17d41bf71bda0ebcdd632893d24f8) Thanks [@dereknex](https://github.com/dereknex)! - A batch no longer loses a child's terminal audit pair to `.gitignore`. When the repository ignores `.imm/audit/` (for example with a blanket `.imm/` rule), batch preflight now refuses before the native gate with `audit_evidence_ignored`, naming the affected paths and the rule to fix, instead of letting a child run to completion and then parking at integration with `adopted commit lacks terminal audit pair`. The per-child commit applies the same check before any Git write, so a rule added mid-batch is refused with the same reason rather than producing a commit without its evidence.
+
+- [#261](https://github.com/dereknex/immune-brain/pull/261) [`298a06a`](https://github.com/dereknex/immune-brain/commit/298a06a904a91f79a939cc564746d0e50c85a5f3) Thanks [@dereknex](https://github.com/dereknex)! - Nudge the Stop continuation hook at most once per unchanged progress digest on both Hosts and then pause. The Claude block reason now says that waiting on an action only the user can perform is a valid stop and must not repeat the request.
+
 ## 5.5.1
 
 ### Patch Changes
