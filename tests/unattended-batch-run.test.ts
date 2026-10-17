@@ -2243,6 +2243,26 @@ describe("shared batch preflight projection", () => {
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
+	it.each([
+		[".imm/\n", false],
+		[".imm/audit/\n", false],
+		[".imm/*\n!.imm/audit/\n", true],
+	])("rejects before the gate when .gitignore %j would drop a child's terminal audit pair", async (rules, passes) => {
+		const root = fixture();
+		try {
+			writeFileSync(join(root, ".gitignore"), rules);
+			execFileSync("git", ["commit", "-qam", "ignore rules"], { cwd: root });
+			const before = snapshot(root);
+			const outcome = await projectBatchPreflight({ root, initiative_slug: SLUG, now: NOW, readInitiative: readNextInitiative });
+			if (passes) {
+				if (!outcome.ok) throw new Error(`a tracked .imm/audit/ must not block: ${outcome.reason}`);
+			} else {
+				expect(outcome).toMatchObject(batchReason("audit_evidence_ignored", ".imm/audit/child-b"));
+			}
+			expect(snapshot(root)).toEqual(before);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
 	it("projects a resume from the record and writes nothing", async () => {
 		const root = fixture();
 		try {
@@ -2380,6 +2400,7 @@ describe("shared batch preflight projection", () => {
 			authorized_scope_underivable: ["branch preflight failed: cannot derive the in-flight child's authorized scope", "resolve the child's intent record, then retry in the current Host"],
 			working_tree_unstaged: ["branch preflight failed: working tree has unstaged or untracked changes (not restored: <detail>)", "establish where each unstaged or untracked change came from before staging anything; move changes that are not the active child's verified work out of the working tree, then retry in the current Host"],
 			working_tree_out_of_scope: ["branch preflight failed: working tree has changes outside the authorized child scope", "commit or unstage changes outside the active task scope, then retry in the current Host"],
+			audit_evidence_ignored: ["batch preflight failed: .gitignore ignores terminal audit evidence, so a child commit would silently drop it: <detail>", "keep .imm/audit/ tracked (ignore .imm/state/ instead of .imm/, or write .imm/* followed by !.imm/audit/), commit the .gitignore change, then retry in the current Host"],
 			empty_enrollable_set: ["empty enrollable child set: no enrollable child tasks found in the initiative plan", "ensure the initiative has uncompleted, non-critical child tasks in the current Host"],
 			plan_projection_failed: ["failed to project batch plan: <detail>", "review initiative issues and planning sidecars in the current Host"],
 			confirmation_port_unavailable: ["native confirmation port is unavailable", "retry through a fresh native gate in the current Host"],

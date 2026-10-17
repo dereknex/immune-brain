@@ -28,7 +28,7 @@ import { runFinalVerification } from "./batch_final_verification";
 import type { InitiativeObservationReader } from "./types";
 import { readTaskIntent, observeEnrollmentTaskIntent } from "../kernel/intent";
 import { classifyBatchLineage, expectedBatchHead, readActiveClaimTaskId as findActiveClaimForCriticalIntegration, findExistingActiveBatch, findSettledBatchRecord } from "./batch_preflight";
-import { batchRefName, buildScopedCommit, liveBatchHead, changedPaths as changedPathsBetween, createBatchRef, isBatchRef, moveBatchRef, pathsDirtyAgainst, readBatchRef } from "./batch_ref";
+import { batchRefName, buildScopedCommit, liveBatchHead, changedPaths as changedPathsBetween, createBatchRef, ignoredPaths, isBatchRef, moveBatchRef, pathsDirtyAgainst, readBatchRef } from "./batch_ref";
 export { classifyBatchLineage, type BatchLineage } from "./batch_preflight";
 
 export type BatchGitPreflightRejectReason =
@@ -482,6 +482,14 @@ export async function commitBatchChild(input: {
 	}
 	if (settled.record.task_id !== taskId || settled.proof.task_id !== taskId) {
 		throw new Error(`cannot commit child ${taskId}: audit task id mismatch`);
+	}
+	// An ignored audit pair would be left out of the commit without error and the
+	// delivery refused at integration; refuse it here, before any Git write.
+	const auditPaths = settled.runId === null ? auditEvidencePaths(root, taskId) :
+		{ record: auditRunRecordPath(taskId, settled.runId), proof: auditRunTerminalProofPath(taskId, settled.runId) };
+	const ignoredAudit = ignoredPaths(root, [auditPaths.record, auditPaths.proof]);
+	if (ignoredAudit.length > 0) {
+		throw new Error(`audit_evidence_ignored: cannot commit child ${taskId}: .gitignore ignores ${ignoredAudit.join(", ")}`);
 	}
 
 	// 2. Read scope_hint and goal from the verified terminal TaskRecord.intent_snapshot (Finding 1)

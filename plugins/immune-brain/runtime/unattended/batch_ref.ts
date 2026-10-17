@@ -106,6 +106,22 @@ export function pathsDirtyAgainst(root: string, commit: string): string[] {
 	});
 }
 
+/**
+ * The given paths a `.gitignore` rule would keep out of a commit. A tracked path
+ * is never reported, matching what `git add -A` would skip.
+ */
+export function ignoredPaths(root: string, paths: readonly string[]): string[] {
+	if (paths.length === 0) return [];
+	const result = spawnSync("git", ["-C", root, "check-ignore", "-z", "--stdin"], {
+		encoding: "utf8",
+		input: `${paths.join("\0")}\0`,
+		stdio: ["pipe", "pipe", "pipe"],
+	});
+	if (result.status === 1) return [];
+	if (result.status !== 0) throw new Error(`failed to check ignore rules: ${result.stderr.trim() || "git check-ignore failed"}`);
+	return splitZ(result.stdout);
+}
+
 export interface BatchCommitInput {
 	parent: string;
 	/** Exact repository-relative paths whose working-tree content becomes the commit's content. */
