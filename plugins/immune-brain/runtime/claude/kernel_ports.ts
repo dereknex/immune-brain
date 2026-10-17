@@ -835,21 +835,12 @@ export class ClaudeRuntime {
 		meta: ToolMeta,
 		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest; lane_revision?: LaneRevisionRequest } = {},
 	): Promise<ClaudeBatchStartResult> {
-		let commit: string | undefined;
-		try {
-			const result = await this.startPreparedBatch(initiativeSlug, meta, options, (value) => { commit = value; });
-			if (commit && "reason" in result) result.reason += `; batch precondition commit ${commit} remains`;
-			return result;
-		} catch (error) {
-			if (commit && error instanceof Error) error.message += `; batch precondition commit ${commit} remains`;
-			throw error;
-		}
+		return this.startPreparedBatch(initiativeSlug, meta, options);
 	}
 
 	private async startPreparedBatch(
 		initiativeSlug: string, meta: ToolMeta,
 		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest; lane_revision?: LaneRevisionRequest },
-		onCommit: (commit: string | undefined) => void,
 	): Promise<ClaudeBatchStartResult> {
 		throwIfCancelled(meta.signal);
 		const reuseOnly = options.reuseOnly === true;
@@ -913,7 +904,6 @@ export class ClaudeRuntime {
 			readInitiative: this.readInitiative ?? observeInitiative,
 			signal: meta.signal, reuseOnly,
 		});
-		onCommit(preflight.precondition_commit);
 		if (!preflight.ok) {
 			return {
 				state: preflight.state,

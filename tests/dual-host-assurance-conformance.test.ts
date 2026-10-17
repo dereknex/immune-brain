@@ -2255,25 +2255,12 @@ describe("dual-host assurance conformance", () => {
 				execFileSync("git", ["commit", "-qm", "structured replay verification"], { cwd: fixture.root });
 			}
 
-			let cLastCommit: string | null = null;
 			const cr = createMcpRuntime({
 				cwd: cf.root,
 				env: ENV,
 				interactive: true,
 				readInitiative: async () => cf.observation,
 				batchKernel: {
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async () => {
-						writeFileSync(join(cf.root, "dummy.txt"), `${Date.now()}`);
-						execFileSync("git", ["add", "dummy.txt"], { cwd: cf.root });
-						execFileSync("git", ["commit", "-q", "-m", "c commit"], { cwd: cf.root });
-						const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: cf.root, encoding: "utf8" }).trim();
-						cLastCommit = commit;
-						return { commit };
-					},
-				lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
 			},
 				requestConfirmation: async () => ({ decision: "accept", requestId: "r-rp1" }),
 			});
@@ -2290,25 +2277,12 @@ describe("dual-host assurance conformance", () => {
 			execFileSync("git", ["add", `.imm/audit/${sharedReplaySlug}-c-c1`], { cwd: cf.root });
 			cRes1 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedReplaySlug}-c` }, { toolCallId: "toolu-rp-ready" });
 
-			let pLastCommit: string | null = null;
-			const replayOptions: Parameters<typeof executePiUnattendedBatch>[0] = {
+						const replayOptions: Parameters<typeof executePiUnattendedBatch>[0] = {
 				root: pf.root,
 				initiativeSlug: `${sharedReplaySlug}-p`,
 				interactive: true,
 				readInitiative: async () => pf.observation,
 				batchKernel: {
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async () => {
-						writeFileSync(join(pf.root, "dummy.txt"), `${Date.now()}`);
-						execFileSync("git", ["add", "dummy.txt"], { cwd: pf.root });
-						execFileSync("git", ["commit", "-q", "-m", "p commit"], { cwd: pf.root });
-						const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim();
-						pLastCommit = commit;
-						return { commit };
-					},
-				lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
 			},
 				confirmBatch: async () => "accept",
 			};

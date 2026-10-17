@@ -20,9 +20,10 @@ import { readBackendClaim } from "../kernel/backend_claim";
 import { computeBatchPlanDigest, type BatchAuthorizationBinding } from "../kernel/batch_authority";
 import { readGitHead } from "../kernel/pi_canary_prepare";
 import { readTaskIntent, observeEnrollmentTaskIntent } from "../kernel/intent";
-import { readTaskRecordRaw, readSettledTaskEvidence, readWorkspaceStateRaw, enrollmentEventIdFor, reconcileKernelAuthority, withKernelStoreLock } from "../kernel/storage";
+import { isBatchRef, readBatchRef } from "./batch_ref";
+import { isWorkflowAuthoringPath } from "./batch_git";
+import { readTaskRecordRaw, readSettledTaskEvidence, readWorkspaceStateRaw, enrollmentEventIdFor, reconcileKernelAuthority } from "../kernel/storage";
 import type { TaskRecord } from "../kernel/types";
-import { commitWorkflowPaths } from "../assurance/workflow_autocommit";
 import { pathMatchesScope } from "../workspace_scope";
 import { captureBatchReconfirmation, retainReconfirmation, ownUnpersistedBatchHead, type ReconfirmationSnapshot } from "./batch_reconfirmation";
 import { projectBatchPlan } from "./batch_plan";
@@ -230,13 +231,20 @@ export function classifyBatchLineage(input: {
 		kind: "broken",
 		message: `batch_head_lineage_broken: ${reason}`,
 	});
-	const branchResult = run(["symbolic-ref", "--short", "HEAD"]);
-	const currentBranch = branchResult.stdout.trim();
-	if (branchResult.status !== 0 || currentBranch !== branch)
-		return broken(`current branch ${currentBranch} does not match expected branch ${branch}`);
-	const headResult = run(["rev-parse", "HEAD"]);
-	const head = headResult.stdout.trim();
-	if (headResult.status !== 0 || !head) return broken("current HEAD is unreadable");
+	// A hidden-ref batch's head is the ref's tip; the user's checkout is not part of it.
+	let head: string;
+	if (isBatchRef(branch)) {
+		head = readBatchRef(root, branch) ?? "";
+		if (!head) return broken(`${branch} does not exist`);
+	} else {
+		const branchResult = run(["symbolic-ref", "--short", "HEAD"]);
+		const currentBranch = branchResult.stdout.trim();
+		if (branchResult.status !== 0 || currentBranch !== branch)
+			return broken(`current branch ${currentBranch} does not match expected branch ${branch}`);
+		const headResult = run(["rev-parse", "HEAD"]);
+		head = headResult.stdout.trim();
+		if (headResult.status !== 0 || !head) return broken("current HEAD is unreadable");
+	}
 	if (head !== expectedHead && run(["merge-base", "--is-ancestor", expectedHead, head]).status !== 0)
 		return broken(`current HEAD ${head} does not descend from expected batch head ${expectedHead}`);
 	for (const commit of childCommits) {
@@ -260,6 +268,16 @@ export function classifyBatchLineage(input: {
 			return broken(`commit ${claimant ?? head} claims batch ${input.batchId} without recorded evidence`);
 	}
 	return { kind: "fast_forward", head };
+}
+
+/**
+ * The head a batch is judged against: a hidden-ref batch sits on its ref's tip, so the
+ * user's own commits, amends and branch switches never move it; a legacy branch batch
+ * sits on the checked-out HEAD.
+ */
+function batchHeadFor(root: string, record: AnyBatchRunStateRecord | null, userHead: string): string {
+	if (record && isBatchRef(record.branch)) return readBatchRef(root, record.branch) ?? userHead;
+	return userHead;
 }
 
 /** The HEAD a resumable batch must still sit on: its last child commit, or its base. */
@@ -310,8 +328,10 @@ export function isOwnBatchClaim(
 	const currentTaskId =
 		workspaceOwner || (claim?.lifecycle_status === "active" ? claim?.task_id : null);
 	if (currentTaskId !== taskId || !claim) return false;
-	const branch = spawnSync("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" }).stdout.trim();
-	if (branch !== batchBranch) return false;
+	if (!isBatchRef(batchBranch)) {
+		const branch = spawnSync("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" }).stdout.trim();
+		if (branch !== batchBranch) return false;
+	}
 	const childInBatch = existingBatch.children.find((c) => c.task_id === taskId);
 	if (!childInBatch || !(childInBatch.state === "enrolled" || childInBatch.state === "needs_human")) {
 		return false;
@@ -328,7 +348,9 @@ export function isOwnBatchClaim(
 	const lineageHeads = [existingBatch.base_head]
 		.concat(Array.isArray(existingBatch.commits) ? existingBatch.commits : [])
 		.concat((existingBatch.adopted_heads ?? []).map((adoption) => adoption.to));
-	if (!lineageHeads.includes(rec.git_base_head)) return false;
+	// A hidden-ref batch leaves the user's branch alone, so a child enrolls on whatever the user's
+	// HEAD is then; only a legacy branch batch can pin the claim to its own commit lineage.
+	if (!isBatchRef(batchBranch) && !lineageHeads.includes(rec.git_base_head)) return false;
 	if (claim.enrollment_event_id !== enrollmentEventIdFor(taskId, claim.created_at)) return false;
 	const createdAt = Date.parse(claim.created_at);
 	if (!Number.isFinite(createdAt) || createdAt > Date.parse(existingBatch.updated_at)) return false;
@@ -563,58 +585,20 @@ export async function projectBatchPreflight(options: BatchPreflightOptions): Pro
 	return projectPreflight(options, false);
 }
 
-/** Host preparation only: commit fresh-batch preconditions before capturing the binding. */
+/**
+ * Host preparation: a fresh batch's TaskIntents may be uncommitted, so they are
+ * read from the working tree. Preflight never commits and never touches HEAD,
+ * the branch or the index (D9).
+ */
 export async function prepareBatchPreflight(
 	options: BatchPreflightOptions & { signal?: AbortSignal; reuseOnly?: boolean },
-): Promise<BatchPreflightOutcome & { precondition_commit?: string }> {
+): Promise<BatchPreflightOutcome> {
 	options.signal?.throwIfAborted();
-	const projected = await projectPreflight(options, !options.reuseOnly);
-	if (!projected.ok || projected.projection.is_resuming || options.reuseOnly) return projected;
-	const { root, initiative_slug: slug } = options;
-	const initialEntries = porcelainEntries(root);
-	if (!initialEntries) return reject("git_status_unreadable");
-	if (initialEntries.length === 0) return projected;
-	let commit: string | undefined;
-	try {
-		const refusal = withKernelStoreLock(root, () => {
-			options.signal?.throwIfAborted();
-			const claim = readActiveClaimTaskId(root);
-			if (claim) return reject("claim_already_active", claim);
-			if (findExistingActiveBatch(root, slug)) return reject("plan_changed");
-			if (readGitHead(root) !== projected.projection.base_head) return reject("head_moved");
-			const scopes: string[] = [];
-			for (const child of projected.projection.recovery_children) {
-				const observed = observeEnrollmentTaskIntent(root, child.task_id);
-				if (observed.content_hash !== child.intent_content_hash) return reject("plan_changed");
-				scopes.push(...observed.intent.scope_hint);
-			}
-			const entries = porcelainEntries(root);
-			if (!entries) return reject("git_status_unreadable");
-			const paths = entries.map(({ path }) => path).filter((path) =>
-				[".imm/audit/", "docs/plans/", "docs/specs/"].some((prefix) => path.startsWith(prefix))
-				|| scopes.some((scope) => pathMatchesScope(path, scope)),
-			);
-			const result = commitWorkflowPaths(root, {
-				paths, subject: `chore(imm): commit batch preconditions for ${slug}`, signal: options.signal,
-			});
-			if (result.committed) commit = result.commit;
-			return null;
-		});
-		if (refusal) return refusal;
-		if (!commit) {
-			const remaining = porcelainEntries(root);
-			if (!remaining) return reject("git_status_unreadable");
-			return remaining.length ? reject("working_tree_dirty", remaining.map(({ path }) => path).join(", ")) : projected;
-		}
-		return { ...await projectBatchPreflight(options), precondition_commit: commit };
-	} catch (error) {
-		return { ...reject("precondition_commit_failed", error instanceof Error ? error.message : String(error)),
-			...(commit ? { precondition_commit: commit } : {}) };
-	}
+	return projectPreflight(options, !options.reuseOnly);
 }
 
 async function projectPreflight(
-	options: BatchPreflightOptions, allowNewDirt: boolean,
+	options: BatchPreflightOptions, preparing: boolean,
 ): Promise<BatchPreflightOutcome> {
 	const { root, initiative_slug: initiativeSlug, readInitiative } = options;
 	if (!INITIATIVE_SLUG_PATTERN.test(initiativeSlug))
@@ -628,7 +612,8 @@ async function projectPreflight(
 	const activeRecord: AnyBatchRunStateRecord | null = found ? found.record : null;
 	const existingBatch: AnyBatchRunStateRecord | null = activeRecord ?? findSettledBatchRecord(root, initiativeSlug);
 	const isResuming = activeRecord !== null;
-	const batchBranch = `imm/${initiativeSlug}`;
+	// A batch records the branch it advances: its hidden ref, or a legacy imm/<slug> branch.
+	const batchBranch = activeRecord?.branch ?? `imm/${initiativeSlug}`;
 
 	// 1. Active workspace claim (pre-confirmation).
 	const activeTaskId = readActiveClaimTaskId(root);
@@ -645,7 +630,7 @@ async function projectPreflight(
 	// 2. HEAD, branch availability, working tree (pre-confirmation, read-only).
 	let baseHead: string;
 	try {
-		baseHead = readGitHead(root);
+		baseHead = batchHeadFor(root, activeRecord, readGitHead(root));
 	} catch (err) {
 		return reject("git_head_unreadable", err instanceof Error ? err.message : String(err));
 	}
@@ -667,9 +652,23 @@ async function projectPreflight(
 		else if (plan.kind === "unprovable") unprovableLeak = `${plan.path}: ${plan.detail}`;
 	}
 	if (statusEntries.length > 0) {
-		if (!isResuming && !allowNewDirt)
-			return reject("working_tree_dirty", statusEntries.map(({ path }) => path).join(", "));
-		if (isResuming) {
+		if (isResuming && isBatchRef(batchBranch)) {
+			// D9 on resume: a hidden-ref batch leaves every settled and in-flight byte in the
+			// user's working tree, so only dirt inside a child that has not started can block.
+			const pendingScopes = unsettledChildScopes(root, existingBatch!.children.filter((c) => c.state === "pending"));
+			const blocking = statusEntries.filter(({ path }) => !isWorkflowAuthoringPath(path) && pendingScopes.some((scope) => pathMatchesScope(path, scope)));
+			if (blocking.length > 0) return reject("working_tree_dirty", blocking.map(({ path }) => path).join(", "));
+			// The Kernel refuses an in-flight child while a path outside every batch scope is staged,
+			// so surface that as a rejection here instead of a projection error later.
+			if (existingBatch!.children.some((c) => c.state === "enrolled" || c.state === "needs_human")) {
+				const batchScopes = unsettledChildScopes(root, existingBatch!.children);
+				const stagedOutside = statusEntries.filter(({ path, code }) => code !== "??" && code[0] !== " " && !isWorkflowAuthoringPath(path) && !batchScopes.some((scope) => pathMatchesScope(path, scope)));
+				if (stagedOutside.length > 0) return reject("working_tree_out_of_scope");
+				// ...and likewise for unstaged or untracked bytes inside the in-flight child's scope.
+				const unstagedInside = statusEntries.filter(({ path, code }) => (code === "??" || code[1] !== " ") && !isWorkflowAuthoringPath(path) && batchScopes.some((scope) => pathMatchesScope(path, scope)));
+				if (unstagedInside.length > 0) return reject("working_tree_unstaged", unprovableLeak);
+			}
+		} else if (isResuming) {
 			// Kernel projections accept staged in-flight work inside the active child's
 			// authorized scope, and reject unstaged/untracked bytes or out-of-scope paths.
 			// `settled` belongs here: Kernel settlement happens before the batch commits
@@ -712,7 +711,7 @@ async function projectPreflight(
 	// 3. Project or reconstruct the plan (pre-confirmation).
 	const now = options.now ?? new Date().toISOString();
 	const planSurface = await projectPlanSurface({
-		preparing: allowNewDirt && !isResuming,
+		preparing: preparing && !isResuming,
 		root,
 		initiative_slug: initiativeSlug,
 		is_resuming: isResuming,
@@ -722,6 +721,12 @@ async function projectPreflight(
 	});
 	if (!planSurface.ok)
 		return reject(planSurface.key, planSurface.detail);
+	if (!isResuming && statusEntries.length > 0) {
+		// One dirt rule (D9): only dirt inside a not-yet-settled child's scope blocks.
+		const scopes = unsettledChildScopes(root, planSurface.surface.recovery_children.filter((child) => child.intent_path !== null));
+		const blocking = statusEntries.filter(({ path }) => !isWorkflowAuthoringPath(path) && scopes.some((scope) => pathMatchesScope(path, scope)));
+		if (blocking.length > 0) return reject("working_tree_dirty", blocking.map(({ path }) => path).join(", "));
+	}
 	let reconfirmation: ReconfirmationSnapshot | undefined;
 	if (activeRecord && !isLaneBatchRecord(activeRecord) && activeRecord.plan_digest !== planSurface.surface.plan_digest) {
 		try { reconfirmation = await captureBatchReconfirmation(root, activeRecord, planSurface.surface.recovery_children); }
@@ -768,9 +773,12 @@ export async function projectBatchDrift(options: BatchPreflightOptions): Promise
 	const activeRecord: AnyBatchRunStateRecord | null = found && !found.corrupt ? found.record : null;
 	const existingBatch: AnyBatchRunStateRecord | null = activeRecord ?? findSettledBatchRecord(root, initiativeSlug);
 	const isResuming = activeRecord !== null;
-	const batchBranch = `imm/${initiativeSlug}`;
+	const batchBranch = activeRecord?.branch ?? `imm/${initiativeSlug}`;
 	const activeClaimTaskId = readActiveClaimTaskId(root);
 	const surface = await projectPlanSurface({
+		// Same plan source as the preflight that built the gate, so an intent the user has not
+		// committed yet reads the same before and after confirmation.
+		preparing: !isResuming,
 		root,
 		initiative_slug: initiativeSlug,
 		is_resuming: isResuming,
@@ -782,7 +790,7 @@ export async function projectBatchDrift(options: BatchPreflightOptions): Promise
 	// to catch a commit that landed during the asynchronous plan read.
 	let baseHead: string | null = null;
 	try {
-		baseHead = readGitHead(root);
+		baseHead = batchHeadFor(root, activeRecord, readGitHead(root));
 	} catch {
 		// The Host reports an unreadable repository from the null it sees here.
 	}
@@ -999,4 +1007,22 @@ export async function authorizeBatch<HostRejection>(
 		binding,
 		...(revisionDelegation !== undefined ? { revision_delegation: revisionDelegation } : {}),
 	};
+}
+
+/**
+ * Scopes of the children a new batch has yet to settle: the only paths whose
+ * dirt blocks preflight (D9). A child whose published TaskIntent cannot be read
+ * is treated as owning everything, so an unreadable intent blocks instead of
+ * letting a dirty tree through.
+ */
+export function unsettledChildScopes(root: string, children: ReadonlyArray<{ task_id: string }>): string[] {
+	const scopes = new Set<string>();
+	for (const child of children) {
+		try {
+			for (const scope of observeEnrollmentTaskIntent(root, child.task_id).intent.scope_hint) scopes.add(scope);
+		} catch {
+			scopes.add("**");
+		}
+	}
+	return [...scopes];
 }

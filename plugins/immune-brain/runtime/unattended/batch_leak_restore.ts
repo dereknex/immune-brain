@@ -11,6 +11,7 @@
 import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { isBatchRef } from "./batch_ref";
 import type { BatchLaneRunStateRecord } from "./batch_state";
 
 export interface LaneLeakRestore {
@@ -49,6 +50,9 @@ function laneOrigin(root: string, record: BatchLaneRunStateRecord, path: string,
 	for (const child of record.children) {
 		const lane = child.lane;
 		if (!lane) continue;
+		// A hidden-ref batch delivers an integrated Lane's delta into this working tree, so
+		// those bytes are the delivery, not a leak; restoring them would undo the integration.
+		if (isBatchRef(record.branch) && (child.state === "integrated" || child.state === "released")) continue;
 		if (blobAt(root, lane.base_head, path) === blob) continue;
 		if (existsSync(join(lane.path, path)) && blobOfFile(lane.path, join(lane.path, path)) === blob) return child.task_id;
 		const commits = git(root, ["rev-list", `${lane.base_head}..${lane.branch}`]);

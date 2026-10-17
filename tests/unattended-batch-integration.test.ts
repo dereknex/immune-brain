@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -10,6 +10,9 @@ import {
 	prepareLaneCandidate,
 	type IntegrationCheckChild,
 } from "../plugins/immune-brain/runtime/unattended/batch_integration";
+import { planLaneLeakRestore, restoreProvableLaneLeaks } from "../plugins/immune-brain/runtime/unattended/batch_leak_restore";
+import { applyDeltaToWorkingTree, batchRefName, changedPaths, createBatchRef, readBatchRef } from "../plugins/immune-brain/runtime/unattended/batch_ref";
+import type { BatchLaneRunStateRecord } from "../plugins/immune-brain/runtime/unattended/batch_state";
 
 const BATCH_BRANCH = "imm/initiative-slug";
 const BATCH_ID = "batch-001";
@@ -285,6 +288,181 @@ describe("interruption between the candidate and the fast-forward", () => {
 			// The process dies after the fast-forward but before the state write: the resume adopts it and adds nothing.
 			expect(find()).toBe(commit);
 			expect(git(fx.repo, "rev-list", "--count", `${fx.base}..HEAD`)).toBe("2");
+		} finally {
+			fx.cleanup();
+		}
+	});
+});
+
+const HIDDEN_REF = batchRefName(BATCH_ID);
+
+interface HiddenFixture {
+	dir: string;
+	repo: string;
+	base: string;
+	cleanup(): void;
+	laneCommit(taskId: string, file: string, body: string): string;
+}
+
+/** A user on `main` with the batch standing on a hidden ref at the base commit; `mode` is the declared Git integration. */
+function hiddenFixture(scripts: Record<string, string>, mode: "manual" | "auto"): HiddenFixture {
+	const dir = realpathSync(mkdtempSync(join(tmpdir(), "imm-hidden-integration-")));
+	const repo = join(dir, "repo");
+	mkdirSync(repo);
+	git(repo, "init", "-q", "-b", "main");
+	writeFileSync(join(repo, ".gitignore"), ".imm/\n");
+	writeFileSync(join(repo, "AGENTS.md"), `# Agent Instructions\n\n## Immune-Brain Preferences\n\n- Git integration: ${mode}\n`);
+	writeFileSync(join(repo, "base.txt"), "base\n");
+	writeFileSync(join(repo, "shared.txt"), "shared\n");
+	mkdirSync(join(repo, "docs/plans"), { recursive: true });
+	for (const [taskId, script] of Object.entries(scripts)) writeFileSync(join(repo, intentPath(taskId)), intentJson(taskId, script));
+	git(repo, "add", "-A");
+	git(repo, "commit", "-q", "-m", "base");
+	const base = git(repo, "rev-parse", "HEAD");
+	createBatchRef(repo, HIDDEN_REF, base);
+	return {
+		dir,
+		repo,
+		base,
+		cleanup: () => rmSync(dir, { recursive: true, force: true }),
+		laneCommit(taskId, file, body) {
+			const path = join(dir, `lane-${taskId}`);
+			git(repo, "worktree", "add", "-q", "-b", `imm-lane/initiative-slug/${taskId}`, path, base);
+			writeFileSync(join(path, file), body);
+			git(path, "add", "-A");
+			git(path, "commit", "-q", "-m", `imm(${taskId}): deliver\n\nImmune-Brain-Batch: ${BATCH_ID}\n`);
+			return git(path, "rev-parse", "HEAD");
+		},
+	};
+}
+
+function integrateHidden(fx: HiddenFixture, task: string, lane_commit: string) {
+	return integrateGuardedLaneCommit({
+		root: fx.repo,
+		branch: HIDDEN_REF,
+		batch_head: readBatchRef(fx.repo, HIDDEN_REF)!,
+		lane_base: fx.base,
+		lane_commit,
+		child: checkOf(task),
+		siblings: [],
+	});
+}
+
+describe("lane integration on a hidden batch ref", () => {
+	it("moves only the hidden ref and writes the scoped delta into the working tree", async () => {
+		const fx = hiddenFixture({ "task-c": ALWAYS_PASS }, "manual");
+		try {
+			const lane = fx.laneCommit("task-c", "task-c.txt", "c\n");
+			const branch = git(fx.repo, "rev-parse", "--abbrev-ref", "HEAD");
+			const { commit } = await integrateHidden(fx, "task-c", lane);
+
+			expect(readBatchRef(fx.repo, HIDDEN_REF)).toBe(commit);
+			expect(commit).not.toBe(fx.base);
+			expect(git(fx.repo, "rev-parse", "HEAD")).toBe(fx.base);
+			expect(git(fx.repo, "rev-parse", "--abbrev-ref", "HEAD")).toBe(branch);
+			expect(git(fx.repo, "diff", "--cached", "--name-only")).toBe("");
+			expect(readFileSync(join(fx.repo, "task-c.txt"), "utf8")).toBe("c\n");
+			expect(git(fx.repo, "status", "--porcelain", "--untracked-files=all")).toBe("?? task-c.txt");
+			expect(git(fx.repo, "for-each-ref", "--format=%(refname)", "refs/heads/main")).toBe("refs/heads/main");
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("parks on a conflicting local edit, naming the paths and changing neither the tree nor the ref", async () => {
+		const fx = hiddenFixture({ "task-c": ALWAYS_PASS }, "auto");
+		try {
+			const lane = fx.laneCommit("task-c", "shared.txt", "from the lane\n");
+			writeFileSync(join(fx.repo, "shared.txt"), "my local edit\n");
+			const reason = await reasonOf(() => integrateHidden(fx, "task-c", lane));
+
+			expect(reason).toBe("batch_integration_conflict");
+			let message = "";
+			try {
+				await integrateHidden(fx, "task-c", lane);
+			} catch (error) {
+				message = (error as Error).message;
+			}
+			expect(message).toContain("local edits on shared.txt");
+			expect(readBatchRef(fx.repo, HIDDEN_REF)).toBe(fx.base);
+			expect(readFileSync(join(fx.repo, "shared.txt"), "utf8")).toBe("my local edit\n");
+			expect(git(fx.repo, "rev-parse", "HEAD")).toBe(fx.base);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("commits only the applied paths through the settle commit under Git integration auto", async () => {
+		const fx = hiddenFixture({ "task-c": ALWAYS_PASS }, "auto");
+		try {
+			const lane = fx.laneCommit("task-c", "task-c.txt", "c\n");
+			writeFileSync(join(fx.repo, "unrelated.txt"), "keep out\n");
+			writeFileSync(join(fx.repo, "base.txt"), "base edited\n");
+			await integrateHidden(fx, "task-c", lane);
+
+			expect(git(fx.repo, "log", "--format=%s", `${fx.base}..HEAD`)).toBe("imm(task-c): settled delivery");
+			expect(git(fx.repo, "show", "--name-only", "--format=", "HEAD")).toBe("task-c.txt");
+			expect(git(fx.repo, "diff", "--name-only")).toBe("base.txt");
+			expect(git(fx.repo, "ls-files", "--others", "--exclude-standard")).toBe("unrelated.txt");
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("commits nothing under Git integration manual", async () => {
+		const fx = hiddenFixture({ "task-c": ALWAYS_PASS }, "manual");
+		try {
+			await integrateHidden(fx, "task-c", fx.laneCommit("task-c", "task-c.txt", "c\n"));
+			expect(git(fx.repo, "rev-list", "--count", `${fx.base}..HEAD`)).toBe("0");
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("completes a retry after an interruption between the working-tree apply and the ref move", async () => {
+		const fx = hiddenFixture({ "task-c": ALWAYS_PASS }, "manual");
+		try {
+			const lane = fx.laneCommit("task-c", "task-c.txt", "c\n");
+			// The process dies after the delta reached the working tree but before the ref moved.
+			applyDeltaToWorkingTree(fx.repo, fx.base, lane, changedPaths(fx.repo, fx.base, lane));
+			expect(readBatchRef(fx.repo, HIDDEN_REF)).toBe(fx.base);
+
+			const { commit } = await integrateHidden(fx, "task-c", lane);
+			expect(readBatchRef(fx.repo, HIDDEN_REF)).toBe(commit);
+			expect(readFileSync(join(fx.repo, "task-c.txt"), "utf8")).toBe("c\n");
+			expect(git(fx.repo, "rev-parse", "HEAD")).toBe(fx.base);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("does not mistake an integrated Lane's delivery in the working tree for a Lane leak", async () => {
+		const fx = hiddenFixture({ "task-c": ALWAYS_PASS }, "manual");
+		try {
+			const lane = fx.laneCommit("task-c", "task-c.txt", "c\n");
+			await integrateHidden(fx, "task-c", lane);
+			const recordWith = (state: string) =>
+				({
+					batch_id: BATCH_ID,
+					branch: HIDDEN_REF,
+					children: [
+						{
+							task_id: "task-c",
+							state,
+							lane: { base_head: fx.base, branch: `imm-lane/initiative-slug/task-c`, path: join(fx.dir, "lane-task-c"), lane_commit: lane },
+						},
+					],
+				}) as unknown as BatchLaneRunStateRecord;
+			const entries = [{ code: "??", path: "task-c.txt" }];
+
+			// Control: while the Lane has not been integrated, the same bytes are its leak.
+			expect(planLaneLeakRestore(fx.repo, recordWith("lane_committed"), entries).kind).toBe("provable");
+
+			// Once integrated, the bytes are the delivery: nothing is restored and the file stays.
+			const integrated = recordWith("integrated");
+			expect(planLaneLeakRestore(fx.repo, integrated, entries).kind).toBe("unprovable");
+			expect(restoreProvableLaneLeaks(fx.repo, integrated, entries, "2026-10-16T00:00:00Z").kind).toBe("unprovable");
+			expect(readFileSync(join(fx.repo, "task-c.txt"), "utf8")).toBe("c\n");
 		} finally {
 			fx.cleanup();
 		}

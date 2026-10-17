@@ -28,6 +28,7 @@ import { runFinalVerification } from "./batch_final_verification";
 import type { InitiativeObservationReader } from "./types";
 import { readTaskIntent, observeEnrollmentTaskIntent } from "../kernel/intent";
 import { classifyBatchLineage, expectedBatchHead, readActiveClaimTaskId as findActiveClaimForCriticalIntegration, findExistingActiveBatch, findSettledBatchRecord } from "./batch_preflight";
+import { batchRefName, buildScopedCommit, liveBatchHead, changedPaths as changedPathsBetween, createBatchRef, isBatchRef, moveBatchRef, pathsDirtyAgainst, readBatchRef } from "./batch_ref";
 export { classifyBatchLineage, type BatchLineage } from "./batch_preflight";
 
 export type BatchGitPreflightRejectReason =
@@ -48,6 +49,8 @@ export interface BatchRunnerGitPort {
 		root: string;
 		initiative_slug: string;
 		base_head: string;
+		batch_id: string;
+		blocking_scopes?: readonly string[];
 	}): Promise<BatchGitPreflightResult> | BatchGitPreflightResult;
 	commitChild(
 		root: string,
@@ -75,28 +78,26 @@ const DEFAULT_GIT_ENV = {
 };
 
 /**
- * Preflight before any child is enrolled: requires clean working tree,
- * committed HEAD, and an absent batch branch or the current branch of a settled
- * run whose commit lineage is preserved.
- * Verifies root is the top-level repository root (Finding 5).
- * Explicitly passes --untracked-files=all so repo config cannot bypass dirty check (Finding 2).
- * Disables Git hooks during checkout (Finding 2).
- * Rejection leaves zero writes, zero batch state files, and the original branch.
- * Passing preflight creates and switches to imm/<initiative-slug> from base_head.
+ * Preflight before any child is enrolled (D9, D10): no commit, no checkout, no
+ * index write. It rejects only when a dirty path lies inside the scope of a
+ * child that has not settled (`blocking_scopes`), and otherwise creates the
+ * batch's hidden ref at base_head. Every other dirty path is the user's own.
+ * Verifies root is the top-level repository root. A rejection leaves HEAD, the
+ * checked-out branch, the index and every ref exactly as they were.
  */
 export function runBatchGitPreflight(input: {
 	root: string;
 	initiative_slug: string;
 	base_head: string;
+	batch_id: string;
+	blocking_scopes?: readonly string[];
 }): BatchGitPreflightResult {
-	const { root, initiative_slug: initiativeSlug, base_head: baseHead } = input;
-	const branch = `imm/${initiativeSlug}`;
+	const { root, base_head: baseHead } = input;
+	const scopes = input.blocking_scopes ?? [];
+	const git = (args: string[]) => spawnSync("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 
-	// 0. Verify root is a Git repository and is the top-level repository root (Finding 5)
-	const toplevelResult = spawnSync("git", ["-C", root, "rev-parse", "--show-toplevel"], {
-		encoding: "utf8",
-		stdio: ["ignore", "pipe", "pipe"],
-	});
+	// 0. Verify root is a Git repository and is the top-level repository root
+	const toplevelResult = git(["rev-parse", "--show-toplevel"]);
 	if (toplevelResult.status !== 0 || !toplevelResult.stdout.trim()) {
 		return {
 			ok: false,
@@ -124,41 +125,8 @@ export function runBatchGitPreflight(input: {
 		};
 	}
 
-	// 1. Clean working tree check: explicitly pass --untracked-files=all so status.showUntrackedFiles=no is overridden (Finding 2)
-	// Also reject unsupported index flags (assume-unchanged/skip-worktree) that hide modifications (Finding 2)
-	const flaggedPreflight = getUnsupportedIndexFlags(root);
-	if (flaggedPreflight.length > 0) {
-		return {
-			ok: false,
-			reason: "dirty_working_tree",
-			message: `unsupported index flags (assume-unchanged/skip-worktree) detected: ${scopeRefusal("unsupported_index_flags", flaggedPreflight).message}`,
-		};
-	}
-
-	const statusResult = spawnSync("git", ["-C", root, "status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none"], {
-		encoding: "utf8",
-		stdio: ["ignore", "pipe", "pipe"],
-	});
-	if (statusResult.status !== 0) {
-		return {
-			ok: false,
-			reason: "dirty_working_tree",
-			message: statusResult.stderr?.trim() || "failed to inspect working tree status",
-		};
-	}
-	if (statusResult.stdout.trim().length > 0) {
-		return {
-			ok: false,
-			reason: "dirty_working_tree",
-			message: "working tree is dirty before batch preflight",
-		};
-	}
-
-	// 2. Committed HEAD check
-	const headResult = spawnSync("git", ["-C", root, "rev-parse", "--verify", "HEAD^{commit}"], {
-		encoding: "utf8",
-		stdio: ["ignore", "pipe", "pipe"],
-	});
+	// 1. Committed base: the hidden ref starts here.
+	const headResult = git(["rev-parse", "--verify", "HEAD^{commit}"]);
 	if (headResult.status !== 0 || !headResult.stdout.trim()) {
 		return {
 			ok: false,
@@ -166,82 +134,62 @@ export function runBatchGitPreflight(input: {
 			message: "HEAD is uncommitted or not a valid commit",
 		};
 	}
+	const baseResult = git(["rev-parse", "--verify", `${baseHead}^{commit}`]);
+	if (baseResult.status !== 0 || baseResult.stdout.trim() !== baseHead) {
+		return { ok: false, reason: "uncommitted_head", message: `base_head ${baseHead} is not a commit` };
+	}
 
-	// 3. Absence of refs/heads/imm/<initiative-slug>
-	const branchCheck = spawnSync(
-		"git",
-		["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
-		{ stdio: ["ignore", "ignore", "ignore"] },
-	);
-	if (branchCheck.status === 0) {
-		const settled = findSettledBatchRecord(root, initiativeSlug);
-		const currentBranch = spawnSync("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], { encoding: "utf8" });
-		// Reuse only this initiative's current, settled branch. Never move or reset
-		// a ref; the new authorization binds the current HEAD, including newly
-		// committed candidate intents, and the old run's evidence stays intact.
-		if (
-			findExistingActiveBatch(root, initiativeSlug) === null &&
-			settled?.branch === branch && currentBranch.status === 0 && currentBranch.stdout.trim() === branch &&
-			headResult.stdout.trim() === baseHead &&
-			spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", expectedBatchHead(settled), baseHead]).status === 0
-		) return { ok: true, branch };
+	// 2. One dirt rule: dirty paths inside an unsettled child's scope block.
+	const inScope = (path: string) => !isWorkflowAuthoringPath(path) && scopes.some((scope) => pathMatchesScope(path, scope));
+	const flagged = getUnsupportedIndexFlags(root).filter((entry) => inScope(entry.path));
+	if (flagged.length > 0) {
+		return {
+			ok: false,
+			reason: "dirty_working_tree",
+			message: `unsupported index flags (assume-unchanged/skip-worktree) detected: ${scopeRefusal("unsupported_index_flags", flagged).message}`,
+		};
+	}
+	const statusResult = git(["status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all", "--ignore-submodules=none"]);
+	if (statusResult.status !== 0) {
+		return {
+			ok: false,
+			reason: "dirty_working_tree",
+			message: statusResult.stderr?.trim() || "failed to inspect working tree status",
+		};
+	}
+	const blocking = statusResult.stdout
+		.split("\0")
+		.filter((entry) => entry.length > 0)
+		.map((entry) => entry.slice(3))
+		.filter(inScope);
+	if (blocking.length > 0) {
+		return {
+			ok: false,
+			reason: "dirty_working_tree",
+			message: `working tree has uncommitted changes inside the scope of a child that has not settled: ${[...new Set(blocking)].sort().join(", ")}`,
+		};
+	}
+
+	// 3. The batch's own hidden ref; the user's branch is never created or switched.
+	const ref = batchRefName(input.batch_id);
+	try {
+		createBatchRef(root, ref, baseHead);
+	} catch (error) {
 		return {
 			ok: false,
 			reason: "batch_branch_exists",
-			message: `branch refs/heads/${branch} already exists`,
+			message: error instanceof Error ? error.message : String(error),
 		};
 	}
+	return { ok: true, branch: ref };
+}
 
-	const originalBranchResult = spawnSync("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
-		encoding: "utf8",
-		stdio: ["ignore", "pipe", "pipe"],
-	});
-	const originalBranch = originalBranchResult.stdout.trim();
-
-	// 4. Create and switch to imm/<initiative-slug> from base_head with hooks explicitly disabled (Finding 2)
-	const checkoutResult = spawnSync(
-		"git",
-		["-C", root, "-c", "core.hooksPath=/dev/null", "checkout", "-b", branch, baseHead],
-		{
-			encoding: "utf8",
-			stdio: ["ignore", "pipe", "pipe"],
-			env: DEFAULT_GIT_ENV,
-		},
-	);
-	if (checkoutResult.status !== 0) {
-		const stderr = checkoutResult.stderr?.trim() || "";
-		// Check if checkout failed because branch already exists concurrently (Finding 2)
-		const branchExists =
-			stderr.includes("already exists") ||
-			spawnSync("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`]).status === 0;
-
-		// Restore original branch checkout if HEAD was switched
-		const currentBranchCheck = spawnSync("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
-			encoding: "utf8",
-			stdio: ["ignore", "pipe", "pipe"],
-		}).stdout.trim();
-		if (currentBranchCheck === branch && originalBranch && originalBranch !== branch) {
-			spawnSync("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "checkout", originalBranch], {
-				stdio: ["ignore", "ignore", "ignore"],
-			});
-		}
-		// Do not unconditionally delete branch with branch -D; preserve concurrent external refs (Finding 2)
-
-		if (branchExists) {
-			return {
-				ok: false,
-				reason: "batch_branch_exists",
-				message: `branch refs/heads/${branch} already exists`,
-			};
-		}
-		return {
-			ok: false,
-			reason: "branch_creation_failed",
-			message: stderr || `failed to checkout -b ${branch} ${baseHead}`,
-		};
-	}
-
-	return { ok: true, branch };
+/**
+ * Runtime state and the plan/spec documents the user authored for the batch are its inputs,
+ * not competing work: an uncommitted TaskIntent never blocks the batch that executes it.
+ */
+export function isWorkflowAuthoringPath(path: string): boolean {
+	return path.startsWith(".imm/") || path.startsWith("docs/plans/") || path.startsWith("docs/specs/");
 }
 
 function hasBoundaryWhitespace(path: string): boolean {
@@ -482,6 +430,23 @@ function requireMatchingSettledAudit(
 	}
 }
 
+/** The delivery about to be committed must still be the one QA attested. */
+function assertReviewedDelivery(root: string, authoritative: unknown, scopeHint: string[], taskId: string): void {
+	const record = authoritative as {
+		contract?: string;
+		git_base_head?: string;
+		attestations?: Array<{ kind: string; diff_hash: string }>;
+	};
+	const qa = [...(record.attestations ?? [])].reverse().find((item) => item.kind === "qa");
+	if (record.contract === "assurance_kernel/task_record/v4" && qa?.diff_hash) {
+		if (!record.git_base_head) throw new Error("batch commit requires a TaskRecord v4 git_base_head");
+		const captured = captureGitTaskRevisionSnapshot(root, scopeHint, record.git_base_head, taskId);
+		const digest = `sha256:${createHash("sha256").update(JSON.stringify(captured)).digest("hex")}`;
+		if (digest !== qa.diff_hash)
+			throw new Error("batch commit drifted from the reviewed delivery identity");
+	}
+}
+
 export async function commitBatchChild(input: {
 	root: string;
 	taskId: string;
@@ -528,6 +493,26 @@ export async function commitBatchChild(input: {
 	const scopeHint = Array.isArray(intentSnapshot.scope_hint)
 		? intentSnapshot.scope_hint.filter((s): s is string => typeof s === "string")
 		: [];
+
+	if (isBatchRef(expectedBranch)) {
+		const tip = readBatchRef(root, expectedBranch);
+		if (tip !== expectedHead)
+			throw new Error(`batch_head_lineage_broken: ${expectedBranch} is at ${tip ?? "nothing"}, expected ${expectedHead}`);
+		// What this child delivers: the in-scope paths that differ from the batch head.
+		// Dirt outside the scope is the user's own and is neither committed nor refused.
+		const delivered = pathsDirtyAgainst(root, expectedHead).filter((path) => isPathAllowedForChild(path, taskId, scopeHint));
+		if (delivered.length === 0) throw new Error(`commit failed for child ${taskId}: nothing to commit`);
+		assertReviewedDelivery(root, authoritative, scopeHint, taskId);
+		const goalFirstLine = goal.trim().split(/\r?\n/)[0]?.trim() || taskId;
+		const message = `imm(${taskId}): ${goalFirstLine}\n\n${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${batchId}`}\n`;
+		const commit = buildScopedCommit(root, { parent: expectedHead, paths: delivered, message });
+		const outsideDelta = changedPathsBetween(root, expectedHead, commit).filter((path) => !isPathAllowedForChild(path, taskId, scopeHint));
+		if (outsideDelta.length > 0) throw scopeRefusal("committed_paths", outsideDelta.map((path) => ({ path })));
+		// Evidence first: a crash between the evidence and the ref move is adopted by lookup.
+		writeBatchCommitEvidence(root, { batchId: batchId ?? "native-task", taskId, commit, parentHead: expectedHead });
+		moveBatchRef(root, expectedBranch, expectedHead, commit);
+		return { commit };
+	}
 
 	// 3. Verify symbolic HEAD branch and HEAD lineage before commit (Review Round 7 Finding 1)
 	if (expectedBranch !== undefined) {
@@ -597,19 +582,7 @@ export async function commitBatchChild(input: {
 		spawnSync("git", ["-C", root, "reset", "--quiet"], { stdio: ["ignore", "ignore", "ignore"] });
 		throw scopeRefusal("staged_paths", stagedOutside.map(path => ({ path })));
 	}
-	const record = authoritative as {
-		contract?: string;
-		git_base_head?: string;
-		attestations?: Array<{ kind: string; diff_hash: string }>;
-	};
-	const qa = [...(record.attestations ?? [])].reverse().find((item) => item.kind === "qa");
-	if (record.contract === "assurance_kernel/task_record/v4" && qa?.diff_hash) {
-		if (!record.git_base_head) throw new Error("batch commit requires a TaskRecord v4 git_base_head");
-		const captured = captureGitTaskRevisionSnapshot(root, scopeHint, record.git_base_head, taskId);
-		const digest = `sha256:${createHash("sha256").update(JSON.stringify(captured)).digest("hex")}`;
-		if (digest !== qa.diff_hash)
-			throw new Error("batch commit drifted from the reviewed delivery identity");
-	}
+	assertReviewedDelivery(root, authoritative, scopeHint, taskId);
 
 	// 6. Commit with structured message, Immune-Brain-Batch trailer, and all hooks disabled (Finding 1)
 	const goalFirstLine = goal.trim().split(/\r?\n/)[0]?.trim() || taskId;
@@ -754,6 +727,7 @@ export async function lookupBatchCommit(input: {
 				"-n",
 				"20",
 				`--format=%x1e${FORMAT}`,
+				...(isBatchRef(expectedBranch) ? [expectedBranch] : []),
 			],
 			{ encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
 		);
@@ -795,7 +769,7 @@ export async function lookupBatchCommit(input: {
 	}
 
 	// Verify symbolic branch matches expected branch (Review Round 7 Finding 1)
-	if (expectedBranch !== undefined) {
+	if (expectedBranch !== undefined && !isBatchRef(expectedBranch)) {
 		const currentBranchResult = spawnSync("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
 			encoding: "utf8",
 			stdio: ["ignore", "pipe", "pipe"],
@@ -830,13 +804,25 @@ export async function lookupBatchCommit(input: {
 	}
 
 	// Every adopted delivery must be in the current history, even without a predecessor assertion.
-	const currentHeadResult = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
-	const currentHead = currentHeadResult.stdout.trim();
-	if (currentHeadResult.status !== 0 || (currentHead !== commit &&
-		spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", commit, currentHead], { stdio: "ignore" }).status !== 0))
-		throw new Error(`batch_head_lineage_broken: current HEAD ${currentHead} diverged from adopted commit ${commit}`);
 	const parentsResult = spawnSync("git", ["-C", root, "rev-parse", `${commit}^@`], { encoding: "utf8" });
 	const parents = parentsResult.stdout.trim().split(/\s+/).filter(Boolean);
+	if (isBatchRef(expectedBranch)) {
+		// The hidden ref is the batch's history. A commit built but not yet reached by
+		// the ref (evidence written, ref not moved) is completed here.
+		const tip = readBatchRef(root, expectedBranch);
+		const reachable = tip !== null && (tip === commit ||
+			spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", commit, tip], { stdio: "ignore" }).status === 0);
+		if (!reachable) {
+			if (tip !== null && parents.length === 1 && parents[0] === tip) moveBatchRef(root, expectedBranch, tip, commit);
+			else throw new Error(`batch_head_lineage_broken: ${expectedBranch} at ${tip ?? "nothing"} diverged from adopted commit ${commit}`);
+		}
+	} else {
+		const currentHeadResult = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
+		const currentHead = currentHeadResult.stdout.trim();
+		if (currentHeadResult.status !== 0 || (currentHead !== commit &&
+			spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", commit, currentHead], { stdio: "ignore" }).status !== 0))
+			throw new Error(`batch_head_lineage_broken: current HEAD ${currentHead} diverged from adopted commit ${commit}`);
+	}
 	if (parentsResult.status !== 0 || parents.length !== 1 || (retained && parents[0] !== retained.parent_head) ||
 		(expectedHead !== undefined && parents[0] !== expectedHead))
 		throw new Error(`batch_head_lineage_broken: adopted commit parent ${parents.join(",")} does not match expected_head ${expectedHead ?? "single-parent delivery"}`);
@@ -1060,9 +1046,9 @@ export async function integrateSettledCriticalSlices(root: string, initiativeSlu
 		if (intent.content_hash !== settled.record.intent_ref.content_hash) throw new Error("critical settled Intent changed before integration");
 		const existing = await lookupBatchCommit({ root, taskId: child.task_id, batchId: nativeBatchId, branch: batch.branch });
 		if (existing) {
-			const live = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
-			if (live.status !== 0) throw new Error("cannot verify recovered critical integration HEAD");
-			if (live.stdout.trim() === existing.commit && expectedBatchHead(batch) !== existing.commit) {
+			const live = liveBatchHead(root, batch.branch);
+			if (!live) throw new Error("cannot verify recovered critical integration HEAD");
+			if (live === existing.commit && expectedBatchHead(batch) !== existing.commit) {
 				const predecessor = spawnSync("git", ["-C", root, "rev-parse", `${existing.commit}^`], { encoding: "utf8" });
 				if (predecessor.status !== 0 || predecessor.stdout.trim() !== expectedBatchHead(batch))
 					throw new Error("recovered critical integration does not extend the exact Parent HEAD");
@@ -1071,9 +1057,9 @@ export async function integrateSettledCriticalSlices(root: string, initiativeSlu
 			}
 			continue;
 		}
-		const head = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
-		if (head.status !== 0) throw new Error("cannot read native integration HEAD");
-		if (head.stdout.trim() !== expectedBatchHead(batch)) {
+		const head = liveBatchHead(root, batch.branch);
+		if (!head) throw new Error("cannot read native integration HEAD");
+		if (head !== expectedBatchHead(batch)) {
 			const lineage = classifyBatchLineage({ root, branch: batch.branch ?? "", expectedHead: expectedBatchHead(batch),
 				childCommits: batch.commits, batchId: batch.batch_id });
 			if (lineage.kind === "broken") throw new Error(lineage.message);
@@ -1082,7 +1068,7 @@ export async function integrateSettledCriticalSlices(root: string, initiativeSlu
 				delete batch.final_verification_result; persist();
 			}
 		}
-		const from = head.stdout.trim();
+		const from = head;
 		const { commit } = await commitBatchChild({ root, taskId: child.task_id, batchId: nativeBatchId, expectedHead: from, branch: batch.branch });
 		batch = { ...batch, adopted_heads: [...(batch.adopted_heads ?? []), { from, to: commit }] };
 		delete batch.final_verification_result;

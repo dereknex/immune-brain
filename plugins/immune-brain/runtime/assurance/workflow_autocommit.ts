@@ -1,13 +1,18 @@
-// The one owner of every commit the runtime makes on the user's behalf for a
-// workflow precondition. A caller passes the exact repository-relative paths
-// and a subject; this module never derives paths. It commits only the listed
-// paths that are dirty, leaves every other index entry and worktree file
-// byte-identical, runs Git hooks normally, and never pushes, amends, switches
-// branch or writes Git config.
+// The one owner of every commit the runtime makes on the user's behalf: a
+// workflow precondition, or under `Git integration: auto` a settled delivery
+// (ADR 0024). A precondition caller passes the exact repository-relative paths
+// and a subject; the settle commit derives its paths from the settled
+// TaskRecord alone. Either commits only the listed paths that are dirty, leaves
+// every other index entry and worktree file byte-identical, runs Git hooks
+// normally, and never pushes, amends, switches branch or writes Git config.
 import { execFileSync, spawnSync } from "node:child_process";
 import { accessSync, chmodSync, constants, lstatSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
+import { readGitIntegrationPreference } from "../git_integration_preference";
+import { readSettledTaskEvidence } from "../kernel/storage";
+import { findResumableBatchSlugForTask } from "../unattended/batch_preflight";
+import { taskStatusIdentity, type TaskDeliveryRecord } from "../workspace_scope";
 
 export type WorkflowCommitResult =
 	| { committed: false }
@@ -219,4 +224,65 @@ export function commitWorkflowPaths(projectRoot: string, input: WorkflowCommitIn
 		throw error;
 	}
 	return { committed: true, commit: git(root, ["rev-parse", "HEAD"]).trim(), paths: dirty };
+}
+
+export type SettleCommitResult =
+	| { mode: "auto"; committed: true; commit: string; paths: string[] }
+	| { mode: "auto"; committed: false; reason: string };
+
+/** Subject of the commit `Git integration: auto` makes for a settled delivery. */
+export function settleCommitSubject(taskId: string): string {
+	return `imm(${taskId}): settled delivery`;
+}
+
+/**
+ * Under `Git integration: auto`, commit exactly the settled delivery of
+ * `taskId`: the in-scope changed paths of its settled snapshot, and nothing
+ * else (D8, SCN-4). Returns null under `manual` (the
+ * default), which commits nothing. The paths are committed only while the
+ * current scoped identity still equals the one the last attestation settled,
+ * so an in-scope edit after settlement is never swept into the commit. A batch
+ * child is left to its batch, and content the user already committed yields
+ * no commit. Never throws: a refused commit is reported as the reason, and the
+ * settlement itself is unaffected.
+ */
+export function commitSettledDelivery(projectRoot: string, taskId: string, signal?: AbortSignal): SettleCommitResult | null {
+	let root: string;
+	try {
+		root = realpathSync(resolve(projectRoot));
+		if (readGitIntegrationPreference(root).mode !== "auto") return null;
+	} catch {
+		return null;
+	}
+	const skipped = (reason: string): SettleCommitResult => ({ mode: "auto", committed: false, reason });
+	try {
+		if (findResumableBatchSlugForTask(root, taskId)) return skipped("a batch child's delivery is committed by its batch");
+		const evidence = readSettledTaskEvidence(root, taskId);
+		const record = evidence?.record as (TaskDeliveryRecord & { lifecycle?: unknown; attestations?: Array<{ diff_hash?: unknown }> }) | undefined;
+		if (!evidence || !record || record.lifecycle !== "done") return skipped("the task has no settled done evidence");
+		const settled = record.attestations?.at(-1)?.diff_hash;
+		const identity = taskStatusIdentity(root, record);
+		if (identity.unstaged_scope_paths.length > 0 || identity.diff_hash !== settled)
+			return skipped("the task's scoped content changed after settlement; nothing was committed");
+		if (identity.changed_paths.length === 0) return skipped("the settled delivery changed no scoped path");
+		const result = commitWorkflowPaths(root, { paths: identity.changed_paths, subject: settleCommitSubject(taskId), signal });
+		return result.committed
+			? { mode: "auto", ...result }
+			: skipped("the settled delivery is already committed");
+	} catch (error) {
+		return skipped(error instanceof Error ? error.message : String(error));
+	}
+}
+
+/**
+ * Both Hosts' completion seam: a result that settled `done` carries the
+ * `settle_commit` outcome under `Git integration: auto`; under `manual`, and for
+ * any other result, it is returned unchanged.
+ */
+export function withSettleCommit<T>(root: string, taskId: string, result: T, signal?: AbortSignal): T {
+	if (result === null || typeof result !== "object" || "settle_commit" in result) return result;
+	const lifecycle = (result as { record?: { lifecycle?: unknown } }).record?.lifecycle;
+	if ((result as { state?: unknown }).state !== "completed" && lifecycle !== "done") return result;
+	const settle = commitSettledDelivery(root, taskId, signal);
+	return settle ? { ...result, settle_commit: settle } : result;
 }

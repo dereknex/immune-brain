@@ -95,20 +95,23 @@ batch re-entry waits for it rather than redispatching. When a batch child's
 foreground terminal mutation reaches Kernel `done`, the same tool call stages
 only that child's generated terminal audit evidence and re-enters the batch under
 the still-valid authorization, opening no gate. The driver reconciles settlement,
-adopts or creates the one scope-bound commit, then enrolls the next ready child
+records the child's settled content on the batch's hidden ref, then enrolls the next ready child
 or settles the batch as `completed`; the result carries the batch report as
 `batch`. A reserved Review, a parked child and a stopped child end where they do
-today and are never committed automatically. If the re-entry fails, the Kernel
+today and are never recorded automatically. If the re-entry fails, the Kernel
 result is unchanged and `batch` carries one recovery action: call
 `start_unattended_batch` with the same slug, which is also how to continue by
-hand. A commit that fast-forwards the batch branch outside the runner is adopted,
-not attributed to a child; any other HEAD movement still fails closed. Ordinary Executor handoff and below-limit
+hand. Your own commits, amends and branch switches never move the batch, which
+advances only its hidden ref; a hidden ref rewritten outside the runner fails closed. Ordinary Executor handoff and below-limit
 QA repair do not park the batch; genuine budget/authority stops remain fail-closed.
 
 Batch execution never pushes a ref, opens or updates a pull request, resolves a
-user decision, or creates, switches, or deletes a Git worktree. Its sole Git
-effect is the batch branch `imm/<initiative-slug>` plus scope-bounded delivery
-commits, one per ordinary child; a native Parent writes no Git effect.
+user decision, or creates, switches, or deletes a Git worktree. It never commits
+to, switches or creates a user-visible branch: progress lives on the hidden ref
+`refs/imm/batches/<batch_id>`, one scope-bound commit per ordinary child, and
+your HEAD, branch and index stay where they were. Preflight commits nothing and
+blocks only on dirty paths inside the scope of a child that has not settled. A
+native Parent writes no Git effect.
 
 ### Parallel Batch Opt-In
 
@@ -128,7 +131,7 @@ deletes a Git worktree: when a child needs a Lane the report carries a
 
 In a Lane the child is enrolled, assured and settled exactly as in a serial batch.
 The runner then commits the settled delivery on the Lane branch and fast-forwards
-the batch branch only to a candidate whose changed paths and per-path content equal
+the batch's hidden ref only to a candidate whose changed paths and per-path content equal
 that commit; a mismatch or conflict moves nothing and parks the child.
 With `max_parallel` above 1 the reconcile tick keeps up to that many Lanes in
 flight and reports one `provision` or `executor` handoff per child in `handoffs[]`.

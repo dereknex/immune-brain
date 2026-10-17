@@ -14,13 +14,13 @@ A green test run is never a live observation. Report the two separately.
 ## Before starting
 
 1. Confirm the loaded build. Call `imm_kernel_canary` with `{ op: "status" }` for any task and compare `plugin_version` with `version` in `package.json`. A newer version on disk proves nothing about the session; restart the session if they differ.
-2. Start from a clean tree on the branch the batch will commit to:
+2. Start from a tree with no changes inside any unsettled child's scope. Other changes do not block the batch:
 
 ```sh
 git status --porcelain --untracked-files=all
 ```
 
-Empty output is required. Record the current HEAD as `<base-head>`.
+Any listed path inside an unsettled child's scope blocks the batch and is named in the refusal. Record the current HEAD as `<base-head>`; the batch never moves it.
 
 ## Run the batch
 
@@ -28,14 +28,14 @@ Empty output is required. Record the current HEAD as `<base-head>`.
 2. The return is `state: "started"` with `report.handoff` naming one enrolled child (`role: "executor"`, `next_obligation: "submit_assurance"`). No QA has run and nothing is committed yet.
 3. Implement that child and stage its scoped paths by name.
 4. Call `imm_kernel_canary` `{ op: "advance_assurance" }` for the child. A `material` child returns `review_ready`: run the Reviewer and `submit_review` before touching any file, because edits invalidate the frozen snapshot.
-5. When the result is `state: "completed"` with `lifecycle: "done"`, the same call stages that child's terminal evidence (`.imm/audit/<task-id>`), re-enters the batch with no gate, makes exactly one commit for the settled child and hands off the next one; the result carries the batch report as `batch`. After the last child the batch report reads `completed`. Repeat from step 3.
+5. When the result is `state: "completed"` with `lifecycle: "done"`, the same call stages that child's terminal evidence (`.imm/audit/<task-id>`), re-enters the batch with no gate, records exactly one commit for the settled child on the hidden ref `refs/imm/batches/<batch-id>`, applies its scoped delta to your working tree and hands off the next one; the result carries the batch report as `batch`. After the last child the batch report reads `completed`. Repeat from step 3.
 6. If `batch` carries a recovery action instead (the continuation failed or the authorization no longer binds), the Kernel result is still final. Call `start_unattended_batch` with the same slug; it continues exactly as the automatic step would.
 
 Calling the Tool again while a child is still enrolled is safe: it returns the same handoff and performs no Enrollment, gate, QA run or commit.
 
 A committed child's `reason` reads `crash after settlement; resuming at commit` on this normal path. It is not a failure signal.
 
-Do not rewrite the batch branch. A commit you add on top of it (a fast-forward) is adopted and never attributed to a child; a different branch, a rewrite or a divergence stops the batch.
+The batch never commits to, creates or switches your branch. Committing, amending or switching your own branch does not stop it; rewriting the hidden ref does.
 
 ## Repair a failed check
 
@@ -51,11 +51,11 @@ Summaries are not authority. After a restart or compaction, call `status` for th
 
 ## Renewal
 
-A confirmed batch does not expire. While it is still running on the same plan, branch and HEAD lineage, `start_unattended_batch` continues it with no gate, however long the child sat in foreground Review. The dialog itself has no time limit either: it waits until you answer or the caller cancels.
+A confirmed batch does not expire. While it is still running on the same plan and hidden-ref lineage, `start_unattended_batch` continues it with no gate, however long the child sat in foreground Review. The dialog itself has no time limit either: it waits until you answer or the caller cancels.
 
-A new native gate opens only when something no longer binds: the batch is parked for a human, the plan digest changed, the branch changed, or HEAD left the recorded lineage (a fast-forward on the batch branch does not count).
+A new native gate opens only when something no longer binds: the batch is parked for a human, the plan digest changed, or the hidden ref left the recorded lineage (your own commits do not count).
 
-- Decline, cancel, or a HEAD that moved while the dialog was open: the call is refused and the batch state, commits, index and enrolled child are unchanged. Retry through a fresh gate.
+- Decline, cancel, or a hidden ref that moved while the dialog was open: the call is refused and the batch state, commits, index and enrolled child are unchanged. Retry through a fresh gate.
 - Confirm: the same batch id continues; earlier commits and the enrolled child's run are kept, and later continuations open no further gate.
 
 ## Decide whether the batch completed
@@ -66,10 +66,10 @@ Completion has four separate dimensions. Check each; one does not imply the next
 |---|---|
 | Implemented | The child's scoped changes are staged. |
 | Settled | `advance_assurance` returned `completed`, `lifecycle: "done"`, and `.imm/audit/<task-id>/<run-id>/` exists. |
-| Committed | The runner's report lists a commit for the child, and the branch has exactly one commit per child, in order: |
+| Committed | The runner's report lists a commit for the child, and the hidden ref has exactly one commit per child, in order: |
 
 ```sh
-git log --format=%H <base-head>..HEAD
+git log --format=%H <base-head>..refs/imm/batches/<batch-id>
 ```
 
 | Dimension | Check |

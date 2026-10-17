@@ -159,19 +159,11 @@ function piConfirmationRef(input: {
 export async function executePiUnattendedBatch(
 	options: PiBatchExecutionOptions,
 ): Promise<PiBatchExecutionResult> {
-	let commit: string | undefined;
-	try {
-		const result = await executePreparedPiBatch(options, (value) => { commit = value; });
-		if (commit && "reason" in result) result.reason += `; batch precondition commit ${commit} remains`;
-		return result;
-	} catch (error) {
-		if (commit && error instanceof Error) error.message += `; batch precondition commit ${commit} remains`;
-		throw error;
-	}
+	return executePreparedPiBatch(options);
 }
 
 async function executePreparedPiBatch(
-	options: PiBatchExecutionOptions, onCommit: (commit: string | undefined) => void,
+	options: PiBatchExecutionOptions,
 ): Promise<PiBatchExecutionResult> {
 	const { root, initiativeSlug, signal } = options;
 	const reuseOnly = options.reuseOnly === true;
@@ -222,7 +214,6 @@ async function executePreparedPiBatch(
 		readInitiative: options.readInitiative,
 		signal, reuseOnly,
 	});
-	onCommit(preflight.precondition_commit);
 	if (!preflight.ok) {
 		return { state: preflight.state, reason: preflight.reason, recovery_action: preflight.recovery_action };
 	}

@@ -28,7 +28,9 @@ import {
 	createDefaultBatchGitPort,
 	type BatchRunnerGitPort,
 } from "./batch_git";
-import { classifyBatchLineage, expectedBatchHead, findSettledBatchRecord } from "./batch_preflight";
+import { isBatchRef, liveBatchHead } from "./batch_ref";
+import { readGitHead } from "../kernel/pi_canary_prepare";
+import { classifyBatchLineage, expectedBatchHead, findSettledBatchRecord, unsettledChildScopes } from "./batch_preflight";
 import { laneRejectionReport, runLaneBatch, type LaneOffer } from "./batch_lanes";
 import {
 	type BatchRunStateRecord,
@@ -381,8 +383,7 @@ function reconcileLineage(
 
 async function validatePersistedRun(input: StartBatchInput, record: BatchRunStateRecord): Promise<void> {
 	if (!record.commits.length && record.children[0]?.state === "settled" && existsSync(join(input.root, ".git"))) {
-		const head = spawnSync("git", ["-C", input.root, "rev-parse", "HEAD"], { encoding: "utf8" });
-		const live = head.stdout.trim();
+		const live = liveBatchHead(input.root, record.branch) ?? "";
 		const expected = expectedBatchHead(record);
 		const adoptable = () =>
 			classifyBatchLineage({
@@ -392,7 +393,7 @@ async function validatePersistedRun(input: StartBatchInput, record: BatchRunStat
 				childCommits: record.commits,
 				batchId: record.batch_id,
 			}).kind === "fast_forward";
-		if (head.status !== 0 || (live !== expected && !ownUnpersistedBatchHead(input.root, record, live) && !adoptable()))
+		if (!live || (live !== expected && !ownUnpersistedBatchHead(input.root, record, live) && !adoptable()))
 			throw new Error("first unpersisted batch commit provenance is invalid");
 	}
 	const plan = input.registry.children(input.capability);
@@ -442,11 +443,15 @@ async function finishSerial(input: StartBatchInput, record: BatchRunStateRecord)
 	if (record.batch_state !== "completed" || !record.final_verification?.length)
 		return finalize(input.root, record, stopReasonFor(record), "");
 	if (!record.final_verification_result) {
-		const result = await runFinalVerification(input.root, record.final_verification);
+		// A hidden-ref batch leaves its delivery in the user's working tree, so the check is
+		// bound to the children's scoped content rather than to a clean tree at HEAD.
+		const result = await runFinalVerification(input.root, record.final_verification,
+			isBatchRef(record.branch) ? { scopes: unsettledChildScopes(input.root, input.children) } : {});
 		record = writeBatchRunState(input.root, { ...record, final_verification_result: result });
 	}
 	const live = spawnSync("git", ["-C", input.root, "rev-parse", "HEAD"], { encoding: "utf8" });
-	const passed = record.final_verification_result!.passed && live.status === 0 && record.final_verification_result!.head === live.stdout.trim();
+	const passed = record.final_verification_result!.passed &&
+		(isBatchRef(record.branch) || (live.status === 0 && record.final_verification_result!.head === live.stdout.trim()));
 	return finalize(input.root, record, passed ? "Every serial delivery is integrated and final verification passed" : "Final verification failed or its Git HEAD changed; Parent is not complete",
 		passed ? "Check every required Parent Slice before reporting overall success" : "Diagnose the failure, prepare the smallest repair TaskIntent for the original goal, validate it and request fresh native Enrollment");
 }
@@ -688,6 +693,7 @@ async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport>
 		}
 	}
 
+	let newBatchBranch: string | undefined;
 	if (!existing) {
 		try {
 			validateRunAuthorization(input, null);
@@ -704,6 +710,8 @@ async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport>
 			root: input.root,
 			initiative_slug: input.initiative_slug,
 			base_head: input.base_head,
+			batch_id: input.batch_id,
+			blocking_scopes: unsettledChildScopes(input.root, input.children),
 		});
 
 		if (!preflightResult.ok) {
@@ -714,6 +722,7 @@ async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport>
 				preflightResult.message || "Correct the preflight condition and re-confirm.",
 			);
 		}
+		newBatchBranch = preflightResult.branch;
 	}
 	let record: BatchRunStateRecord =
 		existing ??
@@ -723,6 +732,7 @@ async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport>
 			children: input.children,
 			plan_digest: input.plan_digest,
 			base_head: input.base_head,
+			...(newBatchBranch ? { branch: newBatchBranch } : {}),
 			confirmation_time: input.confirmation_time,
 			budget: input.budget,
 			now: input.now,
@@ -842,7 +852,9 @@ async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport>
 				batch: {
 					registry: input.registry,
 					capability: input.capability,
-					binding: { batch_id: input.batch_id, expected_head: head },
+					// A hidden-ref batch never moves the user's HEAD, so every serial child enrolls on the
+					// user's current commit; the batch's own progress lives on the ref, not at HEAD.
+					binding: { batch_id: input.batch_id, expected_head: isBatchRef(record.branch) ? readGitHead(input.root) : head },
 				},
 			});
 			record.children = record.children.map((c) =>
