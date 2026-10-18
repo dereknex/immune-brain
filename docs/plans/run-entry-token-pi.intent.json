@@ -1,17 +1,16 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "run-entry-token-pi",
-  "owner": "user",
-  "goal": "On Pi, a literal-user imm-run input (never extension-sourced input) mints the same entry token so Enrollment, batch start, stale batch retirement and same-Host recovery run with no authority dialog, print the same manifest, and lose authority on session exit, workspace change or pause (Spec D1-D4, D6).",
+  "goal": "On Pi, a literal-user imm-run input (never extension-sourced input) mints the same session- and workspace-bound entry token as Claude. Enrollment and unattended batch start keep one authority dialog per entry, because a same-uid model write can forge the token; under a live token stale batch retirement and same-Host recovery open no dialog. A confirmed batch start returns the same non-blocking execution manifest as Claude, and the token is invalidated by session exit, workspace change or a pause (Spec D1-D4, D6; ADR 0025).",
   "acceptance": [
     {
       "id": "AC1",
-      "assertion": "After a literal imm-run input, Pi enroll, start_unattended_batch and retire_stale_batch complete without requestAuthorityDialog and record a confirmation_ref of kind entry_token bound to the same intent hash or plan digest; a rework-exit choice still opens its dialog.",
+      "assertion": "After a literal imm-run input, Pi enroll and start_unattended_batch each open exactly one requestAuthorityDialog, and a declined dialog claims nothing even with a live token; a later retire_stale_batch under that token completes with no requestAuthorityDialog and records a confirmation_ref of kind entry_token bound to the plan digest; a confirmed batch start result carries a manifest listing every child's task id, Slice, risk, scope and verification commands; a rework-exit choice still opens its dialog.",
       "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-phase-entry-gate.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
     },
     {
       "id": "AC2",
-      "assertion": "Each of these is refused with no Kernel mutation: input with source extension that names imm-run; a call with no prior entry; a call from another session; a call after session shutdown; a call from another workspace; a call after the run paused.",
+      "assertion": "Each of these is refused with no Kernel mutation: a retire_stale_batch whose only authority is input with source extension that names imm-run; a retire with no prior entry; a retire from another session; a retire after session shutdown; a retire from another workspace; a retire after the run paused.",
       "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-phase-entry-gate.test.ts\",\n      \"tests/pi-run-continuation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
     }
   ],
@@ -23,10 +22,20 @@
     "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
     "plugins/immune-brain/.pi-extension/pi-canary-interaction.ts",
     "plugins/immune-brain/.pi-extension/pi-run-continuation.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/assurance/phase_entry.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/unattended/run_entry_manifest.ts",
+    "tests/batch-plan-reconfirmation.test.ts",
+    "tests/enrollment-confirmation-relocation.test.ts",
+    "tests/enrollment-git-base.test.ts",
     "tests/pi-batch-authority.test.ts",
+    "tests/pi-canary-enroll-extension.test.ts",
+    "tests/pi-canary-lifecycle-package.test.ts",
     "tests/pi-phase-entry-gate.test.ts",
     "tests/pi-run-continuation.test.ts"
   ],
   "risk": "critical",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

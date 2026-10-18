@@ -74,6 +74,7 @@ import { createBatchKernelPort } from "../unattended/batch_kernel_port";
 import type { LaneRevisionRequest } from "../unattended/batch_delegation";
 import { createBatchTrackerPort, laneRuntimeContractRefusal, type LaneInstructionRequest, type LaneOffer } from "../unattended/batch_lanes";
 import { retireStaleBatch } from "../unattended/batch_disposition";
+import { runEntryManifest, type RunEntryManifest } from "../unattended/run_entry_manifest";
 import type { BatchLaneRunReport } from "../unattended/batch_state";
 import {
 	createBatchAuthorityRegistry,
@@ -268,45 +269,6 @@ export interface ClaudeRuntimeOptions {
 /** ADR 0025: the run-internal authority operations a live entry token authorizes. */
 // ADR 0025: Enrollment and batch start keep their native gate; a token only spares the run-internal steps.
 const ENTRY_TOKEN_OPERATIONS = new Set(["retire_stale_batch"]);
-
-/** One child of a confirmed batch start, as the Loop prints it before working. */
-export interface RunEntryManifestChild {
-	task_id: string;
-	slice_id: string;
-	risk: string;
-	scope: string[];
-	verification: string[];
-}
-
-/** The non-blocking execution manifest a confirmed batch start returns (Spec D6). */
-export interface RunEntryManifest {
-	children: RunEntryManifestChild[];
-}
-
-function manifestVerification(verification: string): string {
-	try {
-		const command = (JSON.parse(verification) as { command?: { executable?: unknown; argv?: unknown } }).command;
-		if (typeof command?.executable === "string" && Array.isArray(command.argv))
-			return [command.executable, ...command.argv.map(String)].join(" ");
-	} catch { /* a plain command string */ }
-	return verification;
-}
-
-function runEntryManifest(root: string, children: ReadonlyArray<{ task_id: string; slice_id: string; risk?: string }>): RunEntryManifest {
-	return {
-		children: children.map((child) => {
-			let intent: Awaited<ReturnType<typeof readTaskIntent>>["intent"] | null = null;
-			try { intent = readTaskIntentForRecord(root, child.task_id).intent; } catch { /* listed without its intent */ }
-			return {
-				task_id: child.task_id,
-				slice_id: child.slice_id,
-				risk: child.risk ?? intent?.risk ?? "unknown",
-				scope: intent ? [...intent.scope_hint] : [],
-				verification: intent ? [...new Set(intent.acceptance.map((item) => manifestVerification(item.verification)))] : [],
-			};
-		}),
-	};
-}
 
 /**
  * The Claude Host's own failure envelopes for a batch start; the shared
@@ -1174,7 +1136,7 @@ export class ClaudeRuntime {
 			state: "started",
 			batch_id: batchId,
 			report,
-			...(manifestChildren ? { manifest: runEntryManifest(this.cwd, manifestChildren) } : {}),
+			...(manifestChildren ? { manifest: runEntryManifest(manifestChildren, (taskId) => readTaskIntentForRecord(this.cwd, taskId).intent) } : {}),
 		};
 	}
 

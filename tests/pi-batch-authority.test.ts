@@ -415,14 +415,15 @@ function textOf(response: { content: Array<{ type: string; text: string }> }): s
 
 // The phase entry gate (ADR 0019) sits in front of this Tool. These tests
 // exercise what lies behind it, so their session records a real run entry
-// through the function the input handler calls;
+// through the function the input handler calls; the entry is bound to the
+// workspace it was made in (ADR 0025), so each fixture root records its own.
 // tests/pi-phase-entry-gate.test.ts owns the refusals.
 const { recordPiPhaseInput } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
 const RUN_ENTRY_SESSION = { getSessionId: () => "pi-batch-authority-tests" };
-recordPiPhaseInput({ text: "/skill:imm-run", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION });
 
 /** Minimal TUI context: the native confirm surface resolves to one selection. */
 function fakeTuiContext(root: string, selection: "confirm" | "decline" | "cancel"): unknown {
+	recordPiPhaseInput({ text: "/skill:imm-run", source: "interactive" }, { cwd: root, sessionManager: RUN_ENTRY_SESSION });
 	return {
 		cwd: root,
 		mode: "tui",
@@ -1330,6 +1331,29 @@ describe("acc-pi-batch-gate", () => {
 		expect(content.report.children.some((child: { reason: string | null }) => (child.reason ?? "").includes("projection unavailable"))).toBe(true);
 		expect(content.report.next_action.length).toBeGreaterThan(0);
 	});
+
+	it("a confirmed start returns the non-blocking manifest of every child (Spec D6)", async () => {
+		const fixture = createBatchFixture("tool-content-manifest");
+		// The confirmed start itself, before any Parent turn resumes the batch.
+		const result = await executePiBatchOnce({
+			root: fixture.root,
+			initiativeSlug: "tool-content-manifest",
+			readInitiative: async () => fixture.observation,
+			batchKernel: { advanceTask: async () => ({ state: "failed", reason: "projection unavailable" }) } as never,
+			confirmBatch: async () => "accept",
+		});
+
+		if (result.state !== "started") throw new Error(`expected started, got ${result.state}`);
+		const child = (n: number, slice: string, risk: string) => ({
+			task_id: `tool-content-manifest-c${n}`,
+			slice_id: slice,
+			risk,
+			scope: [`docs/plans/tool-content-manifest-c${n}.intent.json`, `docs/specs/archive/tool-content-manifest-c${n}.spec.md`, `docs/specs/tool-content-manifest-c${n}.spec.md`],
+			verification: ["bun test"],
+		});
+		expect(result.manifest?.children).toEqual(expect.arrayContaining([child(1, "S1", "routine"), child(2, "S2", "material"), child(3, "S3", "critical")]));
+		expect(result.manifest?.children).toHaveLength(3);
+	});
 });
 
 describe("settled-child resume preflight", () => {
@@ -1613,6 +1637,7 @@ describe("batch authorization reuse (ADR-0005 Decision 1)", () => {
 describe("lane mode parameters (parallel-batch-lanes)", () => {
 	/** A TUI context whose native gate counts how often it opens. */
 	function countingTuiContext(root: string, opened: { count: number }): unknown {
+		recordPiPhaseInput({ text: "/skill:imm-run", source: "interactive" }, { cwd: root, sessionManager: RUN_ENTRY_SESSION });
 		return { cwd: root, mode: "tui", sessionManager: RUN_ENTRY_SESSION, ui: { custom: async () => { opened.count++; return "decline"; } } };
 	}
 

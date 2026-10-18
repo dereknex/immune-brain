@@ -28,8 +28,10 @@ function fixture() {
 	const handlers = new Map<string, Function>();
 	const ctx = { cwd: root, sessionManager: { getSessionId: () => "session-a", getLeafId: () => `leaf-${boundary}` } };
 	let boundary = 0;
+	// The sessions whose entry token the boundary ended (ADR 0025).
+	const revoked: string[] = [];
 	registerPiRunContinuation({ on: (event: string, callback: Function) => handlers.set(event, callback) } as any,
-		{ entry: (text) => recognizePhaseEntry(text, () => null) });
+		{ entry: (text) => recognizePhaseEntry(text, () => null), revokeEntry: (sessionId) => revoked.push(sessionId) });
 	const emit = (name: string, event: unknown) => handlers.get(name)?.(event, ctx);
 	const enter = async () => {
 		await emit("input", { text: "/imm-run", source: "interactive" });
@@ -38,7 +40,7 @@ function fixture() {
 	};
 	const settle = () => { boundary++; return emit("agent_before_settle", { outcome: "completed", continue: false,
 		context: { canContinue: true, pendingMessages: [] } }); };
-	return { root, ctx, emit, enter, settle, dispose: () => rmSync(root, { recursive: true, force: true }) };
+	return { root, ctx, emit, enter, settle, revoked, dispose: () => rmSync(root, { recursive: true, force: true }) };
 }
 
 describe("Pi run continuation boundary", () => {
@@ -121,6 +123,17 @@ describe("Pi run continuation boundary", () => {
 			await h.emit("tool_result", { toolName: "imm_kernel_canary", toolCallId: "gate", isError: true, details: { reason: "cancelled" } });
 			expect(await h.settle()).toMatchObject({ entries: [{ customType: "immune-brain-run-paused" }] });
 			expect(await h.settle()).toBeUndefined();
+		} finally { h.dispose(); }
+	});
+	test("a pause ends the session's entry token; a continuing run keeps it", async () => {
+		const h = fixture(); try {
+			await h.enter();
+			expect(await h.settle()).toMatchObject({ continue: true });
+			expect(h.revoked).toEqual([]);
+			await h.emit("tool_call", { toolName: "imm_kernel_canary", toolCallId: "gate", input: { task_id: "slice-a", action: { op: "request_authorization" } } });
+			await h.emit("tool_result", { toolName: "imm_kernel_canary", toolCallId: "gate", isError: true, details: { reason: "cancelled" } });
+			expect(await h.settle()).toMatchObject({ entries: [{ customType: "immune-brain-run-paused" }] });
+			expect(h.revoked).toEqual(["session-a"]);
 		} finally { h.dispose(); }
 	});
 });

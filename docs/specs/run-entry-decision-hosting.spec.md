@@ -42,7 +42,7 @@ No Brainstorm manifest exists. Decisions were confirmed in the grill session of 
 | ID | Actor | Given | When | Then | Mode | Slice |
 | --- | --- | --- | --- | --- | --- | --- |
 | SCN-1 | Claude user | an approved Initiative | they type `imm-run <slug>` and confirm one batch dialog | the batch starts and a manifest lists children, risk and verification commands; a later stale-batch retirement in the same run opens no dialog | automated | S1 |
-| SCN-2 | Pi user | an approved Initiative | they type `imm-run <slug>` | the same start with no dialog and the same manifest | automated | S2 |
+| SCN-2 | Pi user | an approved Initiative | they type `imm-run <slug>` and confirm one batch dialog | the same start and the same manifest as SCN-1; a later stale-batch retirement in the same run opens no dialog | automated | S2 |
 | SCN-3 | user | an Initiative with a critical child that overlaps a later child | the batch runs | the critical child runs inside the batch and the later overlapping child waits for it to be done | automated | S3 |
 | SCN-4 | user | a transient read failure on start | the agent retries | the run continues without user input; after 2 failed retries it pauses with the reason | automated | S4 |
 | SCN-5 | user | the repository ignores `.imm/audit/` | preflight refuses | the agent commits only the ignore fix, lists it in the manifest, and the batch starts | automated | S4 |
@@ -78,7 +78,8 @@ Delegated technical choices:
 
 - `runtime/assurance/phase_entry.ts`: entry recognition stays; add `mintEntryToken(host, session, workspace, args)` and `readEntryToken(session)` / `invalidateEntryToken(session, reason)` over the private cache.
 - Claude `mcp_server.ts` / `kernel_ports.ts`: `requestConfirmation` for authorization-only operations becomes `admitEntryToken`; choice-collecting confirmations keep `elicitation/create`.
-- Pi `imm-canary-work.ts` / `imm-unattended-batch.ts`: `requestAuthorityDialog` for the same operations becomes the same token admission.
+- Pi `imm-canary-work.ts` / `imm-unattended-batch.ts`: Enrollment and batch start keep `requestAuthorityDialog`; `retire_stale_batch` takes the same entry admission and, under a live token, records a `pi-entry-` confirmation reference instead of opening the dialog.
+- `runtime/unattended/run_entry_manifest.ts`: the host-neutral D6 manifest both Hosts return from a confirmed batch start.
 - `runtime/unattended/batch_plan.ts`, `batch_schedule.ts`, `batch_lanes.ts`, `batch_git.ts`: D5, D7, D8.
 - Continuation hooks (`run_continuation.ts`, `pi-run-continuation.ts`): D3 invalidation, D9 retry counter.
 

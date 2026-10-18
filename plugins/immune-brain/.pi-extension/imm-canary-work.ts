@@ -20,7 +20,7 @@ import type { ConfirmationReferenceSource } from "../runtime/assurance/host_port
 
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -338,9 +338,15 @@ function piAliasReader(cwd: string): AliasReader {
 	};
 }
 
+function piWorkspace(cwd: string | undefined): string | null {
+	try { return realpathSync(cwd ?? process.cwd()); } catch { return null; }
+}
+
 /**
- * One Host input: record whether this literal prompt entered a phase. Input an
- * extension injected is never the user's and leaves the entry state untouched.
+ * One Host input: record whether this literal prompt entered a phase. A run
+ * entry mints the session's entry token bound to the workspace realpath (ADR
+ * 0025). Input an extension injected is never the user's and leaves the entry
+ * state untouched.
  */
 export function recordPiPhaseInput(event: { text?: unknown; source?: unknown }, ctx: PhaseEntryContext): void {
 	if (event.source === "extension") return;
@@ -349,21 +355,39 @@ export function recordPiPhaseInput(event: { text?: unknown; source?: unknown }, 
 	const entries = piPhaseEntries();
 	const text = typeof event.text === "string" ? event.text : "";
 	const entry = recognizePhaseEntry(text, piAliasReader(ctx?.cwd ?? process.cwd()));
-	entries.set(sessionId, applyPrompt(entries.get(sessionId) ?? NO_PHASE_ENTRY, entry));
+	const workspace = entry === "run" ? piWorkspace(ctx?.cwd) : null;
+	entries.set(sessionId, applyPrompt(entries.get(sessionId) ?? NO_PHASE_ENTRY, entry, workspace ? { token: randomUUID(), workspace } : undefined));
+}
+
+/**
+ * The session's entry and its token end: at session shutdown, a pause, or when
+ * the bound run is terminal. The next authority operation needs a new literal entry.
+ */
+export function revokePiPhaseEntry(sessionId: string): void {
+	if (sessionId) piPhaseEntries().delete(sessionId);
 }
 
 /**
  * The phase entry gate for a Pi tool, checked before any preparation or
- * authority dialog. A session without an identity refuses.
+ * authority dialog. A session without an identity refuses, and a live token
+ * bound to another workspace refuses rather than falling back to a dialog.
  */
 export function piRunEntryRefusal(
-	operation: "enroll" | "start_unattended_batch",
+	operation: "enroll" | "start_unattended_batch" | "retire_stale_batch",
 	ctx: PhaseEntryContext,
 ): Extract<PhaseAdmission, { ok: false }> | null {
 	const sessionId = piSessionId(ctx);
-	const state = sessionId ? piPhaseEntries().get(sessionId) ?? NO_PHASE_ENTRY : null;
+	let state = sessionId ? piPhaseEntries().get(sessionId) ?? NO_PHASE_ENTRY : null;
+	if (state?.token && state.workspace !== piWorkspace(ctx?.cwd)) state = NO_PHASE_ENTRY;
 	const admission = admitPhaseOperation({ kind: "tool", name: operation }, state);
 	return admission.ok ? null : admission;
+}
+
+/** The live entry token this session's literal run entry minted for this workspace, or null. */
+export function piEntryToken(ctx: PhaseEntryContext): string | null {
+	const sessionId = piSessionId(ctx);
+	const state = sessionId ? piPhaseEntries().get(sessionId) : undefined;
+	return state?.run_live && state.token && state.workspace === piWorkspace(ctx?.cwd) ? state.token : null;
 }
 
 export default function (
@@ -431,6 +455,7 @@ export default function (
 	// Validate dispatch before the receipt observer records an Agent call.
 	const continuation = registerPiRunContinuation(pi, {
 		entry: (text, root) => recognizePhaseEntry(text, piAliasReader(root)),
+		revokeEntry: revokePiPhaseEntry,
 	});
 	pi.registerCommand("imm-tasks", {
 		handler: async (_args: string, ctx?: ExtensionContext) => {
@@ -497,6 +522,8 @@ export default function (
 		}
 	});
 	pi.on("session_shutdown", async (_event: unknown, ctx?: ExtensionContext) => {
+		// ADR 0025: the entry token ends with its session.
+		revokePiPhaseEntry(piSessionId(ctx ?? railContext));
 		resetInteractionPresentation(ctx ?? railContext);
 		railContext = undefined;
 		await progression.onSessionShutdown();

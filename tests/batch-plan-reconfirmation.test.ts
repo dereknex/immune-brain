@@ -34,7 +34,6 @@ const { createPiAssuranceProgressionPorts, recordPiPhaseInput } = await import("
 // through the function the input handler calls;
 // tests/pi-phase-entry-gate.test.ts owns the refusals.
 const RUN_ENTRY_SESSION = { getSessionId: () => "batch-plan-reconfirmation-tests" };
-recordPiPhaseInput({ text: "/skill:imm-run", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION });
 import { AssuranceProgression } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression";
 import { createMcpRuntime as createMcpRuntimeUngated } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
@@ -196,6 +195,8 @@ async function fixture(host: "pi" | "claude", settle: "done" | "active" | "stopp
 	client.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
 	const run = async (): Promise<any> => {
 		if (host === "claude") return client.callTool("start_unattended_batch", { initiative_slug: slug });
+		// The entry token binds the workspace realpath (ADR 0025), so each fixture root enters imm-run itself.
+		recordPiPhaseInput({ text: "/skill:imm-run", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION, cwd: root });
 		try {
 			const response = await tool.execute(randomUUID(), { initiative_slug: slug }, undefined, undefined,
 				{ cwd: root, mode: "tui", sessionManager: RUN_ENTRY_SESSION, ui: { setWidget() {}, notify() {}, custom: async () => {

@@ -19190,6 +19190,33 @@ async function retireStaleBatch(options) {
   return { outcome: "retired", batch_id: stored.batch_id, record: stored, report };
 }
 
+// plugins/immune-brain/runtime/unattended/run_entry_manifest.ts
+function manifestVerification(verification) {
+  try {
+    const command = JSON.parse(verification).command;
+    if (typeof command?.executable === "string" && Array.isArray(command.argv))
+      return [command.executable, ...command.argv.map(String)].join(" ");
+  } catch {}
+  return verification;
+}
+function runEntryManifest(children, readIntent) {
+  return {
+    children: children.map((child) => {
+      let intent = null;
+      try {
+        intent = readIntent(child.task_id);
+      } catch {}
+      return {
+        task_id: child.task_id,
+        slice_id: child.slice_id,
+        risk: child.risk ?? intent?.risk ?? "unknown",
+        scope: intent ? [...intent.scope_hint] : [],
+        verification: intent ? [...new Set(intent.acceptance.map((item) => manifestVerification(item.verification)))] : []
+      };
+    })
+  };
+}
+
 // plugins/immune-brain/runtime/claude/kernel_ports.ts
 init_batch_authority();
 init_batch_git();
@@ -19259,31 +19286,6 @@ function throwIfCancelled(signal) {
     throw new NativeAuthorityError("user_cancelled", "Tool call was cancelled");
 }
 var ENTRY_TOKEN_OPERATIONS = new Set(["retire_stale_batch"]);
-function manifestVerification(verification) {
-  try {
-    const command = JSON.parse(verification).command;
-    if (typeof command?.executable === "string" && Array.isArray(command.argv))
-      return [command.executable, ...command.argv.map(String)].join(" ");
-  } catch {}
-  return verification;
-}
-function runEntryManifest(root, children) {
-  return {
-    children: children.map((child) => {
-      let intent = null;
-      try {
-        intent = readTaskIntentForRecord(root, child.task_id).intent;
-      } catch {}
-      return {
-        task_id: child.task_id,
-        slice_id: child.slice_id,
-        risk: child.risk ?? intent?.risk ?? "unknown",
-        scope: intent ? [...intent.scope_hint] : [],
-        verification: intent ? [...new Set(intent.acceptance.map((item) => manifestVerification(item.verification)))] : []
-      };
-    })
-  };
-}
 
 class ClaudeRuntime {
   host;
@@ -19995,7 +19997,7 @@ class ClaudeRuntime {
       state: "started",
       batch_id: batchId,
       report,
-      ...manifestChildren ? { manifest: runEntryManifest(this.cwd, manifestChildren) } : {}
+      ...manifestChildren ? { manifest: runEntryManifest(manifestChildren, (taskId) => readTaskIntentForRecord(this.cwd, taskId).intent) } : {}
     };
   }
   async retireStaleBatch(initiativeSlug, meta) {

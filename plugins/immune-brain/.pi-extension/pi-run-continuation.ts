@@ -18,6 +18,8 @@ type ContinuationBoundaryResult = { continue?: boolean; entries?: Array<{ type: 
 /** Continuation is session memory, never a capability or durable task owner. */
 export function registerPiRunContinuation(pi: ExtensionAPI, ports: {
 	entry(text: string, root: string): PhaseEntry | null;
+	/** ADR 0025: ends the session's entry token at a pause or when the bound run is terminal. */
+	revokeEntry?(sessionId: string): void;
 }): { selectedParent(root: string, sessionId: string, slug: string): boolean } {
 	let entered = false;
 	let state: RunContinuationState | undefined;
@@ -53,7 +55,7 @@ export function registerPiRunContinuation(pi: ExtensionAPI, ports: {
 			if (reviewerCallId) { review = "rejected"; return { block: true, reason: "Reserved Reviewer already dispatched; wait for its result and submit the verdict before any new dispatch" }; }
 			reviewerCallId = event.toolCallId; review = "running"; return;
 		}
-		if (!["imm_canary_enrollment", "imm_kernel_canary", "start_unattended_batch"].includes(event.toolName)) return;
+		if (!["imm_canary_enrollment", "imm_kernel_canary", "start_unattended_batch", "retire_stale_batch"].includes(event.toolName)) return;
 		const input = event.input as { task_id?: unknown; initiative_slug?: unknown; action?: { op?: unknown } };
 		calls.set(event.toolCallId, { name: event.toolName,
 			task_id: typeof input.task_id === "string" ? input.task_id : undefined,
@@ -64,6 +66,13 @@ export function registerPiRunContinuation(pi: ExtensionAPI, ports: {
 		if (entered && event.toolName === "Agent" && event.toolCallId === reviewerCallId) review = "returned";
 		const call = calls.get(event.toolCallId); calls.delete(event.toolCallId);
 		if (!entered || !call) return;
+		if (call.name === "retire_stale_batch") {
+			if (event.isError || (event.details as { state?: string } | undefined)?.state !== "retired") {
+				failedGates.add(`${call.name}:${call.initiative_slug ?? ""}:`);
+				hostFailure = "Batch retirement did not apply; inspect the same-Host recovery";
+			}
+			return;
+		}
 		if (call.name === "start_unattended_batch") {
 			const result = event.details as { state?: string; batch_id?: string | null; plan_digest?: string; final_verification_commands?: string[] } | undefined;
 			if (!event.isError && result?.state === "native_parent" && typeof result.plan_digest === "string" && call.initiative_slug) {
@@ -119,6 +128,7 @@ export function registerPiRunContinuation(pi: ExtensionAPI, ports: {
 	const boundaryApi = pi as ExtensionAPI & { on(event: "agent_before_settle", handler: (event: SettleBoundary, ctx: ExtensionContext) => Promise<ContinuationBoundaryResult>): void };
 	boundaryApi.on("agent_before_settle", async (event, ctx) => {
 		if (!entered || !state) return;
+		const revoke = () => ports.revokeEntry?.(ctx.sessionManager.getSessionId());
 		if (event.outcome !== "completed" || !event.context.canContinue) { reset(); return; }
 		if (event.continue || event.context.pendingMessages.length) return;
 		try {
@@ -126,9 +136,9 @@ export function registerPiRunContinuation(pi: ExtensionAPI, ports: {
 				const decision = decideRunContinuation(state, { ...await observeParentRun(state.binding,
 					ctx.sessionManager.getLeafId() ?? "empty-session", review, reviewRecovery), host_failure: hostFailure });
 				state = decision.state;
-				if (decision.action === "settled" || decision.action === "unbound") { reset(); return; }
+				if (decision.action === "settled" || decision.action === "unbound") { if (decision.action === "settled") revoke(); reset(); return; }
 				if (decision.action === "wait") return;
-				if (decision.action === "pause") { reset(); return { entries: [{ type: "custom_message", customType: "immune-brain-run-paused", display: true, content: `Parent paused: ${decision.reason}. ${decision.next_action ?? ""}` }] }; }
+				if (decision.action === "pause") { revoke(); reset(); return { entries: [{ type: "custom_message", customType: "immune-brain-run-paused", display: true, content: `Parent paused: ${decision.reason}. ${decision.next_action ?? ""}` }] }; }
 				return { continue: true, entries: [{ type: "custom_message", customType: "immune-brain-run-continuation", display: false,
 					content: `Parent remains incomplete. ${decision.next_action}. Continue the authorized Loop and batch; individual Slice settlement does not complete the Parent.` }] };
 			}
@@ -141,9 +151,11 @@ export function registerPiRunContinuation(pi: ExtensionAPI, ports: {
 				status, source_digest: record.record ? scopedSourceDigest(ctx.cwd, record.record.intent_snapshot.scope_hint) : "terminal",
 				review, recovery_action: reviewRecovery, host_failure: hostFailure });
 			state = decision.state;
-			if (decision.action === "settled" || decision.action === "unbound") { reset(); return; }
+			// A terminal bound run spends its entry token; the next run needs a new literal entry.
+			if (decision.action === "settled" || decision.action === "unbound") { if (decision.action === "settled") revoke(); reset(); return; }
 			if (decision.action === "wait") return;
 			if (decision.action === "pause") {
+				revoke();
 				reset();
 				return { entries: [{ type: "custom_message" as const, customType: "immune-brain-run-paused", display: true,
 					content: `Run paused: ${decision.reason}${decision.next_action ? `. Recovery: ${decision.next_action}` : ""}` }] };
@@ -151,6 +163,7 @@ export function registerPiRunContinuation(pi: ExtensionAPI, ports: {
 			return { continue: true, entries: [{ type: "custom_message" as const, customType: "immune-brain-run-continuation", display: false,
 				content: `Explicit imm-run remains bound to task ${taskId}, run ${state.binding.kind === "task" ? state.binding.run_id : ""}. Kernel settlement is incomplete. ${decision.next_action}. Continue the authorized Loop; report completion only after authoritative settlement.` }] };
 		} catch (error) {
+			revoke();
 			reset();
 			return { entries: [{ type: "custom_message" as const, customType: "immune-brain-run-paused", display: true,
 				content: `Run paused because continuation facts could not be verified: ${error instanceof Error ? error.message : String(error)}` }] };

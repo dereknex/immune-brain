@@ -101,9 +101,10 @@ function makeFakeUI(confirmResult: boolean): FakeUI {
 // tests/pi-phase-entry-gate.test.ts owns the refusals.
 const { recordPiPhaseInput } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
 const RUN_ENTRY_SESSION = { getSessionId: () => "enrollment-confirmation-relocation-tests" };
-recordPiPhaseInput({ text: "/skill:imm-run", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION });
 
 function makeCtx(root: string, ui: FakeUI, mode: Mode, cwdOverride?: string) {
+	// The entry token binds the workspace realpath (ADR 0025), so each fixture root enters imm-run itself.
+	recordPiPhaseInput({ text: "/skill:imm-run", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION, cwd: cwdOverride ?? root });
 	return {
 		mode,
 		sessionManager: RUN_ENTRY_SESSION,

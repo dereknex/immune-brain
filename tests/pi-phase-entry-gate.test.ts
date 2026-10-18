@@ -5,7 +5,7 @@
 
 import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -39,6 +39,9 @@ const { default: registerPiEnroll } = await import("../plugins/immune-brain/.pi-
 const { default: registerPiBatch } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
 const { PHASE_ENTRY_RECOVERY, RUN_ENTRY_REQUIRED } = await import("../plugins/immune-brain/runtime/assurance/phase_entry");
 const { readBackendClaim } = await import("../plugins/immune-brain/runtime/kernel/backend_claim");
+const { revokePiPhaseEntry } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
+const { batchStatePath } = await import("../plugins/immune-brain/runtime/kernel/storage_paths");
+const { readRunRowByTask, updateRunRecord, withKernelTransaction } = await import("../plugins/immune-brain/runtime/kernel/sqlite_store");
 
 const TASK = "phase-entry-child";
 const SLUG = "phase-entry-init";
@@ -111,11 +114,20 @@ function stableIdentity(): { getSessionId: () => string } {
 
 function session(root: string, identity: { getSessionId?: () => unknown } | null = stableIdentity()) {
 	const tools: Array<{ name: string; execute: (...args: any[]) => Promise<any> }> = [];
-	const handlers = new Map<string, (event: any, ctx: any) => Promise<unknown>>();
+	// Pi runs every extension's handler for an event, in registration order.
+	const handlers = new Map<string, Array<(event: any, ctx: any) => unknown>>();
+	const emit = async (name: string, event: unknown) => {
+		let first: unknown;
+		for (const handler of handlers.get(name) ?? []) {
+			const result = await handler(event, ctx);
+			if (first === undefined) first = result;
+		}
+		return first;
+	};
 	const pi = {
 		registerTool: (tool: { name: string; execute: (...args: any[]) => Promise<any> }) => tools.push(tool),
 		registerCommand() {},
-		on: (name: string, handler: (event: any, ctx: any) => Promise<unknown>) => { if (!handlers.has(name)) handlers.set(name, handler); },
+		on: (name: string, handler: (event: any, ctx: any) => unknown) => { handlers.set(name, [...(handlers.get(name) ?? []), handler]); },
 		events: { on() {}, emit() {} },
 	} as never;
 	registerPiWork(pi);
@@ -126,15 +138,16 @@ function session(root: string, identity: { getSessionId?: () => unknown } | null
 		issue_number: 100,
 		tasks: [{ task_id: TASK, slice_id: "S1", issue_number: 101, blocked_by: [] }],
 	}) as never });
-	const dialogs = { count: 0 };
+	// Each dialog takes the next queued answer, then declines.
+	const dialogs = { count: 0, answers: [] as string[] };
 	const ctx = {
 		cwd: root,
 		mode: "tui",
 		hasUI: true,
 		isIdle: () => true,
 		...(identity ? { sessionManager: identity } : {}),
-		// The native dialog double: it counts each opening and declines.
-		ui: { setWidget() {}, setStatus() {}, notify() {}, custom: async () => { dialogs.count++; return "decline"; } },
+		// The native dialog double: it counts each opening and declines unless an answer is queued.
+		ui: { setWidget() {}, setStatus() {}, notify() {}, input: async () => undefined, custom: async () => { dialogs.count++; return dialogs.answers.shift() ?? "decline"; } },
 	};
 	const tool = (name: string) => {
 		const found = tools.find((candidate) => candidate.name === name);
@@ -155,12 +168,45 @@ function session(root: string, identity: { getSessionId?: () => unknown } | null
 		ctx,
 		dialogs,
 		input: async (text: string, source: "interactive" | "rpc" | "extension" = "interactive") => {
-			const handler = handlers.get("input");
-			if (!handler) throw new Error("no input handler was registered");
-			return handler({ type: "input", text, source }, ctx);
+			if (!handlers.has("input")) throw new Error("no input handler was registered");
+			return emit("input", { type: "input", text, source });
 		},
+		shutdown: () => emit("session_shutdown", { type: "session_shutdown" }),
 		enroll: () => failureOf(tool("imm_canary_enrollment").execute(randomUUID(), { action: "new", task_id: TASK }, undefined, undefined, ctx)),
 		batch: () => failureOf(tool("start_unattended_batch").execute(randomUUID(), { initiative_slug: SLUG }, undefined, undefined, ctx)),
+		retire: () => failureOf(tool("retire_stale_batch").execute("toolu_retire", { initiative_slug: SLUG }, undefined, undefined, ctx)),
+		authorize: () => failureOf(tool("imm_kernel_canary").execute(randomUUID(), { task_id: TASK, action: { op: "request_authorization" } }, undefined, undefined, ctx)),
+	};
+}
+
+const STALE_BATCH = `batch-${SLUG}-0123abcd`;
+const STALE_DIGEST = `sha256:${"c".repeat(64)}`;
+
+/** A parked serial batch record for the Initiative: retirable, nothing in flight. */
+function staleBatch(root: string): { bytes: () => Buffer; report: () => any } {
+	const head = git(root, "rev-parse", "HEAD");
+	const path = join(root, batchStatePath(STALE_BATCH));
+	mkdirSync(join(root, ".imm", "state", "batches"), { recursive: true });
+	writeFileSync(path, `${JSON.stringify({
+		contract: "assurance_kernel/batch_run_state/v1",
+		batch_id: STALE_BATCH,
+		initiative_slug: SLUG,
+		base_head: head,
+		branch: `imm/${SLUG}`,
+		plan_digest: STALE_DIGEST,
+		confirmation_time: "2026-10-01T00:00:00.000Z",
+		batch_state: "needs_human",
+		children: [{ task_id: TASK, slice_id: "S1", state: "pending", commit: null, blocked_by: [], reason: null }],
+		commits: [],
+		consecutive_qa_failures: 0,
+		budget: { max_children: 1, qa_failure_limit: 2 },
+		created_at: "2026-10-01T00:00:00.000Z",
+		updated_at: "2026-10-01T00:00:00.000Z",
+	}, null, 2)}\n`);
+	const reportPath = join(root, ".imm", "state", "batches", `${STALE_BATCH}.report.json`);
+	return {
+		bytes: () => readFileSync(path),
+		report: () => existsSync(reportPath) ? JSON.parse(readFileSync(reportPath, "utf8")) : null,
 	};
 }
 
@@ -278,9 +324,98 @@ describe("Pi phase entry gate", () => {
 		// Pi loads each extension file as its own module graph.
 		const copy = await import(`../plugins/immune-brain/.pi-extension/imm-canary-work.ts?copy=${randomUUID()}`);
 		const identity = stableIdentity();
-		expect(copy.piRunEntryRefusal("enroll", { sessionManager: identity })).toMatchObject({ reason_code: RUN_ENTRY_REQUIRED });
-		const pi = session(fixtureRoot(), identity);
+		const root = fixtureRoot();
+		expect(copy.piRunEntryRefusal("enroll", { cwd: root, sessionManager: identity })).toMatchObject({ reason_code: RUN_ENTRY_REQUIRED });
+		const pi = session(root, identity);
 		await pi.input("/skill:imm-run");
-		expect(copy.piRunEntryRefusal("enroll", { sessionManager: identity })).toBeNull();
+		expect(copy.piRunEntryRefusal("enroll", { cwd: root, sessionManager: identity })).toBeNull();
+	});
+	test("under a literal entry, enroll and batch start each open one dialog, a decline claims nothing, and retirement opens none (ADR 0025)", async () => {
+		const root = fixtureRoot();
+		const pi = session(root);
+		await pi.input("/skill:imm-run");
+
+		await pi.enroll();
+		expect(pi.dialogs.count).toBe(1);
+		expect(readBackendClaim(root)).toBeNull();
+		await pi.batch();
+		expect(pi.dialogs.count).toBe(2);
+		expect(readBackendClaim(root)).toBeNull();
+
+		// The same live entry later retires a parked batch with no dialog.
+		const batch = staleBatch(root);
+		expect(await pi.retire()).toEqual({});
+		expect(pi.dialogs.count).toBe(2);
+		const report = batch.report();
+		expect(report?.batch_state).toBe("superseded");
+		expect(report?.retirement?.confirmation_ref).toMatch(/^pi-entry-[0-9a-f]{16}$/);
+		expect(report?.retirement?.plan_digest).toBe(STALE_DIGEST);
+	});
+
+	test("without a live entry token retirement refuses before any dialog and writes nothing", async () => {
+		const cases: Array<[string, (root: string) => Promise<ReturnType<typeof session>>]> = [
+			["no prior entry", async (root) => session(root)],
+			["only extension-sourced input naming imm-run", async (root) => {
+				const pi = session(root);
+				await pi.input("/skill:imm-run", "extension");
+				return pi;
+			}],
+			["another session's entry", async (root) => {
+				await session(root).input("/skill:imm-run");
+				return session(root);
+			}],
+			["an entry ended by session shutdown", async (root) => {
+				const pi = session(root);
+				await pi.input("/skill:imm-run");
+				await pi.shutdown();
+				return pi;
+			}],
+			["an entry made in another workspace", async (root) => {
+				const identity = stableIdentity();
+				await session(fixtureRoot(), identity).input("/skill:imm-run");
+				return session(root, identity);
+			}],
+			["an entry ended by a run pause", async (root) => {
+				const identity = stableIdentity();
+				const pi = session(root, identity);
+				await pi.input("/skill:imm-run");
+				// The continuation boundary's pause port (pi-run-continuation revokeEntry).
+				revokePiPhaseEntry(identity.getSessionId());
+				return pi;
+			}],
+		];
+		for (const [name, make] of cases) {
+			const root = fixtureRoot();
+			const batch = staleBatch(root);
+			const before = batch.bytes();
+			const pi = await make(root);
+			expect({ name, failure: await pi.retire() }).toMatchObject({ name, failure: { ...REFUSED, message: "retire_stale_batch needs a literal-user imm-run entry in this session" } });
+			expect({ name, dialogs: pi.dialogs.count }).toEqual({ name, dialogs: 0 });
+			expect(batch.bytes().equals(before)).toBe(true);
+			expect(batch.report()).toBeNull();
+		}
+	});
+	test("a live entry token does not stand in for a rework-exit choice: its dialog still opens", async () => {
+		const root = fixtureRoot();
+		const pi = session(root);
+		await pi.input("/skill:imm-run");
+		pi.dialogs.answers.push("confirm");
+		await pi.enroll();
+		expect(readBackendClaim(root)?.task_id).toBe(TASK);
+
+		// The Kernel parks the task for a replan; leaving rework is the user's choice.
+		withKernelTransaction(root, (db) => {
+			const run = readRunRowByTask(db, TASK)!;
+			const record = JSON.parse(run.record_json);
+			record.artifact_state = "active";
+			record.findings.push({ id: "rework:review-limit:replan-required", kind: "replan_required", status: "open",
+				acceptance_id: null, source: "kernel", review_round: 3, summary: "Review rework limit reached" });
+			updateRunRecord(db, run.run_id, run.revision, `${JSON.stringify(record, null, 2)}\n`, new Date().toISOString());
+		});
+		const opened = pi.dialogs.count;
+		await pi.authorize();
+		expect(pi.dialogs.count).toBe(opened + 1);
+		const record = JSON.parse(withKernelTransaction(root, (db) => readRunRowByTask(db, TASK)!.record_json));
+		expect(record.findings.find((finding: { kind: string }) => finding.kind === "replan_required")?.status).toBe("open");
 	});
 });

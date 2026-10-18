@@ -66,12 +66,11 @@ function loadEnrollmentTool() {
 // through the function the input handler calls;
 // tests/pi-phase-entry-gate.test.ts owns the refusals.
 const RUN_ENTRY_SESSION = { getSessionId: () => "pi-canary-lifecycle-package-tests" };
-require("../plugins/immune-brain/.pi-extension/imm-canary-work.ts").recordPiPhaseInput(
-	{ text: "/skill:imm-run", source: "interactive" },
-	{ sessionManager: RUN_ENTRY_SESSION },
-);
+const { recordPiPhaseInput } = require("../plugins/immune-brain/.pi-extension/imm-canary-work.ts");
 
 function enrollmentContext(root: string) {
+	// The entry token binds the workspace realpath (ADR 0025), so each fixture root enters imm-run itself.
+	recordPiPhaseInput({ text: "/skill:imm-run", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION, cwd: root });
 	return {
 		mode: "tui",
 		sessionManager: RUN_ENTRY_SESSION,

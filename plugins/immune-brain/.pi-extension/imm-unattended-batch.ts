@@ -23,7 +23,8 @@ import { integrateSettledCriticalSlices, advanceNativeParent } from "../runtime/
 
 import type { BatchRunnerGitPort } from "../runtime/unattended/batch_git";
 import type { InitiativeObservationReader } from "../runtime/unattended/types";
-import { advancePiTask, piRunEntryRefusal } from "./imm-canary-work";
+import { advancePiTask, piEntryToken, piRunEntryRefusal, readTaskIntentForRecord } from "./imm-canary-work";
+import { runEntryManifest, type RunEntryManifest } from "../runtime/unattended/run_entry_manifest";
 import { batchReason } from "../runtime/unattended/batch_reasons";
 import { parseFinalVerification } from "../runtime/unattended/batch_final_verification";
 import { parseLaneRevision, REVISION_DELEGATION_TEXT, type LaneRevisionRequest } from "../runtime/unattended/batch_delegation";
@@ -138,11 +139,19 @@ export interface PiBatchExecutionOptions {
 
 export type PiBatchExecutionResult =
 	| NonNullable<Awaited<ReturnType<typeof advanceNativeParent>>>
-	| { state: "started"; batch_id: string; report: BatchRunReport }
+	| { state: "started"; batch_id: string; report: BatchRunReport; manifest?: RunEntryManifest }
 	| { state: "rejected"; reason: string; recovery_action: string }
 	| { state: "cancelled"; reason: string; recovery_action: string }
 	| { state: "blocked"; reason: string; recovery_action: string };
 
+/** ADR 0025: the request id an entry token stands in for, in place of a dialog's. */
+const ENTRY_TOKEN_REQUEST_PREFIX = "entry-token:";
+
+/**
+ * The Kernel-bound reference of one confirmation. A reference backed by an
+ * entry token rather than a dialog is named `pi-entry-` so the record shows
+ * which kind of literal-user act it binds.
+ */
 function piConfirmationRef(input: {
 	toolCallId: string;
 	requestId: string;
@@ -150,7 +159,8 @@ function piConfirmationRef(input: {
 	initiativeSlug: string;
 	planDigest: string;
 }): string {
-	return `pi-confirm-${createHash("sha256")
+	const kind = input.requestId.startsWith(ENTRY_TOKEN_REQUEST_PREFIX) ? "entry" : "confirm";
+	return `pi-${kind}-${createHash("sha256")
 		.update(`${input.toolCallId}\0${input.requestId}\0${input.operation}\0${input.initiativeSlug}\0${input.planDigest}`)
 		.digest("hex")
 		.slice(0, 16)}`;
@@ -168,6 +178,8 @@ async function executePreparedPiBatch(
 	const { root, initiativeSlug, signal } = options;
 	const reuseOnly = options.reuseOnly === true;
 	const interactive = options.interactive ?? true;
+	// The children a confirmed gate listed; the non-blocking manifest (Spec D6) repeats them.
+	let manifestChildren: ReadonlyArray<{ task_id: string; slice_id: string; risk?: string }> | null = null;
 
 	if (!reuseOnly && !interactive) return { state: "rejected", ...nonInteractiveRefusal() };
 	if (!reuseOnly && !options.confirmBatch) return batchReason("confirmation_port_unavailable");
@@ -285,6 +297,7 @@ async function executePreparedPiBatch(
 			if (decision !== "accept" && decision !== "accept_delegate") {
 				return { kind: "host_rejection", value: batchReason("confirmation_no_decision") };
 			}
+			manifestChildren = facts.children;
 			return {
 				kind: "confirmed",
 				request_id: randomUUID(),
@@ -379,6 +392,7 @@ async function executePreparedPiBatch(
 		state: "started",
 		batch_id: batchId,
 		report,
+		...(manifestChildren ? { manifest: runEntryManifest(manifestChildren, (taskId) => readTaskIntentForRecord(root, taskId).intent) } : {}),
 		...(activeReviewDispatch ? { review_dispatch: activeReviewDispatch } : {}),
 	};
 }
@@ -413,14 +427,20 @@ export async function executePiRetireStaleBatch(options: {
 	root: string;
 	initiativeSlug: string;
 	signal?: AbortSignal;
+	toolCallId?: string;
+	/** ADR 0025: a live entry token stands in for the dialog; absent, the dialog opens. */
+	entryToken?: string | null;
 	confirmBatch: (details: { title: string; summary: string; details: string; signal?: AbortSignal }) => Promise<"accept" | "decline" | "cancel">;
 }): Promise<PiRetireStaleBatchResult> {
 	const { root, initiativeSlug, signal } = options;
+	const toolCallId = options.toolCallId ?? randomUUID();
 	const outcome = await retireStaleBatch({
 		root,
 		initiative_slug: initiativeSlug,
 		now: new Date().toISOString(),
 		gate: async (facts) => {
+			if (signal?.aborted) return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
+			if (options.entryToken) return { kind: "confirmed", request_id: `${ENTRY_TOKEN_REQUEST_PREFIX}${options.entryToken}` };
 			const details = retireConfirmationDetails(facts);
 			let decision: "accept" | "decline" | "cancel";
 			try {
@@ -440,6 +460,8 @@ export async function executePiRetireStaleBatch(options: {
 				return { kind: "host_rejection", value: batchReason("confirmation_no_decision") };
 			return { kind: "confirmed", request_id: randomUUID() };
 		},
+		confirmationRef: ({ request_id, plan_digest }) =>
+			piConfirmationRef({ toolCallId, requestId: request_id, operation: "retire_stale_batch", initiativeSlug, planDigest: plan_digest }),
 	});
 	if (outcome.outcome === "host_rejection") return outcome.value;
 	if (outcome.outcome === "rejected") return outcome.rejection;
@@ -629,7 +651,7 @@ export default function (
 			initiative_slug: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }),
 		}, { additionalProperties: false }),
 		execute: async (
-			_toolCallId: string,
+			toolCallId: string,
 			params: { initiative_slug: string },
 			signal: AbortSignal | undefined,
 			_onUpdate: unknown,
@@ -648,11 +670,26 @@ export default function (
 					next_action: refusal.recovery_action,
 				});
 			}
+			// The phase entry gate (ADR 0019/0025): retirement needs a live literal entry,
+			// and its token stands in for the dialog.
+			const entryRefusal = piRunEntryRefusal("retire_stale_batch", ctx);
+			if (entryRefusal)
+				throwToolFailure({
+					tool: "imm_canary_enrollment",
+					task_id: initiativeSlug,
+					operation: "retire_stale_batch",
+					state: "blocked",
+					code: entryRefusal.reason_code,
+					message: entryRefusal.detail,
+					next_action: entryRefusal.recovery_action,
+				});
 
 			const result = await executePiRetireStaleBatch({
 				root: ctx.cwd,
 				initiativeSlug,
 				signal,
+				toolCallId,
+				entryToken: piEntryToken(ctx),
 				confirmBatch: async (details) => {
 					presentTaskRail(ctx, {
 						task_id: initiativeSlug,
