@@ -101,37 +101,57 @@ describe("Pi run continuation boundary", () => {
 	test.each([
 		["imm_canary_enrollment", undefined], ["imm_kernel_canary", "request_authorization"],
 		["imm_kernel_canary", "approve_breaking_intent_revision"], ["imm_kernel_canary", "request_stop"],
-	])("%s %s failure suppresses gate retries before and after settle until explicit entry", async (name, op) => {
+	])("%s %s: two failures stay retryable, the third suppresses gate retries until explicit entry (D9)", async (name, op) => {
 		const h = fixture(); try {
 			await h.enter();
 			const call = (id: string) => ({ toolName: name, toolCallId: id, input: { task_id: "slice-a", action: { op } } });
-			await h.emit("tool_call", call("gate"));
-			await h.emit("tool_result", { toolName: name, toolCallId: "gate", isError: true, details: { reason: "cancelled" } });
+			const fail = async (id: string) => {
+				expect(await h.emit("tool_call", call(id))).toBeUndefined();
+				await h.emit("tool_result", { toolName: name, toolCallId: id, isError: true, details: { reason: "rejected" } });
+			};
+			await fail("gate-1"); await fail("gate-2");
+			expect(await h.settle()).toMatchObject({ continue: true });
+			await fail("gate-3");
 			expect(await h.emit("tool_call", call("retry-before"))).toMatchObject({ block: true });
 			expect(await h.settle()).toMatchObject({ entries: [{ customType: "immune-brain-run-paused" }] });
 			expect(await h.emit("tool_call", call("retry-after"))).toMatchObject({ block: true });
 			await h.emit("input", { text: "What remains?", source: "interactive" });
 			expect(await h.emit("tool_call", call("ordinary-input"))).toMatchObject({ block: true });
-			await h.enter(); expect(await h.emit("tool_call", call("new-entry"))).toBeUndefined();
+			await h.enter(); await fail("new-entry-1"); await fail("new-entry-2");
+			expect(await h.emit("tool_call", call("new-entry-3"))).toBeUndefined();
 		} finally { h.dispose(); }
 	});
 
-	test("native failure pauses once; no automatic gate retry", async () => {
+	test("native failures pause once at the third; no automatic gate retry", async () => {
 		const h = fixture(); try {
 			await h.enter();
-			await h.emit("tool_call", { toolName: "imm_kernel_canary", toolCallId: "gate", input: { task_id: "slice-a", action: { op: "request_authorization" } } });
-			await h.emit("tool_result", { toolName: "imm_kernel_canary", toolCallId: "gate", isError: true, details: { reason: "cancelled" } });
+			for (const id of ["gate-1", "gate-2", "gate-3"]) {
+				await h.emit("tool_call", { toolName: "imm_kernel_canary", toolCallId: id, input: { task_id: "slice-a", action: { op: "request_authorization" } } });
+				await h.emit("tool_result", { toolName: "imm_kernel_canary", toolCallId: id, isError: true, details: { reason: "cancelled" } });
+			}
 			expect(await h.settle()).toMatchObject({ entries: [{ customType: "immune-brain-run-paused" }] });
 			expect(await h.settle()).toBeUndefined();
 		} finally { h.dispose(); }
 	});
+
+	test.each([["aborted", false], ["aborted", true], ["completed", false]] as const)(
+		"a %s turn with canContinue %p revokes the live entry token (AC4)", async (outcome, canContinue) => {
+		const h = fixture(); try {
+			await h.enter();
+			await h.emit("agent_before_settle", { outcome, continue: false, context: { canContinue, pendingMessages: [] } });
+			expect(h.revoked).toEqual(["session-a"]);
+		} finally { h.dispose(); }
+	});
+
 	test("a pause ends the session's entry token; a continuing run keeps it", async () => {
 		const h = fixture(); try {
 			await h.enter();
 			expect(await h.settle()).toMatchObject({ continue: true });
 			expect(h.revoked).toEqual([]);
-			await h.emit("tool_call", { toolName: "imm_kernel_canary", toolCallId: "gate", input: { task_id: "slice-a", action: { op: "request_authorization" } } });
-			await h.emit("tool_result", { toolName: "imm_kernel_canary", toolCallId: "gate", isError: true, details: { reason: "cancelled" } });
+			for (const id of ["gate-1", "gate-2", "gate-3"]) {
+				await h.emit("tool_call", { toolName: "imm_kernel_canary", toolCallId: id, input: { task_id: "slice-a", action: { op: "request_authorization" } } });
+				await h.emit("tool_result", { toolName: "imm_kernel_canary", toolCallId: id, isError: true, details: { reason: "cancelled" } });
+			}
 			expect(await h.settle()).toMatchObject({ entries: [{ customType: "immune-brain-run-paused" }] });
 			expect(h.revoked).toEqual(["session-a"]);
 		} finally { h.dispose(); }

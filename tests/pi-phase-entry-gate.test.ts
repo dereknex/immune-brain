@@ -172,6 +172,8 @@ function session(root: string, identity: { getSessionId?: () => unknown } | null
 			return emit("input", { type: "input", text, source });
 		},
 		shutdown: () => emit("session_shutdown", { type: "session_shutdown" }),
+		settle: (outcome: string, canContinue: boolean) => emit("agent_before_settle", { type: "agent_before_settle", outcome, continue: false,
+			context: { canContinue, pendingMessages: [] } }),
 		enroll: () => failureOf(tool("imm_canary_enrollment").execute(randomUUID(), { action: "new", task_id: TASK }, undefined, undefined, ctx)),
 		batch: () => failureOf(tool("start_unattended_batch").execute(randomUUID(), { initiative_slug: SLUG }, undefined, undefined, ctx)),
 		retire: () => failureOf(tool("retire_stale_batch").execute("toolu_retire", { initiative_slug: SLUG }, undefined, undefined, ctx)),
@@ -381,6 +383,12 @@ describe("Pi phase entry gate", () => {
 				await pi.input("/skill:imm-run");
 				// The continuation boundary's pause port (pi-run-continuation revokeEntry).
 				revokePiPhaseEntry(identity.getSessionId());
+				return pi;
+			}],
+			["an entry ended by a user interrupt (AC4)", async (root) => {
+				const pi = session(root);
+				await pi.input("/skill:imm-run");
+				await pi.settle("aborted", false);
 				return pi;
 			}],
 		];

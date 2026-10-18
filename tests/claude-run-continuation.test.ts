@@ -76,12 +76,17 @@ describe("Claude run continuation", () => {
 		} finally { h.dispose(); }
 	});
 
-	test("an unchanged digest blocks once then pauses; source edits block again", async () => {
+	test("an unchanged digest blocks once then yields every later Stop without pausing; progress blocks again (D12)", async () => {
 		const h = fixture(); try {
 			await h.enter(); expect(JSON.parse((await h.stop())!).decision).toBe("block");
+			// Waiting on background work: any number of unchanged Stops end the turn quietly.
+			for (let wait = 0; wait < 10; wait++) expect(await h.stop()).toBeNull();
+			expect(await h.hook({ hook_event_name: "Stop", stop_hook_active: false, transcript_path: join(h.root, ".imm", "transcript.jsonl") })).toBeNull();
+			expect(readPhaseEntryState("hook-session", h.root)?.token).toBeTruthy();
+			expect(await h.hook({ hook_event_name: "PreToolUse", ...h.tool("enroll") })).toBeNull();
 			writeFileSync(join(h.root, "value.txt"), "after\n");
 			expect(JSON.parse((await h.stop())!).decision).toBe("block");
-			expect(JSON.parse((await h.stop())!)).toMatchObject({ systemMessage: expect.stringContaining("no substantive progress") });
+			expect(await h.stop()).toBeNull();
 		} finally { h.dispose(); }
 	});
 
@@ -100,25 +105,40 @@ describe("Claude run continuation", () => {
 		finally { h.dispose(); }
 	});
 
-	test("a failed native gate is reported and cannot be automatically retried", async () => {
+	test("two native-operation failures leave the run live; the third pauses and denies; a new entry resets the count (D9)", async () => {
 		const h = fixture(); try {
-			await h.enter(); const event = h.tool("request_authorization");
-			await h.hook({ hook_event_name: "PreToolUse", ...event });
-			await h.hook({ hook_event_name: "PostToolUseFailure", ...event, error: "cancelled" });
-			expect(JSON.parse((await h.stop())!)).toMatchObject({ systemMessage: expect.stringContaining("no automatic native retry") });
+			await h.enter();
+			const fail = async () => {
+				const event = h.tool("request_authorization");
+				await h.hook({ hook_event_name: "PreToolUse", ...event });
+				await h.hook({ hook_event_name: "PostToolUseFailure", ...event, error: "rejected" });
+			};
+			for (let attempt = 1; attempt <= 2; attempt++) {
+				await fail();
+				expect(JSON.parse((await h.stop())!).decision).toBe("block");
+				writeFileSync(join(h.root, "value.txt"), `retry ${attempt}\n`);
+				expect(await h.hook({ hook_event_name: "PreToolUse", ...h.tool("enroll") })).toBeNull();
+			}
+			await fail();
+			expect(JSON.parse((await h.stop())!)).toMatchObject({ systemMessage: expect.stringContaining("failed 3 times under this entry") });
 			const retry = await h.hook({ hook_event_name: "PreToolUse", ...h.tool("enroll") });
-			expect(JSON.parse(retry!)).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
-			await h.enter(); expect(JSON.parse((await h.stop())!).decision).toBe("block");
+			expect(retry === null || JSON.parse(retry).hookSpecificOutput?.permissionDecision === "deny").toBe(true);
+			expect(readPhaseEntryState("hook-session", h.root)?.run_live).toBe(false);
+			await h.enter(); await fail(); await fail();
+			expect(JSON.parse((await h.stop())!).decision).toBe("block");
 		} finally { h.dispose(); }
 	});
 
-	test("the actual MCP text-block array reports native rejection and pauses", async () => {
+	test("the actual MCP text-block array reports native rejection and pauses at the third one", async () => {
 		const h = fixture(); try {
-			await h.enter(); const event = h.tool("request_authorization");
-			await h.hook({ hook_event_name: "PreToolUse", ...event });
-			await h.hook({ hook_event_name: "PostToolUse", ...event,
-				tool_response: [{ type: "text", text: JSON.stringify({ state: "rejected" }) }] });
-			expect(JSON.parse((await h.stop())!)).toMatchObject({ systemMessage: expect.stringContaining("did not apply") });
+			await h.enter();
+			for (let attempt = 0; attempt < 3; attempt++) {
+				const event = h.tool("request_authorization");
+				await h.hook({ hook_event_name: "PreToolUse", ...event });
+				await h.hook({ hook_event_name: "PostToolUse", ...event,
+					tool_response: [{ type: "text", text: JSON.stringify({ state: "rejected" }) }] });
+			}
+			expect(JSON.parse((await h.stop())!)).toMatchObject({ systemMessage: expect.stringContaining("did not apply 3 times") });
 		} finally { h.dispose(); }
 	});
 
@@ -128,7 +148,7 @@ describe("Claude run continuation", () => {
 			expect(await h.hook({ hook_event_name: "Stop", stop_hook_active: true })).toBeNull();
 			expect(JSON.parse((await h.stop())!).decision).toBe("block");
 			expect(await h.stop(true)).toBeNull(); expect(await h.stop(true)).toBeNull();
-			expect(JSON.parse((await h.stop())!).systemMessage).toContain("no substantive progress");
+			expect(await h.stop()).toBeNull();
 		} finally { h.dispose(); }
 	});
 
@@ -140,17 +160,23 @@ describe("Claude run continuation", () => {
 		} finally { h.dispose(); }
 	});
 
-	test("a Stop-boundary pause refuses retire_stale_batch and the native gates even while the entry token is live", async () => {
+	test("a pause revokes the entry token and refuses retire_stale_batch and the native gates (D10)", async () => {
 		const h = fixture(); try {
 			await h.enter();
-			expect(JSON.parse((await h.stop())!).decision).toBe("block");
-			expect(JSON.parse((await h.stop())!).systemMessage).toContain("no substantive progress");
-			// The pause, not the token, decides: the token is still live here.
-			expect(readPhaseEntryState("hook-session", h.root)?.token).toBeTruthy();
-			for (const operation of ["retire_stale_batch", "enroll", "start_unattended_batch"]) {
-				const denial = JSON.parse((await h.hook({ hook_event_name: "PreToolUse", ...h.tool(operation) }))!);
+			for (let attempt = 0; attempt < 3; attempt++) {
+				const event = h.tool("request_authorization");
+				await h.hook({ hook_event_name: "PreToolUse", ...event });
+				await h.hook({ hook_event_name: "PostToolUseFailure", ...event, error: "rejected" });
+			}
+			expect(JSON.parse((await h.stop())!).systemMessage).toContain("failed 3 times");
+			expect(readPhaseEntryState("hook-session", h.root)?.token ?? null).toBeNull();
+			// With the entry spent, the phase-entry gate denies and records no admission for tools/call to consume.
+			for (const operation of ["retire_stale_batch", "enroll", "start_unattended_batch"] as const) {
+				const denial = JSON.parse(phaseEntryGateHookOutput({ hook_event_name: "PreToolUse",
+					tool_name: `mcp__plugin_immune-brain_immune-brain__${operation}`, tool_input: {}, tool_use_id: `paused-${operation}`,
+					session_id: "hook-session", cwd: h.root }, { root: h.root })!);
 				expect(denial).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
-				expect(denial.hookSpecificOutput.permissionDecisionReason).toStartWith("Run paused: ");
+				expect(consumePhaseAdmission(`paused-${operation}`, operation, h.root)).toBe(false);
 			}
 		} finally { h.dispose(); }
 	});

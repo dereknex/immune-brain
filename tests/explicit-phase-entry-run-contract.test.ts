@@ -44,6 +44,17 @@ describe("explicit phase entry: imm-run owns Enrollment", () => {
 		expect(entry).toContain("skip-worktree or assume-unchanged index flag still refuses both");
 	});
 
+	// Spec run-entry-decision-hosting D9, D10; ADR 0025.
+	test("imm-run contract states the run-entry retry rules, the kept gates and the remaining user stops", () => {
+		const run = readFileSync(join(PLUGIN, "dist/imm-run.md"), "utf8");
+		const decisions = run.slice(run.indexOf("\n## Decisions and Recovery\n"), run.indexOf("\n## Review and Learning\n")).replace(/\s+/g, " ");
+		expect(decisions).toContain("The literal-user `imm-run` entry needs no chat confirmation; Enrollment and unattended batch start each keep one native gate");
+		expect(decisions).toContain("only a side-effect-free rejection is retried, at most twice, and preflight is rerun before each retry");
+		expect(decisions).toContain("`plan_changed`, `head_moved` and a claim conflict are never retried");
+		expect(decisions).toContain("apply it, commit the fixed files alone in one commit even under `Git integration: manual`, list that commit in the manifest, then retry");
+		expect(decisions).toContain("Push, PR, credentials, breaking intent revision and rework exits still stop for the user");
+	});
+
 	test("imm-run loader selects Parent batch or isolated single-task Enrollment", () => {
 		const loader = flat(join(PLUGIN, "skills/imm-run/SKILL.md"));
 		expect(loader).toContain("With no active claim, a standalone validated candidate opens native Enrollment once");

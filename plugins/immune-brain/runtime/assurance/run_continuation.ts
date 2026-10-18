@@ -59,6 +59,8 @@ export type RunContinuationDecision = {
 	reason: string;
 	next_action: string | null;
 	state: RunContinuationState;
+	/** The pause is only an unchanged progress digest; a Host may yield the turn instead (Spec D12). */
+	stalled?: true;
 };
 
 /** One nudge per unchanged progress digest; the next unchanged boundary pauses. */
@@ -282,6 +284,6 @@ export function decideRunContinuation(previous: RunContinuationState,
 	const state = { ...previous, progress_digest: progressDigest, unchanged_observations: unchanged, boundary_id: observation.boundary_id };
 	// Running reviewers/executors progress through their own supervised exit boundary.
 	if (!wait && unchanged >= UNCHANGED_CONTINUATION_LIMIT)
-		return result("pause", "no substantive progress across continuation boundaries", nextAction, state);
+		return { ...result("pause", "no substantive progress across continuation boundaries", nextAction, state), stalled: true };
 	return result(wait ? "wait" : "continue", wait ? "observed foreground work is still running" : "authorized work remains", nextAction, state);
 }

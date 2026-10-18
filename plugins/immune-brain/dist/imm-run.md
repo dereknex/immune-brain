@@ -216,6 +216,19 @@ is recorded as a separate follow-up rather than resolved here.
   the executing session. Planner's route is for a change of goal, bound Spec
   design, or decomposition, and returns any other proposal to the executing
   session. No Host refuses a file edit because of the session's entry.
+- Run entry decision hosting (ADR 0025). The literal-user `imm-run` entry needs
+  no chat confirmation; Enrollment and unattended batch start each keep one native
+  gate, and the entry token spares only retirement and same-Host recovery.
+  Within one entry, only a side-effect-free rejection is retried, at most twice,
+  and preflight is rerun before each retry; judge retryability from the
+  rejection text and `recovery_action`. `plan_changed`, `head_moved` and a claim
+  conflict are never retried. The third native-operation failure under one entry
+  pauses the run and ends its token; only a new literal entry resumes. When
+  preflight names a deterministic fix (for example a `.gitignore` that ignores
+  `.imm/audit/`), apply it, commit the fixed files alone in one commit even under
+  `Git integration: manual`, list that commit in the manifest, then retry. Push,
+  PR, credentials, breaking intent revision and rework exits still stop for the
+  user.
 - Effects are separate grants. A stage-only recovery restores staging and grants
   no commit, push, or publication; an existing exact approval, including a valid
   batch capability bounded to one child, stays usable without another chat gate.

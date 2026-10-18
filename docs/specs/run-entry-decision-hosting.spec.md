@@ -36,6 +36,8 @@ No Brainstorm manifest exists. Decisions were confirmed in the grill session of 
 | E4 | `runtime/unattended/batch_lanes.ts` `parseMaxParallel` accepts 1 as a Lane batch; `resolveLaneParallel` forwards it. |
 | E5 | `runtime/unattended/batch_schedule.ts` `startableChildren` only refuses overlap with in-flight children, so a later overlapping child can start once an earlier one parks or fails. |
 | E6 | `runtime/claude/run_continuation.ts` pauses the run on any native-operation failure ("no automatic native retry") and denies further native tool calls until a fresh entry. |
+| E7 | `runtime/assurance/run_continuation.ts` pauses a run whose progress digest is unchanged after one Stop nudge; in this Initiative's own runs that paused the Loop while it waited on a 13-minute background regression, forcing a new typed entry. |
+| E8 | `.pi-extension/pi-run-continuation.ts` `agent_before_settle` resets on a non-completed outcome or `canContinue: false` without ending the entry token (S2 Review advisory), so an interrupted run kept a live token. |
 
 ## User scenarios
 
@@ -47,6 +49,7 @@ No Brainstorm manifest exists. Decisions were confirmed in the grill session of 
 | SCN-4 | user | a transient read failure on start | the agent retries | the run continues without user input; after 2 failed retries it pauses with the reason | automated | S4 |
 | SCN-5 | user | the repository ignores `.imm/audit/` | preflight refuses | the agent commits only the ignore fix, lists it in the manifest, and the batch starts | automated | S4 |
 | SCN-6 | user | a run in progress | the session exits and a new session calls an authority tool | the call is refused until the user types `imm-run` again | automated | S1 |
+| SCN-7 | Claude user | a run waiting on background verification | the agent ends several turns with no new progress | the run stays live and resumes when progress changes, with no new typed entry | automated | S4 |
 
 ## Decisions
 
@@ -62,6 +65,8 @@ No Brainstorm manifest exists. Decisions were confirmed in the grill session of 
 | D8 | When two children's scopes overlap, the later one in Slice order gains an implicit dependency on the earlier one: it starts only after the earlier one is done, both in the serial runner and in `startableChildren`. If the earlier child freezes, the later one is skipped as `skipped_blocked` just like a declared dependent, so the batch still terminates. Overlap uses the existing `overlappingScopeEntries`. | U9, E5 |
 | D9 | The continuation hooks count native-operation failures per entry token: the first two leave the run live so the agent may retry; the third pauses the run as today. The Loop contract tells the agent to retry only side-effect-free rejections, to rerun preflight before each retry, and never to retry `plan_changed`, `head_moved` or a claim conflict. | U6, E6 |
 | D10 | When preflight names a deterministic fix, the agent applies it, commits exactly the fixed files in one commit even under `Git integration: manual`, and retries. ADR 0025 records this as the second exception to ADR 0024 (the first is batch commits). | U7 |
+| D12 | On Claude, after one Stop block with no progress, a further Stop with an unchanged progress digest is allowed: it yields the turn, never pauses the run, never revokes the token and does not count toward a pause; the next incomplete Stop after progress changes blocks again. Pi keeps its stall pause, because its settle boundary has no background-wait case. | E7 |
+| D13 | A pause ends the entry token on both Hosts, and so does a Pi turn that settles with a non-completed outcome or `canContinue: false`. A paused Claude run is therefore refused at the phase-entry gate and at `tools/call` itself (`run_entry_required`), even when an admission was recorded before the pause. | E8, D3 |
 | D11 | ADR 0025 records D1–D10, amends ADR 0005 §6 (critical in batch) and ADR 0019 (gate on entry: kept for starting execution, removed for retirement), and replaces the `hooks.json` invariant "Hooks never mint authority" with "Authority comes only from a literal-user entry or a native gate". | U2, U5, U7 |
 
 Delegated technical choices:
@@ -105,7 +110,7 @@ Host input event → `mintEntryToken` → private cache → tool call → `admit
 | S1 | `run-entry-token-claude` | Claude literal entry mints the token; retire runs with no gate, enroll/batch keep one gate; manifest; invalidation; ADR 0025 | critical | — | D1–D4, D6, D11 | SCN-1, SCN-6 |
 | S2 | `run-entry-token-pi` | Pi parity of S1 | critical | S1 | D1–D4, D6 | SCN-2 |
 | S3 | `batch-critical-ordering` | critical children in batch; implicit overlap order; `max_parallel <= 1` serial | critical | — | D5, D7, D8 | SCN-3 |
-| S4 | `run-entry-auto-recovery` | bounded retry in both hooks; preflight fix commit; Loop contract text | material | S1, S2 | D9, D10 | SCN-4, SCN-5 |
+| S4 | `run-entry-auto-recovery` | bounded retry in both hooks; preflight fix commit; Loop contract text | material | S1, S2 | D9, D10, D12, D13 | SCN-4, SCN-5, SCN-7 |
 
 ## Discovery evidence
 

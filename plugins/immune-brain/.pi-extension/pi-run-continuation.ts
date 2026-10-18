@@ -13,6 +13,8 @@ type SettleBoundary = {
 	continue: boolean;
 	context: { canContinue: boolean; pendingMessages: unknown[] };
 };
+/** Spec D9: the third native-operation failure under one entry pauses; the first two leave the run live for a retry. */
+const NATIVE_FAILURE_LIMIT = 3;
 type ContinuationBoundaryResult = { continue?: boolean; entries?: Array<{ type: "custom_message"; customType: string; display: boolean; content: string }> } | void;
 
 /** Continuation is session memory, never a capability or durable task owner. */
@@ -25,6 +27,12 @@ export function registerPiRunContinuation(pi: ExtensionAPI, ports: {
 	let state: RunContinuationState | undefined;
 	let hostFailure: string | undefined;
 	const failedGates = new Set<string>();
+	let nativeFailures = 0;
+	/** Counts one failure; only the last one in the budget blocks the gate and pauses at the next boundary. */
+	const failNative = (gate: string, reason: string): boolean => {
+		if (++nativeFailures < NATIVE_FAILURE_LIMIT) return false;
+		failedGates.add(gate); hostFailure = reason; return true;
+	};
 	let reviewRecovery: string | undefined;
 	let review: ReviewContinuationState = "unobserved";
 	let reviewerPrompt: string | undefined;
@@ -32,18 +40,18 @@ export function registerPiRunContinuation(pi: ExtensionAPI, ports: {
 	const calls = new Map<string, { name: string; task_id?: string; op?: string; initiative_slug?: string }>();
 	const reset = () => { entered = false; state = undefined; hostFailure = undefined; reviewRecovery = undefined;
 		review = "unobserved"; reviewerPrompt = undefined; reviewerCallId = undefined; calls.clear(); };
-	pi.on("session_start", () => { failedGates.clear(); reset(); });
-	pi.on("session_shutdown", () => { failedGates.clear(); reset(); });
+	pi.on("session_start", () => { failedGates.clear(); nativeFailures = 0; reset(); });
+	pi.on("session_shutdown", () => { failedGates.clear(); nativeFailures = 0; reset(); });
 	pi.on("input", (event, ctx) => {
 		if (event.source === "extension") return;
 		const entry = ports.entry(event.text, ctx.cwd);
 		if (releasesRunBinding(event.text, entry === "plan" ? "planner" : entry)) { reset(); return; }
-		if (entry === "run") { failedGates.clear(); reset(); entered = true; }
+		if (entry === "run") { failedGates.clear(); nativeFailures = 0; reset(); entered = true; }
 	});
 	pi.on("tool_call", (event) => {
 		const gateInput = event.input as { task_id?: unknown; initiative_slug?: unknown; action?: { op?: unknown } };
 		const gate = `${event.toolName}:${gateInput.task_id ?? gateInput.initiative_slug ?? ""}:${gateInput.action?.op ?? ""}`;
-		if (failedGates.has(gate)) return { block: true, reason: "This native gate failed or was cancelled; enter imm-run explicitly before retrying" };
+		if (failedGates.has(gate)) return { block: true, reason: `This native gate failed ${NATIVE_FAILURE_LIMIT} times under this entry; enter imm-run explicitly before retrying` };
 		if (!entered) return;
 		if (event.toolName === "imm_canary_enrollment" && state?.binding.kind === "parent" &&
 			state.binding.blocked_native_tasks?.includes(String(event.input.task_id)))
@@ -67,10 +75,8 @@ export function registerPiRunContinuation(pi: ExtensionAPI, ports: {
 		const call = calls.get(event.toolCallId); calls.delete(event.toolCallId);
 		if (!entered || !call) return;
 		if (call.name === "retire_stale_batch") {
-			if (event.isError || (event.details as { state?: string } | undefined)?.state !== "retired") {
-				failedGates.add(`${call.name}:${call.initiative_slug ?? ""}:`);
-				hostFailure = "Batch retirement did not apply; inspect the same-Host recovery";
-			}
+			if (event.isError || (event.details as { state?: string } | undefined)?.state !== "retired")
+				failNative(`${call.name}:${call.initiative_slug ?? ""}:`, "Batch retirement did not apply; inspect the same-Host recovery");
 			return;
 		}
 		if (call.name === "start_unattended_batch") {
@@ -82,8 +88,7 @@ export function registerPiRunContinuation(pi: ExtensionAPI, ports: {
 				return;
 			}
 			if (event.isError || result?.state !== "started" || !result.batch_id || !call.initiative_slug) {
-				failedGates.add(`${call.name}:${call.initiative_slug ?? ""}:`);
-				hostFailure = "Batch native operation did not apply; inspect the same-Host recovery"; return;
+				failNative(`${call.name}:${call.initiative_slug ?? ""}:`, "Batch native operation did not apply; inspect the same-Host recovery"); return;
 			}
 			const record = readAnyBatchRunState(ctx.cwd, result.batch_id);
 			if (!record || record.initiative_slug !== call.initiative_slug) { hostFailure = "Batch result has no matching persisted identity"; return; }
@@ -96,9 +101,9 @@ export function registerPiRunContinuation(pi: ExtensionAPI, ports: {
 			agent_params?: { prompt?: unknown } } | undefined;
 		if ((event.isError || ["blocked", "cancelled", "rejected", "failed"].includes(String(details?.state))) &&
 			(call.name === "imm_canary_enrollment" || ["request_authorization", "approve_breaking_intent_revision", "request_stop"].includes(call.op ?? ""))) {
-			failedGates.add(`${call.name}:${call.task_id}:${call.op ?? ""}`);
-			hostFailure = typeof details?.reason === "string" ? details.reason : "Native authority operation failed or was cancelled";
-			if (call.name === "imm_canary_enrollment" && state && await parkFailedCriticalGate(state.binding, call.task_id)) hostFailure = undefined;
+			if (failNative(`${call.name}:${call.task_id}:${call.op ?? ""}`,
+				typeof details?.reason === "string" ? details.reason : "Native authority operation failed or was cancelled") &&
+				call.name === "imm_canary_enrollment" && state && await parkFailedCriticalGate(state.binding, call.task_id)) hostFailure = undefined;
 			return;
 		}
 		if (call.op === "advance_assurance" && !event.isError && details?.state === "review_ready") {
@@ -127,9 +132,11 @@ export function registerPiRunContinuation(pi: ExtensionAPI, ports: {
 	// shortcut: optional workspace SDK types predate Pi 1.2; remove this declaration when that peer reaches 1.2 (owner: Immune-Brain).
 	const boundaryApi = pi as ExtensionAPI & { on(event: "agent_before_settle", handler: (event: SettleBoundary, ctx: ExtensionContext) => Promise<ContinuationBoundaryResult>): void };
 	boundaryApi.on("agent_before_settle", async (event, ctx) => {
-		if (!entered || !state) return;
+		if (!entered) return;
 		const revoke = () => ports.revokeEntry?.(ctx.sessionManager.getSessionId());
-		if (event.outcome !== "completed" || !event.context.canContinue) { reset(); return; }
+		// Spec D13: an interrupted or non-continuable turn ends the entry like a pause.
+		if (event.outcome !== "completed" || !event.context.canContinue) { revoke(); reset(); return; }
+		if (!state) return;
 		if (event.continue || event.context.pendingMessages.length) return;
 		try {
 			if (state.binding.kind === "parent") {

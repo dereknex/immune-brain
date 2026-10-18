@@ -1,8 +1,7 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "run-entry-auto-recovery",
-  "owner": "user",
-  "goal": "Within one imm-run entry the run recovers by itself: both continuation hooks allow two native-operation failures before pausing, the agent applies and commits alone a deterministic preflight fix before retrying, and the packaged Loop contract states the retry rules and the remaining user stops (Spec D9, D10).",
+  "goal": "Within one imm-run entry the run recovers by itself and is not paused by waiting: both continuation hooks allow two native-operation failures before pausing; a Claude Stop that repeats with no progress after one continuation nudge is allowed without counting toward a pause; the agent applies and commits alone a deterministic preflight fix before retrying; a Pi user interrupt revokes the entry token and the Claude MCP server itself refuses token-backed operations while the run is paused; and the packaged Loop contract states the retry rules, the single native gate kept on enroll and batch start, and the remaining user stops (Spec D9, D10, D12, D13).",
   "acceptance": [
     {
       "id": "AC1",
@@ -11,26 +10,53 @@
     },
     {
       "id": "AC2",
-      "assertion": "The packaged imm-run contracts and BASELINE state that a literal entry needs no gate or chat confirmation, that only side-effect-free rejections are retried at most twice after rerunning preflight, that plan_changed, head_moved and claim conflicts are never retried, that a deterministic preflight fix is committed alone and listed in the manifest, and that push, PR, credentials, breaking intent revision and rework exits still stop for the user.",
+      "assertion": "The packaged imm-run contracts and BASELINE state that a literal entry needs no chat confirmation while enroll and unattended batch start each keep one native gate, that only side-effect-free rejections are retried at most twice after rerunning preflight, that plan_changed, head_moved and claim conflicts are never retried, that a deterministic preflight fix is committed alone and listed in the manifest, and that push, PR, credentials, breaking intent revision and rework exits still stop for the user.",
       "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/explicit-phase-entry-run-contract.test.ts\",\n      \"tests/baseline-packaging-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "On Claude, after one Stop block with no progress, further Stops with stop_hook_active true and an unchanged progress digest are allowed (no block), never pause the run and never revoke the token, however many occur; native tools stay admitted; once progress changes, the next incomplete Stop blocks again.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-run-continuation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "A Pi turn that settles with a non-completed outcome or canContinue false under a live token revokes it, and a later retire_stale_batch is refused before any dialog; on Claude, a tools/call for retire_stale_batch, enroll or start_unattended_batch while the run is paused is refused with no Kernel mutation even when a phase admission was recorded.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-run-continuation.test.ts\",\n      \"tests/pi-phase-entry-gate.test.ts\",\n      \"tests/claude-phase-entry-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC5",
+      "assertion": "start_unattended_batch with max_parallel 1 and lane_offers against an active Lane batch recorded with max_parallel 2 resumes that batch at max_parallel 2 instead of reporting batch_parallel_mismatch.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
     }
   ],
   "scope_hint": [
     ".changeset/run-entry-decision-hosting-auto-recovery.md",
+    "docs/adr/0025-run-entry-decision-hosting.md",
     "docs/plans/run-entry-auto-recovery.intent.json",
     "docs/specs/run-entry-decision-hosting.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
     "plugins/immune-brain/.pi-extension/pi-run-continuation.ts",
     "plugins/immune-brain/BASELINE.md",
     "plugins/immune-brain/dist/BASELINE.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
     "plugins/immune-brain/dist/imm-run-batch.md",
     "plugins/immune-brain/dist/imm-run.md",
+    "plugins/immune-brain/runtime/assurance/run_continuation.ts",
+    "plugins/immune-brain/runtime/claude/lane_guard.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
     "plugins/immune-brain/runtime/claude/run_continuation.ts",
     "plugins/immune-brain/skills/BASELINE.md",
     "tests/baseline-packaging-contract.test.ts",
+    "tests/claude-phase-entry-gate.test.ts",
     "tests/claude-run-continuation.test.ts",
     "tests/explicit-phase-entry-run-contract.test.ts",
-    "tests/pi-run-continuation.test.ts"
+    "tests/goal-driven-batch-run.test.ts",
+    "tests/pi-phase-entry-gate.test.ts",
+    "tests/pi-run-continuation.test.ts",
+    "tests/run-continuation.test.ts",
+    "tests/unattended-batch-lanes.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

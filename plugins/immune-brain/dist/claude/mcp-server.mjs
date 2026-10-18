@@ -15833,7 +15833,7 @@ function decideRunContinuation(previous, observation) {
   const unchanged = wait ? previous.unchanged_observations : previous.progress_digest === progressDigest ? previous.unchanged_observations + 1 : 0;
   const state = { ...previous, progress_digest: progressDigest, unchanged_observations: unchanged, boundary_id: observation.boundary_id };
   if (!wait && unchanged >= UNCHANGED_CONTINUATION_LIMIT)
-    return result("pause", "no substantive progress across continuation boundaries", nextAction, state);
+    return { ...result("pause", "no substantive progress across continuation boundaries", nextAction, state), stalled: true };
   return result(wait ? "wait" : "continue", wait ? "observed foreground work is still running" : "authorized work remains", nextAction, state);
 }
 
@@ -16149,6 +16149,7 @@ import { homedir as homedir2 } from "node:os";
 var MCP_TOOL = /^mcp__.*immune-brain.*__(\w+)$/;
 var NATIVE_OPERATIONS = new Set(["enroll", "start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "stop"]);
 var MAX_METADATA_BYTES = 256 * 1024;
+var NATIVE_FAILURE_LIMIT = 3;
 var blank = () => ({
   state: null,
   sequence: 0,
@@ -16158,7 +16159,8 @@ var blank = () => ({
   reviewer_agent_id: null,
   recovery_action: null,
   paused: null,
-  stop_blocks: 0
+  stop_blocks: 0,
+  native_failures: 0
 });
 var statePath2 = (sessionId, root) => join22(cacheDir(root), `${sessionHash(sessionId)}.continuation`);
 var callPath = (toolId, root) => join22(cacheDir(root), `${sessionHash(toolId)}.continuation-call`);
@@ -16195,7 +16197,8 @@ function readMetadata(sessionId, root) {
   const value = readLast(statePath2(sessionId, root));
   if (!value)
     return blank();
-  if (typeof value !== "object" || !Number.isInteger(value.sequence) || value.sequence < 0 || !Number.isInteger(value.stop_blocks) || value.stop_blocks < 0 || !["unobserved", "ready", "running", "returned", "rejected"].includes(value.review) || ![value.reviewer_prompt, value.reviewer_call_id, value.reviewer_agent_id, value.recovery_action, value.paused].every((v) => v === null || typeof v === "string"))
+  value.native_failures ??= 0;
+  if (typeof value !== "object" || !Number.isInteger(value.sequence) || value.sequence < 0 || !Number.isInteger(value.stop_blocks) || value.stop_blocks < 0 || !Number.isInteger(value.native_failures ?? 0) || (value.native_failures ?? 0) < 0 || !["unobserved", "ready", "running", "returned", "rejected"].includes(value.review) || ![value.reviewer_prompt, value.reviewer_call_id, value.reviewer_agent_id, value.recovery_action, value.paused].every((v) => v === null || typeof v === "string"))
     throw new Error("invalid continuation metadata");
   if (value.state) {
     const { binding } = value.state;
@@ -16217,13 +16220,22 @@ function save(sessionId, root, value) {
     drop(temporary, root);
   }
 }
-async function observeNativeFailure(metadata, correlation, root, reason) {
+function pauseRun(metadata, sessionId, root, reason) {
   metadata.paused = reason;
-  save(correlation.session_id, root, metadata);
-  if (correlation.operation === "enroll" && metadata.state && await parkFailedCriticalGate(metadata.state.binding, correlation.task_id ?? undefined)) {
-    metadata.paused = null;
+  save(sessionId, root, metadata);
+  revokeEntryToken(sessionId, "spent", root);
+}
+async function observeNativeFailure(metadata, correlation, root, reason) {
+  metadata.native_failures++;
+  if (metadata.native_failures < NATIVE_FAILURE_LIMIT) {
     save(correlation.session_id, root, metadata);
+    return;
   }
+  if (correlation.operation === "enroll" && metadata.state && await parkFailedCriticalGate(metadata.state.binding, correlation.task_id ?? undefined)) {
+    save(correlation.session_id, root, metadata);
+    return;
+  }
+  pauseRun(metadata, correlation.session_id, root, reason);
 }
 function readRunToolSession(toolId, operation, workspace, root = tmpdir7()) {
   const record = readLast(callPath(toolId, root));
@@ -16359,7 +16371,7 @@ async function runContinuationHookOutput(payload, root = tmpdir7()) {
       drop(callPath(toolId, root), root);
       if (event === "PostToolUseFailure") {
         if (NATIVE_OPERATIONS.has(operation))
-          await observeNativeFailure(metadata, correlated, root, `${operation} failed or was cancelled; no automatic native retry`);
+          await observeNativeFailure(metadata, correlated, root, `${operation} failed ${NATIVE_FAILURE_LIMIT} times under this entry; no further automatic retry`);
         else if (operation === "submit_review") {
           metadata.review = "rejected";
           save(sessionId, root, metadata);
@@ -16424,7 +16436,7 @@ async function runContinuationHookOutput(payload, root = tmpdir7()) {
         }
       }
       if (NATIVE_OPERATIONS.has(operation) && ["blocked", "cancelled", "rejected", "failed"].includes(String(response?.state)))
-        await observeNativeFailure(metadata, correlated, root, `${operation} did not apply; inspect the same-Host recovery before retrying`);
+        await observeNativeFailure(metadata, correlated, root, `${operation} did not apply ${NATIVE_FAILURE_LIMIT} times under this entry; inspect the same-Host recovery`);
       if (metadata.state)
         save(sessionId, root, metadata);
       return null;
@@ -16498,12 +16510,17 @@ async function runContinuationHookOutput(payload, root = tmpdir7()) {
       save(sessionId, root, metadata);
       return null;
     }
+    if (decision.action === "pause" && decision.stalled) {
+      metadata.state = decision.state;
+      metadata.stop_blocks = 0;
+      save(sessionId, root, metadata);
+      return null;
+    }
     if (decision.state.progress_digest !== metadata.state.progress_digest || payload.stop_hook_active !== true)
       metadata.stop_blocks = 0;
     metadata.state = decision.state;
     if (decision.action === "pause" || metadata.stop_blocks >= 7) {
-      metadata.paused = metadata.stop_blocks >= 7 ? "Claude consecutive Stop boundary reached; resume explicitly in the same Host" : decision.reason;
-      save(sessionId, root, metadata);
+      pauseRun(metadata, sessionId, root, metadata.stop_blocks >= 7 ? "Claude consecutive Stop boundary reached; resume explicitly in the same Host" : decision.reason);
       return warning(metadata.paused);
     }
     metadata.stop_blocks++;

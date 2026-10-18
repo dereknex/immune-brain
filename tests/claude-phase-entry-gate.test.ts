@@ -166,6 +166,24 @@ describe("Claude phase entry gate: enroll", () => {
 		expect(s.gateCalls()).toBe(0);
 	});
 
+	test("a paused run refuses enroll, batch start and retire at tools/call even with admissions recorded before the pause", async () => {
+		const s = await session(["gate-a"]);
+		s.prompt("/imm-run gate-a");
+		for (const [tool, id] of [[ENROLL, "toolu_pe"], [BATCH, "toolu_pb"], [RETIRE, "toolu_pr"]] as const) expect(s.hook(tool, id)).toBeNull();
+		// The third native-operation failure under this entry pauses the run (Spec D9).
+		for (let attempt = 1; attempt <= 3; attempt++) {
+			const failure = { tool_name: "mcp__plugin_immune-brain_immune-brain__request_authorization", tool_use_id: `toolu_f${attempt}`,
+				tool_input: { task_id: "gate-a" }, session_id: "gate-session", cwd: s.cwd };
+			await runContinuationHookOutput({ hook_event_name: "PreToolUse", ...failure }, s.store);
+			await runContinuationHookOutput({ hook_event_name: "PostToolUseFailure", ...failure, error: "rejected" }, s.store);
+		}
+		expectRunEntryRequired(await s.call("enroll", { task_id: "gate-a" }, "toolu_pe"));
+		expectRunEntryRequired(await s.call("start_unattended_batch", { initiative_slug: "gate-init" }, "toolu_pb"));
+		expectRunEntryRequired(await s.call("retire_stale_batch", { initiative_slug: "gate-init" }, "toolu_pr"));
+		expect(s.gateCalls()).toBe(0);
+		expect(readActiveClaimTaskId(s.cwd)).toBeNull();
+	});
+
 	test("the run entry stays live for a later Slice after ordinary prompts", async () => {
 		const s = await session(["gate-a"]);
 		s.prompt("/imm-run gate-a");

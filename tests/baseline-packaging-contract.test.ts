@@ -42,6 +42,17 @@ describe("immune-brain BASELINE packaging contract", () => {
     expect(skillsText).toBe(rootText)
   })
 
+  // Spec run-entry-decision-hosting D9, D10; ADR 0025.
+  it("states the run-entry retry rules, the kept native gates and the remaining user stops", () => {
+    const baseline = read(BASELINE_ROOT).replace(/\s+/g, " ")
+    expect(baseline).toContain("a literal-user `imm-run` entry needs no chat confirmation, while Enrollment and unattended batch start each keep one native gate")
+    expect(baseline).toContain("only a side-effect-free rejection is retried, at most twice, and preflight is rerun before each retry")
+    expect(baseline).toContain("`plan_changed`, `head_moved` and a claim conflict are never retried")
+    expect(baseline).toContain("commit the fixed files alone in one commit even under `Git integration: manual`, list that commit in the manifest")
+    expect(baseline).toContain("Push, PR, credentials, breaking intent revision and rework exits still stop for the user")
+    expect(baseline).not.toContain("automatic-retry fallback")
+  })
+
   it("defines one observable Skill-explicit Managed contract without routine-breadth conflicts", () => {
     const baseline = read(BASELINE_ROOT)
     expect(baseline).toContain("## Workflow Activation")

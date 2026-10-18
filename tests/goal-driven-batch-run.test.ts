@@ -140,7 +140,7 @@ describe("native task transitions inside a Parent", () => {
    expect(facts.next_action).not.toContain("start_unattended_batch"); expect(facts.final_passed).toBe(false);
   } finally { rmSync(h.root, { recursive: true, force: true }); }
  });
- it.each([true, false])("Pi parks a rejected critical gate and continues its ordinary Task (error=%s)", async isError => {
+ it.each([true, false])("Pi parks a critical gate rejected three times and continues its ordinary Task (error=%p)", async isError => {
   const h = parentFixture(false);
   try {
    const handlers = new Map<string, Function>();
@@ -152,15 +152,18 @@ describe("native task transitions inside a Parent", () => {
    await emit("tool_call", { toolName: "start_unattended_batch", toolCallId: "batch", input: { initiative_slug: "parent" } });
    await emit("tool_result", { toolName: "start_unattended_batch", toolCallId: "batch", isError: false, details: { state: "started", batch_id: h.binding.batch_id } });
    const gate = { toolName: "imm_canary_enrollment", toolCallId: "gate", input: { task_id: "other-task" } };
-   await emit("tool_call", gate);
-   await emit("tool_result", { ...gate, isError, details: { state: "cancelled", reason: "cancelled" } });
+   for (const attempt of [1, 2, 3]) {
+    const call = { ...gate, toolCallId: `gate-${attempt}` };
+    expect(await emit("tool_call", call)).toBeUndefined();
+    await emit("tool_result", { ...call, isError, details: { state: "cancelled", reason: "cancelled" } });
+   }
    expect(await emit("tool_call", { ...gate, toolCallId: "retry" })).toMatchObject({ block: true });
    const decision = await emit("agent_before_settle", { outcome: "completed", continue: false, context: { canContinue: true, pendingMessages: [] } });
    expect(decision).toMatchObject({ continue: true });
    expect(decision.entries[0].content).toContain("advance_assurance");
   } finally { rmSync(h.root, { recursive: true, force: true }); }
  });
- it.each(["PostToolUse", "PostToolUseFailure"])("Claude parks only the critical gate after %s", async failureEvent => {
+ it.each(["PostToolUse", "PostToolUseFailure"])("Claude parks only the critical gate after three %s failures", async failureEvent => {
   const h = parentFixture(false);
   try {
    const base = { cwd: h.root, session_id: h.binding.session_id };
@@ -171,8 +174,11 @@ describe("native task transitions inside a Parent", () => {
    await hook({ ...batch, hook_event_name: "PreToolUse" });
    await hook({ ...batch, hook_event_name: "PostToolUse", tool_response: { state: "started", batch_id: h.binding.batch_id } });
    const gate = { tool_name: "mcp__plugin_immune-brain_immune-brain__enroll", tool_use_id: "gate", tool_input: { task_id: "other-task" } };
-   await hook({ ...gate, hook_event_name: "PreToolUse" });
-   await hook({ ...gate, hook_event_name: failureEvent, tool_response: { state: "cancelled" }, error: "cancelled" });
+   for (const attempt of [1, 2, 3]) {
+    const call = { ...gate, tool_use_id: `gate-${attempt}` };
+    expect(await hook({ ...call, hook_event_name: "PreToolUse" })).toBeNull();
+    await hook({ ...call, hook_event_name: failureEvent, tool_response: { state: "cancelled" }, error: "cancelled" });
+   }
    expect(JSON.parse((await hook({ ...gate, tool_use_id: "retry", hook_event_name: "PreToolUse" }))!)).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
    expect(await hook({ ...batch, tool_use_id: "resume", hook_event_name: "PreToolUse" })).toBeNull();
    const transcript = join(h.root, ".imm", "transcript.jsonl");

@@ -67,7 +67,11 @@ therefore must not be the only literal-user act behind starting execution.
    scopes order children implicitly (S3); the continuation hooks allow two
    bounded retries of a side-effect-free refusal per token, and a
    deterministic preflight fix is committed alone as the second exception to
-   ADR 0024's `manual` mode, after batch commits (S4).
+   ADR 0024's `manual` mode, after batch commits (S4). S4 also lets a Claude
+   Stop with no new progress yield the turn instead of pausing, so waiting on
+   background work no longer forces a new typed entry, and ends the token on
+   every pause and on an interrupted Pi turn, so a paused run is refused by the
+   MCP server itself and not only by the continuation hook (Spec D12, D13).
 
 ### Deviations from the Spec
 

@@ -740,6 +740,22 @@ describe("max_parallel 1 end to end through a real second worktree", () => {
 		}
 	});
 
+	it("resumes a recorded max_parallel 2 Lane batch at 2 when the host passes max_parallel 1 with lane_offers", async () => {
+		const fx = fixture();
+		try {
+			const kernel = laneKernel();
+			const args = { ...request(fx, [child("task-a", "S1"), child("task-b", "S2")], kernel), max_parallel: 2 };
+			await startBatch(args);
+			const resolved = resolveLaneParallel(fx.repo, SLUG, parseMaxParallel(1), []);
+			expect(resolved).toBe(2);
+			const resumed = lanes(await startBatch({ ...args, max_parallel: resolved }));
+			expect(resumed.reason ?? "").not.toMatch(/batch_parallel_mismatch/);
+			expect(resumed.max_parallel).toBe(2);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
 	it("keeps the serial contract when max_parallel is absent", async () => {
 		const fx = fixture();
 		try {
