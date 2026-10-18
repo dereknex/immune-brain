@@ -1,0 +1,226 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "run-entry-auto-recovery",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "run-entry-auto-recovery",
+    "goal": "Within one imm-run entry the run recovers by itself and is not paused by waiting: both continuation hooks allow two native-operation failures before pausing; a Claude Stop that repeats with no progress after one continuation nudge is allowed without counting toward a pause; the agent applies and commits alone a deterministic preflight fix before retrying; a Pi user interrupt revokes the entry token and the Claude MCP server itself refuses token-backed operations while the run is paused; and the packaged Loop contract states the retry rules, the single native gate kept on enroll and batch start, and the remaining user stops (Spec D9, D10, D12, D13).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "On each Host the first and second native-operation failure under one entry token leave the run live and native tools admitted; the third pauses the run and denies native tools; a new literal entry resets the count.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-run-continuation.test.ts\",\n      \"tests/pi-run-continuation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "The packaged imm-run contracts and BASELINE state that a literal entry needs no chat confirmation while enroll and unattended batch start each keep one native gate, that only side-effect-free rejections are retried at most twice after rerunning preflight, that plan_changed, head_moved and claim conflicts are never retried, that a deterministic preflight fix is committed alone and listed in the manifest, and that push, PR, credentials, breaking intent revision and rework exits still stop for the user.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/explicit-phase-entry-run-contract.test.ts\",\n      \"tests/baseline-packaging-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "On Claude, after one Stop block with no progress, further Stops with stop_hook_active true and an unchanged progress digest are allowed (no block), never pause the run and never revoke the token, however many occur; native tools stay admitted; once progress changes, the next incomplete Stop blocks again.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-run-continuation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "A Pi turn that settles with a non-completed outcome or canContinue false under a live token revokes it, and a later retire_stale_batch is refused before any dialog; on Claude, a tools/call for retire_stale_batch, enroll or start_unattended_batch while the run is paused is refused with no Kernel mutation even when a phase admission was recorded.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-run-continuation.test.ts\",\n      \"tests/pi-phase-entry-gate.test.ts\",\n      \"tests/claude-phase-entry-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "start_unattended_batch with max_parallel 1 and lane_offers against an active Lane batch recorded with max_parallel 2 resumes that batch at max_parallel 2 instead of reporting batch_parallel_mismatch.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/run-entry-decision-hosting-auto-recovery.md",
+      "docs/adr/0025-run-entry-decision-hosting.md",
+      "docs/plans/run-entry-auto-recovery.intent.json",
+      "docs/specs/run-entry-decision-hosting.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-run-continuation.ts",
+      "plugins/immune-brain/BASELINE.md",
+      "plugins/immune-brain/dist/BASELINE.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run-batch.md",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/runtime/assurance/run_continuation.ts",
+      "plugins/immune-brain/runtime/claude/lane_guard.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/claude/run_continuation.ts",
+      "plugins/immune-brain/skills/BASELINE.md",
+      "tests/baseline-packaging-contract.test.ts",
+      "tests/claude-phase-entry-gate.test.ts",
+      "tests/claude-run-continuation.test.ts",
+      "tests/explicit-phase-entry-run-contract.test.ts",
+      "tests/goal-driven-batch-run.test.ts",
+      "tests/pi-phase-entry-gate.test.ts",
+      "tests/pi-run-continuation.test.ts",
+      "tests/run-continuation.test.ts",
+      "tests/unattended-batch-lanes.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/run-entry-auto-recovery.intent.json",
+    "content_hash": "sha256:06da2075078fce5e82319fbe57f25b40a8427560c2c69b23f63268e8f800c699"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:517b385e03db5c81926ccc9d0f439b5fd867bc7e8eac385d27a1d244681b2a30",
+  "git_base_head": "6825b11440c4388e3c4ca3053992fa1bc3ee18c6",
+  "attestations": [
+    {
+      "id": "approval-qa-5416679c",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:06da2075078fce5e82319fbe57f25b40a8427560c2c69b23f63268e8f800c699",
+      "diff_hash": "sha256:220a9fbc5fab07258982407e4c81c79aa273a3e4fc8d0f3d0db9065055a92497",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 project verification check(s) passed; execution=sha256:6de017f24c09db5c26da8ec79eaf86d4fc7232f5696aa124890d7527ad50f544",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:6de017f24c09db5c26da8ec79eaf86d4fc7232f5696aa124890d7527ad50f544"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:6de017f24c09db5c26da8ec79eaf86d4fc7232f5696aa124890d7527ad50f544"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:6de017f24c09db5c26da8ec79eaf86d4fc7232f5696aa124890d7527ad50f544"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:6de017f24c09db5c26da8ec79eaf86d4fc7232f5696aa124890d7527ad50f544"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:6de017f24c09db5c26da8ec79eaf86d4fc7232f5696aa124890d7527ad50f544"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-79832453",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:06da2075078fce5e82319fbe57f25b40a8427560c2c69b23f63268e8f800c699",
+      "diff_hash": "sha256:220a9fbc5fab07258982407e4c81c79aa273a3e4fc8d0f3d0db9065055a92497",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance checks out: single parent 6825b11, tree c68aadf. AC1-AC5 are covered. Both hooks pause only on the third native failure, and a new literal entry resets the count by dropping the state file. On Claude, a stalled Stop yields the turn without pausing or revoking. A pause or interrupted Pi turn revokes the token, so tools/call refuses while paused. The three BASELINE copies are identical and the dist bundle matches the source.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "6825b11440c4388e3c4ca3053992fa1bc3ee18c6",
+        "review_commit": "75719d6bb80d1399d387f370bc533970cbed4b67",
+        "review_tree": "c68aadfbf60525c6020d0ad84427bed967a42cf4",
+        "manifest_digest": "sha256:833395137737fbc66464ece4572618a907298ba5bf745c5a72b9fa7f98d084d7"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-cf8ef750593a-1-review-1",
+          "acceptance_id": "AC1",
+          "summary": "After the third failure, the Claude continuation test now accepts either null or a deny from the hook. The paused-state PreToolUse deny branch in runtime/claude/run_continuation.ts can no longer run after pauseRun revokes the token. The denial is pinned instead at tools/call in tests/claude-phase-entry-gate.test.ts.",
+          "anchor": "sha256:040af3b0ae450c470f24822dfec34691e6292808c4f32defc83839913bded01e",
+          "evidence": {
+            "trigger": "Third request_authorization PostToolUseFailure -> pauseRun revokes the token, so run_live is false -> the continuation PreToolUse for enroll returns null instead of deny. The test assertion 'retry === null || deny' passes either way. The refusal is asserted only by the phase-entry gate and tools/call tests.",
+            "caller_chain": [
+              "tests/claude-run-continuation.test.ts",
+              "plugins/immune-brain/runtime/claude/run_continuation.ts:runContinuationHookOutput",
+              "plugins/immune-brain/runtime/claude/run_continuation.ts:pauseRun",
+              "plugins/immune-brain/runtime/claude/lane_guard.ts:revokeEntryToken"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC1"
+            }
+          }
+        },
+        {
+          "id": "review-cf8ef750593a-2-review-2",
+          "acceptance_id": "AC5",
+          "summary": "The AC5 test drives resolveLaneParallel and then startBatch directly. It never calls the start_unattended_batch tool handler, so the wiring that combines max_parallel 1 with lane_offers is not tested end to end. No seam is named, so this is not blocking.",
+          "anchor": "sha256:f22561e004061ea42f7a0b94ed391c941c8f41a8adf4d225aad9ef0e598b17a1",
+          "evidence": {
+            "trigger": "If the start_unattended_batch handler stopped forwarding resolveLaneParallel's result into startBatch, the test would still pass, because it composes the two functions itself.",
+            "caller_chain": [
+              "tests/unattended-batch-lanes.test.ts",
+              "resolveLaneParallel",
+              "startBatch"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC5"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:81823390caed902d63cb7f522760de8275ffd42632f760f71e34326adcf3a042"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "revise_intent:run-entry-auto-recovery:2026-10-18T03:28:32.387Z",
+      "at": "2026-10-18T03:28:32.387Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\nscope_added:tests/goal-driven-batch-run.test.ts\naction_v2_sha256:fee453df71c86b6a5cb69c3dff1cf8384739852ad9a2db6e052b4cb9a1f04366"
+    },
+    {
+      "id": "freeze_artifacts:run-entry-auto-recovery:2026-10-18T03:44:20.174Z",
+      "at": "2026-10-18T03:44:20.174Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/run-entry-auto-recovery.intent.json"
+    },
+    {
+      "id": "record_approval:run-entry-auto-recovery:2026-10-18T03:45:32.079Z",
+      "at": "2026-10-18T03:45:32.079Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5416679c\naction_v2_sha256:086c211733be001cafd51cd459345ce9fefdffe9bcbc968cbbfd9cfc01bea05c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-18T03:45:32.079Z"
+      }
+    },
+    {
+      "id": "record_approval:run-entry-auto-recovery:2026-10-18T03:47:09.482Z",
+      "at": "2026-10-18T03:47:09.482Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-79832453\naction_v2_sha256:44d9a87c167812893b42b6c5e8e627d072d3aa51a5b06b387f9d5135d9f425c1",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-18T03:47:09.482Z"
+      }
+    },
+    {
+      "id": "complete:run-entry-auto-recovery:2026-10-18T03:47:11.193Z",
+      "at": "2026-10-18T03:47:11.193Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:973108101cb2b166c6bb9971c813d318813ec1211b3c5c87de46c809091b3ebb"
+    }
+  ]
+}

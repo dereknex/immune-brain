@@ -1,0 +1,171 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "run-entry-token-pi",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "run-entry-token-pi",
+    "goal": "On Pi, a literal-user imm-run input (never extension-sourced input) mints the same session- and workspace-bound entry token as Claude. Enrollment and unattended batch start keep one authority dialog per entry, because a same-uid model write can forge the token; under a live token stale batch retirement and same-Host recovery open no dialog. A confirmed batch start returns the same non-blocking execution manifest as Claude, and the token is invalidated by session exit, workspace change or a pause (Spec D1-D4, D6; ADR 0025).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "After a literal imm-run input, Pi enroll and start_unattended_batch each open exactly one requestAuthorityDialog, and a declined dialog claims nothing even with a live token; a later retire_stale_batch under that token completes with no requestAuthorityDialog and records a confirmation_ref of kind entry_token bound to the plan digest; a confirmed batch start result carries a manifest listing every child's task id, Slice, risk, scope and verification commands; a rework-exit choice still opens its dialog.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-phase-entry-gate.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Each of these is refused with no Kernel mutation: a retire_stale_batch whose only authority is input with source extension that names imm-run; a retire with no prior entry; a retire from another session; a retire after session shutdown; a retire from another workspace; a retire after the run paused.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-phase-entry-gate.test.ts\",\n      \"tests/pi-run-continuation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/run-entry-decision-hosting-pi-token.md",
+      "docs/plans/run-entry-token-pi.intent.json",
+      "docs/specs/run-entry-decision-hosting.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-interaction.ts",
+      "plugins/immune-brain/.pi-extension/pi-run-continuation.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/assurance/phase_entry.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/unattended/run_entry_manifest.ts",
+      "tests/batch-plan-reconfirmation.test.ts",
+      "tests/enrollment-confirmation-relocation.test.ts",
+      "tests/enrollment-git-base.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/pi-canary-lifecycle-package.test.ts",
+      "tests/pi-phase-entry-gate.test.ts",
+      "tests/pi-run-continuation.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/run-entry-token-pi.intent.json",
+    "content_hash": "sha256:b59ecc0019384576f1d57ecb3f50d9bb7774c0d27bfb59c7be3087d41f443c6d"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:ace61c0e0176e2d270a9bfb34d613792096cb54305ee9dfd63890ff34d29a5b1",
+  "git_base_head": "00fbe8eac9911c2983c8de8df8864a709c83f9d7",
+  "attestations": [
+    {
+      "id": "approval-qa-e4c6f61a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:b59ecc0019384576f1d57ecb3f50d9bb7774c0d27bfb59c7be3087d41f443c6d",
+      "diff_hash": "sha256:f19c767e68b6714eac283ed8d768f4aab4fecc8934b6a3400202ab4776f71672",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:36264f0250751377776a98dfc53593c53aaf321f4a42992399a343bdd853c306",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:36264f0250751377776a98dfc53593c53aaf321f4a42992399a343bdd853c306"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:36264f0250751377776a98dfc53593c53aaf321f4a42992399a343bdd853c306"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-fc8c9587",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:b59ecc0019384576f1d57ecb3f50d9bb7774c0d27bfb59c7be3087d41f443c6d",
+      "diff_hash": "sha256:f19c767e68b6714eac283ed8d768f4aab4fecc8934b6a3400202ab4776f71672",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (single parent 00fbe8e, tree 756d812). On Pi, a literal imm-run entry now mints an entry token bound to the session and the workspace realpath. Enroll and batch start keep their single dialog. retire_stale_batch is gated by the entry, and under a live token it records a pi-entry- ref bound to the plan digest. Shutdown, pause and settle all revoke the token. The manifest moved into a host-neutral module. Tests cover all six AC2 refusals with byte-identical batch state and no report, plus the rework-exit dialog.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "00fbe8eac9911c2983c8de8df8864a709c83f9d7",
+        "review_commit": "853e583c08fe007253bb86e3db13a5fe0c6915ad",
+        "review_tree": "756d81298a1e06225c855cdee53a20bc79d0d584",
+        "manifest_digest": "sha256:bb2bec43443ac7bbbd5374a821806fff6d6202565d7ec88bf46e61633e0e29ad"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-2012ab6d89c0-1-review-1",
+          "acceptance_id": "AC2",
+          "summary": "The agent_before_settle early exit for a non-completed outcome or canContinue=false calls reset() but not revoke(), so a run that stops this way (for example a user interrupt) keeps its live entry token. The token is revoked only on the continuation pause, settle and error branches.",
+          "anchor": "sha256:6ba636ad5f5ad047aba7f32e4ebb59fbecd6a158bbe1065f2c9c1b3692c8beaf",
+          "evidence": {
+            "trigger": "Under a live imm-run token, the turn settles with outcome !== 'completed' (user abort). The continuation resets, but piPhaseEntries keeps run_live and the token, so a later retire_stale_batch in the same session and workspace runs without a dialog. The AC2 'paused' case (the continuation pause decision) is revoked and tested; this interrupt path is not, and whether it counts as a pause is not settled by the Spec.",
+            "caller_chain": [
+              "plugins/immune-brain/.pi-extension/pi-run-continuation.ts:agent_before_settle",
+              "plugins/immune-brain/.pi-extension/imm-canary-work.ts:piEntryToken",
+              "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:executePiRetireStaleBatch"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:3cb45b97409baf23ad8cd939494e6feb03735fae10f69245390987fddf176428"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "revise_intent:run-entry-token-pi:2026-10-17T17:15:47.708Z",
+      "at": "2026-10-17T17:15:47.708Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\nscope_added:tests/batch-plan-reconfirmation.test.ts\nscope_added:tests/enrollment-confirmation-relocation.test.ts\nscope_added:tests/enrollment-git-base.test.ts\nscope_added:tests/pi-canary-enroll-extension.test.ts\nscope_added:tests/pi-canary-lifecycle-package.test.ts\naction_v2_sha256:55f2a2b6037b8f2a8db8e93b0c89329e4a55a0a95a7f89209bd47d959dae7afd"
+    },
+    {
+      "id": "freeze_artifacts:run-entry-token-pi:2026-10-17T17:40:36.017Z",
+      "at": "2026-10-17T17:40:36.017Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/run-entry-token-pi.intent.json"
+    },
+    {
+      "id": "record_approval:run-entry-token-pi:2026-10-17T17:41:24.775Z",
+      "at": "2026-10-17T17:41:24.775Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e4c6f61a\naction_v2_sha256:161440f1315f54133cbd6550c2d69dfd511c08dc3ee62266ddf864271216722e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-17T17:41:24.775Z"
+      }
+    },
+    {
+      "id": "record_approval:run-entry-token-pi:2026-10-17T17:43:03.506Z",
+      "at": "2026-10-17T17:43:03.506Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-fc8c9587\naction_v2_sha256:81b1d8fe36643ec856ecc9c0baa792a7e2d3e121bd42bd30770225480dbb78ad",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-17T17:43:03.506Z"
+      }
+    },
+    {
+      "id": "complete:run-entry-token-pi:2026-10-17T17:43:05.046Z",
+      "at": "2026-10-17T17:43:05.046Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:fe1c6e5015e5faf36ea997018d657a78d3fd558ec691f8529011e4f9c662add3"
+    }
+  ]
+}

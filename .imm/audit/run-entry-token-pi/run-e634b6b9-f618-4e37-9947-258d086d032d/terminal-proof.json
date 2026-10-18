@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "run-entry-token-pi",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:run-entry-token-pi:2026-10-17T17:43:05.046Z",
+  "final_record_hash": "sha256:91db2cb2b4f7b4324d54fa049748da64cdd1aacb9784ca5a021cda39db398bc2",
+  "terminalized_at": "2026-10-17T17:43:05.046Z"
+}
