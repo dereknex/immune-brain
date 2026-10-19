@@ -139,7 +139,7 @@ import {
 	type GithubTrackerResult,
 } from "../runtime/github_issue_tracker";
 import { projectTaskStatus, reviewReworkFindings, type StatusProjectionResult } from "../runtime/assurance/coordinator";
-import { laneWriteRefusal } from "../runtime/unattended/lane_workspace";
+import { laneEditRefusal } from "../runtime/unattended/lane_workspace";
 import { activeTaskNotice } from "../runtime/assurance/active_task_notice";
 import {
 	admitPhaseOperation,
@@ -1371,16 +1371,6 @@ export function buildUserDecisionOperation(record: {
 export function readTaskIntentForRecord(root: string, taskId: string): ReadTaskIntentResult {
 	const record = readTaskRecordRaw(root, taskId).record;
 	return readTaskIntent(root, taskId, record?.intent_ref.path, record?.intent_snapshot);
-}
-
-/**
- * In a batch Lane, an `edit` or `write` whose resolved target is outside the
- * Lane is refused before it runs; `bash` is not intercepted.
- */
-export function laneEditRefusal(event: { toolName?: string; input?: unknown }, cwd: string): string | null {
-	if (event.toolName !== "edit" && event.toolName !== "write") return null;
-	const input = (event.input ?? {}) as { path?: unknown; file_path?: unknown };
-	return laneWriteRefusal(cwd, input.path ?? input.file_path);
 }
 
 async function markGithubTaskTerminal(

@@ -1845,7 +1845,7 @@ describe("Lane write guard and leak restore (#200)", () => {
 	});
 
 	it("refuses an edit or write from inside a Lane to the coordinator checkout, on both Hosts, and nothing else", async () => {
-		const { laneEditRefusal } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
+		const { laneEditRefusal } = await import("../plugins/immune-brain/runtime/unattended/lane_workspace");
 		const { laneGuardHookOutput } = await import("../plugins/immune-brain/runtime/claude/lane_guard");
 		const fx = fixture();
 		try {

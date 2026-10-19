@@ -56,3 +56,13 @@ export function laneWriteRefusal(cwd: string, target: unknown): string | null {
 	if (inside === "" || (inside !== ".." && !inside.startsWith(`..${sep}`) && !isAbsolute(inside))) return null;
 	return `Lane write refused: ${resolved} is outside this Lane. In a batch Lane every edit and write stays under ${laneRoot}; use the same repository-relative path inside the Lane.`;
 }
+
+/**
+ * In a batch Lane, a Pi `edit` or `write` whose resolved target is outside the
+ * Lane is refused before it runs; `bash` is not intercepted.
+ */
+export function laneEditRefusal(event: { toolName?: string; input?: unknown }, cwd: string): string | null {
+	if (event.toolName !== "edit" && event.toolName !== "write") return null;
+	const input = (event.input ?? {}) as { path?: unknown; file_path?: unknown };
+	return laneWriteRefusal(cwd, input.path ?? input.file_path);
+}

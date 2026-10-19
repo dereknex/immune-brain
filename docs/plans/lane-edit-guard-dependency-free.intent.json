@@ -1,0 +1,26 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "lane-edit-guard-dependency-free",
+  "goal": "The Pi Lane edit guard laneEditRefusal lives in the dependency-free runtime module runtime/unattended/lane_workspace.ts, so tests/unattended-batch-lanes.test.ts loads no Pi extension and passes in a node_modules-free materialized delivery clone, which unblocks the batch integration check for every child whose acceptance runs that file.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "laneEditRefusal is exported from plugins/immune-brain/runtime/unattended/lane_workspace.ts with unchanged behavior: an edit or write from inside a Lane to a path outside it is refused with the existing text, and a non-edit tool, an in-Lane path or a non-Lane cwd yields null; the Pi tool_call handler in imm-canary-work.ts still blocks with that refusal.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "tests/unattended-batch-lanes.test.ts imports no module under plugins/immune-brain/.pi-extension and no package resolved from node_modules, so it passes in a depth-1 Git clone of the delivery tree that has no node_modules directory.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\",\n      \"tests/pi-canary-work-extension.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/lane-edit-guard-dependency-free.intent.json",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/runtime/unattended/lane_workspace.ts",
+    "tests/unattended-batch-lanes.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1,
+  "owner": "user"
+}

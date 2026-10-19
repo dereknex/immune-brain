@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "lane-edit-guard-dependency-free",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:lane-edit-guard-dependency-free:2026-10-19T07:27:12.683Z",
+  "final_record_hash": "sha256:b2f5248e38efd6e7c21cf6d74c4a86e1ba858e2fc9f11dfd71dc92b523a19520",
+  "terminalized_at": "2026-10-19T07:27:12.683Z"
+}

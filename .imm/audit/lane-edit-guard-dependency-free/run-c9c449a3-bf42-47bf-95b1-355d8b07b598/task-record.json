@@ -1,0 +1,128 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "lane-edit-guard-dependency-free",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "lane-edit-guard-dependency-free",
+    "goal": "The Pi Lane edit guard laneEditRefusal lives in the dependency-free runtime module runtime/unattended/lane_workspace.ts, so tests/unattended-batch-lanes.test.ts loads no Pi extension and passes in a node_modules-free materialized delivery clone, which unblocks the batch integration check for every child whose acceptance runs that file.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "laneEditRefusal is exported from plugins/immune-brain/runtime/unattended/lane_workspace.ts with unchanged behavior: an edit or write from inside a Lane to a path outside it is refused with the existing text, and a non-edit tool, an in-Lane path or a non-Lane cwd yields null; the Pi tool_call handler in imm-canary-work.ts still blocks with that refusal.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "tests/unattended-batch-lanes.test.ts imports no module under plugins/immune-brain/.pi-extension and no package resolved from node_modules, so it passes in a depth-1 Git clone of the delivery tree that has no node_modules directory.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\",\n      \"tests/pi-canary-work-extension.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/lane-edit-guard-dependency-free.intent.json",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/runtime/unattended/lane_workspace.ts",
+      "tests/unattended-batch-lanes.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/lane-edit-guard-dependency-free.intent.json",
+    "content_hash": "sha256:f7032fba67b5d798a8639bf5c792a08a993bc587d67244db1bff9a26a5e7bdbb"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:f7032fba67b5d798a8639bf5c792a08a993bc587d67244db1bff9a26a5e7bdbb",
+  "git_base_head": "e00a101ce34829a7193b2ee3381c122abdf5e2e7",
+  "attestations": [
+    {
+      "id": "approval-qa-0c9ae009",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f7032fba67b5d798a8639bf5c792a08a993bc587d67244db1bff9a26a5e7bdbb",
+      "diff_hash": "sha256:f6295ca81215d43e323dad058619b99afcf1b95012c3d1347847eea33ee23d07",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:1111f39d111eff08d83ec9bfa90de33112d75f278f40859c28c045568fa2672b",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:1111f39d111eff08d83ec9bfa90de33112d75f278f40859c28c045568fa2672b"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:1111f39d111eff08d83ec9bfa90de33112d75f278f40859c28c045568fa2672b"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-ebf8057e",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f7032fba67b5d798a8639bf5c792a08a993bc587d67244db1bff9a26a5e7bdbb",
+      "diff_hash": "sha256:f6295ca81215d43e323dad058619b99afcf1b95012c3d1347847eea33ee23d07",
+      "actor_id": "parent-mediated-review",
+      "summary": "laneEditRefusal moved verbatim into runtime/unattended/lane_workspace.ts; the Pi tool_call handler (imm-canary-work.ts:493) imports and calls it from there; the test now imports it from the runtime module, and neither the test nor the runtime tree has any bare package import, so it no longer loads the Pi extension or node_modules.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "e00a101ce34829a7193b2ee3381c122abdf5e2e7",
+        "review_commit": "bac3da368bbdcd511ed7f6c34cc49e7a039d5838",
+        "review_tree": "1acaa9a3dbf76404ff6a5c5b1cb0c6dac1d2f372",
+        "manifest_digest": "sha256:f54e1969dd4dc8f248a024ce3d69839906d39a44c08403b607dd2d34b79ca671"
+      },
+      "reviewer_verdict_sha256": "sha256:d31868c843b7b45e9f0c792f0734d989a71e2bf0469882c01b82d4947d7ea7d4"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:lane-edit-guard-dependency-free:2026-10-19T07:22:42.989Z",
+      "at": "2026-10-19T07:22:42.989Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/lane-edit-guard-dependency-free.intent.json"
+    },
+    {
+      "id": "record_approval:lane-edit-guard-dependency-free:2026-10-19T07:25:52.136Z",
+      "at": "2026-10-19T07:25:52.136Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-0c9ae009\naction_v2_sha256:389d025acb27cae8327d3ea2f31946b9b024c233f2471c29ba05a09437985b0e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-19T07:25:52.137Z"
+      }
+    },
+    {
+      "id": "record_approval:lane-edit-guard-dependency-free:2026-10-19T07:27:11.478Z",
+      "at": "2026-10-19T07:27:11.478Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-ebf8057e\naction_v2_sha256:490eb11a9f0e3c43f3d55c94af66af31879ae4d2fc4944d32fdef4ca1ca865d1",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-19T07:27:11.478Z"
+      }
+    },
+    {
+      "id": "complete:lane-edit-guard-dependency-free:2026-10-19T07:27:12.683Z",
+      "at": "2026-10-19T07:27:12.683Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:6c4b3dbd1260fe1a493d32af1febf5f5fa8e6aa437b2e6bf57f3570d022322f4"
+    }
+  ]
+}
