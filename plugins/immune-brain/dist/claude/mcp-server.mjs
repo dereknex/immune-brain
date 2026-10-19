@@ -12529,7 +12529,17 @@ function scopesOverlap(left, right) {
   });
 }
 function implicitScopeDependencies(children) {
-  const ordered = children.map((child, index) => ({ child, index })).sort((left, right) => left.child.slice_id !== undefined && right.child.slice_id !== undefined ? SLICE_ORDER.compare(left.child.slice_id, right.child.slice_id) || left.index - right.index : left.index - right.index).map(({ child }) => child);
+  const bySlice = children.map((child, index) => ({ child, index })).sort((left, right) => left.child.slice_id !== undefined && right.child.slice_id !== undefined ? SLICE_ORDER.compare(left.child.slice_id, right.child.slice_id) || left.index - right.index : left.index - right.index).map(({ child }) => child);
+  const known = new Set(children.map((child) => child.task_id));
+  const ordered = [];
+  const placed = new Set;
+  while (ordered.length < bySlice.length) {
+    const next = bySlice.find((child) => !placed.has(child.task_id) && child.blocked_by.every((id) => placed.has(id) || !known.has(id)));
+    if (!next)
+      throw new Error("Initiative Task dependencies must form an acyclic graph");
+    ordered.push(next);
+    placed.add(next.task_id);
+  }
   const implicit = new Map;
   for (let later = 0;later < ordered.length; later += 1) {
     const child = ordered[later];

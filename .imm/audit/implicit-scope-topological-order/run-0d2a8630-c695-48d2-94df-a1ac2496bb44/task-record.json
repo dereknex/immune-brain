@@ -1,0 +1,157 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "implicit-scope-topological-order",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "implicit-scope-topological-order",
+    "goal": "Implicit scope dependencies between overlapping batch children follow a topological order of the declared blocked_by edges, with Slice order only breaking ties, so a plan whose declared dependencies are acyclic never projects a cycle when a higher-numbered Slice (such as branch-boundary-r2 S10) is a declared prerequisite of lower-numbered overlapping Slices; batch authorization, Lane admission and parked-child skipping keep using the same edges.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "projectParallelGroups and startableChildren accept a plan whose declared blocked_by edges are acyclic but whose Slice order disagrees with them: children S2 (blocked_by S10), S3 (blocked_by S2, S10), S4 (no declared dependency) and S10 (no declared dependency), all with overlapping scope_hint, project the waves [S4], [S10], [S2], [S3] without throwing, and every implicit edge points from a child placed earlier in that order to one placed later.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-schedule.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "When declared dependencies leave two overlapping children unordered, the lower Slice still runs first (a child without slice_id keeps its list position); a declared dependency cycle is still rejected with the acyclic error; blockedByParked still skips a later overlapping child and its dependents behind a parked child.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-schedule.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "The committed Claude MCP bundle matches the runtime source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/build-claude-plugin.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/implicit-scope-topological-order.intent.json",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/unattended/batch_schedule.ts",
+      "tests/unattended-batch-schedule.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/implicit-scope-topological-order.intent.json",
+    "content_hash": "sha256:fa4c2e1de5c6c0d2440f6287d875d7573589a7612e8ef4697c5c2aafc09571db"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:fa4c2e1de5c6c0d2440f6287d875d7573589a7612e8ef4697c5c2aafc09571db",
+  "git_base_head": "7fe55ee0022b44509e88f693fe454ae58cef51f0",
+  "attestations": [
+    {
+      "id": "approval-qa-d5940483",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:fa4c2e1de5c6c0d2440f6287d875d7573589a7612e8ef4697c5c2aafc09571db",
+      "diff_hash": "sha256:7705dbdb02c58fcdf615cb29f0f56dfab06f4d89c1654b3e345f61904c4cfce8",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:1ce4a47403e76e579764518ed77c07154f78c33df6ac68d5a5fdbe34b85a53ee",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:1ce4a47403e76e579764518ed77c07154f78c33df6ac68d5a5fdbe34b85a53ee"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:1ce4a47403e76e579764518ed77c07154f78c33df6ac68d5a5fdbe34b85a53ee"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:1ce4a47403e76e579764518ed77c07154f78c33df6ac68d5a5fdbe34b85a53ee"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-62662127",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:fa4c2e1de5c6c0d2440f6287d875d7573589a7612e8ef4697c5c2aafc09571db",
+      "diff_hash": "sha256:7705dbdb02c58fcdf615cb29f0f56dfab06f4d89c1654b3e345f61904c4cfce8",
+      "actor_id": "parent-mediated-review",
+      "summary": "implicitScopeDependencies now builds a Slice-tie-broken topological order of the declared blocked_by edges and emits only forward implicit edges, so the S2/S3/S4/S10 plan projects [s4],[s10],[s2],[s3]; startableChildren, blockedByParked and projectParallelGroups share these edges, a declared cycle still raises the acyclic error, unknown blocked_by ids are tolerated, and the bundle hunk mirrors the source.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "7fe55ee0022b44509e88f693fe454ae58cef51f0",
+        "review_commit": "e6c736ad60090343ee6ec0bbe4ee5933e2d89f89",
+        "review_tree": "5296520601b36e0693996906238669cf5e36a1d5",
+        "manifest_digest": "sha256:4ffab6ab92667017fef4e809370ee48a7d1fc5276feb98c514d108eccec7edfe"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-42a52fe8ca0e-1-review-1",
+          "acceptance_id": "AC2",
+          "summary": "The greedy topological order can place a higher Slice ahead of a lower overlapping Slice that declared edges leave unordered, when the lower Slice waits on a still-later prerequisite. This is consistent with AC1's expected waves. It may reorder implicit edges for a batch already in flight under the old projection.",
+          "anchor": "sha256:4c912c6e72d63ca7e5fd0376ad3eca3cedf957f52cf26b528badd7f21fc7eda5",
+          "evidence": {
+            "trigger": "Children A(S2, blocked_by C), B(S5, overlaps only A) and C(S10) give the order B, C, A, so A waits on B. The old code made B wait on A. Every edge still points forward, so this cannot deadlock or form a cycle.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/unattended/batch_schedule.ts:implicitScopeDependencies",
+              "plugins/immune-brain/runtime/unattended/batch_schedule.ts:startableChildren"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:b870005e8fe654dc0ea04e432b4f72e0183b19a5de4d3511456ef897faead577"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:implicit-scope-topological-order:2026-10-19T08:43:48.950Z",
+      "at": "2026-10-19T08:43:48.950Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/implicit-scope-topological-order.intent.json"
+    },
+    {
+      "id": "record_approval:implicit-scope-topological-order:2026-10-19T08:43:54.555Z",
+      "at": "2026-10-19T08:43:54.555Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-d5940483\naction_v2_sha256:f9a2517b754fd44155ad61cc55960ab71ea7c4e7b28913fd5ae2a18beffb98b8",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-19T08:43:54.555Z"
+      }
+    },
+    {
+      "id": "record_approval:implicit-scope-topological-order:2026-10-19T08:44:59.645Z",
+      "at": "2026-10-19T08:44:59.645Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-62662127\naction_v2_sha256:9ceb76f157d792aa7daa552f8451ba30d2d9fce8e259ee27dff11f58faa0429a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-19T08:44:59.645Z"
+      }
+    },
+    {
+      "id": "complete:implicit-scope-topological-order:2026-10-19T08:45:00.795Z",
+      "at": "2026-10-19T08:45:00.795Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:1149c49db56987eeb5f38f17d7d5d39b88feb989c5963eef7b651401d8700b30"
+    }
+  ]
+}

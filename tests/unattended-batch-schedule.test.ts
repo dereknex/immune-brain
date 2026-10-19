@@ -196,6 +196,25 @@ describe("plan parallel groups", () => {
 		expect(projection.scope_conflicts).toEqual([]);
 	});
 
+	it("places a declared prerequisite with a later Slice before its overlapping dependents", () => {
+		const children = [
+			{ task_id: "s2", slice_id: "S2", blocked_by: ["s10"], scope_hint: ["dist/bundle.mjs"] },
+			{ task_id: "s3", slice_id: "S3", blocked_by: ["s10", "s2"], scope_hint: ["dist/bundle.mjs"] },
+			{ task_id: "s4", slice_id: "S4", blocked_by: [], scope_hint: ["dist/bundle.mjs"] },
+			{ task_id: "s10", slice_id: "S10", blocked_by: [], scope_hint: ["dist/bundle.mjs"] },
+		];
+		expect(projectParallelGroups(children).parallel_groups).toEqual([["s4"], ["s10"], ["s2"], ["s3"]]);
+		expect(startableChildren(children.map((entry) => ({ ...entry, state: "pending" as const })), 4)).toEqual(["s4"]);
+	});
+
+	it("keeps Slice order between overlapping children that declared dependencies leave unordered", () => {
+		const projection = projectParallelGroups([
+			{ task_id: "late", slice_id: "S10", blocked_by: [], scope_hint: ["runtime/x.ts"] },
+			{ task_id: "early", slice_id: "S2", blocked_by: [], scope_hint: ["runtime/x.ts"] },
+		]);
+		expect(projection.parallel_groups).toEqual([["early"], ["late"]]);
+	});
+
 	it("rejects a cyclic dependency graph", () => {
 		expect(() =>
 			projectParallelGroups([

@@ -129,23 +129,37 @@ const SLICE_ORDER = new Intl.Collator("en", { numeric: true });
 
 /**
  * Implicit dependencies from overlapping scopes (run-entry decision hosting
- * D8): when two children's scopes overlap, the later one in Slice order waits
- * for the earlier one. A child with no `slice_id` keeps its list position. An
- * edge that would reverse a declared dependency is left out, so the declared
- * order always wins and no cycle forms; one a declared dependency already
- * implies is left out too. Children are given with their declared
+ * D8): when two children's scopes overlap, the later one waits for the earlier
+ * one in a topological order of the declared dependencies, with Slice order
+ * breaking ties. A child with no `slice_id` keeps its list position. Every
+ * implicit edge points forward in that order, so the declared order always
+ * wins and no cycle forms, even through a chain of implicit and declared
+ * edges; one a declared dependency already implies is left out. Children are given with their declared
  * `blocked_by` closure, as a batch plan and record carry it.
  */
 export function implicitScopeDependencies(
 	children: ReadonlyArray<Pick<ScheduleChild, "task_id" | "slice_id" | "blocked_by" | "scope_hint">>,
 ): Map<string, string[]> {
-	const ordered = children
+	const bySlice = children
 		.map((child, index) => ({ child, index }))
 		.sort((left, right) =>
 			left.child.slice_id !== undefined && right.child.slice_id !== undefined
 				? SLICE_ORDER.compare(left.child.slice_id, right.child.slice_id) || left.index - right.index
 				: left.index - right.index)
 		.map(({ child }) => child);
+	// Slice order only breaks ties: a declared prerequisite is placed before its
+	// dependents even when its Slice is later, so implicit edges, which always
+	// point forward in this order, cannot close a cycle with declared ones.
+	const known = new Set(children.map((child) => child.task_id));
+	const ordered: typeof bySlice = [];
+	const placed = new Set<string>();
+	while (ordered.length < bySlice.length) {
+		const next = bySlice.find((child) => !placed.has(child.task_id)
+			&& child.blocked_by.every((id) => placed.has(id) || !known.has(id)));
+		if (!next) throw new Error("Initiative Task dependencies must form an acyclic graph");
+		ordered.push(next);
+		placed.add(next.task_id);
+	}
 	const implicit = new Map<string, string[]>();
 	for (let later = 0; later < ordered.length; later += 1) {
 		const child = ordered[later]!;
