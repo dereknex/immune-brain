@@ -1,0 +1,4 @@
+[test]
+# Raise Bun's 5000 ms per-test default for every bun test invocation (Spec
+# branch-boundary D1); an explicit per-test timeout still overrides it.
+preload = ["./tests/helpers/test-timeout.ts"]

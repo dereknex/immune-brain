@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { copyGitTemplate } from "./helpers/git-template";
 import { PassThrough } from "node:stream";
 import {
 	createMcpRuntime as createMcpRuntimeOnce,
@@ -208,24 +209,13 @@ function releaseWorkspaceForTest(root: string): void {
 
 const ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
 
-function initGitRepo(root: string): string {
-	execFileSync("git", ["init", "-q", "-b", "main"], { cwd: root });
-	execFileSync("git", ["config", "user.name", "Test"], { cwd: root });
-	execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
-	mkdirSync(join(root, ".imm", "state"), { recursive: true });
-	writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
-	execFileSync("git", ["add", "-A"], { cwd: root });
-	execFileSync("git", ["commit", "-q", "-m", "init"], { cwd: root });
-	return execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
-}
-
 function createBatchFixture(slug = "demo-init"): {
 	root: string;
 	head: string;
 	observation: GithubInitiativeObservation;
 } {
 	const root = mkdtempSync(join(tmpdir(), "claude-batch-test-"));
-	const head = initGitRepo(root);
+	const head = copyGitTemplate(root);
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
 
 	// Child 1: routine
@@ -1815,12 +1805,11 @@ describe("acc-claude-batch-fail-closed", () => {
 				risk: "routine",
 				revision: 1,
 			};
-			mkdirSync(join(root, ".imm", "state"), { recursive: true });
+			copyGitTemplate(root);
 			mkdirSync(join(root, "docs", "plans"), { recursive: true });
 			mkdirSync(join(root, "docs", "specs", "archive"), { recursive: true });
 			writeFileSync(join(root, "docs", "plans", `${taskId}.intent.json`), `${JSON.stringify(intent, null, 2)}\n`);
 			writeFileSync(join(root, "docs", "specs", `${taskId}.spec.md`), `# ${taskId}\n`);
-			execFileSync("git", ["init", "-q", "-b", "main"], { cwd: root });
 			execFileSync("git", ["add", "-A"], { cwd: root });
 			execFileSync("git", ["-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "-m", "fixture"], { cwd: root });
 

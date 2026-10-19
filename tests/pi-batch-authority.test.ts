@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { copyGitTemplate } from "./helpers/git-template";
 // Delivery QA has no node_modules; use host seams only when the real package is absent.
 try { await import("typebox"); } catch {
 	const optional = Symbol("optional");
@@ -268,17 +269,6 @@ function seedInFlightOwner(root: string, taskId: string): void {
 	});
 }
 
-function initGitRepo(root: string): string {
-	execFileSync("git", ["init", "-q", "-b", "main"], { cwd: root });
-	execFileSync("git", ["config", "user.name", "Test"], { cwd: root });
-	execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
-	mkdirSync(join(root, ".imm", "state"), { recursive: true });
-	writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
-	execFileSync("git", ["add", "-A"], { cwd: root });
-	execFileSync("git", ["commit", "-q", "-m", "init"], { cwd: root });
-	return execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
-}
-
 function assertZeroWrites(root: string, expectedHead?: string, slug?: string): void {
 	expect(existsSync(join(root, ".imm", "state", "batch"))).toBe(false);
 	expect(existsSync(join(root, ".imm", "state", "batches"))).toBe(false);
@@ -299,7 +289,7 @@ function createBatchFixture(slug = "pi-batch"): {
 	observation: GithubInitiativeObservation;
 } {
 	const root = mkdtempSync(join(tmpdir(), "pi-batch-test-"));
-	const head = initGitRepo(root);
+	const head = copyGitTemplate(root);
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
 
 	// Child 1: routine
@@ -1734,7 +1724,7 @@ describe("native Parent final verification gate", () => {
 		const root = mkdtempSync(join(tmpdir(), "pi-native-final-"));
 		const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
 		try {
-			initGitRepo(root);
+			copyGitTemplate(root);
 			const taskId = "delivered";
 			const paths = ["src/delivered.ts", `docs/plans/${taskId}.intent.json`, `docs/plans/archive/${taskId}.intent.json`];
 			const intent = { contract: "assurance_kernel/task_intent/v1", task_id: taskId, owner: "user", goal: "Deliver", scope_hint: paths,
