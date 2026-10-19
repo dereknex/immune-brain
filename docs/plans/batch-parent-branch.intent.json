@@ -1,0 +1,62 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "batch-parent-branch",
+  "owner": "user",
+  "goal": "A new Lane batch keeps its progress on the Parent branch imm/<slug>, which the runtime writes but never checks out; the runtime creates, removes and reports each child's worktree on imm-lane/<slug>/<task_id> instead of adopting offered Lanes; integration no longer writes the coordinator working tree; final verification runs on the Parent tip; and ADR 0027 is accepted (Spec branch-boundary-r2 D11-D14).",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Starting a new Lane batch creates refs/heads/imm/<slug> at base_head and leaves the coordinator's HEAD, branch, index and working tree byte-identical; when imm/<slug> already exists at a commit other than base_head the start refuses with batch_parent_branch_exists and creates no ref, worktree or batch record.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-parent-branch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "For each admitted child the runtime creates a worktree under the Git common directory on branch imm-lane/<slug>/<task_id> at the current Parent tip and returns its path in the Executor handoff; a lane_offers argument on a new batch refuses with lane_offers_retired.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-parent-branch.test.ts\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "An integrated child advances imm/<slug> by exactly one commit whose changed files equal the child's lane commit, the coordinator working tree is not modified, the clean child worktree and its lane branch are removed, and a child worktree with an uncommitted file is kept and reported instead of removed.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-parent-branch.test.ts\",\n      \"tests/unattended-batch-integration.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "Final verification of a new-mode batch runs in a detached worktree at the Parent tip that is removed afterwards: an uncommitted edit in the coordinator working tree neither fails nor passes it, and a failing check is reported without moving imm/<slug>.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-parent-branch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC5",
+      "assertion": "A batch record in hidden-ref mode and one in legacy branch mode still resume and integrate exactly as before this change.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\",\n      \"tests/unattended-batch-integration.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/branch-boundary-r2-batch-parent-branch.md",
+    "docs/adr/0027-parent-branch-merge-queue.md",
+    "docs/plans/batch-parent-branch.intent.json",
+    "docs/specs/branch-boundary-r2.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-run-batch.md",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/prompts/lane-steward.md",
+    "plugins/immune-brain/runtime/unattended/batch_final_verification.ts",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+    "plugins/immune-brain/runtime/unattended/batch_ref.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/unattended/batch_worktrees.ts",
+    "plugins/immune-brain/runtime/unattended/types.ts",
+    "tests/batch-parent-branch.test.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/unattended-batch-integration.test.ts",
+    "tests/unattended-batch-lanes.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

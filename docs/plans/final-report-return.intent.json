@@ -1,0 +1,41 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "final-report-return",
+  "owner": "user",
+  "goal": "When a new-mode batch has integrated its children and run final verification it writes a final report of per-child approved acceptance against QA results, files beyond the estimate, declared versus projected risk, redo count and parked reason; under manual it stops with that report, and under auto it fast-forwards the coordinator's branch to the Parent branch when possible and otherwise stops with the reason (Spec branch-boundary-r2 D24).",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "A completed new-mode batch writes a final report that lists, for each child, its approved acceptance ids with their QA results, its beyond_estimate files, its declared and projected risk, its redo count, and for a parked child its reason.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-final-report.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Under the manual preference the batch stops with the report, leaves imm/<slug> in place and does not move the coordinator's branch.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-final-report.test.ts\",\n      \"tests/git-integration-preference.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Under the auto preference the coordinator's branch fast-forwards to imm/<slug> when its HEAD is an ancestor and its working tree is clean, and stops with the report and the reason when HEAD has diverged or the working tree is dirty.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-final-report.test.ts\",\n      \"tests/git-integration-preference.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/branch-boundary-r2-final-report-return.md",
+    "docs/adr/0027-parent-branch-merge-queue.md",
+    "docs/plans/final-report-return.intent.json",
+    "docs/specs/branch-boundary-r2.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-run-batch.md",
+    "plugins/immune-brain/runtime/git_integration_preference.ts",
+    "plugins/immune-brain/runtime/unattended/batch_final_report.ts",
+    "plugins/immune-brain/runtime/unattended/batch_final_verification.ts",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "tests/batch-final-report.test.ts",
+    "tests/git-integration-preference.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

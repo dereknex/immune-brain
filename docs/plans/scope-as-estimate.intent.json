@@ -1,0 +1,42 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "scope-as-estimate",
+  "owner": "user",
+  "goal": "A batch or Lane child's delivery boundary is its branch: a file outside scope_hint is no longer refused but listed in Review evidence as beyond_estimate, the child's diff, task diff hash, QA tracked drift and batch commit use base..HEAD of the child branch, the scheduler runs overlapping estimates concurrently, and dead assertChangedFilesWithinScope is deleted (Spec branch-boundary-r2 D19).",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "A Lane child that commits a file outside its scope_hint settles and integrates, and its Review evidence lists that file under beyond_estimate.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-scope-estimate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "A Lane child's task diff hash, QA tracked drift and integrated commit cover exactly the files changed in base..HEAD of its branch: an uncommitted file left in the coordinator working tree is not attributed to it.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-scope-estimate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Two children whose scope_hint entries overlap and that have no blocked_by edge are started concurrently under max_parallel 2, and a blocked_by edge still orders them.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-schedule.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/branch-boundary-r2-scope-as-estimate.md",
+    "docs/plans/scope-as-estimate.intent.json",
+    "docs/specs/branch-boundary-r2.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/assurance/qa.ts",
+    "plugins/immune-brain/runtime/assurance/review_evidence.ts",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_schedule.ts",
+    "plugins/immune-brain/runtime/workspace_scope.ts",
+    "tests/batch-scope-estimate.test.ts",
+    "tests/scope-revision-envelope.test.ts",
+    "tests/unattended-batch-commit.test.ts",
+    "tests/unattended-batch-schedule.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

@@ -1,0 +1,45 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "merge-queue-redo",
+  "owner": "user",
+  "goal": "Settled children integrate through a merge queue onto the Parent branch: each child's frozen acceptance reruns on its rebuilt commit and a failure counts as a conflict, a conflict restarts the child from the new Parent tip with implementation, QA and Review again, and the third conflict parks only that child while independent children finish and the batch summary lists it (Spec branch-boundary-r2 D15, D16).",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Two children settled in order integrate one at a time in settle order, and the second is rebuilt on the Parent tip that already contains the first.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-merge-queue.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "A child whose rebuilt commit has no textual conflict but whose frozen acceptance descriptor fails on that commit does not advance imm/<slug> and is counted as a conflict.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-merge-queue.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "A child whose rebuilt commit conflicts has its worktree reset to the new Parent tip and runs implementation, QA and Review again under the same authorization, and integrates when the redo merges cleanly.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-merge-queue.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "A child that conflicts a third time is parked as batch_integration_redo_exhausted, its dependents become skipped_blocked, an independent child still integrates, and the batch summary lists the parked child with redo count 2.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-merge-queue.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/branch-boundary-r2-merge-queue-redo.md",
+    "docs/plans/merge-queue-redo.intent.json",
+    "docs/specs/branch-boundary-r2.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/unattended/batch_worktrees.ts",
+    "plugins/immune-brain/runtime/unattended/types.ts",
+    "tests/batch-merge-queue.test.ts",
+    "tests/unattended-batch-integration.test.ts",
+    "tests/unattended-batch-lanes.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

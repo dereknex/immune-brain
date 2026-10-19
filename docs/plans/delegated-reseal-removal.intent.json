@@ -1,0 +1,60 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "delegated-reseal-removal",
+  "owner": "user",
+  "goal": "Delegated in-Lane intent revision and reseal are removed from the runtime and both Hosts, the same-directory scope rule is removed so any scope_hint change that keeps the bound Spec path is compatible, the Executor discloses files beyond the estimate instead of revising scope, and ADR 0028 superseding ADR 0018 and ADR 0021 is accepted (Spec branch-boundary-r2 D20).",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "classifyIntentRevision returns compatible for a revision that only adds or removes scope_hint entries in any directory while the bound Spec path is unchanged, records no scope_added history line, and returns breaking when the bound Spec path changes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-intent-v2.test.ts\",\n      \"tests/scope-revision-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "The Claude start_unattended_batch schema and the Pi batch tool expose no lane_revision argument and no delegation choice, and a call that passes lane_revision refuses as an unknown argument.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "A Lane child whose acceptance assertion changes after confirmation is parked with batch_child_authority_changed with no reseal, and a v2 record that carries revision_delegation, delegated_revisions and reseals is still read and retired.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/branch-boundary-r2-delegated-reseal-removal.md",
+    "docs/adr/0018-delegated-in-lane-intent-revision.md",
+    "docs/adr/0021-same-directory-scope-extension.md",
+    "docs/adr/0028-scope-as-estimate.md",
+    "docs/plans/delegated-reseal-removal.intent.json",
+    "docs/specs/branch-boundary-r2.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-run-batch.md",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain/runtime/claude/interaction.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/kernel/enrollment.ts",
+    "plugins/immune-brain/runtime/kernel/intent.ts",
+    "plugins/immune-brain/runtime/kernel/reducer.ts",
+    "plugins/immune-brain/runtime/prompts/executor.md",
+    "plugins/immune-brain/runtime/unattended/batch_delegation.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "plugins/immune-brain/runtime/unattended/batch_start.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "tests/batch-delegation-gate.test.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/claude-host-authority.test.ts",
+    "tests/host-neutral-assurance-coordinator.test.ts",
+    "tests/kernel-intent-v2.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/scope-revision-contract.test.ts",
+    "tests/unattended-batch-lanes.test.ts",
+    "tests/unattended-contracts.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

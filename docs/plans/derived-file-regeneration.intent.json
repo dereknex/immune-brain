@@ -1,0 +1,43 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "derived-file-regeneration",
+  "owner": "user",
+  "goal": "A repository declares derived files in docs/agents/derived-files.json; when every file conflicting in the merge queue is a declared output the queue regenerates it from the merged sources and runs its check instead of reporting a conflict, final verification runs every declared check, and this repository declares the Claude MCP bundle (Spec branch-boundary-r2 D17).",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "The derived-files reader accepts a valid immune_brain/derived_files/v1 declaration and rejects, naming the field, an entry with no check command, an output path outside the repository, an unknown field, and an unknown contract.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/derived-files.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Two children that both changed a declared source and its declared output integrate without a conflict: the queue runs generate then check on the merged sources and the integrated output equals a fresh generate.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/derived-files.test.ts\",\n      \"tests/batch-merge-queue.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "A conflict set that includes a file that is not a declared output, or a declared check that fails after generate, is treated as a conflict.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/derived-files.test.ts\",\n      \"tests/batch-merge-queue.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "Final verification runs every declared check command and reports a failing one, and this repository's docs/agents/derived-files.json declares plugins/immune-brain/dist/claude/mcp-server.mjs with bun scripts/build-claude-plugin.ts and its --check.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/derived-files.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/branch-boundary-r2-derived-file-regeneration.md",
+    "docs/agents/derived-files.json",
+    "docs/plans/derived-file-regeneration.intent.json",
+    "docs/specs/branch-boundary-r2.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/derived_files.ts",
+    "plugins/immune-brain/runtime/unattended/batch_final_verification.ts",
+    "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+    "tests/batch-merge-queue.test.ts",
+    "tests/derived-files.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

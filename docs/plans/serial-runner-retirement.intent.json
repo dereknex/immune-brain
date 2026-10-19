@@ -1,0 +1,61 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "serial-runner-retirement",
+  "owner": "user",
+  "goal": "A batch started without max_parallel runs as a Lane batch with max_parallel 1, the serial runner path and plan reconfirmation are deleted, and a v1 serial batch record stays readable by status and retireable while resuming it refuses with batch_record_shape_retired (Spec branch-boundary-r2 D18).",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "A batch started without max_parallel, and one started with max_parallel 1, runs its children one at a time in runtime-created worktrees and records a v2 Lane record with max_parallel 1.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-serial-retirement.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "A v1 serial batch record on disk is reported by status and retired by retire_stale_batch, and an attempt to resume it refuses with batch_record_shape_retired and the retire recovery action.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-serial-retirement.test.ts\",\n      \"tests/batch-stale-disposition.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "The Claude start_unattended_batch tool and the Pi batch tool accept a call without max_parallel as a one-Lane batch and their descriptions and confirmation text no longer describe a serial run.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/branch-boundary-r2-serial-runner-retirement.md",
+    "IMMUNE.md",
+    "README.md",
+    "docs/plans/serial-runner-retirement.intent.json",
+    "docs/specs/branch-boundary-r2.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/.pi-extension/pi-run-continuation.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-run-batch.md",
+    "plugins/immune-brain/runtime/assurance/run_continuation.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/claude/run_continuation.ts",
+    "plugins/immune-brain/runtime/unattended/batch_disposition.ts",
+    "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "plugins/immune-brain/runtime/unattended/batch_start.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "tests/batch-plan-reconfirmation.test.ts",
+    "tests/batch-serial-retirement.test.ts",
+    "tests/batch-stale-disposition.test.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/claude-host-authority.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/goal-driven-batch-run.test.ts",
+    "tests/pi-batch-acceptance-integration.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/unattended-batch-commit.test.ts",
+    "tests/unattended-batch-lanes.test.ts",
+    "tests/unattended-batch-run.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
