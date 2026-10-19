@@ -1,0 +1,68 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "batch-authority-subject",
+  "owner": "user",
+  "goal": "A batch authorization binds each child's frozen authority subject instead of its whole intent: a scope-only or run-parameter revision mid-batch leaves the batch running, a change to a child's goal, acceptance or verification command parks only that child and its dependents, a verification command change or added acceptance item is a breaking revision, and ADR 0026 records the decision (Spec branch-boundary D5-D10).",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "intentAuthorityHash is unchanged when only scope_hint entries outside docs/specs, revision, risk, a descriptor's timeout_ms or max_output_bytes, or environment change, and changes when goal, owner, an acceptance assertion, a descriptor executable, argv or cwd, the acceptance id set, or the bound Spec path changes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-intent-v2.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "classifyIntentRevision returns breaking for a revision that changes only a descriptor's executable, argv or cwd, or that adds an acceptance item, and still returns compatible for a revision that changes only timeout_ms, max_output_bytes or environment, or adds a same-directory scope entry.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-intent-v2.test.ts\",\n      \"tests/breaking-intent-revision-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "In a serial batch, a child whose intent received a compatible same-directory scope revision or a revision-only bump after confirmation enrolls and completes with no plan_changed and no batch_child_intent_changed, on the Kernel seam and on both Hosts' batch tools.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-batch-authority.test.ts\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/claude-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "In a serial batch and in a Lane batch, a child whose acceptance assertion or verification argv changed after confirmation is parked with batch_child_authority_changed, its dependents become skipped_blocked, an independent child still reaches done, and the batch ends terminal rather than plan_changed; a change to the child set, order or dependencies still fails with plan_changed.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC5",
+      "assertion": "A Lane batch with scope-only drift on one child keeps running, and a delegated acceptance-only revision is still approved and resealed under the existing authorization, while a non-delegated acceptance change parks that child.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\",\n      \"tests/batch-delegation-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC6",
+      "assertion": "A batch record without intent_authority_hash keeps whole-intent comparison: a revision-only bump on its child still yields plan_changed or batch_child_intent_changed, and plan reconfirmation of such a record behaves as before.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-plan-reconfirmation.test.ts\",\n      \"tests/kernel-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/branch-boundary-batch-authority-subject.md",
+    "docs/adr/0026-branch-boundary-frozen-acceptance.md",
+    "docs/plans/batch-authority-subject.intent.json",
+    "docs/specs/branch-boundary.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+    "plugins/immune-brain/runtime/kernel/intent.ts",
+    "plugins/immune-brain/runtime/unattended/batch_delegation.ts",
+    "plugins/immune-brain/runtime/unattended/batch_disposition.ts",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/unattended/types.ts",
+    "tests/batch-delegation-gate.test.ts",
+    "tests/batch-plan-reconfirmation.test.ts",
+    "tests/breaking-intent-revision-gate.test.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/kernel-batch-authority.test.ts",
+    "tests/kernel-intent-v2.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/unattended-batch-lanes.test.ts",
+    "tests/unattended-batch-run.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

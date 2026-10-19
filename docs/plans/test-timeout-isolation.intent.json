@@ -1,0 +1,37 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "test-timeout-isolation",
+  "owner": "user",
+  "goal": "Focused test files of this repository pass under concurrent load: every bun test invocation runs under a default per-test timeout of 30000 ms while an explicit per-test timeout still overrides it, and the pi-batch-authority and claude-batch-authority fixtures copy one template Git repository initialized once per test process instead of running git init per fixture (Spec branch-boundary D1, D2).",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "A bun test run from the repository root of a fixture test with no explicit timeout that takes about 6000 ms passes; a fixture test with an explicit 200 ms timeout that takes 400 ms still fails; tests/test-runtime-config.test.ts drives both through a child bun test process and checks each exit status.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/test-runtime-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "tests/git-template.test.ts shows that two copies of the template repository start at the same HEAD with the same tracked files and local identity, that a commit in one copy leaves the other copy's HEAD and worktree unchanged, that a copy contains no worktree metadata, and that the template is initialized once per process.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/git-template.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "pi-batch-authority and claude-batch-authority create every fixture through the shared template helper and all their existing tests still pass with unchanged assertions.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/claude-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "bunfig.toml",
+    "docs/plans/test-timeout-isolation.intent.json",
+    "docs/specs/branch-boundary.spec.md",
+    "tests/claude-batch-authority.test.ts",
+    "tests/fixtures/default-timeout.fixture.ts",
+    "tests/git-template.test.ts",
+    "tests/helpers/git-template.ts",
+    "tests/helpers/test-timeout.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/test-runtime-config.test.ts"
+  ],
+  "risk": "routine",
+  "revision": 1
+}

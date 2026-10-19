@@ -1,0 +1,38 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "plugin-bundle-staleness",
+  "owner": "user",
+  "goal": "A Claude MCP server whose own bundle changed on disk after it started reports itself as stale with an explicit reconnect action instead of refusing with run_entry_required, and a Lane-mode batch start is refused when the coordinator's loaded plugin build differs from the workspace plugin build (Spec branch-boundary D3, D4).",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "After the server's own bundle file changes on disk following startup, a tools/call for enroll, start_unattended_batch, retire_stale_batch, advance_assurance or submit_review is refused with reason_code plugin_bundle_stale and a recovery_action naming a reconnect of the immune-brain MCP server, before any phase admission is consumed and with no Kernel mutation; with the bundle unchanged the same calls behave as before; status still answers and carries a stale warning; an unreadable bundle file at check time refuses with the same reason code.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-bundle-staleness.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "With a stale bundle and no admission for the call, the refusal is plugin_bundle_stale rather than run_entry_required; with a current bundle and no admission it is still run_entry_required.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-bundle-staleness.test.ts\",\n      \"tests/claude-phase-entry-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "A Lane-mode batch start in the plugin's own source repository is refused with batch_runtime_contract_mismatch, naming both plugin paths and a reload action, when the loaded plugin build differs from the workspace plugin build; it starts as before when the loaded plugin is the workspace plugin or an identical build; a serial batch start is unaffected.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/branch-boundary-plugin-bundle-staleness.md",
+    "docs/plans/plugin-bundle-staleness.intent.json",
+    "docs/specs/branch-boundary.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/claude/interaction.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/plugin_source_skew.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "tests/claude-bundle-staleness.test.ts",
+    "tests/claude-phase-entry-gate.test.ts",
+    "tests/unattended-batch-lanes.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
