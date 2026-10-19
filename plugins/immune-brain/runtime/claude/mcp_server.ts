@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { readActiveClaimTaskId } from "../unattended/batch_preflight";
 import { isTerminalBatchState, readAnyBatchRunState } from "../unattended/batch_state";
 import { createInterface } from "node:readline";
@@ -24,6 +25,7 @@ import { parseFinalVerification } from "../unattended/batch_final_verification";
 import { parseLaneRevision, REVISION_DELEGATION_TEXT } from "../unattended/batch_delegation";
 import { deliveryOf, type AssuranceCoordinatorPorts } from "../assurance/coordinator";
 import { readSettledTaskEvidence } from "../kernel/storage";
+import { watchBundleIdentity, type BundleIdentityWatch } from "../plugin_source_skew";
 import { parseReworkChoice, reworkExitLines, type ReworkChoice } from "../kernel/assurance_projection";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
@@ -131,6 +133,8 @@ export interface McpRuntimeOptions {
 	 * private file store. `true` is an admission without an entry token.
 	 */
 	consumePhaseAdmission?: (toolCallId: string, operation: GatedTool) => boolean | PhaseAdmissionGrant;
+	/** The startup identity of this server's own bundle; defaults to this module file. */
+	bundleIdentity?: BundleIdentityWatch;
 }
 
 /**
@@ -168,6 +172,12 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 	let negotiatedVersion: string | undefined;
 	let negotiatedInteractive = false;
 	const connectionId = randomUUID();
+	// Spec branch-boundary D3: hooks run every new build in a fresh process, but
+	// this long-lived server keeps the bundle it started with. Once that file
+	// changes, authority calls refuse with a reconnect action instead of failing
+	// later as an unrelated refusal such as run_entry_required.
+	const bundle = options.bundleIdentity ?? watchBundleIdentity(fileURLToPath(import.meta.url));
+	const staleBundleMessage = () => `this MCP server started from ${bundle.path}, which changed on disk after startup; it still runs the old bundle`;
 	const consumeAdmission = options.consumePhaseAdmission ?? ((toolCallId: string, operation: GatedTool) => consumePhaseAdmission(toolCallId, operation));
 	// The phase entry gate, before any preparation or native dialog. The hook
 	// decided on the session's literal entry; no admission for this exact call
@@ -209,6 +219,7 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 		},
 		sessionInteractive: () => negotiatedInteractive,
 		async callTool(name: string, args: Record<string, unknown>, meta: Partial<ToolMeta> = {}) {
+			if (name !== "status" && bundle.stale()) throw new NativeAuthorityError("plugin_bundle_stale", staleBundleMessage());
 			const observedSession = readRunToolSession(meta.toolCallId ?? `call-${name}`, name, options.cwd ?? process.cwd());
 			if (observedSession) hookSessionId = observedSession;
 			if (name === "start_unattended_batch") {
@@ -272,7 +283,12 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 			refuseSuppliedAuthority(args);
 			// Read-only status must stay usable without trusted Host evidence, so it
 			// is dispatched before the capability probe rejects unversioned hosts.
-			if (name === "status") return { plugin_version: PLUGIN_VERSION, ...(await runtime.status(taskId)) };
+			if (name === "status") {
+				const result = { plugin_version: PLUGIN_VERSION, ...(await runtime.status(taskId)) } as Record<string, unknown>;
+				if (!bundle.stale()) return result;
+				const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+				return { ...result, warnings: [...warnings, { code: "plugin_bundle_stale", paths: [bundle.path], message: `${staleBundleMessage()}; authority calls refuse until the immune-brain MCP server is reconnected` }] };
+			}
 			// The environment version fallback is disabled on this connection:
 			// only a version bound from the trusted initialize handshake may
 			// reach authority-mutating tools.

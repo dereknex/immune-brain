@@ -21,7 +21,8 @@ export type NativeFailureCode =
 	| "unsupported_host"
 	| "workspace_changed"
 	| "run_entry_required"
-	| "phase_entry_required";
+	| "phase_entry_required"
+	| "plugin_bundle_stale";
 
 const RECOVERY_ACTIONS: Record<NativeFailureCode, string> = {
 	interaction_not_opened: "retry through a fresh native gate in the current Host",
@@ -30,6 +31,7 @@ const RECOVERY_ACTIONS: Record<NativeFailureCode, string> = {
 	correlation_missing: "retry through a fresh native gate in the current Host",
 	unsupported_host: "upgrade to a supported Claude Code version and retry in the current Host",
 	workspace_changed: "review the current workspace and retry through a fresh native gate",
+	plugin_bundle_stale: "reconnect the immune-brain MCP server (/mcp, then reconnect immune-brain) so it loads the current bundle, then retry in the current Host",
 	...PHASE_ENTRY_RECOVERY,
 };
 

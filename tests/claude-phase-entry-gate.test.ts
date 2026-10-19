@@ -8,6 +8,7 @@ import { runContinuationHookOutput } from "../plugins/immune-brain/runtime/claud
 import { confirmationRef, entryTokenRequestId } from "../plugins/immune-brain/runtime/claude/interaction";
 import { createMcpRuntime, handleJsonRpc } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { readActiveClaimTaskId } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
+import { watchBundleIdentity } from "../plugins/immune-brain/runtime/plugin_source_skew";
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/unattended/types";
 
 const ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
@@ -324,5 +325,25 @@ describe("Claude phase entry gate: start_unattended_batch", () => {
 		// phase entry gate: exactly one admission was consumed for the whole run.
 		expect(s.consumed()).toBe(1);
 		expect(readActiveClaimTaskId(s.cwd)).toBe(`${slug}-c1`);
+	});
+});
+
+describe("Claude phase entry gate behind a stale MCP bundle", () => {
+	// Spec branch-boundary D3: a server running an old bundle names that cause
+	// instead of the run_entry_required refusal the old bundle would report.
+	test("with no admission a stale bundle refuses as plugin_bundle_stale and a current one as run_entry_required", async () => {
+		const bundleDir = mkdtempSync(join(tmpdir(), "imm-phase-bundle-"));
+		roots.push(bundleDir);
+		const stalePath = join(bundleDir, "stale.mjs"), currentPath = join(bundleDir, "current.mjs");
+		writeFileSync(stalePath, "// build 1\n");
+		writeFileSync(currentPath, "// build 1\n");
+		const stale = await session(["gate-a"], { bundleIdentity: watchBundleIdentity(stalePath) });
+		writeFileSync(stalePath, "// build 2\n");
+		const staleReply = await stale.call("enroll", { task_id: "gate-a" }, "toolu_no_admission");
+		expect(staleReply?.error?.data?.reason_code).toBe("plugin_bundle_stale");
+		const current = await session(["gate-a"], { bundleIdentity: watchBundleIdentity(currentPath) });
+		expectRunEntryRequired(await current.call("enroll", { task_id: "gate-a" }, "toolu_no_admission"));
+		expect(readActiveClaimTaskId(stale.cwd)).toBeNull();
+		expect(readActiveClaimTaskId(current.cwd)).toBeNull();
 	});
 });

@@ -50,6 +50,7 @@ import {
 } from "./batch_state";
 import { createDefaultBatchGitPort, type BatchRunnerGitPort } from "./batch_git";
 import { LANE_EXECUTOR_HOSTS } from "../role_prompt_bridge";
+import { pluginSourceSkewWarning } from "../plugin_source_skew";
 
 export { LANE_EXECUTOR_HOSTS };
 
@@ -218,7 +219,12 @@ function laneRuntimeDir(root: string, explicit: string | undefined): string | nu
  * never on a plugin version number. A refusal names both sources; a match
  * returns null and adds nothing, no confirmation included.
  */
-export function laneRuntimeContractRefusal(root: string, executorRuntime?: string): string | null {
+export function laneRuntimeContractRefusal(root: string, executorRuntime?: string, loadedFrom?: string): string | null {
+	// Lane Executors on this Host load the coordinator's plugin build, so a build
+	// that differs from the workspace plugin would run every Lane on stale
+	// runtime code (Spec branch-boundary D4).
+	const skew = pluginSourceSkewWarning(root, loadedFrom);
+	if (skew) return `${RUNTIME_CONTRACT_MISMATCH}: ${skew.message}`;
 	const dir = laneRuntimeDir(root, executorRuntime);
 	if (!dir) return null;
 	let lane: ReturnType<typeof readRuntimeContracts>;

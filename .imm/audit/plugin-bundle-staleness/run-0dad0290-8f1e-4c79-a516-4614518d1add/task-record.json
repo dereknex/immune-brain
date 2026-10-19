@@ -1,0 +1,180 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "plugin-bundle-staleness",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "plugin-bundle-staleness",
+    "goal": "A Claude MCP server whose own bundle changed on disk after it started reports itself as stale with an explicit reconnect action instead of refusing with run_entry_required, and a Lane-mode batch start is refused when the coordinator's loaded plugin build differs from the workspace plugin build (Spec branch-boundary D3, D4).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "After the server's own bundle file changes on disk following startup, a tools/call for enroll, start_unattended_batch, retire_stale_batch, advance_assurance or submit_review is refused with reason_code plugin_bundle_stale and a recovery_action naming a reconnect of the immune-brain MCP server, before any phase admission is consumed and with no Kernel mutation; with the bundle unchanged the same calls behave as before; status still answers and carries a stale warning; an unreadable bundle file at check time refuses with the same reason code.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-bundle-staleness.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "With a stale bundle and no admission for the call, the refusal is plugin_bundle_stale rather than run_entry_required; with a current bundle and no admission it is still run_entry_required.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-bundle-staleness.test.ts\",\n      \"tests/claude-phase-entry-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "A Lane-mode batch start in the plugin's own source repository is refused with batch_runtime_contract_mismatch, naming both plugin paths and a reload action, when the loaded plugin build differs from the workspace plugin build; it starts as before when the loaded plugin is the workspace plugin or an identical build; a serial batch start is unaffected.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/branch-boundary-plugin-bundle-staleness.md",
+      "docs/plans/plugin-bundle-staleness.intent.json",
+      "docs/specs/branch-boundary.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/claude/interaction.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/plugin_source_skew.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "tests/claude-bundle-staleness.test.ts",
+      "tests/claude-phase-entry-gate.test.ts",
+      "tests/unattended-batch-lanes.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/plugin-bundle-staleness.intent.json",
+    "content_hash": "sha256:16e96ad6b54a950b2564748fef2d25c5bd2501ee2d4e9ba9d922875ece1e6dca"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:16e96ad6b54a950b2564748fef2d25c5bd2501ee2d4e9ba9d922875ece1e6dca",
+  "git_base_head": "3fa20fccbed0c8bc4581324056c5bd561c0a7958",
+  "attestations": [
+    {
+      "id": "approval-qa-1bc40bd5",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:16e96ad6b54a950b2564748fef2d25c5bd2501ee2d4e9ba9d922875ece1e6dca",
+      "diff_hash": "sha256:a9ea83d8a526ad62f75da325af277b786864a93d40b489e553fafc000bb329fc",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:391f8012e9296c3dd6ab9fee2e7f2ad78aa3ee1bda71b2c6b6bb4e9739697736",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:391f8012e9296c3dd6ab9fee2e7f2ad78aa3ee1bda71b2c6b6bb4e9739697736"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:391f8012e9296c3dd6ab9fee2e7f2ad78aa3ee1bda71b2c6b6bb4e9739697736"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:391f8012e9296c3dd6ab9fee2e7f2ad78aa3ee1bda71b2c6b6bb4e9739697736"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-b117a4a4",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:16e96ad6b54a950b2564748fef2d25c5bd2501ee2d4e9ba9d922875ece1e6dca",
+      "diff_hash": "sha256:a9ea83d8a526ad62f75da325af277b786864a93d40b489e553fafc000bb329fc",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance checks out: df497490's only parent is 3fa20fcc and its tree is 54a31a27. In callTool, the bundle staleness check runs before any session read, phase admission or Kernel call, and status still answers with a warning. The Lane-mode skew refusal runs only on a new Lane start, and the regenerated dist bundle matches the source. Tests cover AC1, AC2 and AC3, including the negative cases.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "3fa20fccbed0c8bc4581324056c5bd561c0a7958",
+        "review_commit": "df497490b1481d33962851b3ddab216ac4137820",
+        "review_tree": "54a31a27ab3bb560cbf12ec54a758676f2745b5d",
+        "manifest_digest": "sha256:a7f76e6a2be676a30120e81b6ea2836e6b188a3b96bc18d0ed1dd9c247add022"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-d20b4a189bf5-1-review-1",
+          "acceptance_id": "AC1",
+          "summary": "watchBundleIdentity re-hashes the bundle only when its size or mtime changes. A rewrite that keeps both the same is not detected, and the server keeps acting as if the bundle were current.",
+          "anchor": "sha256:727ffb8a3e43d88a92af6760cbb983c1a4f4609cb8a8b58a53642000f8e13080",
+          "evidence": {
+            "trigger": "The bundle is replaced in place with different bytes of the same size, and its mtime is preserved (for example a copy that keeps timestamps) → stale() returns false, and authority calls run on the old bundle without a plugin_bundle_stale refusal",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/claude/mcp_server.ts:createMcpRuntime.callTool",
+              "plugins/immune-brain/runtime/plugin_source_skew.ts:watchBundleIdentity.stale"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC1"
+            }
+          }
+        },
+        {
+          "id": "review-d20b4a189bf5-2-review-2",
+          "acceptance_id": "AC1",
+          "summary": "The stale-bundle refusal covers every tool except status, not just the five named in AC1. That is safe (it fails closed), but tools like repair_authority_state now also refuse until the server is reconnected.",
+          "anchor": "sha256:cf3810a6e513a5a85081cc81bdb4659bee51e666414ad5269ab9571012f06c11",
+          "evidence": {
+            "trigger": "The bundle changed after startup, then any tool other than status is called, for example repair_authority_state → it is refused with plugin_bundle_stale even though AC1 does not name that tool",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/claude/mcp_server.ts:createMcpRuntime.callTool"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:001f899df6c66c8774d07e803f406927d4d16f8e26ee2e8c63f741a54f7443ea"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:plugin-bundle-staleness:2026-10-19T01:04:59.586Z",
+      "at": "2026-10-19T01:04:59.586Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/plugin-bundle-staleness.intent.json"
+    },
+    {
+      "id": "record_approval:plugin-bundle-staleness:2026-10-19T01:05:49.786Z",
+      "at": "2026-10-19T01:05:49.786Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-1bc40bd5\naction_v2_sha256:90f718ad0c69fad098557dfaafef67be6e58521c6bac03e4eff81d2d8e56692a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-19T01:05:49.786Z"
+      }
+    },
+    {
+      "id": "record_approval:plugin-bundle-staleness:2026-10-19T01:06:59.874Z",
+      "at": "2026-10-19T01:06:59.874Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-b117a4a4\naction_v2_sha256:518546fc12dbf571b0c3c81db8ccd7f260561ac406ab833300625742aa07f08e",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-19T01:06:59.875Z"
+      }
+    },
+    {
+      "id": "complete:plugin-bundle-staleness:2026-10-19T01:07:01.051Z",
+      "at": "2026-10-19T01:07:01.051Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:fb17db816de678cb7188da166e116066e260bf5404d876934b0213d3e38aa8a0"
+    }
+  ]
+}

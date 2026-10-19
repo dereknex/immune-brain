@@ -8583,6 +8583,7 @@ var init_runtime_contracts = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/plugin_source_skew.ts
+import { createHash as createHash14 } from "node:crypto";
 import { existsSync as existsSync8, readFileSync as readFileSync14, realpathSync as realpathSync9, statSync as statSync5 } from "node:fs";
 import { dirname as dirname8, join as join13 } from "node:path";
 function pluginRootAbove(dir) {
@@ -8624,6 +8625,40 @@ function pluginSourceSkewWarning(root, loadedFrom = runningRuntimeSource()) {
   } catch {
     return null;
   }
+}
+function watchBundleIdentity(path) {
+  const read = () => {
+    try {
+      const stat = statSync5(path);
+      return { stamp: { size: stat.size, mtimeMs: stat.mtimeMs }, hash: createHash14("sha256").update(readFileSync14(path)).digest("hex") };
+    } catch {
+      return null;
+    }
+  };
+  const startup = read();
+  let stamp = startup?.stamp ?? null;
+  let stale = startup === null;
+  return {
+    path,
+    stale() {
+      if (stale || !startup)
+        return true;
+      let current;
+      try {
+        const stat = statSync5(path);
+        current = { size: stat.size, mtimeMs: stat.mtimeMs };
+      } catch {
+        return stale = true;
+      }
+      if (stamp && current.size === stamp.size && current.mtimeMs === stamp.mtimeMs)
+        return false;
+      const now = read();
+      if (!now || now.hash !== startup.hash)
+        return stale = true;
+      stamp = now.stamp;
+      return false;
+    }
+  };
 }
 var WORKSPACE_PLUGIN_DIR, PLUGIN_MANIFEST, BUILD_PROXY, MAX_LEVELS = 8;
 var init_plugin_source_skew = __esm(() => {
@@ -8699,7 +8734,7 @@ __export(exports_coordinator, {
   reviewReworkFindings: () => reviewReworkFindings,
   snapshotDigest: () => snapshotDigest
 });
-import { createHash as createHash14, randomUUID as randomUUID5 } from "node:crypto";
+import { createHash as createHash15, randomUUID as randomUUID5 } from "node:crypto";
 function deriveGithubTerminalProjectionInput(taskId, projection, tombstone) {
   if (projection.error || projection.claim !== null || projection.projection.lifecycle !== "done" && projection.projection.lifecycle !== "stopped" || tombstone?.task_id !== taskId || tombstone.lifecycle_status !== "terminal" || tombstone.terminal_lifecycle !== projection.projection.lifecycle)
     return null;
@@ -8885,7 +8920,7 @@ function reviewTurnBudget(workload) {
   return workload === "quick" ? 12 : workload === "standard" ? 16 : 24;
 }
 function snapshotDigest(snapshot) {
-  return `sha256:${createHash14("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
+  return `sha256:${createHash15("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
 }
 function selfServedScopeLines(added) {
   if (!added?.length)
@@ -9895,7 +9930,7 @@ var init_coordinator = __esm(() => {
 
 // plugins/immune-brain/runtime/assurance/delivery_workspace.ts
 import { execFileSync as execFileSync6 } from "node:child_process";
-import { createHash as createHash15 } from "node:crypto";
+import { createHash as createHash16 } from "node:crypto";
 import { chmodSync as chmodSync3, lstatSync as lstatSync10, mkdirSync as mkdirSync6, mkdtempSync as mkdtempSync3, readdirSync as readdirSync4, readFileSync as readFileSync15, readlinkSync as readlinkSync3, realpathSync as realpathSync11, rmSync as rmSync6 } from "node:fs";
 import { tmpdir as tmpdir3 } from "node:os";
 import { dirname as dirname10, isAbsolute as isAbsolute6, join as join15, parse, relative as relative5, resolve as resolve12, sep as sep6 } from "node:path";
@@ -10037,7 +10072,7 @@ function workspaceFiles(root, dir = root, result = Object.create(null)) {
       result[rel] = `${stat.mode & 4095}:directory`;
       workspaceFiles(root, path, result);
     } else if (stat.isFile())
-      result[rel] = `${stat.mode & 4095}:${createHash15("sha256").update(readFileSync15(path)).digest("hex")}`;
+      result[rel] = `${stat.mode & 4095}:${createHash16("sha256").update(readFileSync15(path)).digest("hex")}`;
     else
       throw new DeliveryWorkspaceError("delivery contains an unsupported filesystem entry");
   }
@@ -10142,7 +10177,7 @@ var PRE_EXISTING_BASELINE_PREFIX = "pre-existing baseline failure:";
 var init_qa_findings = () => {};
 
 // plugins/immune-brain/runtime/assurance/qa.ts
-import { createHash as createHash16 } from "node:crypto";
+import { createHash as createHash17 } from "node:crypto";
 function recordForSnapshot(snapshot) {
   const record = readTaskRecordRaw(snapshot.root, snapshot.task_id).record;
   if (!record || record.contract !== "assurance_kernel/task_record/v4" || !record.git_base_head)
@@ -10154,7 +10189,7 @@ function deliveryTreeForSnapshot(snapshot) {
     return snapshot.review_revision.review_tree;
   const record = recordForSnapshot(snapshot);
   const captured = captureGitTaskRevisionSnapshot(snapshot.root, record.intent_snapshot.scope_hint, record.git_base_head, snapshot.task_id);
-  const digest = `sha256:${createHash16("sha256").update(JSON.stringify(captured)).digest("hex")}`;
+  const digest = `sha256:${createHash17("sha256").update(JSON.stringify(captured)).digest("hex")}`;
   if (digest !== snapshot.diff_hash)
     throw new Error("QA delivery identity does not match the frozen snapshot");
   return writeDeliveryTree(snapshot.root, captured);
@@ -10201,7 +10236,7 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
     const diagnostic = (reason, stage) => [{
       acceptance_id: item.id,
       descriptor_ref: `acceptance/${item.index}/verification/command`,
-      descriptor_digest: `sha256:${createHash16("sha256").update(JSON.stringify(item.descriptor)).digest("hex")}`,
+      descriptor_digest: `sha256:${createHash17("sha256").update(JSON.stringify(item.descriptor)).digest("hex")}`,
       stage,
       outcome: reason,
       elapsed_ms: 0,
@@ -10248,7 +10283,7 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
     const diagnostics = (stage, outcome, affected = group, commandStage = "check", elapsed = 0, result) => affected.map((item) => ({
       acceptance_id: item.id,
       descriptor_ref: `acceptance/${item.index}/verification/${commandStage === "prepare" ? "environment/prepare" : "command"}`,
-      descriptor_digest: `sha256:${createHash16("sha256").update(JSON.stringify(item.descriptor)).digest("hex")}`,
+      descriptor_digest: `sha256:${createHash17("sha256").update(JSON.stringify(item.descriptor)).digest("hex")}`,
       stage,
       outcome,
       elapsed_ms: elapsed,
@@ -10321,8 +10356,8 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
         allCommands.push({ frozen, diagnostics: diagnostics("integrity", "command_identity_changed", affected, stage, Math.round(performance.now() - started), result) });
       evidence.push({
         stage,
-        environment: createHash16("sha256").update(environmentKey).digest("hex"),
-        command: createHash16("sha256").update(JSON.stringify(command)).digest("hex"),
+        environment: createHash17("sha256").update(environmentKey).digest("hex"),
+        command: createHash17("sha256").update(JSON.stringify(command)).digest("hex"),
         entry: frozen?.entry?.content_hash ?? null,
         exit_code: result.exit_code,
         timed_out: result.timed_out,
@@ -10407,7 +10442,7 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
   if (findings.length)
     return { ...base, decision: "rework", findings };
   const disclosure = disclosed.length ? `; ${disclosed.map((item) => item.summary).join("; ")}` : "";
-  const executionDigest = createHash16("sha256").update(JSON.stringify({
+  const executionDigest = createHash17("sha256").update(JSON.stringify({
     tree,
     platform: process.platform,
     arch: process.arch,
@@ -12403,7 +12438,7 @@ __export(exports_batch_plan, {
   observeInitiative: () => observeInitiative,
   projectBatchPlan: () => projectBatchPlan
 });
-import { createHash as createHash17 } from "node:crypto";
+import { createHash as createHash18 } from "node:crypto";
 function specBindingReason(inspection) {
   if (inspection.missing.length > 0)
     return `spec_binding_incomplete: ${inspection.missing.join(", ")}`;
@@ -12581,7 +12616,7 @@ async function projectBatchPlan(root, initiativeSlug, input, readInitiative = ob
   }));
   if (!enrollable.length)
     throw new Error("batch plan has no enrollable children; nothing to confirm");
-  const planDigest = `sha256:${createHash17("sha256").update(stableStringify(enrollable)).digest("hex")}`;
+  const planDigest = `sha256:${createHash18("sha256").update(stableStringify(enrollable)).digest("hex")}`;
   return {
     contract: "assurance_kernel/batch_plan/v1",
     initiative_slug: initiativeSlug,
@@ -12614,7 +12649,7 @@ var init_batch_plan = __esm(() => {
 
 // plugins/immune-brain/runtime/unattended/batch_git.ts
 import { spawnSync as spawnSync12 } from "node:child_process";
-import { createHash as createHash18, randomUUID as randomUUID7 } from "node:crypto";
+import { createHash as createHash19, randomUUID as randomUUID7 } from "node:crypto";
 import {
   constants as constants6,
   closeSync as closeSync6,
@@ -12906,7 +12941,7 @@ function assertReviewedDelivery(root, authoritative, scopeHint, taskId) {
     if (!record.git_base_head)
       throw new Error("batch commit requires a TaskRecord v4 git_base_head");
     const captured = captureGitTaskRevisionSnapshot(root, scopeHint, record.git_base_head, taskId);
-    const digest = `sha256:${createHash18("sha256").update(JSON.stringify(captured)).digest("hex")}`;
+    const digest = `sha256:${createHash19("sha256").update(JSON.stringify(captured)).digest("hex")}`;
     if (digest !== qa.diff_hash)
       throw new Error("batch commit drifted from the reviewed delivery identity");
   }
@@ -13279,7 +13314,7 @@ async function observeNativeParent(root, initiativeSlug, readInitiative, blocked
     return null;
   const native = readNativeParentFinalReport(root, initiativeSlug);
   const proof = await observeParentCompletion(root, initiativeSlug, parent.tasks.map((task) => task.task_id));
-  const planDigest = `sha256:${createHash18("sha256").update(JSON.stringify(intents.map(({ task, intent }) => ({ task_id: task.task_id, blocked_by: task.blocked_by, intent: intent.content_hash })))).digest("hex")}`;
+  const planDigest = `sha256:${createHash19("sha256").update(JSON.stringify(intents.map(({ task, intent }) => ({ task_id: task.task_id, blocked_by: task.blocked_by, intent: intent.content_hash })))).digest("hex")}`;
   const activeTask = readActiveClaimTaskId(root);
   const action = activeTask ? "drive" : proof.complete ? "complete" : "enroll";
   const ready = parent.tasks.find((task) => !blockedNativeTasks.includes(task.task_id) && !readSettledTaskEvidence(root, task.task_id) && task.blocked_by.every((id) => proof.integrated_task_ids.includes(id)));
@@ -14665,6 +14700,7 @@ init_batch_state();
 import { randomUUID as randomUUID12 } from "node:crypto";
 import { existsSync as existsSync17, readdirSync as readdirSync10, realpathSync as realpathSync18 } from "node:fs";
 import { join as join28 } from "node:path";
+import { fileURLToPath as fileURLToPath3 } from "node:url";
 import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
 
@@ -14707,7 +14743,7 @@ function probeHost(env = process.env, platform = process.platform, hostVersion) 
 var PLUGIN_VERSION = "5.5.1";
 
 // plugins/immune-brain/runtime/claude/interaction.ts
-import { createHash as createHash19, randomUUID as randomUUID9 } from "node:crypto";
+import { createHash as createHash20, randomUUID as randomUUID9 } from "node:crypto";
 
 // plugins/immune-brain/runtime/assurance/phase_entry.ts
 var RUN_ENTRY_REQUIRED = "run_entry_required";
@@ -14843,6 +14879,7 @@ var RECOVERY_ACTIONS = {
   correlation_missing: "retry through a fresh native gate in the current Host",
   unsupported_host: "upgrade to a supported Claude Code version and retry in the current Host",
   workspace_changed: "review the current workspace and retry through a fresh native gate",
+  plugin_bundle_stale: "reconnect the immune-brain MCP server (/mcp, then reconnect immune-brain) so it loads the current bundle, then retry in the current Host",
   ...PHASE_ENTRY_RECOVERY
 };
 
@@ -14881,14 +14918,14 @@ function entryTokenRequestId(token) {
 }
 function confirmationRef(input) {
   const kind = input.requestId.startsWith(ENTRY_TOKEN_REQUEST_PREFIX) ? "entry" : "confirm";
-  return `claude-${kind}-${createHash19("sha256").update(`${input.connectionId}\x00${input.toolCallId}\x00${input.requestId}\x00${input.operation}\x00${input.taskId ?? ""}\x00${input.initiativeSlug ?? ""}\x00${input.intentRevision ?? ""}\x00${input.intentContentHash ?? ""}\x00${input.bindingDigest ?? ""}\x00${input.planDigest ?? ""}`).digest("hex").slice(0, 16)}`;
+  return `claude-${kind}-${createHash20("sha256").update(`${input.connectionId}\x00${input.toolCallId}\x00${input.requestId}\x00${input.operation}\x00${input.taskId ?? ""}\x00${input.initiativeSlug ?? ""}\x00${input.intentRevision ?? ""}\x00${input.intentContentHash ?? ""}\x00${input.bindingDigest ?? ""}\x00${input.planDigest ?? ""}`).digest("hex").slice(0, 16)}`;
 }
 function enrollmentNonce() {
   return randomUUID9();
 }
 
 // plugins/immune-brain/runtime/claude/review_host.ts
-import { createHash as createHash20 } from "node:crypto";
+import { createHash as createHash21 } from "node:crypto";
 import { constants as constants7, fstatSync as fstatSync4, lstatSync as lstatSync14, mkdirSync as mkdirSync10, openSync as openSync7, readdirSync as readdirSync9, readSync, realpathSync as realpathSync14, rmSync as rmSync9, writeSync, closeSync as closeSync7 } from "node:fs";
 import { dirname as dirname14, join as join20 } from "node:path";
 import { tmpdir as tmpdir5 } from "node:os";
@@ -14921,7 +14958,7 @@ class MemoryHookEventLog {
 }
 var CACHE_DIR = "immune-brain-claude";
 function sessionHash(sessionId) {
-  return createHash20("sha256").update(sessionId).digest("hex");
+  return createHash21("sha256").update(sessionId).digest("hex");
 }
 function cacheDir(root) {
   return join20(root, CACHE_DIR);
@@ -15527,7 +15564,7 @@ init_coordinator();
 init_batch_preflight();
 init_intent();
 init_storage();
-import { createHash as createHash21 } from "node:crypto";
+import { createHash as createHash22 } from "node:crypto";
 var UNCHANGED_CONTINUATION_LIMIT = 1;
 var USER_WAIT_GUIDANCE = "If the remaining step is an action only the user can perform, waiting for it is a valid stop: stop without repeating the request you already made.";
 function bindRun(binding) {
@@ -15550,7 +15587,7 @@ function releasesRunBinding(prompt, phase) {
   return phase === "planner" || phase === "brainstorm" || /^(?:stop|cancel|pause)(?:\s+(?:execution|the task|this run))?[.!\s]*$/i.test(prompt.trim()) || /^(?:请)?(?:停止|取消|暂停)(?:执行|任务|本次运行|这个任务)?[。！!\s]*$/.test(prompt.trim());
 }
 function digest(value) {
-  return createHash21("sha256").update(JSON.stringify(value)).digest("hex");
+  return createHash22("sha256").update(JSON.stringify(value)).digest("hex");
 }
 function scopedSourceDigest(root, scope) {
   const snapshot = captureGitWorkspaceSnapshot(root);
@@ -16063,7 +16100,7 @@ import { join as join22 } from "node:path";
 import { tmpdir as tmpdir7 } from "node:os";
 
 // plugins/immune-brain/runtime/assurance/review_mediation.ts
-import { createHash as createHash22 } from "node:crypto";
+import { createHash as createHash23 } from "node:crypto";
 function extractVerdictJson(input) {
   if (typeof input === "string") {
     const first = input.indexOf("{");
@@ -16093,7 +16130,7 @@ function verdictFingerprint(raw) {
   });
 }
 function digestOfReviewerBytes(bytes) {
-  return `sha256:${createHash22("sha256").update(bytes).digest("hex")}`;
+  return `sha256:${createHash23("sha256").update(bytes).digest("hex")}`;
 }
 var RELEASED_REVIEW_RECOVERY = "Call advance_assurance to obtain a new Review reservation, then dispatch one fresh reviewer with the returned envelope unchanged";
 var RETAINED_REVIEW_RECOVERY = "Wait for the dispatched reviewer to finish, then call submit_review again with its verdict; do not dispatch or continue another reviewer";
@@ -17106,7 +17143,7 @@ init_backend_claim();
 init_runtime_contracts();
 init_batch_final_verification();
 import { spawnSync as spawnSync17 } from "node:child_process";
-import { createHash as createHash23 } from "node:crypto";
+import { createHash as createHash24 } from "node:crypto";
 import { existsSync as existsSync14, realpathSync as realpathSync17 } from "node:fs";
 import { isAbsolute as isAbsolute8, join as join25 } from "node:path";
 import { readFileSync as readFileSync20 } from "node:fs";
@@ -17238,6 +17275,7 @@ init_batch_schedule();
 init_batch_state();
 init_batch_git();
 init_role_prompt_bridge();
+init_plugin_source_skew();
 var PARALLEL_MISMATCH = "batch_parallel_mismatch";
 var TASK_ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var MAX_LANE_OFFERS = 64;
@@ -17337,7 +17375,10 @@ function laneRuntimeDir(root, explicit) {
     return null;
   }
 }
-function laneRuntimeContractRefusal(root, executorRuntime) {
+function laneRuntimeContractRefusal(root, executorRuntime, loadedFrom) {
+  const skew = pluginSourceSkewWarning(root, loadedFrom);
+  if (skew)
+    return `${RUNTIME_CONTRACT_MISMATCH}: ${skew.message}`;
   const dir = laneRuntimeDir(root, executorRuntime);
   if (!dir)
     return null;
@@ -17919,7 +17960,7 @@ async function runLaneBatch(input, persisted) {
         task_id: request.task_id,
         kind: request.kind,
         text: request.text,
-        text_digest: `sha256:${createHash23("sha256").update(request.text).digest("hex")}`
+        text_digest: `sha256:${createHash24("sha256").update(request.text).digest("hex")}`
       }];
       persist();
       instruction = { task_id: request.task_id, kind: request.kind, accepted: true, reason: null };
@@ -20107,6 +20148,7 @@ class ClaudeRuntime {
 init_batch_final_verification();
 init_coordinator();
 init_storage();
+init_plugin_source_skew();
 init_assurance_projection();
 var MCP_PROTOCOL_VERSION = "2025-06-18";
 var TOOLS = [
@@ -20208,6 +20250,8 @@ function createMcpRuntime(options = {}) {
   let negotiatedVersion;
   let negotiatedInteractive = false;
   const connectionId = randomUUID12();
+  const bundle = options.bundleIdentity ?? watchBundleIdentity(fileURLToPath3(import.meta.url));
+  const staleBundleMessage = () => `this MCP server started from ${bundle.path}, which changed on disk after startup; it still runs the old bundle`;
   const consumeAdmission = options.consumePhaseAdmission ?? ((toolCallId, operation) => consumePhaseAdmission(toolCallId, operation));
   let hookSessionId = null;
   const requireRunEntry = (operation, toolCallId) => {
@@ -20250,6 +20294,8 @@ function createMcpRuntime(options = {}) {
     },
     sessionInteractive: () => negotiatedInteractive,
     async callTool(name, args, meta = {}) {
+      if (name !== "status" && bundle.stale())
+        throw new NativeAuthorityError("plugin_bundle_stale", staleBundleMessage());
       const observedSession = readRunToolSession(meta.toolCallId ?? `call-${name}`, name, options.cwd ?? process.cwd());
       if (observedSession)
         hookSessionId = observedSession;
@@ -20318,8 +20364,13 @@ function createMcpRuntime(options = {}) {
       if (!taskId)
         throw new Error("task_id is required");
       refuseSuppliedAuthority(args);
-      if (name === "status")
-        return { plugin_version: PLUGIN_VERSION, ...await runtime.status(taskId) };
+      if (name === "status") {
+        const result = { plugin_version: PLUGIN_VERSION, ...await runtime.status(taskId) };
+        if (!bundle.stale())
+          return result;
+        const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+        return { ...result, warnings: [...warnings, { code: "plugin_bundle_stale", paths: [bundle.path], message: `${staleBundleMessage()}; authority calls refuse until the immune-brain MCP server is reconnected` }] };
+      }
       if (!negotiatedVersion)
         throw new NativeAuthorityError("unsupported_host", "Claude Code version is unavailable");
       if (!negotiatedInteractive && name !== "repair_authority_state") {

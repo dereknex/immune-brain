@@ -4,6 +4,7 @@
 // follows the loaded build, not the workspace changes. The plugin version does
 // not move during development, so the generated Claude bundle stands in for
 // the build: every runtime change regenerates it under the build parity check.
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { runningRuntimeSource } from "./kernel/runtime_contracts";
@@ -55,4 +56,51 @@ export function pluginSourceSkewWarning(root: string, loadedFrom: string = runni
 		// An observation never blocks status.
 		return null;
 	}
+}
+
+export interface BundleIdentityWatch {
+	/** The file whose identity was recorded at startup. */
+	readonly path: string;
+	/** True once the file on disk no longer matches the startup identity; stays true. */
+	stale(): boolean;
+}
+
+/**
+ * The long-lived MCP server keeps running the bundle it started with while
+ * hooks run every new build (Spec branch-boundary D3, T3). The identity is the
+ * file's SHA-256, re-read only when a cheap size and mtime check moves. An
+ * unreadable file, at startup or later, counts as stale: the server can no
+ * longer show it runs the build on disk.
+ */
+export function watchBundleIdentity(path: string): BundleIdentityWatch {
+	type Stamp = { size: number; mtimeMs: number };
+	const read = (): { stamp: Stamp; hash: string } | null => {
+		try {
+			const stat = statSync(path);
+			return { stamp: { size: stat.size, mtimeMs: stat.mtimeMs }, hash: createHash("sha256").update(readFileSync(path)).digest("hex") };
+		} catch {
+			return null;
+		}
+	};
+	const startup = read();
+	let stamp = startup?.stamp ?? null;
+	let stale = startup === null;
+	return {
+		path,
+		stale() {
+			if (stale || !startup) return true;
+			let current: Stamp;
+			try {
+				const stat = statSync(path);
+				current = { size: stat.size, mtimeMs: stat.mtimeMs };
+			} catch {
+				return (stale = true);
+			}
+			if (stamp && current.size === stamp.size && current.mtimeMs === stamp.mtimeMs) return false;
+			const now = read();
+			if (!now || now.hash !== startup.hash) return (stale = true);
+			stamp = now.stamp;
+			return false;
+		},
+	};
 }

@@ -2123,3 +2123,67 @@ describe("delegated in-Lane Intent revision and plan_digest reseal (ADR 0018, #1
 		}
 	}, 30000);
 });
+
+describe("loaded plugin build preflight (Spec branch-boundary D4)", () => {
+	// This test process loads the repository's own plugin, so a fixture holding a
+	// workspace plugin with another bundle is a coordinator on a differing build.
+	const loadedPlugin = realpathSync(join(import.meta.dir, "..", "plugins", "immune-brain"));
+
+	function withWorkspacePlugin(fx: Fixture, bundle: string | Buffer): Fixture {
+		const plugin = join(fx.repo, "plugins", "immune-brain");
+		mkdirSync(join(plugin, ".claude-plugin"), { recursive: true });
+		mkdirSync(join(plugin, "dist", "claude"), { recursive: true });
+		writeFileSync(join(plugin, ".claude-plugin", "plugin.json"), "{\"name\":\"immune-brain\"}\n");
+		writeFileSync(join(plugin, "dist", "claude", "mcp-server.mjs"), bundle);
+		git(fx.repo, "add", "-A");
+		git(fx.repo, "commit", "-q", "-m", "workspace plugin");
+		return { ...fx, base: git(fx.repo, "rev-parse", "HEAD") };
+	}
+
+	it("refuses a Lane-mode start on a differing loaded build, naming both plugin paths and a reload action", async () => {
+		const fx = withWorkspacePlugin(fixture(), "// another build\n");
+		try {
+			const report = lanes(await startBatch(request(fx, [child("task-a", "S1")], laneKernel())));
+			expect(report.batch_state).toBe("rejected");
+			expect(report.reason).toStartWith("batch_runtime_contract_mismatch:");
+			expect(report.reason).toContain(loadedPlugin);
+			expect(report.reason).toContain(realpathSync(join(fx.repo, "plugins", "immune-brain")));
+			expect(report.reason).toContain("reload the Host with the workspace plugin");
+			expect(report.handoffs).toEqual([]);
+			expect(readAnyBatchRunState(fx.repo, BATCH_ID)).toBeNull();
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("starts as before on an identical build or when the loaded plugin is the workspace plugin", async () => {
+		const fx = withWorkspacePlugin(fixture(), readFileSync(join(loadedPlugin, "dist", "claude", "mcp-server.mjs")));
+		try {
+			const { laneRuntimeContractRefusal } = await import("../plugins/immune-brain/runtime/unattended/batch_lanes");
+			expect(laneRuntimeContractRefusal(fx.repo)).toBeNull();
+			const report = lanes(await startBatch(request(fx, [child("task-a", "S1")], laneKernel())));
+			expect(report.batch_state).toBe("running");
+		} finally {
+			fx.cleanup();
+		}
+		const own = withWorkspacePlugin(fixture(), "// another build\n");
+		try {
+			const { laneRuntimeContractRefusal } = await import("../plugins/immune-brain/runtime/unattended/batch_lanes");
+			expect(laneRuntimeContractRefusal(own.repo, undefined, join(own.repo, "plugins", "immune-brain", "runtime", "kernel"))).toBeNull();
+		} finally {
+			own.cleanup();
+		}
+	});
+
+	it("leaves a serial batch start unaffected by a differing loaded build", async () => {
+		const fx = withWorkspacePlugin(fixture(), "// another build\n");
+		try {
+			const { max_parallel: _serial, ...serial } = request(fx, [child("task-a", "S1")], laneKernel());
+			const report = await startBatch(serial);
+			expect(report.batch_state).not.toBe("rejected");
+			expect(report.reason ?? "").not.toContain("batch_runtime_contract_mismatch");
+		} finally {
+			fx.cleanup();
+		}
+	});
+});
