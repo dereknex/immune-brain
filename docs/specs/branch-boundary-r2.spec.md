@@ -65,7 +65,7 @@ No Brainstorm manifest exists. Round 1 sources U1–U9 are in `docs/specs/branch
 | D13 | Integration stays one rebuilt commit per child on the Parent branch (linear history, ADR 0013's rejection of merge commits stands). For new batches it no longer copies changed files into the coordinator working tree. | U15, E1, E3 |
 | D14 | Final verification of a new batch runs in a runtime-created detached worktree at the Parent tip, removed afterwards; a failure is reported and nothing is rolled back. | U15, E4 |
 | D15 | The merge queue integrates settled children one at a time in settle order. Before advancing the Parent branch it reruns the child's frozen acceptance descriptors on the rebuilt commit; a failing descriptor counts as a conflict. | U14, E3 |
-| D16 | On a conflict the child's worktree is reset to the new Parent tip and the child runs implementation, QA and Review again under the same authorization. The third conflict parks only that child as `batch_integration_redo_exhausted`; its dependents become `skipped_blocked`; independent children continue; the batch summary lists each parked child with its redo count. | U14, E3 |
+| D16 | On a conflict the child's worktree is reset to the new Parent tip by recreating its Lane there (a fresh Lane store, see T7) and the child runs implementation, QA and Review again under the same authorization. The third conflict parks only that child as `batch_integration_redo_exhausted`; its dependents become `skipped_blocked`; independent children continue; the batch summary lists each parked child with its redo count. | U14, E3 |
 | D17 | The repository declares derived files in `docs/agents/derived-files.json` (`contract: immune_brain/derived_files/v1`; each entry has `id`, `sources`, `outputs`, `generate` and `check` commands as executable and argv). When every file conflicting in the queue is a declared output, the queue takes the merged sources, runs `generate`, then `check`, and integrates the result; a failing `check` or any conflicting file that is not a declared output is a conflict. Final verification runs every declared `check`. This repository declares `plugins/immune-brain/dist/claude/mcp-server.mjs`. | U13, E4 |
 | D18 | A batch started without `max_parallel` runs as a Lane batch with `max_parallel` 1. The serial runner path and `batch_reconfirmation.ts` are deleted; the shared start entry, ports and report types move out of `batch_runner.ts`. A v1 serial record can still be read by `status` and retired by `retire_stale_batch`; resuming it refuses with `batch_record_shape_retired` and the retire action. Plan reconfirmation is not ported: a changed authority subject parks a child (ADR 0026 item 3) and any other plan change fails the batch. | U15, E5 |
 | D19 | For batch and Lane children, the delivery boundary is the child branch: `assertNoEnvelopeEscape` no longer refuses a file outside `scope_hint`; the child's diff, `taskDiffHash`, QA tracked drift and the batch commit use `base..HEAD` of the child branch; files outside the estimate are listed in Review evidence as `beyond_estimate`. The scheduler starts children whose `scope_hint` overlaps concurrently and orders only by `blocked_by`. Dead `assertChangedFilesWithinScope` is deleted. | U10, U11 |
@@ -81,7 +81,7 @@ Delegated technical choices:
 | --- | --- | --- |
 | T5 | Worktrees live under the Git common directory. | Never tracked, never inside the user's tree, removed with the repository. |
 | T6 | The Parent branch is a real branch the runtime writes with `update-ref` but never checks out. | Keeps ADR 0005's untouched HEAD while giving the user a reviewable branch. |
-| T7 | Redo keeps the same authorization and TaskIntent; only the Lane's run restarts. | The authority subject did not change; a conflict is an integration fact. |
+| T7 | Redo keeps the same authorization and TaskIntent; the batch authority registry re-issues the child's consumed slot (at most two redo grants) and the run restarts in a recreated Lane with an empty Lane store, never by re-enrolling over a terminal run or reusing earlier QA or Review (S10). | The authority subject did not change; a conflict is an integration fact. Amended after S2 execution evidence: a consumed slot is refused (`kernel/batch_authority.ts:371`), a terminal local run forbids same-task enrollment (`kernel/enrollment.ts:204`), and `runs.task_id` is unique per store (`kernel/sqlite_store.ts:256`). |
 | T8 | v1 serial records become read-and-retire only, with no migration. | No serial batch is active at the planning baseline; a migration would carry retired semantics. |
 
 ## Technical Design
@@ -89,7 +89,8 @@ Delegated technical choices:
 ### Component interfaces
 
 - `runtime/unattended/batch_ref.ts`, `batch_git.ts`, `batch_preflight.ts`: progress-ref mode `parent_branch` beside `hidden_ref` and `legacy_branch` (D11).
-- New `runtime/unattended/batch_worktrees.ts`: create, reset, remove worktrees and lane branches (D12, D14, D16).
+- New `runtime/unattended/batch_worktrees.ts`: create, recreate, remove worktrees and lane branches (D12, D14, D16).
+- `kernel/batch_authority.ts`, `runtime/unattended/batch_kernel_port.ts`: redo slot re-issue bounded to two grants per child, restored with the batch record (D16, T7; S10).
 - `batch_integration.ts`, `batch_lanes.ts`: merge queue, acceptance rerun, redo counter, derived regeneration hook (D13, D15–D17).
 - New `runtime/derived_files.ts` and `runtime/no_touch.ts`: strict declaration readers (D17, D22).
 - `batch_runner.ts` reduced to the shared start entry, or replaced by `batch_start.ts`; `batch_reconfirmation.ts` deleted (D18).
@@ -99,7 +100,7 @@ Delegated technical choices:
 
 ### State transitions
 
-A new-mode child: `pending → laning (worktree created) → enrolled → settled → queued → integrated`. From `queued`: conflict or failing acceptance → `redo` (worktree reset, run restarts) → `enrolled`; third conflict → `parked` (`batch_integration_redo_exhausted`), dependents → `skipped_blocked`. Batch: `running → verifying → reported`; under `auto` `reported → returned` when the fast-forward succeeds.
+A new-mode child: `pending → laning (worktree created) → enrolled → settled → queued → integrated`. From `queued`: conflict or failing acceptance → `redo` (Lane recreated at the new Parent tip, slot re-issued, run restarts) → `enrolled`; third conflict → `parked` (`batch_integration_redo_exhausted`), dependents → `skipped_blocked`. Batch: `running → verifying → reported`; under `auto` `reported → returned` when the fast-forward succeeds.
 
 ## Devil's Advocate Audit
 
@@ -112,7 +113,7 @@ A new-mode child: `pending → laning (worktree created) → enrolled → settle
 | Slice | Task | Result when landed alone | Acceptance seams | Risk | Blocked by |
 | --- | --- | --- | --- | --- | --- |
 | S1 | `batch-parent-branch` | New Lane batches run on runtime-created worktrees and integrate onto `imm/<slug>`; final verification runs on the Parent tip | `tests/batch-parent-branch.test.ts` (new), `tests/unattended-batch-lanes.test.ts`, `tests/unattended-batch-integration.test.ts` | critical | — |
-| S2 | `merge-queue-redo` | Conflicts and failing merged acceptance trigger up to two redos before one child pauses | `tests/batch-merge-queue.test.ts` (new) | critical | S1 |
+| S2 | `merge-queue-redo` | Conflicts and failing merged acceptance trigger up to two redos before one child pauses | `tests/batch-merge-queue.test.ts` (new) | critical | S1, S10 |
 | S3 | `derived-file-regeneration` | Derived-file conflicts regenerate and pass `--check` instead of pausing | `tests/derived-files.test.ts` (new), `tests/batch-merge-queue.test.ts` | material | S2 |
 | S4 | `serial-runner-retirement` | Serial is a one-Lane batch; v1 records are read-and-retire only | `tests/batch-serial-retirement.test.ts` (new), `tests/batch-stale-disposition.test.ts`, `tests/claude-batch-authority.test.ts`, `tests/pi-batch-authority.test.ts` | material | S1 |
 | S5 | `scope-as-estimate` | Batch children deliver beyond their estimate with disclosure; overlap no longer serializes | `tests/batch-scope-estimate.test.ts` (new), `tests/unattended-batch-schedule.test.ts` | critical | S2 |
@@ -120,6 +121,7 @@ A new-mode child: `pending → laning (worktree created) → enrolled → settle
 | S7 | `diff-risk-no-touch` | Risk follows the actual diff; no-touch paths are refused | `tests/no-touch-paths.test.ts` (new), `tests/risk-tier-floor.test.ts` | critical | S5 |
 | S8 | `single-task-clean-workspace` | Single tasks start from a clean workspace and diff from their Enrollment HEAD | `tests/single-task-clean-workspace.test.ts` (new), `tests/enrollment-dirty-scope.test.ts` | material | S5 |
 | S9 | `final-report-return` | A finished batch reports and returns to main by preference | `tests/batch-final-report.test.ts` (new), `tests/git-integration-preference.test.ts` | material | S1, S5, S7 |
+| S10 | `batch-child-redo-slot` | A batch child can rerun under its original authorization in a recreated Lane, at most twice; no user-visible change on its own | `tests/kernel-batch-authority.test.ts`, `tests/batch-redo-slot.test.ts` (new) | critical | S1 |
 
 Every runtime Slice also regenerates `plugins/immune-brain/dist/claude/mcp-server.mjs` and adds a changeset. Because every Slice touches the bundle, today's scheduler serializes them; that is the problem this Initiative removes.
 
