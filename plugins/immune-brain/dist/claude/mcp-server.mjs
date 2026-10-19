@@ -13169,7 +13169,7 @@ async function commitBatchChild(input) {
   const intentSnapshot = authoritative.intent_snapshot;
   const goal = typeof intentSnapshot.goal === "string" ? intentSnapshot.goal : "";
   const scopeHint = Array.isArray(intentSnapshot.scope_hint) ? intentSnapshot.scope_hint.filter((s) => typeof s === "string") : [];
-  if (isBatchRef(expectedBranch)) {
+  if (isProgressRef(expectedBranch)) {
     const tip = readBatchRef(root, expectedBranch);
     if (tip !== expectedHead)
       throw new Error(`batch_head_lineage_broken: ${expectedBranch} is at ${tip ?? "nothing"}, expected ${expectedHead}`);
@@ -13335,7 +13335,7 @@ async function lookupBatchCommit(input) {
       "-n",
       "20",
       `--format=%x1e${FORMAT}`,
-      ...isBatchRef(expectedBranch) ? [expectedBranch] : []
+      ...isProgressRef(expectedBranch) ? [expectedBranch] : []
     ], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     if (result.status !== 0) {
       throw new Error(`failed to lookup batch commit for ${taskId}: ${result.stderr?.trim() || "git log failed"}`);
@@ -13363,7 +13363,7 @@ async function lookupBatchCommit(input) {
   if (match.authorName && match.authorName !== DEFAULT_GIT_ENV.GIT_AUTHOR_NAME) {
     throw new Error(`batch_head_lineage_broken: adopted commit author ${match.authorName} does not match batch authority ${DEFAULT_GIT_ENV.GIT_AUTHOR_NAME}`);
   }
-  if (expectedBranch !== undefined && !isBatchRef(expectedBranch)) {
+  if (expectedBranch !== undefined && !isProgressRef(expectedBranch)) {
     const currentBranchResult = spawnSync13("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
@@ -13392,7 +13392,7 @@ async function lookupBatchCommit(input) {
   }
   const parentsResult = spawnSync13("git", ["-C", root, "rev-parse", `${commit}^@`], { encoding: "utf8" });
   const parents = parentsResult.stdout.trim().split(/\s+/).filter(Boolean);
-  if (isBatchRef(expectedBranch)) {
+  if (isProgressRef(expectedBranch)) {
     const tip = readBatchRef(root, expectedBranch);
     const reachable = tip !== null && (tip === commit || spawnSync13("git", ["-C", root, "merge-base", "--is-ancestor", commit, tip], { stdio: "ignore" }).status === 0);
     if (!reachable) {
@@ -13646,6 +13646,17 @@ async function recordParentRepair(root, batchId, taskId, initiativeSlug) {
   } else
     writeNativeParentFinalReport(root, native);
 }
+function settledDeliveryInTree(root, commit, taskId, settled) {
+  const paths = settled.runId === null ? auditEvidencePaths(root, taskId) : { record: auditRunRecordPath(taskId, settled.runId), proof: auditRunTerminalProofPath(taskId, settled.runId) };
+  return [paths.record, paths.proof].every((path) => {
+    const committed = spawnSync13("git", ["-C", root, "show", `${commit}:${path}`], { encoding: "utf8" });
+    try {
+      return committed.status === 0 && committed.stdout === readSecureProjectFile(root, path);
+    } catch {
+      return false;
+    }
+  });
+}
 async function integrateSettledCriticalSlices(root, initiativeSlug, readInitiative) {
   let record = findExistingActiveBatch(root, initiativeSlug);
   if (record?.corrupt)
@@ -13669,6 +13680,8 @@ async function integrateSettledCriticalSlices(root, initiativeSlug, readInitiati
     const nativeBatchId = `${batch.batch_id}.${repair ? "repair" : "critical"}`;
     const settled = readSettledTaskEvidence(root, child.task_id);
     if (!settled || settled.proof.terminal_lifecycle !== "done" || !repair && settled.record.intent_snapshot.risk !== "critical")
+      continue;
+    if (!repair && settledDeliveryInTree(root, batch.base_head, child.task_id, settled))
       continue;
     if (repair && settled.runId !== repair.run_id)
       throw new Error("repair settlement belongs to a different enrolled run");
@@ -14957,8 +14970,8 @@ var init_batch_preflight = __esm(() => {
 init_batch_preflight();
 init_batch_state();
 import { randomUUID as randomUUID12 } from "node:crypto";
-import { existsSync as existsSync18, readdirSync as readdirSync10, realpathSync as realpathSync19 } from "node:fs";
-import { join as join29 } from "node:path";
+import { existsSync as existsSync19, readdirSync as readdirSync10, realpathSync as realpathSync19 } from "node:fs";
+import { join as join30 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
@@ -16839,9 +16852,9 @@ init_storage();
 init_intent();
 init_canary_application();
 init_authority_port();
-import { existsSync as existsSync17, readFileSync as readFileSync21, writeFileSync as writeFileSync13 } from "node:fs";
+import { existsSync as existsSync18, readFileSync as readFileSync21, writeFileSync as writeFileSync13 } from "node:fs";
 import { execFileSync as execFileSync11 } from "node:child_process";
-import { join as join28 } from "node:path";
+import { join as join29 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/enrollment_authority.ts
 var ENROLLMENT_CAPABILITY_BRAND = Symbol.for("assurance-kernel.enrollment-capability-brand");
@@ -19465,6 +19478,8 @@ init_storage_paths();
 init_batch_reasons();
 init_batch_preflight();
 init_batch_state();
+import { existsSync as existsSync17 } from "node:fs";
+import { join as join28 } from "node:path";
 var SERIAL_IN_FLIGHT = new Set(["enrolled", "settled"]);
 var LANE_IN_FLIGHT = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
 var RETIRE_REASON = "Retired by an explicit literal-user disposition: the batch plan moved past this record, so its authorization could neither reconfirm nor continue. " + "Recorded child commits, child states and the batch branch are preserved as evidence. " + "Children this batch never executed carry no commit, no batch trailer and no approval; nothing infers their delivery from this record.";
@@ -19479,6 +19494,25 @@ function kernelLifecycleOf(root, taskId) {
     return null;
   }
 }
+function laneChildLifecycleOf(root, child) {
+  const lane = child.lane;
+  if (!lane)
+    return kernelLifecycleOf(root, child.task_id);
+  try {
+    if (!existsSync17(join28(lane.path, KERNEL_DB_RELATIVE)))
+      return null;
+    if (readActiveClaimTaskId(lane.path) === child.task_id)
+      return null;
+    const runId = localRunId(lane.path, child.task_id);
+    if (runId === null)
+      return kernelLifecycleOf(root, child.task_id);
+    if (lane.run_id && runId !== lane.run_id)
+      return null;
+    return readSettledRunEvidence(lane.path, child.task_id)?.lifecycle ?? null;
+  } catch {
+    return null;
+  }
+}
 function childEvidenceOf(root, record) {
   if (record.contract === "assurance_kernel/batch_run_state/v2")
     return record.children.map((child) => ({
@@ -19487,7 +19521,7 @@ function childEvidenceOf(root, record) {
       state: child.state,
       commit: child.commit,
       lane_branch: child.lane?.branch ?? null,
-      kernel_lifecycle: kernelLifecycleOf(root, child.task_id)
+      kernel_lifecycle: laneChildLifecycleOf(root, child)
     }));
   return record.children.map((child) => ({
     task_id: child.task_id,
@@ -19499,8 +19533,9 @@ function childEvidenceOf(root, record) {
   }));
 }
 function inFlightChildOf(root, record) {
-  const inFlight = record.contract === "assurance_kernel/batch_run_state/v2" ? LANE_IN_FLIGHT : SERIAL_IN_FLIGHT;
-  return record.children.find((child) => inFlight.has(child.state) && kernelLifecycleOf(root, child.task_id) === null) ?? null;
+  if (record.contract === "assurance_kernel/batch_run_state/v2")
+    return record.children.find((child) => LANE_IN_FLIGHT.has(child.state) && laneChildLifecycleOf(root, child) === null) ?? null;
+  return record.children.find((child) => SERIAL_IN_FLIGHT.has(child.state) && kernelLifecycleOf(root, child.task_id) === null) ?? null;
 }
 function readStaleBatchLookup(root, initiativeSlug) {
   const found = findExistingActiveBatch(root, initiativeSlug);
@@ -19885,7 +19920,7 @@ class ClaudeRuntime {
     try {
       if (!selectedClaudeParent(meta.toolCallId, this.cwd, slug))
         return result;
-      if (existsSync17(join28(this.cwd, ".imm", "audit", taskId)))
+      if (existsSync18(join29(this.cwd, ".imm", "audit", taskId)))
         execFileSync11("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch, ...batch.state === "started" && batch.report?.tracker ? { tracker: batch.report.tracker } : {} };
@@ -19987,7 +20022,7 @@ class ClaudeRuntime {
       throw new Error("approve_breaking_intent_revision requires next_intent");
     const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
     const nextIntentRef = nextIntent ? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash } : undefined;
-    const sidecar = nextIntent ? join28(this.cwd, priorIntent.intent_ref.path) : undefined;
+    const sidecar = nextIntent ? join29(this.cwd, priorIntent.intent_ref.path) : undefined;
     const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
     const restoreStagedIntent2 = () => {
       if (!stagedSnapshot)
@@ -20118,7 +20153,7 @@ class ClaudeRuntime {
     const nextScope = operation.op === "revise_intent" ? operation.next_intent.scope_hint : undefined;
     if (nextScope)
       assertScopeAdditionsAreFiles(ctx.cwd, priorIntent.intent.scope_hint, nextScope);
-    const sidecar = join28(ctx.cwd, priorIntent.intent_ref.path);
+    const sidecar = join29(ctx.cwd, priorIntent.intent_ref.path);
     const priorBytes = operation.op === "revise_intent" ? readFileSync21(sidecar) : null;
     const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
     try {
@@ -21347,8 +21382,8 @@ async function runHook() {
     return;
   const cwd = typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
   if (!readActiveClaimTaskId(cwd)) {
-    const batchesDir = join29(cwd, ".imm", "state", "batches");
-    const activeBatch = existsSync18(batchesDir) && readdirSync10(batchesDir).some((file) => {
+    const batchesDir = join30(cwd, ".imm", "state", "batches");
+    const activeBatch = existsSync19(batchesDir) && readdirSync10(batchesDir).some((file) => {
       if (!file.endsWith(".json") || file.endsWith(".report.json"))
         return false;
       const batch = readAnyBatchRunState(cwd, file.slice(0, -5));

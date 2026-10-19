@@ -276,6 +276,53 @@ describe("native Parent completion without ordinary grants", () => {
 			}
 		} finally { rmSync(repo.root, { recursive: true, force: true }); }
 	});
+	it("moves a Parent branch as a progress ref without consulting the coordinator checkout", async () => {
+		const repo = initGitRepo();
+		const parent = "refs/heads/imm/native-parent";
+		try {
+			git(repo.root, ["update-ref", parent, repo.baseHead]);
+			writeChildAudit(repo.root, "child", "done", repo.baseHead);
+			mkdirSync(join(repo.root, "src")); writeFileSync(join(repo.root, "src/child.ts"), "export const child = 1;\n");
+			const { commit } = await commitBatchChild({ root: repo.root, taskId: "child", batchId: "parent-batch", expectedHead: repo.baseHead, branch: parent });
+			expect(git(repo.root, ["rev-parse", parent])).toBe(commit);
+			expect(git(repo.root, ["rev-parse", `${commit}^`])).toBe(repo.baseHead);
+			// The coordinator stays on its own branch and commit.
+			expect(git(repo.root, ["symbolic-ref", "--short", "HEAD"])).toBe("main");
+			expect(git(repo.root, ["rev-parse", "HEAD"])).toBe(repo.baseHead);
+			expect((await lookupBatchCommit({ root: repo.root, taskId: "child", batchId: "parent-batch", expectedHead: repo.baseHead, branch: parent }))?.commit).toBe(commit);
+		} finally { rmSync(repo.root, { recursive: true, force: true }); }
+	});
+	it("skips a critical task settled before a Parent-branch Lane batch instead of integrating it again", async () => {
+		const repo = initGitRepo();
+		const parent = "refs/heads/imm/native-parent";
+		try {
+			const paths = ["src/critical.ts", "docs/plans/critical.intent.json"];
+			writeTaskIntent(repo.root, "critical", "Goal for critical", paths);
+			const intent = JSON.parse(readFileSync(join(repo.root, paths[1]!), "utf8")); intent.risk = "critical";
+			writeFileSync(join(repo.root, paths[1]!), JSON.stringify(intent));
+			mkdirSync(join(repo.root, "src")); writeFileSync(join(repo.root, paths[0]!), "export const critical = true;\n");
+			writeChildAudit(repo.root, "critical", "done", repo.baseHead, intent);
+			// The critical delivery, audit pair included, lands before the batch starts.
+			git(repo.root, ["add", "-A"]); git(repo.root, ["commit", "-m", "imm(critical): delivered"]);
+			const base = git(repo.root, ["rev-parse", "HEAD"]);
+			git(repo.root, ["update-ref", parent, base]);
+			const now = new Date().toISOString();
+			const record = prepareBatchLaneRunState({ batch_id: "parent-lanes", initiative_slug: "native-parent", base_head: base, branch: parent,
+				plan_digest: `sha256:${"c".repeat(64)}`, confirmation_time: now, now, max_parallel: 2,
+				budget: { max_children: 1, qa_failure_limit: 2 }, children: [{ task_id: "ordinary", slice_id: "S2", blocked_by: [], status: "enrollable",
+					risk: "material", intent_path: "docs/plans/ordinary.intent.json", intent_revision: 1, intent_content_hash: `sha256:${"d".repeat(64)}`,
+					scope_hint: ["src/ordinary.ts"], reason: null, exclusion: null }] });
+			record.batch_state = "running"; writeBatchLaneRunState(repo.root, record);
+			const reader = async () => ({ initiative_slug: "native-parent", carrier: "local" as const, tasks: [
+				{ task_id: "critical", slice_id: "S1", blocked_by: [] }, { task_id: "ordinary", slice_id: "S2", blocked_by: ["critical"] },
+			] });
+			const capture = () => ({ tip: git(repo.root, ["rev-parse", parent]), head: git(repo.root, ["rev-parse", "HEAD"]),
+				branch: git(repo.root, ["symbolic-ref", "--short", "HEAD"]), record: readFileSync(join(repo.root, ".imm/state/batches/parent-lanes.json")) });
+			const before = capture();
+			await integrateSettledCriticalSlices(repo.root, "native-parent", reader);
+			expect(capture()).toEqual(before);
+		} finally { rmSync(repo.root, { recursive: true, force: true }); }
+	});
 	it("leaves a critical-only Parent to the batch path instead of a native task gate (D5)", async () => {
 		const repo = initGitRepo();
 		try {

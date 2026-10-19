@@ -20,8 +20,10 @@
 // open. No Batch Authorization capability is minted, because retiring a record
 // consumes no child and enrolls nothing — the capability exists to authorize
 // child consumption, and minting one here would be ceremony without a property.
-import { readSecureProjectBytes, readSettledRunEvidence } from "../kernel/storage";
-import { batchStatePath } from "../kernel/storage_paths";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { localRunId, readSecureProjectBytes, readSettledRunEvidence } from "../kernel/storage";
+import { batchStatePath, KERNEL_DB_RELATIVE } from "../kernel/storage_paths";
 import { batchReason, type BatchReason } from "./batch_reasons";
 import { findExistingActiveBatch, findSettledBatchRecord, readActiveClaimTaskId, type BatchGateDecision } from "./batch_preflight";
 import {
@@ -29,6 +31,7 @@ import {
 	replaceAnyBatchRunState,
 	writeBatchRunReport,
 	type AnyBatchRunStateRecord,
+	type BatchLaneBinding,
 	type BatchLaneRunReport,
 	type BatchRunReport,
 	type BatchRunState,
@@ -101,6 +104,29 @@ function kernelLifecycleOf(root: string, taskId: string): "done" | "stopped" | n
 	}
 }
 
+/**
+ * A Lane child runs under the Lane's own Kernel store, so its run ends there
+ * and never in the coordinator's. Once a Lane is bound, that store decides: a
+ * missing or unreadable store, an active claim, or a run other than the one the
+ * batch observed at enrollment all read as null. Only a readable Lane store that
+ * holds no run for the task defers to the coordinator store, for a child an
+ * imm-run settled there; a stale coordinator run never overrides a Lane run.
+ */
+function laneChildLifecycleOf(root: string, child: { task_id: string; lane?: BatchLaneBinding | null }): "done" | "stopped" | null {
+	const lane = child.lane;
+	if (!lane) return kernelLifecycleOf(root, child.task_id);
+	try {
+		if (!existsSync(join(lane.path, KERNEL_DB_RELATIVE))) return null;
+		if (readActiveClaimTaskId(lane.path) === child.task_id) return null;
+		const runId = localRunId(lane.path, child.task_id);
+		if (runId === null) return kernelLifecycleOf(root, child.task_id);
+		if (lane.run_id && runId !== lane.run_id) return null;
+		return readSettledRunEvidence(lane.path, child.task_id)?.lifecycle ?? null;
+	} catch {
+		return null;
+	}
+}
+
 function childEvidenceOf(root: string, record: AnyBatchRunStateRecord): StaleBatchChildEvidence[] {
 	if (record.contract === "assurance_kernel/batch_run_state/v2")
 		return record.children.map((child) => ({
@@ -109,7 +135,7 @@ function childEvidenceOf(root: string, record: AnyBatchRunStateRecord): StaleBat
 			state: child.state,
 			commit: child.commit,
 			lane_branch: child.lane?.branch ?? null,
-			kernel_lifecycle: kernelLifecycleOf(root, child.task_id),
+			kernel_lifecycle: laneChildLifecycleOf(root, child),
 		}));
 	return record.children.map((child) => ({
 		task_id: child.task_id,
@@ -122,8 +148,9 @@ function childEvidenceOf(root: string, record: AnyBatchRunStateRecord): StaleBat
 }
 
 function inFlightChildOf(root: string, record: AnyBatchRunStateRecord): { task_id: string } | null {
-	const inFlight = record.contract === "assurance_kernel/batch_run_state/v2" ? LANE_IN_FLIGHT : SERIAL_IN_FLIGHT;
-	return record.children.find((child) => inFlight.has(child.state) && kernelLifecycleOf(root, child.task_id) === null) ?? null;
+	if (record.contract === "assurance_kernel/batch_run_state/v2")
+		return record.children.find((child) => LANE_IN_FLIGHT.has(child.state) && laneChildLifecycleOf(root, child) === null) ?? null;
+	return record.children.find((child) => SERIAL_IN_FLIGHT.has(child.state) && kernelLifecycleOf(root, child.task_id) === null) ?? null;
 }
 
 /**

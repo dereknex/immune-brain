@@ -1,0 +1,39 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "parent-branch-settled-critical-skip",
+  "goal": "A running Lane batch on the Parent branch never re-integrates a critical task that was settled before the batch started (it is not among the batch children and its delivery is already in the batch base), and the native commit and lookup paths treat the Parent branch refs/heads/imm/<slug> as a progress ref rather than the coordinator checkout, so resuming such a batch or sending it a lane_instruction no longer fails with batch_head_lineage_broken while the coordinator stays on main. retire_stale_batch also recognizes a Lane child whose Kernel run ended in its own Lane store, so a stopped Lane child no longer blocks disposition as mid-flight.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "integrateSettledCriticalSlices on a running parent_branch Lane batch whose Initiative lists a critical task settled done before the batch (absent from batch.children, not a repair task) returns without error while the coordinator checkout is on a branch other than the Parent branch, and leaves the Parent branch tip, the batch record and the coordinator HEAD unchanged.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-parent-branch.test.ts\",\n      \"tests/unattended-batch-commit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "commitBatchChild and lookupBatchCommit with branch refs/heads/imm/<slug> read and move that ref without consulting the coordinator's symbolic HEAD, as they already do for refs/imm/batches refs; the serial-batch wrong_branch and diverged lineage refusals still hold.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-parent-branch.test.ts\",\n      \"tests/unattended-batch-commit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "readStaleBatchLookup and retireStaleBatch treat a lane-mode child (enrolled, lane_admitted, settled or lane_committed) as ended when its Kernel run is done or stopped in the child's own Lane store (child.lane.path), not only in the coordinator store, so such a batch is retirable; a Lane child whose run is still active there, or whose Lane store is missing or unreadable, still blocks with stale_batch_in_flight.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-stale-disposition.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "The committed Claude MCP bundle matches the runtime source.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/build-claude-plugin.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/parent-branch-settled-critical-skip.intent.json",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/unattended/batch_disposition.ts",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "tests/batch-parent-branch.test.ts",
+    "tests/batch-stale-disposition.test.ts",
+    "tests/unattended-batch-commit.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 2,
+  "owner": "user"
+}

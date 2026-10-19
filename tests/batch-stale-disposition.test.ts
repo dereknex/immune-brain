@@ -95,7 +95,7 @@ function repo(): Repo {
 }
 
 /** Seed the coordinator's Kernel run for a child: live, or already ended. */
-function seedKernelRun(root: string, taskId: string, lifecycle: "active" | "done" | "stopped"): void {
+function seedKernelRun(root: string, taskId: string, lifecycle: "active" | "done" | "stopped", runId?: string): void {
 	const intent = {
 		contract: "assurance_kernel/task_intent/v1",
 		task_id: taskId,
@@ -122,6 +122,7 @@ function seedKernelRun(root: string, taskId: string, lifecycle: "active" | "done
 			history: [],
 		},
 		...(lifecycle === "active" ? {} : { terminal: { lifecycle } }),
+		...(runId ? { run_id: runId } : {}),
 	});
 }
 
@@ -526,6 +527,56 @@ describe("stale batch disposition", () => {
 		if (outcome.outcome !== "rejected") throw new Error("expected rejected");
 		expect(outcome.rejection.reason).toContain("still mid-flight");
 		expect(g.calls).toHaveLength(0);
+	});
+
+	it("reads a Lane child's run from its own Lane store, bound to the enrolled run", async () => {
+		// A Lane child runs under the Lane worktree's Kernel store; a stop there
+		// never reaches the coordinator store, so only the Lane store can prove it ended.
+		const cases = [
+			{ lifecycle: "stopped", runId: "run-s2", coordinator: null, retired: true },
+			{ lifecycle: "done", runId: "run-s2", coordinator: null, retired: true },
+			{ lifecycle: "active", runId: "run-s2", coordinator: null, retired: false },
+			// A terminal run that is not the one the batch enrolled proves nothing.
+			{ lifecycle: "stopped", runId: "run-other", coordinator: null, retired: false },
+			// A stale terminal coordinator run never overrides what the Lane store holds.
+			{ lifecycle: "active", runId: "run-s2", coordinator: "stopped", retired: false },
+			{ lifecycle: "stopped", runId: "run-other", coordinator: "stopped", retired: false },
+			{ lifecycle: null, runId: "run-s2", coordinator: "stopped", retired: false },
+			// A readable Lane store with no run for the task defers to the coordinator store.
+			{ lifecycle: "unrelated", runId: "run-s2", coordinator: "stopped", retired: true },
+		] as const;
+		for (const { lifecycle, runId, coordinator, retired } of cases) {
+			const r = repo();
+			const laneRoot = realpathSync(mkdtempSync(join(tmpdir(), "imm-disposition-lane-")));
+			roots.push(laneRoot);
+			const record = laneRecord(r);
+			const stuck = record.children[1]!.task_id;
+			write(r, {
+				...record,
+				children: record.children.map((child, index) =>
+					index === 1
+						? { ...child, state: "enrolled" as const, reason: null, lane: { path: laneRoot, branch: `${BATCH_BRANCH}-${stuck}`, base_head: r.base, lane_commit: null, run_id: "run-s2" } }
+						: child,
+				),
+			});
+			// A null Lane lifecycle leaves the Lane with no Kernel store at all.
+			if (lifecycle === "unrelated") seedKernelRun(laneRoot, "unrelated-task", "stopped", runId);
+			else if (lifecycle !== null) seedKernelRun(laneRoot, stuck, lifecycle, runId);
+			if (coordinator !== null) seedKernelRun(r.root, stuck, coordinator, "run-earlier");
+			const g = gate();
+			const outcome = await retireStaleBatch({ root: r.root, initiative_slug: SLUG, now: NOW, gate: g.run });
+			if (!retired) {
+				expect(outcome.outcome).toBe("rejected");
+				if (outcome.outcome !== "rejected") throw new Error("expected rejected");
+				expect(outcome.rejection.reason).toContain(`child ${stuck}`);
+				expect(g.calls).toHaveLength(0);
+				continue;
+			}
+			expect(g.calls).toHaveLength(1);
+			expect(g.calls[0]!.children.find((child) => child.task_id === stuck)!.kernel_lifecycle).toBe(lifecycle === "unrelated" ? coordinator : lifecycle);
+			expect(outcome.outcome).toBe("retired");
+			expect(readAnyBatchRunState(r.root, BATCH_ID)!.batch_state).toBe("superseded");
+		}
 	});
 
 	it("declines and cancels write nothing", async () => {

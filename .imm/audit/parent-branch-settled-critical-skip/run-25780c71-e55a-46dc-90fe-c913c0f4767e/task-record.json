@@ -1,0 +1,268 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "parent-branch-settled-critical-skip",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "parent-branch-settled-critical-skip",
+    "goal": "A running Lane batch on the Parent branch never re-integrates a critical task that was settled before the batch started (it is not among the batch children and its delivery is already in the batch base), and the native commit and lookup paths treat the Parent branch refs/heads/imm/<slug> as a progress ref rather than the coordinator checkout, so resuming such a batch or sending it a lane_instruction no longer fails with batch_head_lineage_broken while the coordinator stays on main. retire_stale_batch also recognizes a Lane child whose Kernel run ended in its own Lane store, so a stopped Lane child no longer blocks disposition as mid-flight.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "integrateSettledCriticalSlices on a running parent_branch Lane batch whose Initiative lists a critical task settled done before the batch (absent from batch.children, not a repair task) returns without error while the coordinator checkout is on a branch other than the Parent branch, and leaves the Parent branch tip, the batch record and the coordinator HEAD unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-parent-branch.test.ts\",\n      \"tests/unattended-batch-commit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "commitBatchChild and lookupBatchCommit with branch refs/heads/imm/<slug> read and move that ref without consulting the coordinator's symbolic HEAD, as they already do for refs/imm/batches refs; the serial-batch wrong_branch and diverged lineage refusals still hold.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-parent-branch.test.ts\",\n      \"tests/unattended-batch-commit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "readStaleBatchLookup and retireStaleBatch treat a lane-mode child (enrolled, lane_admitted, settled or lane_committed) as ended when its Kernel run is done or stopped in the child's own Lane store (child.lane.path), not only in the coordinator store, so such a batch is retirable; a Lane child whose run is still active there, or whose Lane store is missing or unreadable, still blocks with stale_batch_in_flight.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-stale-disposition.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "The committed Claude MCP bundle matches the runtime source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/build-claude-plugin.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/parent-branch-settled-critical-skip.intent.json",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/unattended/batch_disposition.ts",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "tests/batch-parent-branch.test.ts",
+      "tests/batch-stale-disposition.test.ts",
+      "tests/unattended-batch-commit.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/parent-branch-settled-critical-skip.intent.json",
+    "content_hash": "sha256:06a9b686b3ce66514f5a16ff5e862993b622084b893066e6015a658dbbaaa5b8"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:f898e1ded5ba0c7ddb4cc0c7873c236ac011aafa86d30a0d62f889a08caf6aec",
+  "git_base_head": "18eaa7f35520ec1f699ed7668b4a36dbe3345ac6",
+  "attestations": [
+    {
+      "id": "approval-qa-e9905313",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:06a9b686b3ce66514f5a16ff5e862993b622084b893066e6015a658dbbaaa5b8",
+      "diff_hash": "sha256:ec8fbbf69f416db024cbd748268c818ceb16d116373695a2aa233298d8964e01",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:851f5cab73b294b9a55462beda04a6b38ee2b233bcdc201b1bb053a66ca2b6f0",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:851f5cab73b294b9a55462beda04a6b38ee2b233bcdc201b1bb053a66ca2b6f0"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:851f5cab73b294b9a55462beda04a6b38ee2b233bcdc201b1bb053a66ca2b6f0"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:851f5cab73b294b9a55462beda04a6b38ee2b233bcdc201b1bb053a66ca2b6f0"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:851f5cab73b294b9a55462beda04a6b38ee2b233bcdc201b1bb053a66ca2b6f0"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-e3487e2d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:06a9b686b3ce66514f5a16ff5e862993b622084b893066e6015a658dbbaaa5b8",
+      "diff_hash": "sha256:06fe0b8161498ef928a6f4e985ceca17a0b8934090de34d6eb181c73757661ba",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:3b7e81de810d4b36149f2edf4b2fe14aa067d24634f48772d8e10d5512801372",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:3b7e81de810d4b36149f2edf4b2fe14aa067d24634f48772d8e10d5512801372"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:3b7e81de810d4b36149f2edf4b2fe14aa067d24634f48772d8e10d5512801372"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:3b7e81de810d4b36149f2edf4b2fe14aa067d24634f48772d8e10d5512801372"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:3b7e81de810d4b36149f2edf4b2fe14aa067d24634f48772d8e10d5512801372"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-b77cb86d",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:06a9b686b3ce66514f5a16ff5e862993b622084b893066e6015a658dbbaaa5b8",
+      "diff_hash": "sha256:06fe0b8161498ef928a6f4e985ceca17a0b8934090de34d6eb181c73757661ba",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (single parent 18eaa7f, tree e6762d0). commitBatchChild and lookupBatchCommit now route refs/heads/imm/<slug> through isProgressRef, which already exists and is used the same way in batch_preflight and batch_integration. Serial batches keep their short imm/<slug> branch on the symbolic-HEAD path. integrateSettledCriticalSlices skips a non-repair critical task only when batch.base_head already holds its exact settled audit pair. The new Lane-store lifecycle lookup is bound to lane.run_id and blocks when the store is missing, unreadable or still active. Tests cover each acceptance at its seam, and the bundle diff mirrors the source.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "18eaa7f35520ec1f699ed7668b4a36dbe3345ac6",
+        "review_commit": "0b1c593c4e5028dd1475325045a4625f1f8ef9db",
+        "review_tree": "e6762d0271f358671a4e863cf6363f980c369922",
+        "manifest_digest": "sha256:69cece08f5f9805428e13b99b429a2396d7c384adfc6fa22e88a64a2ad975ff3"
+      },
+      "reviewer_verdict_sha256": "sha256:dece5dc07dac3057305edb62fc80d5e001d2d6ab8566d239371540bfbb4cf00d"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-6668935f1948-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "laneChildLifecycleOf falls back to the coordinator store when the Lane store shows the child still active, holds a different run, or is missing or unreadable. A stale terminal run of the same task in the coordinator store then makes a live Lane child look ended, and the batch gets retired.",
+      "anchor": "sha256:5251de90f254e525011905a88bad5790bd1a61c186005d301b0af2579d5a5960",
+      "evidence": {
+        "trigger": "The coordinator Kernel store's latest run for task X is a stopped run from an earlier attempt before the batch. Lane-mode child X is 'enrolled' with lane.run_id=run-s2, and its Lane store (child.lane.path) holds the active claim for X, or its Lane store is missing or unreadable. Inside laneChildLifecycleOf, readActiveClaimTaskId(lane.path) === X, or the try block throws, so control falls through to kernelLifecycleOf(root, X). That reads the coordinator's latest run row (readSettledRunEvidence -> readRunRowByTask) and returns 'stopped'. inFlightChildOf then returns null, and retireStaleBatch supersedes the batch while X is still running in its Lane. AC3 requires stale_batch_in_flight here. The same fall-through applies when the Lane store's terminal run is not the enrolled run_id. The new test seeds no coordinator run for the stuck child, so this case is never exercised. Fix: once child.lane is bound, return null when the Lane store has an active claim for the child, holds a run other than the enrolled one, or cannot be read. Only consult the coordinator store when the Lane store holds no run for the task at all. Add a test that seeds a terminal coordinator run next to an active, mismatched or missing Lane store and asserts rejection.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_disposition.ts:retireStaleBatch",
+          "plugins/immune-brain/runtime/unattended/batch_disposition.ts:inFlightChildOf",
+          "plugins/immune-brain/runtime/unattended/batch_disposition.ts:laneChildLifecycleOf",
+          "plugins/immune-brain/runtime/unattended/batch_disposition.ts:kernelLifecycleOf",
+          "plugins/immune-brain/runtime/kernel/storage.ts:readSettledRunEvidence"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC3"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "revise_intent:parent-branch-settled-critical-skip:2026-10-19T08:02:31.800Z",
+      "at": "2026-10-19T08:02:31.800Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\nscope_added:tests/unattended-batch-commit.test.ts\naction_v2_sha256:eefe9bc59d6de18a8eaa06a8a2d56d27699bdaf971b2c7f215a6e8a1c0ef2c65"
+    },
+    {
+      "id": "freeze_artifacts:parent-branch-settled-critical-skip:2026-10-19T08:02:35.289Z",
+      "at": "2026-10-19T08:02:35.289Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/parent-branch-settled-critical-skip.intent.json"
+    },
+    {
+      "id": "record_approval:parent-branch-settled-critical-skip:2026-10-19T08:03:32.091Z",
+      "at": "2026-10-19T08:03:32.091Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e9905313\naction_v2_sha256:8dd526e45ab0f5920603a22663195958fbee5642f5379114cbc6978c83ebba54",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-19T08:03:32.091Z"
+      }
+    },
+    {
+      "id": "request_rework:parent-branch-settled-critical-skip:2026-10-19T08:05:09.756Z",
+      "at": "2026-10-19T08:05:09.756Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:a7d3ea88efb48891c6ff6418267b9dbb3f2d0176fbaca1611dc371fa805fd09b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-19T08:05:09.756Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "18eaa7f35520ec1f699ed7668b4a36dbe3345ac6",
+        "review_commit": "4ca17f513485f3c7d46d359ad9fc332d74cc3ec4",
+        "review_tree": "6765383961b69cbd3f722e1c77350944ab463652",
+        "manifest_digest": "sha256:2eed43fa940c2f9969e938128dd76f78fb715a3d0c017e20b60f07c76f5c7541"
+      }
+    },
+    {
+      "id": "resolve_finding:parent-branch-settled-critical-skip:2026-10-19T08:09:28.137Z",
+      "at": "2026-10-19T08:09:28.137Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-6668935f1948-1-review-1\naction_v2_sha256:d10bad18902e343bd9d198c613f96e78fc5abd9ed0b2fc9e31abe74b0fcb21ee"
+    },
+    {
+      "id": "freeze_artifacts:parent-branch-settled-critical-skip:2026-10-19T08:09:29.574Z",
+      "at": "2026-10-19T08:09:29.574Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/parent-branch-settled-critical-skip.intent.json"
+    },
+    {
+      "id": "record_approval:parent-branch-settled-critical-skip:2026-10-19T08:10:35.691Z",
+      "at": "2026-10-19T08:10:35.691Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e3487e2d\naction_v2_sha256:c634ae4967bc4c985cbf7369b1c5cded04a324b42ff0bff5c18ca770511591c6",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-19T08:10:35.691Z"
+      }
+    },
+    {
+      "id": "record_approval:parent-branch-settled-critical-skip:2026-10-19T08:11:40.297Z",
+      "at": "2026-10-19T08:11:40.297Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-b77cb86d\naction_v2_sha256:22902665a010212aa98147f641bc3a43255d997909cfb485ec4ede992c01df3e",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-19T08:11:40.297Z"
+      }
+    },
+    {
+      "id": "complete:parent-branch-settled-critical-skip:2026-10-19T08:11:41.633Z",
+      "at": "2026-10-19T08:11:41.633Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:e3c365277c871ba977f217e7cabafa81f0ea7bbcc600b1963bd308f3c80a8620"
+    }
+  ]
+}

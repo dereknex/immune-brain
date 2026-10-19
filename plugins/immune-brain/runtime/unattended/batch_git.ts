@@ -29,7 +29,7 @@ import { withParentWorktree } from "./batch_worktrees";
 import type { InitiativeObservationReader } from "./types";
 import { readTaskIntent, observeEnrollmentTaskIntent } from "../kernel/intent";
 import { classifyBatchLineage, expectedBatchHead, readActiveClaimTaskId as findActiveClaimForCriticalIntegration, findExistingActiveBatch, findSettledBatchRecord } from "./batch_preflight";
-import { batchRefName, buildScopedCommit, liveBatchHead, changedPaths as changedPathsBetween, createBatchRef, ignoredPaths, isBatchRef, moveBatchRef, pathsDirtyAgainst, readBatchRef, parentBranchRef, isParentBranch } from "./batch_ref";
+import { batchRefName, buildScopedCommit, liveBatchHead, changedPaths as changedPathsBetween, createBatchRef, ignoredPaths, isProgressRef, moveBatchRef, pathsDirtyAgainst, readBatchRef, parentBranchRef, isParentBranch } from "./batch_ref";
 export { classifyBatchLineage, type BatchLineage } from "./batch_preflight";
 
 export type BatchGitPreflightRejectReason =
@@ -507,7 +507,7 @@ export async function commitBatchChild(input: {
 		? intentSnapshot.scope_hint.filter((s): s is string => typeof s === "string")
 		: [];
 
-	if (isBatchRef(expectedBranch)) {
+	if (isProgressRef(expectedBranch)) {
 		const tip = readBatchRef(root, expectedBranch);
 		if (tip !== expectedHead)
 			throw new Error(`batch_head_lineage_broken: ${expectedBranch} is at ${tip ?? "nothing"}, expected ${expectedHead}`);
@@ -740,7 +740,7 @@ export async function lookupBatchCommit(input: {
 				"-n",
 				"20",
 				`--format=%x1e${FORMAT}`,
-				...(isBatchRef(expectedBranch) ? [expectedBranch] : []),
+				...(isProgressRef(expectedBranch) ? [expectedBranch] : []),
 			],
 			{ encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
 		);
@@ -782,7 +782,7 @@ export async function lookupBatchCommit(input: {
 	}
 
 	// Verify symbolic branch matches expected branch (Review Round 7 Finding 1)
-	if (expectedBranch !== undefined && !isBatchRef(expectedBranch)) {
+	if (expectedBranch !== undefined && !isProgressRef(expectedBranch)) {
 		const currentBranchResult = spawnSync("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
 			encoding: "utf8",
 			stdio: ["ignore", "pipe", "pipe"],
@@ -819,7 +819,7 @@ export async function lookupBatchCommit(input: {
 	// Every adopted delivery must be in the current history, even without a predecessor assertion.
 	const parentsResult = spawnSync("git", ["-C", root, "rev-parse", `${commit}^@`], { encoding: "utf8" });
 	const parents = parentsResult.stdout.trim().split(/\s+/).filter(Boolean);
-	if (isBatchRef(expectedBranch)) {
+	if (isProgressRef(expectedBranch)) {
 		// The hidden ref is the batch's history. A commit built but not yet reached by
 		// the ref (evidence written, ref not moved) is completed here.
 		const tip = readBatchRef(root, expectedBranch);
@@ -1068,6 +1068,21 @@ export async function recordParentRepair(root: string, batchId: string | null, t
 }
 
 /** Native critical tasks retain their own authority and consume no batch child slot. */
+/** Whether `commit` already carries the task's exact settled audit pair. */
+function settledDeliveryInTree(root: string, commit: string, taskId: string,
+	settled: NonNullable<ReturnType<typeof readSettledTaskEvidence>>): boolean {
+	const paths = settled.runId === null ? auditEvidencePaths(root, taskId) :
+		{ record: auditRunRecordPath(taskId, settled.runId), proof: auditRunTerminalProofPath(taskId, settled.runId) };
+	return [paths.record, paths.proof].every((path) => {
+		const committed = spawnSync("git", ["-C", root, "show", `${commit}:${path}`], { encoding: "utf8" });
+		try {
+			return committed.status === 0 && committed.stdout === readSecureProjectFile(root, path);
+		} catch {
+			return false;
+		}
+	});
+}
+
 export async function integrateSettledCriticalSlices(root: string, initiativeSlug: string,
 	readInitiative?: InitiativeObservationReader): Promise<void> {
 	let record = findExistingActiveBatch(root, initiativeSlug);
@@ -1085,6 +1100,8 @@ export async function integrateSettledCriticalSlices(root: string, initiativeSlu
 		const nativeBatchId = `${batch.batch_id}.${repair ? "repair" : "critical"}`;
 		const settled = readSettledTaskEvidence(root, child.task_id);
 		if (!settled || settled.proof.terminal_lifecycle !== "done" || (!repair && settled.record.intent_snapshot.risk !== "critical")) continue;
+		// Settled before this batch: its delivery is already in the batch base, so it is not this batch's to integrate.
+		if (!repair && settledDeliveryInTree(root, batch.base_head, child.task_id, settled)) continue;
 		if (repair && settled.runId !== repair.run_id) throw new Error("repair settlement belongs to a different enrolled run");
 		const intent = readTaskIntent(root, child.task_id, settled.record.intent_ref.path);
 		if (intent.content_hash !== settled.record.intent_ref.content_hash) throw new Error("critical settled Intent changed before integration");
