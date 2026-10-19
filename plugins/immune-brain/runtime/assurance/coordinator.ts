@@ -592,11 +592,12 @@ const QUICK_REVIEW_MAX_FILES = 5;
 const QUICK_REVIEW_MAX_BYTES = 64 * 1024;
 const HEAVY_REVIEW_MIN_ACCEPTANCE = 9;
 const HEAVY_REVIEW_MIN_BYTES = 512 * 1024 + 1;
+const HEAVY_REVIEW_MIN_FILES = 12;
 
 export function classifyReviewWorkload(snapshot: Pick<SnapshotDescriptor, "risk" | "acceptance">, evidence: ReviewBundle | ReviewManifestV5): ReviewWorkload {
 	const bytes = Buffer.byteLength(JSON.stringify(evidence));
 	const paths = "changed_paths" in evidence ? Object.keys(evidence.changed_paths) : Object.keys(evidence.dirty_files);
-	if (snapshot.risk === "critical" || snapshot.acceptance.length >= HEAVY_REVIEW_MIN_ACCEPTANCE || bytes >= HEAVY_REVIEW_MIN_BYTES) return "heavy";
+	if (snapshot.risk === "critical" || snapshot.acceptance.length >= HEAVY_REVIEW_MIN_ACCEPTANCE || paths.length >= HEAVY_REVIEW_MIN_FILES || bytes >= HEAVY_REVIEW_MIN_BYTES) return "heavy";
 	if (snapshot.risk === "routine" && snapshot.acceptance.length <= QUICK_REVIEW_MAX_ACCEPTANCE && paths.length <= QUICK_REVIEW_MAX_FILES && bytes <= QUICK_REVIEW_MAX_BYTES) return "quick";
 	return "standard";
 }

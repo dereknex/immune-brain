@@ -8,6 +8,7 @@ import {
 	verifyReviewBundle,
 } from "../plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts";
 import { buildReviewPrompt, reviewTurnBudget, type SnapshotDescriptor } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
+import { classifyReviewWorkload } from "../plugins/immune-brain/runtime/assurance/coordinator.ts";
 import { taskDiffHash } from "../plugins/immune-brain/runtime/workspace_scope.ts";
 
 function repo(): string {
@@ -96,6 +97,26 @@ describe("review contract outcome evidence", () => {
 		expect(reviewTurnBudget("quick")).toBe(12);
 		expect(reviewTurnBudget("standard")).toBe(16);
 		expect(reviewTurnBudget("heavy")).toBe(24);
+	});
+
+	test("Review workload counts changed paths, so a wide change gets the heavy budget", () => {
+		const entry = { status: "modified", mode: "100644", oid: "e".repeat(40), base_mode: "100644", base_oid: "f".repeat(40) };
+		const paths = (count: number) => Object.fromEntries(Array.from({ length: count }, (_, i) => [`src/file-${i}.ts`, entry]));
+		const manifest = (count: number) => ({ changed_paths: paths(count) }) as never;
+		const bundle = (count: number) => ({ dirty_files: paths(count) }) as never;
+		const acceptance = (count: number) => Array.from({ length: count }, (_, i) => ({ id: `AC${i + 1}`, assertion: "holds", verification: "{}" }));
+		const material = { risk: "material", acceptance: acceptance(3) };
+		expect(classifyReviewWorkload(material, manifest(12))).toBe("heavy");
+		expect(classifyReviewWorkload(material, bundle(12))).toBe("heavy");
+		expect(classifyReviewWorkload(material, manifest(11))).toBe("standard");
+		expect(classifyReviewWorkload(material, bundle(11))).toBe("standard");
+		expect(reviewTurnBudget(classifyReviewWorkload(material, manifest(27)))).toBe(24);
+		// The other heavy and quick rules are unchanged.
+		expect(classifyReviewWorkload({ risk: "critical", acceptance: acceptance(1) }, manifest(1))).toBe("heavy");
+		expect(classifyReviewWorkload({ risk: "material", acceptance: acceptance(9) }, manifest(1))).toBe("heavy");
+		expect(classifyReviewWorkload({ risk: "routine", acceptance: acceptance(3) }, manifest(5))).toBe("quick");
+		expect(classifyReviewWorkload({ risk: "routine", acceptance: acceptance(3) }, manifest(6))).toBe("standard");
+		expect(classifyReviewWorkload({ risk: "routine", acceptance: acceptance(4) }, manifest(1))).toBe("standard");
 	});
 
 	test("Review prompt still binds the immutable bundle digest and verdict shapes", () => {
