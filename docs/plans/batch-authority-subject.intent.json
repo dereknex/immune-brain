@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "batch-authority-subject",
-  "owner": "user",
   "goal": "A batch authorization binds each child's frozen authority subject instead of its whole intent: a scope-only or run-parameter revision mid-batch leaves the batch running, a change to a child's goal, acceptance or verification command parks only that child and its dependents, a verification command change or added acceptance item is a breaking revision, and ADR 0026 records the decision (Spec branch-boundary D5-D10).",
   "acceptance": [
     {
@@ -57,12 +56,17 @@
     "tests/batch-plan-reconfirmation.test.ts",
     "tests/breaking-intent-revision-gate.test.ts",
     "tests/claude-batch-authority.test.ts",
+    "tests/claude-host-authority.test.ts",
     "tests/kernel-batch-authority.test.ts",
     "tests/kernel-intent-v2.test.ts",
+    "tests/kernel-r2c2-reducer.test.ts",
     "tests/pi-batch-authority.test.ts",
+    "tests/pi-canary-work-extension.test.ts",
     "tests/unattended-batch-lanes.test.ts",
-    "tests/unattended-batch-run.test.ts"
+    "tests/unattended-batch-run.test.ts",
+    "tests/unattended-contracts.test.ts"
   ],
   "risk": "critical",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

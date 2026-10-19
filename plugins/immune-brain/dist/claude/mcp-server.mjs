@@ -1150,6 +1150,99 @@ var init_intent_token_registry = __esm(() => {
   consumedTokens = new WeakSet;
 });
 
+// plugins/immune-brain/runtime/verification_descriptor.ts
+import { isAbsolute as isAbsolute2 } from "node:path";
+function object(value, fields, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new VerificationDescriptorError(`${label} must be an object`);
+  const raw = value;
+  if (Object.keys(raw).some((key) => !fields.includes(key)))
+    throw new VerificationDescriptorError(`${label} has an unknown field`);
+  return raw;
+}
+function verificationRelativePath(value, label) {
+  if (typeof value !== "string" || !value || value.length > 512 || /[\x00-\x1f\x7f\\]/.test(value) || isAbsolute2(value) || value.startsWith("~") || value.split("/").includes("..") || value.split("/").includes(".git") || value.split("/").length > VERIFICATION_DESCRIPTOR_BOUNDS.max_cwd_depth)
+    throw new VerificationDescriptorError(`${label} must stay inside the repository`);
+  return value.split("/").filter((part) => part && part !== ".").join("/") || ".";
+}
+function bound(value, max, label) {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > max)
+    throw new VerificationDescriptorError(`${label} exceeds the host bound`);
+  return value;
+}
+function command(value) {
+  const raw = object(value, ["executable", "argv", "cwd", "timeout_ms", "max_output_bytes"], "verification command");
+  if (typeof raw.executable !== "string")
+    throw new VerificationDescriptorError("verification executable is invalid");
+  let executable = raw.executable;
+  if (executable.startsWith("./")) {
+    const path = verificationRelativePath(executable, "verification executable");
+    if (path === ".")
+      throw new VerificationDescriptorError("verification executable must be a file");
+    executable = `./${path}`;
+  } else if (!/^[A-Za-z0-9_][A-Za-z0-9_.+-]{0,127}$/.test(executable)) {
+    throw new VerificationDescriptorError("verification executable must be a host tool name or ./project-file");
+  }
+  if (!Array.isArray(raw.argv) || raw.argv.length > VERIFICATION_DESCRIPTOR_BOUNDS.max_arg_tokens)
+    throw new VerificationDescriptorError("verification argv must be a bounded array");
+  for (const arg of raw.argv) {
+    if (typeof arg !== "string" || Buffer.byteLength(arg) > VERIFICATION_DESCRIPTOR_BOUNDS.max_arg_token_bytes || /[\x00-\x1f\x7f]/.test(arg))
+      throw new VerificationDescriptorError("verification argv must contain bounded literal strings");
+  }
+  return {
+    executable,
+    argv: raw.argv,
+    cwd: verificationRelativePath(raw.cwd, "verification cwd"),
+    timeout_ms: bound(raw.timeout_ms, VERIFICATION_DESCRIPTOR_BOUNDS.max_timeout_ms, "verification timeout_ms"),
+    max_output_bytes: bound(raw.max_output_bytes, VERIFICATION_DESCRIPTOR_BOUNDS.max_output_bytes, "verification max_output_bytes")
+  };
+}
+function parseVerificationDescriptor(text) {
+  if (Buffer.byteLength(text) > VERIFICATION_DESCRIPTOR_BOUNDS.max_descriptor_bytes)
+    throw new VerificationDescriptorError("verification descriptor exceeds the byte bound");
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw new VerificationDescriptorError("verification string is not valid JSON");
+  }
+  if (value && typeof value === "object" && "contract" in value && value.contract === "assurance_kernel/verification_descriptor/v1")
+    throw new VerificationDescriptorError("verification_contract_migration_required: revise the verification definition to v2 before execution");
+  const raw = object(value, ["contract", "command", "environment"], "verification descriptor");
+  if (raw.contract !== VERIFICATION_DESCRIPTOR_CONTRACT)
+    throw new VerificationDescriptorError("verification descriptor contract is invalid");
+  const env = raw.environment === undefined ? {} : object(raw.environment, ["prepare", "writable_paths"], "verification environment");
+  const writable = env.writable_paths ?? [];
+  if (!Array.isArray(writable) || writable.length > VERIFICATION_DESCRIPTOR_BOUNDS.max_writable_paths)
+    throw new VerificationDescriptorError("verification writable_paths exceeds the host bound");
+  const paths = writable.map((path) => verificationRelativePath(path, "verification writable path")).sort();
+  if (paths.includes(".") || new Set(paths).size !== paths.length || paths.some((path, i) => paths.some((other, j) => j !== i && path.startsWith(`${other}/`))))
+    throw new VerificationDescriptorError("verification writable paths must be distinct non-overlapping directories");
+  return {
+    contract: VERIFICATION_DESCRIPTOR_CONTRACT,
+    command: command(raw.command),
+    environment: { prepare: env.prepare === undefined || env.prepare === null ? null : command(env.prepare), writable_paths: paths }
+  };
+}
+var VERIFICATION_DESCRIPTOR_CONTRACT = "assurance_kernel/verification_descriptor/v2", VERIFICATION_DESCRIPTOR_BOUNDS, VerificationDescriptorError;
+var init_verification_descriptor = __esm(() => {
+  VERIFICATION_DESCRIPTOR_BOUNDS = {
+    max_arg_tokens: 64,
+    max_arg_token_bytes: 512,
+    max_cwd_depth: 32,
+    max_timeout_ms: 600000,
+    max_output_bytes: 262144,
+    max_descriptor_bytes: 65536,
+    max_writable_paths: 32
+  };
+  VerificationDescriptorError = class VerificationDescriptorError extends Error {
+    constructor(message) {
+      super(message);
+      this.name = "VerificationDescriptorError";
+    }
+  };
+});
+
 // plugins/immune-brain/runtime/kernel/intent.ts
 import { createHash as createHash2 } from "node:crypto";
 import {
@@ -1293,6 +1386,27 @@ function parseTaskIntentV1(raw) {
 function canonicalIntentHash(intent) {
   return `sha256:${sha256Hex(stableStringify(intent))}`;
 }
+function verificationCommandSubject(verification) {
+  try {
+    const { command } = parseVerificationDescriptor(verification);
+    return { executable: command.executable, argv: command.argv, cwd: command.cwd };
+  } catch {
+    return verification;
+  }
+}
+function intentAuthoritySubject(intent) {
+  return {
+    contract: intent.contract,
+    task_id: intent.task_id,
+    goal: intent.goal,
+    owner: intent.owner,
+    specs: intent.scope_hint.filter((path) => ACTIVE_SPEC_PATH.test(path)).sort(),
+    acceptance: intent.acceptance.map((item) => ({ id: item.id, assertion: item.assertion, command: verificationCommandSubject(item.verification) })).sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0)
+  };
+}
+function intentAuthorityHash(intent) {
+  return canonicalIntentHash(intentAuthoritySubject(intent));
+}
 function parseProjectTaskIntent(root, raw, recordedIntent) {
   const parsed = parseTaskIntentV1(raw);
   if (recordedIntent && parsed.revision === recordedIntent.revision && raiseRisk(recordedIntent.risk, parsed.risk) === recordedIntent.risk)
@@ -1357,8 +1471,8 @@ function classifyIntentRevision(previous, next, floor = NO_RISK_FLOOR) {
   const scopeNarrowed = next.scope_hint.length > 0 && next.scope_hint.every((entry) => priorScope.has(entry));
   const breaking = previous.contract !== next.contract || previous.task_id !== next.task_id || previous.owner !== next.owner || previous.goal !== next.goal || scopeChanged && !scopeNarrowed && sameDirectoryScopeAdditions(previous.scope_hint, next.scope_hint, floor) === null || RISK_RANK2[next.risk] < RISK_RANK2[previous.risk] || previous.acceptance.some((prior) => {
     const current = next.acceptance.find((item) => item.id === prior.id);
-    return !current || current.assertion !== prior.assertion;
-  });
+    return !current || current.assertion !== prior.assertion || JSON.stringify(verificationCommandSubject(current.verification)) !== JSON.stringify(verificationCommandSubject(prior.verification));
+  }) || next.acceptance.some((item) => !previous.acceptance.some((prior) => prior.id === item.id));
   if (breaking)
     return "breaking";
   return next.revision > previous.revision ? "compatible" : "breaking";
@@ -1535,11 +1649,12 @@ function readTaskIntent(root, taskId, requestedPath, recordedIntent) {
   const { identity, ...observed } = readTaskIntentSource(root, taskId, requestedPath, true, recordedIntent);
   return { ...observed, token: mintToken(identity) };
 }
-var INTENT_MAX_BYTES, INTENT_SIDECAR_RELATIVE_PREFIX = "docs/plans/", TASK_ID_PATTERN, portablePathCollator, RISK_RANK2, SCOPE_ADDED_PREFIX = "scope_added:", TaskIntentObservationError, intentReaderTestHook = null;
+var INTENT_MAX_BYTES, INTENT_SIDECAR_RELATIVE_PREFIX = "docs/plans/", TASK_ID_PATTERN, portablePathCollator, ACTIVE_SPEC_PATH, RISK_RANK2, SCOPE_ADDED_PREFIX = "scope_added:", TaskIntentObservationError, intentReaderTestHook = null;
 var init_intent = __esm(() => {
   init_types();
   init_risk_floor();
   init_intent_token_registry();
+  init_verification_descriptor();
   INTENT_MAX_BYTES = 64 * 1024;
   TASK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
   portablePathCollator = new Intl.Collator("und", {
@@ -1548,6 +1663,7 @@ var init_intent = __esm(() => {
     numeric: false,
     ignorePunctuation: false
   });
+  ACTIVE_SPEC_PATH = /^docs\/specs\/(?!archive\/)[^/]+\.spec\.md$/;
   RISK_RANK2 = { routine: 0, material: 1, critical: 2 };
   TaskIntentObservationError = class TaskIntentObservationError extends Error {
     code;
@@ -3388,7 +3504,7 @@ import {
   rmSync as rmSync2,
   writeFileSync as writeFileSync2
 } from "node:fs";
-import { dirname as dirname2, isAbsolute as isAbsolute2, relative as relative2, resolve as resolve5, sep as sep3 } from "node:path";
+import { dirname as dirname2, isAbsolute as isAbsolute3, relative as relative2, resolve as resolve5, sep as sep3 } from "node:path";
 function revisionFor(content) {
   return `sha256:${createHash6("sha256").update(content).digest("hex")}`;
 }
@@ -3532,10 +3648,10 @@ function readdirNames(path) {
 }
 function withinRoot(root, candidate) {
   const rel = relative2(root, candidate);
-  return rel === "" || !isAbsolute2(rel) && rel !== ".." && !rel.startsWith(`..${sep3}`);
+  return rel === "" || !isAbsolute3(rel) && rel !== ".." && !rel.startsWith(`..${sep3}`);
 }
 function safeCandidate(root, relativePath) {
-  if (!relativePath || relativePath.includes("\x00") || isAbsolute2(relativePath) || relativePath.includes("\\"))
+  if (!relativePath || relativePath.includes("\x00") || isAbsolute3(relativePath) || relativePath.includes("\\"))
     throw new KernelStoreSecurityError("project-relative path is invalid");
   const canonical = canonicalRoot2(root);
   const candidate = resolve5(canonical, relativePath);
@@ -4620,6 +4736,15 @@ function stableStringify3(value) {
   return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableStringify3(record[key])}`).join(",")}}`;
 }
 function computeBatchPlanDigest(children) {
+  if (bindsAuthoritySubject(children)) {
+    const canonical = children.map((child) => ({
+      blocked_by: [...child.blocked_by],
+      intent_authority_hash: child.intent_authority_hash,
+      intent_path: child.intent_path,
+      task_id: child.task_id
+    }));
+    return `sha256:${sha256Hex3(stableStringify3({ binding: "authority_subject", children: canonical }))}`;
+  }
   const canonical = children.map((child) => ({
     blocked_by: [...child.blocked_by],
     intent_content_hash: child.intent_content_hash,
@@ -4628,6 +4753,9 @@ function computeBatchPlanDigest(children) {
     task_id: child.task_id
   }));
   return `sha256:${sha256Hex3(stableStringify3(canonical))}`;
+}
+function bindsAuthoritySubject(children) {
+  return children.length > 0 && children.every((child) => typeof child.intent_authority_hash === "string" && child.intent_authority_hash.length > 0);
 }
 function requireNonEmpty(binding) {
   const missing = [];
@@ -4817,7 +4945,20 @@ function deriveChildEnrollment(root, registry, input) {
     throw new Error(`batch_head_lineage_broken: expected ${input.expected_head}, found ${preparation.git_base_head}`);
   if (!preparation.intent)
     throw new Error(`batch_child_intent_changed: ${input.task_id} intent sidecar is unreadable`);
-  if (preparation.intent.path !== child.intent_path || preparation.intent.revision !== child.intent_revision || preparation.intent.content_hash !== child.intent_content_hash)
+  if (child.intent_authority_hash) {
+    let live = null;
+    try {
+      const read = readTaskIntent(root, input.task_id, preparation.intent.path);
+      if (read.content_hash === preparation.intent.content_hash)
+        live = intentAuthorityHash(read.intent);
+    } catch {
+      live = null;
+    }
+    if (live === null)
+      throw new Error(`batch_child_intent_changed: ${input.task_id} intent sidecar is unreadable`);
+    if (preparation.intent.path !== child.intent_path || live !== child.intent_authority_hash)
+      throw new Error(`batch_child_authority_changed: ${input.task_id}`);
+  } else if (preparation.intent.path !== child.intent_path || preparation.intent.revision !== child.intent_revision || preparation.intent.content_hash !== child.intent_content_hash)
     throw new Error(`batch_child_intent_changed: ${input.task_id}`);
   if (registry.consumedChildren(input.capability).length === 0)
     assertBatchLineageOrigin(root, validated.base_head, input.expected_head);
@@ -4827,8 +4968,8 @@ function deriveChildEnrollment(root, registry, input) {
     binding: {
       task_id: child.task_id,
       intent_path: child.intent_path,
-      intent_revision: child.intent_revision,
-      intent_content_hash: child.intent_content_hash,
+      intent_revision: child.intent_authority_hash ? preparation.intent.revision : child.intent_revision,
+      intent_content_hash: child.intent_authority_hash ? preparation.intent.content_hash : child.intent_content_hash,
       preparation_digest: preparation.digest,
       actor_id: validated.actor_id,
       confirmation_ref: validated.confirmation_ref,
@@ -4840,6 +4981,7 @@ var BATCH_AUTHORITY_CAPABILITY_BRAND, GIT_COMMIT_ID;
 var init_batch_authority = __esm(() => {
   init_actor_identity();
   init_pi_canary_prepare();
+  init_intent();
   BATCH_AUTHORITY_CAPABILITY_BRAND = Symbol.for("assurance-kernel.batch-authority-capability-brand");
   GIT_COMMIT_ID = /^[a-f0-9]{40}$/;
 });
@@ -5844,6 +5986,31 @@ function canonicalBytes(record) {
   return `${JSON.stringify(withoutRetiredClock(record), null, 2)}
 `;
 }
+function batchIntentIdentities(children) {
+  return Object.fromEntries(children.filter((child) => child.intent_path !== null && child.intent_revision !== null && child.intent_content_hash !== null).map((child) => [child.task_id, {
+    intent_path: child.intent_path,
+    intent_revision: child.intent_revision,
+    intent_content_hash: child.intent_content_hash,
+    ...child.intent_authority_hash ? { intent_authority_hash: child.intent_authority_hash } : {}
+  }]));
+}
+function recordedAuthorityHashes(record) {
+  const identities = record.intent_identities;
+  if (!identities)
+    return null;
+  const hashes = new Map;
+  for (const child of record.children) {
+    const hash = identities[child.task_id]?.intent_authority_hash;
+    if (typeof hash !== "string" || !hash)
+      return null;
+    hashes.set(child.task_id, hash);
+  }
+  return hashes;
+}
+function validateIntentIdentities(record, batchId) {
+  if (record.intent_identities !== undefined && (!isObject(record.intent_identities) || Object.values(record.intent_identities).some((i) => !isObject(i) || typeof i.intent_path !== "string" || !i.intent_path || !isRevision(i.intent_revision) || typeof i.intent_content_hash !== "string" || !i.intent_content_hash || i.intent_authority_hash !== undefined && !isHash(i.intent_authority_hash))))
+    throw new Error(`batch run state ${batchId} has an invalid intent_identities map`);
+}
 function validateRepairTasks(record) {
   if (record.repair_tasks === undefined)
     return;
@@ -5858,6 +6025,7 @@ function validateRecordShape(value, batchId) {
     throw new Error(`batch run state ${batchId} has an unknown contract`);
   parseFinalVerification(record.final_verification);
   validateRepairTasks(record);
+  validateIntentIdentities(record, batchId);
   if (record.final_verification_result !== undefined) {
     parseFinalVerificationReport(record.final_verification_result, record.final_verification);
     if (record.batch_state !== "completed")
@@ -5940,6 +6108,7 @@ function prepareBatchRunState(input) {
     })),
     consecutive_qa_failures: 0,
     commits: [],
+    ...bindsAuthoritySubject(input.children) ? { intent_identities: batchIntentIdentities(input.children) } : {},
     created_at: input.now,
     updated_at: input.now
   };
@@ -6081,17 +6250,13 @@ function validateLaneRecordShape(value, batchId) {
   }
   if (record.interventions !== undefined && (!Array.isArray(record.interventions) || record.interventions.some((i) => typeof i !== "object" || i === null || typeof i.task_id !== "string" || i.kind !== "instruction" && i.kind !== "correction" || typeof i.text !== "string" || typeof i.text_digest !== "string")))
     throw new Error(`batch run state ${batchId} has an invalid interventions list`);
-  const isObject = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
-  const isHash = (v) => typeof v === "string" && /^sha256:[0-9a-f]{64}$/.test(v);
-  const isRevision = (v) => typeof v === "number" && Number.isSafeInteger(v) && v > 0;
   if (record.revision_delegation !== undefined && (!isObject(record.revision_delegation) || Object.keys(record.revision_delegation).join() !== "confirmation_time" || !isCanonicalTimestamp(record.revision_delegation.confirmation_time)))
     throw new Error(`batch run state ${batchId} has an invalid revision_delegation`);
   if (record.delegated_revisions !== undefined && (!Array.isArray(record.delegated_revisions) || record.delegated_revisions.some((r) => !isObject(r) || typeof r.task_id !== "string" || !isRevision(r.from_revision) || !isRevision(r.to_revision) || r.to_revision <= r.from_revision || !isHash(r.intent_content_hash) || typeof r.confirmation_ref !== "string" || !r.confirmation_ref.startsWith(`delegated-batch:${batchId}@`) || !isCanonicalTimestamp(r.at))))
     throw new Error(`batch run state ${batchId} has an invalid delegated_revisions list`);
   if (record.delegated_revisions?.length && !record.revision_delegation)
     throw new Error(`batch run state ${batchId} records delegated revisions without a delegation grant`);
-  if (record.intent_identities !== undefined && (!isObject(record.intent_identities) || Object.values(record.intent_identities).some((i) => !isObject(i) || typeof i.intent_path !== "string" || !i.intent_path || !isRevision(i.intent_revision) || typeof i.intent_content_hash !== "string" || !i.intent_content_hash)))
-    throw new Error(`batch run state ${batchId} has an invalid intent_identities map`);
+  validateIntentIdentities(record, batchId);
   if (record.reseals !== undefined && (!Array.isArray(record.reseals) || record.reseals.some((r) => !isObject(r) || typeof r.task_id !== "string" || typeof r.from_digest !== "string" || typeof r.to_digest !== "string" || !isRevision(r.intent_revision) || !isHash(r.intent_content_hash) || !record.delegated_revisions?.some((d) => d.task_id === r.task_id && d.intent_content_hash === r.intent_content_hash))))
     throw new Error(`batch run state ${batchId} has an invalid reseals list`);
   if (record.reseals?.length && record.reseals[record.reseals.length - 1].to_digest !== record.plan_digest)
@@ -6176,7 +6341,7 @@ function prepareBatchLaneRunState(input) {
     commits: [],
     ...input.final_verification?.length ? { final_verification: [...input.final_verification] } : {},
     ...input.revision_delegation ? { revision_delegation: { ...input.revision_delegation } } : {},
-    intent_identities: Object.fromEntries(input.children.filter((child) => child.intent_path !== null && child.intent_revision !== null && child.intent_content_hash !== null).map((child) => [child.task_id, { intent_path: child.intent_path, intent_revision: child.intent_revision, intent_content_hash: child.intent_content_hash }])),
+    intent_identities: batchIntentIdentities(input.children),
     created_at: input.now,
     updated_at: input.now
   };
@@ -6272,10 +6437,11 @@ function canonicalReportBytes(report) {
 function isTerminalBatchState(state) {
   return state === "completed" || state === "budget_stopped" || state === "failed" || state === "rejected" || state === "superseded";
 }
-var BATCH_ID_PATTERN, CHILD_RUN_STATES, BATCH_RUN_STATES, ISO_TIMESTAMP_PATTERN, LANE_CHILD_STATES, LANE_BOUND_STATES;
+var BATCH_ID_PATTERN, CHILD_RUN_STATES, BATCH_RUN_STATES, ISO_TIMESTAMP_PATTERN, isObject = (v) => typeof v === "object" && v !== null && !Array.isArray(v), isHash = (v) => typeof v === "string" && /^sha256:[0-9a-f]{64}$/.test(v), isRevision = (v) => typeof v === "number" && Number.isSafeInteger(v) && v > 0, LANE_CHILD_STATES, LANE_BOUND_STATES;
 var init_batch_state = __esm(() => {
   init_storage();
   init_batch_final_verification();
+  init_batch_authority();
   BATCH_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
   CHILD_RUN_STATES = new Set([
     "pending",
@@ -6354,99 +6520,6 @@ var INSTRUCTION_FILES, DIRECTIVE;
 var init_git_integration_preference = __esm(() => {
   INSTRUCTION_FILES = ["AGENTS.md", "CLAUDE.md"];
   DIRECTIVE = /^\s*[-*]\s+Git integration:\s*(.*?)\s*$/i;
-});
-
-// plugins/immune-brain/runtime/verification_descriptor.ts
-import { isAbsolute as isAbsolute3 } from "node:path";
-function object(value, fields, label) {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new VerificationDescriptorError(`${label} must be an object`);
-  const raw = value;
-  if (Object.keys(raw).some((key) => !fields.includes(key)))
-    throw new VerificationDescriptorError(`${label} has an unknown field`);
-  return raw;
-}
-function verificationRelativePath(value, label) {
-  if (typeof value !== "string" || !value || value.length > 512 || /[\x00-\x1f\x7f\\]/.test(value) || isAbsolute3(value) || value.startsWith("~") || value.split("/").includes("..") || value.split("/").includes(".git") || value.split("/").length > VERIFICATION_DESCRIPTOR_BOUNDS.max_cwd_depth)
-    throw new VerificationDescriptorError(`${label} must stay inside the repository`);
-  return value.split("/").filter((part) => part && part !== ".").join("/") || ".";
-}
-function bound(value, max, label) {
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > max)
-    throw new VerificationDescriptorError(`${label} exceeds the host bound`);
-  return value;
-}
-function command(value) {
-  const raw = object(value, ["executable", "argv", "cwd", "timeout_ms", "max_output_bytes"], "verification command");
-  if (typeof raw.executable !== "string")
-    throw new VerificationDescriptorError("verification executable is invalid");
-  let executable = raw.executable;
-  if (executable.startsWith("./")) {
-    const path = verificationRelativePath(executable, "verification executable");
-    if (path === ".")
-      throw new VerificationDescriptorError("verification executable must be a file");
-    executable = `./${path}`;
-  } else if (!/^[A-Za-z0-9_][A-Za-z0-9_.+-]{0,127}$/.test(executable)) {
-    throw new VerificationDescriptorError("verification executable must be a host tool name or ./project-file");
-  }
-  if (!Array.isArray(raw.argv) || raw.argv.length > VERIFICATION_DESCRIPTOR_BOUNDS.max_arg_tokens)
-    throw new VerificationDescriptorError("verification argv must be a bounded array");
-  for (const arg of raw.argv) {
-    if (typeof arg !== "string" || Buffer.byteLength(arg) > VERIFICATION_DESCRIPTOR_BOUNDS.max_arg_token_bytes || /[\x00-\x1f\x7f]/.test(arg))
-      throw new VerificationDescriptorError("verification argv must contain bounded literal strings");
-  }
-  return {
-    executable,
-    argv: raw.argv,
-    cwd: verificationRelativePath(raw.cwd, "verification cwd"),
-    timeout_ms: bound(raw.timeout_ms, VERIFICATION_DESCRIPTOR_BOUNDS.max_timeout_ms, "verification timeout_ms"),
-    max_output_bytes: bound(raw.max_output_bytes, VERIFICATION_DESCRIPTOR_BOUNDS.max_output_bytes, "verification max_output_bytes")
-  };
-}
-function parseVerificationDescriptor(text) {
-  if (Buffer.byteLength(text) > VERIFICATION_DESCRIPTOR_BOUNDS.max_descriptor_bytes)
-    throw new VerificationDescriptorError("verification descriptor exceeds the byte bound");
-  let value;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    throw new VerificationDescriptorError("verification string is not valid JSON");
-  }
-  if (value && typeof value === "object" && "contract" in value && value.contract === "assurance_kernel/verification_descriptor/v1")
-    throw new VerificationDescriptorError("verification_contract_migration_required: revise the verification definition to v2 before execution");
-  const raw = object(value, ["contract", "command", "environment"], "verification descriptor");
-  if (raw.contract !== VERIFICATION_DESCRIPTOR_CONTRACT)
-    throw new VerificationDescriptorError("verification descriptor contract is invalid");
-  const env = raw.environment === undefined ? {} : object(raw.environment, ["prepare", "writable_paths"], "verification environment");
-  const writable = env.writable_paths ?? [];
-  if (!Array.isArray(writable) || writable.length > VERIFICATION_DESCRIPTOR_BOUNDS.max_writable_paths)
-    throw new VerificationDescriptorError("verification writable_paths exceeds the host bound");
-  const paths = writable.map((path) => verificationRelativePath(path, "verification writable path")).sort();
-  if (paths.includes(".") || new Set(paths).size !== paths.length || paths.some((path, i) => paths.some((other, j) => j !== i && path.startsWith(`${other}/`))))
-    throw new VerificationDescriptorError("verification writable paths must be distinct non-overlapping directories");
-  return {
-    contract: VERIFICATION_DESCRIPTOR_CONTRACT,
-    command: command(raw.command),
-    environment: { prepare: env.prepare === undefined || env.prepare === null ? null : command(env.prepare), writable_paths: paths }
-  };
-}
-var VERIFICATION_DESCRIPTOR_CONTRACT = "assurance_kernel/verification_descriptor/v2", VERIFICATION_DESCRIPTOR_BOUNDS, VerificationDescriptorError;
-var init_verification_descriptor = __esm(() => {
-  VERIFICATION_DESCRIPTOR_BOUNDS = {
-    max_arg_tokens: 64,
-    max_arg_token_bytes: 512,
-    max_cwd_depth: 32,
-    max_timeout_ms: 600000,
-    max_output_bytes: 262144,
-    max_descriptor_bytes: 65536,
-    max_writable_paths: 32
-  };
-  VerificationDescriptorError = class VerificationDescriptorError extends Error {
-    constructor(message) {
-      super(message);
-      this.name = "VerificationDescriptorError";
-    }
-  };
 });
 
 // plugins/immune-brain/runtime/assurance/verification.ts
@@ -12586,7 +12659,8 @@ async function projectBatchPlan(root, initiativeSlug, input, readInitiative = ob
         reason: null,
         intent_path: read.intent_ref.path,
         intent_revision: read.intent_ref.revision,
-        intent_content_hash: read.content_hash
+        intent_content_hash: read.content_hash,
+        intent_authority_hash: intentAuthorityHash(read.intent)
       });
     } catch (error) {
       if (!(error instanceof TaskIntentObservationError))
@@ -12612,6 +12686,7 @@ async function projectBatchPlan(root, initiativeSlug, input, readInitiative = ob
     intent_path: child.intent_path,
     intent_revision: child.intent_revision,
     intent_content_hash: child.intent_content_hash,
+    intent_authority_hash: child.intent_authority_hash,
     blocked_by: child.blocked_by.filter((id) => childById.get(id)?.status === "enrollable")
   }));
   if (!enrollable.length)
@@ -13601,6 +13676,7 @@ function takeReconfirmation(nonce) {
 async function captureBatchReconfirmation(root, record, children) {
   if (!id.test(record.batch_id) || !oid.test(record.base_head) || isTerminalBatchState(record.batch_state) || record.commits.length || record.children.some((c) => c.commit !== null || c.state === "committed") || record.children.length !== children.length || !children.length)
     refuse();
+  const authorized = recordedAuthorityHashes(record);
   const assertNoCommitEvidence = () => {
     for (const child of record.children) {
       if (!id.test(child.task_id))
@@ -13644,14 +13720,27 @@ async function captureBatchReconfirmation(root, record, children) {
     if (old.task_id !== child.task_id)
       refuse();
     const oldHash = canonicalIntentHash(old);
-    oldChildren.push({ task_id: child.task_id, blocked_by: [...child.blocked_by], intent_path: child.intent_path, intent_revision: old.revision, intent_content_hash: oldHash });
+    const oldAuthority = authorized?.get(child.task_id);
+    oldChildren.push({
+      task_id: child.task_id,
+      blocked_by: [...child.blocked_by],
+      intent_path: child.intent_path,
+      intent_revision: old.revision,
+      intent_content_hash: oldHash,
+      ...oldAuthority ? { intent_authority_hash: oldAuthority } : {}
+    });
     const currentBytes = capture(child.intent_path);
     const current = parseProjectTaskIntent(root, JSON.parse(decode(currentBytes)));
     const currentHash = canonicalIntentHash(current);
     const tracked = readTaskIntent(root, child.task_id, child.intent_path);
     if (currentHash !== tracked.content_hash || currentHash !== child.intent_content_hash || current.revision !== child.intent_revision)
       refuse();
-    if (currentHash === oldHash)
+    if (authorized) {
+      if (child.intent_authority_hash === oldAuthority)
+        continue;
+      if (child.intent_authority_hash !== intentAuthorityHash(current))
+        refuse();
+    } else if (currentHash === oldHash)
       continue;
     if (scope !== null || previous.state === "pending" || previous.state === "skipped_blocked" || current.revision <= old.revision || current.goal !== old.goal || current.owner !== old.owner)
       refuse();
@@ -13738,7 +13827,8 @@ async function captureBatchReconfirmation(root, record, children) {
   const plan_digest = computeBatchPlanDigest(oldChildren.map((old, index) => ({
     ...old,
     intent_revision: children[index].intent_revision,
-    intent_content_hash: children[index].intent_content_hash
+    intent_content_hash: children[index].intent_content_hash,
+    ...authorized ? { intent_authority_hash: children[index].intent_authority_hash } : {}
   })));
   return { root, plan_digest, stateBytes, assertUnchanged };
 }
@@ -14278,6 +14368,8 @@ async function projectPlanSurface(input) {
       max_children: existingBatch.budget.max_children,
       qa_failure_limit: existingBatch.budget.qa_failure_limit
     };
+    const authorized = recordedAuthorityHashes(existingBatch);
+    const unenrolled = new Set(["pending", "lane_admitted", "skipped_blocked", "needs_human"]);
     try {
       recoveryChildren = existingBatch.children.map((c) => {
         const intentPath = `docs/plans/${c.task_id}.intent.json`;
@@ -14313,7 +14405,8 @@ async function projectPlanSurface(input) {
           reason: c.reason ?? null,
           intent_path: intentPath,
           intent_revision: read.intent.revision,
-          intent_content_hash: read.content_hash
+          intent_content_hash: read.content_hash,
+          ...authorized ? { intent_authority_hash: unenrolled.has(c.state) ? authorized.get(c.task_id) : intentAuthorityHash(read.intent) } : {}
         };
       });
     } catch (err) {
@@ -14324,6 +14417,7 @@ async function projectPlanSurface(input) {
       intent_path: c.intent_path ?? `docs/plans/${c.task_id}.intent.json`,
       intent_revision: c.intent_revision ?? 1,
       intent_content_hash: c.intent_content_hash ?? "",
+      ...c.intent_authority_hash ? { intent_authority_hash: c.intent_authority_hash } : {},
       blocked_by: c.blocked_by
     })));
   } else {
@@ -17590,23 +17684,36 @@ function resealDelegatedRevision(input, record, taskId) {
   let integrated;
   try {
     const read = readTaskIntent(input.root, taskId, recorded.intent_path);
-    integrated = { revision: read.intent.revision, content_hash: read.content_hash };
+    integrated = { revision: read.intent.revision, content_hash: read.content_hash, authority_hash: intentAuthorityHash(read.intent) };
   } catch {
     return false;
   }
-  if (integrated.revision === recorded.intent_revision && integrated.content_hash === recorded.intent_content_hash)
+  const binds = recorded.intent_authority_hash !== undefined;
+  if (binds ? integrated.authority_hash === recorded.intent_authority_hash : integrated.revision === recorded.intent_revision && integrated.content_hash === recorded.intent_content_hash)
     return false;
   const delegated = [...record.delegated_revisions ?? []].reverse().find((r) => r.task_id === taskId);
   if (!delegated || delegated.to_revision !== integrated.revision || delegated.intent_content_hash !== integrated.content_hash)
     return false;
-  const next = { ...identities, [taskId]: { ...recorded, intent_revision: integrated.revision, intent_content_hash: integrated.content_hash } };
+  const next = { ...identities, [taskId]: {
+    ...recorded,
+    intent_revision: integrated.revision,
+    intent_content_hash: integrated.content_hash,
+    ...binds ? { intent_authority_hash: integrated.authority_hash } : {}
+  } };
   if (record.children.some((child) => !next[child.task_id]))
     return false;
   let toDigest;
   try {
     toDigest = computeBatchPlanDigest(record.children.map((child) => {
       const identity = next[child.task_id];
-      return { task_id: child.task_id, intent_path: identity.intent_path, intent_revision: identity.intent_revision, intent_content_hash: identity.intent_content_hash, blocked_by: child.blocked_by };
+      return {
+        task_id: child.task_id,
+        intent_path: identity.intent_path,
+        intent_revision: identity.intent_revision,
+        intent_content_hash: identity.intent_content_hash,
+        ...identity.intent_authority_hash ? { intent_authority_hash: identity.intent_authority_hash } : {},
+        blocked_by: child.blocked_by
+      };
     }));
   } catch {
     return false;
@@ -17617,11 +17724,29 @@ function resealDelegatedRevision(input, record, taskId) {
     from_digest: record.plan_digest,
     to_digest: toDigest,
     intent_revision: integrated.revision,
-    intent_content_hash: integrated.content_hash
+    intent_content_hash: integrated.content_hash,
+    ...binds ? { intent_authority_hash: integrated.authority_hash } : {}
   }];
   record.intent_identities = next;
   record.plan_digest = toDigest;
   return true;
+}
+function laneAuthorityChange(record, taskId, lanePath) {
+  const recorded = record.intent_identities?.[taskId];
+  if (!recorded?.intent_authority_hash)
+    return null;
+  let read;
+  try {
+    read = readTaskIntent(lanePath, taskId, recorded.intent_path);
+  } catch {
+    return null;
+  }
+  if (intentAuthorityHash(read.intent) === recorded.intent_authority_hash)
+    return null;
+  const delegated = [...record.delegated_revisions ?? []].reverse().find((r) => r.task_id === taskId);
+  if (delegated && delegated.to_revision === read.intent.revision && delegated.intent_content_hash === read.content_hash)
+    return null;
+  return `batch_child_authority_changed: ${taskId}`;
 }
 async function closeIntegratedIssues(input, record, persist) {
   const observations = [];
@@ -18056,6 +18181,11 @@ async function runLaneBatch(input, persisted) {
       continue;
     }
     const holdsClaim = fresh.claim !== null && fresh.claim.task_id === child.task_id;
+    const authorityChange = child.state === "enrolled" ? laneAuthorityChange(record, child.task_id, child.lane.path) : null;
+    if (authorityChange) {
+      parkChild(child.task_id, authorityChange);
+      continue;
+    }
     if (child.state === "lane_admitted") {
       if (holdsClaim) {
         record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "enrolled", reason: "adopted existing lane claim after interruption", lane: { ...child.lane, run_id: fresh.projection.run_id } } : c);
@@ -18126,6 +18256,11 @@ async function runLaneBatch(input, persisted) {
   for (const child of [...record.children]) {
     if (child.state !== "settled" || !child.lane)
       continue;
+    const authorityChange = laneAuthorityChange(record, child.task_id, child.lane.path);
+    if (authorityChange) {
+      parkChild(child.task_id, authorityChange);
+      continue;
+    }
     const planChild = input.children.find((c) => c.task_id === child.task_id);
     let laneCommit;
     try {
@@ -18434,6 +18569,9 @@ function finalize(root, record, reason, nextAction, details = {}) {
   }
   return report;
 }
+function isAuthorityChangeError(message) {
+  return message.startsWith("batch_child_authority_changed:");
+}
 function isLineageBreakError(message) {
   return message.includes("batch_head_lineage_broken");
 }
@@ -18558,7 +18696,8 @@ function applyPlanReconfirmation(input, existing) {
     ...existing,
     plan_digest: input.plan_digest,
     confirmation_time: input.confirmation_time,
-    budget: input.budget
+    budget: input.budget,
+    ...recordedAuthorityHashes(existing) ? { intent_identities: batchIntentIdentities(input.children) } : {}
   };
   if (!existing.branch || input.batch_id !== existing.batch_id || input.initiative_slug !== existing.initiative_slug || input.base_head !== existing.base_head || input.budget.max_children !== existing.budget.max_children || input.budget.qa_failure_limit !== existing.budget.qa_failure_limit)
     throw new Error("plan_digest mismatch: reconfirmation binding changed");
@@ -18803,6 +18942,12 @@ async function startBatchLocked(input) {
           record.batch_state = "failed";
           persist();
           break;
+        }
+        if (isAuthorityChangeError(message)) {
+          record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: message } : c);
+          skipDependents2(record, child.task_id, `dependency ${child.task_id} parked`);
+          persist();
+          continue;
         }
         record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: message } : c);
         skipDependents2(record, child.task_id, `dependency ${child.task_id} parked`);

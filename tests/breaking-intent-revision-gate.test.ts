@@ -669,6 +669,44 @@ describe("scope revision is judged against its next scope", () => {
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
+	// Frozen acceptance (Spec branch-boundary D6): the command an item runs and the
+	// set of items are authority, so neither is a compatible revision.
+	const withCommand = (argv: string[]) => [{ ...INTENT.acceptance[0]!, verification: JSON.stringify({
+		contract: "assurance_kernel/verification_descriptor/v2", command: { executable: "bun", argv, cwd: ".", timeout_ms: 1_000, max_output_bytes: 1_024 } }) }];
+	test.each([
+		["a changed verification argv", withCommand(["test", "tests/other.test.ts"])],
+		["an added acceptance item", [...INTENT.acceptance, { id: "A2", assertion: "a2", verification: INTENT.acceptance[0]!.verification }]],
+	])("breaking: %s is refused on the compatible route and reaches one gate on the breaking route", async (_label, acceptance) => {
+		const root = makeScopeRoot();
+		try {
+			const before = readFileSync(join(root, SIDECAR), "utf8");
+			const next = { ...scopeIntent([], 2), acceptance };
+			const compatibleUi = makeUI();
+			const failure = await captureToolFailure(loadSurface().tool.execute("f1", { task_id: TASK, action: { op: "revise_intent", next_intent: next } }, undefined, undefined, makeCtx(root, compatibleUi)));
+			expect(failure.message).toContain("compatible");
+			expect(compatibleUi.dialogCalls).toHaveLength(0);
+			expect(readFileSync(join(root, SIDECAR), "utf8")).toBe(before);
+
+			const breakingUi = makeUI();
+			await loadSurface().tool.execute("f2", { task_id: TASK, action: { op: "approve_breaking_intent_revision", next_intent: next } }, undefined, undefined, makeCtx(root, breakingUi));
+			expect(breakingUi.dialogCalls).toHaveLength(1);
+			expect(storedRecord(root).intent_snapshot.acceptance).toEqual(acceptance);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
+	test("compatible: a run-parameter-only verification change applies without a gate", async () => {
+		const root = makeScopeRoot();
+		try {
+			const acceptance = [{ ...INTENT.acceptance[0]!, verification: JSON.stringify({
+				contract: "assurance_kernel/verification_descriptor/v2", command: { executable: "bun", argv: ["test"], cwd: ".", timeout_ms: 30_000, max_output_bytes: 1_024 } }) }];
+			const next = { ...scopeIntent([], 2), acceptance };
+			const ui = makeUI();
+			await loadSurface().tool.execute("f3", { task_id: TASK, action: { op: "revise_intent", next_intent: next } }, undefined, undefined, makeCtx(root, ui));
+			expect(ui.dialogCalls).toHaveLength(0);
+			expect(storedRecord(root).intent_snapshot.acceptance).toEqual(acceptance);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
 	test("compatible: a staged path outside both scopes refuses and restores the sidecar", async () => {
 		const root = makeScopeRoot();
 		try {

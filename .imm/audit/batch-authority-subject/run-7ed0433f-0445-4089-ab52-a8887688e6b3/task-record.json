@@ -1,0 +1,244 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "batch-authority-subject",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "batch-authority-subject",
+    "goal": "A batch authorization binds each child's frozen authority subject instead of its whole intent: a scope-only or run-parameter revision mid-batch leaves the batch running, a change to a child's goal, acceptance or verification command parks only that child and its dependents, a verification command change or added acceptance item is a breaking revision, and ADR 0026 records the decision (Spec branch-boundary D5-D10).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "intentAuthorityHash is unchanged when only scope_hint entries outside docs/specs, revision, risk, a descriptor's timeout_ms or max_output_bytes, or environment change, and changes when goal, owner, an acceptance assertion, a descriptor executable, argv or cwd, the acceptance id set, or the bound Spec path changes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-intent-v2.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "classifyIntentRevision returns breaking for a revision that changes only a descriptor's executable, argv or cwd, or that adds an acceptance item, and still returns compatible for a revision that changes only timeout_ms, max_output_bytes or environment, or adds a same-directory scope entry.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-intent-v2.test.ts\",\n      \"tests/breaking-intent-revision-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "In a serial batch, a child whose intent received a compatible same-directory scope revision or a revision-only bump after confirmation enrolls and completes with no plan_changed and no batch_child_intent_changed, on the Kernel seam and on both Hosts' batch tools.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-batch-authority.test.ts\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/claude-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "In a serial batch and in a Lane batch, a child whose acceptance assertion or verification argv changed after confirmation is parked with batch_child_authority_changed, its dependents become skipped_blocked, an independent child still reaches done, and the batch ends terminal rather than plan_changed; a change to the child set, order or dependencies still fails with plan_changed.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "A Lane batch with scope-only drift on one child keeps running, and a delegated acceptance-only revision is still approved and resealed under the existing authorization, while a non-delegated acceptance change parks that child.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\",\n      \"tests/batch-delegation-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC6",
+        "assertion": "A batch record without intent_authority_hash keeps whole-intent comparison: a revision-only bump on its child still yields plan_changed or batch_child_intent_changed, and plan reconfirmation of such a record behaves as before.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-plan-reconfirmation.test.ts\",\n      \"tests/kernel-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/branch-boundary-batch-authority-subject.md",
+      "docs/adr/0026-branch-boundary-frozen-acceptance.md",
+      "docs/plans/batch-authority-subject.intent.json",
+      "docs/specs/branch-boundary.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+      "plugins/immune-brain/runtime/kernel/intent.ts",
+      "plugins/immune-brain/runtime/unattended/batch_delegation.ts",
+      "plugins/immune-brain/runtime/unattended/batch_disposition.ts",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/types.ts",
+      "tests/batch-delegation-gate.test.ts",
+      "tests/batch-plan-reconfirmation.test.ts",
+      "tests/breaking-intent-revision-gate.test.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/kernel-batch-authority.test.ts",
+      "tests/kernel-intent-v2.test.ts",
+      "tests/kernel-r2c2-reducer.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/unattended-batch-lanes.test.ts",
+      "tests/unattended-batch-run.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/batch-authority-subject.intent.json",
+    "content_hash": "sha256:634739fbe0ca0a0004fec0887cf509870f899e6a73f983398a02843f76d654a1"
+  },
+  "lifecycle": "stopped",
+  "artifact_state": "frozen",
+  "baseline": "sha256:04078775091500d0a254c2c414f19896ec0c127a295c3a538339020f055062be",
+  "git_base_head": "3fa20fccbed0c8bc4581324056c5bd561c0a7958",
+  "attestations": [
+    {
+      "id": "approval-qa-bb1458a0",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:04078775091500d0a254c2c414f19896ec0c127a295c3a538339020f055062be",
+      "diff_hash": "sha256:99eb94897d539658c5152af5254442d224c619711b372cde7309ba67ea734e0c",
+      "actor_id": "deterministic-qa",
+      "summary": "all 7 project verification check(s) passed; execution=sha256:744f014fbe828eacb262689c54875eb17aa46bca0ea6656831628ee7d2f15674",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:744f014fbe828eacb262689c54875eb17aa46bca0ea6656831628ee7d2f15674"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:744f014fbe828eacb262689c54875eb17aa46bca0ea6656831628ee7d2f15674"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:744f014fbe828eacb262689c54875eb17aa46bca0ea6656831628ee7d2f15674"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:744f014fbe828eacb262689c54875eb17aa46bca0ea6656831628ee7d2f15674"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:744f014fbe828eacb262689c54875eb17aa46bca0ea6656831628ee7d2f15674"
+        },
+        {
+          "acceptance_id": "AC6",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:744f014fbe828eacb262689c54875eb17aa46bca0ea6656831628ee7d2f15674"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-d2b8c7108213-1-review-1",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "AC3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Both Host batch-authority test files import ./helpers/git-template, a file that does not exist in the review revision, so AC3's evidence on both Hosts' batch tools cannot be reproduced from this commit.",
+      "anchor": "sha256:a7e52045baed4fdc90fcb3034655817d4655f0ed21b8248d837717f69317f893",
+      "evidence": {
+        "trigger": "At commit b63e954, tests/claude-batch-authority.test.ts:6 and tests/pi-batch-authority.test.ts:6 both run `import { copyGitTemplate } from \"./helpers/git-template\"`. git ls-tree b63e954 tests/helpers lists only pi-canary-assurance-harness.ts, public-skills.ts and roadmap-e2e-harness.ts. The delivery also deleted the local initGitRepo helpers. Running `bun test tests/pi-batch-authority.test.ts tests/claude-batch-authority.test.ts` against this tree fails with a module-resolution error before any test runs. That includes the new 'a compatible revision mid-batch still enrolls every child and completes' tests on both Hosts, which are AC3's Host-seam proof. The QA pass only holds in the live worktree, where another task has staged tests/helpers/git-template.ts. Fix: either commit the helper as part of this change set, or keep the local initGitRepo fixtures.",
+        "caller_chain": [
+          "tests/claude-batch-authority.test.ts",
+          "tests/pi-batch-authority.test.ts",
+          "tests/helpers/git-template.ts (absent at b63e954)"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-d2b8c7108213-2-review-2",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "AC3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The committed Claude bundle contains code from runtime sources that are not in this revision, and batch_lanes.ts carries the D4 plugin-skew Lane refusal from another slice without that slice's test, so the shipped Claude Host behaves differently from the reviewed sources.",
+      "anchor": "sha256:285fcf440778e7e2a0c27d4978603276636567f85b9b1817be995a3c90b08e21",
+      "evidence": {
+        "trigger": "The diff of plugins/immune-brain/dist/claude/mcp-server.mjs adds watchBundleIdentity(), a `plugin_bundle_stale` recovery hint and a fileURLToPath import. `git grep watchBundleIdentity\\|plugin_bundle_stale b63e954 -- plugins/immune-brain/runtime` returns nothing, because those sources (runtime/claude/mcp_server.ts and interaction.ts, uncommitted from task plugin-bundle-staleness) are not in this commit. As a result, `bun scripts/build-claude-plugin.ts --check` (part of verify:release in package.json, cited because it is the bundle parity gate) cannot reproduce the committed bundle from this tree, and the Claude Host's batch tools (the AC3 Claude seam) run stale-bundle refusal logic that was never reviewed. In the same change, laneRuntimeContractRefusal in runtime/unattended/batch_lanes.ts now refuses with batch_runtime_contract_mismatch whenever pluginSourceSkewWarning reports a skew. That is Spec D4, outside this task's D5-D10 goal, and its test tests/claude-bundle-staleness.test.ts is not in the revision. So a Lane batch started from a cached-plugin coordinator in the plugin's own repo now refuses, with no test in this change set. Fix: rebuild dist from exactly this revision's sources, and move the D4 hunk out to its owning task, or carry its test and sources together with it.",
+        "caller_chain": [
+          "plugins/immune-brain/dist/claude/mcp-server.mjs",
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:laneRuntimeContractRefusal",
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts (unchanged caller of laneRuntimeContractRefusal)",
+          "scripts/build-claude-plugin.ts --check (unchanged parity gate)"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC3"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:batch-authority-subject:2026-10-19T02:12:34.178Z",
+      "at": "2026-10-19T02:12:34.178Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-authority-subject.intent.json"
+    },
+    {
+      "id": "record_approval:batch-authority-subject:2026-10-19T02:20:47.862Z",
+      "at": "2026-10-19T02:20:47.862Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-bb1458a0\naction_v2_sha256:5ee1fce9b7c1de39829b4078f05cd0caf7a9c857d90dd48a0c5e9a48af53c1a3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-19T02:20:47.862Z"
+      }
+    },
+    {
+      "id": "request_rework:batch-authority-subject:2026-10-19T02:23:57.843Z",
+      "at": "2026-10-19T02:23:57.843Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:cf8c0964d720fb8fd5fa04ea4c00cb3a77d2d19205f37d978871a6c3e6d796a9",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-19T02:23:57.843Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "3fa20fccbed0c8bc4581324056c5bd561c0a7958",
+        "review_commit": "b63e954277b961e3cc449db237cce8911b396ea8",
+        "review_tree": "53ff54d11452bb79cdc4a2b14c732427702da8bb",
+        "manifest_digest": "sha256:64f6af2624a73e9e6c8a47260fff991cdf0ecd72ea4090e9672aad86b66bde69"
+      }
+    },
+    {
+      "id": "revise_intent:batch-authority-subject:2026-10-19T02:33:30.854Z",
+      "at": "2026-10-19T02:33:30.854Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\nscope_added:tests/claude-host-authority.test.ts\nscope_added:tests/kernel-r2c2-reducer.test.ts\nscope_added:tests/pi-canary-work-extension.test.ts\nscope_added:tests/unattended-contracts.test.ts\naction_v2_sha256:f2ef40edc61a5dd7dce908dfbc307b50c131779b150dcc8b3da6ffb8a2c096c3"
+    },
+    {
+      "id": "stop:batch-authority-subject:2026-10-19T02:35:57.601Z",
+      "at": "2026-10-19T02:35:57.601Z",
+      "type": "stop",
+      "from_state": "active:active",
+      "to_state": "stopped:frozen",
+      "reason": "Review base 3fa20fc predated the settled S1/S2 commits (e7d386e, f7b0982); per user decision, fast-forward main to f7b0982 and re-enroll S3 on that base.\naction_v2_sha256:056c7f0be4bf977ab8769c0683c95197c35921349bb0075fdd25245307748587",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-7e9c4bc3dfb8b653",
+        "issued_at": "2026-10-19T02:36:20.697Z"
+      }
+    }
+  ]
+}

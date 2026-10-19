@@ -19,7 +19,8 @@ import { LITERAL_USER_ACTOR_ID } from "../kernel/actor_identity";
 import { readBackendClaim } from "../kernel/backend_claim";
 import { computeBatchPlanDigest, type BatchAuthorizationBinding } from "../kernel/batch_authority";
 import { readGitHead } from "../kernel/pi_canary_prepare";
-import { readTaskIntent, observeEnrollmentTaskIntent } from "../kernel/intent";
+import { intentAuthorityHash, readTaskIntent, observeEnrollmentTaskIntent } from "../kernel/intent";
+import type { TaskIntentV1 } from "../kernel/types";
 import { ignoredPaths, isBatchRef, readBatchRef } from "./batch_ref";
 import { auditRunRecordPath, auditRunTerminalProofPath } from "../kernel/storage_paths";
 import { isWorkflowAuthoringPath } from "./batch_git";
@@ -29,7 +30,7 @@ import { pathMatchesScope } from "../workspace_scope";
 import { captureBatchReconfirmation, retainReconfirmation, ownUnpersistedBatchHead, type ReconfirmationSnapshot } from "./batch_reconfirmation";
 import { projectBatchPlan } from "./batch_plan";
 import { batchReason, type BatchReasonKey } from "./batch_reasons";
-import { BATCH_RUN_STATES, isLaneBatchRecord, isTerminalBatchState, readAnyBatchRunState, type AnyBatchRunStateRecord, type BatchRunStateRecord } from "./batch_state";
+import { BATCH_RUN_STATES, isLaneBatchRecord, isTerminalBatchState, readAnyBatchRunState, recordedAuthorityHashes, type AnyBatchRunStateRecord, type BatchRunStateRecord } from "./batch_state";
 import { planLaneLeakRestore } from "./batch_leak_restore";
 import type {
 	BatchPlanBudget,
@@ -468,6 +469,13 @@ async function projectPlanSurface(input: {
 			max_children: existingBatch.budget.max_children,
 			qa_failure_limit: existingBatch.budget.qa_failure_limit,
 		};
+		// A record that binds the authority subject resumes on subjects, so a
+		// scope-only revision leaves its digest unchanged. A child that has not
+		// enrolled keeps the subject the user authorized: a changed one parks only
+		// that child at enrollment (Spec branch-boundary D8). A child that has run
+		// is read live, so a changed subject still reaches reconfirmation.
+		const authorized = recordedAuthorityHashes(existingBatch);
+		const unenrolled = new Set(["pending", "lane_admitted", "skipped_blocked", "needs_human"]);
 		try {
 			recoveryChildren = existingBatch.children.map((c) => {
 				const intentPath = `docs/plans/${c.task_id}.intent.json`;
@@ -508,6 +516,7 @@ async function projectPlanSurface(input: {
 					intent_path: intentPath,
 					intent_revision: read.intent.revision,
 					intent_content_hash: read.content_hash,
+					...(authorized ? { intent_authority_hash: unenrolled.has(c.state) ? authorized.get(c.task_id)! : intentAuthorityHash(read.intent as unknown as TaskIntentV1) } : {}),
 				} satisfies BatchPlanChild;
 			});
 		} catch (err) {
@@ -519,6 +528,7 @@ async function projectPlanSurface(input: {
 				intent_path: c.intent_path ?? `docs/plans/${c.task_id}.intent.json`,
 				intent_revision: c.intent_revision ?? 1,
 				intent_content_hash: c.intent_content_hash ?? "",
+				...(c.intent_authority_hash ? { intent_authority_hash: c.intent_authority_hash } : {}),
 				blocked_by: c.blocked_by,
 			})),
 		);

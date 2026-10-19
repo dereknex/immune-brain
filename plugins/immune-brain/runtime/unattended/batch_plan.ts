@@ -4,6 +4,7 @@ import { observeGithubInitiative } from "../github_issue_tracker";
 import { hasLocalInitiative, observeLocalInitiative } from "../local_initiative";
 import { readTaskTombstone } from "../kernel/backend_claim";
 import {
+	intentAuthorityHash,
 	observeTaskIntent,
 	observeEnrollmentTaskIntent,
 	TaskIntentObservationError,
@@ -205,6 +206,7 @@ export async function projectBatchPlan(
 				intent_path: read.intent_ref.path,
 				intent_revision: read.intent_ref.revision,
 				intent_content_hash: read.content_hash,
+				intent_authority_hash: intentAuthorityHash(read.intent),
 			});
 		} catch (error) {
 			if (!(error instanceof TaskIntentObservationError)) throw error;
@@ -230,6 +232,7 @@ export async function projectBatchPlan(
 			intent_path: child.intent_path!,
 			intent_revision: child.intent_revision!,
 			intent_content_hash: child.intent_content_hash!,
+			intent_authority_hash: child.intent_authority_hash!,
 			blocked_by: child.blocked_by.filter((id) => childById.get(id)?.status === "enrollable"),
 		}));
 	if (!enrollable.length)

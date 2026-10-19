@@ -38,7 +38,7 @@ import { AssuranceProgression } from "../plugins/immune-brain/.pi-extension/pi-c
 import { createMcpRuntime as createMcpRuntimeUngated } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import { diffSnapshotOf } from "../plugins/immune-brain/runtime/claude/kernel_ports";
-import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
+import { canonicalIntentHash, intentAuthorityHash, parseTaskIntentV1, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { capabilityActionFor, createCanaryApplication } from "../plugins/immune-brain/runtime/kernel/canary_application";
 import { digestOfAction } from "../plugins/immune-brain/runtime/kernel/authority_port";
 import { createTestMutationRegistry, createMutationAuthorityCapabilityForTest, seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
@@ -49,6 +49,7 @@ import { projectBatchPreflight } from "../plugins/immune-brain/runtime/unattende
 import { taskCommitRevisionIdentity } from "../plugins/immune-brain/runtime/workspace_scope";
 import * as batchState from "../plugins/immune-brain/runtime/unattended/batch_state";
 import * as batchRunner from "../plugins/immune-brain/runtime/unattended/batch_runner";
+import { computeBatchPlanDigest } from "../plugins/immune-brain/runtime/kernel/batch_authority";
 import { commitBatchChild, lookupBatchCommit, runBatchGitPreflight } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import type { BatchRunnerGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
@@ -306,6 +307,8 @@ describe("bounded batch plan reconfirmation", () => {
 		expect(result.report.handoff.task_id).toBe(`${f.slug}-c2`); expect(f.gates()).toBe(2);
 		const state = f.state(); expect(state.children.map(c => c.state)).toEqual(["committed", "enrolled"]);
 		expect(state.commits).toHaveLength(1); expect(state.plan_digest).not.toBe(f.before.plan_digest);
+		// The reconfirmed subject becomes the authorized one (Spec branch-boundary D7).
+		expect(state.intent_identities?.[f.task]?.intent_authority_hash).toBe(intentAuthorityHash(f.next));
 		for (const key of ["batch_id", "base_head", "branch", "created_at", "consecutive_qa_failures"] as const) expect(state[key]).toEqual(f.before[key]);
 		expect(state.budget).toEqual(f.before.budget);
 		expect(Date.parse(state.confirmation_time)).toBeGreaterThan(Date.parse(f.before.confirmation_time));
@@ -318,6 +321,30 @@ describe("bounded batch plan reconfirmation", () => {
 		const bytes = readFileSync(join(f.root, f.path)); const head = batchTip(f.root, f.before.branch);
 		const replay = await f.run(); expect(replay.report.handoff.task_id).toBe(`${f.slug}-c2`);
 		expect(f.gates()).toBe(2); expect(readFileSync(join(f.root, f.path))).toEqual(bytes); expect(batchTip(f.root, f.before.branch)).toBe(head);
+	}, 90000);
+
+	// Spec branch-boundary D9: a record written before the authority-subject
+	// binding keeps whole-intent comparison, and its reconfirmation is unchanged.
+	it("pi: a record without the subject binding reconfirms the revised settlement as before", async () => {
+		const f = await fixture("pi", "done", "material");
+		const { intent_identities: _identities, ...rest } = f.state();
+		const legacyChildren = rest.children.map(c => {
+			const old = parseTaskIntentV1(JSON.parse(git(f.root, "show", `${f.base}:docs/plans/${c.task_id}.intent.json`)));
+			return { task_id: c.task_id, blocked_by: [...c.blocked_by], intent_path: `docs/plans/${c.task_id}.intent.json`,
+				intent_revision: old.revision, intent_content_hash: canonicalIntentHash(old) };
+		});
+		put(f.root, f.path, { ...rest, plan_digest: computeBatchPlanDigest(legacyChildren) });
+		const legacy = f.state();
+		expect(legacy.intent_identities).toBeUndefined();
+		const projected = await projectBatchPreflight({ root: f.root, initiative_slug: f.slug });
+		if (!projected.ok) throw new Error(projected.reason);
+		expect(projected.projection.reconfirmation).toBeDefined();
+		const result = await f.run();
+		expect(result.state).toBe("started"); expect(result.report.handoff.task_id).toBe(`${f.slug}-c2`); expect(f.gates()).toBe(2);
+		const state = f.state();
+		expect(state.children.map(c => c.state)).toEqual(["committed", "enrolled"]);
+		expect(state.plan_digest).not.toBe(legacy.plan_digest);
+		expect(state.intent_identities).toBeUndefined();
 	}, 90000);
 
 	it("plan drift after recorded child progress gives a non-authorizing evidence-preserving disposition", async () => {
@@ -603,7 +630,8 @@ describe("bounded batch plan reconfirmation", () => {
 			{ confirmation_time: state.confirmation_time },
 			{ plan_digest: `sha256:${"f".repeat(64)}` },
 			{ budget: { ...input.budget, max_children: input.budget.max_children + 1 } },
-			{ children: input.children.map((child, i) => i ? child : { ...child, intent_content_hash: `sha256:${"e".repeat(64)}` }) },
+			// The plan binds each child's authority subject (Spec branch-boundary D7), not its content hash.
+			{ children: input.children.map((child, i) => i ? child : { ...child, intent_authority_hash: `sha256:${"e".repeat(64)}` }) },
 		];
 		for (const changed of invalidInputs) {
 			const before = snapshot(f.root);

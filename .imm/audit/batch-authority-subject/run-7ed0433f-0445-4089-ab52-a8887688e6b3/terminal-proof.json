@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "batch-authority-subject",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "stopped",
+  "terminal_event_id": "stop:batch-authority-subject:2026-10-19T02:35:57.601Z",
+  "final_record_hash": "sha256:22f938063d603836fc6c566b7ff42c44a5d9a0b8bcf046f172496fcc1aad1ae5",
+  "terminalized_at": "2026-10-19T02:35:57.601Z"
+}

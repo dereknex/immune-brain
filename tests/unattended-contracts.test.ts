@@ -746,6 +746,8 @@ describe("unattended batch contract text", () => {
 			"final_verification_result",
 			"repair_tasks",
 			"adopted_heads",
+			// Spec branch-boundary D7: the authorized identities, kept only when the plan binds the authority subject.
+			"intent_identities",
 			"created_at",
 			"updated_at",
 		]);

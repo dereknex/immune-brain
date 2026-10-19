@@ -13,6 +13,7 @@ import { createCapabilityRegistry } from "./capability_registry";
 import { isLiteralUserActor } from "./actor_identity";
 import type { BaseCapabilityBinding, EnrollmentCapabilityBinding } from "./enrollment_authority";
 import { preparePiCanary, type PiCanaryPreparation } from "./pi_canary_prepare";
+import { intentAuthorityHash, readTaskIntent } from "./intent";
 
 export const BATCH_AUTHORITY_CAPABILITY_BRAND = Symbol.for(
 	"assurance-kernel.batch-authority-capability-brand",
@@ -26,6 +27,12 @@ export interface BatchPlanChild {
 	intent_path: string;
 	intent_revision: number;
 	intent_content_hash: string;
+	/**
+	 * The child's frozen authority subject (Spec branch-boundary D5). A plan whose
+	 * every child carries it binds the subject instead of revision and content
+	 * hash; a plan without it keeps whole-intent binding (D9).
+	 */
+	intent_authority_hash?: string;
 	blocked_by: string[];
 }
 
@@ -106,6 +113,15 @@ function stableStringify(value: unknown): string {
  * literal user approves, and this digest is what binds it.
  */
 export function computeBatchPlanDigest(children: BatchPlanChild[]): string {
+	if (bindsAuthoritySubject(children)) {
+		const canonical = children.map((child) => ({
+			blocked_by: [...child.blocked_by],
+			intent_authority_hash: child.intent_authority_hash,
+			intent_path: child.intent_path,
+			task_id: child.task_id,
+		}));
+		return `sha256:${sha256Hex(stableStringify({ binding: "authority_subject", children: canonical }))}`;
+	}
 	const canonical = children.map((child) => ({
 		blocked_by: [...child.blocked_by],
 		intent_content_hash: child.intent_content_hash,
@@ -114,6 +130,11 @@ export function computeBatchPlanDigest(children: BatchPlanChild[]): string {
 		task_id: child.task_id,
 	}));
 	return `sha256:${sha256Hex(stableStringify(canonical))}`;
+}
+
+/** Whether a plan binds each child's authority subject rather than its whole intent. */
+export function bindsAuthoritySubject(children: ReadonlyArray<{ intent_authority_hash?: string | null }>): boolean {
+	return children.length > 0 && children.every((child) => typeof child.intent_authority_hash === "string" && child.intent_authority_hash.length > 0);
 }
 
 function requireNonEmpty(binding: BatchAuthorizationBinding): void {
@@ -361,7 +382,20 @@ export function deriveChildEnrollment(
 		);
 	if (!preparation.intent)
 		throw new Error(`batch_child_intent_changed: ${input.task_id} intent sidecar is unreadable`);
-	if (
+	if (child.intent_authority_hash) {
+		// Spec branch-boundary D7: only the frozen subject binds; a scope-only or
+		// run-parameter revision enrolls under the same authorization.
+		let live: string | null = null;
+		try {
+			const read = readTaskIntent(root, input.task_id, preparation.intent.path);
+			if (read.content_hash === preparation.intent.content_hash) live = intentAuthorityHash(read.intent);
+		} catch {
+			live = null;
+		}
+		if (live === null) throw new Error(`batch_child_intent_changed: ${input.task_id} intent sidecar is unreadable`);
+		if (preparation.intent.path !== child.intent_path || live !== child.intent_authority_hash)
+			throw new Error(`batch_child_authority_changed: ${input.task_id}`);
+	} else if (
 		preparation.intent.path !== child.intent_path ||
 		preparation.intent.revision !== child.intent_revision ||
 		preparation.intent.content_hash !== child.intent_content_hash
@@ -381,8 +415,10 @@ export function deriveChildEnrollment(
 		binding: {
 			task_id: child.task_id,
 			intent_path: child.intent_path,
-			intent_revision: child.intent_revision,
-			intent_content_hash: child.intent_content_hash,
+			// The single-task TaskRecord binds the live full content (D7): under a
+			// subject binding that is the revised sidecar the subject check admitted.
+			intent_revision: child.intent_authority_hash ? preparation.intent.revision : child.intent_revision,
+			intent_content_hash: child.intent_authority_hash ? preparation.intent.content_hash : child.intent_content_hash,
 			preparation_digest: preparation.digest,
 			actor_id: validated.actor_id,
 			confirmation_ref: validated.confirmation_ref,

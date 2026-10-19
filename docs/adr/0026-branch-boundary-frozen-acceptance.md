@@ -1,12 +1,12 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Branch Boundary with Frozen Acceptance
 
 Proposed on 2026-10-18 by the repository owner (decisions Q1–Q20′ in
-`docs/specs/branch-boundary.spec.md`). It becomes accepted when Slice S3 of
-Initiative `batch-unblock` settles. It amends
+`docs/specs/branch-boundary.spec.md`) and accepted when Slice S3 of
+Initiative `batch-unblock` (`batch-authority-subject`) landed. It amends
 [ADR 0005](0005-unattended-initiative-batch-run.md) (what a batch
 authorization binds) and narrows
 [ADR 0019](0019-explicit-run-entry-owns-enrollment.md)'s Enrollment identity
@@ -42,7 +42,9 @@ rest of the intent from the authority subject.
 2. **Batches bind the subject.** The plan digest, child enrollment identity,
    drift checks, reconfirmation, delegated reseal and delivery checks compare
    the authority subject. A scope-only revision leaves the batch running.
-   Single-task TaskRecord, Review and QA snapshots keep the whole content hash.
+   Single-task TaskRecord, Review and QA snapshots keep the whole content hash;
+   a delivery check that compares a child's commit with its own TaskRecord is
+   such a single-task comparison and keeps the whole hash too.
 3. **A subject change stops one child.** A child whose subject changed after
    confirmation is parked and its dependents are skipped; independent
    children finish. A change to the child set, order or dependencies still

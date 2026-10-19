@@ -4,9 +4,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AssuranceProjectionResult } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
-import { computeBatchPlanDigest, createBatchAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/batch_authority";
+import { computeBatchPlanDigest, createBatchAuthorityRegistry, deriveChildEnrollment } from "../plugins/immune-brain/runtime/kernel/batch_authority";
 import { createEnrollmentAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
-import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
+import { canonicalIntentHash, intentAuthorityHash, parseTaskIntentV1, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { createBatchKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
 import { projectBatchPreflight, readActiveClaimTaskId } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
@@ -2033,7 +2033,9 @@ describe("delegated in-Lane Intent revision and plan_digest reseal (ADR 0018, #1
 			for (const [next, reason] of [
 				[revised({ scope_hint: ["docs/plans", "a.txt", "b.txt"] }), "widening scope_hint is outside the delegation: b.txt"],
 				[revised({ risk: "material" }), "a risk change is outside the delegation"],
-				[{ ...intentV1, revision: 2, acceptance: [...intentV1.acceptance, { id: "A2", assertion: "a2", verification: "bun test tests/y.test.ts" }] }, "only a breaking revision"],
+				// A compatible revision is not delegated. An added acceptance item no longer
+				// qualifies: it is breaking (Spec branch-boundary D6), so delegation covers it.
+				[{ ...intentV1, revision: 2, scope_hint: ["docs/plans"] }, "only a breaking revision"],
 			] as const) {
 				const report = lanes(await startBatch({ ...granted.real, revision_delegation: undefined, lane_revision: parseLaneRevision({ task_id: "task-a", next_intent: next }) }));
 				expect(report.lane_revision?.accepted).toBe(false);
@@ -2099,6 +2101,7 @@ describe("delegated in-Lane Intent revision and plan_digest reseal (ADR 0018, #1
 		}
 	}, 30000);
 
+	// A record without the subject binding (Spec branch-boundary D9): see "Lane batch authority subject" for the bound one.
 	it("does not reseal a revision that was not delegated, so plan_changed still applies", async () => {
 		const fx = fixture({}, { "task-a": ["a.txt", "docs/plans"] });
 		try {
@@ -2118,6 +2121,187 @@ describe("delegated in-Lane Intent revision and plan_digest reseal (ADR 0018, #1
 			expect(integrated.children[0]!.state).toBe("integrated");
 			expect(integrated.reseals).toBeUndefined();
 			expect(readAnyBatchRunState(fx.repo, BATCH_ID)!.plan_digest).toBe(before);
+		} finally {
+			fx.cleanup();
+		}
+	}, 30000);
+});
+
+// Spec branch-boundary D7/D8: a Lane batch whose plan binds each child's
+// authority subject parks only a child whose subject changed; a scope-only
+// revision keeps running and a delegated revision is still resealed.
+describe("Lane batch authority subject", () => {
+	/** Plan children carrying each committed sidecar's real identity and authority hash. */
+	const bound = (fx: Fixture, specs: Array<[string, string[]]>): BatchPlanChild[] =>
+		specs.map(([taskId, blockedBy], i) => {
+			const read = readTaskIntent(fx.repo, taskId);
+			return { ...child(taskId, `S${i + 1}`, blockedBy), intent_revision: read.intent_ref.revision,
+				intent_content_hash: read.content_hash, intent_authority_hash: intentAuthorityHash(read.intent) };
+		});
+	const reviseIn = (lane: string, taskId: string, edit: (intent: Record<string, any>) => Record<string, any>) => {
+		const path = join(lane, `docs/plans/${taskId}.intent.json`);
+		const next = edit(JSON.parse(readFileSync(path, "utf8")));
+		writeFileSync(path, `${JSON.stringify(next)}\n`);
+		return next;
+	};
+	const newAssertion = (intent: Record<string, any>) => ({ ...intent, revision: 2, acceptance: [{ ...intent.acceptance[0], assertion: "rewritten after confirmation" }] });
+	const newArgv = (intent: Record<string, any>) => {
+		const descriptor = JSON.parse(intent.acceptance[0].verification);
+		descriptor.command.argv = ["-e", "process.exit(1)"];
+		return { ...intent, revision: 2, acceptance: [{ ...intent.acceptance[0], verification: JSON.stringify(descriptor) }] };
+	};
+	const SCOPES = { "task-a": ["a.txt", "docs/plans"], "task-b": ["b.txt"], "task-c": ["c.txt"] };
+
+	it.each([
+		["acceptance assertion", newAssertion, "before"],
+		["verification argv", newArgv, "before"],
+		["acceptance assertion", newAssertion, "after"],
+	] as const)(
+		"AC4: a changed %s %s Lane enrollment parks only that child and its dependents",
+		async (_label, edit, when) => {
+			const fx = fixture({}, SCOPES);
+			try {
+				const kernel = laneKernel();
+				const args = request(fx, bound(fx, [["task-a", []], ["task-b", ["task-a"]], ["task-c", []]]), kernel, { max_parallel: 2 });
+				const binding = { batch_id: BATCH_ID, initiative_slug: SLUG, plan_digest: args.plan_digest, branch: "main", base_head: fx.base,
+					budget: args.budget, actor_id: "user", confirmation_ref: "confirm", nonce: "n" };
+				const enroll = kernel.enrollTask.bind(kernel);
+				// The real Kernel derivation decides, per Lane, whether its authorization still holds.
+				kernel.enrollTask = async (a) => {
+					deriveChildEnrollment(a.root, args.registry, { capability: args.capability, binding, task_id: a.task_id,
+						expected_head: a.batch!.binding.expected_head, now: CONFIRMED_AT });
+					return enroll(a);
+				};
+				const first = lanes(await startBatch(args));
+				expect(first.handoffs?.map((h) => h.task_id)).toEqual(["task-a", "task-c"]);
+				if (when === "before") {
+					// Revised on the batch branch after confirmation, so the Lane is provisioned with it.
+					reviseIn(fx.repo, "task-a", edit);
+					git(fx.repo, "commit", "-qam", "revise task-a");
+				}
+				const laneA = fx.lane("task-a");
+				const laneC = fx.lane("task-c");
+				const offered = lanes(await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }, { task_id: "task-c", path: laneC }] }));
+				if (when === "after") {
+					expect(offered.children.map((c) => c.state)).toEqual(["enrolled", "pending", "enrolled"]);
+					reviseIn(laneA, "task-a", edit);
+				}
+				writeFileSync(join(laneC, "c.txt"), "c\n");
+				kernel.frozen.add("task-c");
+				const done = lanes(await startBatch(args));
+				expect(done.children.map((c) => [c.task_id, c.state, c.reason])).toEqual([
+					["task-a", "needs_human", "batch_child_authority_changed: task-a"],
+					["task-b", "skipped_blocked", "dependency task-a parked"],
+					["task-c", "integrated", null],
+				]);
+				expect([...kernel.enrolled.keys()]).toEqual(when === "before" ? ["task-c"] : ["task-a", "task-c"]);
+				expect(done.batch_state).toBe("needs_human");
+				expect(done.reason).not.toContain("plan_changed");
+				expect(git(fx.repo, "log", "--format=%s", `${fx.base}..HEAD`)).toContain("imm(task-c): deliver");
+				expect(git(fx.repo, "log", "--format=%s", `${fx.base}..HEAD`)).not.toContain("imm(task-a)");
+			} finally {
+				fx.cleanup();
+			}
+		},
+		30000,
+	);
+
+	it("AC4: a changed child order or dependency still refuses the Lane batch as a different plan", async () => {
+		const fx = fixture({}, SCOPES);
+		try {
+			const kernel = laneKernel();
+			const args = request(fx, bound(fx, [["task-a", []], ["task-b", ["task-a"]]]), kernel);
+			for (const children of [[...args.children].reverse(), args.children.map((c) => ({ ...c, blocked_by: [] }))]) {
+				const report = lanes(await startBatch({ ...args, children, plan_digest: computeBatchPlanDigest(children) }));
+				expect(report.batch_state).toBe("rejected");
+				expect(report.reason).toContain("plan_digest mismatch");
+			}
+			expect(kernel.enrolled.size).toBe(0);
+			expect(readAnyBatchRunState(fx.repo, BATCH_ID)).toBeNull();
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("AC5: scope-only drift in a Lane keeps the batch running, with no reseal and an unchanged digest", async () => {
+		const fx = fixture({}, SCOPES);
+		try {
+			const kernel = laneKernel();
+			const args = request(fx, bound(fx, [["task-a", []], ["task-b", ["task-a"]]]), kernel);
+			await startBatch(args);
+			const laneA = fx.lane("task-a");
+			await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] });
+			const before = readAnyBatchRunState(fx.repo, BATCH_ID)!.plan_digest;
+			reviseIn(laneA, "task-a", (intent) => ({ ...intent, revision: 2, scope_hint: [...intent.scope_hint, "docs/plans/task-a.notes.md"] }));
+			writeFileSync(join(laneA, "a.txt"), "a\n");
+			kernel.frozen.add("task-a");
+			const next = lanes(await startBatch(args));
+			expect(next.batch_state).toBe("running");
+			expect(next.children.map((c) => [c.state, c.reason])).toEqual([["integrated", null], ["pending", null]]);
+			expect(next.handoffs?.map((h) => [h.role, h.task_id])).toEqual([["lane-steward", "task-b"]]);
+			expect(next.reseals).toBeUndefined();
+			expect(readAnyBatchRunState(fx.repo, BATCH_ID)!.plan_digest).toBe(before);
+			// The next resume's preflight computes the same digest from the revised sidecar.
+			const outcome = await projectBatchPreflight({ root: fx.repo, initiative_slug: SLUG, now: FAR_FUTURE });
+			expect(outcome.ok).toBe(true);
+			expect((outcome as { projection: { plan_digest: string } }).projection.plan_digest).toBe(before);
+		} finally {
+			fx.cleanup();
+		}
+	}, 30000);
+
+	it("AC5: a delegated acceptance-only revision is still resealed, recording its new authority subject", async () => {
+		const fx = fixture({}, SCOPES);
+		try {
+			const kernel = laneKernel();
+			const args = request(fx, bound(fx, [["task-a", []], ["task-b", ["task-a"]]]), kernel, { revision_delegation: true });
+			await startBatch(args);
+			const laneA = fx.lane("task-a");
+			await startBatch({ ...args, revision_delegation: undefined, lane_offers: [{ task_id: "task-a", path: laneA }] });
+			const next = reviseIn(laneA, "task-a", newAssertion);
+			writeFileSync(join(laneA, "a.txt"), "a\n");
+			// The delegated application itself is covered against a real Lane store above.
+			const statePath = join(fx.repo, `.imm/state/batches/${BATCH_ID}.json`);
+			const state = JSON.parse(readFileSync(statePath, "utf8"));
+			const before = state.plan_digest;
+			state.delegated_revisions = [{ at: CONFIRMED_AT, task_id: "task-a", from_revision: 1, to_revision: 2,
+				intent_content_hash: canonicalIntentHash(next), confirmation_ref: `delegated-batch:${BATCH_ID}@${CONFIRMED_AT}` }];
+			writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
+			kernel.frozen.add("task-a");
+			const integrated = lanes(await startBatch(args));
+			expect(integrated.children[0]!.state).toBe("integrated");
+			const authority = intentAuthorityHash(parseTaskIntentV1(next));
+			expect(integrated.reseals).toEqual([expect.objectContaining({ task_id: "task-a", from_digest: before, intent_revision: 2, intent_authority_hash: authority })]);
+			const after = readAnyBatchRunState(fx.repo, BATCH_ID)!;
+			expect(after.plan_digest).toBe(integrated.reseals![0]!.to_digest);
+			expect((after as { intent_identities?: Record<string, { intent_authority_hash?: string }> }).intent_identities?.["task-a"]?.intent_authority_hash).toBe(authority);
+			const outcome = await projectBatchPreflight({ root: fx.repo, initiative_slug: SLUG, now: FAR_FUTURE });
+			expect(outcome.ok).toBe(true);
+			expect((outcome as { projection: { plan_digest: string } }).projection.plan_digest).toBe(after.plan_digest);
+		} finally {
+			fx.cleanup();
+		}
+	}, 30000);
+
+	it("AC5: a non-delegated acceptance change parks that child before anything reaches the batch branch", async () => {
+		const fx = fixture({}, SCOPES);
+		try {
+			const kernel = laneKernel();
+			const args = request(fx, bound(fx, [["task-a", []], ["task-b", ["task-a"]]]), kernel);
+			await startBatch(args);
+			const laneA = fx.lane("task-a");
+			await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] });
+			reviseIn(laneA, "task-a", newAssertion);
+			writeFileSync(join(laneA, "a.txt"), "a\n");
+			kernel.frozen.add("task-a");
+			const report = lanes(await startBatch(args));
+			expect(report.children.map((c) => [c.state, c.reason])).toEqual([
+				["needs_human", "batch_child_authority_changed: task-a"],
+				["skipped_blocked", "dependency task-a parked"],
+			]);
+			expect(report.batch_state).toBe("needs_human");
+			expect(report.commits).toEqual([]);
+			expect(git(fx.repo, "rev-parse", BATCH_BRANCH)).toBe(fx.base);
 		} finally {
 			fx.cleanup();
 		}

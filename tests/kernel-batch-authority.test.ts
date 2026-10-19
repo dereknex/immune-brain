@@ -17,6 +17,7 @@ import {
 	canonicalActorId,
 	isLiteralUserActor,
 } from "../plugins/immune-brain/runtime/kernel/actor_identity";
+import { intentAuthorityHash, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import { createEnrollmentAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { preparePiCanary, readGitHead } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
@@ -487,6 +488,62 @@ describe("batch child enrollment derivation", () => {
 		});
 		expect(derived.child.task_id).toBe("t1");
 		expect(registry.consumedChildren(capability)).toEqual([]);
+	});
+});
+
+// Spec branch-boundary D5/D7/D9: a plan that carries each child's authority
+// subject hash re-checks only that subject at derivation; a plan without it
+// keeps whole-intent comparison.
+describe("batch child authority subject", () => {
+	const registry = createBatchAuthorityRegistry();
+	const subjectChild = (root: string, taskId: string): BatchPlanChild => {
+		const read = readTaskIntent(root, taskId);
+		return { ...childFor(root, taskId), intent_authority_hash: intentAuthorityHash(read.intent) };
+	};
+	const derive = (root: string, children: BatchPlanChild[], revise: (root: string) => void) => {
+		const binding = bindingFor(root, children);
+		const capability = registry.issue(binding, children, NOW);
+		revise(root);
+		const head = commitAll(root, "revise");
+		return { capability, run: () => deriveChildEnrollment(root, registry, { capability, binding, task_id: "t1", expected_head: head, now: NOW }) };
+	};
+
+	test("the subject binding changes the plan digest but not under a revision or scope edit", () => {
+		const root = makeRoot(["t1"]);
+		const legacy = [childFor(root, "t1")];
+		const bound = [subjectChild(root, "t1")];
+		expect(computeBatchPlanDigest(bound)).not.toBe(computeBatchPlanDigest(legacy));
+		expect(computeBatchPlanDigest([{ ...bound[0]!, intent_revision: 2, intent_content_hash: "f".repeat(64) }]))
+			.toBe(computeBatchPlanDigest(bound));
+	});
+
+	test.each([
+		["a revision-only bump", (r: string) => writeIntent(r, "t1", intentFor("t1", 2))],
+		["a scope-only revision", (r: string) => writeIntent(r, "t1", { ...intentFor("t1", 2), scope_hint: [...intentFor("t1").scope_hint, "docs/notes"] })],
+	])("AC3: %s derives under the same authorization", (_label, revise) => {
+		const root = makeRoot(["t1"]);
+		const { capability, run } = derive(root, [subjectChild(root, "t1")], revise);
+		const derived = run();
+		// The derived binding carries the revised sidecar, so the single-task Enrollment admits it.
+		expect(derived.binding).toMatchObject({ task_id: "t1", intent_revision: 2, intent_content_hash: readTaskIntent(root, "t1").content_hash });
+		expect(registry.consumedChildren(capability)).toEqual([]);
+	});
+
+	test.each([
+		["goal", (r: string) => writeIntent(r, "t1", intentFor("t1", 2, "a different goal"))],
+		["bound active Spec", (r: string) => writeIntent(r, "t1", { ...intentFor("t1", 2), scope_hint: ["docs/plans"] })],
+		["verification argv", (r: string) => writeIntent(r, "t1", { ...intentFor("t1", 2), acceptance: [{ ...intentFor("t1").acceptance[0]!, verification: "bun test tests/other.test.ts" }] })],
+	])("AC4: a changed %s refuses that child as an authority change", (_label, revise) => {
+		const root = makeRoot(["t1"]);
+		const { capability, run } = derive(root, [subjectChild(root, "t1")], revise);
+		expect(run).toThrow("batch_child_authority_changed: t1");
+		expect(registry.consumedChildren(capability)).toEqual([]);
+	});
+
+	test("AC6: a plan without the subject binding refuses a revision-only bump as before", () => {
+		const root = makeRoot(["t1"]);
+		const { run } = derive(root, [childFor(root, "t1")], (r) => writeIntent(r, "t1", intentFor("t1", 2)));
+		expect(run).toThrow(/batch_child_intent_changed/);
 	});
 });
 

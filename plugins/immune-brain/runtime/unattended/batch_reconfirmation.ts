@@ -1,7 +1,7 @@
 // Read-only eligibility for a first, zero-commit plan reconfirmation.
 import { spawnSync } from "node:child_process";
 import { computeBatchPlanDigest, type BatchPlanChild as DigestChild } from "../kernel/batch_authority";
-import { canonicalIntentHash, parseProjectTaskIntent, readTaskIntent } from "../kernel/intent";
+import { canonicalIntentHash, intentAuthorityHash, parseProjectTaskIntent, readTaskIntent } from "../kernel/intent";
 import { projectAssurance } from "../kernel/assurance_projection";
 import { readAuditTaskPair, readSecureProjectBytes, readSettledRunEvidence, enrollmentEventIdFor, readWorkspaceStateRaw, type SettledRunEvidence } from "../kernel/storage";
 import { auditRunDirPath, auditRunRecordPath, auditRunTerminalProofPath, batchCommitEvidencePath, batchStatePath } from "../kernel/storage_paths";
@@ -9,7 +9,7 @@ import { taskDeliveryIdentity, taskCommitRevisionIdentity, pathMatchesScope } fr
 import { projectTask } from "../kernel/completion";
 import { readRiskFloor } from "../kernel/risk_floor";
 import { isBatchRef, liveBatchHead } from "./batch_ref";
-import { isTerminalBatchState, type BatchRunStateRecord } from "./batch_state";
+import { isTerminalBatchState, recordedAuthorityHashes, type BatchRunStateRecord } from "./batch_state";
 import type { BatchPlanChild } from "./types";
 
 const oid = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
@@ -85,6 +85,9 @@ export function takeReconfirmation(nonce: string): ReconfirmationSnapshot {
 export async function captureBatchReconfirmation(root: string, record: BatchRunStateRecord, children: BatchPlanChild[]): Promise<ReconfirmationSnapshot> {
 	if (!id.test(record.batch_id) || !oid.test(record.base_head) || isTerminalBatchState(record.batch_state) || record.commits.length ||
 		record.children.some(c => c.commit !== null || c.state === "committed") || record.children.length !== children.length || !children.length) refuse();
+	// Spec branch-boundary D7: a record that binds the authority subject
+	// reconfirms a changed subject; one without it compares whole intents (D9).
+	const authorized = recordedAuthorityHashes(record);
 	const assertNoCommitEvidence = () => {
 		for (const child of record.children) {
 			if (!id.test(child.task_id)) refuse();
@@ -116,13 +119,19 @@ export async function captureBatchReconfirmation(root: string, record: BatchRunS
 		const old = parseProjectTaskIntent(root, JSON.parse(git(root, ["show", `${record.base_head}:${child.intent_path}`])));
 		if (old.task_id !== child.task_id) refuse();
 		const oldHash = canonicalIntentHash(old);
-		oldChildren.push({ task_id: child.task_id, blocked_by: [...child.blocked_by], intent_path: child.intent_path, intent_revision: old.revision, intent_content_hash: oldHash });
+		const oldAuthority = authorized?.get(child.task_id);
+		oldChildren.push({ task_id: child.task_id, blocked_by: [...child.blocked_by], intent_path: child.intent_path, intent_revision: old.revision, intent_content_hash: oldHash,
+			...(oldAuthority ? { intent_authority_hash: oldAuthority } : {}) });
 		const currentBytes = capture(child.intent_path);
 		const current = parseProjectTaskIntent(root, JSON.parse(decode(currentBytes)));
 		const currentHash = canonicalIntentHash(current);
 		const tracked = readTaskIntent(root, child.task_id, child.intent_path);
 		if (currentHash !== tracked.content_hash || currentHash !== child.intent_content_hash || current.revision !== child.intent_revision) refuse();
-		if (currentHash === oldHash) continue;
+		if (authorized) {
+			// An unchanged subject, or a child not yet enrolled (it parks at enrollment), is not reconfirmed.
+			if (child.intent_authority_hash === oldAuthority) continue;
+			if (child.intent_authority_hash !== intentAuthorityHash(current)) refuse();
+		} else if (currentHash === oldHash) continue;
 		if (scope !== null || previous.state === "pending" || previous.state === "skipped_blocked" || current.revision <= old.revision || current.goal !== old.goal || current.owner !== old.owner) refuse();
 		const settled = readSettledRunEvidence(root, child.task_id);
 		if (!settled || settled.lifecycle !== "done") refuse();
@@ -194,6 +203,7 @@ export async function captureBatchReconfirmation(root: string, record: BatchRunS
 	};
 	assertUnchanged();
 	const plan_digest = computeBatchPlanDigest(oldChildren.map((old, index) => ({ ...old,
-		intent_revision: children[index]!.intent_revision!, intent_content_hash: children[index]!.intent_content_hash! })));
+		intent_revision: children[index]!.intent_revision!, intent_content_hash: children[index]!.intent_content_hash!,
+		...(authorized ? { intent_authority_hash: children[index]!.intent_authority_hash! } : {}) })));
 	return { root, plan_digest, stateBytes, assertUnchanged };
 }

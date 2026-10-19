@@ -310,7 +310,8 @@ describe("TaskRecord v4 reducer", () => {
 		const nextIntent = {
 			...INTENT,
 			revision: 2,
-			acceptance: [...INTENT.acceptance, { id: "A2", assertion: "acceptance two", verification: "verify two" }],
+			// Raising risk stays compatible; an added acceptance item is breaking (Spec branch-boundary D6).
+			risk: "critical",
 		};
 		const mutation = reduce(recordFixture(), {
 			...baseAction("revise_intent"),

@@ -150,14 +150,14 @@ function makeCtx(root: string, ui: FakeUI, mode = "tui", decision: string | null
 	};
 }
 
-function makeEnrolledRoot(): string {
+function makeEnrolledRoot(intent: typeof INTENT = INTENT): string {
 	const root = mkdtempSync(join(tmpdir(), "phase3-ext-"));
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
 	mkdirSync(join(root, "docs", "specs"), { recursive: true });
 	mkdirSync(join(root, "plugins", "immune-brain", ".pi-extension"), { recursive: true });
 	mkdirSync(join(root, ".imm/state"), { recursive: true });
 	execFileSync("git", ["init", "-q"], { cwd: root });
-	writeFileSync(join(root, "docs", "plans", `${TASK}.intent.json`), JSON.stringify(INTENT, null, 2) + "\n");
+	writeFileSync(join(root, "docs", "plans", `${TASK}.intent.json`), JSON.stringify(intent, null, 2) + "\n");
 	writeFileSync(join(root, "docs", "specs", "canary-ext-task.spec.md"), "# Canary extension task\n");
 	writeFileSync(join(root, RISK_FLOOR_DECLARATION_PATH), FLOOR_TEXT);
 	writeFileSync(join(root, "plugins", "immune-brain", ".pi-extension", "task.ts"), "export const task = 'baseline';\n");
@@ -169,7 +169,7 @@ function makeEnrolledRoot(): string {
 		task_id: TASK,
 		intent_path: `docs/plans/${TASK}.intent.json`,
 		intent_revision: 1,
-		intent_content_hash: INTENT_HASH,
+		intent_content_hash: canonicalIntentHash(parseTaskIntentV1(intent)),
 		preparation_digest: prep.digest,
 		actor_id: "user",
 		confirmation_ref: "c",
@@ -1167,7 +1167,8 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			...INTENT,
 			revision: 2,
 			scope_hint: [...INTENT.scope_hint, "plugins/immune-brain/.pi-extension/nested"],
-			acceptance: [...INTENT.acceptance, { id: "A2", assertion: "a2", verification: INTENT.acceptance[0].verification }],
+			// A run-parameter change stays compatible; an added acceptance item is breaking (Spec branch-boundary D6).
+			acceptance: [{ ...INTENT.acceptance[0], verification: INTENT.acceptance[0].verification.replace('"timeout_ms":1000', '"timeout_ms":2000') }],
 		};
 		const normalizedNextIntent = { ...nextIntent, scope_hint: [...INTENT.scope_hint] };
 		const revise = (tool: RegisteredTool, root: string, intent: unknown) => tool.execute(
@@ -1211,18 +1212,21 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 	});
 
 	test("QA snapshot keeps current-task sidecar ownership after Intent revision", { timeout: 15000 }, async () => {
-		const ownRoot = makeEnrolledRoot();
-		const foreignRoot = makeEnrolledRoot();
-		const dependencyFreeVerification = JSON.stringify({
+		const dependencyFreeVerification = (timeout_ms: number) => JSON.stringify({
 			contract: "assurance_kernel/verification_descriptor/v2",
 			command: {
 				executable: "git",
 				argv: ["diff", "--check", "--cached"],
 				cwd: ".",
-				timeout_ms: 1_000,
+				timeout_ms,
 				max_output_bytes: 1_024,
 			},
 		});
+		// Enrolled with a command QA can run here; the revision then changes only a
+		// run parameter, which stays compatible (Spec branch-boundary D6).
+		const enrolled = { ...INTENT, acceptance: [{ ...INTENT.acceptance[0], verification: dependencyFreeVerification(1_000) }] };
+		const ownRoot = makeEnrolledRoot(enrolled);
+		const foreignRoot = makeEnrolledRoot(enrolled);
 		try {
 			const ownTool = loadSurface({
 				writeReviewEvidence: () => ({ path: join(ownRoot, "review.json"), remove: () => {} }),
@@ -1232,16 +1236,9 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 				action: {
 					op: "revise_intent",
 					next_intent: {
-						...INTENT,
+						...enrolled,
 						revision: 2,
-						acceptance: [{
-							...INTENT.acceptance[0],
-							verification: dependencyFreeVerification,
-						}, {
-							id: "A2",
-							assertion: "a2",
-							verification: dependencyFreeVerification,
-						}],
+						acceptance: [{ ...enrolled.acceptance[0], verification: dependencyFreeVerification(2_000) }],
 					},
 				},
 			}, undefined, undefined, makeCtx(ownRoot, makeUI()));

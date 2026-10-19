@@ -1752,7 +1752,8 @@ describe("claude host revise_intent", () => {
 		const root = makeResolveFindingRoot(false);
 		const mcp = await resolveFindingRuntime(root);
 		const path = `docs/plans/${RESOLVE_TASK}.intent.json`;
-		const next = { ...RESOLVE_INTENT, revision: 2, acceptance: [{ ...RESOLVE_INTENT.acceptance[0], verification: "bun test src/revised.ts" }] };
+		// A same-directory scope entry stays compatible; a changed verification command is breaking (Spec branch-boundary D6).
+		const next = { ...RESOLVE_INTENT, revision: 2, scope_hint: ["src/revised.ts", "src/worked.ts"] };
 		const tool = listMcpTools().find((entry) => String(entry.name) === "revise_intent");
 		expect(tool?.inputSchema.required).toEqual(["task_id", "next_intent"]);
 		expect(tool?.annotations).toEqual({ readOnlyHint: false });
@@ -1788,8 +1789,7 @@ describe("claude host revise_intent", () => {
 		expect((await projectAssurance(root, RESOLVE_TASK, diffSnapshotOf)).projection.fresh_acceptance_ids).toEqual(["A1"]);
 		const mcp = await resolveFindingRuntime(root);
 		await mcp.callTool("revise_intent", { task_id: RESOLVE_TASK, next_intent: {
-			...RESOLVE_INTENT, revision: 2,
-			acceptance: [{ ...RESOLVE_INTENT.acceptance[0], verification: "bun test src/revised.ts" }],
+			...RESOLVE_INTENT, revision: 2, scope_hint: ["src/revised.ts", "src/worked.ts"],
 		} });
 		const projection = (await projectAssurance(root, RESOLVE_TASK, diffSnapshotOf)).projection;
 		expect(projection.fresh_acceptance_ids).toEqual([]);

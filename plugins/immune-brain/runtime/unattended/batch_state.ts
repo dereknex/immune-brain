@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { readSecureProjectFile, readSecureProjectBytes, withKernelStoreLock } from "../kernel/storage";
 import { parseFinalVerification, parseFinalVerificationReport } from "./batch_final_verification";
+import { bindsAuthoritySubject } from "../kernel/batch_authority";
 import type { BatchPlanChild } from "./types";
 
 export type BatchRunState =
@@ -31,6 +32,18 @@ export type BatchChildRunState =
 	| "committed"
 	| "needs_human"
 	| "skipped_blocked";
+
+/**
+ * One child's TaskIntent identity as the batch authorized it. A record whose
+ * every identity carries `intent_authority_hash` binds the frozen subject
+ * (Spec branch-boundary D7); one without keeps whole-intent comparison (D9).
+ */
+export interface BatchIntentIdentity {
+	intent_path: string;
+	intent_revision: number;
+	intent_content_hash: string;
+	intent_authority_hash?: string;
+}
 
 export interface BatchChildRun {
 	task_id: string;
@@ -73,6 +86,8 @@ export interface BatchRunStateRecord {
 	 * expected head. Never attributed to a child and never rewritten.
 	 */
 	adopted_heads?: Array<{ from: string; to: string }>;
+	/** Each child's authorized identity; written only for a plan that binds the authority subject. */
+	intent_identities?: Record<string, BatchIntentIdentity>;
 	created_at: string;
 	updated_at: string;
 }
@@ -184,9 +199,9 @@ export interface BatchLaneRunStateRecord {
 	/** Every revision applied under that grant. */
 	delegated_revisions?: import("./batch_delegation").DelegatedRevisionRecord[];
 	/** Each child's TaskIntent identity behind `plan_digest`; resealed only for a delegated revision. */
-	intent_identities?: Record<string, { intent_path: string; intent_revision: number; intent_content_hash: string }>;
+	intent_identities?: Record<string, BatchIntentIdentity>;
 	/** Each `plan_digest` reseal at integration, with the digest before and after. */
-	reseals?: Array<{ at: string; task_id: string; from_digest: string; to_digest: string; intent_revision: number; intent_content_hash: string }>;
+	reseals?: Array<{ at: string; task_id: string; from_digest: string; to_digest: string; intent_revision: number; intent_content_hash: string; intent_authority_hash?: string }>;
 	created_at: string;
 	updated_at: string;
 }
@@ -252,6 +267,48 @@ function canonicalBytes(record: AnyBatchRunStateRecord): string {
 	return `${JSON.stringify(withoutRetiredClock(record), null, 2)}\n`;
 }
 
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+const isHash = (v: unknown) => typeof v === "string" && /^sha256:[0-9a-f]{64}$/.test(v);
+const isRevision = (v: unknown) => typeof v === "number" && Number.isSafeInteger(v) && v > 0;
+
+/** The authorized identities of a plan's children, keyed by task id. */
+export function batchIntentIdentities(children: BatchPlanChild[]): Record<string, BatchIntentIdentity> {
+	return Object.fromEntries(
+		children
+			.filter((child) => child.intent_path !== null && child.intent_revision !== null && child.intent_content_hash !== null)
+			.map((child) => [child.task_id, {
+				intent_path: child.intent_path!,
+				intent_revision: child.intent_revision!,
+				intent_content_hash: child.intent_content_hash!,
+				...(child.intent_authority_hash ? { intent_authority_hash: child.intent_authority_hash } : {}),
+			}]),
+	);
+}
+
+/**
+ * The recorded authority hash of every child, or null when the record predates
+ * authority-subject binding (D9) and so compares whole intents.
+ */
+export function recordedAuthorityHashes(record: AnyBatchRunStateRecord): Map<string, string> | null {
+	const identities = record.intent_identities;
+	if (!identities) return null;
+	const hashes = new Map<string, string>();
+	for (const child of record.children) {
+		const hash = identities[child.task_id]?.intent_authority_hash;
+		if (typeof hash !== "string" || !hash) return null;
+		hashes.set(child.task_id, hash);
+	}
+	return hashes;
+}
+
+function validateIntentIdentities(record: Record<string, unknown>, batchId: string): void {
+	if (record.intent_identities !== undefined &&
+		(!isObject(record.intent_identities) || Object.values(record.intent_identities).some((i: unknown) =>
+			!isObject(i) || typeof i.intent_path !== "string" || !i.intent_path || !isRevision(i.intent_revision) || typeof i.intent_content_hash !== "string" || !i.intent_content_hash ||
+			(i.intent_authority_hash !== undefined && !isHash(i.intent_authority_hash)))))
+		throw new Error(`batch run state ${batchId} has an invalid intent_identities map`);
+}
+
 function validateRepairTasks(record: Record<string, unknown>): void {
 	if (record.repair_tasks === undefined) return;
 	if (!Array.isArray(record.repair_tasks) || record.repair_tasks.some(task => !task ||
@@ -269,6 +326,7 @@ function validateRecordShape(value: unknown, batchId: string): asserts value is 
 		throw new Error(`batch run state ${batchId} has an unknown contract`);
 	parseFinalVerification(record.final_verification);
 	validateRepairTasks(record);
+	validateIntentIdentities(record, batchId);
 	if (record.final_verification_result !== undefined) {
 		parseFinalVerificationReport(record.final_verification_result, record.final_verification as string[] | undefined);
 		if (record.batch_state !== "completed") throw new Error("final verification requires a completed serial batch");
@@ -413,6 +471,8 @@ export function prepareBatchRunState(input: {
 		})),
 		consecutive_qa_failures: 0,
 		commits: [],
+		// Only a plan that binds the authority subject records identities (D9).
+		...(bindsAuthoritySubject(input.children) ? { intent_identities: batchIntentIdentities(input.children) } : {}),
 		created_at: input.now,
 		updated_at: input.now,
 	};
@@ -633,9 +693,6 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 	)
 		throw new Error(`batch run state ${batchId} has an invalid interventions list`);
 	// ADR 0018 fields carry authority effects, so a malformed one fails closed.
-	const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-	const isHash = (v: unknown) => typeof v === "string" && /^sha256:[0-9a-f]{64}$/.test(v);
-	const isRevision = (v: unknown) => typeof v === "number" && Number.isSafeInteger(v) && v > 0;
 	if (record.revision_delegation !== undefined &&
 		(!isObject(record.revision_delegation) || Object.keys(record.revision_delegation).join() !== "confirmation_time" ||
 			!isCanonicalTimestamp(record.revision_delegation.confirmation_time)))
@@ -649,10 +706,7 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 		throw new Error(`batch run state ${batchId} has an invalid delegated_revisions list`);
 	if (record.delegated_revisions?.length && !record.revision_delegation)
 		throw new Error(`batch run state ${batchId} records delegated revisions without a delegation grant`);
-	if (record.intent_identities !== undefined &&
-		(!isObject(record.intent_identities) || Object.values(record.intent_identities).some((i: unknown) =>
-			!isObject(i) || typeof i.intent_path !== "string" || !i.intent_path || !isRevision(i.intent_revision) || typeof i.intent_content_hash !== "string" || !i.intent_content_hash)))
-		throw new Error(`batch run state ${batchId} has an invalid intent_identities map`);
+	validateIntentIdentities(record, batchId);
 	if (record.reseals !== undefined &&
 		(!Array.isArray(record.reseals) || record.reseals.some((r: unknown) =>
 			!isObject(r) || typeof r.task_id !== "string" || typeof r.from_digest !== "string" || typeof r.to_digest !== "string" ||
@@ -786,11 +840,7 @@ export function prepareBatchLaneRunState(input: {
 		commits: [],
 		...(input.final_verification?.length ? { final_verification: [...input.final_verification] } : {}),
 		...(input.revision_delegation ? { revision_delegation: { ...input.revision_delegation } } : {}),
-		intent_identities: Object.fromEntries(
-			input.children
-				.filter((child) => child.intent_path !== null && child.intent_revision !== null && child.intent_content_hash !== null)
-				.map((child) => [child.task_id, { intent_path: child.intent_path!, intent_revision: child.intent_revision!, intent_content_hash: child.intent_content_hash! }]),
-		),
+		intent_identities: batchIntentIdentities(input.children),
 		created_at: input.now,
 		updated_at: input.now,
 	};

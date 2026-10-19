@@ -18,6 +18,7 @@ import { join } from "node:path";
 import {
 	canonicalIntentHash,
 	classifyIntentRevision,
+	intentAuthorityHash,
 	observeTaskIntent,
 	parseProjectTaskIntent,
 	parseTaskIntentV1,
@@ -168,16 +169,16 @@ describe("classifyIntentRevision", () => {
 		expect(classifyIntentRevision(prev, equivalent)).toBe("unchanged");
 	});
 
-	test("compatible: adds acceptance and updates verification with revision bump", () => {
+	test("breaking: an added acceptance item is a new obligation (Spec branch-boundary D6)", () => {
 		const next = parseTaskIntentV1({
 			...INTENT_V1,
 			revision: 3,
 			acceptance: [
-				...INTENT_V1.acceptance,
+				...(INTENT_V1.acceptance as unknown[]),
 				{ id: "A2", assertion: "Extra", verification: "Check" },
 			],
 		});
-		expect(classifyIntentRevision(prev, next)).toBe("compatible");
+		expect(classifyIntentRevision(prev, next)).toBe("breaking");
 	});
 
 	test("breaking: any semantic scope expansion requires authority", () => {
@@ -218,6 +219,86 @@ describe("classifyIntentRevision", () => {
 // ADR 0021 / spec D3: a scope revision is compatible only when it contains every
 // previous entry and adds concrete files whose directory already holds a previous
 // concrete entry, outside every risk-floor prefix, docs/specs and docs/plans.
+// A v2 verification descriptor whose command and run parameters a case can vary.
+function descriptor(command: Record<string, unknown> = {}, environment: Record<string, unknown> = {}): string {
+	return JSON.stringify({
+		contract: "assurance_kernel/verification_descriptor/v2",
+		command: { executable: "bun", argv: ["test", "tests/a.test.ts"], cwd: ".", timeout_ms: 60000, max_output_bytes: 8192, ...command },
+		environment: { prepare: null, writable_paths: [], ...environment },
+	});
+}
+
+const AUTHORITY_BASE: Record<string, unknown> = {
+	...INTENT_V1,
+	scope_hint: ["docs/specs/feature.spec.md", "src/mod/a.ts"],
+	acceptance: [
+		{ id: "A1", assertion: "One observable acceptance condition", verification: descriptor() },
+		{ id: "A2", assertion: "A second condition", verification: descriptor({ argv: ["test", "tests/b.test.ts"] }) },
+	],
+	revision: 2,
+};
+const withAcceptance = (index: number, item: Record<string, unknown>) => ({
+	acceptance: (AUTHORITY_BASE.acceptance as Record<string, unknown>[]).map((prior, i) => (i === index ? { ...prior, ...item } : prior)),
+});
+
+describe("intentAuthorityHash (Spec branch-boundary D5)", () => {
+	const base = intentAuthorityHash(parseTaskIntentV1(AUTHORITY_BASE));
+	const hashOf = (change: Record<string, unknown>) => intentAuthorityHash(parseTaskIntentV1({ ...AUTHORITY_BASE, ...change }));
+
+	test.each([
+		["a scope entry outside docs/specs", { scope_hint: ["docs/specs/feature.spec.md", "src/mod/a.ts", "src/mod/b.ts"] }],
+		["revision", { revision: 9 }],
+		["risk", { risk: "critical" }],
+		["a descriptor timeout_ms", withAcceptance(0, { verification: descriptor({ timeout_ms: 300000 }) })],
+		["a descriptor max_output_bytes", withAcceptance(0, { verification: descriptor({ max_output_bytes: 131072 }) })],
+		["a descriptor environment", withAcceptance(0, { verification: descriptor({}, { writable_paths: ["tmp"] }) })],
+		["the acceptance order", { acceptance: [...(AUTHORITY_BASE.acceptance as unknown[])].reverse() }],
+	])("unchanged when only %s changes", (_label, change) => {
+		expect(hashOf(change)).toBe(base);
+	});
+
+	test.each([
+		["goal", { goal: "A different outcome" }],
+		["an acceptance assertion", withAcceptance(1, { assertion: "A rewritten condition" })],
+		["a descriptor executable", withAcceptance(0, { verification: descriptor({ executable: "node" }) })],
+		["a descriptor argv", withAcceptance(0, { verification: descriptor({ argv: ["test", "tests/other.test.ts"] }) })],
+		["a descriptor cwd", withAcceptance(0, { verification: descriptor({ cwd: "plugins" }) })],
+		["the acceptance id set", withAcceptance(1, { id: "A3" })],
+		["an added acceptance item", { acceptance: [...(AUTHORITY_BASE.acceptance as unknown[]), { id: "A3", assertion: "Extra", verification: descriptor() }] }],
+		["the bound Spec path", { scope_hint: ["docs/specs/other.spec.md", "src/mod/a.ts"] }],
+	])("changes when %s changes", (_label, change) => {
+		expect(hashOf(change)).not.toBe(base);
+	});
+
+	test("changes when owner changes", () => {
+		// The parser accepts only owner "user", so the subject is pinned on the parsed shape.
+		expect(intentAuthorityHash({ ...parseTaskIntentV1(AUTHORITY_BASE), owner: "agent" } as never)).not.toBe(base);
+	});
+});
+
+describe("classifyIntentRevision: verification commands (Spec branch-boundary D6)", () => {
+	const prev = parseTaskIntentV1(AUTHORITY_BASE);
+	const next = (change: Record<string, unknown>) => parseTaskIntentV1({ ...AUTHORITY_BASE, revision: 3, ...change });
+
+	test.each([
+		["a descriptor executable", withAcceptance(0, { verification: descriptor({ executable: "node" }) })],
+		["a descriptor argv", withAcceptance(0, { verification: descriptor({ argv: ["test", "tests/other.test.ts"] }) })],
+		["a descriptor cwd", withAcceptance(0, { verification: descriptor({ cwd: "plugins" }) })],
+		["an added acceptance item", { acceptance: [...(AUTHORITY_BASE.acceptance as unknown[]), { id: "A3", assertion: "Extra", verification: descriptor() }] }],
+	])("breaking: a revision that changes only %s", (_label, change) => {
+		expect(classifyIntentRevision(prev, next(change))).toBe("breaking");
+	});
+
+	test.each([
+		["a descriptor timeout_ms", withAcceptance(0, { verification: descriptor({ timeout_ms: 300000 }) })],
+		["a descriptor max_output_bytes", withAcceptance(0, { verification: descriptor({ max_output_bytes: 131072 }) })],
+		["a descriptor environment", withAcceptance(0, { verification: descriptor({}, { writable_paths: ["tmp"] }) })],
+		["a same-directory scope entry", { scope_hint: ["docs/specs/feature.spec.md", "src/mod/a.ts", "src/mod/b.ts"] }],
+	])("compatible: a revision that changes only %s", (_label, change) => {
+		expect(classifyIntentRevision(prev, next(change))).toBe("compatible");
+	});
+});
+
 describe("classifyIntentRevision: same-directory scope additions", () => {
 	const scoped = (scope: string[], extra: Record<string, unknown> = {}) =>
 		parseTaskIntentV1({ ...INTENT_V1, scope_hint: scope, ...extra });

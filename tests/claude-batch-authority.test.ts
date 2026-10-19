@@ -93,6 +93,16 @@ import { diffSnapshotOf } from "../plugins/immune-brain/runtime/claude/kernel_po
 
 // Test double for a batch child commit under the hidden-ref model (S2): built from the working
 // tree with Git plumbing so only the batch's own ref advances, never the fixture's HEAD or index.
+/** Commits a revision outside the authority subject: a bump, plus a scope addition unless `revisionOnly`. */
+function reviseCompatibly(root: string, taskId: string, revisionOnly = true): void {
+	const path = join(root, "docs", "plans", `${taskId}.intent.json`);
+	const intent = JSON.parse(readFileSync(path, "utf8"));
+	intent.revision += 1;
+	if (!revisionOnly) intent.scope_hint = [...intent.scope_hint, `docs/plans/${taskId}.notes.md`];
+	writeFileSync(path, `${JSON.stringify(intent, null, 2)}\n`);
+	execFileSync("git", ["commit", "-qm", `revise ${taskId}`, "--only", "--", `docs/plans/${taskId}.intent.json`], { cwd: root });
+}
+
 function commitOnBatchRef(root: string, head: string, branch: string | undefined, paths: string[], message: string): string {
 	if (!isBatchRef(branch)) throw new Error(`fixture expected a hidden batch ref, got ${branch ?? "no branch"}`);
 	const commit = buildScopedCommit(root, { parent: head, paths, message });
@@ -425,7 +435,9 @@ for (const host of ["Pi", "Claude"] as const) {
 					if (failure === "plan-drift") {
 						const path = join(fixture.root, "docs", "plans", `${fixture.slug}-c1.intent.json`);
 						const intent = JSON.parse(readFileSync(path, "utf8"));
+						// A revision-only bump is outside the authority subject (Spec branch-boundary D5).
 						intent.revision++;
+						intent.goal = "child 1, revised out of band";
 						writeFileSync(path, `${JSON.stringify(intent, null, 2)}\n`);
 					}
 					if (failure === "claim-drift") claimWorkspaceForTest(fixture.root, "foreign-claim");
@@ -922,18 +934,21 @@ describe("batch foreground closeout boundaries", () => {
 		} finally { await client.runtime.coordinator.onSessionShutdown?.(); }
 	}, 60000);
 
-	it("a continuation the batch refuses (plan drift) reports a recovery action beside the unchanged result and opens no gate", async () => {
+	it("a continuation the batch refuses (lineage drift) reports a recovery action beside the unchanged result and opens no gate", async () => {
 		const slug = "boundary-drift";
 		const { fixture, client, confirmations } = await closeoutFixture(slug);
 		try {
 			await client.callTool("start_unattended_batch", { initiative_slug: slug });
 			const { verdict } = await reviewPass(client, fixture.root, slug, `${slug}-c1`);
-			// Plan drift makes the stored authorization unusable.
-			const c2 = join(fixture.root, `docs/plans/${slug}-c2.intent.json`);
-			const intent = JSON.parse(readFileSync(c2, "utf8"));
-			intent.goal = "child 2, revised out of band";
-			writeFileSync(c2, `${JSON.stringify(intent, null, 2)}\n`);
-			execFileSync("git", ["commit", "-qm", "revise c2 intent", "--only", "--", `docs/plans/${slug}-c2.intent.json`], { cwd: fixture.root });
+			// The batch's hidden ref was replaced with unrelated history, so the stored
+			// authorization no longer binds and reuse is refused. (A changed child
+			// subject parks only that child instead: see the next test.)
+			const [record] = readdirSync(join(fixture.root, ".imm/state/batches")).filter((f) => /^batch-.*(?<!\.report)\.json$/.test(f));
+			const { branch } = JSON.parse(readFileSync(join(fixture.root, ".imm/state/batches", record!), "utf8"));
+			const gitEnv = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
+			const emptyTree = execFileSync("git", ["mktree"], { cwd: fixture.root, input: "", encoding: "utf8" }).trim();
+			const unrelated = execFileSync("git", ["commit-tree", emptyTree, "-m", "external drift"], { cwd: fixture.root, encoding: "utf8", env: gitEnv }).trim();
+			execFileSync("git", ["update-ref", branch, unrelated], { cwd: fixture.root });
 			const settled: any = await client.callTool("submit_review", { task_id: `${slug}-c1`, verdict });
 			expect(settled).toMatchObject({ state: "completed" });
 			expect(settled.batch.state).not.toBe("started");
@@ -941,6 +956,29 @@ describe("batch foreground closeout boundaries", () => {
 			expect(settled.batch.recovery_action.length).toBeGreaterThan(0);
 			expect(confirmations()).toBe(1);
 			expect(execFileSync("git", ["log", "--format=%s", "-3"], { cwd: fixture.root, encoding: "utf8" })).not.toContain(`${slug}-c1`);
+		} finally { await client.runtime.coordinator.onSessionShutdown?.(); }
+	}, 60000);
+
+	// Spec branch-boundary D8: a changed authority subject parks only that child;
+	// the settled sibling still commits and no gate opens.
+	it("a pending sibling whose authority subject changed parks alone while the settled child commits", async () => {
+		const slug = "boundary-subject";
+		const { fixture, client, confirmations } = await closeoutFixture(slug);
+		try {
+			await client.callTool("start_unattended_batch", { initiative_slug: slug });
+			const { verdict } = await reviewPass(client, fixture.root, slug, `${slug}-c1`);
+			const c2 = join(fixture.root, `docs/plans/${slug}-c2.intent.json`);
+			const intent = JSON.parse(readFileSync(c2, "utf8"));
+			intent.goal = "child 2, revised out of band";
+			writeFileSync(c2, `${JSON.stringify(intent, null, 2)}\n`);
+			execFileSync("git", ["commit", "-qm", "revise c2 intent", "--only", "--", `docs/plans/${slug}-c2.intent.json`], { cwd: fixture.root });
+			const settled: any = await client.callTool("submit_review", { task_id: `${slug}-c1`, verdict });
+			expect(settled).toMatchObject({ state: "completed" });
+			expect(settled.batch.report.batch_state).toBe("needs_human");
+			expect(settled.batch.report.children.map((c: any) => [c.task_id, c.state])).toEqual([[`${slug}-c1`, "committed"], [`${slug}-c2`, "needs_human"]]);
+			expect(settled.batch.report.children[1].reason).toBe(`batch_child_authority_changed: ${slug}-c2`);
+			expect(settled.batch.report.commits).toHaveLength(1);
+			expect(confirmations()).toBe(1);
 		} finally { await client.runtime.coordinator.onSessionShutdown?.(); }
 	}, 60000);
 });
@@ -1042,7 +1080,8 @@ describe("acc-claude-batch-gate", () => {
 				// Mutate intent on disk so that plan_digest drifts before accept settlement
 				const c1Path = join(fixture.root, "docs", "plans", "drift-reject-c1.intent.json");
 				const c1 = JSON.parse(readFileSync(c1Path, "utf8"));
-				writeFileSync(c1Path, `${JSON.stringify({ ...c1, revision: 2 }, null, 2)}\n`);
+				// The goal is part of the authority subject (Spec branch-boundary D5).
+				writeFileSync(c1Path, `${JSON.stringify({ ...c1, revision: 2, goal: "revised goal" }, null, 2)}\n`);
 				return { decision: "accept", requestId: "req-drift" };
 			},
 		});
@@ -1678,6 +1717,55 @@ describe("acc-claude-batch-fail-closed", () => {
 		expect(result.report.batch_state).toBe("completed");
 		expect(result.report.commits.length).toBe(3);
 		expect(result.report.children.every((c: { state: string }) => c.state === "committed")).toBe(true);
+	});
+
+	// Spec branch-boundary D7 / AC3: a revision-only bump and a same-directory scope
+	// edit mid-batch leave the authority subject unchanged, so the batch
+	// runs to completion through the real Kernel enrollment.
+	it("a compatible revision mid-batch still enrolls every child and completes", async () => {
+		const fixture = createBatchFixture("compatible-revision");
+		const commitsByTask = new Map<string, string>();
+		let revised = false;
+		const enrolledRevisions: Array<[string, number]> = [];
+		const runtime = createMcpRuntime({
+			cwd: fixture.root,
+			env: ENV,
+			interactive: true,
+			readInitiative: async () => fixture.observation,
+			batchKernel: {
+				advanceTask: async (_root: string, taskId: string) => {
+					enrolledRevisions.push([taskId, readTaskRecordRaw(fixture.root, taskId).record!.intent_snapshot.revision]);
+					// While the first child runs, its pending siblings are revised compatibly.
+					if (!revised) {
+						revised = true;
+						reviseCompatibly(fixture.root, "compatible-revision-c2", false);
+						reviseCompatibly(fixture.root, "compatible-revision-c3");
+					}
+					releaseWorkspaceForTest(fixture.root);
+					return { state: "completed" };
+				},
+			},
+			batchGit: {
+				...createDefaultBatchGitPort(),
+				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
+					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
+					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "child commit");
+					commitsByTask.set(taskId, commit);
+					return { commit };
+				},
+				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
+			},
+			requestConfirmation: async () => ({ decision: "accept", requestId: "req-compatible" }),
+		});
+		runtime.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
+
+		const result = await runtime.callTool("start_unattended_batch", { initiative_slug: "compatible-revision" }, { toolCallId: "toolu-compatible" });
+
+		expect(result.state).toBe("started");
+		expect(result.report.batch_state).toBe("completed");
+		expect(result.report.children.map((c: { state: string; reason: string | null }) => [c.state, c.reason])).toEqual([["committed", null], ["committed", null], ["committed", null]]);
+		// Each revised child enrolled its revised sidecar under the original authorization.
+		expect(Object.fromEntries(enrolledRevisions)).toEqual({ "compatible-revision-c1": 1, "compatible-revision-c2": 2, "compatible-revision-c3": 2 });
 	});
 
 	it("review-batch-head-revalidation-window: HEAD moving during revalidation rejects execution with zero writes", async () => {

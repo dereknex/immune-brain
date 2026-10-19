@@ -16,6 +16,8 @@ export interface BatchPlanDigestChild {
 	intent_path: string;
 	intent_revision: number;
 	intent_content_hash: string;
+	/** Frozen authority subject (Spec branch-boundary D5); absent on a legacy plan. */
+	intent_authority_hash?: string;
 	blocked_by: string[];
 }
 
@@ -47,6 +49,8 @@ export interface BatchPlanChild {
 	intent_path: string | null;
 	intent_revision: number | null;
 	intent_content_hash: string | null;
+	/** Frozen authority subject of an enrollable child (Spec branch-boundary D5). */
+	intent_authority_hash?: string;
 }
 
 /** Start waves of enrollable children: each is ready and pairwise scope-disjoint. */

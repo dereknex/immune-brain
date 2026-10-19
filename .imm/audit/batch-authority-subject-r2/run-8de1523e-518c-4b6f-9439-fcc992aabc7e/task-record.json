@@ -1,0 +1,215 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "batch-authority-subject-r2",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "batch-authority-subject-r2",
+    "goal": "A batch authorization binds each child's frozen authority subject instead of its whole intent: a scope-only or run-parameter revision mid-batch leaves the batch running, a change to a child's goal, acceptance or verification command parks only that child and its dependents, a verification command change or added acceptance item is a breaking revision, and ADR 0026 records the decision (Spec branch-boundary D5-D10).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "intentAuthorityHash is unchanged when only scope_hint entries outside docs/specs, revision, risk, a descriptor's timeout_ms or max_output_bytes, or environment change, and changes when goal, owner, an acceptance assertion, a descriptor executable, argv or cwd, the acceptance id set, or the bound Spec path changes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-intent-v2.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "classifyIntentRevision returns breaking for a revision that changes only a descriptor's executable, argv or cwd, or that adds an acceptance item, and still returns compatible for a revision that changes only timeout_ms, max_output_bytes or environment, or adds a same-directory scope entry.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-intent-v2.test.ts\",\n      \"tests/breaking-intent-revision-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "In a serial batch, a child whose intent received a compatible same-directory scope revision or a revision-only bump after confirmation enrolls and completes with no plan_changed and no batch_child_intent_changed, on the Kernel seam and on both Hosts' batch tools.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-batch-authority.test.ts\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/claude-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "In a serial batch and in a Lane batch, a child whose acceptance assertion or verification argv changed after confirmation is parked with batch_child_authority_changed, its dependents become skipped_blocked, an independent child still reaches done, and the batch ends terminal rather than plan_changed; a change to the child set, order or dependencies still fails with plan_changed.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "A Lane batch with scope-only drift on one child keeps running, and a delegated acceptance-only revision is still approved and resealed under the existing authorization, while a non-delegated acceptance change parks that child.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\",\n      \"tests/batch-delegation-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC6",
+        "assertion": "A batch record without intent_authority_hash keeps whole-intent comparison: a revision-only bump on its child still yields plan_changed or batch_child_intent_changed, and plan reconfirmation of such a record behaves as before.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-plan-reconfirmation.test.ts\",\n      \"tests/kernel-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/branch-boundary-batch-authority-subject.md",
+      "docs/adr/0026-branch-boundary-frozen-acceptance.md",
+      "docs/plans/batch-authority-subject-r2.intent.json",
+      "docs/plans/batch-authority-subject.intent.json",
+      "docs/specs/branch-boundary.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+      "plugins/immune-brain/runtime/kernel/intent.ts",
+      "plugins/immune-brain/runtime/unattended/batch_delegation.ts",
+      "plugins/immune-brain/runtime/unattended/batch_disposition.ts",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/types.ts",
+      "tests/batch-delegation-gate.test.ts",
+      "tests/batch-plan-reconfirmation.test.ts",
+      "tests/breaking-intent-revision-gate.test.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/kernel-batch-authority.test.ts",
+      "tests/kernel-intent-v2.test.ts",
+      "tests/kernel-r2c2-reducer.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/unattended-batch-lanes.test.ts",
+      "tests/unattended-batch-run.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/batch-authority-subject-r2.intent.json",
+    "content_hash": "sha256:f7e0561cc2bdf93d9b26e8f7313b02ee8d96ce4cba28a105e70599752889d538"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:f7e0561cc2bdf93d9b26e8f7313b02ee8d96ce4cba28a105e70599752889d538",
+  "git_base_head": "f7b0982ec6eec9e9f7f30a452d44586d656c74ff",
+  "attestations": [
+    {
+      "id": "approval-qa-6c0145a5",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f7e0561cc2bdf93d9b26e8f7313b02ee8d96ce4cba28a105e70599752889d538",
+      "diff_hash": "sha256:20e3dccfc9cb1b677ee5cc938027a364ffefed3353fd349b24a0354bcbebf8ae",
+      "actor_id": "deterministic-qa",
+      "summary": "all 7 project verification check(s) passed; execution=sha256:47c076ce318caf2cac4a7446bf16007ab3f44b8762443e5c46a421d5fac9af3b",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:47c076ce318caf2cac4a7446bf16007ab3f44b8762443e5c46a421d5fac9af3b"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:47c076ce318caf2cac4a7446bf16007ab3f44b8762443e5c46a421d5fac9af3b"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:47c076ce318caf2cac4a7446bf16007ab3f44b8762443e5c46a421d5fac9af3b"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:47c076ce318caf2cac4a7446bf16007ab3f44b8762443e5c46a421d5fac9af3b"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:47c076ce318caf2cac4a7446bf16007ab3f44b8762443e5c46a421d5fac9af3b"
+        },
+        {
+          "acceptance_id": "AC6",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:47c076ce318caf2cac4a7446bf16007ab3f44b8762443e5c46a421d5fac9af3b"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-1976c649",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f7e0561cc2bdf93d9b26e8f7313b02ee8d96ce4cba28a105e70599752889d538",
+      "diff_hash": "sha256:20e3dccfc9cb1b677ee5cc938027a364ffefed3353fd349b24a0354bcbebf8ae",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance checks out: the commit has a single parent at the base and the expected tree. Under authority-subject binding, scope-only and revision-only edits leave the batch running, and only a child whose subject changed is parked. Command changes and added acceptance items are now classified as breaking, and legacy records keep whole-intent comparison. Tests cover AC1-AC6 on the Kernel seam, both Host batch tools and the Lane batch, and the dist bundle matches the source.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "f7b0982ec6eec9e9f7f30a452d44586d656c74ff",
+        "review_commit": "615d4c922d400cc6e76914e2c376f69991f1d5ff",
+        "review_tree": "ce716af04388113b5bbbbbc735e7ca2873dd265c",
+        "manifest_digest": "sha256:cf594f7c5298af6fbe640c1e2198b7c0637fbffbfed6db8dd911e8aee99907f0"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-31ee9d3b7345-1-review-1",
+          "acceptance_id": "AC4",
+          "summary": "laneAuthorityChange returns null (no park) when the Lane sidecar cannot be read, so the subject check fails open and relies on later commit/integration reads to catch an unreadable or removed sidecar.",
+          "anchor": "sha256:f65fa339ada9f840acc808bceaa75415e502973aa294e22b82ce3bb2424217cd",
+          "evidence": {
+            "trigger": "Lane child in state enrolled or settled under a record whose identities carry intent_authority_hash, and readTaskIntent(lanePath, taskId) throws (sidecar deleted or malformed in the Lane) → laneAuthorityChange returns null and the child is not parked with batch_child_authority_changed at this checkpoint",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/unattended/batch_lanes.ts:runLaneBatch",
+              "plugins/immune-brain/runtime/unattended/batch_lanes.ts:laneAuthorityChange",
+              "plugins/immune-brain/runtime/kernel/intent.ts:readTaskIntent"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC4"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:4fa66da40d9d41f6b73a5ac71afe4a450b5c73464af000fcb3f858d3e73b2121"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:batch-authority-subject-r2:2026-10-19T02:42:52.973Z",
+      "at": "2026-10-19T02:42:52.973Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-authority-subject-r2.intent.json"
+    },
+    {
+      "id": "record_approval:batch-authority-subject-r2:2026-10-19T02:49:41.144Z",
+      "at": "2026-10-19T02:49:41.144Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-6c0145a5\naction_v2_sha256:296237a0c974f5ae4dda9adf1b0dd2020bf6fb43557d1ec37384ff287f52a2ca",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-19T02:49:41.144Z"
+      }
+    },
+    {
+      "id": "record_approval:batch-authority-subject-r2:2026-10-19T02:51:43.716Z",
+      "at": "2026-10-19T02:51:43.716Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-1976c649\naction_v2_sha256:1f667dc663eee756b65bc2006e3fb515c3c583c7f89f031d7e98c4c91d1148f4",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-19T02:51:43.716Z"
+      }
+    },
+    {
+      "id": "complete:batch-authority-subject-r2:2026-10-19T02:51:46.046Z",
+      "at": "2026-10-19T02:51:46.046Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:d393010b1beabae2fb337be9b12d31fc47caa46581747ffb0fff077b08138547"
+    }
+  ]
+}

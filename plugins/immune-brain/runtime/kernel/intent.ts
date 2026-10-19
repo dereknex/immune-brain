@@ -38,6 +38,7 @@ import {
 	type TaskIntentIdentityToken,
 	type TokenIdentity,
 } from "./intent_token_registry";
+import { parseVerificationDescriptor } from "../verification_descriptor";
 
 export const INTENT_MAX_BYTES = 64 * 1024;
 export const INTENT_SIDECAR_RELATIVE_PREFIX = "docs/plans/";
@@ -265,6 +266,46 @@ export function canonicalIntentHash(intent: unknown): string {
 	return `sha256:${sha256Hex(stableStringify(intent))}`;
 }
 
+// An active Spec path, matching spec_binding.ts (which this module cannot import).
+const ACTIVE_SPEC_PATH = /^docs\/specs\/(?!archive\/)[^/]+\.spec\.md$/;
+
+/**
+ * The command a verification string runs: executable, argv and cwd of a v2
+ * descriptor. Run parameters (timeout, output bound, environment) are not part
+ * of it. A string that is not a v2 descriptor is its own command.
+ */
+function verificationCommandSubject(verification: string): unknown {
+	try {
+		const { command } = parseVerificationDescriptor(verification);
+		return { executable: command.executable, argv: command.argv, cwd: command.cwd };
+	} catch {
+		return verification;
+	}
+}
+
+/**
+ * The frozen part of a TaskIntent a batch authorization binds (Spec
+ * branch-boundary D5): identity, goal, owner, the bound Spec path, and every
+ * acceptance item's id, assertion and verification command. `scope_hint` other
+ * than the Spec binding, `revision`, `risk` and run parameters are outside it.
+ */
+export function intentAuthoritySubject(intent: TaskIntentV1): unknown {
+	return {
+		contract: intent.contract,
+		task_id: intent.task_id,
+		goal: intent.goal,
+		owner: intent.owner,
+		specs: intent.scope_hint.filter((path) => ACTIVE_SPEC_PATH.test(path)).sort(),
+		acceptance: intent.acceptance
+			.map((item) => ({ id: item.id, assertion: item.assertion, command: verificationCommandSubject(item.verification) }))
+			.sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0)),
+	};
+}
+
+export function intentAuthorityHash(intent: TaskIntentV1): string {
+	return canonicalIntentHash(intentAuthoritySubject(intent));
+}
+
 const RISK_RANK: Record<TaskRisk, number> = { routine: 0, material: 1, critical: 2 };
 
 /**
@@ -391,8 +432,12 @@ export function classifyIntentRevision(
 		RISK_RANK[next.risk] < RISK_RANK[previous.risk] ||
 		previous.acceptance.some((prior) => {
 			const current = next.acceptance.find((item) => item.id === prior.id);
-			return !current || current.assertion !== prior.assertion;
-		});
+			return !current || current.assertion !== prior.assertion ||
+				JSON.stringify(verificationCommandSubject(current.verification)) !==
+					JSON.stringify(verificationCommandSubject(prior.verification));
+		}) ||
+		// Frozen acceptance (Spec branch-boundary D6): a new item is a new obligation.
+		next.acceptance.some((item) => !previous.acceptance.some((prior) => prior.id === item.id));
 	if (breaking) return "breaking";
 
 	return next.revision > previous.revision ? "compatible" : "breaking";

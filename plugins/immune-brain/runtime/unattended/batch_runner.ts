@@ -45,6 +45,8 @@ import {
 	writeBatchRunState,
 	replaceBatchRunState,
 	writeBatchRunReport,
+	batchIntentIdentities,
+	recordedAuthorityHashes,
 } from "./batch_state";
 
 /** Kernel-facing ports the driver needs. Host adapters supply these. Git
@@ -342,6 +344,10 @@ function finalize(
 /** review round 8: only lineage breaks (external branch switch / HEAD
  * regression) on a persisted record fail the batch with a persisted report;
  * fabricated records keep throwing with zero writes. */
+function isAuthorityChangeError(message: string): boolean {
+	return message.startsWith("batch_child_authority_changed:");
+}
+
 function isLineageBreakError(message: string): boolean {
 	return message.includes("batch_head_lineage_broken");
 }
@@ -505,7 +511,9 @@ function validateRunAuthorization(input: StartBatchInput, existing: BatchRunStat
 function applyPlanReconfirmation(input: StartBatchInput, existing: BatchRunStateRecord): BatchRunStateRecord {
 	if (existing.plan_digest === input.plan_digest) return existing;
 	const next = { ...existing, plan_digest: input.plan_digest, confirmation_time: input.confirmation_time,
-		budget: input.budget };
+		budget: input.budget,
+		// The reconfirmed subjects become the authorized ones (Spec branch-boundary D7).
+		...(recordedAuthorityHashes(existing) ? { intent_identities: batchIntentIdentities(input.children) } : {}) };
 	if (!existing.branch || input.batch_id !== existing.batch_id || input.initiative_slug !== existing.initiative_slug || input.base_head !== existing.base_head ||
 		input.budget.max_children !== existing.budget.max_children || input.budget.qa_failure_limit !== existing.budget.qa_failure_limit)
 		throw new Error("plan_digest mismatch: reconfirmation binding changed");
@@ -887,6 +895,17 @@ async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport>
 				record.batch_state = "failed";
 				persist();
 				break;
+			}
+			if (isAuthorityChangeError(message)) {
+				// Spec branch-boundary D8: a child whose frozen subject changed never
+				// enrolled, so it holds no claim. Park it and its dependents; the
+				// independent children keep running.
+				record.children = record.children.map((c) =>
+					c.task_id === child.task_id ? { ...c, state: "needs_human", reason: message } : c,
+				);
+				skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
+				persist();
+				continue;
 			}
 			record.children = record.children.map((c) =>
 				c.task_id === child.task_id ? { ...c, state: "needs_human", reason: message } : c,

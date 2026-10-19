@@ -11,7 +11,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { computeBatchPlanDigest } from "../kernel/batch_authority";
 import { readTaskRecordRaw } from "../kernel/storage";
-import { readTaskIntent } from "../kernel/intent";
+import { intentAuthorityHash, readTaskIntent } from "../kernel/intent";
 import { applyScopeRiskFloor, readRiskFloor } from "../kernel/risk_floor";
 import { readTaskTombstone } from "../kernel/backend_claim";
 import {
@@ -519,24 +519,30 @@ function resealDelegatedRevision(input: StartBatchInput, record: BatchLaneRunSta
 	const identities = record.intent_identities;
 	const recorded = identities?.[taskId];
 	if (!identities || !recorded) return false;
-	let integrated: { revision: number; content_hash: string };
+	let integrated: { revision: number; content_hash: string; authority_hash: string };
 	try {
 		const read = readTaskIntent(input.root, taskId, recorded.intent_path);
-		integrated = { revision: read.intent.revision, content_hash: read.content_hash };
+		integrated = { revision: read.intent.revision, content_hash: read.content_hash, authority_hash: intentAuthorityHash(read.intent) };
 	} catch {
 		return false;
 	}
-	if (integrated.revision === recorded.intent_revision && integrated.content_hash === recorded.intent_content_hash) return false;
+	// Spec branch-boundary D7: a record that binds the authority subject needs no
+	// reseal while that subject is unchanged, whatever else the revision touched.
+	const binds = recorded.intent_authority_hash !== undefined;
+	if (binds ? integrated.authority_hash === recorded.intent_authority_hash
+		: integrated.revision === recorded.intent_revision && integrated.content_hash === recorded.intent_content_hash) return false;
 	const delegated = [...(record.delegated_revisions ?? [])].reverse().find((r) => r.task_id === taskId);
 	if (!delegated || delegated.to_revision !== integrated.revision || delegated.intent_content_hash !== integrated.content_hash) return false;
-	const next = { ...identities, [taskId]: { ...recorded, intent_revision: integrated.revision, intent_content_hash: integrated.content_hash } };
+	const next = { ...identities, [taskId]: { ...recorded, intent_revision: integrated.revision, intent_content_hash: integrated.content_hash,
+		...(binds ? { intent_authority_hash: integrated.authority_hash } : {}) } };
 	// Every child needs a recorded identity, or no digest can be recomputed.
 	if (record.children.some((child) => !next[child.task_id])) return false;
 	let toDigest: string;
 	try {
 		toDigest = computeBatchPlanDigest(record.children.map((child) => {
 			const identity = next[child.task_id]!;
-			return { task_id: child.task_id, intent_path: identity.intent_path, intent_revision: identity.intent_revision, intent_content_hash: identity.intent_content_hash, blocked_by: child.blocked_by };
+			return { task_id: child.task_id, intent_path: identity.intent_path, intent_revision: identity.intent_revision, intent_content_hash: identity.intent_content_hash,
+				...(identity.intent_authority_hash ? { intent_authority_hash: identity.intent_authority_hash } : {}), blocked_by: child.blocked_by };
 		}));
 	} catch {
 		return false;
@@ -548,10 +554,34 @@ function resealDelegatedRevision(input: StartBatchInput, record: BatchLaneRunSta
 		to_digest: toDigest,
 		intent_revision: integrated.revision,
 		intent_content_hash: integrated.content_hash,
+		...(binds ? { intent_authority_hash: integrated.authority_hash } : {}),
 	}];
 	record.intent_identities = next;
 	record.plan_digest = toDigest;
 	return true;
+}
+
+/**
+ * Spec branch-boundary D8: under a record that binds each child's authority
+ * subject, a Lane whose sidecar now carries a different subject parks that
+ * child before anything of it reaches the batch branch, unless the change is
+ * the delegated revision the batch already approved (resealed at integration).
+ * A scope-only or run-parameter revision keeps the subject and passes. A
+ * record without the binding is left alone, so it still fails as plan_changed.
+ */
+function laneAuthorityChange(record: BatchLaneRunStateRecord, taskId: string, lanePath: string): string | null {
+	const recorded = record.intent_identities?.[taskId];
+	if (!recorded?.intent_authority_hash) return null;
+	let read: ReturnType<typeof readTaskIntent>;
+	try {
+		read = readTaskIntent(lanePath, taskId, recorded.intent_path);
+	} catch {
+		return null;
+	}
+	if (intentAuthorityHash(read.intent) === recorded.intent_authority_hash) return null;
+	const delegated = [...(record.delegated_revisions ?? [])].reverse().find((r) => r.task_id === taskId);
+	if (delegated && delegated.to_revision === read.intent.revision && delegated.intent_content_hash === read.content_hash) return null;
+	return `batch_child_authority_changed: ${taskId}`;
 }
 
 type TrackerObservations = NonNullable<BatchLaneRunReport["tracker_observations"]>;
@@ -1059,6 +1089,11 @@ export async function runLaneBatch(
 			continue;
 		}
 		const holdsClaim = fresh.claim !== null && fresh.claim.task_id === child.task_id;
+		const authorityChange = child.state === "enrolled" ? laneAuthorityChange(record, child.task_id, child.lane.path) : null;
+		if (authorityChange) {
+			parkChild(child.task_id, authorityChange);
+			continue;
+		}
 		if (child.state === "lane_admitted") {
 			// A crash between admission and enrollment adopts an existing claim or enrolls now.
 			if (holdsClaim) {
@@ -1148,6 +1183,11 @@ export async function runLaneBatch(
 	// 2. Commit each settled child on its lane branch, then integrate it.
 	for (const child of [...record.children]) {
 		if (child.state !== "settled" || !child.lane) continue;
+		const authorityChange = laneAuthorityChange(record, child.task_id, child.lane.path);
+		if (authorityChange) {
+			parkChild(child.task_id, authorityChange);
+			continue;
+		}
 		const planChild = input.children.find((c) => c.task_id === child.task_id);
 		let laneCommit: string;
 		try {

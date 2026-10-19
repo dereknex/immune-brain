@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
+import { intentAuthorityHash, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { describe, expect, it, spyOn } from "bun:test";
 import { mkdtempSync, rmSync, existsSync, writeFileSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync } from "node:fs";
@@ -352,6 +352,131 @@ describe("renewed authorization with real enrollment derivation", () => {
 		});
 		}
 	}
+});
+
+// Spec branch-boundary D7/D8/D9: a serial batch binds each child's frozen
+// authority subject, so a scope-only or revision-only edit enrolls under the
+// same authorization and a changed subject parks only that child.
+describe("serial batch authority subject", () => {
+	const IDS = ["task-a", "task-b", "task-c"] as const;
+	const intentOf = (taskId: string, extra: Record<string, unknown> = {}) => ({
+		contract: "assurance_kernel/task_intent/v1", task_id: taskId, owner: "user", revision: 1,
+		goal: taskId, risk: "routine", scope_hint: [`src/${taskId}/a.ts`],
+		acceptance: [{ id: "acc-1", assertion: taskId, verification: JSON.stringify({
+			contract: "assurance_kernel/verification_descriptor/v2",
+			command: { executable: "bun", argv: ["test", `tests/${taskId}.test.ts`], cwd: ".", timeout_ms: 60000, max_output_bytes: 8192 },
+			environment: { prepare: null, writable_paths: [] },
+		}) }],
+		...extra,
+	});
+
+	/** task-b depends on task-a; task-c is independent. `legacy` drops the subject binding (D9). */
+	function fixture(legacy = false) {
+		const root = tempRoot();
+		const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8", env: {
+			...process.env, GIT_AUTHOR_NAME: "test", GIT_AUTHOR_EMAIL: "test@example.test",
+			GIT_COMMITTER_NAME: "test", GIT_COMMITTER_EMAIL: "test@example.test",
+		} }).trim();
+		git("init", "-q", "-b", "main");
+		git("config", "core.hooksPath", "/dev/null");
+		mkdirSync(join(root, "docs/plans"), { recursive: true });
+		for (const taskId of IDS) writeFileSync(join(root, `docs/plans/${taskId}.intent.json`), JSON.stringify(intentOf(taskId)));
+		git("add", "docs/plans"); git("commit", "-qm", "fixture");
+		const base = git("rev-parse", "HEAD");
+		git("checkout", "-qb", "imm/initiative-slug");
+		const plan = IDS.map((taskId, index) => {
+			const read = readTaskIntent(root, taskId);
+			return { ...child(taskId, `S${index + 1}`, taskId === "task-b" ? ["task-a"] : []), intent_path: read.intent_ref.path,
+				intent_revision: read.intent_ref.revision, intent_content_hash: read.content_hash,
+				...(legacy ? {} : { intent_authority_hash: intentAuthorityHash(read.intent) }) };
+		});
+		const kernel = scriptedKernel(Object.fromEntries(IDS.map((taskId) => [taskId, [{ state: "completed" as const }]])));
+		const evidence = new Map<string, string>();
+		kernel.lookupBatchCommit = async (_root, taskId) => (evidence.has(taskId) ? { commit: evidence.get(taskId)! } : null);
+		kernel.commitChild = async (_root, taskId) => {
+			git("commit", "--allow-empty", "-qm", taskId);
+			const commit = git("rev-parse", "HEAD"); evidence.set(taskId, commit); return { commit };
+		};
+		const request = input(root, plan, kernel, { base_head: base });
+		const binding = { batch_id: request.batch_id, initiative_slug: request.initiative_slug,
+			plan_digest: request.plan_digest, branch: "main", base_head: base, budget: request.budget,
+			actor_id: "user", confirmation_ref: "confirm", nonce: "n" };
+		const enroll = kernel.enrollTask.bind(kernel);
+		// The real Kernel derivation decides, per child, whether its authorization still holds.
+		kernel.enrollTask = async (args) => {
+			deriveChildEnrollment(root, request.registry, { capability: request.capability, binding,
+				task_id: args.task_id, expected_head: args.batch.binding.expected_head, now: new Date().toISOString() });
+			request.registry.consumeChild(request.capability, binding, args.task_id);
+			return enroll(args);
+		};
+		const revise = (taskId: string, extra: Record<string, unknown>) =>
+			writeFileSync(join(root, `docs/plans/${taskId}.intent.json`), JSON.stringify(intentOf(taskId, extra)));
+		return { root, request, kernel, revise };
+	}
+
+	it.each([
+		["a same-directory scope revision", { revision: 2, scope_hint: ["src/task-a/a.ts", "src/task-a/b.ts"] }],
+		["a revision-only bump", { revision: 2 }],
+	])("AC3: %s after confirmation enrolls and completes under the same authorization", async (_label, extra) => {
+		const f = fixture();
+		try {
+			f.revise("task-a", extra);
+			const report = await startBatch(f.request);
+			expect(report.batch_state).toBe("completed");
+			expect(report.children.map((c) => [c.task_id, c.state, c.reason])).toEqual(IDS.map((id) => [id, "committed", null]));
+			expect(f.kernel.enrolled).toEqual([...IDS]);
+		} finally { rmSync(f.root, { recursive: true, force: true }); }
+	});
+
+	it.each([
+		["an acceptance assertion", { revision: 2, acceptance: [{ ...intentOf("task-a").acceptance[0]!, assertion: "rewritten" }] }],
+		["a verification argv", { revision: 2, acceptance: [{ ...intentOf("task-a").acceptance[0]!,
+			verification: intentOf("task-a").acceptance[0]!.verification.replace("tests/task-a.test.ts", "tests/other.test.ts") }] }],
+	])("AC4: a changed %s parks only that child and its dependents", async (_label, extra) => {
+		const f = fixture();
+		try {
+			f.revise("task-a", extra);
+			const report = await startBatch(f.request);
+			// The run ends normally from the remaining children: none is left pending or
+			// enrolled, and the parked child gives the usual needs_human end state.
+			expect(report.batch_state).toBe("needs_human");
+			expect(report.children.every((c) => c.state !== "pending" && c.state !== "enrolled")).toBe(true);
+			const states = Object.fromEntries(report.children.map((c) => [c.task_id, [c.state, c.reason]]));
+			expect(states["task-a"]).toEqual(["needs_human", "batch_child_authority_changed: task-a"]);
+			expect(states["task-b"]).toEqual(["skipped_blocked", "dependency task-a parked"]);
+			expect(states["task-c"]).toEqual(["committed", null]);
+			expect(f.kernel.enrolled).toEqual(["task-c"]);
+			expect(report.reason).not.toContain("plan_changed");
+		} finally { rmSync(f.root, { recursive: true, force: true }); }
+	});
+
+	it("AC4: a changed child order or dependency still refuses the run as a different plan", async () => {
+		const f = fixture();
+		try {
+			for (const children of [
+				[...f.request.children].reverse(),
+				f.request.children.map((c) => (c.task_id === "task-c" ? { ...c, blocked_by: ["task-a"] } : c)),
+			]) {
+				const report = await startBatch({ ...f.request, children });
+				expect(report.batch_state).toBe("rejected");
+				expect(report.reason).toContain("does not match the authorized plan");
+			}
+			expect(f.kernel.enrolled).toEqual([]);
+		} finally { rmSync(f.root, { recursive: true, force: true }); }
+	});
+
+	it("AC6: a record without the subject binding keeps whole-intent comparison", async () => {
+		const f = fixture(true);
+		try {
+			f.revise("task-a", { revision: 2 });
+			const report = await startBatch(f.request);
+			expect(report.batch_state).toBe("needs_human");
+			expect(report.children[0]).toMatchObject({ task_id: "task-a", state: "needs_human" });
+			expect(report.children[0]!.reason).toStartWith("batch_child_intent_changed: task-a");
+			expect(readBatchRunState(f.root, "batch-001")!.intent_identities).toBeUndefined();
+			expect(f.kernel.enrolled).toEqual([]);
+		} finally { rmSync(f.root, { recursive: true, force: true }); }
+	});
 });
 
 // S5/AC1: the one production child Kernel port in runtime/unattended. A Host
