@@ -54,7 +54,8 @@
     "tests/pi-batch-authority.test.ts",
     "tests/unattended-batch-commit.test.ts",
     "tests/unattended-batch-lanes.test.ts",
-    "tests/unattended-batch-run.test.ts"
+    "tests/unattended-batch-run.test.ts",
+    "tests/unattended-contracts.test.ts"
   ],
   "risk": "material",
   "revision": 1
