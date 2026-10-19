@@ -32,9 +32,11 @@ import {
 	integrateGuardedLaneCommit,
 	type IntegrationCheckChild,
 } from "./batch_integration";
-import { isBatchRef } from "./batch_ref";
+import { isBatchRef, isParentBranch } from "./batch_ref";
+import { copyLanePlanningInput, createLaneWorktree, removeLaneWorktree } from "./batch_worktrees";
 import { classifyBatchLineage, expectedBatchHead, findExistingActiveBatch, porcelainEntries, readActiveClaimTaskId, unsettledChildScopes } from "./batch_preflight";
 import { restoreProvableLaneLeaks } from "./batch_leak_restore";
+import { withBatchEvidence } from "./batch_git";
 import { blockedByParked, startableChildren } from "./batch_schedule";
 import {
 	type AnyBatchRunStateRecord,
@@ -88,6 +90,9 @@ export function resolveLaneParallel(
 	laneOffers: unknown,
 	laneInstruction?: unknown,
 ): number | undefined {
+	const existing = findExistingActiveBatch(root, initiativeSlug);
+	if (laneOffers !== undefined && (!existing || (!existing.corrupt && isParentBranch(existing.record.branch))))
+		throw new Error("lane_offers_retired: new batches create their own Lanes");
 	if (maxParallel !== undefined && maxParallel <= 1) maxParallel = undefined;
 	if (maxParallel !== undefined || (laneOffers === undefined && laneInstruction === undefined)) return maxParallel;
 	const lookup = findExistingActiveBatch(root, initiativeSlug);
@@ -425,6 +430,7 @@ function releaseHandoffs(
 	record: BatchLaneRunStateRecord,
 	lanes: BatchLaneGitPort,
 ): BatchLaneHandoff[] {
+	if (isParentBranch(record.branch)) return [];
 	const lineage = classifyBatchLineage({ root: input.root, branch: record.branch ?? "",
 		expectedHead: expectedBatchHead(record), childCommits: record.commits, batchId: record.batch_id });
 	if (lineage.kind === "broken") return [];
@@ -608,7 +614,8 @@ async function closeIntegratedIssues(
 		let status: string;
 		let message: string;
 		try {
-			const tombstone = readTaskTombstone(input.root, child.task_id);
+			const tombstone = await withBatchEvidence(input.root, record.branch, expectedBatchHead(record),
+				root => readTaskTombstone(root, child.task_id));
 			if (!tombstone || tombstone.lifecycle_status !== "terminal" || tombstone.terminal_lifecycle !== "done") {
 				observations.push({ task_id: child.task_id, status: "retryable_failure", message: "integrated child has no done terminal proof on the batch branch" });
 				continue;
@@ -808,6 +815,8 @@ export async function runLaneBatch(
 		return refuse(input, persisted, PARALLEL_MISMATCH, "the recorded batch runs serially; max_parallel cannot be added on a resume");
 	if (persisted && input.max_parallel !== undefined && input.max_parallel !== persisted.max_parallel)
 		return refuse(input, persisted, PARALLEL_MISMATCH, `the recorded batch runs with max_parallel ${persisted.max_parallel}`);
+	if (input.lane_offers !== undefined && (!persisted || isParentBranch(persisted.branch)))
+		return refuse(input, persisted, "lane_offers_retired", "new batches create their own Lanes");
 	const limit = persisted?.max_parallel ?? input.max_parallel ?? 1;
 	if (!input.children.length) return refuse(input, persisted, "batch_plan_empty", "batch plan is empty");
 
@@ -870,6 +879,7 @@ export async function runLaneBatch(
 			base_head: input.base_head,
 			batch_id: input.batch_id,
 			blocking_scopes: unsettledChildScopes(input.root, input.children),
+			progress_mode: "parent_branch",
 		});
 		if (!preflight.ok) return refuse(input, null, preflight.reason, preflight.message || "Correct the preflight condition and re-confirm.");
 		record = prepareBatchLaneRunState({
@@ -879,6 +889,7 @@ export async function runLaneBatch(
 			plan_digest: input.plan_digest,
 			base_head: input.base_head,
 			branch: preflight.branch,
+			...(isParentBranch(preflight.branch) ? { progress_mode: "parent_branch" as const } : {}),
 			confirmation_time: input.confirmation_time,
 			budget: input.budget,
 			max_parallel: limit,
@@ -900,7 +911,7 @@ export async function runLaneBatch(
 	};
 	// Lane writes that leaked into the coordinator checkout, restored only now,
 	// after authorization, and only when every dirty path is provably a Lane's.
-	if (persisted) {
+	if (persisted && !isParentBranch(record.branch)) {
 		const entries = porcelainEntries(input.root);
 		if (entries && entries.length > 0) {
 			const outcome = restoreProvableLaneLeaks(input.root, record, entries, input.now);
@@ -1052,11 +1063,14 @@ export async function runLaneBatch(
 	const enrollInLane = async (taskId: string): Promise<BatchLaneRunReport | null> => {
 		const lane = record.children.find((c) => c.task_id === taskId)!.lane!;
 		try {
+			if (isParentBranch(record.branch)) copyLanePlanningInput(input.root, lane.path, taskId, "intent");
 			await input.kernel.enrollTask({
 				root: lane.path,
 				task_id: taskId,
 				batch: { registry: input.registry, capability: input.capability, binding: { batch_id: record.batch_id, expected_head: lane.base_head } },
 			});
+			// Deliver the bound Spec after Enrollment so it is task work, not baseline user dirt.
+			if (isParentBranch(record.branch)) copyLanePlanningInput(input.root, lane.path, taskId, "spec");
 			const fresh = await readLaneProjection(input, lane.path, taskId);
 			if (fresh.error !== null) throw new Error(laneUnreadableReason(fresh.error, taskId, lane.run_id));
 			if (!fresh.projection.run_id || fresh.claim?.task_id !== taskId)
@@ -1097,6 +1111,7 @@ export async function runLaneBatch(
 		if (child.state === "lane_admitted") {
 			// A crash between admission and enrollment adopts an existing claim or enrolls now.
 			if (holdsClaim) {
+				if (isParentBranch(record.branch)) copyLanePlanningInput(input.root, child.lane.path, child.task_id, "spec");
 				record.children = record.children.map((c) =>
 					c.task_id === child.task_id ? { ...c, state: "enrolled", reason: "adopted existing lane claim after interruption", lane: { ...child.lane!, run_id: fresh.projection.run_id } } : c,
 				);
@@ -1229,7 +1244,7 @@ export async function runLaneBatch(
 				lane_commit: child.lane.lane_commit,
 				child: { task_id: child.task_id, intent_path: intentPathOf(child.task_id) },
 				siblings: record.children
-					.filter((c) => c.state === "integrated" && c.task_id !== child.task_id)
+					.filter((c) => (c.state === "integrated" || c.state === "released") && c.task_id !== child.task_id)
 					.map((c) => ({ task_id: c.task_id, intent_path: intentPathOf(c.task_id), commit: c.commit })),
 			});
 			await git.retainLaneEvidence?.({ root: input.root, taskId: child.task_id, batchId: record.batch_id,
@@ -1257,9 +1272,33 @@ export async function runLaneBatch(
 	// Close each integrated child's Issue now that its commit is on the batch branch.
 	const tracker = await closeIntegratedIssues(input, record, persist);
 
-	// 3. Admit offered Lanes, then enroll each admitted child into its Lane.
+	// New records own Lane lifecycle; legacy records still admit offered paths.
+	if (isParentBranch(record.branch)) {
+		for (const child of record.children) {
+			if (child.state !== "integrated" || !child.lane?.lane_commit) continue;
+			const facts = lanes.inspectLane(input.root, child.lane.path);
+			if (!facts.exists) continue;
+			if (facts.same_repository && facts.is_worktree_root && facts.clean && facts.branch === child.lane.branch &&
+				facts.head === child.lane.lane_commit && facts.active_claim_task_id === null &&
+				lanes.auditReachable({ root: input.root, head: expectedBatchHead(record), task_id: child.task_id }) &&
+				removeLaneWorktree(input.root, child.lane.path, child.lane.branch, child.lane.lane_commit)) {
+				record.children = record.children.map(c => c.task_id === child.task_id ? { ...c, state: "released" } : c);
+				persist();
+			} else refusals.push({ task_id: child.task_id, path: child.lane.path, reason: "batch_lane_kept: Lane is dirty or its release evidence is incomplete" });
+		}
+	}
+	// 3. Admit runtime-created Lanes (or legacy offers), then enroll each child.
+	const offers = [...(input.lane_offers ?? [])];
+	if (isParentBranch(record.branch)) {
+		for (const taskId of startableChildren(scheduleView(input, record), limit)) {
+			if (consumedSlots(record) + offers.length >= record.budget.max_children) break;
+			if (input.kernel.canStartTask && !await input.kernel.canStartTask(taskId)) continue;
+			try { offers.push({ task_id: taskId, path: createLaneWorktree(input.root, record.initiative_slug, taskId, expectedBatchHead(record)) }); }
+			catch (error) { parkChild(taskId, error instanceof Error ? error.message : String(error)); }
+		}
+	}
 	const coordinatorReal = lanes.resolveRoot(input.root);
-	for (const offer of input.lane_offers ?? []) {
+	for (const offer of offers) {
 		const startable = new Set(startableChildren(scheduleView(input, record), limit));
 		const child = record.children.find((c) => c.task_id === offer.task_id);
 		if (!child || child.state !== "pending" || !startable.has(child.task_id)) {
@@ -1300,6 +1339,7 @@ export async function runLaneBatch(
 		// bound to the children's scoped content rather than to a clean tree at HEAD.
 		const final = record.final_verification?.length
 			? await runFinalVerification(input.root, record.final_verification,
+				isParentBranch(record.branch) ? { parent_head: expectedBatchHead(record) } :
 				isBatchRef(record.branch) ? { scopes: unsettledChildScopes(input.root, input.children) } : {})
 			: undefined;
 		record.batch_state = "completed";
@@ -1367,7 +1407,7 @@ export async function runLaneBatch(
 			{ refusals, tracker, instruction, revision },
 		);
 	}
-	if (!overBudget) {
+	if (!overBudget && !isParentBranch(record.branch)) {
 		for (const taskId of startable) {
 			handoffs.push({
 				role: "lane-steward",

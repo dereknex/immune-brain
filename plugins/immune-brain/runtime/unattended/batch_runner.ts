@@ -54,7 +54,7 @@ import {
  * BatchRunnerGitPort alone (D5 of docs/specs/deepen-authority-seams.spec.md). */
 import { readTaskTombstone } from "../kernel/backend_claim";
 import { observeInitiative } from "./batch_plan";
-import { observeParentCompletion } from "./batch_git";
+import { observeParentCompletion, withBatchEvidence } from "./batch_git";
 import { createBatchTrackerPort } from "./batch_lanes";
 import type { InitiativeObservationReader } from "./types";
 export async function completedParentReport(root: string, initiativeSlug: string, readInitiative?: InitiativeObservationReader,
@@ -67,7 +67,8 @@ export async function completedParentReport(root: string, initiativeSlug: string
 	const proof = await observeParentCompletion(root, initiativeSlug, parent.tasks.map(child => child.task_id));
 	if (!proof.complete) return null;
 	const last = parent.tasks.at(-1);
-	const tombstone = last ? readTaskTombstone(root, last.task_id) : null;
+	const tombstone = last ? await withBatchEvidence(root, batch.branch, expectedBatchHead(batch),
+		path => readTaskTombstone(path, last.task_id)) : null;
 	let sync: Awaited<ReturnType<BatchTrackerPort["markTerminal"]>> | null = null;
 	if (last && tracker) {
 		if (!tombstone || tombstone.terminal_lifecycle !== "done") throw new Error("Parent tracker synchronization requires exact terminal evidence");

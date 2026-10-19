@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "batch-parent-branch",
-  "owner": "user",
   "goal": "A new Lane batch keeps its progress on the Parent branch imm/<slug>, which the runtime writes but never checks out; the runtime creates, removes and reports each child's worktree on imm-lane/<slug>/<task_id> instead of adopting offered Lanes; integration no longer writes the coordinator working tree; final verification runs on the Parent tip; and ADR 0027 is accepted (Spec branch-boundary-r2 D11-D14).",
   "acceptance": [
     {
@@ -38,6 +37,7 @@
     "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
     "plugins/immune-brain/dist/claude/mcp-server.mjs",
     "plugins/immune-brain/dist/imm-run-batch.md",
+    "plugins/immune-brain/dist/role-prompts/lane-steward.md",
     "plugins/immune-brain/runtime/claude/kernel_ports.ts",
     "plugins/immune-brain/runtime/claude/mcp_server.ts",
     "plugins/immune-brain/runtime/prompts/lane-steward.md",
@@ -48,6 +48,7 @@
     "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
     "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
     "plugins/immune-brain/runtime/unattended/batch_ref.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
     "plugins/immune-brain/runtime/unattended/batch_state.ts",
     "plugins/immune-brain/runtime/unattended/batch_worktrees.ts",
     "plugins/immune-brain/runtime/unattended/types.ts",
@@ -58,5 +59,6 @@
     "tests/unattended-batch-lanes.test.ts"
   ],
   "risk": "critical",
-  "revision": 1
+  "revision": 3,
+  "owner": "user"
 }

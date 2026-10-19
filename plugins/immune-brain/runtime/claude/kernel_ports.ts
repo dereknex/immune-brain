@@ -926,6 +926,7 @@ export class ClaudeRuntime {
 			initiative_slug: initiativeSlug,
 			now,
 			readInitiative: this.readInitiative ?? observeInitiative,
+			max_parallel: options.max_parallel,
 			signal: meta.signal, reuseOnly,
 		});
 		if (!preflight.ok) {

@@ -160,6 +160,7 @@ export interface LaneIntervention {
  */
 export interface BatchLaneRunStateRecord {
 	contract: "assurance_kernel/batch_run_state/v2";
+	progress_mode?: "parent_branch";
 	batch_id: string;
 	initiative_slug: string;
 	plan_digest: string;
@@ -610,6 +611,8 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 	const record = value as Record<string, unknown>;
 	if (record.contract !== "assurance_kernel/batch_run_state/v2")
 		throw new Error(`batch run state ${batchId} has an unknown contract`);
+	if (record.progress_mode !== undefined && (record.progress_mode !== "parent_branch" || record.branch !== `refs/heads/imm/${record.initiative_slug}`))
+		throw new Error(`batch run state ${batchId} has an invalid progress_mode`);
 	if (record.batch_id !== batchId)
 		throw new Error(`batch run state ${batchId} carries batch_id ${String(record.batch_id)}`);
 	if (typeof record.plan_digest !== "string" || !record.plan_digest)
@@ -811,6 +814,7 @@ export function prepareBatchLaneRunState(input: {
 	confirmation_time: string;
 	budget: { max_children: number; qa_failure_limit: number };
 	max_parallel: number;
+	progress_mode?: "parent_branch";
 	now: string;
 	final_verification?: string[];
 	revision_delegation?: import("./batch_delegation").RevisionDelegationGrant;
@@ -826,6 +830,7 @@ export function prepareBatchLaneRunState(input: {
 		confirmation_time: input.confirmation_time,
 		budget: input.budget,
 		max_parallel: input.max_parallel,
+		...(input.progress_mode ? { progress_mode: input.progress_mode } : {}),
 		batch_state: "prepared",
 		children: input.children.map((child) => ({
 			task_id: child.task_id,

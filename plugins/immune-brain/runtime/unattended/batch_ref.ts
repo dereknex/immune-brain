@@ -20,6 +20,21 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 export const BATCH_REF_PREFIX = "refs/imm/batches/";
+
+/** Fully qualified Parent refs distinguish new records from legacy checked-out branches. */
+export function parentBranchRef(slug: string): string {
+	if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(slug) || slug.includes("..") || slug.endsWith(".lock"))
+		throw new Error("invalid Parent branch slug");
+	return `refs/heads/imm/${slug}`;
+}
+
+export function isParentBranch(branch: string | undefined | null): branch is string {
+	return typeof branch === "string" && branch.startsWith("refs/heads/imm/");
+}
+
+export function isProgressRef(branch: string | undefined | null): branch is string {
+	return isBatchRef(branch) || isParentBranch(branch);
+}
 const NULL_OID = "0".repeat(40);
 
 /** The hidden ref one batch owns. */
@@ -67,8 +82,16 @@ export function readBatchRef(root: string, ref: string): string | null {
 	throw new Error(`failed to read ${ref}: ${result.stderr.trim() || "git rev-parse failed"}`);
 }
 
-/** Create the hidden ref at `base`; an existing ref at the same commit is the same batch's retry. */
+function assertParentNotCheckedOut(root: string, ref: string): void {
+	if (!isParentBranch(ref)) return;
+	const worktrees = out(root, ["worktree", "list", "--porcelain", "-z"], "failed to inspect Parent checkouts");
+	if (worktrees.split("\0").includes(`branch ${ref}`))
+		throw new Error(`batch_parent_branch_checked_out: ${ref} is checked out`);
+}
+
+/** Create the progress ref; an existing ref at the same commit is a retry. */
 export function createBatchRef(root: string, ref: string, base: string): void {
+	assertParentNotCheckedOut(root, ref);
 	const created = run(root, ["update-ref", ref, base, NULL_OID]);
 	if (created.status === 0) return;
 	if (readBatchRef(root, ref) === base) return;
@@ -77,6 +100,7 @@ export function createBatchRef(root: string, ref: string, base: string): void {
 
 /** Move the hidden ref only from the commit the caller expects it to hold. */
 export function moveBatchRef(root: string, ref: string, from: string, to: string): void {
+	assertParentNotCheckedOut(root, ref);
 	const moved = run(root, ["update-ref", ref, to, from]);
 	if (moved.status !== 0)
 		throw new Error(`batch_head_lineage_broken: ${ref} did not move from ${from} to ${to}: ${moved.stderr.trim() || "git update-ref failed"}`);
@@ -266,7 +290,7 @@ export function applyDeltaToWorkingTree(root: string, from: string, to: string, 
  * for a legacy batch recorded against a checked-out branch. Null when unreadable.
  */
 export function liveBatchHead(root: string, branch: string | null | undefined): string | null {
-	if (isBatchRef(branch)) return readBatchRef(root, branch);
+	if (isProgressRef(branch)) return readBatchRef(root, branch);
 	const head = run(root, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
 	return head.status === 0 ? head.stdout.trim() || null : null;
 }

@@ -11,6 +11,7 @@ import { createHash } from "node:crypto";
 import { parseTaskIntentV1 } from "../kernel/intent";
 import { spawn, spawnSync } from "node:child_process";
 import { scopedContentIdentity } from "../workspace_scope";
+import { withParentWorktree } from "./batch_worktrees";
 
 export const MAX_FINAL_VERIFICATION_COMMANDS = 8;
 const MAX_COMMAND_LENGTH = 512;
@@ -114,8 +115,12 @@ export function prepareFinalRepairCandidate(input: {
 export async function runFinalVerification(
 	root: string,
 	commands: readonly string[],
-	options: { timeoutMs?: number; scopes?: readonly string[] } = {},
+	options: { timeoutMs?: number; scopes?: readonly string[]; parent_head?: string } = {},
 ): Promise<FinalVerificationReport> {
+	if (options.parent_head) {
+		return withParentWorktree(root, options.parent_head, path =>
+			runFinalVerification(path, commands, { timeoutMs: options.timeoutMs }));
+	}
 	const verifiedCommands = parseFinalVerification([...commands])!;
 	const head = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
 	if (options.scopes) {

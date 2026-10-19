@@ -25,10 +25,11 @@ import { captureGitTaskRevisionSnapshot, pathMatchesScope, scopedContentIdentity
 import { readNativeParentFinalReport, writeNativeParentFinalReport, readAnyBatchRunState, isLaneBatchRecord, writeBatchRunState, writeBatchLaneRunState, type AnyBatchRunStateRecord } from "./batch_state";
 import { changeIdentity, identitiesEqual } from "./batch_integration";
 import { runFinalVerification } from "./batch_final_verification";
+import { withParentWorktree } from "./batch_worktrees";
 import type { InitiativeObservationReader } from "./types";
 import { readTaskIntent, observeEnrollmentTaskIntent } from "../kernel/intent";
 import { classifyBatchLineage, expectedBatchHead, readActiveClaimTaskId as findActiveClaimForCriticalIntegration, findExistingActiveBatch, findSettledBatchRecord } from "./batch_preflight";
-import { batchRefName, buildScopedCommit, liveBatchHead, changedPaths as changedPathsBetween, createBatchRef, ignoredPaths, isBatchRef, moveBatchRef, pathsDirtyAgainst, readBatchRef } from "./batch_ref";
+import { batchRefName, buildScopedCommit, liveBatchHead, changedPaths as changedPathsBetween, createBatchRef, ignoredPaths, isBatchRef, moveBatchRef, pathsDirtyAgainst, readBatchRef, parentBranchRef, isParentBranch } from "./batch_ref";
 export { classifyBatchLineage, type BatchLineage } from "./batch_preflight";
 
 export type BatchGitPreflightRejectReason =
@@ -51,6 +52,7 @@ export interface BatchRunnerGitPort {
 		base_head: string;
 		batch_id: string;
 		blocking_scopes?: readonly string[];
+		progress_mode?: "parent_branch";
 	}): Promise<BatchGitPreflightResult> | BatchGitPreflightResult;
 	commitChild(
 		root: string,
@@ -91,10 +93,13 @@ export function runBatchGitPreflight(input: {
 	base_head: string;
 	batch_id: string;
 	blocking_scopes?: readonly string[];
+	progress_mode?: "parent_branch";
 }): BatchGitPreflightResult {
 	const { root, base_head: baseHead } = input;
-	const scopes = input.blocking_scopes ?? [];
-	const git = (args: string[]) => spawnSync("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+	const scopes = input.progress_mode === "parent_branch" ? [] : input.blocking_scopes ?? [];
+	const git = (args: string[]) => spawnSync("git", ["-C", root, ...args], {
+		encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+	});
 
 	// 0. Verify root is a Git repository and is the top-level repository root
 	const toplevelResult = git(["rev-parse", "--show-toplevel"]);
@@ -171,13 +176,13 @@ export function runBatchGitPreflight(input: {
 	}
 
 	// 3. The batch's own hidden ref; the user's branch is never created or switched.
-	const ref = batchRefName(input.batch_id);
+	const ref = input.progress_mode === "parent_branch" ? parentBranchRef(input.initiative_slug) : batchRefName(input.batch_id);
 	try {
 		createBatchRef(root, ref, baseHead);
 	} catch (error) {
 		return {
 			ok: false,
-			reason: "batch_branch_exists",
+			reason: input.progress_mode === "parent_branch" ? "batch_parent_branch_exists" : "batch_branch_exists",
 			message: error instanceof Error ? error.message : String(error),
 		};
 	}
@@ -850,6 +855,22 @@ export async function lookupBatchCommit(input: {
 export async function retainIntegratedLaneEvidence(input: Parameters<typeof lookupBatchCommit>[0] & {
 	lane: { path: string; base_head: string; lane_commit: string; integrated_commit: string };
 }): Promise<void> {
+	if (isParentBranch(input.branch)) {
+		const lane = input.lane;
+		const source = await lookupBatchCommit({ root: lane.path, taskId: input.taskId, batchId: input.batchId,
+			branch: spawnSync("git", ["-C", lane.path, "symbolic-ref", "--short", "HEAD"], { encoding: "utf8" }).stdout.trim(),
+			expectedHead: lane.base_head });
+		const parent = spawnSync("git", ["-C", input.root, "rev-parse", `${lane.integrated_commit}^@`], { encoding: "utf8" });
+		const parents = parent.stdout.trim().split(/\s+/).filter(Boolean);
+		const tip = readBatchRef(input.root, input.branch);
+		if (source?.commit !== lane.lane_commit || parent.status !== 0 || parents.length !== 1 || !tip ||
+			spawnSync("git", ["-C", input.root, "merge-base", "--is-ancestor", lane.integrated_commit, tip]).status !== 0 ||
+			!identitiesEqual(changeIdentity(input.root, lane.base_head, lane.lane_commit), changeIdentity(input.root, parents[0]!, lane.integrated_commit)))
+			throw new Error("batch_head_lineage_broken: Parent candidate differs from produced Lane delivery");
+		writeBatchCommitEvidence(input.root, { batchId: input.batchId ?? "native-task", taskId: input.taskId,
+			commit: lane.integrated_commit, parentHead: parents[0]! });
+		return;
+	}
 	const landed = await lookupBatchCommit(input);
 	if (!landed) throw new Error("batch_head_lineage_broken: missing integrated Lane delivery");
 	const parent = spawnSync("git", ["-C", input.root, "rev-parse", `${landed.commit}^`], { encoding: "utf8" });
@@ -868,7 +889,12 @@ export interface ParentCompletionObservation {
 	reason: string | null;
 }
 
-/** Settled `done` with an unchanged TaskIntent is delivered; Git commits are the user's carrier and are never consulted. */
+/** New-mode evidence lives on the Parent revision; legacy evidence stays in its original checkout. */
+export async function withBatchEvidence<T>(root: string, branch: string | undefined, head: string, read: (path: string) => T | Promise<T>): Promise<T> {
+	return isParentBranch(branch) ? withParentWorktree(root, head, async path => read(path)) : read(root);
+}
+
+/** Settled `done` with an unchanged TaskIntent is delivered. */
 function isDelivered(root: string, taskId: string): boolean {
 	const settled = readSettledTaskEvidence(root, taskId);
 	if (!settled || settled.proof.terminal_lifecycle !== "done") return false;
@@ -908,21 +934,27 @@ export async function observeParentCompletion(root: string, initiativeSlug: stri
 	const native = readNativeParentFinalReport(root, initiativeSlug);
 	const allTaskIds = [...new Set([...requiredTaskIds, ...records.flatMap(record => record.repair_tasks?.map(task => task.task_id) ?? []),
 		...(native?.repair_tasks?.map(task => task.task_id) ?? [])])];
-	const delivered = allTaskIds.filter(taskId => isDelivered(root, taskId));
-	const missing = allTaskIds.filter(taskId => !delivered.includes(taskId));
-	let content: string | undefined;
-	// A content-bound report holds while the scoped bytes are equal; a legacy head-bound one only while HEAD matches.
-	const holds = (final: { head: string | null; content_identity?: string }) => final.content_identity === undefined
-		? final.head === head : missing.length === 0 && final.content_identity === (content ??= scopedContentIdentity(root, deliveryScopes(root, allTaskIds)));
-	const finalPassed = (native?.final_verification.passed === true && holds(native.final_verification) &&
-		JSON.stringify([...native.task_ids].sort()) === JSON.stringify([...requiredTaskIds].sort())) || records.some(record => {
-		const final = record.final_verification_result;
-		return record.batch_state === "completed" && final?.passed === true && holds(final);
+	const parent = records.filter(record => isParentBranch(record.branch)).sort((a, b) => a.updated_at.localeCompare(b.updated_at)).at(-1);
+	const deliveryHead = parent ? readBatchRef(root, parent.branch!) : head;
+	if (!deliveryHead) throw new Error("Parent evidence requires an existing Parent ref");
+	return withBatchEvidence(root, parent?.branch, deliveryHead, evidenceRoot => {
+		const delivered = allTaskIds.filter(taskId => isDelivered(evidenceRoot, taskId));
+		const missing = allTaskIds.filter(taskId => !delivered.includes(taskId));
+		let content: string | undefined;
+		// Parent reports bind their tip; legacy content reports bind only scoped bytes.
+		const holds = (final: { head: string | null; content_identity?: string }) => parent || final.content_identity === undefined
+			? final.head === deliveryHead : missing.length === 0 && final.content_identity === (content ??= scopedContentIdentity(evidenceRoot, deliveryScopes(evidenceRoot, allTaskIds)));
+		const finalPassed = (!parent && native?.final_verification.passed === true && holds(native.final_verification) &&
+			JSON.stringify([...native.task_ids].sort()) === JSON.stringify([...requiredTaskIds].sort())) || records.some(record => {
+			const final = record.final_verification_result;
+			if (parent && (record.branch !== parent.branch || expectedBatchHead(record) !== deliveryHead)) return false;
+			return record.batch_state === "completed" && final?.passed === true && holds(final);
+		});
+		return { complete: missing.length === 0 && finalPassed, integrated_task_ids: delivered,
+			missing_task_ids: missing, final_passed: finalPassed, head: deliveryHead,
+			reason: missing.length ? `Required delivery is absent: ${missing.join(", ")}`
+				: finalPassed ? null : "Final verification has not passed on the delivered content" };
 	});
-	return { complete: missing.length === 0 && finalPassed, integrated_task_ids: delivered,
-		missing_task_ids: missing, final_passed: finalPassed, head,
-		reason: missing.length ? `Required delivery is absent: ${missing.join(", ")}`
-			: finalPassed ? null : "Final verification has not passed on the delivered content" };
 }
 
 /**

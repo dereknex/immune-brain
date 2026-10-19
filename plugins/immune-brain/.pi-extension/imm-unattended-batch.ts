@@ -224,6 +224,7 @@ async function executePreparedPiBatch(
 		initiative_slug: initiativeSlug,
 		now,
 		readInitiative: options.readInitiative,
+		max_parallel: options.max_parallel,
 		signal, reuseOnly,
 	});
 	if (!preflight.ok) {

@@ -1,0 +1,492 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "batch-parent-branch",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "batch-parent-branch",
+    "goal": "A new Lane batch keeps its progress on the Parent branch imm/<slug>, which the runtime writes but never checks out; the runtime creates, removes and reports each child's worktree on imm-lane/<slug>/<task_id> instead of adopting offered Lanes; integration no longer writes the coordinator working tree; final verification runs on the Parent tip; and ADR 0027 is accepted (Spec branch-boundary-r2 D11-D14).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Starting a new Lane batch creates refs/heads/imm/<slug> at base_head and leaves the coordinator's HEAD, branch, index and working tree byte-identical; when imm/<slug> already exists at a commit other than base_head the start refuses with batch_parent_branch_exists and creates no ref, worktree or batch record.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-parent-branch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "For each admitted child the runtime creates a worktree under the Git common directory on branch imm-lane/<slug>/<task_id> at the current Parent tip and returns its path in the Executor handoff; a lane_offers argument on a new batch refuses with lane_offers_retired.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-parent-branch.test.ts\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "An integrated child advances imm/<slug> by exactly one commit whose changed files equal the child's lane commit, the coordinator working tree is not modified, the clean child worktree and its lane branch are removed, and a child worktree with an uncommitted file is kept and reported instead of removed.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-parent-branch.test.ts\",\n      \"tests/unattended-batch-integration.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "Final verification of a new-mode batch runs in a detached worktree at the Parent tip that is removed afterwards: an uncommitted edit in the coordinator working tree neither fails nor passes it, and a failing check is reported without moving imm/<slug>.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-parent-branch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "A batch record in hidden-ref mode and one in legacy branch mode still resume and integrate exactly as before this change.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\",\n      \"tests/unattended-batch-integration.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/branch-boundary-r2-batch-parent-branch.md",
+      "docs/adr/0027-parent-branch-merge-queue.md",
+      "docs/plans/batch-parent-branch.intent.json",
+      "docs/specs/branch-boundary-r2.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run-batch.md",
+      "plugins/immune-brain/dist/role-prompts/lane-steward.md",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/prompts/lane-steward.md",
+      "plugins/immune-brain/runtime/unattended/batch_final_verification.ts",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "plugins/immune-brain/runtime/unattended/batch_ref.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/batch_worktrees.ts",
+      "plugins/immune-brain/runtime/unattended/types.ts",
+      "tests/batch-parent-branch.test.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/unattended-batch-integration.test.ts",
+      "tests/unattended-batch-lanes.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 3,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/batch-parent-branch.intent.json",
+    "content_hash": "sha256:ee7dae853af02d5c95db87afa527637647a026ca71a235f0baa943767b347b0c"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:12374947d5e0026d3ed21de672c4aa9c34e503b72fae61ecb5bef04d23434dfa",
+  "git_base_head": "cb016d3174c41ebe147a56343c6381f6ad6dedcb",
+  "attestations": [
+    {
+      "id": "approval-qa-37cd5298",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:d4d8436a0de8b55081f4fa92b76a13c0b5417a63a1f62474aaad9fa9afd91a17",
+      "diff_hash": "sha256:16e7001154c63d79e7e25bad0d4c1c0dde9dcf57c2d5c6fa3d91748fe7c830cf",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 project verification check(s) passed; execution=sha256:5f0795fff87f33b6a7cd195bde0c0d74b178913779267ef1e2a2b847f1a4c564",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:5f0795fff87f33b6a7cd195bde0c0d74b178913779267ef1e2a2b847f1a4c564"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:5f0795fff87f33b6a7cd195bde0c0d74b178913779267ef1e2a2b847f1a4c564"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:5f0795fff87f33b6a7cd195bde0c0d74b178913779267ef1e2a2b847f1a4c564"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:5f0795fff87f33b6a7cd195bde0c0d74b178913779267ef1e2a2b847f1a4c564"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:5f0795fff87f33b6a7cd195bde0c0d74b178913779267ef1e2a2b847f1a4c564"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-f328e766",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:d4d8436a0de8b55081f4fa92b76a13c0b5417a63a1f62474aaad9fa9afd91a17",
+      "diff_hash": "sha256:88a4403c99db77239641dcc7ce3ba2c1e05f768c8927b6702e532033ff61ee33",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 project verification check(s) passed; execution=sha256:4cff290483b26e06343247866b44a3dcd231cfff7626750a5672a92e09fe12dd",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:4cff290483b26e06343247866b44a3dcd231cfff7626750a5672a92e09fe12dd"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:4cff290483b26e06343247866b44a3dcd231cfff7626750a5672a92e09fe12dd"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:4cff290483b26e06343247866b44a3dcd231cfff7626750a5672a92e09fe12dd"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:4cff290483b26e06343247866b44a3dcd231cfff7626750a5672a92e09fe12dd"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:4cff290483b26e06343247866b44a3dcd231cfff7626750a5672a92e09fe12dd"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-87ce3b58",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:ee7dae853af02d5c95db87afa527637647a026ca71a235f0baa943767b347b0c",
+      "diff_hash": "sha256:8e7b69f27f8b2dae1c0a1d23924c4089b621bc2231886d474e70377cb60eb964",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 project verification check(s) passed; execution=sha256:a8f284d18efd10b83f66ae8eeb9200051fb81eccb893a2904862d5210a572f86",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:a8f284d18efd10b83f66ae8eeb9200051fb81eccb893a2904862d5210a572f86"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:a8f284d18efd10b83f66ae8eeb9200051fb81eccb893a2904862d5210a572f86"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:a8f284d18efd10b83f66ae8eeb9200051fb81eccb893a2904862d5210a572f86"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:a8f284d18efd10b83f66ae8eeb9200051fb81eccb893a2904862d5210a572f86"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:a8f284d18efd10b83f66ae8eeb9200051fb81eccb893a2904862d5210a572f86"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-4b8f4d2b",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:ee7dae853af02d5c95db87afa527637647a026ca71a235f0baa943767b347b0c",
+      "diff_hash": "sha256:8e7b69f27f8b2dae1c0a1d23924c4089b621bc2231886d474e70377cb60eb964",
+      "actor_id": "parent-mediated-review",
+      "summary": "已验证 manifest_digest、revision 的单一 parent、tree 与全部 23 个 changed-path blob；完整阅读逐文件 diff，并重点追踪本轮 Parent evidence 读取及 released sibling 验证修复，未发现阻断问题。AC1–AC5 测试执行结果采用 Kernel 提供的通过证据，未重新运行测试。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "cb016d3174c41ebe147a56343c6381f6ad6dedcb",
+        "review_commit": "50add633c7789af66c936def3d654f4848545725",
+        "review_tree": "5dbd4fb3cb75663d0016adeb88012504750e7d9b",
+        "manifest_digest": "sha256:6772db98eaf15ce3313736287157c94780e7ca3d63d2e69bbed2ac00ab981b19"
+      },
+      "reviewer_verdict_sha256": "sha256:295030bcced2d04716897cc1994b4a0b345d43df1f115b38ae744e5ce20e4c25"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-13de33925aa9-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_lanes.ts:1290 从 Parent commit 创建 Lane，却没有携带预检已接受的未提交 TaskIntent/Spec。现有 prepareBatchPreflight 明确允许从 coordinator 工作树读取未提交计划；这些文件若尚不在 Parent commit，真实 Enrollment 会因 intent 不可读或 authority 不匹配而 park，无法返回 Executor handoff。应将已授权的规划输入安全地交付到 Lane，保持 Parent base 和 coordinator 不变，并增加使用真实 Enrollment 的未提交规划输入测试。为追踪该直接调用链，读取了未修改的 batch_kernel_port.ts 和 kernel/batch_authority.ts；后者确实在 Lane 内重新读取并校验 intent。",
+      "anchor": "sha256:adcac6ce78bc05a1bcbe499e92cc7f8c24f9aeb47bc46be063b53f8ce84a7d5c",
+      "evidence": {
+        "trigger": "用户在 coordinator 新建尚未提交的 docs/plans/<task_id>.intent.json，并以 max_parallel=2 确认新 batch；预检从工作树成功授权该 intent → createLaneWorktree 只检出不含该文件的 Parent commit，deriveChildEnrollment 报 batch_child_intent_changed，child 进入 needs_human 而不是返回 Executor handoff。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_preflight.ts:prepareBatchPreflight",
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:runLaneBatch",
+          "plugins/immune-brain/runtime/unattended/batch_worktrees.ts:createLaneWorktree",
+          "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts:createBatchKernelPort.enrollTask",
+          "plugins/immune-brain/runtime/kernel/batch_authority.ts:deriveChildEnrollment"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-13de33925aa9-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_git.ts:101,153 的 git status 未禁用 optional locks，会刷新并写回 coordinator index，违反 AC1 的 byte-identical 保证。例如跟踪文件内容未变但 stat 信息变化时，启动 batch 仍会改写 index。应为这些只读 Git 检查设置 GIT_OPTIONAL_LOCKS=0，并增加先改变文件时间戳、直接捕获原始 index bytes、再启动 batch 的回归测试；捕获基线时不要先运行会刷新 index 的 git status。",
+      "anchor": "sha256:fb36c6ce7c4ccd9d7308eac6792e6193fd2ef903ba1ad9bd6e152fc69a343d79",
+      "evidence": {
+        "trigger": "coordinator 中某个内容与 index 相同的跟踪文件被 touch，index 内缓存的 stat 信息尚未刷新，然后启动 Parent-branch batch → runBatchGitPreflight 执行默认允许 optional locks 的 git status，刷新并写回 index，启动前后的 index bytes 不同。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:runLaneBatch",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:runBatchGitPreflight"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-b91158f25287-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC4",
+      "source": "review",
+      "review_round": 2,
+      "summary": "Parent-branch 模式尚未贯通结果证据的读取方：成功验证后的 Parent 仍被判定为未交付，Child Issue 也无法关闭。应从记录的 Parent revision 读取交付证据，并将验证结果绑定到 Parent tip，而不是 coordinator HEAD；增加完成后重新进入 Host 的回归测试。",
+      "anchor": "sha256:fced172d84b94ab9716f69647cba8987b2c40dda757585ab8dc34aa428dfee30",
+      "evidence": {
+        "trigger": "新模式 batch 的全部 children 集成并通过 final verification，coordinator 保持原始 HEAD 且没有 Lane 的 audit 文件 → batch_git.ts:931 的 isDelivered(input.root) 找不到终态证据，:935-940 又将 Parent tip 上的验证结果与 coordinator HEAD 比较，因此 completedParentReport 返回 null；再次调用 start_unattended_batch 会落入新 batch preflight 并因现有 Parent tip 不等于 coordinator HEAD 而拒绝。相同的证据位置错配还使 batch_lanes.ts:616-619 永久报告 tracker retryable_failure。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:881 completedParentReport",
+          "plugins/immune-brain/runtime/unattended/batch_runner.ts:60-68 completedParentReport（未修改；直接消费本次改动产生的 final verification 和交付状态）",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:892-945 isDelivered/observeParentCompletion",
+          "plugins/immune-brain/runtime/unattended/batch_final_verification.ts:120-122 runFinalVerification",
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:604-624 closeIntegratedIssues"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC4"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-b91158f25287-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC3",
+      "source": "review",
+      "review_round": 2,
+      "summary": "自动释放 Lane 会使后续集成遗漏已交付 sibling 的 acceptance 重检。batch_lanes.ts:1244-1246 应同时传入 integrated 和 released children，并增加跨 tick 集成的负例，确保 sibling acceptance 失败时 Parent ref 不移动。",
+      "anchor": "sha256:848f6e494bb390b595ad41215f98b11ffc0925a3fe851a4724260f988d5e40ea",
+      "evidence": {
+        "trigger": "两个 scope-disjoint children A、B 从同一 Parent base 并行启动；A 先集成，其 clean Lane 在 batch_lanes.ts:1283 被自动标为 released；下一 tick B 的候选虽通过 B 自己的 acceptance，但使 A 的 acceptance 失败 → :1245 只选择 integrated siblings，将 A 排除，verifyCandidateDescriptors 不再运行 A 的检查，Parent ref 因而接受原本应被 integration guard 拒绝的候选。scope-disjoint 文件仍可存在运行时依赖，因此无需越界修改即可触发。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:1273-1284 automatic Lane release",
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:1237-1246 lanes.integrate siblings",
+          "plugins/immune-brain/runtime/unattended/batch_integration.ts:verifyCandidateDescriptors",
+          "plugins/immune-brain/runtime/unattended/batch_integration.ts:integrateGuardedLaneCommit"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC3"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:batch-parent-branch:2026-10-19T05:56:23.553Z",
+      "at": "2026-10-19T05:56:23.553Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:3877bfbc956a1f0eeb761d7c0d5a0de285152db36a1598d70fcf98d4d58b4773",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-3c36de8f75226646",
+        "issued_at": "2026-10-19T05:56:23.891Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:batch-parent-branch:2026-10-19T06:21:29.792Z",
+      "at": "2026-10-19T06:21:29.792Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-parent-branch.intent.json"
+    },
+    {
+      "id": "record_approval:batch-parent-branch:2026-10-19T06:24:04.303Z",
+      "at": "2026-10-19T06:24:04.303Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-37cd5298\naction_v2_sha256:7e7b1f27d7686210b849c9365364b106adbb27bb85e1ff8b15474179430184b3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-cb56565370298dbc",
+        "issued_at": "2026-10-19T06:24:04.303Z"
+      }
+    },
+    {
+      "id": "request_rework:batch-parent-branch:2026-10-19T06:28:53.753Z",
+      "at": "2026-10-19T06:28:53.753Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:4096875d8e6b5a48fa8ffaf11141c9706211e0647ce8f55891cba0f5acac7968",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-6d0e505185d7169e",
+        "issued_at": "2026-10-19T06:28:53.753Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "cb016d3174c41ebe147a56343c6381f6ad6dedcb",
+        "review_commit": "27ea78da99fe51fa08fb02095e173bd640d90681",
+        "review_tree": "cc367d0652ea27de09732e68519d9801481e6a81",
+        "manifest_digest": "sha256:1b63ef286a38189e1b243b5510f15bb8886c589ace52d5a68da291adfc001c79"
+      }
+    },
+    {
+      "id": "resolve_finding:batch-parent-branch:2026-10-19T06:38:36.854Z",
+      "at": "2026-10-19T06:38:36.854Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-13de33925aa9-1-review-1\naction_v2_sha256:86d63df6835658f78c78134c01e4177678bfad9f80c57743dcc09d2b15b0bebb"
+    },
+    {
+      "id": "resolve_finding:batch-parent-branch:2026-10-19T06:38:45.289Z",
+      "at": "2026-10-19T06:38:45.289Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-13de33925aa9-2-review-2\naction_v2_sha256:cdb676d05fb98e16f117fdd801892d3f0aefe81f9ca872f0856d7691b24988c8"
+    },
+    {
+      "id": "freeze_artifacts:batch-parent-branch:2026-10-19T06:38:53.025Z",
+      "at": "2026-10-19T06:38:53.025Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-parent-branch.intent.json"
+    },
+    {
+      "id": "record_approval:batch-parent-branch:2026-10-19T06:41:14.847Z",
+      "at": "2026-10-19T06:41:14.847Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-f328e766\naction_v2_sha256:a55085d859d08e2ac990c738a3b10eac5176603ad850cf4ed474e4252d684a01",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f5a0ae073e1588d5",
+        "issued_at": "2026-10-19T06:41:14.847Z"
+      }
+    },
+    {
+      "id": "request_rework:batch-parent-branch:2026-10-19T06:44:58.320Z",
+      "at": "2026-10-19T06:44:58.320Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:0af232fd37e457881eca07d67c95c5fb469a844d67a9d74b8943ec7815867a2b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-9cae29d3e17382fd",
+        "issued_at": "2026-10-19T06:44:58.320Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "cb016d3174c41ebe147a56343c6381f6ad6dedcb",
+        "review_commit": "cdc0b86fb0ab829652480298a3b9dbeed2bfec1e",
+        "review_tree": "7e420d90fee35ec779a311e695ff665554c08374",
+        "manifest_digest": "sha256:aa50570f8c78367e9ca53cba4d728191e048baed79bce3282beef39142097775"
+      }
+    },
+    {
+      "id": "revise_intent:batch-parent-branch:2026-10-19T06:45:35.766Z",
+      "at": "2026-10-19T06:45:35.766Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\nscope_added:plugins/immune-brain/runtime/unattended/batch_runner.ts\naction_v2_sha256:20818abc5fe313a9d612821eb90777ca973eb121cd2277db7234ca9ee21f0857"
+    },
+    {
+      "id": "resolve_finding:batch-parent-branch:2026-10-19T06:59:21.664Z",
+      "at": "2026-10-19T06:59:21.664Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-b91158f25287-1-review-1\naction_v2_sha256:e57cee2390bf0cadbab9cc9a14a658a4341dcacbc4f0c4b3424b32325a9962d8"
+    },
+    {
+      "id": "resolve_finding:batch-parent-branch:2026-10-19T06:59:29.524Z",
+      "at": "2026-10-19T06:59:29.524Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-b91158f25287-2-review-2\naction_v2_sha256:3100adcbf069d7d52b67457dcc41ef93cf84bf6d5e0ac398c1ace4c2cf342263"
+    },
+    {
+      "id": "freeze_artifacts:batch-parent-branch:2026-10-19T06:59:40.183Z",
+      "at": "2026-10-19T06:59:40.183Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-parent-branch.intent.json"
+    },
+    {
+      "id": "record_approval:batch-parent-branch:2026-10-19T07:02:02.274Z",
+      "at": "2026-10-19T07:02:02.274Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-87ce3b58\naction_v2_sha256:360ef79e148040dc14e7537e391dfe49d5b1f6a85a3cd54bda80352967e9eaae",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-a8f6e9da292dc360",
+        "issued_at": "2026-10-19T07:02:02.274Z"
+      }
+    },
+    {
+      "id": "record_approval:batch-parent-branch:2026-10-19T07:06:05.058Z",
+      "at": "2026-10-19T07:06:05.058Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-4b8f4d2b\naction_v2_sha256:95a9c0fa2e0afb3a3ea4342cec484f584a735f0ca77cfd432efece8903e2842b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-af5122b5977677f3",
+        "issued_at": "2026-10-19T07:06:05.058Z"
+      }
+    },
+    {
+      "id": "complete:batch-parent-branch:2026-10-19T07:06:07.294Z",
+      "at": "2026-10-19T07:06:07.294Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:425450d801396a6d450a30db4d14a531a93e039b0b08ce1bf6d2c5076b4dd97a"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "batch-parent-branch",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:batch-parent-branch:2026-10-19T07:06:07.294Z",
+  "final_record_hash": "sha256:321ded565d958037604fb63f96e0c0636cf60a7d9291a971177df9bc096815c2",
+  "terminalized_at": "2026-10-19T07:06:07.294Z"
+}

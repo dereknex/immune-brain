@@ -94,23 +94,24 @@ batch re-entry waits for it rather than redispatching. When a batch child's
 foreground terminal mutation reaches Kernel `done`, the same tool call stages
 only that child's generated terminal audit evidence and re-enters the batch under
 the still-valid authorization, opening no gate. The driver reconciles settlement,
-records the child's settled content on the batch's hidden ref, then enrolls the next ready child
+records the child's settled content on the batch's progress ref, then enrolls the next ready child
 or settles the batch as `completed`; the result carries the batch report as
 `batch`. A reserved Review, a parked child and a stopped child end where they do
 today and are never recorded automatically. If the re-entry fails, the Kernel
 result is unchanged and `batch` carries one recovery action: call
 `start_unattended_batch` with the same slug, which is also how to continue by
 hand. Your own commits, amends and branch switches never move the batch, which
-advances only its hidden ref; a hidden ref rewritten outside the runner fails closed. Ordinary Executor handoff and below-limit
+advances only its recorded progress ref; a progress ref rewritten outside the runner fails closed. Ordinary Executor handoff and below-limit
 QA repair do not park the batch; genuine budget/authority stops remain fail-closed.
 
-Batch execution never pushes a ref, opens or updates a pull request, resolves a
-user decision, or creates, switches, or deletes a Git worktree. It never commits
-to, switches or creates a user-visible branch: progress lives on the hidden ref
-`refs/imm/batches/<batch_id>`, one scope-bound commit per ordinary child, and
-your HEAD, branch and index stay where they were. Preflight commits nothing and
-blocks only on dirty paths inside the scope of a child that has not settled. A
-native Parent writes no Git effect.
+Batch execution never pushes a ref, opens or updates a pull request, or resolves a
+user decision. New Lane batches keep progress on `refs/heads/imm/<slug>`, created
+at `base_head` and never checked out by the runtime. A different existing tip
+refuses with `batch_parent_branch_exists` before creating refs, worktrees or a
+batch record. The coordinator's HEAD, branch, index and working tree stay
+untouched. Existing hidden-ref and legacy branch records retain their recorded
+behavior; serial execution is unchanged in this Slice. A native Parent writes
+no Git effect.
 
 ### Parallel Batch Opt-In
 
@@ -118,23 +119,32 @@ Lane mode uses the optional `max_parallel` parameter of `start_unattended_batch`
 selected by the Parent before native confirmation; without Lane supervision the
 confirmed run stays Managed serial on this Host. A `max_parallel` of 1 is the same
 as omitting it: the batch runs serially, not in Lane mode. `max_parallel` is a positive integer; the
-Standalone Hosts expose the same optional `lane_offers` list, each entry naming a
-`task_id` and an absolute `path` of an already existing Git worktree. The runner
-admits an offered Lane only when it shares the coordinator repository, is not the
-coordinator worktree, is on the branch `imm-lane/<initiative-slug>/<task-id>` at the
-named base, is clean and has no active run; otherwise it refuses the offer with a
-stable reason and writes nothing. A call that passes `lane_offers` without
-`max_parallel` resumes the recorded lane batch with its recorded `max_parallel`;
-without a recorded active lane batch it is refused before any gate opens. The runner still never creates, switches or
-deletes a Git worktree: when a child needs a Lane the report carries a
-`lane-steward` handoff and the Lane is provisioned outside the runner.
+runtime creates each new batch's Lane under the Git common directory at
+`imm/worktrees/<slug>/<task_id>`, on `imm-lane/<slug>/<task_id>` at the current
+Parent tip. The report returns its absolute path in an `executor` handoff;
+there is no provision handoff for a new batch. `lane_offers`, including an empty
+list, refuses with `lane_offers_retired` for a new or Parent-branch batch.
+Resume a Parent-branch batch with its slug and no offers; its recorded parallelism
+is retained when `max_parallel` is omitted.
+
+Only existing hidden-ref and legacy branch records still accept `lane_offers`
+and use `lane-steward` provision/release handoffs. Each offer names `task_id` and
+an absolute worktree path; admission requires the same repository, a separate
+clean worktree on the expected Lane branch and base, and no active run. These
+legacy instructions retire when the old records drain (runtime owner).
 
 In a Lane the child is enrolled, assured and settled exactly as in a serial batch.
 The runner then commits the settled delivery on the Lane branch and fast-forwards
-the batch's hidden ref only to a candidate whose changed paths and per-path content equal
-that commit; a mismatch or conflict moves nothing and parks the child.
+the recorded progress ref only to a candidate whose changed paths and per-path content equal
+that commit; a mismatch or conflict moves nothing and parks the child. New
+Parent-branch batches do not copy the integrated delta into the coordinator
+checkout. After integration, the runtime removes a clean, unoccupied Lane and
+its branch; a dirty Lane is kept and reported. Final verification runs in a
+detached worktree at the Parent tip and removes that worktree afterwards; a
+failure is reported without moving the Parent ref.
 With `max_parallel` above 1 the reconcile tick keeps up to that many Lanes in
-flight and reports one `provision` or `executor` handoff per child in `handoffs[]`.
+flight and reports one `executor` handoff per running child in `handoffs[]`
+(`provision` remains only for legacy records).
 Only children whose scopes are provably disjoint run together; a child whose scope
 overlaps an in-flight Lane waits until that Lane is integrated. Settled children
 integrate serially, and a parked child ends only itself and its dependents while a
@@ -169,7 +179,8 @@ missing Lane's `batch_lane_lost`.
 Inside a Lane, the Pi extension and the Claude Code `PreToolUse` hook refuse an
 `edit`/`write` (Claude: `Edit`, `Write`, `MultiEdit`, `NotebookEdit`) whose
 resolved target lies outside the Lane, naming the Lane path. A shell command is
-not intercepted; this is no bash sandbox. When a lane batch is re-entered with a
+not intercepted; this is no bash sandbox. Parent-branch batches never restore
+coordinator edits. Only when a legacy lane batch is re-entered with a
 dirty coordinator checkout, each dirty path is restored to HEAD only if every one
 of them is an unstaged modification or untracked file that a Lane of this batch
 changed (its bytes differ from that Lane's base) and whose bytes equal the Lane's,

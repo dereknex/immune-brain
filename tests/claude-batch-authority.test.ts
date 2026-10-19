@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it, mock, spyOn } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { copyGitTemplate } from "./helpers/git-template";
@@ -2046,15 +2046,16 @@ describe("lane mode parameters (parallel-batch-lanes)", () => {
 			});
 			expect(claude.state).toBe("started");
 			expect(pi.state).toBe("started");
-			const normalize = (value: unknown, fixture: { head: string }) =>
+			const normalize = (value: unknown, fixture: { head: string; root: string }) =>
 				JSON.parse(
-					JSON.stringify(value)
+					JSON.stringify(value, (key, item) => key === "run_id" || key === "record_revision" ? `<${key}>` : item)
+						.split(realpathSync(fixture.root)).join("<root>")
 						.split(fixture.head).join("<head>")
 						.replace(/batch-[A-Za-z0-9._-]+?-[0-9a-f-]{36}/g, "<batch>")
 						.replace(/\d{4}-\d\d-\d\dT[\d:.]+Z/g, "<time>"),
 				);
 			expect(claude.report.max_parallel).toBe(maxParallel);
-			expect(claude.report.handoffs?.[0]).toMatchObject({ role: "lane-steward", action: "provision" });
+			expect(claude.report.handoffs?.[0]).toMatchObject({ role: "executor", task_id: `${slug}-c1`, next_obligation: "submit_assurance" });
 			expect(claude.report).not.toHaveProperty("handoff");
 			expect(normalize(claude.report.handoffs, claudeFixture)).toEqual(normalize(pi.report.handoffs, piFixture));
 			expect(normalize(claude.report, claudeFixture)).toEqual(normalize(pi.report, piFixture));
@@ -2078,9 +2079,10 @@ describe("lane mode parameters (parallel-batch-lanes)", () => {
 });
 
 describe("lane resume without max_parallel (lane-followups)", () => {
-	const normalize = (value: unknown, fixture: { head: string }) =>
+	const normalize = (value: unknown, fixture: { head: string; root: string }) =>
 		JSON.parse(
-			JSON.stringify(value)
+			JSON.stringify(value, (key, item) => key === "run_id" || key === "record_revision" ? `<${key}>` : item)
+				.split(realpathSync(fixture.root)).join("<root>")
 				.split(fixture.head).join("<head>")
 				.replace(/batch-[A-Za-z0-9._-]+?-[0-9a-f-]{36}/g, "<batch>")
 				.replace(/\d{4}-\d\d-\d\dT[\d:.]+Z/g, "<time>"),
@@ -2096,7 +2098,7 @@ describe("lane resume without max_parallel (lane-followups)", () => {
 		return client;
 	}
 
-	it("resumes the recorded lane batch with lane_offers alone and gives both Hosts equal reports", async () => {
+	it("resumes the runtime-owned lane batch without max_parallel and gives both Hosts equal reports", async () => {
 		const slug = "lane-resume-parity";
 		const claudeFixture = createBatchFixture(slug);
 		const piFixture = createBatchFixture(slug);
@@ -2109,9 +2111,9 @@ describe("lane resume without max_parallel (lane-followups)", () => {
 				readInitiative: async () => piFixture.observation,
 				confirmBatch: async () => "accept",
 			});
-			const claude: any = await client.callTool("start_unattended_batch", { initiative_slug: slug, lane_offers: [] });
+			const claude: any = await client.callTool("start_unattended_batch", { initiative_slug: slug });
 			const pi: any = await executePiUnattendedBatch({
-				root: piFixture.root, initiativeSlug: slug, lane_offers: [],
+				root: piFixture.root, initiativeSlug: slug,
 				readInitiative: async () => piFixture.observation,
 				confirmBatch: async () => "accept",
 			});
@@ -2133,7 +2135,7 @@ describe("lane resume without max_parallel (lane-followups)", () => {
 		try {
 			const client = claudeClient(fixture, gates);
 			await client.callTool("start_unattended_batch", { initiative_slug: slug, max_parallel: 2 });
-			const result: any = await client.callTool("start_unattended_batch", { initiative_slug: slug, max_parallel: 3, lane_offers: [] });
+			const result: any = await client.callTool("start_unattended_batch", { initiative_slug: slug, max_parallel: 3 });
 			expect(JSON.stringify(result)).toContain("batch_parallel_mismatch");
 		} finally {
 			rmSync(fixture.root, { recursive: true, force: true });

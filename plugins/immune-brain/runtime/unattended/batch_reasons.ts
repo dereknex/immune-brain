@@ -16,6 +16,7 @@ export type BatchReasonKey =
 	| "kernel_authority_conflict"
 	| "git_head_unreadable"
 	| "branch_already_exists"
+	| "batch_parent_branch_exists"
 	| "git_status_unreadable"
 	| "working_tree_dirty"
 	| "authorized_scope_underivable"
@@ -48,6 +49,11 @@ export interface BatchReasonSpec {
 }
 
 export const BATCH_REASONS: Readonly<Record<BatchReasonKey, BatchReasonSpec>> = Object.freeze({
+	batch_parent_branch_exists: {
+		state: "rejected",
+		reason: detail => `batch_parent_branch_exists: ${detail} does not point at base_head`,
+		recovery_action: "inspect the existing Parent branch and retry with a reconciled base in the current Host",
+	},
 	invalid_slug: {
 		state: "rejected",
 		reason: (detail: string) => `invalid initiative slug: ${detail}`,

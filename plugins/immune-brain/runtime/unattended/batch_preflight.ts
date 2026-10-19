@@ -21,7 +21,7 @@ import { computeBatchPlanDigest, type BatchAuthorizationBinding } from "../kerne
 import { readGitHead } from "../kernel/pi_canary_prepare";
 import { intentAuthorityHash, readTaskIntent, observeEnrollmentTaskIntent } from "../kernel/intent";
 import type { TaskIntentV1 } from "../kernel/types";
-import { ignoredPaths, isBatchRef, readBatchRef } from "./batch_ref";
+import { ignoredPaths, isBatchRef, isParentBranch, isProgressRef, parentBranchRef, readBatchRef } from "./batch_ref";
 import { auditRunRecordPath, auditRunTerminalProofPath } from "../kernel/storage_paths";
 import { isWorkflowAuthoringPath } from "./batch_git";
 import { readTaskRecordRaw, readSettledTaskEvidence, readWorkspaceStateRaw, enrollmentEventIdFor, reconcileKernelAuthority } from "../kernel/storage";
@@ -44,6 +44,7 @@ const INITIATIVE_SLUG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 export interface BatchPreflightOptions {
 	root: string;
+	max_parallel?: number;
 	initiative_slug: string;
 	now?: string;
 	readInitiative?: InitiativeObservationReader;
@@ -235,7 +236,7 @@ export function classifyBatchLineage(input: {
 	});
 	// A hidden-ref batch's head is the ref's tip; the user's checkout is not part of it.
 	let head: string;
-	if (isBatchRef(branch)) {
+	if (isProgressRef(branch)) {
 		head = readBatchRef(root, branch) ?? "";
 		if (!head) return broken(`${branch} does not exist`);
 	} else {
@@ -278,7 +279,7 @@ export function classifyBatchLineage(input: {
  * sits on the checked-out HEAD.
  */
 function batchHeadFor(root: string, record: AnyBatchRunStateRecord | null, userHead: string): string {
-	if (record && isBatchRef(record.branch)) return readBatchRef(root, record.branch) ?? userHead;
+	if (record && isProgressRef(record.branch)) return readBatchRef(root, record.branch) ?? userHead;
 	return userHead;
 }
 
@@ -624,7 +625,7 @@ async function projectPreflight(
 	const existingBatch: AnyBatchRunStateRecord | null = activeRecord ?? findSettledBatchRecord(root, initiativeSlug);
 	const isResuming = activeRecord !== null;
 	// A batch records the branch it advances: its hidden ref, or a legacy imm/<slug> branch.
-	const batchBranch = activeRecord?.branch ?? `imm/${initiativeSlug}`;
+	const batchBranch = activeRecord?.branch ?? (options.max_parallel !== undefined ? parentBranchRef(initiativeSlug) : `imm/${initiativeSlug}`);
 
 	// 1. Active workspace claim (pre-confirmation).
 	const activeTaskId = readActiveClaimTaskId(root);
@@ -645,9 +646,13 @@ async function projectPreflight(
 	} catch (err) {
 		return reject("git_head_unreadable", err instanceof Error ? err.message : String(err));
 	}
-	const branchExists = spawnSync("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${batchBranch}`]);
-	if (branchExists.status === 0 && !existingBatch)
-		return reject("branch_already_exists", batchBranch);
+	if (!isResuming && isParentBranch(batchBranch)) {
+		const tip = readBatchRef(root, batchBranch);
+		if (tip && tip !== baseHead) return reject("batch_parent_branch_exists", batchBranch);
+	} else {
+		const branchExists = spawnSync("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${batchBranch}`]);
+		if (branchExists.status === 0 && !existingBatch) return reject("branch_already_exists", batchBranch);
+	}
 
 	let statusEntries = porcelainEntries(root);
 	if (statusEntries === null)
@@ -657,6 +662,7 @@ async function projectPreflight(
 	// a Lane's write, the runner restores them after the gate; any change of
 	// unknown origin is refused below and nothing is touched.
 	let unprovableLeak = "";
+	if (isParentBranch(batchBranch)) statusEntries = [];
 	if (statusEntries.length > 0 && activeRecord && isLaneBatchRecord(activeRecord)) {
 		const plan = planLaneLeakRestore(root, activeRecord, statusEntries);
 		if (plan.kind === "provable") statusEntries = [];

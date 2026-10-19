@@ -1680,7 +1680,7 @@ describe("lane mode parameters (parallel-batch-lanes)", () => {
 		const opened = { count: 0 };
 		await expect(
 			tool.execute("tc", { initiative_slug: "lane-offers-only", lane_offers: [] }, undefined, undefined, countingTuiContext(fixture.root, opened) as never),
-		).rejects.toThrow(/lane_offers requires max_parallel/);
+		).rejects.toThrow(/lane_offers_retired/);
 		expect(opened.count).toBe(0);
 		assertZeroWrites(fixture.root, fixture.head, "lane-offers-only");
 	});

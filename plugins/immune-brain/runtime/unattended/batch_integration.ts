@@ -13,7 +13,7 @@ import { parseTaskIntentV1 } from "../kernel/intent";
 import { commitWorkflowPaths, settleCommitSubject } from "../assurance/workflow_autocommit";
 import { readGitIntegrationPreference } from "../git_integration_preference";
 import { parseVerificationDescriptor } from "../verification_descriptor";
-import { applyDeltaToWorkingTree, changedPaths, isBatchRef, moveBatchRef, readBatchRef } from "./batch_ref";
+import { applyDeltaToWorkingTree, changedPaths, isBatchRef, isParentBranch, isProgressRef, moveBatchRef, readBatchRef } from "./batch_ref";
 
 export type BatchIntegrationReason =
 	| "batch_integration_conflict"
@@ -160,7 +160,7 @@ export interface IntegrateLaneInput {
  */
 export function prepareLaneCandidate(input: IntegrateLaneInput): string {
 	const { root, branch, batch_head: head, lane_base: base, lane_commit: laneCommit } = input;
-	if (isBatchRef(branch)) {
+	if (isProgressRef(branch)) {
 		const tip = readBatchRef(root, branch);
 		if (tip !== head)
 			throw new BatchIntegrationError(
@@ -213,6 +213,10 @@ export function fastForwardToCandidate(
 	candidate: string,
 	hidden?: { branch: string; from: string },
 ): { commit: string; applied?: string[] } {
+	if (hidden && isParentBranch(hidden.branch)) {
+		moveBatchRef(root, hidden.branch, hidden.from, candidate);
+		return { commit: candidate };
+	}
 	if (hidden && isBatchRef(hidden.branch)) {
 		const delta = applyDeltaToWorkingTree(root, hidden.from, candidate, changedPaths(root, hidden.from, candidate));
 		if (delta.conflicts.length > 0)
@@ -426,7 +430,7 @@ export function findIntegratedCandidate(input: {
 	lane_commit: string;
 }): string | null {
 	const { root, task_id: taskId, batch_id: batchId, from_head: from, lane_base: base, lane_commit: laneCommit } = input;
-	const tip = isBatchRef(input.branch) ? input.branch : "HEAD";
+	const tip = isProgressRef(input.branch) ? input.branch : "HEAD";
 	const listed = git(root, [
 		"log",
 		"--fixed-strings",

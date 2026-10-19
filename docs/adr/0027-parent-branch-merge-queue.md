@@ -1,12 +1,14 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Parent Branch and Merge Queue
 
-Proposed on 2026-10-19 by the repository owner (decisions D11–D18 and D24 in
-`docs/specs/branch-boundary-r2.spec.md`), to be accepted when Slice S1 of
-Initiative `branch-boundary-r2` (`batch-parent-branch`) lands. It delivers
+Accepted by the repository owner with Slice S1 of Initiative `branch-boundary-r2`
+(`batch-parent-branch`): Parent-branch Lane lifecycle and final verification
+(decisions D11–D14 in `docs/specs/branch-boundary-r2.spec.md`). Merge redo,
+derived regeneration, serial retirement and return-to-main remain the later
+Slices defined by that Spec (D15–D18 and D24), not S1 delivery claims. It delivers
 [ADR 0026](0026-branch-boundary-frozen-acceptance.md) item 5. It supersedes
 [ADR 0005](0005-unattended-initiative-batch-run.md) §6 and
 [ADR 0013](0013-optional-parallel-batch-lanes.md) §3 for worktree management,

@@ -6,12 +6,12 @@ import { join } from "node:path";
 import type { AssuranceProjectionResult } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 import { computeBatchPlanDigest, createBatchAuthorityRegistry, deriveChildEnrollment } from "../plugins/immune-brain/runtime/kernel/batch_authority";
 import { createEnrollmentAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
-import { canonicalIntentHash, intentAuthorityHash, parseTaskIntentV1, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
+import { canonicalIntentHash, intentAuthorityHash, parseTaskIntentV1, readTaskIntent, observeEnrollmentTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { createBatchKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
 import { projectBatchPreflight, readActiveClaimTaskId } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
-import type { BatchRunnerGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
+import { observeParentCompletion, runBatchGitPreflight, type BatchRunnerGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import {
 	BatchIntegrationError,
 	changeIdentity,
@@ -31,7 +31,8 @@ import {
 	type LaneOffer,
 } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
 import type { BatchRunnerKernelPort, StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_runner";
-import { startBatch } from "../plugins/immune-brain/runtime/unattended/batch_runner";
+import { completedParentReport, startBatch } from "../plugins/immune-brain/runtime/unattended/batch_runner";
+import { recoverKernelStoreFollowUps } from "../plugins/immune-brain/runtime/kernel/storage";
 import { readAnyBatchRunState, type BatchLaneRunReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import type { BatchPlanChild } from "../plugins/immune-brain/runtime/unattended/types";
 
@@ -252,6 +253,140 @@ function request(
 }
 
 const lanes = (report: unknown) => report as BatchLaneRunReport;
+
+describe("runtime-owned Parent Lane lifecycle", () => {
+	for (const untracked of [false, true]) it(`enrolls real Lanes with ${untracked ? "untracked" : "modified"} coordinator planning inputs without copying implementation dirt`, async () => {
+		const specPath = "docs/specs/parent.spec.md";
+		const fx = fixture({}, { "task-a": ["a.txt", specPath] });
+		try {
+			git(fx.repo, "checkout", "-q", "main");
+			git(fx.repo, "branch", "-D", BATCH_BRANCH);
+			const intentPath = "docs/plans/task-a.intent.json";
+			const intent = JSON.parse(readFileSync(join(fx.repo, intentPath), "utf8"));
+			if (untracked) {
+				git(fx.repo, "rm", intentPath);
+				git(fx.repo, "commit", "-qm", "planning input not in Parent base");
+			}
+			const base = git(fx.repo, "rev-parse", "HEAD");
+			intent.revision = 2;
+			intent.goal = "authorized uncommitted planning input";
+			const intentBytes = JSON.stringify(intent) + "\n";
+			writeFileSync(join(fx.repo, intentPath), intentBytes);
+			mkdirSync(join(fx.repo, "docs/specs"), { recursive: true });
+			writeFileSync(join(fx.repo, specPath), "# Approved uncommitted Spec\n");
+			writeFileSync(join(fx.repo, "a.txt"), "coordinator dirt must not reach Lane\n");
+			const observed = observeEnrollmentTaskIntent(fx.repo, "task-a");
+			const planned = { ...child("task-a", "S1"), intent_revision: observed.intent.revision, intent_content_hash: observed.content_hash };
+			const args = request({ ...fx, base }, [planned], laneKernel(), { git: { ...laneGit(), preflight: runBatchGitPreflight } });
+			args.kernel = createBatchKernelPort({
+				root: fx.repo, enrollmentRegistry: createEnrollmentAuthorityRegistry(),
+				registry: args.registry, capability: args.capability,
+				binding: { batch_id: BATCH_ID, initiative_slug: SLUG, plan_digest: args.plan_digest, branch: "main", base_head: base,
+					budget: args.budget, actor_id: "user", confirmation_ref: "confirm", nonce: "n" },
+				advanceTask: async () => ({ state: "completed" }),
+				resume: { isResuming: false, existingBatch: null, batchBranch: `refs/heads/${BATCH_BRANCH}` },
+				overrides: { validateBatchAuthorization: ({ registry, capability, binding }) =>
+					registry.inspect(capability, { ...binding, branch: "main", actor_id: "user", confirmation_ref: "confirm", nonce: "n" } as never) },
+			});
+			const index = readFileSync(join(fx.repo, ".git/index"));
+			const report = lanes(await startBatch(args));
+			expect(report.children[0]!.reason).toBeNull();
+			expect(report.children.map(c => c.state)).toEqual(["enrolled"]);
+			expect(report.handoffs).toMatchObject([{ role: "executor", task_id: "task-a" }]);
+			const lane = report.children[0]!.lane!.path;
+			expect(readActiveClaimTaskId(lane)).toBe("task-a");
+			expect(readActiveClaimTaskId(fx.repo)).toBeNull();
+			expect(readFileSync(join(lane, intentPath), "utf8")).toBe(intentBytes);
+			expect(readFileSync(join(lane, specPath), "utf8")).toBe("# Approved uncommitted Spec\n");
+			expect(existsSync(join(lane, "a.txt"))).toBe(false);
+			expect(git(lane, "rev-parse", "HEAD")).toBe(base);
+			expect(git(fx.repo, "rev-parse", `refs/heads/${BATCH_BRANCH}`)).toBe(base);
+			expect(readFileSync(join(fx.repo, ".git/index"))).toEqual(index);
+			expect(readFileSync(join(fx.repo, intentPath), "utf8")).toBe(intentBytes);
+			expect(readFileSync(join(fx.repo, "a.txt"), "utf8")).toBe("coordinator dirt must not reach Lane\n");
+		} finally { fx.cleanup(); }
+	});
+	for (const mode of ["clean", "dirty", "sibling-fails"] as const) it(`runtime-owned lifecycle: ${mode}`, async () => {
+		const dirty = mode === "dirty";
+		const siblingFails = mode === "sibling-fails";
+		const fx = fixture(siblingFails ? { "task-a": `process.exit(require('node:fs').existsSync('b.txt') ? 1 : 0)` } : {},
+			{ "task-a": ["a.txt"], "task-b": ["b.txt"] });
+		try {
+			// The Parent branch must not already be checked out by the coordinator.
+			git(fx.repo, "checkout", "-q", "main");
+			git(fx.repo, "branch", "-D", BATCH_BRANCH);
+			const kernel = laneKernel();
+			const advance = kernel.advanceTask;
+			kernel.advanceTask = async (root, taskId) => {
+				const read = readTaskIntent(root, taskId);
+				seedKernelRunForTest(root, { task_id: taskId, terminal: { lifecycle: "done" }, record: {
+					contract: "assurance_kernel/task_record/v4", task_id: taskId, intent_snapshot: read.intent,
+					intent_ref: { path: read.intent_ref.path, content_hash: read.content_hash }, lifecycle: "done", artifact_state: "frozen", baseline: read.content_hash,
+					git_base_head: git(root, "rev-parse", "HEAD"), attestations: [], findings: [], history: [],
+				} });
+				recoverKernelStoreFollowUps(root, taskId);
+				return advance(root, taskId);
+			};
+			const port = createDefaultLaneGitPort();
+			const closed: string[] = [];
+			const tracker = { markTerminal: async (_root: string, request: { task_id: string; terminal_event_id: string }) => {
+				expect(request.terminal_event_id).not.toBe("");
+				closed.push(request.task_id);
+				return { status: "updated" as const, message: "closed" };
+			} };
+			if (dirty) {
+				const integrate = port.integrate;
+				port.integrate = async input => {
+					const result = await integrate(input);
+					writeFileSync(join(kernel.enrolled.get(input.child.task_id)!, "keep.txt"), "uncommitted\n");
+					return result;
+				};
+			}
+			const args = request(fx, [child("task-a", "S1"), child("task-b", "S2", siblingFails ? [] : ["task-a"])], kernel, {
+				git: Object.assign(laneGit(), { preflight: runBatchGitPreflight, lane: port }),
+				final_verification: ["bun --version"], tracker, ...(siblingFails ? { max_parallel: 2 } : {}),
+			});
+			const first = lanes(await startBatch(args));
+			expect(first.handoffs).toContainEqual(expect.objectContaining({ role: "executor", task_id: "task-a" }));
+			const laneA = kernel.enrolled.get("task-a")!;
+			expect(laneA).toContain("/.git/imm/worktrees/");
+			writeFileSync(join(laneA, "a.txt"), "a\n");
+			kernel.frozen.add("task-a");
+			const second = lanes(await startBatch(args));
+			expect(second.children.map(c => c.state)).toEqual([dirty ? "integrated" : "released", "enrolled"]);
+			expect(existsSync(laneA)).toBe(dirty);
+			if (dirty) expect(second.lane_refusals).toContainEqual({ task_id: "task-a", path: laneA, reason: "batch_lane_kept: Lane is dirty or its release evidence is incomplete" });
+			const laneB = kernel.enrolled.get("task-b")!;
+			expect(git(laneB, "rev-parse", "HEAD")).toBe(siblingFails ? fx.base : second.commits[0]!);
+			writeFileSync(join(laneB, "b.txt"), "b\n");
+			kernel.frozen.add("task-b");
+			const done = lanes(await startBatch(args));
+			if (siblingFails) {
+				expect(done.batch_state).toBe("needs_human");
+				expect(done.children[1]!.state).toBe("needs_human");
+				expect(done.children[1]!.reason).toContain("batch_integration_check_failed");
+				expect(git(fx.repo, "rev-parse", BATCH_BRANCH)).toBe(second.commits[0]!);
+				expect(closed).toEqual(["task-a"]);
+				return;
+			}
+			expect(done.batch_state).toBe("completed");
+			expect(done.commits).toHaveLength(2);
+			expect(done.final_verification).toMatchObject({ passed: true, head: done.commits[1] });
+			expect(git(fx.repo, "rev-parse", "HEAD")).toBe(fx.base);
+			expect(git(fx.repo, "diff", "HEAD")).toBe("");
+			expect(existsSync(join(fx.repo, "a.txt"))).toBe(false);
+			expect(existsSync(join(fx.repo, "b.txt"))).toBe(false);
+			expect(closed).toEqual(["task-a", "task-b"]);
+			expect(await observeParentCompletion(fx.repo, SLUG, ["task-a", "task-b"])).toMatchObject({ complete: true, head: done.commits[1] });
+			const reader = async () => ({ contract: "immune_brain/github_initiative_observation/v1" as const,
+				initiative_id: SLUG, initiative_slug: SLUG, carrier: "local" as const,
+				tasks: [{ task_id: "task-a", slice_id: "S1", blocked_by: [] }, { task_id: "task-b", slice_id: "S2", blocked_by: ["task-a"] }] });
+			expect(await completedParentReport(fx.repo, SLUG, reader, tracker)).toMatchObject({ batch_state: "completed" });
+			git(fx.repo, "update-ref", `refs/heads/${BATCH_BRANCH}`, fx.base);
+			expect(await completedParentReport(fx.repo, SLUG, reader, tracker)).toBeNull();
+		} finally { fx.cleanup(); }
+	});
+});
 
 describe("lane mode parameters", () => {
 	it("accepts positive integers and rejects everything else", () => {
@@ -734,7 +869,7 @@ describe("max_parallel 1 end to end through a real second worktree", () => {
 			expect(report).not.toHaveProperty("max_parallel");
 			expect(readAnyBatchRunState(fx.repo, BATCH_ID)?.contract).toBe("assurance_kernel/batch_run_state/v1");
 			// Lane offers with nothing recorded to resume are still refused, not turned serial.
-			expect(() => resolveLaneParallel(fx.repo, "other-initiative", parseMaxParallel(1), [])).toThrow(/requires max_parallel/);
+			expect(() => resolveLaneParallel(fx.repo, "other-initiative", parseMaxParallel(1), [])).toThrow(/lane_offers_retired/);
 		} finally {
 			fx.cleanup();
 		}
