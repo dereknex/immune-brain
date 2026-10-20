@@ -315,6 +315,24 @@ never rewrite" invariant is preserved — see Architecture invariants).
    series once, here, means the batch convergence trigger and the review
    quality report read the same numbers. The report decides nothing by
    itself; wiring a trigger into imm-run remains #204 S1's own follow-up.
+8. **Review timing instrumentation (added 2026-10-20).** Item 3's
+   rounds-to-pass numbers say how many rounds a task took, never how long
+   a round's review took: no TaskRecord version timestamps the review
+   itself (the v4 history has no review event and attestations carry no
+   timestamps; the v2/v3 `submit_review` event records submission of an
+   already-obtained verdict, not a dispatch bracket — verified by the
+   2026-10-20 measurement over the 145 committed records, which could
+   not recover any review-duration share). So that "how much of a task
+   is review" is measurable from records at all, the coordinator records
+   two timestamps per review round on the task record: when the Review
+   reservation is created (QA pass → `review_ready`) and when the verdict
+   is submitted. The record report (item 3) additionally publishes the
+   dispatch→verdict duration distribution (median and p95) over rounds
+   that carry both timestamps. Records written before this change are
+   treated as unmeasured and excluded from the duration series, never
+   counted as zero. The timestamps are observations only: no gate,
+   budget, or admission reads them. When S3 lands, verifier rounds get
+   the same pair on the verification history event.
 
 ### S2: verifier role
 
