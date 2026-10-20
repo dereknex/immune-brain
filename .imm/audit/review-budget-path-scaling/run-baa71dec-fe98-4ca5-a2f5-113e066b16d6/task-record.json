@@ -1,0 +1,138 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "review-budget-path-scaling",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "review-budget-path-scaling",
+    "goal": "The heavy independent Review turn budget grows with the number of changed paths instead of stopping at a flat 24 turns: a heavy Review gets 12 turns plus one per changed path, at least 24 and at most 48, so a wide change such as branch-boundary-r2 S4 serial-runner-retirement (29 paths, -12303 lines) is no longer cut off before the reviewer has read every changed file.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "The turn budget for a heavy Review is 12 plus the number of changed paths in its evidence, bounded below by 24 and above by 48: 12 or fewer paths give 24, 29 paths give 41, and 36 or more paths give 48, for both a review manifest (changed_paths) and a review bundle (dirty_files).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-review-outcome-evidence.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Quick and standard Reviews keep their flat 12 and 16 turn budgets regardless of path count, and the workload classification rules (critical, 9 or more acceptance items, 12 or more changed paths or more than 512 KiB of evidence for heavy; the routine quick limits) are unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-review-outcome-evidence.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "The committed Claude MCP bundle matches the runtime source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/build-claude-plugin.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/review-budget-path-scaling.intent.json",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "tests/pi-canary-review-outcome-evidence.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/review-budget-path-scaling.intent.json",
+    "content_hash": "sha256:8360186f03aa767c533724fb87457582acefe3f2ae81731edad19c282d4a803e"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:8360186f03aa767c533724fb87457582acefe3f2ae81731edad19c282d4a803e",
+  "git_base_head": "7082861f9ccfd22fe74f51dc416916e58f8e0a4f",
+  "attestations": [
+    {
+      "id": "approval-qa-31fa6ad4",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8360186f03aa767c533724fb87457582acefe3f2ae81731edad19c282d4a803e",
+      "diff_hash": "sha256:de3eb8cc05351e114c5b3cb41d84e87a55e3381aa4f450d2b22482a521975b8f",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:e21e2a3c67401f5ceb882edd17c502757d558db86bc1dc42a991c3d72b549028",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e21e2a3c67401f5ceb882edd17c502757d558db86bc1dc42a991c3d72b549028"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e21e2a3c67401f5ceb882edd17c502757d558db86bc1dc42a991c3d72b549028"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e21e2a3c67401f5ceb882edd17c502757d558db86bc1dc42a991c3d72b549028"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-f8ecc11f",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8360186f03aa767c533724fb87457582acefe3f2ae81731edad19c282d4a803e",
+      "diff_hash": "sha256:de3eb8cc05351e114c5b3cb41d84e87a55e3381aa4f450d2b22482a521975b8f",
+      "actor_id": "parent-mediated-review",
+      "summary": "Heavy Review budget is now clamp(12 + changed paths, 24, 48) for both manifest changed_paths and bundle dirty_files. Quick (12) and standard (16) budgets and the classification thresholds are unchanged. The only call site that sets maxTurns, in coordinator.ts, now passes the path count, and the dist bundle mirrors the source. Provenance checked: commit c7d78c2 has 7082861 as its only parent and tree dda1b9f.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "7082861f9ccfd22fe74f51dc416916e58f8e0a4f",
+        "review_commit": "c7d78c2f4f4e5e7b7724905ed529533f9becc91d",
+        "review_tree": "dda1b9fc442ad65bc979ba014944a85f79624f77",
+        "manifest_digest": "sha256:feef56d095849961432250ae3e68e52900fca1f0473ab3fa6f866b35b4d494b8"
+      },
+      "reviewer_verdict_sha256": "sha256:48d9b72620adb0d1a4a81c8aec027a35ea26dcecaa355cd6c50a1c4e20c6b06b"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:review-budget-path-scaling:2026-10-20T00:08:47.295Z",
+      "at": "2026-10-20T00:08:47.295Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-budget-path-scaling.intent.json"
+    },
+    {
+      "id": "record_approval:review-budget-path-scaling:2026-10-20T00:08:54.602Z",
+      "at": "2026-10-20T00:08:54.602Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-31fa6ad4\naction_v2_sha256:e89c31530ec7d170c51d55b456afd9707b5c244d8c5f948893c9bba848af8876",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-20T00:08:54.602Z"
+      }
+    },
+    {
+      "id": "record_approval:review-budget-path-scaling:2026-10-20T00:09:38.338Z",
+      "at": "2026-10-20T00:09:38.338Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-f8ecc11f\naction_v2_sha256:82ae2dd73b48a88a1452c51dd6f0e227e47dcfa90eec2bd3dd74fcdbde74852a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-20T00:09:38.338Z"
+      }
+    },
+    {
+      "id": "complete:review-budget-path-scaling:2026-10-20T00:09:39.456Z",
+      "at": "2026-10-20T00:09:39.456Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:d139d94b60a00ae18b4632bb97e581492728f9bd163695369ce375aaf6d9e720"
+    }
+  ]
+}

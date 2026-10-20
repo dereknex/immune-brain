@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "review-budget-path-scaling",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:review-budget-path-scaling:2026-10-20T00:09:39.456Z",
+  "final_record_hash": "sha256:64401efccc4a447a3c39ac25031f7afe1e423bf4be910d4e261fb05a1e5eb290",
+  "terminalized_at": "2026-10-20T00:09:39.456Z"
+}
