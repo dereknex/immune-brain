@@ -251,6 +251,18 @@ describe("skill dist consistency", () => {
 		expect(contract).toContain("Stop on detached HEAD, zero matches, multiple matches");
 		expect(contract).toContain("without creating or mutating\nTaskIntent, TaskRecord, Kernel, Spec, or Plan authority");
 		expect(contract).toContain("An already active\nManaged task remains owned by `imm-run`");
+		const loaderPath = join(SKILLS_DIR, "imm-pr-fix/SKILL.md");
+		const loader = read(loaderPath);
+		const diagnosis = linkedSections(loaderPath, routeLine(loader, "diagnosis:"));
+		expect(diagnosis).toContain("head commit SHA");
+		expect(diagnosis).toContain("incomplete diagnosis");
+		expect(diagnosis).toContain("effective `CHANGES_REQUESTED`");
+		expect(diagnosis).toContain("complete discussion");
+		const closeout = linkedSections(loaderPath, routeLine(loader, "verification or remote closeout"));
+		expect(closeout).toContain("compare its head SHA with the diagnostic baseline");
+		expect(closeout).toContain("re-read the target discussion");
+		expect(closeout).toContain("keep disputed or blocked items unresolved");
+		expect(closeout).toContain("Local repair and remote feedback closeout are separate results");
 	});
 
 	test("every packaged contract document is declared with a source-of-truth", () => {

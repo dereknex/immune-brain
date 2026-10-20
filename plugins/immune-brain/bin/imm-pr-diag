@@ -27,7 +27,8 @@ Prerequisites:
 
 Output:
   A JSON object containing pr_target, checks, reviews, review_threads,
-  conflicts, and blocker_summary fields.
+  comments, conflicts, and blocker_summary fields. Unknown mergeability and
+  pending checks remain explicit; any failed diagnostic query exits nonzero.
 EOF
   exit 0
 }
@@ -58,19 +59,24 @@ fi
 
 # ── Fetch PR metadata ───────────────────────────────────────────────────────
 
-PR_JSON=$(gh pr view "$PR" --json number,headRefName,baseRefName,url,mergeable,mergeStateStatus,files 2>&1) || {
+PR_JSON=$(gh pr view "$PR" --json number,headRefName,headRefOid,headRepository,headRepositoryOwner,baseRefName,url,mergeable,mergeStateStatus,files 2>&1) || {
   echo "error: failed to fetch PR data for '${PR}'. Is this a valid PR identifier?" >&2
   echo "       gh output: ${PR_JSON}" >&2
   exit 1
 }
 
-PR_NUMBER=$(printf '%s\n' "$PR_JSON" | jq -r '.number')
+PR_NUMBER=$(printf '%s\n' "$PR_JSON" | jq -er '.number')
+PR_HOST=$(printf '%s\n' "$PR_JSON" | jq -er '.url | split("/")[2]')
+REPO_FULL_NAME=$(printf '%s\n' "$PR_JSON" | jq -er '.url | split("/")[3:5] | join("/")')
+TARGET_REPO="$PR_HOST/$REPO_FULL_NAME"
 
 # ── Fetch CI checks ─────────────────────────────────────────────────────────
 
 CHECKS_STATUS=0
-CHECKS_JSON=$(gh pr checks "$PR" --json name,state,bucket,link,workflow 2>&1) || CHECKS_STATUS=$?
-if [ "$CHECKS_STATUS" -ne 0 ] && [ "$CHECKS_STATUS" -ne 8 ]; then
+CHECKS_JSON=$(gh pr checks "$PR_NUMBER" --repo "$TARGET_REPO" --json name,state,bucket,link,workflow 2>&1) || CHECKS_STATUS=$?
+# gh uses 1 for failed checks and 8 for pending checks; both carry valid JSON.
+if { [ "$CHECKS_STATUS" -ne 0 ] && [ "$CHECKS_STATUS" -ne 1 ] && [ "$CHECKS_STATUS" -ne 8 ]; } ||
+   ! printf '%s\n' "$CHECKS_JSON" | jq -e 'type == "array"' >/dev/null 2>&1; then
   echo "error: failed to fetch PR checks for '${PR}'." >&2
   echo "       gh output: ${CHECKS_JSON}" >&2
   exit 1
@@ -78,18 +84,22 @@ fi
 
 # ── Fetch reviews ───────────────────────────────────────────────────────────
 
-REVIEWS_JSON=$(gh pr view "$PR" --json reviews --jq '.reviews' 2>/dev/null) || REVIEWS_JSON="[]"
+REVIEWS_PAGES=$(gh api --hostname "$PR_HOST" --paginate --slurp "repos/$REPO_FULL_NAME/pulls/$PR_NUMBER/reviews" 2>&1) || {
+  echo "error: failed to fetch PR reviews: $REVIEWS_PAGES" >&2
+  exit 1
+}
+REVIEWS_JSON=$(printf '%s\n' "$REVIEWS_PAGES" | jq '[.[][]]')
+COMMENTS_PAGES=$(gh api --hostname "$PR_HOST" --paginate --slurp "repos/$REPO_FULL_NAME/issues/$PR_NUMBER/comments" 2>&1) || {
+  echo "error: failed to fetch PR comments: $COMMENTS_PAGES" >&2
+  exit 1
+}
+COMMENTS_JSON=$(printf '%s\n' "$COMMENTS_PAGES" | jq '[.[][]]')
 
 # ── Fetch review threads (comments) ─────────────────────────────────────────
 
-REPO_FULL_NAME=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>&1) || {
-  echo "error: failed to determine repository name for review thread lookup." >&2
-  echo "       gh output: ${REPO_FULL_NAME}" >&2
-  exit 1
-}
 REPO_OWNER=${REPO_FULL_NAME%/*}
 REPO_NAME=${REPO_FULL_NAME#*/}
-THREADS_PAGES=$(gh api graphql --paginate --slurp \
+THREADS_PAGES=$(gh api --hostname "$PR_HOST" graphql --paginate --slurp \
   -f owner="$REPO_OWNER" \
   -f repo="$REPO_NAME" \
   -F pr="$PR_NUMBER" \
@@ -99,14 +109,23 @@ query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
     pullRequest(number: $pr) {
       reviewThreads(first: 100, after: $endCursor) {
         nodes {
+          id
           path
           line
           startLine
           isResolved
-          comments(first: 1) {
+          isOutdated
+          viewerCanResolve
+          comments(first: 100) {
             nodes {
+              id
+              url
+              author { login }
               body
+              createdAt
+              updatedAt
             }
+            totalCount
           }
         }
         pageInfo {
@@ -122,7 +141,39 @@ query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
   echo "       gh output: ${THREADS_PAGES}" >&2
   exit 1
 }
-THREADS_JSON=$(printf '%s\n' "$THREADS_PAGES" | jq '[.[].data.repository.pullRequest.reviewThreads.nodes[]?]')
+THREADS_JSON=$(printf '%s\n' "$THREADS_PAGES" | jq -e '
+  if any(.[]; (.errors | length) > 0 or .data.repository.pullRequest == null)
+  then error("incomplete review thread response")
+  else [.[].data.repository.pullRequest.reviewThreads.nodes[]] end')
+
+# Fetch overflowing discussions separately so both connection cursors stay complete.
+THREADS_JSON=$(printf '%s\n' "$THREADS_JSON" | jq -c '.[]' | while IFS= read -r thread; do
+  if [ "$(printf '%s\n' "$thread" | jq -r '.comments.totalCount > 100')" = true ]; then
+    thread_id=$(printf '%s\n' "$thread" | jq -r '.id')
+    pages=$(gh api --hostname "$PR_HOST" graphql --paginate --slurp -f id="$thread_id" -f query='
+query($id: ID!, $endCursor: String) {
+  node(id: $id) {
+    ... on PullRequestReviewThread {
+      comments(first: 100, after: $endCursor) {
+        nodes { id url author { login } body createdAt updatedAt }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+  }
+}' 2>&1) || {
+      echo "error: failed to fetch discussion $thread_id: $pages" >&2
+      exit 1
+    }
+    comments=$(printf '%s\n' "$pages" | jq -e '
+      if any(.[]; (.errors | length) > 0 or .data.node == null)
+      then error("incomplete discussion response")
+      else [.[].data.node.comments.nodes[]] end') || exit 1
+    printf '%s\n' "$thread" | jq --argjson comments "$comments" '.comments.nodes = $comments' || exit 1
+  else
+    printf '%s\n' "$thread"
+  fi
+done) || exit 1
+THREADS_JSON=$(printf '%s\n' "$THREADS_JSON" | jq -s '.')
 
 # ── Assemble the final JSON ─────────────────────────────────────────────────
 
@@ -131,13 +182,21 @@ jq -n \
   --argjson checks "$CHECKS_JSON" \
   --argjson reviews "$REVIEWS_JSON" \
   --argjson threads "$THREADS_JSON" \
+  --argjson comments "$COMMENTS_JSON" \
 '
 # ── pr_target ──────────────────────────────────────────────────────────────
 ($pr.mergeable // "UNKNOWN") as $mergeable |
+($reviews | sort_by(.submitted_at, .id) | group_by(.user.login)
+  | map(map(select(.state != "COMMENTED" and .state != "PENDING")) | last)
+  | map(select(. != null))) as $decisions |
 
 {
   pr_target: {
     number:    $pr.number,
+    repository: ($pr.url | split("/")[3:5] | join("/")),
+    head_repository: (if $pr.headRepository == null then null else
+      ($pr.headRepositoryOwner.login + "/" + $pr.headRepository.name) end),
+    head_sha:  $pr.headRefOid,
     branch:    $pr.headRefName,
     base:      $pr.baseRefName,
     url:       $pr.url,
@@ -156,48 +215,45 @@ jq -n \
     }
   ],
 
-# ── reviews (deduplicate to latest per author) ─────────────────────────────
+# Keep review bodies and chronology; later COMMENTED reviews do not revoke decisions.
   reviews: [
-    ($reviews
-      | group_by(.author.login)
-      | map(sort_by(.submittedAt) | last)
-      | .[]
-    ) | {
-      author: .author.login,
-      state:  .state,
-      body:   (.body // "")
+    $reviews[] | {
+      id: .id, url: .html_url, author: .user.login,
+      state: .state, body: (.body // ""),
+      submitted_at: .submitted_at, commit_id: .commit_id
+    }
+  ],
+  comments: [
+    $comments[] | {
+      id: .id, url: .html_url, author: .user.login,
+      body: (.body // ""), created_at: .created_at, updated_at: .updated_at
     }
   ],
 
 # ── review_threads ─────────────────────────────────────────────────────────
   review_threads: [
     $threads[] | {
-      path:       .path,
-      line:       (.line // .startLine // null),
-      body:       (.comments.nodes[0].body // .comments[0].body // ""),
-      isResolved: .isResolved
+      id: .id,
+      path: .path,
+      line: (.line // .startLine // null),
+      body: (.comments.nodes[0].body // ""),
+      comments: .comments.nodes,
+      isResolved: .isResolved,
+      isOutdated: .isOutdated,
+      viewerCanResolve: .viewerCanResolve
     }
   ],
 
 # ── conflicts ──────────────────────────────────────────────────────────────
   conflicts: (
-    ($mergeable == "CONFLICTING") as $has |
+    (if $mergeable == "CONFLICTING" then true
+     elif $mergeable == "MERGEABLE" then false else null end) as $has |
     {
       has_conflicts:    $has,
       conflicting_files_status: (
-        if $has then
-          "unknown"
-        else
-          "none"
-        end
+        if $has == false then "none" else "unknown" end
       ),
-      conflicting_files: (
-        if $has then
-          []
-        else
-          []
-        end
-      )
+      conflicting_files: []
     }
   ),
 
@@ -209,20 +265,26 @@ jq -n \
     # Unresolved review threads
     [ $threads[] | select(.isResolved == false) ] | length as $pending |
 
-    # Merge conflicts
-    ($mergeable == "CONFLICTING") as $has_conflicts |
+    [$decisions[] | select(.state == "CHANGES_REQUESTED") | .id] as $requested |
+    [$checks[] | select(.bucket == "pending") | .name] as $waiting |
+    (if $mergeable == "CONFLICTING" then true
+     elif $mergeable == "MERGEABLE" then false else null end) as $has_conflicts |
 
     # Categories
     (
       (if ($failing | length) > 0     then ["check_repair"]    else [] end) +
-      (if $pending > 0                then ["feedback_repair"]  else [] end) +
+      (if $pending > 0 or ($requested | length) > 0 then ["feedback_repair"] else [] end) +
       (if $has_conflicts              then ["conflict_repair"]  else [] end)
     ) as $cats |
 
     {
       failing_checks:       $failing,
-      pending_feedback_count: $pending,
-      has_merge_conflicts:  $has_conflicts,
+      pending_feedback_count: ($pending + ($requested | length)),
+      pending_thread_count: $pending,
+      changes_requested_review_ids: $requested,
+      pending_checks: $waiting,
+      mergeability_unknown: ($has_conflicts == null),
+      has_merge_conflicts: $has_conflicts,
       blocker_categories:   $cats
     }
   )

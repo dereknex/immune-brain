@@ -9092,15 +9092,22 @@ function deriveQaJobTimeoutMs(descriptors) {
 }
 function classifyReviewWorkload(snapshot, evidence) {
   const bytes = Buffer.byteLength(JSON.stringify(evidence));
-  const paths = "changed_paths" in evidence ? Object.keys(evidence.changed_paths) : Object.keys(evidence.dirty_files);
-  if (snapshot.risk === "critical" || snapshot.acceptance.length >= HEAVY_REVIEW_MIN_ACCEPTANCE || paths.length >= HEAVY_REVIEW_MIN_FILES || bytes >= HEAVY_REVIEW_MIN_BYTES)
+  const paths = reviewChangedPathCount(evidence);
+  if (snapshot.risk === "critical" || snapshot.acceptance.length >= HEAVY_REVIEW_MIN_ACCEPTANCE || paths >= HEAVY_REVIEW_MIN_FILES || bytes >= HEAVY_REVIEW_MIN_BYTES)
     return "heavy";
-  if (snapshot.risk === "routine" && snapshot.acceptance.length <= QUICK_REVIEW_MAX_ACCEPTANCE && paths.length <= QUICK_REVIEW_MAX_FILES && bytes <= QUICK_REVIEW_MAX_BYTES)
+  if (snapshot.risk === "routine" && snapshot.acceptance.length <= QUICK_REVIEW_MAX_ACCEPTANCE && paths <= QUICK_REVIEW_MAX_FILES && bytes <= QUICK_REVIEW_MAX_BYTES)
     return "quick";
   return "standard";
 }
-function reviewTurnBudget(workload) {
-  return workload === "quick" ? 12 : workload === "standard" ? 16 : 24;
+function reviewChangedPathCount(evidence) {
+  return "changed_paths" in evidence ? Object.keys(evidence.changed_paths).length : Object.keys(evidence.dirty_files).length;
+}
+function reviewTurnBudget(workload, changedPaths = 0) {
+  if (workload === "quick")
+    return 12;
+  if (workload === "standard")
+    return 16;
+  return Math.min(HEAVY_REVIEW_MAX_TURNS, Math.max(HEAVY_REVIEW_MIN_TURNS, HEAVY_REVIEW_BASE_TURNS + changedPaths));
 }
 function snapshotDigest(snapshot) {
   return `sha256:${createHash15("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
@@ -9788,7 +9795,8 @@ class AssuranceCoordinator {
       let hostReservation;
       try {
         ensureOperationLive();
-        const workload = classifyReviewWorkload(review.snapshot, review.reviewManifest ?? review.reviewBundle);
+        const reviewEvidence = review.reviewManifest ?? review.reviewBundle;
+        const workload = classifyReviewWorkload(review.snapshot, reviewEvidence);
         const promptOptions = {
           selfServedScopeAdditions: scopeAdditionsFromHistory((await this.ports.readTaskRecord(ctx.cwd, taskId)).record?.history ?? [])
         };
@@ -9798,7 +9806,7 @@ class AssuranceCoordinator {
           prompt: buildReviewPrompt(review.snapshot, evidence.path, promptOptions),
           snapshotPrompt: buildReviewSnapshotPrompt(review.snapshot, evidence.path, promptOptions),
           evidencePath: evidence.path,
-          maxTurns: reviewTurnBudget(workload)
+          maxTurns: reviewTurnBudget(workload, reviewChangedPathCount(reviewEvidence))
         });
         ensureOperationLive();
       } catch (error) {
@@ -10036,7 +10044,7 @@ function boundedAssuranceError(error) {
   const normalized = raw.replace(/\s+/g, " ").trim() || "unknown error";
   return normalized.length <= 300 ? normalized : `${normalized.slice(0, 299)}...`;
 }
-var TRACKER_PROJECTION_FAILURE, QA_STAGES, QA_OUTCOMES, QA_DRIFT_PATH_LIMIT = 64, QA_PREPARE_STDERR_TAIL_BYTES = 2048, QA_PREPARE_REPRODUCTION_NOTE = "a reproduction in the live worktree is not equivalent: this run used an isolated delivery with no worktree node_modules", QA_DRIFT_NOTE = "in-scope tracked content of the working directory differs from the frozen snapshot; see prepare_observation.drift_paths", QA_PREPARE_REASONS, QA_TAIL_CONTROL, QaPreparationError, QA_MIN_JOB_TIMEOUT_SECONDS, QA_MAX_JOB_TIMEOUT_SECONDS, QA_JOB_OVERHEAD_SECONDS, QA_JOB_TIMEOUT_SECONDS, QA_MAX_IDENTICAL_FAILURES = 2, REVIEW_TIMING_PROFILES, QUICK_REVIEW_MAX_ACCEPTANCE = 3, QUICK_REVIEW_MAX_FILES = 5, QUICK_REVIEW_MAX_BYTES, HEAVY_REVIEW_MIN_ACCEPTANCE = 9, HEAVY_REVIEW_MIN_BYTES, HEAVY_REVIEW_MIN_FILES = 12, invocationRegistry;
+var TRACKER_PROJECTION_FAILURE, QA_STAGES, QA_OUTCOMES, QA_DRIFT_PATH_LIMIT = 64, QA_PREPARE_STDERR_TAIL_BYTES = 2048, QA_PREPARE_REPRODUCTION_NOTE = "a reproduction in the live worktree is not equivalent: this run used an isolated delivery with no worktree node_modules", QA_DRIFT_NOTE = "in-scope tracked content of the working directory differs from the frozen snapshot; see prepare_observation.drift_paths", QA_PREPARE_REASONS, QA_TAIL_CONTROL, QaPreparationError, QA_MIN_JOB_TIMEOUT_SECONDS, QA_MAX_JOB_TIMEOUT_SECONDS, QA_JOB_OVERHEAD_SECONDS, QA_JOB_TIMEOUT_SECONDS, QA_MAX_IDENTICAL_FAILURES = 2, REVIEW_TIMING_PROFILES, QUICK_REVIEW_MAX_ACCEPTANCE = 3, QUICK_REVIEW_MAX_FILES = 5, QUICK_REVIEW_MAX_BYTES, HEAVY_REVIEW_MIN_ACCEPTANCE = 9, HEAVY_REVIEW_MIN_BYTES, HEAVY_REVIEW_MIN_FILES = 12, HEAVY_REVIEW_BASE_TURNS = 12, HEAVY_REVIEW_MIN_TURNS = 24, HEAVY_REVIEW_MAX_TURNS = 48, invocationRegistry;
 var init_coordinator = __esm(() => {
   init_git_integration_preference();
   init_refutation();

@@ -596,14 +596,25 @@ const HEAVY_REVIEW_MIN_FILES = 12;
 
 export function classifyReviewWorkload(snapshot: Pick<SnapshotDescriptor, "risk" | "acceptance">, evidence: ReviewBundle | ReviewManifestV5): ReviewWorkload {
 	const bytes = Buffer.byteLength(JSON.stringify(evidence));
-	const paths = "changed_paths" in evidence ? Object.keys(evidence.changed_paths) : Object.keys(evidence.dirty_files);
-	if (snapshot.risk === "critical" || snapshot.acceptance.length >= HEAVY_REVIEW_MIN_ACCEPTANCE || paths.length >= HEAVY_REVIEW_MIN_FILES || bytes >= HEAVY_REVIEW_MIN_BYTES) return "heavy";
-	if (snapshot.risk === "routine" && snapshot.acceptance.length <= QUICK_REVIEW_MAX_ACCEPTANCE && paths.length <= QUICK_REVIEW_MAX_FILES && bytes <= QUICK_REVIEW_MAX_BYTES) return "quick";
+	const paths = reviewChangedPathCount(evidence);
+	if (snapshot.risk === "critical" || snapshot.acceptance.length >= HEAVY_REVIEW_MIN_ACCEPTANCE || paths >= HEAVY_REVIEW_MIN_FILES || bytes >= HEAVY_REVIEW_MIN_BYTES) return "heavy";
+	if (snapshot.risk === "routine" && snapshot.acceptance.length <= QUICK_REVIEW_MAX_ACCEPTANCE && paths <= QUICK_REVIEW_MAX_FILES && bytes <= QUICK_REVIEW_MAX_BYTES) return "quick";
 	return "standard";
 }
 
-export function reviewTurnBudget(workload: ReviewWorkload): number {
-	return workload === "quick" ? 12 : workload === "standard" ? 16 : 24;
+export function reviewChangedPathCount(evidence: ReviewBundle | ReviewManifestV5): number {
+	return "changed_paths" in evidence ? Object.keys(evidence.changed_paths).length : Object.keys(evidence.dirty_files).length;
+}
+
+const HEAVY_REVIEW_BASE_TURNS = 12;
+const HEAVY_REVIEW_MIN_TURNS = 24;
+const HEAVY_REVIEW_MAX_TURNS = 48;
+
+/** A heavy Review gets one extra turn per changed path, so a wide change is read in full. */
+export function reviewTurnBudget(workload: ReviewWorkload, changedPaths = 0): number {
+	if (workload === "quick") return 12;
+	if (workload === "standard") return 16;
+	return Math.min(HEAVY_REVIEW_MAX_TURNS, Math.max(HEAVY_REVIEW_MIN_TURNS, HEAVY_REVIEW_BASE_TURNS + changedPaths));
 }
 
 export function snapshotDigest(snapshot: SnapshotDescriptor): string {
@@ -1365,7 +1376,8 @@ export class AssuranceCoordinator {
 			let hostReservation: HostReviewReservation;
 			try {
 				ensureOperationLive();
-				const workload = classifyReviewWorkload(review.snapshot, review.reviewManifest ?? review.reviewBundle!);
+				const reviewEvidence = review.reviewManifest ?? review.reviewBundle!;
+				const workload = classifyReviewWorkload(review.snapshot, reviewEvidence);
 				// Derived from Kernel history on every dispatch; nothing is stored.
 				const promptOptions: ReviewPromptOptions = {
 					selfServedScopeAdditions: scopeAdditionsFromHistory(
@@ -1378,7 +1390,7 @@ export class AssuranceCoordinator {
 					prompt: buildReviewPrompt(review.snapshot, evidence.path, promptOptions),
 					snapshotPrompt: buildReviewSnapshotPrompt(review.snapshot, evidence.path, promptOptions),
 					evidencePath: evidence.path,
-					maxTurns: reviewTurnBudget(workload),
+					maxTurns: reviewTurnBudget(workload, reviewChangedPathCount(reviewEvidence)),
 				});
 				ensureOperationLive();
 			} catch (error) {
