@@ -304,6 +304,17 @@ never rewrite" invariant is preserved — see Architecture invariants).
    classifier is itself evaluated against the S0 gold cases before its
    numbers are reported as anything but experimental. Its output never
    changes a finding, a record, or an admission decision.
+7. **Per-acceptance repeat counts (convergence data, added 2026-10-20).**
+   The record report (item 3) also carries, per acceptance ID, the count
+   of that acceptance's rework findings across rounds and the number of
+   rounds since its last finding, derived from committed records only.
+   This is the data half of #204 S1: that proposal asked the runtime to
+   surface a per-acceptance repeat count so imm-run's generalize-or-refute
+   rule and coordinator-correction behaviour fire on a deterministic
+   count instead of a coordinator remembering to count. Building the
+   series once, here, means the batch convergence trigger and the review
+   quality report read the same numbers. The report decides nothing by
+   itself; wiring a trigger into imm-run remains #204 S1's own follow-up.
 
 ### S2: verifier role
 
