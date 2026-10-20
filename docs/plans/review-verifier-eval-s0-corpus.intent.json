@@ -6,7 +6,7 @@
   "acceptance": [
     {
       "id": "RVE-S0-A1",
-      "assertion": "Meet S0 in docs/specs/review-verifier-eval.spec.md: an offline extractor run at a pinned commit yields a deterministic corpus (same input commit produces byte-identical corpus.jsonl); a case enters the gold pool only when its finding is review-sourced with non-null evidence and anchor, its review_round is present, its review revision identity is recoverable, and both git objects are reachable, and ineligible records are excluded with counts by reason; the corpus validates against its schema and separates disposition (silver label) from gold (confirmed_true / confirmed_false / unlabeled) as distinct fields; the README states in its first paragraph that resolved is a silver label only and documents the gold labelling protocol (first set: 30 cases labelled by Derek, at least 10 confirmed_false or clean); at least 10 clean revisions from done tasks with no request_rework are included; the split is by task recency with the newest 20 percent held out as the validation split and is stable across regeneration.",
+      "assertion": "Meet S0 in docs/specs/review-verifier-eval.spec.md: an offline extractor run at a pinned commit yields a deterministic corpus (same input commit produces byte-identical corpus.jsonl); a case enters the gold pool only when its finding is review-sourced with non-null evidence and anchor, its review_round is present, its review revision identity is recoverable, and both git objects are reachable, and ineligible records are excluded with counts by reason; the corpus validates against its schema and separates disposition (silver label) from gold (confirmed_true / confirmed_false / unlabeled) as distinct fields; the README states in its first paragraph that resolved is a silver label only and documents the gold labelling protocol (first set: 30 cases labelled by Derek, at least 10 confirmed_false or clean); at least 10 clean revisions from done tasks with no request_rework are included; the split is by task recency with the newest 20 percent held out as the validation split and is stable across regeneration. Selection of the 30 gold cases is uncertainty-first under an offline Jev-style pre-screen (scripts/review-eval/prescreen.ts) scoring every extracted finding likely_true, likely_false, or uncertain from its trigger, caller_chain, and violated fields: least-confident cases and cases whose lean disagrees with the silver disposition are labelled first, the classifier output is recorded only in a selection log with probabilities and reasons and never becomes a label or corpus gold, and disabling the pre-screen reproduces the weight-rule selection exactly.",
       "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-eval-corpus.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
     }
   ],
@@ -14,10 +14,11 @@
     "docs/plans/review-verifier-eval-s0-corpus.intent.json",
     "docs/specs/review-verifier-eval.spec.md",
     "scripts/review-eval/extract.ts",
+    "scripts/review-eval/prescreen.ts",
     "tests/fixtures/review-eval/README.md",
     "tests/fixtures/review-eval/corpus.jsonl",
     "tests/review-eval-corpus.test.ts"
   ],
   "risk": "routine",
-  "revision": 1
+  "revision": 2
 }

@@ -5,7 +5,9 @@ authority. Prepared 2026-10-20 at Derek's request, from the analysis of
 Anthropic's "How the Claude Code team does code review" (claude.dev,
 published 2026-10-15). Derek adopted the recommended answers to decision
 points D1–D6 on 2026-10-20; the decisions are recorded in issue #284 and in
-the "Decisions" section below.
+the "Decisions" section below. A Jev supplement (three items, following
+issue #204's advisory-only / escalation-only pattern) was adopted by Derek
+on 2026-10-20 and is folded into S0 item 7, S1 item 6, and S3 item 7.
 **Initiative**: Review 验证与评测 (Review verification and eval)
 **Immutable slug**: `review-verifier-eval`
 **Carrier**: GitHub issue #284, which carries the full text of this spec;
@@ -222,6 +224,19 @@ never rewrite" invariant is preserved — see Architecture invariants).
    protocol and the silver-label warning. Corpus regeneration is a rerun of
    the extractor at a new commit plus a labelling pass; the committed
    corpus, not the extractor output, is the eval input.
+7. **Gold-case selection pre-screen (Jev supplement, 2026-10-20).** Before
+   labelling, an offline Jev-style decision model pre-screens every
+   extracted finding into {likely_true, likely_false, uncertain} from its
+   `trigger`, `caller_chain`, and `violated` fields. Selection of the 30
+   gold cases is uncertainty-first: cases the classifier is least
+   confident about, and cases where its lean disagrees with the silver
+   disposition, are labelled first; the item 3 weight rule breaks the
+   remaining ties. The classifier's output is never a label and never
+   enters the corpus as gold; it is recorded only in a selection log
+   (case id, probabilities, selected or not, reason). The pre-screen is a
+   disposable offline tool (`scripts/review-eval/prescreen.ts`); if it is
+   unavailable, or a spot-check against the first labelled cases is poor,
+   selection falls back to the item 3 weight rule with no other change.
 
 ### S1: eval runner and quality metrics
 
@@ -279,6 +294,16 @@ never rewrite" invariant is preserved — see Architecture invariants).
    rounds-to-pass p95 (record report) not higher. When recall and FP trade
    against each other, **recall wins**; the trade must be named in the run
    report, not hidden in an average.
+6. **`security_boundary` mislabel rate (Jev supplement, 2026-10-20).** The
+   record report (item 3) additionally runs an offline Jev-style
+   classification of each blocking finding's `violated.kind` from its
+   trigger and caller chain, independent of the reviewer's declared kind,
+   and reports the mismatch rate beside the raw `security_boundary` share:
+   the share shows volume, the mismatch rate shows mislabelling — the
+   gaming signal the review-convergence spec assigned to observation. The
+   classifier is itself evaluated against the S0 gold cases before its
+   numbers are reported as anything but experimental. Its output never
+   changes a finding, a record, or an admission decision.
 
 ### S2: verifier role
 
@@ -381,6 +406,22 @@ stateDiagram-v2
    shadow mode cannot be built without a second projection path, it is
    dropped and rollout is off → on with the eval gate as the only guard.
    (No silent third semantics.)
+7. **Refutation escalation check (Jev supplement, 2026-10-20).** Before a
+   refuted finding is archived under item 2, a Host-side Jev-style
+   classifier — invoked by the Host, never by the runtime (ADR 0006) —
+   scores the probability that the finding is a true positive, from its
+   trigger, caller chain, and the verifier's counter-path. The score and
+   the threshold version are recorded in the verification history event.
+   If the probability meets a code-owned threshold, the refutation does
+   not archive: the finding escalates to the same literal-user dispute
+   stop as item 3's repeated anchor, presenting claim, counter-path, and
+   the classifier's disagreement. The classifier can never refute or keep
+   a finding by itself, never affects kept findings, and never lowers a
+   dispute back to an archive. Its threshold is set from S1 baseline data
+   and changed only through the S1 eval gate (D4). If the classifier is
+   unavailable or fails, behaviour is exactly items 1–6 as written (the
+   archive proceeds): the check is additive strictness, and its absence
+   restores the pre-supplement semantics rather than blocking the task.
 
 ### Decisions (adopted 2026-10-20, Derek; recorded in issue #284)
 
@@ -416,10 +457,10 @@ All checks are post-implementation obligations; Planner ran none of them.
 
 | Acceptance | Focused seams | Required regression evidence |
 | --- | --- | --- |
-| S0 / `RVE-S0-A1` | `tests/review-eval-corpus.test.ts` (new) | Extractor run at a pinned commit yields a deterministic corpus (same input commit → byte-identical jsonl); ineligible records (null evidence, unrecoverable revision, unreachable git objects) are excluded with counts by reason; corpus validates against its schema; README states the silver-label rule; gold/validation split is by recency and stable across regeneration. |
-| S1 / `RVE-S1-A1` | `tests/review-eval-runner.test.ts` (new, model dispatch faked), `tests/review-retro-analyzer.test.ts` | Scoring: a faked verdict reproducing a gold bug by anchor and one by location both count as recall hits; a blocking finding on a clean case counts FP; unknown anchors count as new-anchor, never silently as FP or TP. Record report: rounds/dispositions/`security_boundary` shares computed from committed fixture records match hand-checked values. Retro: new metrics appear only for events present in fixtures; a fixture without `violated.kind` in verdict findings yields the pre-change report unchanged. Baseline report committed and referenced from the corpus README. |
+| S0 / `RVE-S0-A1` | `tests/review-eval-corpus.test.ts` (new) | Extractor run at a pinned commit yields a deterministic corpus (same input commit → byte-identical jsonl); ineligible records (null evidence, unrecoverable revision, unreachable git objects) are excluded with counts by reason; corpus validates against its schema; README states the silver-label rule; gold/validation split is by recency and stable across regeneration. Pre-screen: the selection log records probabilities and a reason for every candidate, selected cases are uncertainty- and disagreement-first, classifier output appears nowhere in the corpus as a label, and disabling the pre-screen reproduces the item 3 weight-rule selection exactly. |
+| S1 / `RVE-S1-A1` | `tests/review-eval-runner.test.ts` (new, model dispatch faked), `tests/review-retro-analyzer.test.ts` | Scoring: a faked verdict reproducing a gold bug by anchor and one by location both count as recall hits; a blocking finding on a clean case counts FP; unknown anchors count as new-anchor, never silently as FP or TP. Record report: rounds/dispositions/`security_boundary` shares computed from committed fixture records match hand-checked values. Retro: new metrics appear only for events present in fixtures; a fixture without `violated.kind` in verdict findings yields the pre-change report unchanged. Baseline report committed and referenced from the corpus README. Mislabel rate: classifier-kind versus declared-kind mismatch over fixture records matches hand-checked values and is labelled experimental until scored against gold. |
 | S2 / `RVE-S2-A1` | `tests/host-neutral-assurance-coordinator.test.ts`, `tests/skill-dist-consistency.test.ts` | Verifier packet contains finding + acceptance + revision and demonstrably excludes reviewer prose/Parent text (packet snapshot assertions); output contract rejects missing results, unknown anchors, refuted-without-counter-path, and extra findings as malformed-kept-all; source prompt and all dist mirrors agree; the role has no review gate and cannot be dispatched as `imm-code-review`. |
-| S3 / `RVE-S3-A1` | `tests/host-neutral-assurance-coordinator.test.ts`, `tests/kernel-canary-rework-authority.test.ts`, host conformance (`tests/claude-host-authority.test.ts`, `tests/pi-canary-user-authority.test.ts` as applicable) | From real submitted verdicts through the coordinator (not prompt-text assertions): partial refutation projects kept findings only and records `verifier_refutations` with counter-paths; all-refuted issues exactly one redispatch whose prompt carries the counter-evidence; a repeated refuted anchor parks for the user with zero Executor work projected; verifier timeout/malformed/receipt-mismatch projects all findings and records the failure; `pass` verdicts never dispatch a verifier (default config); config `off` reproduces today's projection exactly; records without verifier fields parse and settle unchanged on both hosts. |
+| S3 / `RVE-S3-A1` | `tests/host-neutral-assurance-coordinator.test.ts`, `tests/kernel-canary-rework-authority.test.ts`, host conformance (`tests/claude-host-authority.test.ts`, `tests/pi-canary-user-authority.test.ts` as applicable) | From real submitted verdicts through the coordinator (not prompt-text assertions): partial refutation projects kept findings only and records `verifier_refutations` with counter-paths; all-refuted issues exactly one redispatch whose prompt carries the counter-evidence; a repeated refuted anchor parks for the user with zero Executor work projected; verifier timeout/malformed/receipt-mismatch projects all findings and records the failure; `pass` verdicts never dispatch a verifier (default config); config `off` reproduces today's projection exactly; records without verifier fields parse and settle unchanged on both hosts. Escalation check: a refuted finding whose recorded classifier probability meets the threshold parks for the literal user instead of archiving, a below-threshold score archives, and classifier failure archives with the failure recorded in the verification event. |
 
 ### Descriptor execution provenance
 
@@ -454,7 +495,7 @@ All checks are post-implementation obligations; Planner ran none of them.
 
 ## Devil's Advocate Audit
 
-- **Correlated blindness**: a same-family verifier may share the reviewer's
+- **Correlated blindness**: S3 item 7's escalation check is the heterogeneous second signal for this risk (a decision-model classifier, structurally different from the verifier's generative judgment, advisory-to-stricter only). A same-family verifier may share the reviewer's
   blind spots, refuting real bugs confidently. Mitigations: D1's
   different-model default, counter-path must cite the revision, and S1's
   gate can score the verifier itself (refutations later contradicted by a
