@@ -1,0 +1,29 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "review-verifier-eval-s1-metrics",
+  "owner": "user",
+  "goal": "Score reviewer configurations against the eval corpus with an offline runner, record the baseline of the current single-reviewer pipeline, publish a record-based review-quality report, and add session-visible quality metrics to the imm-retro analyzer within its existing counting rules and boundary.",
+  "acceptance": [
+    {
+      "id": "RVE-S1-A1",
+      "assertion": "Meet S1 in docs/specs/review-verifier-eval.spec.md: the runner scores a reviewer configuration per gold case (recall over confirmed_true by anchor match or by violated.ref plus first caller_chain path matching the gold location, false positives as blocking findings on clean cases plus matches to confirmed_false anchors, unknown anchors reported separately as new-anchor rate, and no recall or precision denominator ever includes unlabeled cases); a baseline run for the current pipeline is committed under benchmark-results/review-eval and its numbers are recorded in the corpus README; the record-based report computes, from committed audit records only and never live .imm state, rounds-to-pass median and p95, the resolved / refuted / accepted_risk disposition mix, the security_boundary share of blocking findings, and advisory count per pass; the imm-retro analyzer additionally reports per author model the blocking split by violated.kind and refute / resolve / accept-residual-risk event counts only where a committed fixture proves the source event is visible in session logs, and a fixture without violated.kind yields the pre-change report unchanged; the merge gate is written down with it: recall not lower, clean-case false-positive rate not higher, rounds-to-pass p95 not higher, and recall wins any trade-off.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-eval-runner.test.ts\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "benchmark-results/review-eval",
+    "docs/plans/review-verifier-eval-s1-metrics.intent.json",
+    "docs/specs/review-verifier-eval.spec.md",
+    "plugins/immune-brain/dist/imm-retro.md",
+    "plugins/immune-brain/skills/imm-retro/SKILL.md",
+    "plugins/immune-brain/skills/imm-retro/scripts/review_retro.ts",
+    "scripts/review-eval/report.ts",
+    "scripts/review-eval/run.ts",
+    "tests/fixtures/review-eval/README.md",
+    "tests/fixtures/review-retro",
+    "tests/review-eval-runner.test.ts",
+    "tests/review-retro-analyzer.test.ts"
+  ],
+  "risk": "routine",
+  "revision": 1
+}

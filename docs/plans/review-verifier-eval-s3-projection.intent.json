@@ -1,0 +1,33 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "review-verifier-eval-s3-projection",
+  "owner": "user",
+  "goal": "Make the coordinator consume the verifier attestation before projecting a rework verdict: kept findings alone become Executor work, refuted claims are archived on the record, an all-refuted verdict buys exactly one reviewer redispatch, a repeated refuted anchor stops for the user, and verifier failure keeps every finding.",
+  "acceptance": [
+    {
+      "id": "RVE-S3-A1",
+      "assertion": "Meet S3 in docs/specs/review-verifier-eval.spec.md, driving real submitted verdicts through the coordinator rather than asserting prompt text: after a rework verdict validates and before any request_rework projection, the coordinator returns a verification_ready state carrying one exact foreground verifier dispatch (prompt verbatim, receipt-bound submit_verification, single-use reservation, artifacts still frozen, pass verdicts never verified); a valid verification projects kept findings only and records each refuted claim in verifier_refutations with its counter-path plus a verification history event with checked and refuted counts; an all-refuted verdict synthesizes no pass and issues exactly one new Review reservation whose coordinator-built prompt carries the counter-evidence, and the redispatched verdict is verified again; a repeated anchor refuted for the same snapshot blocks submission and parks the task for a literal-user dispute decision with zero Executor work projected; verifier timeout, dispatch failure, malformed output, or receipt mismatch records the failure and projects all findings without automatic retry; the review_verifier config switch defaults off until the S1 baseline exists and off reproduces today's projection exactly; records without verifier fields parse and settle unchanged on both hosts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\",\n      \"tests/kernel-canary-rework-authority.test.ts\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/pi-canary-user-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/review-verifier-eval-s3-projection.intent.json",
+    "docs/specs/review-verifier-eval.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-run.md",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain/runtime/assurance/review_mediation.ts",
+    "plugins/immune-brain/runtime/claude/interaction.ts",
+    "plugins/immune-brain/runtime/kernel/reducer.ts",
+    "plugins/immune-brain/runtime/kernel/types.ts",
+    "plugins/immune-brain/runtime/kernel/validation.ts",
+    "tests/claude-host-authority.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/host-neutral-assurance-coordinator.test.ts",
+    "tests/kernel-canary-rework-authority.test.ts",
+    "tests/pi-canary-user-authority.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

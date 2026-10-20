@@ -1,0 +1,23 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "review-verifier-eval-s0-corpus",
+  "owner": "user",
+  "goal": "Build a versioned reviewer eval corpus from committed audit records: eligible historical review cases with revision identity, finding anchor and evidence, acceptance text, and disposition, where resolved counts only as a silver label, gold labels are human-confirmed, clean cases are included, and the newest cases form a holdout validation split.",
+  "acceptance": [
+    {
+      "id": "RVE-S0-A1",
+      "assertion": "Meet S0 in docs/specs/review-verifier-eval.spec.md: an offline extractor run at a pinned commit yields a deterministic corpus (same input commit produces byte-identical corpus.jsonl); a case enters the gold pool only when its finding is review-sourced with non-null evidence and anchor, its review_round is present, its review revision identity is recoverable, and both git objects are reachable, and ineligible records are excluded with counts by reason; the corpus validates against its schema and separates disposition (silver label) from gold (confirmed_true / confirmed_false / unlabeled) as distinct fields; the README states in its first paragraph that resolved is a silver label only and documents the gold labelling protocol (first set: 30 cases labelled by Derek, at least 10 confirmed_false or clean); at least 10 clean revisions from done tasks with no request_rework are included; the split is by task recency with the newest 20 percent held out as the validation split and is stable across regeneration.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-eval-corpus.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/review-verifier-eval-s0-corpus.intent.json",
+    "docs/specs/review-verifier-eval.spec.md",
+    "scripts/review-eval/extract.ts",
+    "tests/fixtures/review-eval/README.md",
+    "tests/fixtures/review-eval/corpus.jsonl",
+    "tests/review-eval-corpus.test.ts"
+  ],
+  "risk": "routine",
+  "revision": 1
+}
