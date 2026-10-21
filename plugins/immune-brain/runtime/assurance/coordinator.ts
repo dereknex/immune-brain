@@ -652,6 +652,7 @@ function reviewDeltaLines(delta: SnapshotDescriptor["review_delta"]): string[] {
 		return [`Review round ${delta.round}: no rework delta is available (${delta.skipped}); the delta admission rule does not apply to this round.`];
 	return [
 		`Review round ${delta.round}: review only the latest rework delta and its direct interactions. Prior reviewed commit ${delta.prior_review_commit}; delta_paths: ${delta.delta_paths.length ? delta.delta_paths.join(", ") : "(none)"}. A blocking finding must have a caller_chain path in delta_paths or violated.kind "security_boundary"; otherwise it is advisory on a pass verdict.`,
+		`Changed paths outside delta_paths were inspected by earlier rounds at ${delta.prior_review_commit}; list them in approval.inspected_paths by carry-forward without re-reading their full diff. An unread or truncated read is not a defect and is never a blocking finding.`,
 	];
 }
 

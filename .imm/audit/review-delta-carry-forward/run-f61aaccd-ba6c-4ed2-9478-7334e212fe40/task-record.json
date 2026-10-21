@@ -1,0 +1,138 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "review-delta-carry-forward",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "review-delta-carry-forward",
+    "goal": "A delta Review round (round 3 or later with computed delta_paths) tells the reviewer that changed paths outside delta_paths were inspected by earlier rounds at the prior reviewed commit and are attested in approval.inspected_paths by carry-forward rather than re-read, and that an unread or truncated path is not a defect and never a blocking finding, so a wide change such as branch-boundary-r2 S4 serial-runner-retirement (29 paths, -12303 lines) no longer blocks on a coverage-only finding that names no defect.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "The Review prompt for a round with computed delta_paths states that changed paths outside delta_paths are attested in approval.inspected_paths by carry-forward from the prior reviewed commit without re-reading their full diff, and that incomplete reading is not a defect and never a blocking finding.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "The Review prompt for rounds 1 and 2 and for a skipped delta carries none of the carry-forward text, and verdict validation is unchanged: a pass still lists every changed path in approval.inspected_paths and an out-of-delta blocking finding is still rejected.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "The committed Claude MCP bundle matches the runtime source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/build-claude-plugin.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/review-delta-carry-forward.intent.json",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "tests/host-neutral-assurance-coordinator.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/review-delta-carry-forward.intent.json",
+    "content_hash": "sha256:94e8475e002314da5d521036965eec3ce89a98ad33948e954adb25d36d79de20"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:94e8475e002314da5d521036965eec3ce89a98ad33948e954adb25d36d79de20",
+  "git_base_head": "58d39bff39eb489653dc1de51e5768c31adf851c",
+  "attestations": [
+    {
+      "id": "approval-qa-61fde6a4",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:94e8475e002314da5d521036965eec3ce89a98ad33948e954adb25d36d79de20",
+      "diff_hash": "sha256:063c2a3b82976a35ba02f7636f0a4f92a78d4b51a25208c5c9220c03c05b8551",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:22e97bb3ab8b15d4d663384cae66e3f19261631cb524998d59e8745b9e6650ab",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:22e97bb3ab8b15d4d663384cae66e3f19261631cb524998d59e8745b9e6650ab"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:22e97bb3ab8b15d4d663384cae66e3f19261631cb524998d59e8745b9e6650ab"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:22e97bb3ab8b15d4d663384cae66e3f19261631cb524998d59e8745b9e6650ab"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-e5fc8a72",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:94e8475e002314da5d521036965eec3ce89a98ad33948e954adb25d36d79de20",
+      "diff_hash": "sha256:063c2a3b82976a35ba02f7636f0a4f92a78d4b51a25208c5c9220c03c05b8551",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (single parent 58d39bf, tree 1ac3167); reviewDeltaLines adds carry-forward text only on computed-delta rounds, skipped/no-delta paths untouched, parseAssuranceVerdict unchanged, bundle mirrors source, and the new test pins both positive and negative prompt cases.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "58d39bff39eb489653dc1de51e5768c31adf851c",
+        "review_commit": "34a408a240651c674a13b18517ddc731405dcad3",
+        "review_tree": "1ac3167bf7fc0003555966d2cb6d86a02c8c6e18",
+        "manifest_digest": "sha256:1bfa9130112c35b4f748f736c7b0ec5de42c2992d81767ae3c364b5f99c015c8"
+      },
+      "reviewer_verdict_sha256": "sha256:9c12a0ee013db6c01b3bac63d6054d576337d14dda3ac35f917a13cacce28b25"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:review-delta-carry-forward:2026-10-21T13:39:40.565Z",
+      "at": "2026-10-21T13:39:40.565Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-delta-carry-forward.intent.json"
+    },
+    {
+      "id": "record_approval:review-delta-carry-forward:2026-10-21T13:40:01.885Z",
+      "at": "2026-10-21T13:40:01.885Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-61fde6a4\naction_v2_sha256:4f6adae2ff5205138f88fc4223f5f188788c8ceda36050fda76dd694ca76f30a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-21T13:40:01.885Z"
+      }
+    },
+    {
+      "id": "record_approval:review-delta-carry-forward:2026-10-21T13:42:36.176Z",
+      "at": "2026-10-21T13:42:36.176Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-e5fc8a72\naction_v2_sha256:2442d42595fb70035a2f1e865289f6bcf37516cd9f4d12bf3997b113e78b0ae1",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-21T13:42:36.176Z"
+      }
+    },
+    {
+      "id": "complete:review-delta-carry-forward:2026-10-21T13:42:37.298Z",
+      "at": "2026-10-21T13:42:37.298Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:33baca29ee1cb03632b6f75518414844833c629fdf50a46bc7b42ff153d9bc9c"
+    }
+  ]
+}

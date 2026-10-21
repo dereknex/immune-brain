@@ -505,6 +505,14 @@ describe("host-neutral assurance coordinator", () => {
 			expect(() => parseAssuranceVerdict(verdict, inDelta)).toThrow(/review-[0-9a-f]+-2-old-1/);
 		});
 
+		test("only a computed delta round attests the paths outside the delta by carry-forward", () => {
+			const carryForward = /outside delta_paths were inspected by earlier rounds at b{40}; list them in approval\.inspected_paths by carry-forward.*never a blocking finding/s;
+			expect(buildReviewSnapshotPrompt(inDelta)).toMatch(carryForward);
+			expect(buildReviewPrompt(inDelta)).toMatch(carryForward);
+			for (const s of [deltaSnapshot(undefined), deltaSnapshot({ round: 3, skipped: "prior_review_revision_absent" })])
+				expect(buildReviewSnapshotPrompt(s)).not.toContain("carry-forward");
+		});
+
 		test("rounds without a delta and a skipped delta never block on the missing fact", () => {
 			const outside = [blocking("old-1", ["runtime/kernel/other.ts"], { kind: "acceptance", ref: "A1" })];
 			const round2 = deltaSnapshot(undefined);
