@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "single-task-clean-workspace",
-  "owner": "user",
   "goal": "Single-task Enrollment requires a clean workspace apart from the Planner-produced intent and Spec, records its Enrollment HEAD, and takes the task's diff, attribution and changed paths from that HEAD, disclosing files beyond the estimate instead of refusing them (Spec branch-boundary-r2 D23).",
   "acceptance": [
     {
@@ -26,8 +25,11 @@
     "plugins/immune-brain/runtime/kernel/types.ts",
     "plugins/immune-brain/runtime/workspace_scope.ts",
     "tests/enrollment-dirty-scope.test.ts",
+    "tests/enrollment-git-base.test.ts",
+    "tests/kernel-enrollment-transaction.test.ts",
     "tests/single-task-clean-workspace.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

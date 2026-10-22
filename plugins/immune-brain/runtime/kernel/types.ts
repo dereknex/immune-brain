@@ -250,8 +250,9 @@ export interface TaskRecordV3 {
 
 /**
  * TaskRecord v4 binds the Enrollment commit so Review, QA, authorization, and
- * completion can all derive one scoped revision from base to final index tree.
- * `git_base_head` is immutable from Enrollment through terminal settlement.
+ * completion derive one revision from base to final index tree. For a clean-start
+ * single task, `git_base_head` is its enrollment_head and includes the whole delta.
+ * It is immutable from Enrollment through terminal settlement.
  */
 export interface TaskRecordV4 extends Omit<TaskRecordV3, "contract"> {
 	contract: typeof TASK_RECORD_CONTRACT_V4;

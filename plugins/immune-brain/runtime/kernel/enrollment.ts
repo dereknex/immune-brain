@@ -20,7 +20,7 @@ import type {
 import type { BackendClaim } from "./backend_claim";
 import { assertBatchLineageOrigin } from "./batch_authority";
 import { preparePiCanary, readGitHead } from "./pi_canary_prepare";
-import { dirtyScopePaths, writeEnrollmentBaseline } from "../workspace_scope";
+import { dirtyScopePaths, dirtyWorkspacePaths, writeEnrollmentBaseline } from "../workspace_scope";
 import { enrollmentRequestDigest } from "./run_identity";
 import {
 	commitEnrollmentLocked,
@@ -241,20 +241,28 @@ function runEnrollmentPreconditionChecks<T>(
 		} catch (error) {
 			fail(`git base: ${error instanceof Error ? error.message : String(error)}`, error);
 		}
-		// In-scope dirt the confirmed gate listed is claimed: it is left out of the
-		// Enrollment baseline and becomes task work. Any other in-scope dirt would
-		// be recorded there as user dirt and withheld from every later task
-		// snapshot, so the task could never deliver it. Refuse that before the
-		// capability is consumed; nothing is claimed that the gate did not show.
+		// Single tasks start clean apart from planning; batch children keep their
+		// confirmed Lane disclosure. Check before spending either capability.
 		if (intent && gitBaseHead) {
 			try {
-				const disclosed = new Set(input.disclosed_scope_paths ?? []);
-				const dirty = dirtyScopePaths(root, intent.intent.scope_hint, input.task_id);
-				const unlisted = dirty.filter((path) => !disclosed.has(path));
-				if (unlisted.length > 0) {
-					const message = `task scope is already dirty before Enrollment: ${unlisted.join(", ")}; the confirmed Enrollment gate did not list these paths, so enroll again from the Host to review them`;
-					fail(message, new Error(message));
-				} else claimedScopePaths = dirty;
+				if (!input.batch) {
+					const binding = inspectSpecBinding(intent.intent);
+					const planning = [input.intent_path, ...(binding.ok && binding.binding ? [binding.binding.active] : [])];
+					claimedScopePaths = planning;
+					const dirty = dirtyWorkspacePaths(root, planning);
+					if (dirty.length > 0) {
+						const message = `workspace_not_clean: ${dirty.join(", ")}`;
+						fail(message, new Error(message));
+					}
+				} else {
+					const disclosed = new Set(input.disclosed_scope_paths ?? []);
+					const dirty = dirtyScopePaths(root, intent.intent.scope_hint, input.task_id);
+					const unlisted = dirty.filter((path) => !disclosed.has(path));
+					if (unlisted.length > 0) {
+						const message = `task scope is already dirty before Enrollment: ${unlisted.join(", ")}; the confirmed Enrollment gate did not list these paths, so enroll again from the Host to review them`;
+						fail(message, new Error(message));
+					} else claimedScopePaths = dirty;
+				}
 			} catch (error) {
 				fail(`scope: ${error instanceof Error ? error.message : String(error)}`, error);
 			}
@@ -594,7 +602,7 @@ export function enrollCanaryTask(
 				claim as unknown as Record<string, unknown>,
 				digest,
 			);
-			writeEnrollmentBaseline(root, checks.claimedScopePaths);
+			writeEnrollmentBaseline(root, checks.claimedScopePaths, !input.batch);
 			return {
 				record: mutation.record,
 				backend_claim: claim,

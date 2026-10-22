@@ -17,6 +17,8 @@ export interface GitWorkspaceSnapshot {
 	repository_root: string;
 	head: string;
 	dirty_files: Record<string, string>;
+	/** Single-task Enrollment starts clean and owns the subsequent workspace delta. */
+	whole_workspace_delivery?: boolean;
 }
 
 function git(root: string, args: string[]): string | null {
@@ -68,9 +70,10 @@ function enrollmentBaselinePath(root: string): string {
  * paths the confirmed Enrollment gate listed: they are left out, so later
  * snapshots treat them as task work instead of withholding them.
  */
-export function writeEnrollmentBaseline(root: string, claimedPaths: readonly string[] = []): void {
+export function writeEnrollmentBaseline(root: string, claimedPaths: readonly string[] = [], wholeWorkspaceDelivery = false): void {
 	const snapshot = captureGitWorkspaceSnapshot(root);
 	if (!snapshot) return;
+	if (wholeWorkspaceDelivery) snapshot.whole_workspace_delivery = true;
 	for (const path of claimedPaths) delete snapshot.dirty_files[path];
 	const path = enrollmentBaselinePath(root);
 	mkdirSync(dirname(path), { recursive: true });
@@ -88,8 +91,9 @@ function readEnrollmentBaseline(root: string): GitWorkspaceSnapshot | null {
 	}
 }
 
-/** Runtime-created Lane branches deliver their whole branch delta. */
+/** Lanes and clean-start single tasks deliver their entire Enrollment delta. */
 export function usesBranchDelivery(root: string, taskId?: string): boolean {
+	if (readEnrollmentBaseline(root)?.whole_workspace_delivery) return true;
 	const branch = git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"])?.trim();
 	if (!branch || !/^imm-lane\/[^/]+\/[^/]+$/.test(branch)) return false;
 	return taskId === undefined || branch.endsWith(`/${taskId}`);
@@ -436,12 +440,20 @@ function assertNoPreEnrollmentScopeChanges(root: string, scopedStagedPaths: read
 		);
 }
 
-/**
- * In-scope paths that are already staged, modified or untracked relative to
- * HEAD. The Enrollment gate lists them; the ones it listed are claimed as task
- * work, and any other one refuses Enrollment, because the baseline would record
- * it as user dirt and the task could never deliver it.
- */
+/** Refuse pre-existing single-task work except the exact planning paths. */
+export function dirtyWorkspacePaths(root: string, planningPaths: readonly string[]): string[] {
+	const tracked = git(root, ["diff", "--name-only", "--no-renames", "-z", "HEAD", "--"]);
+	const staged = git(root, ["diff", "--cached", "--name-only", "--no-renames", "-z", "HEAD", "--"]);
+	const untracked = git(root, ["ls-files", "--others", "--exclude-standard", "-z", "--"]);
+	if (tracked === null || staged === null || untracked === null)
+		throw new Error("cannot inspect Enrollment workspace");
+	// Enrollment creates its own store before this check, even in repositories
+	// that have not ignored it yet. Tracked authority changes still refuse.
+	return [...new Set([...splitNull(tracked), ...splitNull(staged), ...splitNull(untracked).filter(path => !path.startsWith(".imm/state/"))])]
+		.filter(path => !planningPaths.includes(path)).sort(comparePaths);
+}
+
+/** Batch disclosure keeps its scope-bound claim of pre-existing changes. */
 export function dirtyScopePaths(projectRoot: string, scopeHint: unknown, taskId?: string): string[] {
 	const root = realpathSync(resolve(projectRoot));
 	const scope = assertCanonicalTaskScope(scopeHint);

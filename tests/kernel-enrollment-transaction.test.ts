@@ -265,6 +265,8 @@ describe("enrollment workspace revision binding", () => {
 					2,
 				)}\n`,
 			);
+			// Foreign evidence must be clean under D23; it still grants no authority.
+			gitInitAndCommit(root);
 			// This worktree has never run task-a, so it may enroll it.
 			expect(() => enroll(root, "task-a")).not.toThrow();
 			expect(readTaskRecordRaw(root, "task-a").record).toMatchObject({ lifecycle: "active" });

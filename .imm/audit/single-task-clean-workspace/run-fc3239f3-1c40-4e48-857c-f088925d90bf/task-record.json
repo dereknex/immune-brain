@@ -1,0 +1,145 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "single-task-clean-workspace",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "single-task-clean-workspace",
+    "goal": "Single-task Enrollment requires a clean workspace apart from the Planner-produced intent and Spec, records its Enrollment HEAD, and takes the task's diff, attribution and changed paths from that HEAD, disclosing files beyond the estimate instead of refusing them (Spec branch-boundary-r2 D23).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Enrollment refuses with workspace_not_clean naming the paths when a tracked file is modified or a non-ignored untracked file exists outside the task's own intent and Spec, and succeeds when only those planning files are dirty.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-clean-workspace.test.ts\",\n      \"tests/enrollment-dirty-scope.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "A single task's diff hash and changed paths cover the commits since its recorded enrollment_head plus its working-tree changes, and a file it changed outside scope_hint is settled and listed as beyond_estimate rather than refused.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-clean-workspace.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/branch-boundary-r2-single-task-clean-workspace.md",
+      "docs/plans/single-task-clean-workspace.intent.json",
+      "docs/specs/branch-boundary-r2.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/assurance/qa.ts",
+      "plugins/immune-brain/runtime/assurance/review_evidence.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment.ts",
+      "plugins/immune-brain/runtime/kernel/types.ts",
+      "plugins/immune-brain/runtime/workspace_scope.ts",
+      "tests/enrollment-dirty-scope.test.ts",
+      "tests/enrollment-git-base.test.ts",
+      "tests/kernel-enrollment-transaction.test.ts",
+      "tests/single-task-clean-workspace.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/single-task-clean-workspace.intent.json",
+    "content_hash": "sha256:408b3d33c245bb28b046a881dc2dd37c7fbfb795ed003d7e23bff17ad801f2dc"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:b62d1efef233f60ea0a9b37dd1481c6d9d2f64536fcf97637932c8764d1bf704",
+  "git_base_head": "b175fb29dd696a6548a58ca45e27759ec6100972",
+  "attestations": [
+    {
+      "id": "approval-qa-8bcc198f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:408b3d33c245bb28b046a881dc2dd37c7fbfb795ed003d7e23bff17ad801f2dc",
+      "diff_hash": "sha256:42f70d119d49322bdd32b2a2fa025563b5d716056bc26888f2bb68029dd7ebe5",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:00668ae098434ba5bf8e39d51e6697f8defd21c0fcaec6470a761aebf2b1bfdc",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:00668ae098434ba5bf8e39d51e6697f8defd21c0fcaec6470a761aebf2b1bfdc"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:00668ae098434ba5bf8e39d51e6697f8defd21c0fcaec6470a761aebf2b1bfdc"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-55700cd2",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:408b3d33c245bb28b046a881dc2dd37c7fbfb795ed003d7e23bff17ad801f2dc",
+      "diff_hash": "sha256:42f70d119d49322bdd32b2a2fa025563b5d716056bc26888f2bb68029dd7ebe5",
+      "actor_id": "parent-mediated-review",
+      "summary": "已验证 immutable revision 的唯一 parent、tree、manifest digest 和全部变更路径；审阅完整 diff 及 Enrollment、delivery identity、QA、Review、completion 的直接交互，结合 Kernel 已验证的 AC1/AC2 outcomes，未发现阻断问题；未重复执行测试。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "b175fb29dd696a6548a58ca45e27759ec6100972",
+        "review_commit": "513365561a2419e7b0972261f408309972929b87",
+        "review_tree": "0accbf7ac33488cc431dc7f6a5679033f05f027e",
+        "manifest_digest": "sha256:88f90caaeb1d000bac81852c27f7f915207a0616ef863cb7aef25c3a837e2f6d"
+      },
+      "reviewer_verdict_sha256": "sha256:c1cee71882d83442d5ee05a86ee45a4ed553a3fb30e3188a2593414c66a3210b"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "revise_intent:single-task-clean-workspace:2026-10-22T12:29:00.517Z",
+      "at": "2026-10-22T12:29:00.517Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\nscope_added:tests/enrollment-git-base.test.ts\nscope_added:tests/kernel-enrollment-transaction.test.ts\naction_v2_sha256:6549e59a7d12530c7aec9eaaeb8bd51289b62a4c931510c6daa53adb2126d31f"
+    },
+    {
+      "id": "freeze_artifacts:single-task-clean-workspace:2026-10-22T12:29:06.054Z",
+      "at": "2026-10-22T12:29:06.054Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/single-task-clean-workspace.intent.json"
+    },
+    {
+      "id": "record_approval:single-task-clean-workspace:2026-10-22T12:29:26.968Z",
+      "at": "2026-10-22T12:29:26.968Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-8bcc198f\naction_v2_sha256:8a58c20096372a7c15b9a0c225f5fd2eacb38dfdc842d52232ec934c8306cc73",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-af9147e75fbea698",
+        "issued_at": "2026-10-22T12:29:26.968Z"
+      }
+    },
+    {
+      "id": "record_approval:single-task-clean-workspace:2026-10-22T12:41:39.152Z",
+      "at": "2026-10-22T12:41:39.152Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-55700cd2\naction_v2_sha256:0eb9bbfef9c4a03d1fd2a5946ae85b9736cb595ef5cd9d845248e72337a87a72",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-958b41da708a4446",
+        "issued_at": "2026-10-22T12:41:39.152Z"
+      }
+    },
+    {
+      "id": "complete:single-task-clean-workspace:2026-10-22T12:41:40.495Z",
+      "at": "2026-10-22T12:41:40.495Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:af99bb702ed2ffc986c03ff79b9c0a9cedf1d97ba9aa85e1c471eaa14db667cb"
+    }
+  ]
+}

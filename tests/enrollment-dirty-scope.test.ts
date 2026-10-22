@@ -52,6 +52,7 @@ function repo(): string {
 			revision: 1,
 		}, null, 2)}\n`,
 	);
+	writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
 	writeFileSync(join(root, "src", "task.ts"), "export const task = 'base';\n");
 	writeFileSync(join(root, "outside.ts"), "export const outside = 'base';\n");
 	git(root, ["add", "-A"]);
@@ -123,12 +124,13 @@ describe("Enrollment refuses in-scope dirt the gate did not list", () => {
 				const { registry, capability, input } = enroll(root);
 				const rehearsal = runEnrollmentRehearsal(root, input, capability, registry);
 				expect(rehearsal.evidence.outcome).toBe("not_ready");
-				expect(rehearsal.evidence.blockers.join("\n")).toContain(`task scope is already dirty before Enrollment: ${path}`);
+				expect(rehearsal.evidence.blockers.join("\n")).toContain("workspace_not_clean:");
+				expect(rehearsal.evidence.blockers.join("\n")).toContain(path);
 				// The Host commits these paths itself; the refusal never hands that to the user.
 				expect(rehearsal.evidence.blockers.join("\n")).not.toMatch(/commit, stash or revert|commit (them|these|it) /i);
 
 				expect(() => enrollCanaryTask(root, input, registry)).toThrow(
-					new RegExp(`task scope is already dirty before Enrollment: ${path.replace(".", "\\.")}`),
+					new RegExp(`workspace_not_clean: .*${path.replace(".", "\\.")}`),
 				);
 				expect(registry.isConsumed(capability)).toBe(false);
 				expect(readTaskRecordRaw(root, TASK).record).toBeNull();
@@ -139,104 +141,34 @@ describe("Enrollment refuses in-scope dirt the gate did not list", () => {
 		});
 	}
 
-	test("out-of-scope dirt, the task's own sidecar and audit attachments do not block", () => {
-		const root = repo();
-		try {
-			writeFileSync(join(root, "outside.ts"), "export const outside = 'dirty';\n");
-			writeFileSync(join(root, "scratch.txt"), "notes\n");
-			mkdirSync(join(root, ".imm/audit/other-task"), { recursive: true });
-			writeFileSync(join(root, ".imm/audit/other-task/terminal-proof.json"), "{}\n");
-			// The own sidecar and an audit attachment stay exempt even when the
-			// scope would otherwise match them.
-			expect(dirtyScopePaths(root, SCOPE, TASK)).toEqual([]);
-			expect(dirtyScopePaths(root, [".imm/audit", "docs/plans"], "unlisted-task")).toEqual([]);
-			writeFileSync(join(root, "docs", "plans", `${TASK}.intent.json`), "{}\n");
-			expect(dirtyScopePaths(root, ["docs/plans"], TASK)).toEqual([]);
-			expect(dirtyScopePaths(root, ["docs/plans"], "other-task")).toEqual([`docs/plans/${TASK}.intent.json`]);
-			git(root, ["checkout", "--", `docs/plans/${TASK}.intent.json`]);
-
-			const { registry, capability, input } = enroll(root);
-			expect(runEnrollmentRehearsal(root, input, capability, registry).evidence.outcome).toBe("ready");
-			const result = enrollCanaryTask(root, input, registry);
-			expect(result.record).toMatchObject({ task_id: TASK, lifecycle: "active" });
-			expect(registry.isConsumed(capability)).toBe(true);
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
 });
 
-describe("Enrollment claims the in-scope changes its gate listed", () => {
-	for (const kind of ["staged", "modified", "untracked", "deleted"] as const) {
-		test(`a listed ${kind} in-scope path enrolls and is in the first snapshot`, () => {
+// D23 retires claiming dirty source files, even when the gate listed them.
+describe("single-task clean workspace guard", () => {
+	for (const path of ["outside.ts", "scratch.txt", ".imm/audit/other-task/terminal-proof.json"]) {
+		test(`rejects dirt outside the estimate: ${path}`, () => {
 			const root = repo();
 			try {
-				const baseHead = git(root, ["rev-parse", "HEAD"]);
-				const path = dirtyScope(root, kind);
-				writeFileSync(join(root, "outside.ts"), "export const outside = 'dirty';\n");
-				const disclosure = enrollmentScopeDisclosure(root, TASK);
-				expect(disclosure.paths).toEqual([path]);
-				expect(disclosure.notice).toBe(
-					`In-scope changes that already exist (1) and become task work on confirmation: ${path}`,
-				);
-
+				mkdirSync(join(root, path, ".."), { recursive: true });
+				writeFileSync(join(root, path), "dirty\n");
 				const { registry, capability, input } = enroll(root);
-				const listed = { ...input, disclosed_scope_paths: disclosure.paths };
-				const rehearsal = runEnrollmentRehearsal(root, listed, capability, registry);
-				expect(rehearsal.evidence).toMatchObject({ outcome: "ready", claimed_scope_paths: [path] });
-				expect(enrollCanaryTask(root, listed, registry).record).toMatchObject({ task_id: TASK, lifecycle: "active" });
-				expect(registry.isConsumed(capability)).toBe(true);
-
-				// The claimed path is left out of the baseline; out-of-scope dirt stays in it.
-				const baseline = JSON.parse(readFileSync(join(root, ".imm/state/enrollment-baseline.json"), "utf8"));
-				expect(Object.keys(baseline.dirty_files)).toContain("outside.ts");
-				expect(Object.keys(baseline.dirty_files)).not.toContain(path);
-
-				// `git rm` already staged the deletion and left no `src` to add.
-				if (kind !== "deleted") git(root, ["add", "-A", "--", "src"]);
-				expect(Object.keys(captureGitTaskRevisionSnapshot(root, SCOPE, baseHead, TASK).changed_paths)).toEqual([path]);
-				expect(Object.keys(captureGitTaskSnapshot(root, SCOPE, TASK).staged_files)).toEqual([path]);
-			} finally {
-				rmSync(root, { recursive: true, force: true });
-			}
+				expect(() => enrollCanaryTask(root, input, registry)).toThrow("workspace_not_clean");
+				expect(registry.isConsumed(capability)).toBe(false);
+				expect(readBackendClaim(root)).toBeNull();
+			} finally { rmSync(root, { recursive: true, force: true }); }
 		});
 	}
-
-	test("a clean scope discloses nothing", () => {
-		const root = repo();
-		try {
-			writeFileSync(join(root, "outside.ts"), "export const outside = 'dirty';\n");
-			expect(enrollmentScopeDisclosure(root, TASK)).toEqual({ paths: [], notice: null });
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	test("a path dirtied after the gate text was built is not claimed", () => {
-		const root = repo();
-		try {
-			dirtyScope(root, "staged");
-			const disclosure = enrollmentScopeDisclosure(root, TASK);
-			expect(disclosure.paths).toEqual(["src/task.ts"]);
-			// Dirtied between building the gate text and the confirmed Enrollment.
-			dirtyScope(root, "untracked");
-
-			const { registry, capability, input } = enroll(root);
-			const listed = { ...input, disclosed_scope_paths: disclosure.paths };
-			expect(runEnrollmentRehearsal(root, listed, capability, registry).evidence).toMatchObject({
-				outcome: "not_ready",
-				claimed_scope_paths: [],
-			});
-			expect(() => enrollCanaryTask(root, listed, registry)).toThrow(
-				/task scope is already dirty before Enrollment: src\/new\.ts; the confirmed Enrollment gate did not list these paths/,
-			);
-			expect(registry.isConsumed(capability)).toBe(false);
-			expect(readTaskRecordRaw(root, TASK).record).toBeNull();
-			expect(readBackendClaim(root)).toBeNull();
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
+	for (const kind of ["staged", "modified", "untracked", "deleted"] as const) {
+		test(`refuses listed ${kind} source changes`, () => {
+			const root = repo();
+			try {
+				const path = dirtyScope(root, kind);
+				const { registry, capability, input } = enroll(root);
+				expect(() => enrollCanaryTask(root, { ...input, disclosed_scope_paths: [path] }, registry)).toThrow("workspace_not_clean");
+				expect(registry.isConsumed(capability)).toBe(false);
+			} finally { rmSync(root, { recursive: true, force: true }); }
+		});
+	}
 });
 
 describe("task-path derivation fails closed on pre-Enrollment scope changes", () => {
@@ -286,6 +218,9 @@ describe("task-path derivation fails closed on pre-Enrollment scope changes", ()
 			expect(Object.keys(captureGitTaskRevisionSnapshot(root, scope, baseHead, TASK).changed_paths)).toEqual([own]);
 			expect(() => taskRevisionDiffHash(root, scope, baseHead, TASK)).not.toThrow();
 
+			// Legacy dirty baselines still fail closed; new clean-start enrollment
+			// excludes its planning files from withheld user dirt.
+			writeEnrollmentBaseline(root);
 			// The exemption is bound to the task id: a different task, or no
 			// task id, still stops on the same baseline-equal path.
 			const refusal = new RegExp(`staged changes that predate Enrollment and cannot become task work: ${own.replace(/\./g, "\\.")}`);

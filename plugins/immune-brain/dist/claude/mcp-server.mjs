@@ -5293,10 +5293,12 @@ function isPlanningNoise(path, taskId) {
 function enrollmentBaselinePath(root) {
   return join6(root, ".imm/state/enrollment-baseline.json");
 }
-function writeEnrollmentBaseline(root, claimedPaths = []) {
+function writeEnrollmentBaseline(root, claimedPaths = [], wholeWorkspaceDelivery = false) {
   const snapshot = captureGitWorkspaceSnapshot(root);
   if (!snapshot)
     return;
+  if (wholeWorkspaceDelivery)
+    snapshot.whole_workspace_delivery = true;
   for (const path of claimedPaths)
     delete snapshot.dirty_files[path];
   const path = enrollmentBaselinePath(root);
@@ -5316,6 +5318,8 @@ function readEnrollmentBaseline(root) {
   }
 }
 function usesBranchDelivery(root, taskId) {
+  if (readEnrollmentBaseline(root)?.whole_workspace_delivery)
+    return true;
   const branch = git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"])?.trim();
   if (!branch || !/^imm-lane\/[^/]+\/[^/]+$/.test(branch))
     return false;
@@ -5534,6 +5538,14 @@ function assertNoPreEnrollmentScopeChanges(root, scopedStagedPaths, taskId) {
   const withheld = [...new Set(scopedStagedPaths)].filter((path) => !isOwnPlanningSidecar(path, taskId)).filter((path) => baseline.dirty_files[path] !== undefined && baseline.dirty_files[path] === current.dirty_files[path]).sort(comparePaths);
   if (withheld.length > 0)
     throw new Error(`task scope contains staged changes that predate Enrollment and cannot become task work: ${withheld.join(", ")}; stop the task and enroll again so the Enrollment gate lists them, or from a clean scope`);
+}
+function dirtyWorkspacePaths(root, planningPaths) {
+  const tracked = git(root, ["diff", "--name-only", "--no-renames", "-z", "HEAD", "--"]);
+  const staged = git(root, ["diff", "--cached", "--name-only", "--no-renames", "-z", "HEAD", "--"]);
+  const untracked = git(root, ["ls-files", "--others", "--exclude-standard", "-z", "--"]);
+  if (tracked === null || staged === null || untracked === null)
+    throw new Error("cannot inspect Enrollment workspace");
+  return [...new Set([...splitNull(tracked), ...splitNull(staged), ...splitNull(untracked).filter((path) => !path.startsWith(".imm/state/"))])].filter((path) => !planningPaths.includes(path)).sort(comparePaths);
 }
 function dirtyScopePaths(projectRoot, scopeHint, taskId) {
   const root = realpathSync7(resolve7(projectRoot));
@@ -17005,14 +17017,25 @@ function runEnrollmentPreconditionChecks(root, input, capability, registry, mode
     }
     if (intent && gitBaseHead) {
       try {
-        const disclosed = new Set(input.disclosed_scope_paths ?? []);
-        const dirty = dirtyScopePaths(root, intent.intent.scope_hint, input.task_id);
-        const unlisted = dirty.filter((path) => !disclosed.has(path));
-        if (unlisted.length > 0) {
-          const message = `task scope is already dirty before Enrollment: ${unlisted.join(", ")}; the confirmed Enrollment gate did not list these paths, so enroll again from the Host to review them`;
-          fail(message, new Error(message));
-        } else
-          claimedScopePaths = dirty;
+        if (!input.batch) {
+          const binding = inspectSpecBinding(intent.intent);
+          const planning = [input.intent_path, ...binding.ok && binding.binding ? [binding.binding.active] : []];
+          claimedScopePaths = planning;
+          const dirty = dirtyWorkspacePaths(root, planning);
+          if (dirty.length > 0) {
+            const message = `workspace_not_clean: ${dirty.join(", ")}`;
+            fail(message, new Error(message));
+          }
+        } else {
+          const disclosed = new Set(input.disclosed_scope_paths ?? []);
+          const dirty = dirtyScopePaths(root, intent.intent.scope_hint, input.task_id);
+          const unlisted = dirty.filter((path) => !disclosed.has(path));
+          if (unlisted.length > 0) {
+            const message = `task scope is already dirty before Enrollment: ${unlisted.join(", ")}; the confirmed Enrollment gate did not list these paths, so enroll again from the Host to review them`;
+            fail(message, new Error(message));
+          } else
+            claimedScopePaths = dirty;
+        }
       } catch (error) {
         fail(`scope: ${error instanceof Error ? error.message : String(error)}`, error);
       }
@@ -17187,7 +17210,7 @@ function enrollCanaryTask(root, input, registry) {
         next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}
 `
       }, claim, digest);
-      writeEnrollmentBaseline(root, checks.claimedScopePaths);
+      writeEnrollmentBaseline(root, checks.claimedScopePaths, !input.batch);
       return {
         record: mutation.record,
         backend_claim: claim,

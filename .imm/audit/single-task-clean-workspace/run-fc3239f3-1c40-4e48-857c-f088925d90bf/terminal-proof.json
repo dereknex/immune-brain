@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "single-task-clean-workspace",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:single-task-clean-workspace:2026-10-22T12:41:40.495Z",
+  "final_record_hash": "sha256:6be848bf000912713b82f5ed9163ed8bf464059f14ce26a1431668e644dc42aa",
+  "terminalized_at": "2026-10-22T12:41:40.495Z"
+}
