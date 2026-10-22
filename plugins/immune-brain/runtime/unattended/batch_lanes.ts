@@ -33,7 +33,8 @@ import {
 	type IntegrationCheckChild,
 } from "./batch_integration";
 import { isBatchRef, isParentBranch } from "./batch_ref";
-import { copyLanePlanningInput, createLaneWorktree, removeLaneWorktree } from "./batch_worktrees";
+import { copyLanePlanningInput, createLaneWorktree, recreateLaneWorktree, removeLaneWorktree, withParentWorktree } from "./batch_worktrees";
+import { deriveChildRedoEnrollment } from "./batch_kernel_port";
 import { classifyBatchLineage, expectedBatchHead, findExistingActiveBatch, porcelainEntries, readActiveClaimTaskId, unsettledChildScopes } from "./batch_preflight";
 import { restoreProvableLaneLeaks } from "./batch_leak_restore";
 import { withBatchEvidence } from "./batch_git";
@@ -752,7 +753,7 @@ function validateNewAuthorization(input: StartBatchInput): string | null {
 }
 
 /** Durable redo spend, written by the integration redo coordinator (S2). */
-export type BatchLaneRedoChildRun = BatchLaneChildRun & { redo_grants?: number };
+export type BatchLaneRedoChildRun = BatchLaneChildRun;
 
 /** Restore slots and redo spend together, including a granted redo not yet enrolled. */
 export function rehydrateConsumption(input: StartBatchInput, record: BatchLaneRunStateRecord): void {
@@ -770,7 +771,7 @@ export function rehydrateConsumption(input: StartBatchInput, record: BatchLaneRu
 	for (const child of record.children) {
 		const recorded = (child as BatchLaneRedoChildRun).redo_grants;
 		const grants = recorded === undefined ? 0 : recorded;
-		const consumed = child.state !== "pending" && child.state !== "skipped_blocked" && child.state !== "lane_admitted";
+		const consumed = child.state !== "pending" && child.state !== "skipped_blocked" && child.state !== "lane_admitted" && !child.redo_head;
 		if (!consumed && grants === 0) continue;
 		input.registry.restoreChild(input.capability, binding, child.task_id, grants);
 		if (!consumed) input.registry.releaseChild(input.capability, child.task_id);
@@ -928,7 +929,7 @@ export async function runLaneBatch(
 
 	// Adopt an integration the previous tick completed but did not record.
 	for (const child of record.children) {
-		if (child.state !== "lane_committed" || !child.lane?.lane_commit) continue;
+		if (child.state !== "lane_committed" || child.redo_head || !child.lane?.lane_commit) continue;
 		const found = lanes.findIntegrated({
 			root: input.root,
 			task_id: child.task_id,
@@ -1087,6 +1088,28 @@ export async function runLaneBatch(
 		}
 	};
 
+	const settledAt = (child: BatchLaneChildRun): string =>
+		readTaskTombstone(child.lane!.path, child.task_id)?.terminalized_at ?? input.now;
+	const queue = (): BatchLaneChildRun[] => [...record.children].sort((a, b) =>
+		(a.settled_at ?? record.created_at).localeCompare(b.settled_at ?? record.created_at));
+	const resumeRedo = async (child: BatchLaneChildRun): Promise<void> => {
+		const path = recreateLaneWorktree(input.root, record.initiative_slug, child.task_id, child.redo_head!, child.lane!.lane_commit!);
+		record.children = record.children.map(c => {
+			if (c.task_id !== child.task_id) return c;
+			const { redo_head: head, settled_at: _settledAt, correction_due: _due, ...rest } = c;
+			return { ...rest, state: "lane_admitted", reason: null, qa_failures: 0,
+				lane: { path, branch: child.lane!.branch, base_head: head!, lane_commit: null } };
+		});
+		persist();
+		await enrollInLane(child.task_id);
+	};
+	// The grant and target survive a crash before recreation or enrollment.
+	for (const child of record.children) {
+		if (child.state !== "lane_committed" || !child.redo_head) continue;
+		try { await resumeRedo(child); }
+		catch (error) { parkChild(child.task_id, error instanceof Error ? error.message : String(error)); }
+	}
+
 	// 1. Observe every in-flight Lane and drive each frozen child's QA and Review.
 	// Nothing is inferred from terminal text; only Kernel facts move a child.
 	for (const child of [...record.children]) {
@@ -1121,7 +1144,7 @@ export async function runLaneBatch(
 			continue;
 		}
 		if (fresh.projection.lifecycle === "done" && fresh.projection.completion_ready) {
-			record.children = record.children.map((c) => (c.task_id === child.task_id ? { ...c, state: "settled", reason: null } : c));
+			record.children = record.children.map((c) => (c.task_id === child.task_id ? { ...c, state: "settled", reason: null, settled_at: settledAt(child) } : c));
 			persist();
 			continue;
 		}
@@ -1141,7 +1164,7 @@ export async function runLaneBatch(
 		const terminal = await input.kernel.advanceTask(child.lane.path, child.task_id);
 		if (terminal.state === "completed") {
 			record.children = record.children.map((c) =>
-				c.task_id === child.task_id ? { ...c, state: "settled", reason: null, qa_failures: 0 } : c,
+				c.task_id === child.task_id ? { ...c, state: "settled", reason: null, qa_failures: 0, settled_at: settledAt(child) } : c,
 			);
 			persist();
 		} else if (terminal.state === "review_ready") {
@@ -1193,8 +1216,8 @@ export async function runLaneBatch(
 		}
 	}
 
-	// 2. Commit each settled child on its lane branch, then integrate it.
-	for (const child of [...record.children]) {
+	// 2. Commit and integrate serially in Kernel settlement order, not plan order.
+	for (const child of queue()) {
 		if (child.state !== "settled" || !child.lane) continue;
 		const authorityChange = laneAuthorityChange(record, child.task_id, child.lane.path);
 		if (authorityChange) {
@@ -1230,8 +1253,8 @@ export async function runLaneBatch(
 		);
 		persist();
 	}
-	for (const child of [...record.children]) {
-		if (child.state !== "lane_committed" || !child.lane?.lane_commit) continue;
+	for (const child of queue()) {
+		if (child.state !== "lane_committed" || child.redo_head || !child.lane?.lane_commit) continue;
 		const intentPathOf = (taskId: string) => input.children.find((c) => c.task_id === taskId)?.intent_path ?? null;
 		try {
 			const { commit } = await lanes.integrate({
@@ -1256,6 +1279,34 @@ export async function runLaneBatch(
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			const reason = error instanceof BatchIntegrationError ? error.reason : "batch_integration_conflict";
+			const conflict = error instanceof BatchIntegrationError &&
+				(reason === "batch_integration_conflict" || reason === "batch_integration_check_failed");
+			if (isParentBranch(record.branch) && conflict) {
+				if ((child.redo_grants ?? 0) >= 2) {
+					parkChild(child.task_id, `batch_integration_redo_exhausted: ${message}`);
+					continue;
+				}
+				try {
+					const head = expectedBatchHead(record);
+					const binding = input.kernel.validateBatchAuthorization({ registry: input.registry, capability: input.capability,
+						binding: { batch_id: record.batch_id, plan_digest: record.plan_digest, base_head: record.base_head,
+							initiative_slug: record.initiative_slug, budget: record.budget } });
+					await withParentWorktree(input.root, head, async root => {
+						copyLanePlanningInput(input.root, root, child.task_id, "intent");
+						copyLanePlanningInput(input.root, root, child.task_id, "spec");
+						deriveChildRedoEnrollment(root, input.registry, { capability: input.capability, binding,
+							task_id: child.task_id, expected_head: head, now: input.now,
+							prior_lane_root: child.lane!.path, prior_run_id: child.lane!.run_id ?? "" });
+						record.children = record.children.map(c => c.task_id === child.task_id
+							? { ...c, redo_grants: input.registry.redoGrants(input.capability, child.task_id), redo_head: head, reason: message } : c);
+						persist();
+					});
+					await resumeRedo(record.children.find(c => c.task_id === child.task_id)!);
+				} catch (redoError) {
+					parkChild(child.task_id, redoError instanceof Error ? redoError.message : String(redoError));
+				}
+				continue;
+			}
 			parkChild(child.task_id, isLineageBreak(message) || message.startsWith(`${reason}:`) ? message : `${reason}: ${message}`);
 			if (isLineageBreak(message)) {
 				// A broken lineage cannot be trusted for any later integration.

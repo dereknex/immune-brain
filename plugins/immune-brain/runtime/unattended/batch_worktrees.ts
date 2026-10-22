@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, rmdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { observeEnrollmentTaskIntent } from "../kernel/intent";
+import { readBackendClaim } from "../kernel/backend_claim";
 import { readBoundActiveSpec } from "../kernel/spec_binding";
 import { readSecureProjectFile } from "../kernel/storage";
 import { parentBranchRef } from "./batch_ref";
@@ -44,15 +45,28 @@ export function createLaneWorktree(root: string, slug: string, taskId: string, h
 }
 
 /** Recreate only the runtime-owned clean Lane; its ignored Authority Store is discarded. */
-export function recreateLaneWorktree(root: string, slug: string, taskId: string, head: string): string {
+export function recreateLaneWorktree(root: string, slug: string, taskId: string, head: string, priorCommit?: string): string {
 	parentBranchRef(slug);
 	parentBranchRef(taskId);
 	// Resolve the new base before deleting anything, including on a malformed ref.
 	const target = git(root, ["rev-parse", "--verify", "--end-of-options", `${head}^{commit}`]);
 	const path = join(worktreeDirectory(root), slug, taskId);
 	const branch = `imm-lane/${slug}/${taskId}`;
-	if (!existsSync(path) || !removeLaneWorktree(root, path, branch, git(path, ["rev-parse", "HEAD"])))
-		throw new Error("batch_worktree_failed: redo requires the existing clean owned Lane");
+	if (existsSync(path)) {
+		if (readBackendClaim(path)) throw new Error("batch_worktree_failed: redo Lane still has an active claim");
+		const current = git(path, ["rev-parse", "HEAD"]);
+		if ((priorCommit && current !== priorCommit && current !== target) || !removeLaneWorktree(root, path, branch, current))
+			throw new Error("batch_worktree_failed: redo requires the existing clean owned Lane");
+	} else {
+		if (!priorCommit) throw new Error("batch_worktree_failed: redo requires the existing clean owned Lane");
+		// Recover a crash after removal, but never delete an unrelated branch tip.
+		const ref = `refs/heads/${branch}`;
+		const found = spawnSync("git", ["-C", root, "rev-parse", "--verify", "--quiet", ref], { encoding: "utf8" });
+		if (found.status === 0) {
+			if (found.stdout.trim() !== priorCommit) throw new Error("batch_worktree_failed: redo branch moved");
+			git(root, ["update-ref", "-d", ref, priorCommit]);
+		} else if (found.status !== 1) throw new Error("batch_worktree_failed: redo branch is unreadable");
+	}
 	return createLaneWorktree(root, slug, taskId, target);
 }
 

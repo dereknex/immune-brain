@@ -1,0 +1,157 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "merge-queue-redo",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "merge-queue-redo",
+    "goal": "Settled children integrate through a merge queue onto the Parent branch: each child's frozen acceptance reruns on its rebuilt commit and a failure counts as a conflict, a conflict restarts the child from the new Parent tip with implementation, QA and Review again, and the third conflict parks only that child while independent children finish and the batch summary lists it (Spec branch-boundary-r2 D15, D16).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Two children settled in order integrate one at a time in settle order, and the second is rebuilt on the Parent tip that already contains the first.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-merge-queue.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "A child whose rebuilt commit has no textual conflict but whose frozen acceptance descriptor fails on that commit does not advance imm/<slug> and is counted as a conflict.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-merge-queue.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "A child whose rebuilt commit conflicts has its worktree reset to the new Parent tip and runs implementation, QA and Review again under the same authorization, and integrates when the redo merges cleanly.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-merge-queue.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "A child that conflicts a third time is parked as batch_integration_redo_exhausted, its dependents become skipped_blocked, an independent child still integrates, and the batch summary lists the parked child with redo count 2.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-merge-queue.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/branch-boundary-r2-merge-queue-redo.md",
+      "docs/plans/merge-queue-redo.intent.json",
+      "docs/specs/branch-boundary-r2.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/batch_worktrees.ts",
+      "plugins/immune-brain/runtime/unattended/types.ts",
+      "tests/batch-merge-queue.test.ts",
+      "tests/unattended-batch-integration.test.ts",
+      "tests/unattended-batch-lanes.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/merge-queue-redo.intent.json",
+    "content_hash": "sha256:0b7a1954f004f233447cbe2c0caac80875cd32b4482946b37f5f516071a377f9"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:0b7a1954f004f233447cbe2c0caac80875cd32b4482946b37f5f516071a377f9",
+  "git_base_head": "10d4e9ea905b61e056eb62943d2ba6e418be1172",
+  "attestations": [
+    {
+      "id": "approval-qa-13ef9924",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:0b7a1954f004f233447cbe2c0caac80875cd32b4482946b37f5f516071a377f9",
+      "diff_hash": "sha256:53874da126ba75070deacc81a3f28b9578184561587d770640d0d16be1f92062",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:917a44ec6975262f1ed3938e353b0c758880db4546117b1db5bce6d906d92d2f",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:917a44ec6975262f1ed3938e353b0c758880db4546117b1db5bce6d906d92d2f"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:917a44ec6975262f1ed3938e353b0c758880db4546117b1db5bce6d906d92d2f"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:917a44ec6975262f1ed3938e353b0c758880db4546117b1db5bce6d906d92d2f"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:917a44ec6975262f1ed3938e353b0c758880db4546117b1db5bce6d906d92d2f"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-760c3275",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:0b7a1954f004f233447cbe2c0caac80875cd32b4482946b37f5f516071a377f9",
+      "diff_hash": "sha256:53874da126ba75070deacc81a3f28b9578184561587d770640d0d16be1f92062",
+      "actor_id": "parent-mediated-review",
+      "summary": "Verified manifest digest, revision parent/tree, and all changed-path blob identities; reviewed every complete per-file diff, settlement ordering, frozen acceptance checks, bounded redo authorization and recovery, and AC1–AC4 coverage. No blocking correctness or regression findings; execution verification relies on the supplied Kernel QA outcomes.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "10d4e9ea905b61e056eb62943d2ba6e418be1172",
+        "review_commit": "e8266814c0096d3d938379ef4eb7b58aca29c9c0",
+        "review_tree": "6cf49a2f7982e31d87844a789ff724f5478d2229",
+        "manifest_digest": "sha256:c5d8494649f1c5e31be1cb917d4038bcfd1d6243edd5ce7a19d865f5ca2647a1"
+      },
+      "reviewer_verdict_sha256": "sha256:7b963dd4c6ea6925d8ab4841152f8f9e3c7a7b77d224dcca19ff7f16746d66a6"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:merge-queue-redo:2026-10-22T05:02:11.846Z",
+      "at": "2026-10-22T05:02:11.846Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/merge-queue-redo.intent.json"
+    },
+    {
+      "id": "record_approval:merge-queue-redo:2026-10-22T05:04:58.150Z",
+      "at": "2026-10-22T05:04:58.150Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-13ef9924\naction_v2_sha256:9b4e567a7a04e19d3e85063518b0bd900ac5c843411a4baf4fddad9da108edd6",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-2017c27ff0757a65",
+        "issued_at": "2026-10-22T05:04:58.151Z"
+      }
+    },
+    {
+      "id": "record_approval:merge-queue-redo:2026-10-22T05:09:21.093Z",
+      "at": "2026-10-22T05:09:21.093Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-760c3275\naction_v2_sha256:b7d13fed4e3be33ce3c7d3cc12bc0bdf93fb4ea218ef5976e8aa62f4c2fd325f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-f73c33dff7696f08",
+        "issued_at": "2026-10-22T05:09:21.093Z"
+      }
+    },
+    {
+      "id": "complete:merge-queue-redo:2026-10-22T05:09:22.689Z",
+      "at": "2026-10-22T05:09:22.689Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:68e3cb63321f0efe4c2abe243ca2f19102e9cce71d91d3dc69e41fc3b2352802"
+    }
+  ]
+}

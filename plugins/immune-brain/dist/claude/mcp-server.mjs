@@ -4956,6 +4956,11 @@ function assertBatchLineageOrigin(root, baseHead, expectedHead) {
 function deriveChildEnrollment(root, registry, input) {
   return prepareChildEnrollment(root, registry, input, false);
 }
+function reissueChildEnrollment(root, registry, input) {
+  const derived = prepareChildEnrollment(root, registry, input, true);
+  registry.reissueChild(input.capability, input.binding, input.task_id);
+  return derived;
+}
 function prepareChildEnrollment(root, registry, input, redo) {
   const validated = registry.inspect(input.capability, input.binding);
   const child = registry.children(input.capability).find((entry) => entry.task_id === input.task_id);
@@ -5925,6 +5930,32 @@ function createLaneWorktree(root, slug, taskId, head) {
   git2(root, ["worktree", "add", "-b", branch, path, head]);
   return path;
 }
+function recreateLaneWorktree(root, slug, taskId, head, priorCommit) {
+  parentBranchRef(slug);
+  parentBranchRef(taskId);
+  const target = git2(root, ["rev-parse", "--verify", "--end-of-options", `${head}^{commit}`]);
+  const path = join6(worktreeDirectory(root), slug, taskId);
+  const branch = `imm-lane/${slug}/${taskId}`;
+  if (existsSync4(path)) {
+    if (readBackendClaim(path))
+      throw new Error("batch_worktree_failed: redo Lane still has an active claim");
+    const current = git2(path, ["rev-parse", "HEAD"]);
+    if (priorCommit && current !== priorCommit && current !== target || !removeLaneWorktree(root, path, branch, current))
+      throw new Error("batch_worktree_failed: redo requires the existing clean owned Lane");
+  } else {
+    if (!priorCommit)
+      throw new Error("batch_worktree_failed: redo requires the existing clean owned Lane");
+    const ref = `refs/heads/${branch}`;
+    const found = spawnSync6("git", ["-C", root, "rev-parse", "--verify", "--quiet", ref], { encoding: "utf8" });
+    if (found.status === 0) {
+      if (found.stdout.trim() !== priorCommit)
+        throw new Error("batch_worktree_failed: redo branch moved");
+      git2(root, ["update-ref", "-d", ref, priorCommit]);
+    } else if (found.status !== 1)
+      throw new Error("batch_worktree_failed: redo branch is unreadable");
+  }
+  return createLaneWorktree(root, slug, taskId, target);
+}
 function copyLanePlanningInput(root, lane, taskId, kind) {
   const read = observeEnrollmentTaskIntent(root, taskId);
   const input = kind === "intent" ? { path: read.intent_ref.path, content: readSecureProjectFile(root, read.intent_ref.path) } : readBoundActiveSpec(root, read.intent);
@@ -5968,6 +5999,7 @@ async function withParentWorktree(root, head, use) {
 }
 var init_batch_worktrees = __esm(() => {
   init_intent();
+  init_backend_claim();
   init_spec_binding();
   init_storage();
   init_batch_ref();
@@ -6337,6 +6369,12 @@ function validateLaneRecordShape(value, batchId) {
       throw new Error(`batch run state ${batchId} child ${child.task_id} has invalid terminal fields`);
     if (typeof child.qa_failures !== "number" || !Number.isInteger(child.qa_failures) || child.qa_failures < 0)
       throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid qa_failures`);
+    if (child.settled_at !== undefined && !isCanonicalTimestamp(child.settled_at))
+      throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid settled_at`);
+    if (child.redo_grants !== undefined && (!Number.isInteger(child.redo_grants) || child.redo_grants < 0 || child.redo_grants > 2))
+      throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid redo_grants`);
+    if (child.redo_head !== undefined && (typeof child.redo_head !== "string" || !/^[0-9a-f]{40}$/.test(child.redo_head) || !child.redo_grants || child.state !== "lane_committed" && child.state !== "needs_human"))
+      throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid redo_head`);
     if (child.corrections !== undefined && (!Number.isInteger(child.corrections) || child.corrections < 0 || child.corrections > 2))
       throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid corrections count`);
     if (child.correction_due !== undefined && (typeof child.correction_due !== "string" || !child.correction_due || child.state !== "enrolled"))
@@ -6350,6 +6388,8 @@ function validateLaneRecordShape(value, batchId) {
       if (typeof lane !== "object" || typeof lane.path !== "string" || !lane.path || typeof lane.branch !== "string" || !lane.branch || typeof lane.base_head !== "string" || !lane.base_head || lane.lane_commit !== null && typeof lane.lane_commit !== "string" || lane.run_id !== undefined && lane.run_id !== null && (typeof lane.run_id !== "string" || !lane.run_id))
         throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid lane`);
     }
+    if (child.redo_head !== undefined && (record.branch !== `refs/heads/imm/${record.initiative_slug}` || !lane?.run_id || !lane.lane_commit))
+      throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid redo_head binding`);
     if (LANE_BOUND_STATES.has(child.state) && lane === null)
       throw new Error(`batch run state ${batchId} child ${child.task_id} is ${child.state} without a lane`);
     if ((child.state === "pending" || child.state === "skipped_blocked") && lane !== null)
@@ -11022,24 +11062,26 @@ function fastForwardToCandidate(root, candidate, hidden) {
 function commitsBetween(root, from, to) {
   return new Set(gitOut(root, ["rev-list", `${from}..${to}`], `failed to list commits ${from}..${to}`).split(/\s+/).filter(Boolean));
 }
-function readCandidateAcceptance(root, candidate, check) {
+function readFrozenAcceptance(root, commit, check) {
   if (!check.intent_path)
     throw new BatchIntegrationError("batch_integration_check_failed", `batch_integration_check_failed: ${check.task_id} has no intent to rerun`);
-  const shown = git5(root, ["show", `${candidate}:${check.intent_path}`]);
+  const shown = git5(root, ["show", `${commit}:${check.intent_path}`]);
   if (shown.status !== 0)
-    throw new BatchIntegrationError("batch_integration_check_failed", `batch_integration_check_failed: intent ${check.intent_path} of ${check.task_id} is absent from candidate ${candidate}`);
+    throw new BatchIntegrationError("batch_integration_check_failed", `batch_integration_check_failed: intent ${check.intent_path} of ${check.task_id} is absent from frozen delivery ${commit}`);
   try {
     const intent = parseTaskIntentV1(JSON.parse(shown.stdout));
     return intent.acceptance.map((item) => ({ id: `${check.task_id}:${item.id}`, assertion: item.assertion, verification: item.verification }));
   } catch (error) {
-    throw new BatchIntegrationError("batch_integration_check_failed", `batch_integration_check_failed: intent of ${check.task_id} is unreadable in candidate ${candidate}: ${error instanceof Error ? error.message : String(error)}`);
+    throw new BatchIntegrationError("batch_integration_check_failed", `batch_integration_check_failed: intent of ${check.task_id} is unreadable in frozen delivery ${commit}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 async function verifyCandidateDescriptors(input) {
   const { root, candidate } = input;
   const since = commitsBetween(root, input.lane_base, input.batch_head);
-  const checks = [input.child, ...input.siblings.filter((sibling) => sibling.commit !== null && since.has(sibling.commit))];
-  const acceptance = checks.flatMap((check) => readCandidateAcceptance(root, candidate, check));
+  const acceptance = [
+    ...readFrozenAcceptance(root, input.lane_commit, input.child),
+    ...input.siblings.filter((sibling) => sibling.commit !== null && since.has(sibling.commit)).flatMap((sibling) => readFrozenAcceptance(root, sibling.commit, sibling))
+  ];
   const descriptors = new Map;
   try {
     for (const item of acceptance)
@@ -11095,6 +11137,7 @@ async function integrateGuardedLaneCommit(input) {
     root: input.root,
     candidate,
     lane_base: input.lane_base,
+    lane_commit: input.lane_commit,
     batch_head: input.batch_head,
     child: input.child,
     siblings: input.siblings,
@@ -17301,6 +17344,92 @@ init_local_initiative();
 init_batch_integration();
 init_batch_ref();
 init_batch_worktrees();
+
+// plugins/immune-brain/runtime/unattended/batch_kernel_port.ts
+init_batch_git();
+init_assurance_projection();
+init_batch_authority();
+init_storage();
+init_batch_preflight();
+function deriveChildRedoEnrollment(root, registry, input) {
+  registry.inspect(input.capability, input.binding);
+  if (!input.prior_run_id || localRunId(input.prior_lane_root, input.task_id) !== input.prior_run_id)
+    throw new Error(`batch_child_redo_run_mismatch: ${input.task_id}`);
+  const prior = readSettledRunEvidence(input.prior_lane_root, input.task_id);
+  if (!prior)
+    throw new Error(`batch_child_redo_run_active: ${input.task_id}`);
+  if (prior.run_id !== input.prior_run_id)
+    throw new Error(`batch_child_redo_run_mismatch: ${input.task_id}`);
+  return reissueChildEnrollment(root, registry, input);
+}
+function createBatchKernelPort(input) {
+  const project = input.deps?.projectAssurance ?? projectAssurance;
+  const readRecord = input.deps?.readTaskRecordRaw ?? readTaskRecordRaw;
+  const deriveEnrollment = input.deps?.deriveChildEnrollment ?? deriveChildEnrollment;
+  const enrollKernelTask = input.deps?.enrollTask ?? enrollTask;
+  const base = {
+    canStartTask: async (taskId) => {
+      if (!input.parent)
+        return true;
+      const task = input.parent.tasks.find((child) => child.task_id === taskId);
+      if (!task)
+        throw new Error("authorized child absent from confirmed Parent topology");
+      const authorizedIds = new Set(input.registry.children(input.capability).map((child) => child.task_id));
+      const external = task.blocked_by.filter((id) => !authorizedIds.has(id));
+      if (!external.length)
+        return true;
+      const observation = await observeParentCompletion(input.root, input.parent.initiative_id, external);
+      return observation.missing_task_ids.length === 0;
+    },
+    enrollTask: async ({ root, task_id, batch }) => {
+      const now = new Date().toISOString();
+      const derived = deriveEnrollment(root, batch.registry, {
+        capability: batch.capability,
+        binding: input.binding,
+        task_id,
+        expected_head: batch.binding.expected_head,
+        now
+      });
+      await enrollKernelTask(root, input.enrollmentRegistry, {
+        binding: derived.binding,
+        batch: {
+          registry: batch.registry,
+          capability: batch.capability,
+          binding: input.binding,
+          expected_head: batch.binding.expected_head
+        },
+        now
+      });
+      const recordRaw = readRecord(root, task_id);
+      return { record_revision: recordRaw.revision };
+    },
+    advanceTask: input.advanceTask,
+    projectTask: async (root, taskId) => {
+      const fresh = await project(root, taskId);
+      if (!fresh.claim || fresh.projection.lifecycle !== "active" || fresh.error !== null)
+        return fresh;
+      const { record, revision } = readRecord(root, taskId);
+      if (!record || revision !== fresh.projection.record_revision)
+        throw new Error(`Kernel recovery projection changed for ${taskId}`);
+      return { ...fresh, ...batchQaFailureFacts(record) };
+    },
+    ownsTaskClaim: (taskId) => input.registry.isChildConsumed(input.capability, taskId),
+    validateBatchAuthorization: (request) => request.registry.inspect(request.capability, request.binding)
+  };
+  const port = { ...base, ...input.overrides ?? {} };
+  const overriddenOwnsTaskClaim = port.ownsTaskClaim;
+  return {
+    ...port,
+    ownsTaskClaim: (taskId) => {
+      if (input.resume.isResuming && taskId === readActiveClaimTaskId(input.root)) {
+        return isOwnBatchClaim(input.root, input.resume.existingBatch, taskId, input.resume.batchBranch);
+      }
+      return overriddenOwnsTaskClaim(taskId);
+    }
+  };
+}
+
+// plugins/immune-brain/runtime/unattended/batch_lanes.ts
 init_batch_preflight();
 init_batch_leak_restore();
 init_batch_git();
@@ -17818,7 +17947,7 @@ function rehydrateConsumption(input, record) {
   for (const child of record.children) {
     const recorded = child.redo_grants;
     const grants = recorded === undefined ? 0 : recorded;
-    const consumed = child.state !== "pending" && child.state !== "skipped_blocked" && child.state !== "lane_admitted";
+    const consumed = child.state !== "pending" && child.state !== "skipped_blocked" && child.state !== "lane_admitted" && !child.redo_head;
     if (!consumed && grants === 0)
       continue;
     input.registry.restoreChild(input.capability, binding, child.task_id, grants);
@@ -17960,7 +18089,7 @@ async function runLaneBatch(input, persisted) {
     persist();
   }
   for (const child of record.children) {
-    if (child.state !== "lane_committed" || !child.lane?.lane_commit)
+    if (child.state !== "lane_committed" || child.redo_head || !child.lane?.lane_commit)
       continue;
     const found = lanes.findIntegrated({
       root: input.root,
@@ -18120,6 +18249,34 @@ async function runLaneBatch(input, persisted) {
       return finalizeLane(input.root, record, message, "", { refusals });
     }
   };
+  const settledAt = (child) => readTaskTombstone(child.lane.path, child.task_id)?.terminalized_at ?? input.now;
+  const queue = () => [...record.children].sort((a, b) => (a.settled_at ?? record.created_at).localeCompare(b.settled_at ?? record.created_at));
+  const resumeRedo = async (child) => {
+    const path = recreateLaneWorktree(input.root, record.initiative_slug, child.task_id, child.redo_head, child.lane.lane_commit);
+    record.children = record.children.map((c) => {
+      if (c.task_id !== child.task_id)
+        return c;
+      const { redo_head: head, settled_at: _settledAt, correction_due: _due, ...rest } = c;
+      return {
+        ...rest,
+        state: "lane_admitted",
+        reason: null,
+        qa_failures: 0,
+        lane: { path, branch: child.lane.branch, base_head: head, lane_commit: null }
+      };
+    });
+    persist();
+    await enrollInLane(child.task_id);
+  };
+  for (const child of record.children) {
+    if (child.state !== "lane_committed" || !child.redo_head)
+      continue;
+    try {
+      await resumeRedo(child);
+    } catch (error) {
+      parkChild(child.task_id, error instanceof Error ? error.message : String(error));
+    }
+  }
   for (const child of [...record.children]) {
     if (child.state !== "lane_admitted" && child.state !== "enrolled" || !child.lane)
       continue;
@@ -18152,7 +18309,7 @@ async function runLaneBatch(input, persisted) {
       continue;
     }
     if (fresh.projection.lifecycle === "done" && fresh.projection.completion_ready) {
-      record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "settled", reason: null } : c);
+      record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "settled", reason: null, settled_at: settledAt(child) } : c);
       persist();
       continue;
     }
@@ -18170,7 +18327,7 @@ async function runLaneBatch(input, persisted) {
       continue;
     const terminal = await input.kernel.advanceTask(child.lane.path, child.task_id);
     if (terminal.state === "completed") {
-      record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "settled", reason: null, qa_failures: 0 } : c);
+      record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "settled", reason: null, qa_failures: 0, settled_at: settledAt(child) } : c);
       persist();
     } else if (terminal.state === "review_ready") {
       record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, reason: `review reservation ${terminal.operation_id} open` } : c);
@@ -18207,7 +18364,7 @@ async function runLaneBatch(input, persisted) {
       parkChild(child.task_id, reason);
     }
   }
-  for (const child of [...record.children]) {
+  for (const child of queue()) {
     if (child.state !== "settled" || !child.lane)
       continue;
     const authorityChange = laneAuthorityChange(record, child.task_id, child.lane.path);
@@ -18232,8 +18389,8 @@ async function runLaneBatch(input, persisted) {
     record.children = record.children.map((c) => c.task_id === child.task_id && c.lane ? { ...c, state: "lane_committed", lane: { ...c.lane, lane_commit: laneCommit } } : c);
     persist();
   }
-  for (const child of [...record.children]) {
-    if (child.state !== "lane_committed" || !child.lane?.lane_commit)
+  for (const child of queue()) {
+    if (child.state !== "lane_committed" || child.redo_head || !child.lane?.lane_commit)
       continue;
     const intentPathOf = (taskId) => input.children.find((c) => c.task_id === taskId)?.intent_path ?? null;
     try {
@@ -18261,6 +18418,46 @@ async function runLaneBatch(input, persisted) {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const reason = error instanceof BatchIntegrationError ? error.reason : "batch_integration_conflict";
+      const conflict = error instanceof BatchIntegrationError && (reason === "batch_integration_conflict" || reason === "batch_integration_check_failed");
+      if (isParentBranch(record.branch) && conflict) {
+        if ((child.redo_grants ?? 0) >= 2) {
+          parkChild(child.task_id, `batch_integration_redo_exhausted: ${message}`);
+          continue;
+        }
+        try {
+          const head = expectedBatchHead(record);
+          const binding = input.kernel.validateBatchAuthorization({
+            registry: input.registry,
+            capability: input.capability,
+            binding: {
+              batch_id: record.batch_id,
+              plan_digest: record.plan_digest,
+              base_head: record.base_head,
+              initiative_slug: record.initiative_slug,
+              budget: record.budget
+            }
+          });
+          await withParentWorktree(input.root, head, async (root) => {
+            copyLanePlanningInput(input.root, root, child.task_id, "intent");
+            copyLanePlanningInput(input.root, root, child.task_id, "spec");
+            deriveChildRedoEnrollment(root, input.registry, {
+              capability: input.capability,
+              binding,
+              task_id: child.task_id,
+              expected_head: head,
+              now: input.now,
+              prior_lane_root: child.lane.path,
+              prior_run_id: child.lane.run_id ?? ""
+            });
+            record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, redo_grants: input.registry.redoGrants(input.capability, child.task_id), redo_head: head, reason: message } : c);
+            persist();
+          });
+          await resumeRedo(record.children.find((c) => c.task_id === child.task_id));
+        } catch (redoError) {
+          parkChild(child.task_id, redoError instanceof Error ? redoError.message : String(redoError));
+        }
+        continue;
+      }
       parkChild(child.task_id, isLineageBreak(message) || message.startsWith(`${reason}:`) ? message : `${reason}: ${message}`);
       if (isLineageBreak(message)) {
         record.batch_state = "failed";
@@ -18481,79 +18678,6 @@ async function startBatch(input) {
       throw error;
     return laneRejectionReport(input, recorded, message, "settle the reported kernel store condition and retry in the current Host");
   }
-}
-
-// plugins/immune-brain/runtime/unattended/batch_kernel_port.ts
-init_batch_git();
-init_assurance_projection();
-init_batch_authority();
-init_storage();
-init_batch_preflight();
-function createBatchKernelPort(input) {
-  const project = input.deps?.projectAssurance ?? projectAssurance;
-  const readRecord = input.deps?.readTaskRecordRaw ?? readTaskRecordRaw;
-  const deriveEnrollment = input.deps?.deriveChildEnrollment ?? deriveChildEnrollment;
-  const enrollKernelTask = input.deps?.enrollTask ?? enrollTask;
-  const base = {
-    canStartTask: async (taskId) => {
-      if (!input.parent)
-        return true;
-      const task = input.parent.tasks.find((child) => child.task_id === taskId);
-      if (!task)
-        throw new Error("authorized child absent from confirmed Parent topology");
-      const authorizedIds = new Set(input.registry.children(input.capability).map((child) => child.task_id));
-      const external = task.blocked_by.filter((id) => !authorizedIds.has(id));
-      if (!external.length)
-        return true;
-      const observation = await observeParentCompletion(input.root, input.parent.initiative_id, external);
-      return observation.missing_task_ids.length === 0;
-    },
-    enrollTask: async ({ root, task_id, batch }) => {
-      const now = new Date().toISOString();
-      const derived = deriveEnrollment(root, batch.registry, {
-        capability: batch.capability,
-        binding: input.binding,
-        task_id,
-        expected_head: batch.binding.expected_head,
-        now
-      });
-      await enrollKernelTask(root, input.enrollmentRegistry, {
-        binding: derived.binding,
-        batch: {
-          registry: batch.registry,
-          capability: batch.capability,
-          binding: input.binding,
-          expected_head: batch.binding.expected_head
-        },
-        now
-      });
-      const recordRaw = readRecord(root, task_id);
-      return { record_revision: recordRaw.revision };
-    },
-    advanceTask: input.advanceTask,
-    projectTask: async (root, taskId) => {
-      const fresh = await project(root, taskId);
-      if (!fresh.claim || fresh.projection.lifecycle !== "active" || fresh.error !== null)
-        return fresh;
-      const { record, revision } = readRecord(root, taskId);
-      if (!record || revision !== fresh.projection.record_revision)
-        throw new Error(`Kernel recovery projection changed for ${taskId}`);
-      return { ...fresh, ...batchQaFailureFacts(record) };
-    },
-    ownsTaskClaim: (taskId) => input.registry.isChildConsumed(input.capability, taskId),
-    validateBatchAuthorization: (request) => request.registry.inspect(request.capability, request.binding)
-  };
-  const port = { ...base, ...input.overrides ?? {} };
-  const overriddenOwnsTaskClaim = port.ownsTaskClaim;
-  return {
-    ...port,
-    ownsTaskClaim: (taskId) => {
-      if (input.resume.isResuming && taskId === readActiveClaimTaskId(input.root)) {
-        return isOwnBatchClaim(input.root, input.resume.existingBatch, taskId, input.resume.batchBranch);
-      }
-      return overriddenOwnsTaskClaim(taskId);
-    }
-  };
 }
 
 // plugins/immune-brain/runtime/unattended/batch_disposition.ts

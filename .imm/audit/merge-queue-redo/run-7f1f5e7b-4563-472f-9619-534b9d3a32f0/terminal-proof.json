@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "merge-queue-redo",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:merge-queue-redo:2026-10-22T05:09:22.689Z",
+  "final_record_hash": "sha256:685e09df7707ceef034423f64ca60cf93ce11776513b1c2f641a64096ce2f1f1",
+  "terminalized_at": "2026-10-22T05:09:22.689Z"
+}

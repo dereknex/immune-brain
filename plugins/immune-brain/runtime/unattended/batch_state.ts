@@ -130,6 +130,12 @@ export interface BatchLaneChildRun {
 	commit: string | null;
 	lane: BatchLaneBinding | null;
 	qa_failures: number;
+	/** Kernel settlement time orders the durable merge queue, including across ticks. */
+	settled_at?: string;
+	/** Automatic integration redos already granted under the original authorization. */
+	redo_grants?: number;
+	/** Granted redo awaiting Lane recreation; the old binding remains until recreation succeeds. */
+	redo_head?: string;
 	/**
 	 * The Child Issue was closed by the coordinator after this child's commit was
 	 * integrated. Absent until then; a Lane settlement never closes it.
@@ -744,6 +750,14 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 			throw new Error(`batch run state ${batchId} child ${child.task_id} has invalid terminal fields`);
 		if (typeof child.qa_failures !== "number" || !Number.isInteger(child.qa_failures) || child.qa_failures < 0)
 			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid qa_failures`);
+		if (child.settled_at !== undefined && !isCanonicalTimestamp(child.settled_at))
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid settled_at`);
+		if (child.redo_grants !== undefined && (!Number.isInteger(child.redo_grants) || child.redo_grants < 0 || child.redo_grants > 2))
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid redo_grants`);
+		if (child.redo_head !== undefined &&
+			(typeof child.redo_head !== "string" || !/^[0-9a-f]{40}$/.test(child.redo_head) ||
+			 !child.redo_grants || (child.state !== "lane_committed" && child.state !== "needs_human")))
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid redo_head`);
 		if (child.corrections !== undefined && (!Number.isInteger(child.corrections) || child.corrections < 0 || child.corrections > 2))
 			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid corrections count`);
 		if (child.correction_due !== undefined && (typeof child.correction_due !== "string" || !child.correction_due || child.state !== "enrolled"))
@@ -767,6 +781,9 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 			)
 				throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid lane`);
 		}
+		if (child.redo_head !== undefined &&
+			(record.branch !== `refs/heads/imm/${record.initiative_slug}` || !lane?.run_id || !lane.lane_commit))
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid redo_head binding`);
 		if (LANE_BOUND_STATES.has(child.state) && lane === null)
 			throw new Error(`batch run state ${batchId} child ${child.task_id} is ${child.state} without a lane`);
 		if ((child.state === "pending" || child.state === "skipped_blocked") && lane !== null)

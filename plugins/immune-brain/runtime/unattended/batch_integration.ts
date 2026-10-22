@@ -256,7 +256,7 @@ export function integrateLaneCommit(input: IntegrateLaneInput): { commit: string
 /** A child whose intent descriptors the integration guard reruns on the candidate. */
 export interface IntegrationCheckChild {
 	task_id: string;
-	/** The intent sidecar, relative to the repository root; read from the candidate tree. */
+	/** The intent sidecar, relative to the repository root; read from this child's frozen delivery. */
 	intent_path: string | null;
 }
 
@@ -271,9 +271,9 @@ function commitsBetween(root: string, from: string, to: string): Set<string> {
 	return new Set(gitOut(root, ["rev-list", `${from}..${to}`], `failed to list commits ${from}..${to}`).split(/\s+/).filter(Boolean));
 }
 
-function readCandidateAcceptance(
+function readFrozenAcceptance(
 	root: string,
-	candidate: string,
+	commit: string,
 	check: IntegrationCheckChild,
 ): Array<{ id: string; assertion: string; verification: string }> {
 	if (!check.intent_path)
@@ -281,11 +281,11 @@ function readCandidateAcceptance(
 			"batch_integration_check_failed",
 			`batch_integration_check_failed: ${check.task_id} has no intent to rerun`,
 		);
-	const shown = git(root, ["show", `${candidate}:${check.intent_path}`]);
+	const shown = git(root, ["show", `${commit}:${check.intent_path}`]);
 	if (shown.status !== 0)
 		throw new BatchIntegrationError(
 			"batch_integration_check_failed",
-			`batch_integration_check_failed: intent ${check.intent_path} of ${check.task_id} is absent from candidate ${candidate}`,
+			`batch_integration_check_failed: intent ${check.intent_path} of ${check.task_id} is absent from frozen delivery ${commit}`,
 		);
 	try {
 		const intent = parseTaskIntentV1(JSON.parse(shown.stdout));
@@ -293,7 +293,7 @@ function readCandidateAcceptance(
 	} catch (error) {
 		throw new BatchIntegrationError(
 			"batch_integration_check_failed",
-			`batch_integration_check_failed: intent of ${check.task_id} is unreadable in candidate ${candidate}: ${error instanceof Error ? error.message : String(error)}`,
+			`batch_integration_check_failed: intent of ${check.task_id} is unreadable in frozen delivery ${commit}: ${error instanceof Error ? error.message : String(error)}`,
 		);
 	}
 }
@@ -309,6 +309,7 @@ export async function verifyCandidateDescriptors(input: {
 	root: string;
 	candidate: string;
 	lane_base: string;
+	lane_commit: string;
 	batch_head: string;
 	child: IntegrationCheckChild;
 	siblings: IntegrateGuardedInput["siblings"];
@@ -316,8 +317,12 @@ export async function verifyCandidateDescriptors(input: {
 }): Promise<void> {
 	const { root, candidate } = input;
 	const since = commitsBetween(root, input.lane_base, input.batch_head);
-	const checks = [input.child, ...input.siblings.filter((sibling) => sibling.commit !== null && since.has(sibling.commit))];
-	const acceptance = checks.flatMap((check) => readCandidateAcceptance(root, candidate, check));
+	// Freeze each acceptance at its own delivery, never at a sibling-modified candidate sidecar.
+	const acceptance = [
+		...readFrozenAcceptance(root, input.lane_commit, input.child),
+		...input.siblings.filter((sibling) => sibling.commit !== null && since.has(sibling.commit))
+			.flatMap((sibling) => readFrozenAcceptance(root, sibling.commit!, sibling)),
+	];
 	const descriptors = new Map<string, VerificationDescriptor>();
 	try {
 		for (const item of acceptance) descriptors.set(item.id, parseVerificationDescriptor(item.verification));
@@ -387,6 +392,7 @@ export async function integrateGuardedLaneCommit(input: IntegrateGuardedInput): 
 		root: input.root,
 		candidate,
 		lane_base: input.lane_base,
+		lane_commit: input.lane_commit,
 		batch_head: input.batch_head,
 		child: input.child,
 		siblings: input.siblings,

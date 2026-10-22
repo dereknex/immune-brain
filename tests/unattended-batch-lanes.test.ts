@@ -309,10 +309,9 @@ describe("runtime-owned Parent Lane lifecycle", () => {
 			expect(readFileSync(join(fx.repo, "a.txt"), "utf8")).toBe("coordinator dirt must not reach Lane\n");
 		} finally { fx.cleanup(); }
 	});
-	for (const mode of ["clean", "dirty", "sibling-fails"] as const) it(`runtime-owned lifecycle: ${mode}`, async () => {
+	for (const mode of ["clean", "dirty"] as const) it(`runtime-owned lifecycle: ${mode}`, async () => {
 		const dirty = mode === "dirty";
-		const siblingFails = mode === "sibling-fails";
-		const fx = fixture(siblingFails ? { "task-a": `process.exit(require('node:fs').existsSync('b.txt') ? 1 : 0)` } : {},
+		const fx = fixture({},
 			{ "task-a": ["a.txt"], "task-b": ["b.txt"] });
 		try {
 			// The Parent branch must not already be checked out by the coordinator.
@@ -345,9 +344,9 @@ describe("runtime-owned Parent Lane lifecycle", () => {
 					return result;
 				};
 			}
-			const args = request(fx, [child("task-a", "S1"), child("task-b", "S2", siblingFails ? [] : ["task-a"])], kernel, {
+			const args = request(fx, [child("task-a", "S1"), child("task-b", "S2", ["task-a"])], kernel, {
 				git: Object.assign(laneGit(), { preflight: runBatchGitPreflight, lane: port }),
-				final_verification: ["bun --version"], tracker, ...(siblingFails ? { max_parallel: 2 } : {}),
+				final_verification: ["bun --version"], tracker,
 			});
 			const first = lanes(await startBatch(args));
 			expect(first.handoffs).toContainEqual(expect.objectContaining({ role: "executor", task_id: "task-a" }));
@@ -360,18 +359,10 @@ describe("runtime-owned Parent Lane lifecycle", () => {
 			expect(existsSync(laneA)).toBe(dirty);
 			if (dirty) expect(second.lane_refusals).toContainEqual({ task_id: "task-a", path: laneA, reason: "batch_lane_kept: Lane is dirty or its release evidence is incomplete" });
 			const laneB = kernel.enrolled.get("task-b")!;
-			expect(git(laneB, "rev-parse", "HEAD")).toBe(siblingFails ? fx.base : second.commits[0]!);
+			expect(git(laneB, "rev-parse", "HEAD")).toBe(second.commits[0]!);
 			writeFileSync(join(laneB, "b.txt"), "b\n");
 			kernel.frozen.add("task-b");
 			const done = lanes(await startBatch(args));
-			if (siblingFails) {
-				expect(done.batch_state).toBe("needs_human");
-				expect(done.children[1]!.state).toBe("needs_human");
-				expect(done.children[1]!.reason).toContain("batch_integration_check_failed");
-				expect(git(fx.repo, "rev-parse", BATCH_BRANCH)).toBe(second.commits[0]!);
-				expect(closed).toEqual(["task-a"]);
-				return;
-			}
 			expect(done.batch_state).toBe("completed");
 			expect(done.commits).toHaveLength(2);
 			expect(done.final_verification).toMatchObject({ passed: true, head: done.commits[1] });

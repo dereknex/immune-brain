@@ -161,6 +161,19 @@ describe("integration guard reruns descriptors on the candidate", () => {
 		}
 	});
 
+	it("does not let a sibling weaken the child's frozen acceptance in the candidate sidecar", async () => {
+		const fx = fixture({ "task-c": absent("shared.txt"), "task-s": ALWAYS_PASS });
+		try {
+			const lane = fx.laneCommit("task-c", "task-c.txt", "c\n");
+			writeFileSync(join(fx.repo, "shared.txt"), "break the frozen acceptance\n");
+			const sibling = fx.siblingCommit("task-s", intentPath("task-c"), intentJson("task-c", ALWAYS_PASS));
+			const refs = fx.refs();
+			expect(await reasonOf(() => integrate(fx, { task: "task-c", lane_commit: lane,
+				siblings: [{ task: "task-s", commit: sibling }] }))).toBe("batch_integration_check_failed");
+			expectUntouched(fx, sibling, refs);
+		} finally { fx.cleanup(); }
+	});
+
 	it("rejects when the child's change breaks the descriptor of a sibling integrated since the lane base", async () => {
 		const fx = fixture({ "task-c": ALWAYS_PASS, "task-s": absent("task-c.txt") });
 		try {
