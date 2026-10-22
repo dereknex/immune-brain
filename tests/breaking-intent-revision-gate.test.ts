@@ -595,8 +595,6 @@ describe("breaking intent revision gate", () => {
 // (compatible: no gate; breaking: one gate); a staged path outside both scopes
 // refuses and restores the sidecar. Mirrors tests/scope-revision-envelope.test.ts.
 describe("scope revision is judged against its next scope", () => {
-	// A directory outside every risk-floor prefix: a sibling there is a compatible
-	// scope addition (D3); under plugins/immune-brain it would classify breaking.
 	const SIDECAR = `docs/plans/${TASK}.intent.json`;
 	const ANCHOR = "src/mod/task.ts";
 	const scopeIntent = (extra: string[], revision = 1) => ({
@@ -654,7 +652,7 @@ describe("scope revision is judged against its next scope", () => {
 
 	test.each([
 		["compatible: a staged sibling file covered only by the next scope applies without a gate", "c1", "revise_intent", "src/mod/sibling.ts", 0],
-		["breaking: a staged path in another directory covered only by the next scope reaches one gate", "b1", "approve_breaking_intent_revision", "tests/envelope.test.ts", 1],
+		["compatible: a staged path in another directory applies without a gate", "b1", "revise_intent", "tests/envelope.test.ts", 0],
 	])("%s", async (_title, eventId, op, stagedPath, gates) => {
 		const root = makeScopeRoot();
 		try {
@@ -726,19 +724,17 @@ describe("scope revision is judged against its next scope", () => {
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
-	test("compatible route refuses an added entry that is a directory in the worktree (D4)", async () => {
+	test("compatible route accepts an added directory in the worktree (D20)", async () => {
 		const root = makeScopeRoot();
 		try {
 			mkdirSync(join(root, "src/mod/pkg"), { recursive: true });
 			writeFileSync(join(root, "src/mod/pkg/index.ts"), "export const pkg = 1;\n");
-			const before = JSON.stringify(storedRecord(root).intent_snapshot.scope_hint);
+			execFileSync("git", ["add", "--", "src/mod/pkg"], { cwd: root });
 			const ui = makeUI();
-
-			const failure = await captureToolFailure(loadSurface().tool.execute("d1", { task_id: TASK, action: { op: "revise_intent", next_intent: scopeIntent(["src/mod/pkg"], 2) } }, undefined, undefined, makeCtx(root, ui)));
-
-			expect(failure.message).toContain("src/mod/pkg is a directory");
+			const next = scopeIntent(["src/mod/pkg"], 2);
+			await loadSurface().tool.execute("d1", { task_id: TASK, action: { op: "revise_intent", next_intent: next } }, undefined, undefined, makeCtx(root, ui));
 			expect(ui.dialogCalls).toHaveLength(0);
-			expect(JSON.stringify(storedRecord(root).intent_snapshot.scope_hint)).toBe(before);
+			expect(storedRecord(root).intent_snapshot.scope_hint).toEqual(next.scope_hint);
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 

@@ -501,6 +501,7 @@ describe("claude host authority", () => {
 			{ response: { result: { action: "accept" } }, code: "correlation_missing" },
 			{ response: { result: { action: "accept", content: "yes" } }, code: "correlation_missing" },
 			{ response: { result: { action: "accept", content: { unexpected: true } } }, code: "correlation_missing" },
+			{ response: { result: { action: "accept", content: { delegate_in_lane_revisions: true } } }, code: "correlation_missing" },
 			{ response: { jsonrpc: "1.0", result: { action: "accept", content: {} } }, code: "correlation_missing" },
 			{ response: { method: "spoofed/request", result: { action: "accept", content: {} } }, code: "correlation_missing" },
 			{ response: { error: { code: -32601, message: "method not found" } }, code: "unsupported_host" },

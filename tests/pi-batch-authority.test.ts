@@ -108,10 +108,17 @@ describe("acc-pi-batch-gate", () => {
 	it("registers the Lane tool and exactly its supported parameters", () => {
 		const tool = register(async () => { throw new Error("schema does not read a plan"); });
 		expect(tool).toBeDefined(); expect(tool.description).toContain("Lane"); expect(tool.description).not.toMatch(/serial/i);
-		expect(Object.keys(tool.parameters.properties)).toEqual(["initiative_slug", "max_parallel", "lane_offers", "final_verification", "lane_instruction", "lane_revision"]);
+		expect(Object.keys(tool.parameters.properties)).toEqual(["initiative_slug", "max_parallel", "lane_offers", "final_verification", "lane_instruction"]);
 		expect(tool.parameters.required).toEqual(["initiative_slug"]);
 		const schema = tool.parameters.properties.max_parallel;
 		expect(schema.minimum).toBe(1); expect(schema.type === "integer" || schema.multipleOf === 1).toBe(true);
+	});
+	it.each([undefined, null, {}])("rejects unknown lane_revision before direct execution or tool effects (%p)", async lane_revision => {
+		const f = fixture("retired-revision"); const before = snapshot(f.root); const opened = { count: 0 };
+		const readInitiative = async () => { throw new Error("must reject before reading the plan"); };
+		await expect(runBatch({ root: f.root, initiativeSlug: f.slug, readInitiative, lane_revision } as never)).rejects.toThrow("unknown parameter: lane_revision");
+		await expect(register(readInitiative).execute("retired", { initiative_slug: f.slug, lane_revision }, undefined, undefined, context(f.root, "confirm", opened))).rejects.toThrow("unknown parameter: lane_revision");
+		expect(opened.count).toBe(0); expect(snapshot(f.root)).toEqual(before); noBatchWrites(f.root);
 	});
 	it("rejects non-interactive invocation with an interactive-TUI recovery and zero writes", async () => {
 		const f = fixture("non-inter"); const before = snapshot(f.root);
@@ -131,6 +138,7 @@ describe("acc-pi-batch-gate", () => {
 		expect(details.summary).toContain("Budget: max_children="); expect(details.summary).not.toMatch(/expires|deadline|serial/i);
 		expect(details.details).toContain("Ordered children (3):"); expect(details.details).toContain("Parallel groups (");
 		for (const [n, risk] of [[1, "routine"], [2, "material"], [3, "critical"]]) expect(details.details).toContain(`${f.slug}-c${n} (S${n}) [risk: ${risk}]`);
+		expect(JSON.stringify(details)).not.toMatch(/delegat/i);
 		noBatchWrites(f.root);
 	});
 	it.each([undefined, null, "invalid", 42])("fails closed when the confirmation port is missing or invalid (%p)", async confirmBatch => {
@@ -148,8 +156,8 @@ describe("acc-pi-batch-gate", () => {
 		expect(result.reason).toContain(selection === "decline" ? "native interaction declined" : "native interaction cancelled");
 		expect(snapshot(f.root)).toEqual(before); expect(readFileSync(join(f.root, "staged.txt"), "utf8")).toBe("unstaged bytes\n"); noBatchWrites(f.root);
 	});
-	it("maps all dialog decisions, including revision delegation and Escape", () => {
-		expect(mapDialogSelection("confirm")).toBe("accept"); expect(mapDialogSelection("confirm_delegate")).toBe("accept_delegate");
+	it("maps dialog decisions and fails closed for the retired delegation choice", () => {
+		expect(mapDialogSelection("confirm")).toBe("accept"); expect(mapDialogSelection("confirm_delegate")).toBe("cancel");
 		expect(mapDialogSelection("decline")).toBe("decline"); expect(mapDialogSelection("cancel")).toBe("cancel"); expect(mapDialogSelection(undefined)).toBe("cancel");
 	});
 	it("pending confirmation settles on caller cancellation without writes", async () => {

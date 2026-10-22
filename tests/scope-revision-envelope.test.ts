@@ -93,7 +93,7 @@ describe("claude host: a scope revision is judged against its next scope (D6, I5
 		const taskId = "envelope-breaking-next-scope";
 		const { root, runtime, meta, gateCalls } = await enrolled(taskId);
 		stage(root, "src/newdir/c.ts");
-		const next = intentFor(taskId, ["src/mod/a.ts", "src/newdir/c.ts"], 2);
+		const next = { ...intentFor(taskId, ["src/mod/a.ts", "src/newdir/c.ts"], 2), acceptance: [{ id: "acc-1", assertion: "revised assertion", verification: "bun test" }] };
 
 		const result = await runtime.authorize(taskId, "approve_breaking_intent_revision", meta("approve"), { next_intent: next });
 
@@ -165,28 +165,22 @@ describe("claude host: a scope revision is judged against its next scope (D6, I5
 		expect(git(root, ["show", `:${sidecar}`])).toBe(before);
 		expect(storedScope(root, taskId)).toEqual(intentFor(taskId, ["src/mod/a.ts"]).scope_hint);
 	});
-	test("compatible route refuses an added entry that is a directory in the worktree (D4)", async () => {
+	test("compatible route accepts an added directory in the worktree (D20)", async () => {
 		const taskId = "envelope-added-directory";
 		const { root, runtime, gateCalls } = await enrolled(taskId);
-		const before = JSON.stringify(storedScope(root, taskId));
 		const next = intentFor(taskId, ["src/mod/a.ts", "src/mod/pkg"], 2);
-
-		await expect(runtime.reviseIntent(taskId, next)).rejects.toThrow("src/mod/pkg is a directory");
-
+		await runtime.reviseIntent(taskId, next);
 		expect(gateCalls).toEqual([]);
-		expect(JSON.stringify(storedScope(root, taskId))).toBe(before);
+		expect(storedScope(root, taskId)).toEqual(next.scope_hint);
 	});
 
-	test("compatible route refuses a sibling whose anchoring entry is a directory in the worktree (D4)", async () => {
+	test("compatible route accepts a sibling beside a directory entry (D20)", async () => {
 		const taskId = "envelope-anchor-directory";
 		const { root, runtime, gateCalls } = await enrolled(taskId, "accept", ["src/mod/pkg"]);
 		stage(root, "src/mod/b.ts");
-		const before = JSON.stringify(storedScope(root, taskId));
 		const next = intentFor(taskId, ["src/mod/pkg", "src/mod/b.ts"], 2);
-
-		await expect(runtime.reviseIntent(taskId, next)).rejects.toThrow("src/mod/pkg is a directory");
-
+		await runtime.reviseIntent(taskId, next);
 		expect(gateCalls).toEqual([]);
-		expect(JSON.stringify(storedScope(root, taskId))).toBe(before);
+		expect(storedScope(root, taskId)).toEqual(next.scope_hint);
 	});
 });

@@ -106,9 +106,10 @@ Host native-gate failures pause with same-Host recovery and never auto-retry.
 A single Slice ends at its own terminal proof; a Parent uses whole-plan completion
 from the [batch contract](imm-run-batch.md#unattended-batch-opt-in).
 
-1. For active artifacts, implement only the enrolled acceptance within the
-   `scope_hint` envelope in the current conversation. New helpers or tests
-   inside an approved directory or glob do not require a revision. Run focused
+1. For active artifacts, implement the enrolled acceptance in the current
+   conversation. `scope_hint` is an estimate; disclose changed files beyond it
+   as `beyond_estimate` in Review evidence instead of revising scope. Preserve
+   frozen acceptance and the bound Spec, and respect hard no-touch paths. Run focused
    checks. Before `advance_assurance`, inspect ownership and stage only the exact
    task-owned paths needed for delivery. Do not hand routine task-owned staging
    to the user. If a file mixes pre-existing user changes with task changes and
@@ -149,7 +150,7 @@ from the [batch contract](imm-run-batch.md#unattended-batch-opt-in).
    accepted contract and answer with `refute_finding` bound to fresh QA evidence
    for that acceptance. Escalating a local heuristic a third time instead of
    choosing one of those two responses is the loop this step exists to break.
-   A finding whose defect lies inside the TaskIntent goal and `scope_hint` is
+   A finding whose defect lies inside the TaskIntent goal and acceptance is
    ordinary rework even when no acceptance names its exact case: fix the code,
    add the test that pins the case, and dispose the finding. It is never a
    reason to revise the Intent. Acceptance text states principles; enumeration
@@ -191,27 +192,14 @@ Retain the actual owner, and do not create or replay a mutation, gate, or
 completion to match the prose. Summary production outside this repository is not
 locally fixed; the consumer-side protection is these rules, and a producer bug
 is recorded as a separate follow-up rather than resolved here.
-- Scope expansion returns to Planner's Enrolled Intent Revision route. Planner
-  prepares the complete proposed revision without replacing the active owner;
-  the current Loop submits it through Kernel revision authority. Collect all
-  currently known missing paths, caller/test/generated mirrors, and verification
-  reasons in one request. Do not edit outside scope while waiting or widen it
-  piecemeal without new evidence. Bounded test or PR repair stays inside the same
-  TaskIntent.
-- Exception to the bullet above, the Loop owner's own call: a same-directory
-  addition. When the new entry is a concrete file in a directory where the scope
-  already names a concrete file, and it is not a path the project's risk floor
-  names in `.imm/risk-floor.json`,
-  submit `revise_intent` with the complete next intent. It classifies
-  `compatible`, applies without a native gate, and the next Review prompt names
-  the added paths as self-served (ADR 0021). A revision that only removes
-  entries is `compatible` as well: narrowing removes authority, so it applies
-  through `revise_intent` without a gate, provided at least one entry remains.
-  A glob, new directory or floor path is breaking, and so is an addition
-  combined with a removed entry; a directory written without a trailing
-  slash is refused by the Host before submission, so name concrete files or
-  widen with a glob entry through `approve_breaking_intent_revision`. The envelope check for a revision is judged against the next
-  scope, so a worktree that already holds the added files no longer blocks it.
+- `scope_hint` is an estimate (ADR 0028). Deliver files needed for the accepted
+  outcome and disclose paths beyond it as `beyond_estimate`; a missing caller,
+  test or generated mirror does not require a scope revision. Hard no-touch
+  paths remain prohibited. Any scope-only revision that keeps the bound Spec
+  path is `compatible` through `revise_intent`, including additions, removals,
+  directories and globs; it has no same-directory exception or `scope_added:`
+  history. A change of goal, bound Spec design or decomposition returns to
+  Planner without replacing the active owner.
 - Revision ownership: the Loop owner prepares a scope or acceptance revision in
   the executing session. Planner's route is for a change of goal, bound Spec
   design, or decomposition, and returns any other proposal to the executing
@@ -237,22 +225,16 @@ is recorded as a separate follow-up rather than resolved here.
   no new provider or data effect.
 - Text instructions are contracts, not a hard bash sandbox. They guide and are
   reviewed; the Kernel authority gates remain the real boundary.
-- In a Lane whose batch confirmation delegated in-envelope revisions
-  (ADR 0018), the Executor does not open the gate for a breaking revision that
-  changes acceptance, alone or with a narrowed `scope_hint`: it stops and
-  returns the complete next intent to the Parent, which submits it as
-  `lane_revision` on `start_unattended_batch`. The runner applies it as a delegated approval
-  (actor `batch-coordinator`, confirmation `delegated-batch:<batch_id>@<time>`)
-  or refuses it with `batch_delegation_refused` and a `fallback`; on refusal the
-  Executor uses its own native gate below. Widening scope, changing risk, goal
-  or the bound Spec is never delegated, and nobody answers a dialog in a tab. A
-  revision that only narrows `scope_hint` is compatible and is not delegated:
-  the Executor applies it with `revise_intent`.
+- Frozen acceptance remains the authority subject (ADR 0026). In a Lane,
+  acceptance changes pause the child for the literal user's native gate;
+  the coordinator cannot approve them or reseal the batch. Existing records
+  with delegation fields remain readable and retireable (ADR 0028).
 - Invoke `approve_breaking_intent_revision` with the complete next intent
   directly; the native Host gate is the single user decision. Do not overwrite
   enrolled intent sidecars or ask for chat pre-confirmation. A breaking revision
-  is used only when the goal, the `scope_hint`, or a user-visible commitment
-  changes. A defect inside the existing goal and scope is rework under the
+  is used when the authority subject changes, including acceptance or a bound
+  Spec change; scope-only changes keeping the bound Spec path are compatible.
+  A defect inside the existing goal and acceptance is rework under the
   Execution Loop, not a revision, and the acceptance length limit is never
   worked around by shortening words: when an assertion grows toward it, the
   assertion is enumerating cases that belong in tests.

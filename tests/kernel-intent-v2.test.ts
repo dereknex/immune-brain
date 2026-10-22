@@ -26,6 +26,8 @@ import {
 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { parseRiskFloor, readRiskFloor } from "../plugins/immune-brain/runtime/kernel/risk_floor";
 import { resolveProjectedRisk } from "../plugins/immune-brain/runtime/kernel/completion";
+import { canonicalRecordHash, reduceTask } from "../plugins/immune-brain/runtime/kernel/reducer";
+import { parseTaskRecordV4 } from "../plugins/immune-brain/runtime/kernel/validation";
 
 function git(root: string, args: string[]): void {
 	execFileSync("git", args, { cwd: root, stdio: "pipe" });
@@ -181,13 +183,13 @@ describe("classifyIntentRevision", () => {
 		expect(classifyIntentRevision(prev, next)).toBe("breaking");
 	});
 
-	test("breaking: any semantic scope expansion requires authority", () => {
+	test("compatible: scope expansion is an estimate change", () => {
 		const expanded = parseTaskIntentV1({
 			...INTENT_V1,
 			revision: 3,
 			scope_hint: ["path/or/domain", "more"],
 		});
-		expect(classifyIntentRevision(prev, expanded)).toBe("breaking");
+		expect(classifyIntentRevision(prev, expanded)).toBe("compatible");
 	});
 
 	test("breaking: goal/owner/task identity change, risk lowered, acceptance removed or assertion rewritten, revision not increased", () => {
@@ -299,7 +301,7 @@ describe("classifyIntentRevision: verification commands (Spec branch-boundary D6
 	});
 });
 
-describe("classifyIntentRevision: same-directory scope additions", () => {
+describe("classifyIntentRevision: scope estimates (D20)", () => {
 	const scoped = (scope: string[], extra: Record<string, unknown> = {}) =>
 		parseTaskIntentV1({ ...INTENT_V1, scope_hint: scope, ...extra });
 	const base = scoped(["src/mod/a.ts", "src/mod/sub/d.ts"], { revision: 2 });
@@ -316,52 +318,75 @@ describe("classifyIntentRevision: same-directory scope additions", () => {
 		["a new directory", ["src/mod/a.ts", "src/mod/sub/d.ts", "src/other/c.ts"]],
 		["an entry that swallows a previous one", ["src/mod/a.ts", "src/mod/sub/d.ts", "src/mod/sub"]],
 		["an unanchored parent", ["src/mod/a.ts", "src/mod/sub/d.ts", "src/c.ts"]],
-	])("breaking: %s", (_label, scope) => {
-		expect(classifyIntentRevision(base, revised(scope))).toBe("breaking");
+	])("compatible: %s", (_label, scope) => {
+		expect(classifyIntentRevision(base, revised(scope))).toBe("compatible");
 	});
 
-	// Spec host-owned-environment D10: narrowing removes authority, so a next
-	// scope made only of previous entries needs no confirmation. Replaces the
-	// former "breaking: a removed entry" case.
 	test("compatible: a strict subset of the previous scope", () => {
 		expect(classifyIntentRevision(base, revised(["src/mod/a.ts"]))).toBe("compatible");
 		expect(classifyIntentRevision(base, revised(["src/mod/sub/d.ts"]))).toBe("compatible");
 	});
 
-	test("a subset keeps its previous result once anything else changes", () => {
-		// One added entry is still judged by the same-directory rule (I6).
-		expect(classifyIntentRevision(base, revised(["src/mod/a.ts", "src/other/c.ts"]))).toBe("breaking");
-		expect(classifyIntentRevision(base, revised(["src/mod/a.ts", "src/mod/b.ts"]))).toBe("breaking");
+	test("scope replacements are compatible and preserve validation of other fields", () => {
+		expect(classifyIntentRevision(base, revised(["src/mod/a.ts", "src/other/c.ts"]))).toBe("compatible");
+		expect(classifyIntentRevision(base, revised(["src/mod/a.ts", "src/mod/b.ts"]))).toBe("compatible");
 		expect(classifyIntentRevision(base, revised(["src/mod/a.ts"], { goal: "A different goal" }))).toBe("breaking");
-		// An empty scope is not a narrowing.
-		expect(classifyIntentRevision(base, { ...base, scope_hint: [], revision: 3 })).toBe("breaking");
+		expect(() => revised([])).toThrow("scope_hint must contain at least one path");
 		// A subset without a revision bump is not a revision.
 		expect(classifyIntentRevision(base, scoped(["src/mod/a.ts"], { revision: 2 }))).toBe("breaking");
 	});
 
-	test("breaking: a glob previous entry does not anchor a sibling", () => {
+	test("compatible: a glob previous entry does not need to anchor a sibling", () => {
 		const globbed = scoped(["src/mod/*.ts"], { revision: 2 });
-		expect(classifyIntentRevision(globbed, revised(["src/mod/*.ts", "src/mod/b.ts"]))).toBe("breaking");
+		expect(classifyIntentRevision(globbed, revised(["src/mod/*.ts", "src/mod/b.ts"]))).toBe("compatible");
 	});
 
-	// The same-directory rule never self-serves an addition on a path the
-	// project's risk floor names (ADR 0021, ADR 0023).
 	const REPOSITORY_FLOOR = parseRiskFloor(JSON.parse(readFileSync(join(process.cwd(), ".imm/risk-floor.json"), "utf8")));
-	test.each([...REPOSITORY_FLOOR.material.paths, ...REPOSITORY_FLOOR.material.changed_only])("breaking: a sibling under the %s floor prefix", (prefix) => {
+	test.each([...REPOSITORY_FLOOR.material.paths, ...REPOSITORY_FLOOR.material.changed_only])("compatible: a sibling under the %s floor prefix", (prefix) => {
 		const floor = { risk: "critical" };
 		const previous = scoped([`${prefix}/a.ts`], { revision: 2, ...floor });
 		const next = revised([`${prefix}/a.ts`, `${prefix}/b.ts`], floor);
-		expect(classifyIntentRevision(previous, next, REPOSITORY_FLOOR)).toBe("breaking");
-		// A project that declares no floor has no such path.
 		expect(classifyIntentRevision(previous, next)).toBe("compatible");
 	});
 
-	test("breaking: adding the declaration file beside an anchored sibling, declared or not", () => {
+	test("compatible: adding the declaration file beside an anchored sibling, declared or not", () => {
 		const floor = { risk: "critical" };
 		const previous = scoped([".imm/notes.md"], { revision: 2, ...floor });
 		const next = revised([".imm/notes.md", ".imm/risk-floor.json"], floor);
-		expect(classifyIntentRevision(previous, next)).toBe("breaking");
-		expect(classifyIntentRevision(previous, next, REPOSITORY_FLOOR)).toBe("breaking");
+		expect(classifyIntentRevision(previous, next)).toBe("compatible");
+	});
+
+	test.each([
+		["replaced", ["docs/specs/other.spec.md", "src/mod/a.ts"]],
+		["removed", ["src/mod/a.ts"]],
+		["added", ["docs/specs/feature.spec.md", "docs/specs/other.spec.md", "src/mod/a.ts"]],
+	])("breaking: the bound Spec is %s", (_label, scope) => {
+		const previous = scoped(["docs/specs/feature.spec.md", "src/mod/a.ts"], { revision: 2 });
+		expect(classifyIntentRevision(previous, revised(scope))).toBe("breaking");
+	});
+
+	test("compatible scope revisions record no scope_added history", () => {
+		const intent = parseTaskIntentV1(AUTHORITY_BASE);
+		const record = parseTaskRecordV4({
+			contract: "assurance_kernel/task_record/v4",
+			task_id: intent.task_id,
+			intent_snapshot: intent,
+			intent_ref: { path: `docs/plans/${intent.task_id}.intent.json`, content_hash: canonicalIntentHash(intent) },
+			lifecycle: "active", artifact_state: "active",
+			baseline: canonicalIntentHash(intent), git_base_head: "a".repeat(40),
+			attestations: [], findings: [], history: [],
+		});
+		const next = parseTaskIntentV1({ ...intent, revision: 3, scope_hint: ["docs/specs/feature.spec.md", "src/other/**", ".imm/risk-floor.json"] });
+		const mutation = reduceTask(record, {
+			type: "revise_intent", event_id: "scope-estimate", at: "2026-10-09T00:00:00.000Z", actor_id: "executor",
+			expected_record_hash: canonicalRecordHash(record), expected_workspace_hash: `sha256:${"b".repeat(64)}`,
+			diff_hash: `sha256:${"c".repeat(64)}`,
+			next_intent: next, next_intent_ref: { path: record.intent_ref.path, content_hash: canonicalIntentHash(next) },
+		});
+		expect(mutation.record.intent_snapshot).toEqual(next);
+		expect(mutation.record.history).toHaveLength(1);
+		expect(mutation.record.history[0].reason).toStartWith("intent_revision_3");
+		expect(mutation.record.history[0].reason).not.toContain("scope_added:");
 	});
 
 	test("breaking: a compatible scope addition combined with any other breaking field", () => {

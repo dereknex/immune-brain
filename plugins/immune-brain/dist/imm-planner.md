@@ -186,13 +186,12 @@ integration assertions; for runtime changes, include the generated Claude bundle
 when it inlines that runtime and the required release changeset. Resolve these
 paths from the build and test references before Enrollment. Record the concrete paths in the Spec's discovery evidence when the work is
 complex; simple TaskIntent-only work records them in `scope_hint`.
-Do not author while a referenced sibling is unresolved. Default ordinary
-implementation scope to the smallest coherent module directory: name the
-concrete files it needs, so a sibling the work later needs is a same-directory
-addition the Loop owner submits itself with `revise_intent` (ADR 0021). Keep Kernel,
-authority, migration, secret, and security-sensitive scope exact to the files
-proved necessary by the trace. Scope is closed by reference evidence, not by an
-exhaustive filename guess.
+Do not author while a referenced sibling is unresolved. `scope_hint` is an
+estimate of the files needed for the outcome, grounded in reference evidence
+rather than an exhaustive filename guess (ADR 0028). The Executor discloses
+additional changed files as `beyond_estimate` instead of revising scope.
+Hard no-touch paths remain prohibited; frozen acceptance and any bound Spec
+remain the authority subject.
 
 The Planner never writes the `docs/plans/<task-id>.intent.json` artifact
 directly and never overwrites an existing TaskIntent. Under an active
@@ -471,7 +470,7 @@ acceptance.
 - **TaskIntent decomposition**: Use the selected design boundaries as one retain/split criterion for TaskIntent slices. Keep work in one TaskIntent when the selected views describe one coherent executable slice with shared acceptance, risk treatment, rollback, and authority. Split a successor TaskIntent when a service boundary, state-machine owner, migration/compatibility boundary, independently promotable layer, or sequence dependency needs independent verification, rollback, authorization, or settlement. Do not split merely because the design names several layers, files, or services. Treat trust-boundary changes as the same kind of decomposition evidence: a TaskIntent should normally change one primary trust-boundary invariant, while merely traversing several boundaries or updating both sides of one end-to-end authority chain does not require a split. Split separate trust invariants when they can be independently verified, rolled back, authorized, migrated, or settled. Keep multiple trust-boundary changes together only when they form one atomic security outcome and splitting would create an unsafe or unusable intermediate state; record that reason in the Spec. This is Planner judgment, not a TaskIntent schema field or an Enrollment counting rule. This does not revive prose Plan, Roadmap, or Phase authority. For a multi-TaskIntent Initiative only, each Slice also states what is observable and verifiable when that Slice alone has landed, and no acceptance may require another unfinished Slice's work to pass; the Initiative review table's existing `result` column carries that statement. A Slice with no such result is a horizontal layer slice and is re-cut. Exception: a wide mechanical refactor whose blast radius prevents any green vertical slice may be batched, with the rationale recorded and the batches blocking one final integrate-and-verify Slice.
 - **Mermaid Use**: Mermaid is required only when a medium/high-risk design contains structure, sequence, data flow, or state transition relationships that a diagram materially clarifies. Mermaid is not a universal gate; a diagram supplements adjacent prose and never becomes a second design authority. Only a Medium/High risk Spec whose design requires a diagram records `**Diagram decision**: required` and a non-empty `**Diagram reason**:`, and it must have a Mermaid block. A Spec that needs no diagram records neither field and does not explain the omission. Low-risk Specs omit the empty ceremony and record neither field.
 - **Verification**: Every acceptance assertion has a concrete focused descriptor that can fail on the intended regression, and every named invariant has positive, negative, and bound controls at an observable seam. Hypothetical evidence is not execution-ready; a check that matches zero tests, is skipped, or lacks its prerequisite is a failure rather than a pass.
-- **Executable Scope**: `scope_hint` is the mutation envelope, not discovery context. Close references across callers, tests, generated mirrors, and state-machine owners before authoring. Simple tasks are TaskIntent-only. A complex task binds at most one active Spec by content identity; do not add archive paths for freeze, and do not relocate artifacts. Collect all known scope gaps in one revision request; ask again only when new evidence changes the boundary.
+- **Scope estimate**: `scope_hint` estimates delivery paths. Trace callers, tests, generated mirrors, and state-machine owners before authoring; disclose later changed paths as `beyond_estimate` instead of requesting a scope revision. Simple tasks are TaskIntent-only. A complex task binds at most one active Spec by content identity; do not add archive paths for freeze, and do not relocate artifacts. A scope-only revision that keeps that bound Spec path is compatible; frozen acceptance remains unchanged.
 - **Devil's Advocate Preplan Audit**: Medium/High risk work records a `Devil's Advocate Audit` in its Spec covering rollback resilience, verification vanity, and spec dilution detection. Explain recovery from partial implementation, why verification detects the regression, and how accepted requirements remain covered. Simple TaskIntent-only work records outcome, boundary, and concrete verification on the Intent. Low-risk work omits the empty template.
 - **Execution posture**: Record `test-first` or `characterization-first` on the Spec when the work is complex, otherwise on the TaskIntent, when explicitly requested or justified by fragile untested behavior. The Executor owns the local choreography; do not create prototype or RED/GREEN/REFACTOR authority Steps. Throwaway probes must have a cleanup condition and a durable decision output.
 
@@ -536,8 +535,10 @@ changes in the proposal. Preserve the prior on-disk sidecars until Kernel applie
 the revision; do not overwrite the enrolled TaskIntent, invoke the new-intent
 author command, or request a second Enrollment.
 
-A same-directory file addition is not a Planner request: the Loop owner submits
-it directly (ADR 0021). Return the proposal to the current Loop owner for Kernel `revise_intent` or,
+Files beyond the scope estimate are disclosed as `beyond_estimate`, not a
+Planner revision request (ADR 0028). Any scope-only revision that keeps the
+bound Spec path is compatible, with no same-directory special rule. Return
+an actual revision proposal to the current Loop owner for Kernel `revise_intent` or,
 when breaking, `approve_breaking_intent_revision` with the complete next intent.
 The native gate is the single user decision for a breaking revision; candidate
 preparation does not apply the revision or authorize expanded execution.
@@ -549,9 +550,10 @@ bound Spec design, or decomposition, and returns any other proposal to the
 executing session instead of editing the task's files. No Host refuses a file
 edit because of the session's entry.
 
-A revision is warranted only when the goal, the `scope_hint`, or a user-visible
-commitment changes. A finding whose defect lies inside the current goal and scope
-is ordinary rework for the Loop, not a revision request: decline to prepare one
+A revision is warranted when the authority subject or an accepted user-visible
+commitment changes. Frozen acceptance remains user-gated, including in a Lane;
+no coordinator delegation or reseal applies. A finding whose defect lies inside
+the current goal and acceptance is ordinary rework for the Loop, not a revision request: decline to prepare one
 that only appends a single input case to an acceptance assertion. Acceptance
 states principles; enumeration of cases belongs in tests.
 

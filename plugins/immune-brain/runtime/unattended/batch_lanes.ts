@@ -10,9 +10,7 @@ import { createHash } from "node:crypto";
 import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { computeBatchPlanDigest } from "../kernel/batch_authority";
-import { readTaskRecordRaw } from "../kernel/storage";
 import { intentAuthorityHash, readTaskIntent } from "../kernel/intent";
-import { applyScopeRiskFloor, readRiskFloor } from "../kernel/risk_floor";
 import { readTaskTombstone } from "../kernel/backend_claim";
 import {
 	readRuntimeContracts,
@@ -23,7 +21,6 @@ import {
 import { readFileSync } from "node:fs";
 import { readDerivedFilesAt } from "../derived_files";
 import { runFinalVerification, type FinalVerificationReport } from "./batch_final_verification";
-import { applyDelegatedIntentRevision, delegatedConfirmationRef, delegatedRevisionRefusal } from "./batch_delegation";
 import { runGithubTrackerOperation } from "../github_issue_tracker";
 import { hasLocalInitiative } from "../local_initiative";
 import type { BatchTrackerPort, StartBatchInput } from "./batch_runner";
@@ -505,64 +502,9 @@ const TERMINAL_NEXT_ACTIONS: Record<string, string> = {
 };
 
 /**
- * ADR 0018 / #198: once a child is integrated, its TaskIntent on the batch
- * branch may differ from the identity the batch authorized. When it equals the
- * last revision applied under this batch's own delegation, the recorded
- * identity is replaced and `plan_digest` resealed, with both digests recorded.
- * Any other difference is left alone, so it still fails closed as `plan_changed`.
- * Commits and their evidence are never touched.
- */
-function resealDelegatedRevision(input: StartBatchInput, record: BatchLaneRunStateRecord, taskId: string): boolean {
-	const identities = record.intent_identities;
-	const recorded = identities?.[taskId];
-	if (!identities || !recorded) return false;
-	let integrated: { revision: number; content_hash: string; authority_hash: string };
-	try {
-		const read = readTaskIntent(input.root, taskId, recorded.intent_path);
-		integrated = { revision: read.intent.revision, content_hash: read.content_hash, authority_hash: intentAuthorityHash(read.intent) };
-	} catch {
-		return false;
-	}
-	// Spec branch-boundary D7: a record that binds the authority subject needs no
-	// reseal while that subject is unchanged, whatever else the revision touched.
-	const binds = recorded.intent_authority_hash !== undefined;
-	if (binds ? integrated.authority_hash === recorded.intent_authority_hash
-		: integrated.revision === recorded.intent_revision && integrated.content_hash === recorded.intent_content_hash) return false;
-	const delegated = [...(record.delegated_revisions ?? [])].reverse().find((r) => r.task_id === taskId);
-	if (!delegated || delegated.to_revision !== integrated.revision || delegated.intent_content_hash !== integrated.content_hash) return false;
-	const next = { ...identities, [taskId]: { ...recorded, intent_revision: integrated.revision, intent_content_hash: integrated.content_hash,
-		...(binds ? { intent_authority_hash: integrated.authority_hash } : {}) } };
-	// Every child needs a recorded identity, or no digest can be recomputed.
-	if (record.children.some((child) => !next[child.task_id])) return false;
-	let toDigest: string;
-	try {
-		toDigest = computeBatchPlanDigest(record.children.map((child) => {
-			const identity = next[child.task_id]!;
-			return { task_id: child.task_id, intent_path: identity.intent_path, intent_revision: identity.intent_revision, intent_content_hash: identity.intent_content_hash,
-				...(identity.intent_authority_hash ? { intent_authority_hash: identity.intent_authority_hash } : {}), blocked_by: child.blocked_by };
-		}));
-	} catch {
-		return false;
-	}
-	record.reseals = [...(record.reseals ?? []), {
-		at: input.now,
-		task_id: taskId,
-		from_digest: record.plan_digest,
-		to_digest: toDigest,
-		intent_revision: integrated.revision,
-		intent_content_hash: integrated.content_hash,
-		...(binds ? { intent_authority_hash: integrated.authority_hash } : {}),
-	}];
-	record.intent_identities = next;
-	record.plan_digest = toDigest;
-	return true;
-}
-
-/**
  * Spec branch-boundary D8: under a record that binds each child's authority
  * subject, a Lane whose sidecar now carries a different subject parks that
- * child before anything of it reaches the batch branch, unless the change is
- * the delegated revision the batch already approved (resealed at integration).
+ * child before anything of it reaches the batch branch.
  * A scope-only or run-parameter revision keeps the subject and passes. A
  * record without the binding is left alone, so it still fails as plan_changed.
  */
@@ -576,8 +518,6 @@ function laneAuthorityChange(record: BatchLaneRunStateRecord, taskId: string, la
 		return null;
 	}
 	if (intentAuthorityHash(read.intent) === recorded.intent_authority_hash) return null;
-	const delegated = [...(record.delegated_revisions ?? [])].reverse().find((r) => r.task_id === taskId);
-	if (delegated && delegated.to_revision === read.intent.revision && delegated.intent_content_hash === read.content_hash) return null;
 	return `batch_child_authority_changed: ${taskId}`;
 }
 
@@ -632,7 +572,7 @@ function laneReport(
 	record: BatchLaneRunStateRecord,
 	reason: string | null,
 	nextAction: string,
-	extra: { handoffs?: BatchLaneHandoff[]; refusals?: BatchLaneRunReport["lane_refusals"]; tracker?: TrackerObservations; final?: FinalVerificationReport; instruction?: BatchLaneRunReport["lane_instruction"]; revision?: BatchLaneRunReport["lane_revision"] } = {},
+	extra: { handoffs?: BatchLaneHandoff[]; refusals?: BatchLaneRunReport["lane_refusals"]; tracker?: TrackerObservations; final?: FinalVerificationReport; instruction?: BatchLaneRunReport["lane_instruction"] } = {},
 ): BatchLaneRunReport {
 	return {
 		contract: "assurance_kernel/batch_run_report/v1",
@@ -650,7 +590,6 @@ function laneReport(
 		...(extra.final ? { final_verification: extra.final } : {}),
 		...(record.interventions?.length ? { interventions: record.interventions } : {}),
 		...(extra.instruction ? { lane_instruction: extra.instruction } : {}),
-		...(extra.revision ? { lane_revision: extra.revision } : {}),
 		...(record.delegated_revisions?.length ? { delegated_revisions: record.delegated_revisions } : {}),
 		...(record.reseals?.length ? { reseals: record.reseals } : {}),
 		next_action: nextAction || (TERMINAL_NEXT_ACTIONS[record.batch_state] ?? "Inspect the batch run state."),
@@ -893,15 +832,7 @@ export async function runLaneBatch(
 			max_parallel: limit,
 			now: input.now,
 			...(input.final_verification?.length ? { final_verification: input.final_verification } : {}),
-			...(input.revision_delegation ? { revision_delegation: { confirmation_time: input.confirmation_time } } : {}),
 		});
-	}
-	// A fresh confirmation of a persisted batch replaces its grant with that answer.
-	if (persisted && input.revision_delegation !== undefined) {
-		const { revision_delegation: _prior, ...rest } = record;
-		record = input.revision_delegation ? { ...rest, revision_delegation: { confirmation_time: input.confirmation_time } } : rest;
-		// Durable at once: a withdrawn grant must never survive to a later reused tick.
-		if (record.batch_state !== "prepared") record = writeBatchLaneRunState(input.root, record);
 	}
 
 	const persist = (): void => {
@@ -1004,47 +935,6 @@ export async function runLaneBatch(
 			}];
 			persist();
 			instruction = { task_id: request.task_id, kind: request.kind, accepted: true, reason: null };
-		}
-	}
-	// ADR 0018: a breaking revision the coordinator approves under the batch's
-	// grant. Out of bounds, or without a grant, it is refused and the Executor's
-	// own native gate stays the only path.
-	let revision: BatchLaneRunReport["lane_revision"];
-	if (input.lane_revision) {
-		const request = input.lane_revision;
-		const fallback = "the Executor requests approve_breaking_intent_revision through its own native gate for the user to answer";
-		const refuseRevision = (reason: string) => { revision = { task_id: request.task_id, accepted: false, reason: `batch_delegation_refused: ${reason}`, fallback }; };
-		const child = record.children.find((c) => c.task_id === request.task_id);
-		const planChild = input.children.find((c) => c.task_id === request.task_id);
-		const grant = record.revision_delegation;
-		if (!grant) refuseRevision("this batch's confirmation did not delegate Intent revisions");
-		else if (!child?.lane || child.state !== "enrolled") refuseRevision(`${request.task_id} is not running in its Lane`);
-		else {
-			try {
-				const authorized = readTaskIntent(input.root, request.task_id, planChild?.intent_path ?? undefined).intent;
-				const current = readTaskRecordRaw(child.lane.path, request.task_id).record?.intent_snapshot;
-				if (!current) throw new Error(`the Lane has no TaskRecord for ${request.task_id}`);
-				// The Lane's own declaration decides the floor of the revision it applies.
-				const floor = readRiskFloor(child.lane.path);
-				const nextIntent = applyScopeRiskFloor(request.next_intent, floor);
-				const outOfBounds = delegatedRevisionRefusal(authorized, current, nextIntent, floor);
-				if (outOfBounds) refuseRevision(outOfBounds);
-				else {
-					const confirmationRef = delegatedConfirmationRef(record.batch_id, grant);
-					const applied = await applyDelegatedIntentRevision({
-						lane_root: child.lane.path,
-						task_id: request.task_id,
-						next_intent: nextIntent,
-						confirmation_ref: confirmationRef,
-						now: input.now,
-					});
-					record.delegated_revisions = [...(record.delegated_revisions ?? []), { at: input.now, task_id: request.task_id, ...applied, confirmation_ref: confirmationRef }];
-					persist();
-					revision = { task_id: request.task_id, accepted: true, reason: null };
-				}
-			} catch (error) {
-				refuseRevision(error instanceof Error ? error.message : String(error));
-			}
 		}
 	}
 	const refusals: NonNullable<BatchLaneRunReport["lane_refusals"]> = [];
@@ -1274,9 +1164,6 @@ export async function runLaneBatch(
 			record.children = record.children.map((c) => (c.task_id === child.task_id ? { ...c, state: "integrated", commit, reason: null } : c));
 			record.commits = [...record.commits, commit];
 			persist();
-			// The integration is durable before any reseal; a reseal that cannot be
-			// computed leaves plan_digest as it was, so the change fails closed later.
-			if (resealDelegatedRevision(input, record, child.task_id)) persist();
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			const reason = error instanceof BatchIntegrationError ? error.reason : "batch_integration_conflict";
@@ -1404,7 +1291,7 @@ export async function runLaneBatch(
 			final && !final.passed
 				? "Every child is integrated but the batch did not pass its final verification; inspect the failing commands against the delivered content. Integrated commits were not rolled back."
 				: "",
-			{ handoffs: releaseHandoffs(input, record, lanes), refusals, tracker, instruction, revision, ...(final ? { final } : {}) },
+			{ handoffs: releaseHandoffs(input, record, lanes), refusals, tracker, instruction, ...(final ? { final } : {}) },
 		);
 	}
 	const handoffs: BatchLaneHandoff[] = [];
@@ -1454,7 +1341,7 @@ export async function runLaneBatch(
 			record,
 			parkedMessage ?? (parked ? "a parked child needs a human decision" : overBudget ? `max_children budget exhausted (${record.budget.max_children})` : "no child can start"),
 			"",
-			{ refusals, tracker, instruction, revision },
+			{ refusals, tracker, instruction },
 		);
 	}
 	if (!overBudget && !isParentBranch(record.branch)) {
@@ -1476,7 +1363,7 @@ export async function runLaneBatch(
 				? `child ${reviewOpen[0]} holds an open Review reservation`
 				: `children ${reviewOpen.join(", ")} hold open Review reservations`,
 			"Submit each reserved foreground Review verdict in its own Lane, then call start_unattended_batch again to continue.",
-			{ handoffs, refusals, tracker, instruction, revision },
+			{ handoffs, refusals, tracker, instruction },
 		);
 	}
 	return laneReport(
@@ -1487,6 +1374,6 @@ export async function runLaneBatch(
 			: handoffs.some((h) => h.role === "lane-steward" && h.action === "provision")
 				? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers."
 				: "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.",
-		{ handoffs, refusals, tracker, instruction, revision },
+		{ handoffs, refusals, tracker, instruction },
 	);
 }

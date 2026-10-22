@@ -30,7 +30,6 @@ import {
 	NO_RISK_FLOOR,
 	raiseRisk,
 	readRiskFloor,
-	touchesChangedPathFloor,
 	type RiskFloor,
 } from "./risk_floor";
 import {
@@ -336,99 +335,21 @@ function contentHashWithoutRevision(intent: TaskIntentV1): string {
 	return canonicalIntentHash(rest);
 }
 
-function isConcreteScopeEntry(entry: string): boolean {
-	return !entry.includes("*") && !entry.includes("?");
-}
-
-function scopeEntryParent(entry: string): string {
-	const slash = entry.lastIndexOf("/");
-	return slash < 0 ? "" : entry.slice(0, slash);
-}
-
-/**
- * The entries a same-directory additive scope revision adds, or null when the
- * delta is anything else (ADR 0021). Additive means the next scope contains
- * every previous entry; same-directory means each added entry is a concrete
- * path whose parent directory already holds a concrete previous entry, outside
- * every path the project's risk floor names, and not an ancestor of any
- * previous entry. The check is purely textual: it cannot tell a file from a
- * directory written without a trailing slash, so each Host also refuses a
- * directory in the worktree (see `assertScopeAdditionsAreFiles`).
- */
-export function sameDirectoryScopeAdditions(
-	previous: readonly string[],
-	next: readonly string[],
-	floor: RiskFloor = NO_RISK_FLOOR,
-): string[] | null {
-	const prior = new Set(previous);
-	const retained = new Set(next);
-	if (previous.some((entry) => !retained.has(entry))) return null;
-	const added = next.filter((entry) => !prior.has(entry));
-	const anchors = new Set(previous.filter(isConcreteScopeEntry).map(scopeEntryParent));
-	for (const entry of added) {
-		if (!isConcreteScopeEntry(entry) || touchesChangedPathFloor(entry, floor)) return null;
-		if (!anchors.has(scopeEntryParent(entry))) return null;
-		if (previous.some((existing) => existing.startsWith(`${entry}/`))) return null;
-	}
-	return added;
-}
-
-/** The previous concrete entries that anchor an added entry's directory. */
-export function scopeAdditionAnchors(
-	previous: readonly string[],
-	added: readonly string[],
-): string[] {
-	const parents = new Set(added.map(scopeEntryParent));
-	return previous.filter(
-		(entry) => isConcreteScopeEntry(entry) && parents.has(scopeEntryParent(entry)),
-	);
-}
-
-// The revise_intent history entry carries the paths a compatible scope revision
-// added, one `scope_added:<path>` line each, so Review can name them without a
-// TaskRecord field (ADR 0021, D5).
-const SCOPE_ADDED_PREFIX = "scope_added:";
-
-export function scopeAdditionsReasonLines(added: readonly string[]): string[] {
-	return added.map((entry) => `${SCOPE_ADDED_PREFIX}${entry}`);
-}
-
-export function scopeAdditionsFromHistory(
-	history: ReadonlyArray<{ type: string; reason: string }>,
-): string[] {
-	const added: string[] = [];
-	for (const entry of history) {
-		if (entry.type !== "revise_intent") continue;
-		for (const line of entry.reason.split("\n"))
-			if (line.startsWith(SCOPE_ADDED_PREFIX)) added.push(line.slice(SCOPE_ADDED_PREFIX.length));
-	}
-	return [...new Set(added)].sort();
-}
-
 export function classifyIntentRevision(
 	previous: TaskIntentV1,
 	next: TaskIntentV1,
-	floor: RiskFloor = NO_RISK_FLOOR,
 ): "unchanged" | "compatible" | "breaking" {
 	if (contentHashWithoutRevision(previous) === contentHashWithoutRevision(next))
 		return "unchanged";
 
-	const scopeChanged =
-		JSON.stringify(previous.scope_hint) !== JSON.stringify(next.scope_hint);
-	// Narrowing removes authority: a next scope made only of previous entries
-	// needs no confirmation. An empty scope is not a narrowing, and any added
-	// entry is classified by the same-directory rule below, as before.
-	const priorScope = new Set(previous.scope_hint);
-	const scopeNarrowed =
-		next.scope_hint.length > 0 && next.scope_hint.every((entry) => priorScope.has(entry));
+	const boundSpecs = (intent: TaskIntentV1) =>
+		intent.scope_hint.filter((path) => ACTIVE_SPEC_PATH.test(path)).sort();
 	const breaking =
 		previous.contract !== next.contract ||
 		previous.task_id !== next.task_id ||
 		previous.owner !== next.owner ||
 		previous.goal !== next.goal ||
-		(scopeChanged &&
-			!scopeNarrowed &&
-			sameDirectoryScopeAdditions(previous.scope_hint, next.scope_hint, floor) === null) ||
+		JSON.stringify(boundSpecs(previous)) !== JSON.stringify(boundSpecs(next)) ||
 		RISK_RANK[next.risk] < RISK_RANK[previous.risk] ||
 		previous.acceptance.some((prior) => {
 			const current = next.acceptance.find((item) => item.id === prior.id);
@@ -441,33 +362,6 @@ export function classifyIntentRevision(
 	if (breaking) return "breaking";
 
 	return next.revision > previous.revision ? "compatible" : "breaking";
-}
-
-/**
- * The Host-side half of the same-directory rule (ADR 0021, D4). The classifier
- * is pure and cannot tell a file from a directory, so before a Host submits a
- * compatible scope revision it refuses one whose added entries, or the previous
- * entries that anchor them, are directories in the worktree.
- */
-export function assertScopeAdditionsAreFiles(
-	root: string,
-	previous: readonly string[],
-	next: readonly string[],
-): void {
-	const added = sameDirectoryScopeAdditions(previous, next, readRiskFloor(root));
-	if (!added || added.length === 0) return;
-	for (const entry of [...added, ...scopeAdditionAnchors(previous, added)]) {
-		let isDirectory = false;
-		try {
-			isDirectory = statSync(join(root, entry)).isDirectory();
-		} catch {
-			// An absent or unreadable entry is not a directory.
-		}
-		if (isDirectory)
-			throw new Error(
-				`scope entry ${entry} is a directory, so adding it is not a same-directory file addition; name concrete files, or widen with a glob entry such as ${entry}/** through approve_breaking_intent_revision`,
-			);
-	}
 }
 
 /**

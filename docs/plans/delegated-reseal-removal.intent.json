@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "delegated-reseal-removal",
-  "owner": "user",
   "goal": "Delegated in-Lane intent revision and reseal are removed from the runtime and both Hosts, the same-directory scope rule is removed so any scope_hint change that keeps the bound Spec path is compatible, the Executor discloses files beyond the estimate instead of revising scope, and ADR 0028 superseding ADR 0018 and ADR 0021 is accepted (Spec branch-boundary-r2 D20).",
   "acceptance": [
     {
@@ -30,7 +29,10 @@
     "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
     "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
     "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-planner.md",
     "plugins/immune-brain/dist/imm-run-batch.md",
+    "plugins/immune-brain/dist/imm-run.md",
+    "plugins/immune-brain/dist/role-prompts/executor.md",
     "plugins/immune-brain/runtime/assurance/coordinator.ts",
     "plugins/immune-brain/runtime/claude/interaction.ts",
     "plugins/immune-brain/runtime/claude/kernel_ports.ts",
@@ -46,15 +48,18 @@
     "plugins/immune-brain/runtime/unattended/batch_start.ts",
     "plugins/immune-brain/runtime/unattended/batch_state.ts",
     "tests/batch-delegation-gate.test.ts",
+    "tests/breaking-intent-revision-gate.test.ts",
     "tests/claude-batch-authority.test.ts",
     "tests/claude-host-authority.test.ts",
     "tests/host-neutral-assurance-coordinator.test.ts",
     "tests/kernel-intent-v2.test.ts",
     "tests/pi-batch-authority.test.ts",
     "tests/scope-revision-contract.test.ts",
+    "tests/scope-revision-envelope.test.ts",
     "tests/unattended-batch-lanes.test.ts",
     "tests/unattended-contracts.test.ts"
   ],
   "risk": "critical",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

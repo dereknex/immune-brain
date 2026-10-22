@@ -200,14 +200,10 @@ export interface BatchLaneRunStateRecord {
 	final_verification?: string[];
 	final_verification_result?: import("./batch_final_verification").FinalVerificationReport;
 	repair_tasks?: Array<{ task_id: string; run_id: string }>;
-	/**
-	 * ADR 0018: the literal user's grant, in this batch's confirmation, to let the
-	 * coordinator approve in-envelope Lane Intent revisions. Absent: not granted.
-	 */
-	revision_delegation?: import("./batch_delegation").RevisionDelegationGrant;
-	/** Every revision applied under that grant. */
-	delegated_revisions?: import("./batch_delegation").DelegatedRevisionRecord[];
-	/** Each child's TaskIntent identity behind `plan_digest`; resealed only for a delegated revision. */
+	/** Legacy v2 fields, preserved for reading and retirement only (D20). */
+	revision_delegation?: { confirmation_time: string };
+	delegated_revisions?: Array<{ at: string; task_id: string; from_revision: number; to_revision: number; intent_content_hash: string; confirmation_ref: string }>;
+	/** Each child's TaskIntent identity behind `plan_digest`. */
 	intent_identities?: Record<string, BatchIntentIdentity>;
 	/** Each `plan_digest` reseal at integration, with the digest before and after. */
 	reseals?: Array<{ at: string; task_id: string; from_digest: string; to_digest: string; intent_revision: number; intent_content_hash: string; intent_authority_hash?: string }>;
@@ -845,7 +841,6 @@ export function prepareBatchLaneRunState(input: {
 	progress_mode?: "parent_branch";
 	now: string;
 	final_verification?: string[];
-	revision_delegation?: import("./batch_delegation").RevisionDelegationGrant;
 }): BatchLaneRunStateRecord {
 	validateBatchId(input.batch_id);
 	return {
@@ -873,7 +868,6 @@ export function prepareBatchLaneRunState(input: {
 		})),
 		commits: [],
 		...(input.final_verification?.length ? { final_verification: [...input.final_verification] } : {}),
-		...(input.revision_delegation ? { revision_delegation: { ...input.revision_delegation } } : {}),
 		intent_identities: batchIntentIdentities(input.children),
 		created_at: input.now,
 		updated_at: input.now,
@@ -984,9 +978,7 @@ export interface BatchLaneRunReport {
 	final_verification?: import("./batch_final_verification").FinalVerificationReport;
 	/** Coordinator instructions sent to Lane sessions (see BatchLaneRunStateRecord.interventions). */
 	interventions?: LaneIntervention[];
-	/** This tick's decision on the coordinator's `lane_revision` (ADR 0018). */
-	lane_revision?: { task_id: string; accepted: boolean; reason: string | null; fallback?: string };
-	delegated_revisions?: import("./batch_delegation").DelegatedRevisionRecord[];
+	delegated_revisions?: BatchLaneRunStateRecord["delegated_revisions"];
 	reseals?: BatchLaneRunStateRecord["reseals"];
 	/** This tick's decision on the Parent's `lane_instruction`: send the text only when accepted. */
 	lane_instruction?: { task_id: string; kind: LaneIntervention["kind"]; accepted: boolean; reason: string | null };

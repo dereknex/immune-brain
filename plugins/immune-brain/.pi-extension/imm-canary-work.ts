@@ -103,7 +103,6 @@ import {
 import { inspectStorageLayout } from "../runtime/kernel/storage_paths";
 import { migrateLegacyLayout } from "../runtime/kernel/storage_layout_migration";
 import {
-	assertScopeAdditionsAreFiles,
 	canonicalIntentHash,
 	parseProjectTaskIntent,
 	parseTaskIntentV1,
@@ -703,25 +702,6 @@ export default function (
 				return toolResult(JSON.stringify(enriched, null, 2), enriched);
 			}
 			const requested = requestedScope(action as { op: string; next_intent?: unknown });
-			if (requested) {
-				// The directory rule is the compatible route's own refusal; it runs
-				// before the projection so a directory's files are not reported as
-				// unstaged scope changes instead (ADR 0021, D4).
-				let prior: ReadTaskIntentResult | null = null;
-				try {
-					prior = readTaskIntentForRecord(ctx.cwd, taskId);
-				} catch {
-					// An unreadable intent is the projection's diagnostic to report.
-				}
-				if (prior) {
-					try {
-						assertScopeAdditionsAreFiles(ctx.cwd, prior.intent.scope_hint, requested);
-					} catch (error) {
-						const message = error instanceof Error ? error.message : String(error);
-						return failCanaryTool(taskId, action.op, "blocked", "scope_addition_is_directory", message, "name concrete files, or widen through approve_breaking_intent_revision");
-					}
-				}
-			}
 			// Status is a read: unstaged in-scope paths come back as a warning. Every
 			// other operation projects through the refusing delivery identity.
 			const projection: StatusProjectionResult = action.op === "status"
@@ -1641,7 +1621,6 @@ async function executeOrdinaryOperation(
 	const nextScope = operation.op === "revise_intent"
 		? (operation.next_intent as { scope_hint: string[] }).scope_hint
 		: undefined;
-	if (nextScope) assertScopeAdditionsAreFiles(ctx.cwd, priorIntent.intent.scope_hint, nextScope);
 	const sidecar = join(ctx.cwd, priorIntent.intent_ref.path);
 	const priorBytes = operation.op === "revise_intent" ? readFileSync(sidecar) : null;
 	// A content-changing revision writes the sidecar before the kernel's drift

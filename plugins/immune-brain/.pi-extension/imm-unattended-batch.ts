@@ -27,7 +27,6 @@ import { advancePiTask, piEntryToken, piRunEntryRefusal, readTaskIntentForRecord
 import { runEntryManifest, type RunEntryManifest } from "../runtime/unattended/run_entry_manifest";
 import { batchReason } from "../runtime/unattended/batch_reasons";
 import { parseFinalVerification } from "../runtime/unattended/batch_final_verification";
-import { parseLaneRevision, REVISION_DELEGATION_TEXT, type LaneRevisionRequest } from "../runtime/unattended/batch_delegation";
 import { createBatchTrackerPort, laneRuntimeContractRefusal, parseLaneInstruction, type LaneInstructionRequest, parseLaneOffers, parseMaxParallel, resolveLaneParallel, type LaneOffer } from "../runtime/unattended/batch_lanes";
 import {
 	authorizeBatch,
@@ -80,9 +79,8 @@ export async function readSettledTaskRecord(
  * is the testable unit, and the direct-execution suites cover the decision
  * outcomes (decline -> rejected, cancel/Escape -> cancelled) with zero writes.
  */
-export function mapDialogSelection(selected: string | undefined): "accept" | "accept_delegate" | "decline" | "cancel" {
+export function mapDialogSelection(selected: string | undefined): "accept" | "decline" | "cancel" {
 	if (selected === "confirm") return "accept";
-	if (selected === "confirm_delegate") return "accept_delegate";
 	if (selected === "decline") return "decline";
 	return "cancel";
 }
@@ -122,8 +120,6 @@ export interface PiBatchExecutionOptions {
 	final_verification?: string[];
 	/** Lane mode: one instruction for an idle Lane session, recorded before it is sent. */
 	lane_instruction?: LaneInstructionRequest;
-	/** Lane mode, ADR 0018: one breaking Intent revision the coordinator approves under the batch's grant. */
-	lane_revision?: LaneRevisionRequest;
 	batchKernel?: Partial<BatchRunnerKernelPort>;
 	batchGit?: BatchRunnerGitPort;
 	/** Lane mode: closes an integrated child's Issue; defaults to the GitHub projection. */
@@ -135,9 +131,7 @@ export interface PiBatchExecutionOptions {
 		details: string;
 		planDigest: string;
 		signal?: AbortSignal;
-		/** ADR 0018: offer the opt-in delegation choice (lane mode only). */
-		offerRevisionDelegation?: boolean;
-	}) => Promise<"accept" | "accept_delegate" | "decline" | "cancel">;
+	}) => Promise<"accept" | "decline" | "cancel">;
 }
 
 export type PiBatchExecutionResult =
@@ -172,6 +166,7 @@ function piConfirmationRef(input: {
 export async function executePiUnattendedBatch(
 	options: PiBatchExecutionOptions,
 ): Promise<PiBatchExecutionResult> {
+	if (Object.hasOwn(options, "lane_revision")) throw new Error("unknown parameter: lane_revision");
 	return executePreparedPiBatch(options);
 }
 
@@ -214,7 +209,7 @@ async function executePreparedPiBatch(
 		async (effects) => {
 			// A continuation never opens a gate; unconfirmed commands wait for a fresh explicit entry.
 			if (reuseOnly || !options.confirmBatch) return batchReason("confirmation_port_unavailable");
-			let decision: "accept" | "accept_delegate" | "decline" | "cancel";
+			let decision: "accept" | "decline" | "cancel";
 			try {
 				decision = await options.confirmBatch({
 					title: `Authorize Parent Final Verification: ${effects.initiative_slug}`,
@@ -234,7 +229,7 @@ async function executePreparedPiBatch(
 		});
 	if (native) return native;
 	// A lane_offers-only call resumes the recorded lane batch; refused before any gate otherwise.
-	const resolvedParallel = resolveLaneParallel(root, initiativeSlug, options.max_parallel, options.lane_offers, options.lane_instruction ?? options.lane_revision);
+	const resolvedParallel = resolveLaneParallel(root, initiativeSlug, options.max_parallel, options.lane_offers, options.lane_instruction);
 	options = { ...options, max_parallel: resolvedParallel };
 
 	// 1. Host-independent batch preflight: claim ownership, branch availability,
@@ -296,12 +291,11 @@ async function executePreparedPiBatch(
 				details: `Ordered children (${facts.children.length}):\n${facts.children.map((child) => `  - ${child.task_id} (${child.slice_id}) [risk: ${child.risk}] [status: ${child.status === "already_settled" ? "completed" : "pending execution"}]`).join("\n")}${facts.excluded.length > 0 ? `\n\nExcluded children:\n${facts.excluded.map((child) => `  - ${child.task_id} (${child.slice_id}): ${child.reason}`).join("\n")}` : ""}${options.max_parallel !== undefined ? `\n\nParallel groups (${facts.parallel_groups.length}):\n${facts.parallel_groups.map((group) => `  - ${group.join(", ")}`).join("\n")}${facts.scope_conflicts.length > 0 ? `\n\nSerialized by overlapping scope:\n${facts.scope_conflicts.map((c) => `  - ${c.task_id} after ${c.overlaps_with.join(", ")}`).join("\n")}` : ""}` : ""}${facts.reuse_blockers.length > 0 ? `\n\nRe-confirmation required: ${facts.reuse_blockers.join(", ")}.\nRecovery: confirm to issue a fresh authorization bound to the current plan and HEAD.` : ""}`,
 				planDigest: facts.plan_digest,
 				signal,
-				...(options.max_parallel !== undefined ? { offerRevisionDelegation: true } : {}),
 			};
 
 			// The gate settles only on the literal user's answer or the caller's
 			// cancellation signal.
-			let decision: "accept" | "accept_delegate" | "decline" | "cancel";
+			let decision: "accept" | "decline" | "cancel";
 			try {
 				decision = await options.confirmBatch(confirmDetails);
 			} catch (err) {
@@ -318,14 +312,13 @@ async function executePreparedPiBatch(
 			if (decision === "decline") {
 				return { kind: "host_rejection", value: batchReason("confirmation_declined") };
 			}
-			if (decision !== "accept" && decision !== "accept_delegate") {
+			if (decision !== "accept") {
 				return { kind: "host_rejection", value: batchReason("confirmation_no_decision") };
 			}
 			manifestChildren = facts.children;
 			return {
 				kind: "confirmed",
 				request_id: randomUUID(),
-				...(decision === "accept_delegate" && options.max_parallel !== undefined ? { delegate_revisions: true } : {}),
 			};
 		},
 		confirmationRef: ({ batch_id, request_id }) =>
@@ -403,8 +396,6 @@ async function executePreparedPiBatch(
 					max_parallel: options.max_parallel,
 					tracker: options.batchTracker ?? createBatchTrackerPort(root, initiativeSlug),
 					...(options.lane_instruction ? { lane_instruction: options.lane_instruction } : {}),
-					...(options.lane_revision ? { lane_revision: options.lane_revision } : {}),
-					...(authorization.revision_delegation !== undefined ? { revision_delegation: authorization.revision_delegation } : {}),
 				}
 			: {}),
 		...(options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}),
@@ -535,18 +526,15 @@ export default function (
 				text: Type.String(),
 				session_state: Type.Union([Type.Literal("idle"), Type.Literal("working"), Type.Literal("blocked"), Type.Literal("done")]),
 			}, { additionalProperties: false })),
-			lane_revision: Type.Optional(Type.Object({
-				task_id: Type.String(),
-				next_intent: Type.Object({}, { additionalProperties: true }),
-			}, { additionalProperties: false })),
 		}, { additionalProperties: false }),
 		execute: async (
 			_toolCallId: string,
-			params: { initiative_slug: string; max_parallel?: number; lane_offers?: Array<{ task_id: string; path: string }>; final_verification?: string[]; lane_instruction?: unknown; lane_revision?: unknown },
+			params: { initiative_slug: string; max_parallel?: number; lane_offers?: Array<{ task_id: string; path: string }>; final_verification?: string[]; lane_instruction?: unknown },
 			signal: AbortSignal | undefined,
 			_onUpdate: unknown,
 			ctx: ExtensionContext,
 		) => {
+			if (Object.hasOwn(params, "lane_revision")) throw new Error("unknown parameter: lane_revision");
 			const { initiative_slug: initiativeSlug } = params;
 			if (ctx.mode !== "tui") {
 				const refusal = nonInteractiveRefusal();
@@ -578,7 +566,6 @@ export default function (
 			const laneOffers = parseLaneOffers(params.lane_offers);
 			const finalVerification = parseFinalVerification(params.final_verification);
 			const laneInstruction = parseLaneInstruction(params.lane_instruction);
-			const laneRevision = parseLaneRevision(params.lane_revision);
 
 			const result = await executePiUnattendedBatch({
 				root: ctx.cwd,
@@ -587,7 +574,6 @@ export default function (
 				...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),
 				...(finalVerification !== undefined ? { final_verification: finalVerification } : {}),
 				...(laneInstruction !== undefined ? { lane_instruction: laneInstruction } : {}),
-				...(laneRevision !== undefined ? { lane_revision: laneRevision } : {}),
 				interactive: ctx.mode === "tui",
 				signal,
 				readInitiative: dependencies.readInitiative,
@@ -616,9 +602,6 @@ export default function (
 							signal: details.signal,
 							actions: [
 								{ value: "confirm", label: "Authorize batch run", description: "Start the unattended Lane batch run" },
-								...(details.offerRevisionDelegation
-									? [{ value: "confirm_delegate", label: "Authorize and delegate in-Lane revisions", description: REVISION_DELEGATION_TEXT }]
-									: []),
 								{ value: "decline", label: "Decline batch", description: "Reject this batch authorization; repository and authority stay unchanged" },
 								{ value: "cancel", label: "Cancel", description: "Leave repository and authority unchanged" },
 							],
@@ -746,8 +729,7 @@ export default function (
 							],
 						},
 					);
-					const mapped = mapDialogSelection(selected);
-					return mapped === "accept_delegate" ? "accept" : mapped;
+					return mapDialogSelection(selected);
 				},
 			});
 

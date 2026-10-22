@@ -101,8 +101,6 @@ export interface NativeConfirmationInput {
 			parallel_groups: string[][];
 			serialized: Array<{ task_id: string; overlaps_with: string[] }>;
 			final_verification?: string[];
-			/** ADR 0018: the gate offers the opt-in delegation of in-envelope Lane Intent revisions. */
-			offer_revision_delegation?: boolean;
 		};
 	};
 	/** Present only for a batch disposition: the record the user is asked to retire. */
@@ -120,8 +118,6 @@ export interface NativeConfirmationInput {
 export interface NativeConfirmationResult {
 	decision: NativeDecision;
 	requestId: string;
-	/** ADR 0018: true only when the user ticked the delegation in a lane batch gate. */
-	delegateRevisions?: boolean;
 	/** Present only when the request offered `reworkExits` and the user accepted. */
 	reworkChoice?: ReworkChoice;
 }

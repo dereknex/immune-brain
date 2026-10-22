@@ -1073,16 +1073,6 @@ function changedPathRiskFloor(changedPaths, floor) {
     return "material";
   return null;
 }
-function touchesChangedPathFloor(entry, floor) {
-  if (floor.invalid !== null)
-    return true;
-  return entryReachesFile(entry, RISK_FLOOR_DECLARATION_PATH) || entryTouches(entry, [
-    ...floor.critical.paths,
-    ...floor.critical.changed_only,
-    ...floor.material.paths,
-    ...floor.material.changed_only
-  ]);
-}
 function raiseRisk(declared, floor) {
   return floor !== null && RISK_RANK[declared] < RISK_RANK[floor] ? floor : declared;
 }
@@ -1248,8 +1238,7 @@ import {
   lstatSync as lstatSync5,
   openSync as openSync3,
   readFileSync as readFileSync5,
-  realpathSync as realpathSync4,
-  statSync as statSync2
+  realpathSync as realpathSync4
 } from "node:fs";
 import { execFileSync as execFileSync2 } from "node:child_process";
 import { join as join3, resolve as resolve4, sep as sep2 } from "node:path";
@@ -1416,75 +1405,17 @@ function contentHashWithoutRevision(intent) {
   const { revision: _revision, ...rest } = intent;
   return canonicalIntentHash(rest);
 }
-function isConcreteScopeEntry(entry) {
-  return !entry.includes("*") && !entry.includes("?");
-}
-function scopeEntryParent(entry) {
-  const slash = entry.lastIndexOf("/");
-  return slash < 0 ? "" : entry.slice(0, slash);
-}
-function sameDirectoryScopeAdditions(previous, next, floor = NO_RISK_FLOOR) {
-  const prior = new Set(previous);
-  const retained = new Set(next);
-  if (previous.some((entry) => !retained.has(entry)))
-    return null;
-  const added = next.filter((entry) => !prior.has(entry));
-  const anchors = new Set(previous.filter(isConcreteScopeEntry).map(scopeEntryParent));
-  for (const entry of added) {
-    if (!isConcreteScopeEntry(entry) || touchesChangedPathFloor(entry, floor))
-      return null;
-    if (!anchors.has(scopeEntryParent(entry)))
-      return null;
-    if (previous.some((existing) => existing.startsWith(`${entry}/`)))
-      return null;
-  }
-  return added;
-}
-function scopeAdditionAnchors(previous, added) {
-  const parents = new Set(added.map(scopeEntryParent));
-  return previous.filter((entry) => isConcreteScopeEntry(entry) && parents.has(scopeEntryParent(entry)));
-}
-function scopeAdditionsReasonLines(added) {
-  return added.map((entry) => `${SCOPE_ADDED_PREFIX}${entry}`);
-}
-function scopeAdditionsFromHistory(history) {
-  const added = [];
-  for (const entry of history) {
-    if (entry.type !== "revise_intent")
-      continue;
-    for (const line of entry.reason.split(`
-`))
-      if (line.startsWith(SCOPE_ADDED_PREFIX))
-        added.push(line.slice(SCOPE_ADDED_PREFIX.length));
-  }
-  return [...new Set(added)].sort();
-}
-function classifyIntentRevision(previous, next, floor = NO_RISK_FLOOR) {
+function classifyIntentRevision(previous, next) {
   if (contentHashWithoutRevision(previous) === contentHashWithoutRevision(next))
     return "unchanged";
-  const scopeChanged = JSON.stringify(previous.scope_hint) !== JSON.stringify(next.scope_hint);
-  const priorScope = new Set(previous.scope_hint);
-  const scopeNarrowed = next.scope_hint.length > 0 && next.scope_hint.every((entry) => priorScope.has(entry));
-  const breaking = previous.contract !== next.contract || previous.task_id !== next.task_id || previous.owner !== next.owner || previous.goal !== next.goal || scopeChanged && !scopeNarrowed && sameDirectoryScopeAdditions(previous.scope_hint, next.scope_hint, floor) === null || RISK_RANK2[next.risk] < RISK_RANK2[previous.risk] || previous.acceptance.some((prior) => {
+  const boundSpecs = (intent) => intent.scope_hint.filter((path) => ACTIVE_SPEC_PATH.test(path)).sort();
+  const breaking = previous.contract !== next.contract || previous.task_id !== next.task_id || previous.owner !== next.owner || previous.goal !== next.goal || JSON.stringify(boundSpecs(previous)) !== JSON.stringify(boundSpecs(next)) || RISK_RANK2[next.risk] < RISK_RANK2[previous.risk] || previous.acceptance.some((prior) => {
     const current = next.acceptance.find((item) => item.id === prior.id);
     return !current || current.assertion !== prior.assertion || JSON.stringify(verificationCommandSubject(current.verification)) !== JSON.stringify(verificationCommandSubject(prior.verification));
   }) || next.acceptance.some((item) => !previous.acceptance.some((prior) => prior.id === item.id));
   if (breaking)
     return "breaking";
   return next.revision > previous.revision ? "compatible" : "breaking";
-}
-function assertScopeAdditionsAreFiles(root, previous, next) {
-  const added = sameDirectoryScopeAdditions(previous, next, readRiskFloor(root));
-  if (!added || added.length === 0)
-    return;
-  for (const entry of [...added, ...scopeAdditionAnchors(previous, added)]) {
-    let isDirectory = false;
-    try {
-      isDirectory = statSync2(join3(root, entry)).isDirectory();
-    } catch {}
-    if (isDirectory)
-      throw new Error(`scope entry ${entry} is a directory, so adding it is not a same-directory file addition; name concrete files, or widen with a glob entry such as ${entry}/** through approve_breaking_intent_revision`);
-  }
 }
 function withNextScope(record, nextScope) {
   return {
@@ -1645,7 +1576,7 @@ function readTaskIntent(root, taskId, requestedPath, recordedIntent) {
   const { identity, ...observed } = readTaskIntentSource(root, taskId, requestedPath, true, recordedIntent);
   return { ...observed, token: mintToken(identity) };
 }
-var INTENT_MAX_BYTES, INTENT_SIDECAR_RELATIVE_PREFIX = "docs/plans/", TASK_ID_PATTERN, portablePathCollator, ACTIVE_SPEC_PATH, RISK_RANK2, SCOPE_ADDED_PREFIX = "scope_added:", TaskIntentObservationError, intentReaderTestHook = null;
+var INTENT_MAX_BYTES, INTENT_SIDECAR_RELATIVE_PREFIX = "docs/plans/", TASK_ID_PATTERN, portablePathCollator, ACTIVE_SPEC_PATH, RISK_RANK2, TaskIntentObservationError, intentReaderTestHook = null;
 var init_intent = __esm(() => {
   init_types();
   init_risk_floor();
@@ -2990,7 +2921,7 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths, f
         throw new KernelInvariantError([
           `cannot revise intent while lifecycle is ${record.lifecycle}`
         ]);
-      const revisionClass = classifyIntentRevision(record.intent_snapshot, action.next_intent, floor);
+      const revisionClass = classifyIntentRevision(record.intent_snapshot, action.next_intent);
       if (action.type === "revise_intent" && revisionClass !== "compatible")
         throw new KernelInvariantError([
           "revise_intent requires a compatible revision"
@@ -3019,7 +2950,6 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths, f
         throw new KernelInvariantError([
           "next intent ref must match the next intent"
         ]);
-      const selfServedAdditions = action.type === "revise_intent" ? sameDirectoryScopeAdditions(record.intent_snapshot.scope_hint, action.next_intent.scope_hint, floor) ?? [] : [];
       record.intent_snapshot = { ...action.next_intent };
       record.intent_ref = { ...action.next_intent_ref };
       if (action.type === "approve_breaking_intent_revision") {
@@ -3030,11 +2960,7 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths, f
         if (record.artifact_state === "frozen")
           record.artifact_state = "active";
       }
-      appendHistory(record, action, from, [
-        `intent_revision_${record.intent_snapshot.revision}`,
-        ...scopeAdditionsReasonLines(selfServedAdditions)
-      ].join(`
-`), authorityAudit);
+      appendHistory(record, action, from, `intent_revision_${record.intent_snapshot.revision}`, authorityAudit);
       break;
     }
     case "request_rework": {
@@ -6628,7 +6554,6 @@ function prepareBatchLaneRunState(input) {
     })),
     commits: [],
     ...input.final_verification?.length ? { final_verification: [...input.final_verification] } : {},
-    ...input.revision_delegation ? { revision_delegation: { ...input.revision_delegation } } : {},
     intent_identities: batchIntentIdentities(input.children),
     created_at: input.now,
     updated_at: input.now
@@ -9533,13 +9458,6 @@ function reviewTurnBudget(workload, changedPaths = 0) {
 function snapshotDigest(snapshot) {
   return `sha256:${createHash17("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
 }
-function selfServedScopeLines(added) {
-  if (!added?.length)
-    return [];
-  return [
-    `Self-served scope additions (added by compatible Intent revisions with no user confirmation; judge each against the goal and its acceptance, not as pre-approved): ${added.join(", ")}`
-  ];
-}
 function reviewDeltaLines(delta) {
   if (!delta)
     return [];
@@ -9550,7 +9468,7 @@ function reviewDeltaLines(delta) {
     `Changed paths outside delta_paths were inspected by earlier rounds at ${delta.prior_review_commit}; list them in approval.inspected_paths by carry-forward without re-reading their full diff. An unread or truncated read is not a defect and is never a blocking finding.`
   ];
 }
-function buildReviewSnapshotPrompt(snapshot, evidencePath, options = {}) {
+function buildReviewSnapshotPrompt(snapshot, evidencePath) {
   if (snapshot.role !== "review")
     throw new Error("native review prompt requires review role");
   const acceptance = snapshot.acceptance.map((item) => `- ${item.id}: ${item.assertion}`).join(`
@@ -9573,7 +9491,6 @@ function buildReviewSnapshotPrompt(snapshot, evidencePath, options = {}) {
     `Snapshot digest: ${digest}`,
     `TaskRecord revision: ${snapshot.record_revision}`,
     revision ? `Intent revision ${snapshot.intent_revision} (hash ${snapshot.intent_content_hash}), diff ${snapshot.diff_hash}, review revision ${revision.review_commit} (base ${revision.base_head}, tree ${revision.review_tree}, manifest ${revision.manifest_digest}), state ${snapshot.lifecycle}:${snapshot.artifact_state}.` : `Intent revision ${snapshot.intent_revision} (hash ${snapshot.intent_content_hash}), diff ${snapshot.diff_hash}, review bundle ${snapshot.review_bundle_digest}, state ${snapshot.lifecycle}:${snapshot.artifact_state}.`,
-    ...selfServedScopeLines(options.selfServedScopeAdditions),
     ...reviewDeltaLines(snapshot.review_delta),
     "Acceptance assertions:",
     acceptance,
@@ -9584,7 +9501,7 @@ function buildReviewSnapshotPrompt(snapshot, evidencePath, options = {}) {
   ].join(`
 `);
 }
-function buildReviewPrompt(snapshot, evidencePath, options = {}) {
+function buildReviewPrompt(snapshot, evidencePath) {
   if (snapshot.role !== "review")
     throw new Error("native review prompt requires review role");
   const digest = snapshotDigest(snapshot);
@@ -9600,7 +9517,7 @@ function buildReviewPrompt(snapshot, evidencePath, options = {}) {
   return [
     rolePacket.prompt,
     ...STATIC_REVIEW_RULES,
-    buildReviewSnapshotPrompt(snapshot, evidencePath, options)
+    buildReviewSnapshotPrompt(snapshot, evidencePath)
   ].join(`
 `);
 }
@@ -10219,14 +10136,11 @@ class AssuranceCoordinator {
         ensureOperationLive();
         const reviewEvidence = review.reviewManifest ?? review.reviewBundle;
         const workload = classifyReviewWorkload(review.snapshot, reviewEvidence);
-        const promptOptions = {
-          selfServedScopeAdditions: scopeAdditionsFromHistory((await this.ports.readTaskRecord(ctx.cwd, taskId)).record?.history ?? [])
-        };
         hostReservation = this.ports.host.prepareReview({
           taskId,
           operationId,
-          prompt: buildReviewPrompt(review.snapshot, evidence.path, promptOptions),
-          snapshotPrompt: buildReviewSnapshotPrompt(review.snapshot, evidence.path, promptOptions),
+          prompt: buildReviewPrompt(review.snapshot, evidence.path),
+          snapshotPrompt: buildReviewSnapshotPrompt(review.snapshot, evidence.path),
           evidencePath: evidence.path,
           maxTurns: reviewTurnBudget(workload, reviewChangedPathCount(reviewEvidence))
         });
@@ -10476,7 +10390,6 @@ var init_coordinator = __esm(() => {
   init_assurance_projection();
   init_workspace_scope();
   init_plugin_source_skew();
-  init_intent();
   init_lane_workspace();
   init_batch_preflight();
   init_batch_state();
@@ -14928,13 +14841,11 @@ async function authorizeBatch(options) {
     scope_conflicts: projection.scope_conflicts
   };
   let requestId = null;
-  let revisionDelegation;
   if (!reuseAuthorization) {
     const decision = await options.gate(facts);
     if (decision.kind === "host_rejection")
       return { outcome: "host_rejection", value: decision.value };
     requestId = decision.request_id;
-    revisionDelegation = decision.delegate_revisions === true;
   }
   const drift = await projectBatchDrift({
     root,
@@ -14980,8 +14891,7 @@ async function authorizeBatch(options) {
     batch_id: batchId,
     reuse_authorization: reuseAuthorization,
     reuse_blockers: reuseBlockers,
-    binding,
-    ...revisionDelegation !== undefined ? { revision_delegation: revisionDelegation } : {}
+    binding
   };
 }
 function unsettledChildScopes(root, children) {
@@ -15020,7 +14930,7 @@ init_batch_preflight();
 init_batch_state();
 import { randomUUID as randomUUID12 } from "node:crypto";
 import { existsSync as existsSync18, readdirSync as readdirSync10, realpathSync as realpathSync19 } from "node:fs";
-import { join as join31 } from "node:path";
+import { join as join30 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
@@ -16903,9 +16813,9 @@ init_storage();
 init_intent();
 init_canary_application();
 init_authority_port();
-import { existsSync as existsSync17, readFileSync as readFileSync21, writeFileSync as writeFileSync13 } from "node:fs";
-import { execFileSync as execFileSync11 } from "node:child_process";
-import { join as join30 } from "node:path";
+import { existsSync as existsSync17, readFileSync as readFileSync21, writeFileSync as writeFileSync12 } from "node:fs";
+import { execFileSync as execFileSync10 } from "node:child_process";
+import { join as join29 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/enrollment_authority.ts
 var ENROLLMENT_CAPABILITY_BRAND = Symbol.for("assurance-kernel.enrollment-capability-brand");
@@ -17449,141 +17359,21 @@ init_batch_preflight();
 
 // plugins/immune-brain/runtime/unattended/batch_lanes.ts
 init_batch_authority();
-init_storage();
 init_intent();
-init_risk_floor();
 init_backend_claim();
 init_runtime_contracts();
 init_derived_files();
 init_batch_final_verification();
-import { spawnSync as spawnSync18 } from "node:child_process";
-import { createHash as createHash25 } from "node:crypto";
-import { existsSync as existsSync15, realpathSync as realpathSync18 } from "node:fs";
-import { isAbsolute as isAbsolute8, join as join28 } from "node:path";
-import { readFileSync as readFileSync20 } from "node:fs";
-
-// plugins/immune-brain/runtime/unattended/batch_delegation.ts
-init_assurance_projection();
-init_authority_port();
-init_canary_application();
-init_intent();
-init_spec_binding();
-init_storage();
-init_verdict_authority();
-import { execFileSync as execFileSync10 } from "node:child_process";
-import { join as join27 } from "node:path";
-import { writeFileSync as writeFileSync12 } from "node:fs";
-init_workspace_scope();
-var REVISION_DELEGATION_TEXT = "Optional, off by default: also let the batch coordinator approve a Lane child's breaking Intent revisions that stay inside that child's authorized TaskIntent (acceptance changes, a narrower scope_hint). Widening scope, changing risk, goal or the bound Spec still needs your own confirmation. The grant ends with this batch.";
-var DELEGATED_ACTOR_ID = "batch-coordinator";
-function delegatedConfirmationRef(batchId, grant) {
-  return `delegated-batch:${batchId}@${grant.confirmation_time}`;
-}
-function parseLaneRevision(value) {
-  if (value === undefined || value === null)
-    return;
-  if (typeof value !== "object" || Array.isArray(value))
-    throw new Error("invalid lane_revision: expected an object");
-  const { task_id: taskId, next_intent: nextIntent, ...rest } = value;
-  if (Object.keys(rest).length > 0)
-    throw new Error("invalid lane_revision: unknown field");
-  if (typeof taskId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(taskId))
-    throw new Error("invalid lane_revision: task_id is not a valid task id");
-  const intent = parseTaskIntentV1(nextIntent);
-  if (intent.task_id !== taskId)
-    throw new Error("invalid lane_revision: next_intent belongs to another task");
-  return { task_id: taskId, next_intent: intent };
-}
-function delegatedRevisionRefusal(authorized, current, next, floor) {
-  if (classifyIntentRevision(current, next, floor) !== "breaking")
-    return "only a breaking revision needs this approval; apply a compatible one with revise_intent";
-  if (next.revision <= current.revision)
-    return "the revision number must increase";
-  if (next.goal !== authorized.goal || next.owner !== authorized.owner || next.task_id !== authorized.task_id)
-    return "goal, owner and task identity are outside the delegation";
-  if (next.risk !== authorized.risk || next.risk !== current.risk)
-    return "a risk change is outside the delegation";
-  if ((boundSpecPath(next) ?? null) !== (boundSpecPath(authorized) ?? null))
-    return "a change of the bound Spec is outside the delegation";
-  const allowed = new Set(authorized.scope_hint);
-  const widened = next.scope_hint.filter((entry) => !allowed.has(entry));
-  if (widened.length > 0)
-    return `widening scope_hint is outside the delegation: ${widened.join(", ")}`;
-  return null;
-}
-function applyDelegatedIntentRevision(input) {
-  return (async () => {
-    const { lane_root: root, task_id: taskId, next_intent: nextIntent, now } = input;
-    recoverKernelStoreFollowUps(root, taskId);
-    const record = readTaskRecordRaw(root, taskId).record;
-    const prior = readTaskIntent(root, taskId, record?.intent_ref.path, record?.intent_snapshot);
-    const before = await projectAssurance(root, taskId, taskDeliveryIdentity);
-    if (before.error || before.claim?.task_id !== taskId || before.projection.lifecycle !== "active")
-      throw new Error(`the Lane does not hold an active run of ${taskId}`);
-    const nextHash = canonicalIntentHash(nextIntent);
-    const nextRef = { path: `docs/plans/${taskId}.intent.json`, content_hash: nextHash };
-    const snapshot = captureStagedIntent(root, prior.intent_ref.path);
-    try {
-      writeFileSync12(join27(root, prior.intent_ref.path), `${JSON.stringify(nextIntent, null, 2)}
-`);
-      execFileSync10("git", ["add", "--", prior.intent_ref.path], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
-      const prepared = await projectAssurance(root, taskId, taskDeliveryIdentity);
-      if (prepared.error || prepared.projection.record_revision !== before.projection.record_revision)
-        throw new Error("the Lane's TaskRecord changed while the delegated revision was prepared");
-      const registry = createMutationAuthorityRegistry();
-      const action = capabilityActionFor({
-        op: "approve_breaking_intent_revision",
-        task_id: taskId,
-        at: now,
-        actor_id: DELEGATED_ACTOR_ID,
-        next_intent: nextIntent,
-        next_intent_ref: nextRef
-      });
-      const binding = {
-        authority_kind: "user",
-        task_id: taskId,
-        ...prepared.projection.run_id ? { run_id: prepared.projection.run_id } : {},
-        action_digest: digestOfAction(action),
-        expected_record_hash: prepared.projection.record_revision,
-        intent_revision: nextIntent.revision,
-        intent_content_hash: nextHash,
-        diff_hash: prepared.projection.diff_hash,
-        actor_id: DELEGATED_ACTOR_ID,
-        confirmation_ref: input.confirmation_ref,
-        findings_digest: null
-      };
-      const capability = registry.issue(binding);
-      const result = createCanaryApplication(registry).execute({
-        root,
-        task_id: taskId,
-        operation: {
-          op: "approve_breaking_intent_revision",
-          capability,
-          actor_id: DELEGATED_ACTOR_ID,
-          next_intent: nextIntent,
-          next_intent_ref: nextRef
-        },
-        prior_intent_token: prior.token,
-        diffProvider: taskDeliveryIdentity,
-        now
-      });
-      stagePlanningArtifactTransition(root, result.record);
-      return { from_revision: prior.intent.revision, to_revision: nextIntent.revision, intent_content_hash: nextHash };
-    } catch (error) {
-      const current = readTaskRecordRaw(root, taskId);
-      if (current.record?.intent_snapshot.revision === prior.intent.revision)
-        restoreStagedIntent(root, snapshot);
-      throw error;
-    }
-  })();
-}
-
-// plugins/immune-brain/runtime/unattended/batch_lanes.ts
 init_github_issue_tracker();
 init_local_initiative();
 init_batch_integration();
 init_batch_ref();
 init_batch_worktrees();
+import { spawnSync as spawnSync18 } from "node:child_process";
+import { createHash as createHash25 } from "node:crypto";
+import { existsSync as existsSync15, realpathSync as realpathSync18 } from "node:fs";
+import { isAbsolute as isAbsolute8, join as join27 } from "node:path";
+import { readFileSync as readFileSync20 } from "node:fs";
 
 // plugins/immune-brain/runtime/unattended/batch_kernel_port.ts
 init_batch_git();
@@ -17769,7 +17559,7 @@ function laneRuntimeDir(root, explicit) {
   if (explicit)
     return explicit;
   try {
-    const manifest = JSON.parse(readFileSync20(join28(root, "package.json"), "utf8"));
+    const manifest = JSON.parse(readFileSync20(join27(root, "package.json"), "utf8"));
     return manifest.name === "immune-brain" ? root : null;
   } catch {
     return null;
@@ -17984,61 +17774,6 @@ var TERMINAL_NEXT_ACTIONS = {
   running: "The batch is still running; no terminal report is due yet.",
   prepared: "The batch is prepared but not started."
 };
-function resealDelegatedRevision(input, record, taskId) {
-  const identities = record.intent_identities;
-  const recorded = identities?.[taskId];
-  if (!identities || !recorded)
-    return false;
-  let integrated;
-  try {
-    const read = readTaskIntent(input.root, taskId, recorded.intent_path);
-    integrated = { revision: read.intent.revision, content_hash: read.content_hash, authority_hash: intentAuthorityHash(read.intent) };
-  } catch {
-    return false;
-  }
-  const binds = recorded.intent_authority_hash !== undefined;
-  if (binds ? integrated.authority_hash === recorded.intent_authority_hash : integrated.revision === recorded.intent_revision && integrated.content_hash === recorded.intent_content_hash)
-    return false;
-  const delegated = [...record.delegated_revisions ?? []].reverse().find((r) => r.task_id === taskId);
-  if (!delegated || delegated.to_revision !== integrated.revision || delegated.intent_content_hash !== integrated.content_hash)
-    return false;
-  const next = { ...identities, [taskId]: {
-    ...recorded,
-    intent_revision: integrated.revision,
-    intent_content_hash: integrated.content_hash,
-    ...binds ? { intent_authority_hash: integrated.authority_hash } : {}
-  } };
-  if (record.children.some((child) => !next[child.task_id]))
-    return false;
-  let toDigest;
-  try {
-    toDigest = computeBatchPlanDigest(record.children.map((child) => {
-      const identity = next[child.task_id];
-      return {
-        task_id: child.task_id,
-        intent_path: identity.intent_path,
-        intent_revision: identity.intent_revision,
-        intent_content_hash: identity.intent_content_hash,
-        ...identity.intent_authority_hash ? { intent_authority_hash: identity.intent_authority_hash } : {},
-        blocked_by: child.blocked_by
-      };
-    }));
-  } catch {
-    return false;
-  }
-  record.reseals = [...record.reseals ?? [], {
-    at: input.now,
-    task_id: taskId,
-    from_digest: record.plan_digest,
-    to_digest: toDigest,
-    intent_revision: integrated.revision,
-    intent_content_hash: integrated.content_hash,
-    ...binds ? { intent_authority_hash: integrated.authority_hash } : {}
-  }];
-  record.intent_identities = next;
-  record.plan_digest = toDigest;
-  return true;
-}
 function laneAuthorityChange(record, taskId, lanePath) {
   const recorded = record.intent_identities?.[taskId];
   if (!recorded?.intent_authority_hash)
@@ -18050,9 +17785,6 @@ function laneAuthorityChange(record, taskId, lanePath) {
     return null;
   }
   if (intentAuthorityHash(read.intent) === recorded.intent_authority_hash)
-    return null;
-  const delegated = [...record.delegated_revisions ?? []].reverse().find((r) => r.task_id === taskId);
-  if (delegated && delegated.to_revision === read.intent.revision && delegated.intent_content_hash === read.content_hash)
     return null;
   return `batch_child_authority_changed: ${taskId}`;
 }
@@ -18105,7 +17837,6 @@ function laneReport(record, reason, nextAction, extra = {}) {
     ...extra.final ? { final_verification: extra.final } : {},
     ...record.interventions?.length ? { interventions: record.interventions } : {},
     ...extra.instruction ? { lane_instruction: extra.instruction } : {},
-    ...extra.revision ? { lane_revision: extra.revision } : {},
     ...record.delegated_revisions?.length ? { delegated_revisions: record.delegated_revisions } : {},
     ...record.reseals?.length ? { reseals: record.reseals } : {},
     next_action: nextAction || (TERMINAL_NEXT_ACTIONS[record.batch_state] ?? "Inspect the batch run state."),
@@ -18300,15 +18031,8 @@ async function runLaneBatch(input, persisted) {
       budget: input.budget,
       max_parallel: limit,
       now: input.now,
-      ...input.final_verification?.length ? { final_verification: input.final_verification } : {},
-      ...input.revision_delegation ? { revision_delegation: { confirmation_time: input.confirmation_time } } : {}
+      ...input.final_verification?.length ? { final_verification: input.final_verification } : {}
     });
-  }
-  if (persisted && input.revision_delegation !== undefined) {
-    const { revision_delegation: _prior, ...rest } = record;
-    record = input.revision_delegation ? { ...rest, revision_delegation: { confirmation_time: input.confirmation_time } } : rest;
-    if (record.batch_state !== "prepared")
-      record = writeBatchLaneRunState(input.root, record);
   }
   const persist = () => {
     record = writeBatchLaneRunState(input.root, record);
@@ -18362,7 +18086,7 @@ async function runLaneBatch(input, persisted) {
     record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "released" } : c);
     persist();
   }
-  const lineage = existsSync15(join28(input.root, ".git")) ? classifyBatchLineage({
+  const lineage = existsSync15(join27(input.root, ".git")) ? classifyBatchLineage({
     root: input.root,
     branch: record.branch ?? "",
     expectedHead: expectedBatchHead(record),
@@ -18407,49 +18131,6 @@ async function runLaneBatch(input, persisted) {
       }];
       persist();
       instruction = { task_id: request.task_id, kind: request.kind, accepted: true, reason: null };
-    }
-  }
-  let revision;
-  if (input.lane_revision) {
-    const request = input.lane_revision;
-    const fallback = "the Executor requests approve_breaking_intent_revision through its own native gate for the user to answer";
-    const refuseRevision = (reason) => {
-      revision = { task_id: request.task_id, accepted: false, reason: `batch_delegation_refused: ${reason}`, fallback };
-    };
-    const child = record.children.find((c) => c.task_id === request.task_id);
-    const planChild = input.children.find((c) => c.task_id === request.task_id);
-    const grant = record.revision_delegation;
-    if (!grant)
-      refuseRevision("this batch's confirmation did not delegate Intent revisions");
-    else if (!child?.lane || child.state !== "enrolled")
-      refuseRevision(`${request.task_id} is not running in its Lane`);
-    else {
-      try {
-        const authorized = readTaskIntent(input.root, request.task_id, planChild?.intent_path ?? undefined).intent;
-        const current = readTaskRecordRaw(child.lane.path, request.task_id).record?.intent_snapshot;
-        if (!current)
-          throw new Error(`the Lane has no TaskRecord for ${request.task_id}`);
-        const floor = readRiskFloor(child.lane.path);
-        const nextIntent = applyScopeRiskFloor(request.next_intent, floor);
-        const outOfBounds = delegatedRevisionRefusal(authorized, current, nextIntent, floor);
-        if (outOfBounds)
-          refuseRevision(outOfBounds);
-        else {
-          const confirmationRef = delegatedConfirmationRef(record.batch_id, grant);
-          const applied = await applyDelegatedIntentRevision({
-            lane_root: child.lane.path,
-            task_id: request.task_id,
-            next_intent: nextIntent,
-            confirmation_ref: confirmationRef,
-            now: input.now
-          });
-          record.delegated_revisions = [...record.delegated_revisions ?? [], { at: input.now, task_id: request.task_id, ...applied, confirmation_ref: confirmationRef }];
-          persist();
-          revision = { task_id: request.task_id, accepted: true, reason: null };
-        }
-      } catch (error) {
-        refuseRevision(error instanceof Error ? error.message : String(error));
-      }
     }
   }
   const refusals = [];
@@ -18655,8 +18336,6 @@ async function runLaneBatch(input, persisted) {
       record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "integrated", commit, reason: null } : c);
       record.commits = [...record.commits, commit];
       persist();
-      if (resealDelegatedRevision(input, record, child.task_id))
-        persist();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const reason = error instanceof BatchIntegrationError ? error.reason : "batch_integration_conflict";
@@ -18777,7 +18456,7 @@ async function runLaneBatch(input, persisted) {
     if (final)
       record.final_verification_result = final;
     persist();
-    return finalizeLane(input.root, record, final && !final.passed ? `all enrollable children integrated; final verification did not pass: ${[...final.results, ...final.derived_checks ?? []].filter((r) => !r.passed).map((r) => r.command).join(", ")}` : "all enrollable children integrated", final && !final.passed ? "Every child is integrated but the batch did not pass its final verification; inspect the failing commands against the delivered content. Integrated commits were not rolled back." : "", { handoffs: releaseHandoffs(input, record, lanes), refusals, tracker, instruction, revision, ...final ? { final } : {} });
+    return finalizeLane(input.root, record, final && !final.passed ? `all enrollable children integrated; final verification did not pass: ${[...final.results, ...final.derived_checks ?? []].filter((r) => !r.passed).map((r) => r.command).join(", ")}` : "all enrollable children integrated", final && !final.passed ? "Every child is integrated but the batch did not pass its final verification; inspect the failing commands against the delivered content. Integrated commits were not rolled back." : "", { handoffs: releaseHandoffs(input, record, lanes), refusals, tracker, instruction, ...final ? { final } : {} });
   }
   const handoffs = [];
   for (const child of record.children) {
@@ -18820,7 +18499,7 @@ async function runLaneBatch(input, persisted) {
     const parked = record.children.some((c) => c.state === "needs_human" || c.state === "skipped_blocked");
     record.batch_state = parked ? "needs_human" : overBudget ? "budget_stopped" : "needs_human";
     persist();
-    return finalizeLane(input.root, record, parkedMessage ?? (parked ? "a parked child needs a human decision" : overBudget ? `max_children budget exhausted (${record.budget.max_children})` : "no child can start"), "", { refusals, tracker, instruction, revision });
+    return finalizeLane(input.root, record, parkedMessage ?? (parked ? "a parked child needs a human decision" : overBudget ? `max_children budget exhausted (${record.budget.max_children})` : "no child can start"), "", { refusals, tracker, instruction });
   }
   if (!overBudget && !isParentBranch(record.branch)) {
     for (const taskId of startable) {
@@ -18835,9 +18514,9 @@ async function runLaneBatch(input, persisted) {
     }
   }
   if (reviewOpen.length > 0) {
-    return laneReport(record, reviewOpen.length === 1 ? `child ${reviewOpen[0]} holds an open Review reservation` : `children ${reviewOpen.join(", ")} hold open Review reservations`, "Submit each reserved foreground Review verdict in its own Lane, then call start_unattended_batch again to continue.", { handoffs, refusals, tracker, instruction, revision });
+    return laneReport(record, reviewOpen.length === 1 ? `child ${reviewOpen[0]} holds an open Review reservation` : `children ${reviewOpen.join(", ")} hold open Review reservations`, "Submit each reserved foreground Review verdict in its own Lane, then call start_unattended_batch again to continue.", { handoffs, refusals, tracker, instruction });
   }
-  return laneReport(record, null, handoffs.some((h) => h.role === "coordinator") ? "For each coordinator handoff, read every round's findings in that Lane, start a new Lane session and send one design-level correction as lane_instruction kind correction; run the other handoffs as usual." : handoffs.some((h) => h.role === "lane-steward" && h.action === "provision") ? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers." : "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.", { handoffs, refusals, tracker, instruction, revision });
+  return laneReport(record, null, handoffs.some((h) => h.role === "coordinator") ? "For each coordinator handoff, read every round's findings in that Lane, start a new Lane session and send one design-level correction as lane_instruction kind correction; run the other handoffs as usual." : handoffs.some((h) => h.role === "lane-steward" && h.action === "provision") ? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers." : "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.", { handoffs, refusals, tracker, instruction });
 }
 
 // plugins/immune-brain/runtime/unattended/batch_runner.ts
@@ -18929,7 +18608,7 @@ init_batch_reasons();
 init_batch_preflight();
 init_batch_state();
 import { existsSync as existsSync16 } from "node:fs";
-import { join as join29 } from "node:path";
+import { join as join28 } from "node:path";
 var SERIAL_IN_FLIGHT = new Set(["enrolled", "settled"]);
 var LANE_IN_FLIGHT = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
 var RETIRE_REASON = "Retired by an explicit literal-user disposition: the batch plan moved past this record, so its authorization could neither reconfirm nor continue. " + "Recorded child commits, child states and the batch branch are preserved as evidence. " + "Children this batch never executed carry no commit, no batch trailer and no approval; nothing infers their delivery from this record.";
@@ -18949,7 +18628,7 @@ function laneChildLifecycleOf(root, child) {
   if (!lane)
     return kernelLifecycleOf(root, child.task_id);
   try {
-    if (!existsSync16(join29(lane.path, KERNEL_DB_RELATIVE)))
+    if (!existsSync16(join28(lane.path, KERNEL_DB_RELATIVE)))
       return null;
     if (readActiveClaimTaskId(lane.path) === child.task_id)
       return null;
@@ -19371,8 +19050,8 @@ class ClaudeRuntime {
     try {
       if (!selectedClaudeParent(meta.toolCallId, this.cwd, slug))
         return result;
-      if (existsSync17(join30(this.cwd, ".imm", "audit", taskId)))
-        execFileSync11("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
+      if (existsSync17(join29(this.cwd, ".imm", "audit", taskId)))
+        execFileSync10("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch, ...batch.state === "started" && batch.report?.tracker ? { tracker: batch.report.tracker } : {} };
     } catch (error) {
@@ -19473,7 +19152,7 @@ class ClaudeRuntime {
       throw new Error("approve_breaking_intent_revision requires next_intent");
     const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
     const nextIntentRef = nextIntent ? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash } : undefined;
-    const sidecar = nextIntent ? join30(this.cwd, priorIntent.intent_ref.path) : undefined;
+    const sidecar = nextIntent ? join29(this.cwd, priorIntent.intent_ref.path) : undefined;
     const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
     const restoreStagedIntent2 = () => {
       if (!stagedSnapshot)
@@ -19484,9 +19163,9 @@ class ClaudeRuntime {
     let gate;
     try {
       if (sidecar && nextIntent) {
-        writeFileSync13(sidecar, `${JSON.stringify(nextIntent, null, 2)}
+        writeFileSync12(sidecar, `${JSON.stringify(nextIntent, null, 2)}
 `);
-        execFileSync11("git", ["add", "--", priorIntent.intent_ref.path], { cwd: this.cwd, stdio: ["ignore", "pipe", "pipe"] });
+        execFileSync10("git", ["add", "--", priorIntent.intent_ref.path], { cwd: this.cwd, stdio: ["ignore", "pipe", "pipe"] });
         const preparedRecord = await readTaskRecordRaw(this.cwd, taskId);
         if (!preparedRecord.record) {
           throw new NativeAuthorityError("workspace_changed", "TaskRecord changed before the breaking revision digest");
@@ -19602,16 +19281,14 @@ class ClaudeRuntime {
     const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: parseProjectTaskIntent(ctx.cwd, input.operation.next_intent) } : input.operation;
     const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
     const nextScope = operation.op === "revise_intent" ? operation.next_intent.scope_hint : undefined;
-    if (nextScope)
-      assertScopeAdditionsAreFiles(ctx.cwd, priorIntent.intent.scope_hint, nextScope);
-    const sidecar = join30(ctx.cwd, priorIntent.intent_ref.path);
+    const sidecar = join29(ctx.cwd, priorIntent.intent_ref.path);
     const priorBytes = operation.op === "revise_intent" ? readFileSync21(sidecar) : null;
     const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
     try {
       if (priorBytes) {
-        writeFileSync13(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}
+        writeFileSync12(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}
 `);
-        execFileSync11("git", ["add", "--", priorIntent.intent_ref.path], {
+        execFileSync10("git", ["add", "--", priorIntent.intent_ref.path], {
           cwd: ctx.cwd,
           stdio: ["ignore", "pipe", "pipe"]
         });
@@ -19637,6 +19314,8 @@ class ClaudeRuntime {
     }
   }
   async startUnattendedBatch(initiativeSlug, meta, options = {}) {
+    if (Object.hasOwn(options, "lane_revision"))
+      throw new Error("unknown parameter: lane_revision");
     return this.startPreparedBatch(initiativeSlug, meta, options);
   }
   async startPreparedBatch(initiativeSlug, meta, options) {
@@ -19791,8 +19470,7 @@ class ClaudeRuntime {
                   max_parallel: options.max_parallel,
                   parallel_groups: facts.parallel_groups,
                   serialized: facts.scope_conflicts,
-                  ...options.final_verification ? { final_verification: options.final_verification } : {},
-                  offer_revision_delegation: true
+                  ...options.final_verification ? { final_verification: options.final_verification } : {}
                 }
               } : {},
               ...facts.reuse_blockers.length > 0 ? {
@@ -19836,8 +19514,7 @@ class ClaudeRuntime {
           return { kind: "host_rejection", value: batchReason("confirmation_no_decision") };
         return {
           kind: "confirmed",
-          request_id: confirmationResult.requestId,
-          ...options.max_parallel !== undefined && confirmationResult.delegateRevisions ? { delegate_revisions: true } : {}
+          request_id: confirmationResult.requestId
         };
       },
       confirmationRef: ({ batch_id, request_id }) => confirmationRef({
@@ -19908,9 +19585,7 @@ class ClaudeRuntime {
       ...options.max_parallel !== undefined ? {
         max_parallel: options.max_parallel,
         tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug),
-        ...options.lane_instruction ? { lane_instruction: options.lane_instruction } : {},
-        ...options.lane_revision ? { lane_revision: options.lane_revision } : {},
-        ...authorization.revision_delegation !== undefined ? { revision_delegation: authorization.revision_delegation } : {}
+        ...options.lane_instruction ? { lane_instruction: options.lane_instruction } : {}
       } : {},
       ...options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}
     });
@@ -20064,12 +19739,6 @@ function listMcpTools() {
               },
               required: ["task_id", "text", "session_state"],
               additionalProperties: false
-            },
-            lane_revision: {
-              type: "object",
-              properties: { task_id: { type: "string" }, next_intent: { type: "object" } },
-              required: ["task_id", "next_intent"],
-              additionalProperties: false
             }
           } : {}
         } : {
@@ -20167,6 +19836,8 @@ function createMcpRuntime(options = {}) {
       if (observedSession)
         hookSessionId = observedSession;
       if (name === "start_unattended_batch") {
+        if (Object.hasOwn(args, "lane_revision"))
+          throw new Error("unknown parameter: lane_revision");
         const initiativeSlug = String(args.initiative_slug ?? "");
         if (!initiativeSlug)
           throw new Error("initiative_slug is required");
@@ -20191,15 +19862,13 @@ function createMcpRuntime(options = {}) {
         };
         const laneOffers = parseLaneOffers(args.lane_offers);
         const laneInstruction = parseLaneInstruction(args.lane_instruction);
-        const laneRevision = parseLaneRevision(args.lane_revision);
-        const maxParallel = resolveLaneParallel(options.cwd ?? process.cwd(), initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction ?? laneRevision);
+        const maxParallel = resolveLaneParallel(options.cwd ?? process.cwd(), initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction);
         const finalVerification = parseFinalVerification(args.final_verification);
         return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
           ...maxParallel !== undefined ? { max_parallel: maxParallel } : {},
           ...laneOffers !== undefined ? { lane_offers: laneOffers } : {},
           ...finalVerification !== undefined ? { final_verification: finalVerification } : {},
-          ...laneInstruction !== undefined ? { lane_instruction: laneInstruction } : {},
-          ...laneRevision !== undefined ? { lane_revision: laneRevision } : {}
+          ...laneInstruction !== undefined ? { lane_instruction: laneInstruction } : {}
         });
       }
       if (name === "retire_stale_batch") {
@@ -20511,8 +20180,7 @@ ${b.lane_mode.parallel_groups.map((group) => `  - ${group.join(", ")}`).join(`
       b?.lane_mode && b.lane_mode.serialized.length > 0 ? `Serialized by overlapping scope (${b.lane_mode.serialized.length}):
 ${b.lane_mode.serialized.map((c) => `  - ${c.task_id} after ${c.overlaps_with.join(", ")}`).join(`
 `)}` : null,
-      b?.final_verification ? `Final verification: ${b.final_verification.join("; ")}` : null,
-      b?.lane_mode?.offer_revision_delegation ? REVISION_DELEGATION_TEXT : null
+      b?.final_verification ? `Final verification: ${b.final_verification.join("; ")}` : null
     ].filter(Boolean);
     return {
       mode: "form",
@@ -20520,17 +20188,7 @@ ${b.lane_mode.serialized.map((c) => `  - ${c.task_id} after ${c.overlaps_with.jo
 
 ${details.join(`
 `)}`,
-      requestedSchema: b?.lane_mode?.offer_revision_delegation ? {
-        type: "object",
-        properties: {
-          delegate_in_lane_revisions: {
-            type: "boolean",
-            title: "Delegate in-envelope Lane Intent revisions to the batch coordinator",
-            description: REVISION_DELEGATION_TEXT,
-            default: false
-          }
-        }
-      } : { type: "object", properties: {} }
+      requestedSchema: { type: "object", properties: {} }
     };
   }
   if (input.reworkExits) {
@@ -20639,7 +20297,6 @@ async function serveStdio(options = {}) {
       if (action !== "accept" && action !== "decline" && action !== "cancel") {
         throw new NativeAuthorityError("correlation_missing", "MCP elicitation returned an invalid action");
       }
-      let delegateRevisions = false;
       let reworkChoice;
       if (action === "accept" && input.reworkExits) {
         const parsed = parseReworkChoice(input.reworkExits, result.content);
@@ -20649,18 +20306,15 @@ async function serveStdio(options = {}) {
         reworkChoice = parsed;
       } else if (action === "accept") {
         const content = result.content;
-        const offered = input.operation === "start_unattended_batch" && input.batchDetails?.lane_mode?.offer_revision_delegation === true;
         const keys = typeof content === "object" && content !== null && !Array.isArray(content) ? Object.keys(content) : null;
-        const valid = keys !== null && (keys.length === 0 || offered && keys.length === 1 && keys[0] === "delegate_in_lane_revisions" && typeof content.delegate_in_lane_revisions === "boolean");
+        const valid = keys !== null && keys.length === 0;
         if (!valid) {
           throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the requested schema");
         }
-        delegateRevisions = offered && content.delegate_in_lane_revisions === true;
       }
       return {
         decision: action,
         requestId,
-        ...delegateRevisions ? { delegateRevisions: true } : {},
         ...reworkChoice ? { reworkChoice } : {}
       };
     } finally {
@@ -20858,7 +20512,7 @@ async function runHook() {
     return;
   const cwd = typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
   if (!readActiveClaimTaskId(cwd)) {
-    const batchesDir = join31(cwd, ".imm", "state", "batches");
+    const batchesDir = join30(cwd, ".imm", "state", "batches");
     const activeBatch = existsSync18(batchesDir) && readdirSync10(batchesDir).some((file) => {
       if (!file.endsWith(".json") || file.endsWith(".report.json"))
         return false;

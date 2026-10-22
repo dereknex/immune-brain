@@ -24,7 +24,6 @@ import { projectAssurance, type AssuranceProjectionResult } from "../kernel/assu
 import { taskStatusIdentity } from "../workspace_scope";
 import { pluginSourceSkewWarning, type PluginSourceSkewWarning } from "../plugin_source_skew";
 import type { TaskIntentIdentityToken } from "../kernel/intent_token_registry";
-import { scopeAdditionsFromHistory } from "../kernel/intent";
 import type { AssuranceHostPort, HostReviewReservation } from "./host_port";
 import type { GithubTrackerResult as GithubTrackerProjectionResult } from "../github_issue_tracker";
 import { isLaneWorkspaceForTask } from "../unattended/lane_workspace";
@@ -634,22 +633,6 @@ export function snapshotDigest(snapshot: SnapshotDescriptor): string {
 	return `sha256:${createHash("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
 }
 
-export interface ReviewPromptOptions {
-	/**
-	 * Paths added by compatible scope revisions, derived from Kernel history.
-	 * The user confirmed none of them, so Review is told to treat each as task
-	 * work and to check it against the goal (ADR 0021).
-	 */
-	selfServedScopeAdditions?: readonly string[];
-}
-
-function selfServedScopeLines(added: readonly string[] | undefined): string[] {
-	if (!added?.length) return [];
-	return [
-		`Self-served scope additions (added by compatible Intent revisions with no user confirmation; judge each against the goal and its acceptance, not as pre-approved): ${added.join(", ")}`,
-	];
-}
-
 /**
  * The per-dispatch Review facts: which evidence to read, which revision it pins,
  * what the acceptances assert, and the exact verdict shapes.
@@ -672,7 +655,6 @@ function reviewDeltaLines(delta: SnapshotDescriptor["review_delta"]): string[] {
 export function buildReviewSnapshotPrompt(
 	snapshot: SnapshotDescriptor,
 	evidencePath?: string,
-	options: ReviewPromptOptions = {},
 ): string {
 	if (snapshot.role !== "review") throw new Error("native review prompt requires review role");
 	const acceptance = snapshot.acceptance.map((item) => `- ${item.id}: ${item.assertion}`).join("\n");
@@ -698,7 +680,6 @@ export function buildReviewSnapshotPrompt(
 		revision
 			? `Intent revision ${snapshot.intent_revision} (hash ${snapshot.intent_content_hash}), diff ${snapshot.diff_hash}, review revision ${revision.review_commit} (base ${revision.base_head}, tree ${revision.review_tree}, manifest ${revision.manifest_digest}), state ${snapshot.lifecycle}:${snapshot.artifact_state}.`
 			: `Intent revision ${snapshot.intent_revision} (hash ${snapshot.intent_content_hash}), diff ${snapshot.diff_hash}, review bundle ${snapshot.review_bundle_digest}, state ${snapshot.lifecycle}:${snapshot.artifact_state}.`,
-		...selfServedScopeLines(options.selfServedScopeAdditions),
 		...reviewDeltaLines(snapshot.review_delta),
 		"Acceptance assertions:", acceptance,
 		`PASS shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>","inspected_paths":["<every changed path of the reviewed change set>"]}}`,
@@ -716,7 +697,6 @@ export function buildReviewSnapshotPrompt(
 export function buildReviewPrompt(
 	snapshot: SnapshotDescriptor,
 	evidencePath?: string,
-	options: ReviewPromptOptions = {},
 ): string {
 	if (snapshot.role !== "review") throw new Error("native review prompt requires review role");
 	const digest = snapshotDigest(snapshot);
@@ -732,7 +712,7 @@ export function buildReviewPrompt(
 	return [
 		rolePacket.prompt,
 		...STATIC_REVIEW_RULES,
-		buildReviewSnapshotPrompt(snapshot, evidencePath, options),
+		buildReviewSnapshotPrompt(snapshot, evidencePath),
 	].join("\n");
 }
 
@@ -1392,17 +1372,11 @@ export class AssuranceCoordinator {
 				ensureOperationLive();
 				const reviewEvidence = review.reviewManifest ?? review.reviewBundle!;
 				const workload = classifyReviewWorkload(review.snapshot, reviewEvidence);
-				// Derived from Kernel history on every dispatch; nothing is stored.
-				const promptOptions: ReviewPromptOptions = {
-					selfServedScopeAdditions: scopeAdditionsFromHistory(
-						(await this.ports.readTaskRecord(ctx.cwd, taskId)).record?.history ?? [],
-					),
-				};
 				hostReservation = this.ports.host.prepareReview({
 					taskId,
 					operationId,
-					prompt: buildReviewPrompt(review.snapshot, evidence.path, promptOptions),
-					snapshotPrompt: buildReviewSnapshotPrompt(review.snapshot, evidence.path, promptOptions),
+					prompt: buildReviewPrompt(review.snapshot, evidence.path),
+					snapshotPrompt: buildReviewSnapshotPrompt(review.snapshot, evidence.path),
 					evidencePath: evidence.path,
 					maxTurns: reviewTurnBudget(workload, reviewChangedPathCount(reviewEvidence)),
 				});

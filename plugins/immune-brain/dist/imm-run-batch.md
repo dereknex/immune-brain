@@ -156,16 +156,16 @@ and reports the attempt in `tracker_observations`. A parked or lost child is
 never integrated, so its Issue stays open; an explicit stop inside a Lane still
 projects `not planned` at once.
 
-The lane batch confirmation offers one opt-in choice, off by default: delegate
-to the coordinator the approval of each Lane child's breaking Intent revisions
-that stay inside that child's TaskIntent as authorized for the batch (ADR 0018).
-The answer is recorded on the batch record as `revision_delegation`; a batch
-confirmed without it behaves exactly as before, and the grant ends with that
-batch — a terminal, retired or later batch never uses it. When an integrated
-child's TaskIntent equals the last revision applied under that grant, the runner
-reseals `plan_digest` and records both digests in `reseals`, so later children
-continue without retiring the batch. Any other Intent change still fails closed
-as `plan_changed` and takes the ADR 0016 retirement path.
+Frozen acceptance remains the authority subject (ADR 0026). A Lane child whose
+acceptance changes pauses for the literal user's native gate; the coordinator
+cannot approve revisions or reseal `plan_digest` (ADR 0028). There is no
+`lane_revision` input or delegation checkbox. Existing v2 records containing
+`revision_delegation`, `delegated_revisions` or `reseals` remain readable and
+retireable as historical evidence; those fields grant no current authority.
+`scope_hint` is an estimate: disclose changed paths beyond it as `beyond_estimate`
+instead of revising scope. A scope-only revision keeping the bound Spec path is
+compatible; a changed authority subject parks the child rather than resealing
+the batch.
 On either Host, status queried with the Parent slug as `task_id` reports the
 persisted batch in `batch.record`, including v1 identity, state and child
 progress, even without an enrolled Parent TaskRecord. This evidence-only read

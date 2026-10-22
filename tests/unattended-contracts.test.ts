@@ -478,7 +478,7 @@ describe("unattended batch contract text", () => {
 			// The recorded verification outcome and the bounded Parent repair tasks it produced.
 			"final_verification_result",
 			"repair_tasks",
-			// ADR 0018: the user's recorded delegation answer and its effects.
+			// ADR 0028: legacy delegation evidence stays readable, with no current grant.
 			"revision_delegation",
 			"delegated_revisions",
 			"intent_identities",
@@ -510,6 +510,23 @@ describe("unattended batch contract text", () => {
 			"created_at",
 			"updated_at",
 		]);
+	});
+
+	it("documents frozen acceptance and retains delegation fields only as legacy evidence (ADR 0028)", () => {
+		const batch = normalized(BATCH_CONTRACT);
+		expect(batch).toContain("Frozen acceptance remains the authority subject (ADR 0026)");
+		expect(batch).toContain("acceptance changes pauses for the literal user's native gate");
+		expect(batch).toContain("cannot approve revisions or reseal `plan_digest`");
+		expect(batch).toContain("those fields grant no current authority");
+		expect(batch).toContain("scope-only revision keeping the bound Spec path is compatible");
+		const state = read("plugins/immune-brain/runtime/unattended/batch_state.ts");
+		expect(state).toContain("Legacy v2 fields, preserved for reading and retirement only (D20)");
+		for (const host of [
+			"plugins/immune-brain/runtime/claude/mcp_server.ts",
+			"plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+		]) {
+			expect(read(host)).not.toContain("lane_revision:");
+		}
 	});
 
 	it("keeps the edited suites free of skipped, focused, or vacuous tests", () => {

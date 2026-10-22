@@ -1,7 +1,6 @@
-// Pins the same-directory scope rule (ADR 0021) in the contract text a Loop
-// owner, a Planner and an Executor actually read. Behavior is covered by
-// kernel-intent-v2, scope-revision-envelope and the coordinator tests; this
-// file only guards that the stated rule and its mirror cannot drift apart.
+// Pins ADR 0028 in the authoring sources consumed by Loop, Planner and Executor.
+// Behavioral classification remains covered by kernel-intent-v2; generated
+// mirrors are checked by dist-docs-sync-contract after the Parent regenerates.
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -11,36 +10,43 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PLUGIN = "plugins/immune-brain";
 const read = (path: string) => readFileSync(resolve(ROOT, path), "utf8").replace(/\s+/g, " ");
 
-describe("same-directory scope rule is stated where it is applied (ADR 0021)", () => {
-	it("Loop contract lets the owner submit the addition and names the exclusions", () => {
-		const run = read(`${PLUGIN}/dist/imm-run.md`);
-		expect(run).toContain("a same-directory addition");
-		expect(run).toContain("`revise_intent`");
-		expect(run).toContain("path the project's risk floor names in `.imm/risk-floor.json`");
-		expect(run).toContain("self-served (ADR 0021)");
-		expect(run).toContain("Scope expansion returns to Planner's Enrolled Intent Revision route");
+describe("scope is an estimate in workflow source contracts (ADR 0028)", () => {
+	it.each([
+		`${PLUGIN}/dist/imm-run.md`,
+		`${PLUGIN}/dist/imm-planner.md`,
+		`${PLUGIN}/runtime/prompts/executor.md`,
+	])("%s discloses delivery beyond the estimate and preserves frozen acceptance", (path) => {
+		const source = read(path);
+		expect(source).toContain("`scope_hint` is an estimate");
+		expect(source).toContain("`beyond_estimate`");
+		expect(source).toMatch(/scope-only revision.*keeps the bound Spec path.*compatible/);
+		expect(source).toMatch(/[Ff]rozen acceptance/);
+		expect(source).not.toContain("self-served (ADR 0021)");
+		expect(source).not.toContain("same-directory addition: submit `revise_intent`");
 	});
 
-	it("Planner contract defaults to the module directory and declines the addition as a request", () => {
-		const planner = read(`${PLUGIN}/dist/imm-planner.md`);
-		expect(planner).toContain("smallest coherent module directory");
-		expect(planner).toContain("same-directory addition the Loop owner submits itself");
-		expect(planner).toContain("A same-directory file addition is not a Planner request");
+	it("batch revisions retain user authority without delegated approval or reseal", () => {
+		const batch = read(`${PLUGIN}/dist/imm-run-batch.md`);
+		expect(batch).toContain("acceptance changes pauses for the literal user's native gate");
+		expect(batch).toContain("cannot approve revisions or reseal `plan_digest`");
+		expect(batch).toContain("remain readable and retireable as historical evidence");
+		expect(batch).not.toContain("confirmation offers one opt-in choice");
 	});
 
-	it("Executor prompt and its packaged mirror state the same rule", () => {
-		const source = read(`${PLUGIN}/runtime/prompts/executor.md`);
-		const mirror = read(`${PLUGIN}/dist/role-prompts/executor.md`);
-		expect(source).toContain("same-directory addition");
-		expect(source).toContain("`revise_intent`");
-		expect(mirror).toBe(source);
-	});
-
-	it("ADR 0021 records the rule and its relation to ADR 0018", () => {
-		const adr = read("docs/adr/0021-same-directory-scope-extension.md");
+	it("ADR 0028 is accepted and the superseded ADRs retain their historical decisions", () => {
+		const adr = read("docs/adr/0028-scope-as-estimate.md");
 		expect(adr).toContain("status: accepted");
-		expect(adr).toContain("## Relation to ADR 0018");
-		expect(adr).toContain("`classifyIntentRevision`");
-		expect(adr).toContain("`.imm/risk-floor.json`");
+		expect(adr).toContain("`beyond_estimate`");
+		expect(adr).toContain("keeps the bound Spec path");
+		for (const path of [
+			"docs/adr/0018-delegated-in-lane-intent-revision.md",
+			"docs/adr/0021-same-directory-scope-extension.md",
+		]) {
+			const historical = read(path);
+			expect(historical).toContain("status: superseded by ADR-0028");
+			expect(historical).toContain("0028-scope-as-estimate.md");
+			expect(historical).toContain("## Decision");
+			expect(historical).toContain("Accepted on");
+		}
 	});
 });

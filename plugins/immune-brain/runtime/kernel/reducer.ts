@@ -27,8 +27,6 @@ import {
 import {
 	canonicalIntentHash,
 	classifyIntentRevision,
-	sameDirectoryScopeAdditions,
-	scopeAdditionsReasonLines,
 } from "./intent";
 import { assertValidSpecBinding } from "./spec_binding";
 
@@ -492,7 +490,6 @@ export function reduceTask(
 			const revisionClass = classifyIntentRevision(
 				record.intent_snapshot,
 				action.next_intent,
-				floor,
 			);
 			if (action.type === "revise_intent" && revisionClass !== "compatible")
 				throw new KernelInvariantError([
@@ -526,16 +523,6 @@ export function reduceTask(
 				throw new KernelInvariantError([
 					"next intent ref must match the next intent",
 				]);
-			// A compatible scope revision is self-served: the user confirmed nothing,
-			// so the added paths ride in this entry's reason for Review to name.
-			const selfServedAdditions =
-				action.type === "revise_intent"
-					? sameDirectoryScopeAdditions(
-						record.intent_snapshot.scope_hint,
-						action.next_intent.scope_hint,
-						floor,
-					) ?? []
-					: [];
 			record.intent_snapshot = { ...action.next_intent };
 			record.intent_ref = { ...action.next_intent_ref };
 			if (action.type === "approve_breaking_intent_revision") {
@@ -549,10 +536,7 @@ export function reduceTask(
 				record,
 				action,
 				from,
-				[
-					`intent_revision_${record.intent_snapshot.revision}`,
-					...scopeAdditionsReasonLines(selfServedAdditions),
-				].join("\n"),
+				`intent_revision_${record.intent_snapshot.revision}`,
 				authorityAudit,
 			);
 			break;

@@ -1,8 +1,11 @@
 ---
-status: accepted
+status: superseded by ADR-0028
 ---
 
 # Delegated In-Lane Intent Revision
+
+Superseded by [ADR 0028](0028-scope-as-estimate.md). Delegated revision and
+reseal are retired; the decision below is preserved as historical context.
 
 Accepted on 2026-10-10 by the repository owner, for retro issues #194 and #198.
 It revises one clause of ADR 0005 and one clause of ADR 0016. ADR 0013 (Lanes)

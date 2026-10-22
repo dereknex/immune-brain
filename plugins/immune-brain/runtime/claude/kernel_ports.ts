@@ -25,7 +25,6 @@ import { type TaskFinding, type TaskRecord } from "../kernel/types";
 import { findingsDigestV2 } from "../kernel/reducer";
 import { readTaskRecordRaw, recoverKernelStoreFollowUps } from "../kernel/storage";
 import {
-	assertScopeAdditionsAreFiles,
 	canonicalIntentHash,
 	parseProjectTaskIntent,
 	readTaskIntent,
@@ -74,7 +73,6 @@ import {
 	type BatchTrackerPort,
 } from "../unattended/batch_runner";
 import { createBatchKernelPort } from "../unattended/batch_kernel_port";
-import type { LaneRevisionRequest } from "../unattended/batch_delegation";
 import { createBatchTrackerPort, laneRuntimeContractRefusal, type LaneInstructionRequest, type LaneOffer } from "../unattended/batch_lanes";
 import { retireStaleBatch } from "../unattended/batch_disposition";
 import { runEntryManifest, type RunEntryManifest } from "../unattended/run_entry_manifest";
@@ -820,7 +818,6 @@ export class ClaudeRuntime {
 		const nextScope = operation.op === "revise_intent"
 			? (operation.next_intent as { scope_hint: string[] }).scope_hint
 			: undefined;
-		if (nextScope) assertScopeAdditionsAreFiles(ctx.cwd, priorIntent.intent.scope_hint, nextScope);
 		const sidecar = join(ctx.cwd, priorIntent.intent_ref.path);
 		const priorBytes = operation.op === "revise_intent" ? readFileSync(sidecar) : null;
 		// A content-changing revision writes the sidecar before the kernel's drift
@@ -858,14 +855,15 @@ export class ClaudeRuntime {
 	async startUnattendedBatch(
 		initiativeSlug: string,
 		meta: ToolMeta,
-		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest; lane_revision?: LaneRevisionRequest } = {},
+		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest } = {},
 	): Promise<ClaudeBatchStartResult> {
+		if (Object.hasOwn(options, "lane_revision")) throw new Error("unknown parameter: lane_revision");
 		return this.startPreparedBatch(initiativeSlug, meta, options);
 	}
 
 	private async startPreparedBatch(
 		initiativeSlug: string, meta: ToolMeta,
-		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest; lane_revision?: LaneRevisionRequest },
+		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest },
 	): Promise<ClaudeBatchStartResult> {
 		throwIfCancelled(meta.signal);
 		const reuseOnly = options.reuseOnly === true;
@@ -995,7 +993,7 @@ export class ClaudeRuntime {
 					};
 				// The gate settles only on the literal user's answer or the caller's
 				// cancellation signal.
-				let confirmationResult: { decision: NativeDecision; requestId: string; delegateRevisions?: boolean };
+				let confirmationResult: { decision: NativeDecision; requestId: string };
 				manifestChildren = facts.children;
 				try {
 					confirmationResult = await this.confirm({
@@ -1025,7 +1023,6 @@ export class ClaudeRuntime {
 											parallel_groups: facts.parallel_groups,
 											serialized: facts.scope_conflicts,
 											...(options.final_verification ? { final_verification: options.final_verification } : {}),
-											offer_revision_delegation: true,
 										},
 									}
 								: {}),
@@ -1073,7 +1070,6 @@ export class ClaudeRuntime {
 				return {
 					kind: "confirmed",
 					request_id: confirmationResult.requestId,
-					...(options.max_parallel !== undefined && confirmationResult.delegateRevisions ? { delegate_revisions: true } : {}),
 				};
 			},
 			// A reused authorization keeps this invocation's Kernel binding without a new
@@ -1148,8 +1144,6 @@ export class ClaudeRuntime {
 						max_parallel: options.max_parallel,
 						tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug),
 						...(options.lane_instruction ? { lane_instruction: options.lane_instruction } : {}),
-						...(options.lane_revision ? { lane_revision: options.lane_revision } : {}),
-						...(authorization.revision_delegation !== undefined ? { revision_delegation: authorization.revision_delegation } : {}),
 					}
 				: {}),
 			...(options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}),
@@ -1186,7 +1180,7 @@ export class ClaudeRuntime {
 			initiative_slug: initiativeSlug,
 			now: new Date().toISOString(),
 			gate: async (facts) => {
-				let confirmationResult: { decision: NativeDecision; requestId: string; delegateRevisions?: boolean };
+				let confirmationResult: { decision: NativeDecision; requestId: string };
 				try {
 					confirmationResult = await this.confirm({
 						operation: "retire_stale_batch",

@@ -1,8 +1,12 @@
 ---
-status: accepted
+status: superseded by ADR-0028
 ---
 
 # Same-Directory Scope Extension
+
+Superseded by [ADR 0028](0028-scope-as-estimate.md). Scope is now an estimate;
+the same-directory special rule is retired. The decision below is preserved as
+historical context.
 
 Accepted on 2026-10-12 by the repository owner (user decisions U2 and U3 in
 `docs/specs/ceremony-trim-r647.spec.md`), for Issue #217. It revises one rule

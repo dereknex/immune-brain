@@ -189,7 +189,14 @@ describe("acc-claude-batch-gate", () => {
 	it("registers the privileged Lane tool, destructive annotation and supported schema", () => {
 		expect(PRIVILEGED_OPERATIONS).toContain("start_unattended_batch"); const tool = listMcpTools().find(t => t.name === "start_unattended_batch")!;
 		expect(tool).toBeDefined(); expect(tool.annotations).toEqual({ destructiveHint: true }); expect(tool.description).toContain("Lane"); expect(tool.description).not.toMatch(/serial/i);
-		expect(tool.inputSchema.required).toEqual(["initiative_slug"]); expect(Object.keys(tool.inputSchema.properties ?? {})).toEqual(["initiative_slug", "max_parallel", "lane_offers", "final_verification", "lane_instruction", "lane_revision"]);
+		expect(tool.inputSchema.required).toEqual(["initiative_slug"]); expect(Object.keys(tool.inputSchema.properties ?? {})).toEqual(["initiative_slug", "max_parallel", "lane_offers", "final_verification", "lane_instruction"]);
+	});
+	it.each([undefined, null, {}])("rejects unknown lane_revision at MCP and direct runtime boundaries (%p)", async lane_revision => {
+		const f = fixture("retired-revision"); const before = snapshot(f.root); let gates = 0;
+		const runtime = client(f, { requestConfirmation: async () => { gates++; return { decision: "accept", requestId: "retired" }; } });
+		await expect(runtime.callTool("start_unattended_batch", { initiative_slug: f.slug, lane_revision })).rejects.toThrow("unknown parameter: lane_revision");
+		await expect(runtime.runtime.startUnattendedBatch(f.slug, { toolCallId: "retired", interactive: true }, { lane_revision } as never)).rejects.toThrow("unknown parameter: lane_revision");
+		expect(gates).toBe(0); expect(snapshot(f.root)).toEqual(before); noBatchWrites(f.root);
 	});
 	it("refuses non-interactive Claude Code before writes", async () => {
 		const f = fixture("non-interactive"); const before = snapshot(f.root);
@@ -207,7 +214,10 @@ describe("acc-claude-batch-gate", () => {
 		expect(message).toContain(`Initiative: ${f.slug}`); expect(message).toContain(`Batch branch: refs/heads/imm/${f.slug}`); expect(message).toContain("Plan digest: sha256:");
 		expect(message).toContain("Ordered children (3):"); for (const [n, risk] of [[1, "routine"], [2, "material"], [3, "critical"]]) expect(message).toContain(`${f.slug}-c${n} (S${n}) [risk: ${risk}]`);
 		expect(message).not.toContain("Excluded children"); expect(message).not.toContain("attacker_attempt"); expect(message).toContain(`Lane mode: max_parallel=${max_parallel ?? 1}`); expect(message).toContain("Budget: max_children="); expect(message).not.toMatch(/expires|deadline|serial/i);
-		expect(input.batchDetails.lane_mode).toMatchObject({ max_parallel: max_parallel ?? 1, offer_revision_delegation: true }); expect(Array.isArray(input.batchDetails.lane_mode.parallel_groups)).toBe(true);
+		expect(input.batchDetails.lane_mode).toMatchObject({ max_parallel: max_parallel ?? 1 }); expect(Array.isArray(input.batchDetails.lane_mode.parallel_groups)).toBe(true);
+		expect(JSON.stringify(input.batchDetails)).not.toMatch(/delegat/i);
+		expect(elicitationParams(input).requestedSchema).toEqual({ type: "object", properties: {} });
+		expect(message).not.toMatch(/delegat/i);
 		noBatchWrites(f.root);
 	});
 	it("one accepted confirmation issues a Lane authorization", async () => {

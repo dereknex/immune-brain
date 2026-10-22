@@ -1,0 +1,194 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "delegated-reseal-removal",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "delegated-reseal-removal",
+    "goal": "Delegated in-Lane intent revision and reseal are removed from the runtime and both Hosts, the same-directory scope rule is removed so any scope_hint change that keeps the bound Spec path is compatible, the Executor discloses files beyond the estimate instead of revising scope, and ADR 0028 superseding ADR 0018 and ADR 0021 is accepted (Spec branch-boundary-r2 D20).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "classifyIntentRevision returns compatible for a revision that only adds or removes scope_hint entries in any directory while the bound Spec path is unchanged, records no scope_added history line, and returns breaking when the bound Spec path changes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-intent-v2.test.ts\",\n      \"tests/scope-revision-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "The Claude start_unattended_batch schema and the Pi batch tool expose no lane_revision argument and no delegation choice, and a call that passes lane_revision refuses as an unknown argument.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "A Lane child whose acceptance assertion changes after confirmation is parked with batch_child_authority_changed with no reseal, and a v2 record that carries revision_delegation, delegated_revisions and reseals is still read and retired.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/branch-boundary-r2-delegated-reseal-removal.md",
+      "docs/adr/0018-delegated-in-lane-intent-revision.md",
+      "docs/adr/0021-same-directory-scope-extension.md",
+      "docs/adr/0028-scope-as-estimate.md",
+      "docs/plans/delegated-reseal-removal.intent.json",
+      "docs/specs/branch-boundary-r2.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/dist/imm-run-batch.md",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/dist/role-prompts/executor.md",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/claude/interaction.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment.ts",
+      "plugins/immune-brain/runtime/kernel/intent.ts",
+      "plugins/immune-brain/runtime/kernel/reducer.ts",
+      "plugins/immune-brain/runtime/prompts/executor.md",
+      "plugins/immune-brain/runtime/unattended/batch_delegation.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_start.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "tests/batch-delegation-gate.test.ts",
+      "tests/breaking-intent-revision-gate.test.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/host-neutral-assurance-coordinator.test.ts",
+      "tests/kernel-intent-v2.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/scope-revision-contract.test.ts",
+      "tests/scope-revision-envelope.test.ts",
+      "tests/unattended-batch-lanes.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/delegated-reseal-removal.intent.json",
+    "content_hash": "sha256:5155d51eb1fab1c6b20ee60cca3f3656bfd3283226e8cfd71c5b6a02150d037b"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:2416a9fda8d4d085111849a75ae0d475a556cfffe00628553cc295f47897fae3",
+  "git_base_head": "55cdfda860b81d8f39b3b351e4661af04edca2ad",
+  "attestations": [
+    {
+      "id": "approval-qa-72c50af6",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:5155d51eb1fab1c6b20ee60cca3f3656bfd3283226e8cfd71c5b6a02150d037b",
+      "diff_hash": "sha256:efffba83f4966c01f1f2d026fb3cd55f42f2c70fa14b403d3b0918ba881b30f4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:1671ad90cc0dd6e95464dd8610b548265c85a849f0709ea9a48ef360caa1902d",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:1671ad90cc0dd6e95464dd8610b548265c85a849f0709ea9a48ef360caa1902d"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:1671ad90cc0dd6e95464dd8610b548265c85a849f0709ea9a48ef360caa1902d"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:1671ad90cc0dd6e95464dd8610b548265c85a849f0709ea9a48ef360caa1902d"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-68207724",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:5155d51eb1fab1c6b20ee60cca3f3656bfd3283226e8cfd71c5b6a02150d037b",
+      "diff_hash": "sha256:efffba83f4966c01f1f2d026fb3cd55f42f2c70fa14b403d3b0918ba881b30f4",
+      "actor_id": "parent-mediated-review",
+      "summary": "已验证 manifest、snapshot 摘要及 Git revision 来源，审查全部 35 个文件的完整 diff，并追踪 scope 分类、Host 参数拒绝和 Lane authority 检查；未发现阻断问题。验收执行结果采用 Kernel 提供的通过证据，未重新运行测试。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "55cdfda860b81d8f39b3b351e4661af04edca2ad",
+        "review_commit": "435a3c7329a35766ce9a9c11e17b87ff876e20c9",
+        "review_tree": "6061d7b71af62d9a10e801b07a5b04e25edb4839",
+        "manifest_digest": "sha256:957397173ac3dd38b3af70525f52138bc829f684328fc719a0de4eb73f1240bf"
+      },
+      "reviewer_verdict_sha256": "sha256:620ad422b28d8af75682b3bb5f43bdd29fdeb02647eb6b6ff2f48af5bc369d04"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:delegated-reseal-removal:2026-10-22T07:48:31.572Z",
+      "at": "2026-10-22T07:48:31.572Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/delegated-reseal-removal.intent.json"
+    },
+    {
+      "id": "approve_breaking_intent_revision:delegated-reseal-removal:2026-10-22T08:38:03.104Z",
+      "at": "2026-10-22T08:38:03.104Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:0715ef59f72cf3a9e92fbd24a218da82946eb55b7f5ae4d01c22e5cccf94481e",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-4f3c0fc9ae8242c5",
+        "issued_at": "2026-10-22T08:38:04.266Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:delegated-reseal-removal:2026-10-22T08:38:15.681Z",
+      "at": "2026-10-22T08:38:15.681Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/delegated-reseal-removal.intent.json"
+    },
+    {
+      "id": "record_approval:delegated-reseal-removal:2026-10-22T08:40:34.131Z",
+      "at": "2026-10-22T08:40:34.131Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-72c50af6\naction_v2_sha256:729d28557fdfcb3b1d9c5bfac52c3a32c47eb1034c453977be6659c029f94108",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-a7217bd1fc51e716",
+        "issued_at": "2026-10-22T08:40:34.132Z"
+      }
+    },
+    {
+      "id": "record_approval:delegated-reseal-removal:2026-10-22T10:57:37.513Z",
+      "at": "2026-10-22T10:57:37.513Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-68207724\naction_v2_sha256:9faeff9acb995e52a31cad629e2e3223b504f20b3cf2450b51aeaac5b6e6764c",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-ed91f111d85cb382",
+        "issued_at": "2026-10-22T10:57:37.513Z"
+      }
+    },
+    {
+      "id": "complete:delegated-reseal-removal:2026-10-22T10:57:41.490Z",
+      "at": "2026-10-22T10:57:41.490Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:1074efef24882a2baa371f93b4b68cfb4b8b8dd8e778691f71c9b5893ebf7d55"
+    }
+  ]
+}
