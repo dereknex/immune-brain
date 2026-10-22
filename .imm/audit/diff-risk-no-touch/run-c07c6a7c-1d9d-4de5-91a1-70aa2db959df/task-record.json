@@ -1,0 +1,285 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "diff-risk-no-touch",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "diff-risk-no-touch",
+    "goal": "Projected risk is the highest of declared risk, the scope floor and the floor of the actual changed paths and only strengthens Review, and hard no-touch paths (authority state, credential-type files, CI and release config, plus repository additions in docs/agents/no-touch.json) refuse single-task settlement, batch integration and TaskIntent validation (Spec branch-boundary-r2 D21, D22).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "A task declared routine whose actual diff touches a material floor path projects material and requires Review without opening any gate, and a task declared material whose diff touches no floor path still projects material.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/risk-tier-floor.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "A single-task settlement whose diff changes .imm/state/x, .env, a .pem file, .github/workflows/ci.yml or .changeset/config.json refuses with no_touch_path_changed naming the path, and a diff changing only .changeset/feature.md is not refused.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/no-touch-paths.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "A batch child whose rebuilt commit changes a no-touch path does not advance the Parent branch and is parked with no_touch_path_changed.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/no-touch-paths.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "A path added in docs/agents/no-touch.json is refused like a default, the declaration cannot remove a default, a malformed declaration is rejected naming the field, changing the declaration itself raises risk to critical, and intent validate rejects a TaskIntent whose scope_hint names a no-touch path.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/no-touch-paths.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/branch-boundary-r2-diff-risk-no-touch.md",
+      "docs/agents/no-touch.json",
+      "docs/plans/diff-risk-no-touch.intent.json",
+      "docs/specs/branch-boundary-r2.spec.md",
+      "package.json",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/commands/kernel.ts",
+      "plugins/immune-brain/runtime/kernel/completion.ts",
+      "plugins/immune-brain/runtime/kernel/intent.ts",
+      "plugins/immune-brain/runtime/kernel/risk_floor.ts",
+      "plugins/immune-brain/runtime/no_touch.ts",
+      "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "plugins/immune-brain/runtime/workspace_scope.ts",
+      "tests/batch-merge-queue.test.ts",
+      "tests/no-touch-paths.test.ts",
+      "tests/risk-tier-floor.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/diff-risk-no-touch.intent.json",
+    "content_hash": "sha256:71b92480f97d30e58615413c2e7399f0f55b4bf6975d63b397692d6a7fbae18d"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:8ac8a96969d3b76fa9aaa7040d3446ebf0ab272840d6d0c95e83332568dccb8a",
+  "git_base_head": "d3836984311542c9caceb8b2e55f8761df5929c4",
+  "attestations": [
+    {
+      "id": "approval-qa-4b741fe8",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:71b92480f97d30e58615413c2e7399f0f55b4bf6975d63b397692d6a7fbae18d",
+      "diff_hash": "sha256:a7ea636ae3d08b878eb73e59df6c366d5ddc9ba6c468ce9820ae7e65c8863aff",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:a99a5ae70a4f0ff0cf7f88c440b72e552db87226d6750aee5f6ecf230564c622",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:a99a5ae70a4f0ff0cf7f88c440b72e552db87226d6750aee5f6ecf230564c622"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:a99a5ae70a4f0ff0cf7f88c440b72e552db87226d6750aee5f6ecf230564c622"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:a99a5ae70a4f0ff0cf7f88c440b72e552db87226d6750aee5f6ecf230564c622"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:a99a5ae70a4f0ff0cf7f88c440b72e552db87226d6750aee5f6ecf230564c622"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-1f7871e0",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:71b92480f97d30e58615413c2e7399f0f55b4bf6975d63b397692d6a7fbae18d",
+      "diff_hash": "sha256:521e5693ac6a7723e10ccc91dab895ac06d3341397e6957618ed3db679488046",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:3a1dfee095667ebfe63713db913ec48e8b685ccc5b8d74c9875fe5bd3c5d5906",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:3a1dfee095667ebfe63713db913ec48e8b685ccc5b8d74c9875fe5bd3c5d5906"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:3a1dfee095667ebfe63713db913ec48e8b685ccc5b8d74c9875fe5bd3c5d5906"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:3a1dfee095667ebfe63713db913ec48e8b685ccc5b8d74c9875fe5bd3c5d5906"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:3a1dfee095667ebfe63713db913ec48e8b685ccc5b8d74c9875fe5bd3c5d5906"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-648a5be8",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:71b92480f97d30e58615413c2e7399f0f55b4bf6975d63b397692d6a7fbae18d",
+      "diff_hash": "sha256:521e5693ac6a7723e10ccc91dab895ac06d3341397e6957618ed3db679488046",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 manifest digest、revision 的唯一 parent、tree 和全部 changed_paths 的对象身份，逐文件审查完整 diff，并追踪风险投影、single-task delivery 和 batch integration 的拒绝及状态推进路径；未发现阻断问题。测试执行依据 Kernel 提供的 AC1–AC4 passed outcomes，本角色未重跑测试。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "d3836984311542c9caceb8b2e55f8761df5929c4",
+        "review_commit": "ec68240dc78ef6a8e8956e8a095b06069b0dd39c",
+        "review_tree": "db2352caeea43a881512a270307f43a67fafd024",
+        "manifest_digest": "sha256:7a01c1cb8df3cd091a7269e1d79c1b7a7b4e87ca35b2ec79614cc21a05c50c66"
+      },
+      "reviewer_verdict_sha256": "sha256:9540764d5118a2fdb9e18dcf49738b4b02225653db2541a08a2276c18a791932"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-daf537039118-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC4",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/kernel/intent.ts:231-232 在 scope 去除冗余子路径之后才检查 no-touch，导致显式禁止路径被祖先目录吞掉而通过验证。应在祖先路径合并前检查每个规范化后的原始 scope entry；repository additions 也应使用未丢失子路径的 entries 检查，并在 tests/no-touch-paths.test.ts 增加默认规则和 repository additions 的回归用例。",
+      "anchor": "sha256:e2289e8c219728b617cb51ed21d5b60c32a0d93ac3e3599e61e8a1cf12b9f735",
+      "evidence": {
+        "trigger": "提交其他字段合法、scope_hint 为 [\"nested\", \"nested/.env\"] 的 TaskIntent → parseScopeHintV1 在 intent.ts:194-202 删除 nested/.env，assertNoTouch 只收到 nested，最终 intent validate 返回 valid:true，而 AC4 要求拒绝显式命名 no-touch 路径的 TaskIntent。同样，声明 paths:[\"protected/config.json\"] 时，scope_hint:[\"protected\", \"protected/config.json\"] 也会绕过检查。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/commands/kernel.ts:runIntentValidate（未修改路径；因其直接实现 AC4 指定的 intent validate 验收入口而读取）",
+          "plugins/immune-brain/runtime/kernel/intent.ts:parseProjectTaskIntent",
+          "plugins/immune-brain/runtime/kernel/intent.ts:parseTaskIntentV1",
+          "plugins/immune-brain/runtime/kernel/intent.ts:parseScopeHintV1",
+          "plugins/immune-brain/runtime/no_touch.ts:assertNoTouch"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC4"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:diff-risk-no-touch:2026-10-22T12:00:25.264Z",
+      "at": "2026-10-22T12:00:25.264Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:9707ca85f76180446000d2baf8a65804e1ae5f951f7d5d0065f92496d7a42212",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-9bb8ff0895c9d72a",
+        "issued_at": "2026-10-22T12:00:25.802Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:diff-risk-no-touch:2026-10-22T12:00:40.121Z",
+      "at": "2026-10-22T12:00:40.121Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/diff-risk-no-touch.intent.json"
+    },
+    {
+      "id": "record_approval:diff-risk-no-touch:2026-10-22T12:01:05.464Z",
+      "at": "2026-10-22T12:01:05.464Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-4b741fe8\naction_v2_sha256:ad409c1d707b800837cffaa58c31d4688276aeea684a71df55ae58221cdfdad2",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f09179815aa218f9",
+        "issued_at": "2026-10-22T12:01:05.464Z"
+      }
+    },
+    {
+      "id": "request_rework:diff-risk-no-touch:2026-10-22T12:04:23.971Z",
+      "at": "2026-10-22T12:04:23.971Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:1c2e488ff9239f9ee400e0eae81822cb0874b9a1371f35c91c0d91a243056057",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-a3402bfe1991d762",
+        "issued_at": "2026-10-22T12:04:23.971Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "d3836984311542c9caceb8b2e55f8761df5929c4",
+        "review_commit": "8c496fda6e85a29d19d1ee30a06e7255644c1087",
+        "review_tree": "d85c581bd7e19b97ac523cc8fc685c64e5a5573d",
+        "manifest_digest": "sha256:b589af41cc452d283aab96c81409699e9af726719788ac159055d723081e4a2e"
+      }
+    },
+    {
+      "id": "resolve_finding:diff-risk-no-touch:2026-10-22T12:05:17.415Z",
+      "at": "2026-10-22T12:05:17.415Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-daf537039118-1-review-1\naction_v2_sha256:0ddfc4ee4f4ffb687f105e69edf2dfe73a9aa655a59610ff2db12f60224b29db"
+    },
+    {
+      "id": "freeze_artifacts:diff-risk-no-touch:2026-10-22T12:05:28.420Z",
+      "at": "2026-10-22T12:05:28.420Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/diff-risk-no-touch.intent.json"
+    },
+    {
+      "id": "record_approval:diff-risk-no-touch:2026-10-22T12:06:01.824Z",
+      "at": "2026-10-22T12:06:01.824Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-1f7871e0\naction_v2_sha256:9142b449e58560b9ce24da2e13306109ed6d2aa3f4ce9ee2699d86c03ffc1e92",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-6728c617b47bf528",
+        "issued_at": "2026-10-22T12:06:01.824Z"
+      }
+    },
+    {
+      "id": "record_approval:diff-risk-no-touch:2026-10-22T12:09:10.732Z",
+      "at": "2026-10-22T12:09:10.732Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-648a5be8\naction_v2_sha256:2bdb47fc42b77bc9fd20eeeb612ddae5e5761dd1a7c21913eb97b3fba692ba3b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-d6f4b63fc2c2458f",
+        "issued_at": "2026-10-22T12:09:10.732Z"
+      }
+    },
+    {
+      "id": "complete:diff-risk-no-touch:2026-10-22T12:09:12.778Z",
+      "at": "2026-10-22T12:09:12.778Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:061a896887d44e167d42f2b3db5b9ab723a3a781ab62dde8152de216c323fd0f"
+    }
+  ]
+}

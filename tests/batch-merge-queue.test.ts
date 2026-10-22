@@ -103,6 +103,18 @@ const pass = "process.exit(0)";
 const mergedCheck = "const fs=require('node:fs'); process.exit(fs.existsSync('a.txt') && fs.readFileSync('b.txt','utf8').trim() === 'old' ? 1 : 0)";
 
 describe("Parent merge queue", () => {
+	test("no-touch integration parks the child without a redo or Parent advance", async () => {
+		const fx = fixture({ a: pass });
+		await fx.tick();
+		mkdirSync(join(fx.laneOf("a"), ".github/workflows"), { recursive: true });
+		writeFileSync(join(fx.laneOf("a"), ".github/workflows/ci.yml"), "changed\n");
+		fx.settle("a");
+		const report = await fx.tick();
+		expect(report.children[0]!.state).toBe("needs_human");
+		expect(report.children[0]!.reason).toContain("no_touch_path_changed: .github/workflows/ci.yml");
+		expect(report.children[0]!.redo_grants ?? 0).toBe(0);
+		expect(git(fx.root, "rev-parse", "refs/heads/imm/queue")).toBe(fx.base);
+	}, 30000);
 	test("derived outputs regenerate from both settled children without spending a redo", async () => {
 		const fx = fixture({ a: pass, b: pass }, {}, root => {
 			mkdirSync(join(root, "docs/agents"), { recursive: true });

@@ -159,6 +159,13 @@ describe("deterministic risk-tier floor", () => {
 });
 
 describe("changed-path task-tier classification", () => {
+	it("projects the maximum of declared, scope and actual diff risk without changing the intent", () => {
+		const intent = parseTaskIntentV1({ ...BASE, scope_hint: ["src"] });
+		expect(resolveProjectedRisk(intent, ["plugins/immune-brain/runtime/kernel/completion.ts"], FLOOR)).toBe("material");
+		expect(intent.risk).toBe("routine");
+		expect(resolveProjectedRisk({ ...intent, risk: "material" }, ["src/feature.ts"], FLOOR)).toBe("material");
+		expect(resolveProjectedRisk(intent, ["docs/agents/no-touch.json"], FLOOR)).toBe("critical");
+	});
 	it("forces configured prefixes and descendants to material without near-prefix matches", () => {
 		for (const prefix of CHANGED_PATH_RISK_FLOOR_PREFIXES) {
 			expect(classifyTaskRisk([prefix], "routine", FLOOR)).toBe("material");

@@ -6,6 +6,7 @@
 // index; the only ref it moves is the hidden ref the batch already owns.
 // Defined by docs/specs/parallel-batch-lanes.spec.md (Temporal sequence, step 2).
 import { spawnSync } from "node:child_process";
+import { noTouchPaths, readNoTouchAt } from "../no_touch";
 import { materializeDeliveryWorkspace } from "../assurance/delivery_workspace";
 import { readDerivedFilesAt, runDerivedCommand } from "../derived_files";
 import type { SnapshotDescriptor } from "../assurance/coordinator";
@@ -18,6 +19,7 @@ import { parseVerificationDescriptor } from "../verification_descriptor";
 import { applyDeltaToWorkingTree, changedPaths, isBatchRef, isParentBranch, isProgressRef, moveBatchRef, readBatchRef } from "./batch_ref";
 
 export type BatchIntegrationReason =
+	| "no_touch_path_changed"
 	| "batch_integration_conflict"
 	| "batch_integration_check_failed"
 	| "batch_head_lineage_broken";
@@ -242,6 +244,9 @@ export function prepareLaneCandidate(input: IntegrateLaneInput): string {
 			"batch_integration_conflict",
 			`batch_integration_conflict: candidate ${candidate} does not carry the lane commit ${laneCommit} change`,
 		);
+	const forbidden = noTouchPaths([...changeIdentity(root, head, candidate).keys()],
+		readNoTouchAt(root, input.declaration_head ?? base));
+	if (forbidden.length) throw new BatchIntegrationError("no_touch_path_changed", `no_touch_path_changed: ${forbidden.join(", ")}`);
 	return candidate;
 }
 

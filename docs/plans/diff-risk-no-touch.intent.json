@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "diff-risk-no-touch",
-  "owner": "user",
   "goal": "Projected risk is the highest of declared risk, the scope floor and the floor of the actual changed paths and only strengthens Review, and hard no-touch paths (authority state, credential-type files, CI and release config, plus repository additions in docs/agents/no-touch.json) refuse single-task settlement, batch integration and TaskIntent validation (Spec branch-boundary-r2 D21, D22).",
   "acceptance": [
     {
@@ -30,6 +29,7 @@
     "docs/agents/no-touch.json",
     "docs/plans/diff-risk-no-touch.intent.json",
     "docs/specs/branch-boundary-r2.spec.md",
+    "package.json",
     "plugins/immune-brain/dist/claude/mcp-server.mjs",
     "plugins/immune-brain/runtime/assurance/coordinator.ts",
     "plugins/immune-brain/runtime/commands/kernel.ts",
@@ -40,9 +40,11 @@
     "plugins/immune-brain/runtime/unattended/batch_integration.ts",
     "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
     "plugins/immune-brain/runtime/workspace_scope.ts",
+    "tests/batch-merge-queue.test.ts",
     "tests/no-touch-paths.test.ts",
     "tests/risk-tier-floor.test.ts"
   ],
   "risk": "critical",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

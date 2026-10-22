@@ -1,4 +1,5 @@
 import { classifyTaskRisk } from "./intent";
+import { assertNoTouch } from "../no_touch";
 import { NO_RISK_FLOOR, raiseRisk, scopeRiskFloor, type RiskFloor } from "./risk_floor";
 import { archivePath, boundSpecPath, inspectSpecBinding } from "./spec_binding";
 import type {
@@ -87,6 +88,7 @@ export function completionDecision(
 	floor: RiskFloor = NO_RISK_FLOOR,
 ): CompletionDecision {
 	assertKernelInvariantsV3(intent, record);
+	assertNoTouch(changedPaths);
 	const freshAttestations = record.attestations.filter(
 		(item) =>
 			item.task_revision === intent.revision &&
