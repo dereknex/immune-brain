@@ -21,7 +21,7 @@ import { dirname, join } from "node:path";
 import { auditEvidencePaths, auditRunRecordPath, auditRunTerminalProofPath } from "../kernel/storage_paths";
 import { readSettledTaskEvidence, readAuditTaskPair, readSecureProjectFile } from "../kernel/storage";
 import { serializeTaskTombstone, readTaskTombstone, type TaskTombstone } from "../kernel/backend_claim";
-import { captureGitTaskRevisionSnapshot, pathMatchesScope, scopedContentIdentity } from "../workspace_scope";
+import { captureGitTaskRevisionSnapshot, pathMatchesScope, scopedContentIdentity, taskCommitRevisionIdentity, usesBranchDelivery } from "../workspace_scope";
 import { readNativeParentFinalReport, writeNativeParentFinalReport, readAnyBatchRunState, isLaneBatchRecord, writeBatchRunState, writeBatchLaneRunState, type AnyBatchRunStateRecord } from "./batch_state";
 import { laneCandidateMatches } from "./batch_integration";
 import { runFinalVerification } from "./batch_final_verification";
@@ -362,7 +362,7 @@ function writeFileAtomically(root: string, relativePath: string, bytes: string):
 
 function writeBatchCommitEvidence(
 	root: string,
-	evidence: { batchId: string; taskId: string; commit: string; parentHead: string },
+	evidence: { batchId: string; taskId: string; commit: string; parentHead: string; previousHead?: string },
 ): void {
 	const path = commitEvidencePath(evidence.batchId, evidence.taskId);
 	const payload = {
@@ -371,6 +371,7 @@ function writeBatchCommitEvidence(
 		task_id: evidence.taskId,
 		commit: evidence.commit,
 		parent_head: evidence.parentHead,
+		...(evidence.previousHead ? { previous_head: evidence.previousHead } : {}),
 		created_at: new Date().toISOString(),
 	};
 	writeFileAtomically(root, path, `${JSON.stringify(payload, null, 2)}\n`);
@@ -380,7 +381,7 @@ function readBatchCommitEvidence(
 	root: string,
 	batchId: string,
 	taskId: string,
-): { commit: string; parent_head: string } | null {
+): { commit: string; parent_head: string; previous_head?: string } | null {
 	const path = commitEvidencePath(batchId, taskId);
 	const fullPath = join(root, path);
 	if (!existsSync(fullPath)) return null;
@@ -392,15 +393,18 @@ function readBatchCommitEvidence(
 			task_id?: unknown;
 			commit?: unknown;
 			parent_head?: unknown;
+			previous_head?: unknown;
 		};
 		if (
 			parsed.contract === "assurance_kernel/batch_commit_evidence/v1" &&
 			parsed.batch_id === batchId &&
 			parsed.task_id === taskId &&
 			typeof parsed.commit === "string" &&
-			typeof parsed.parent_head === "string"
+			typeof parsed.parent_head === "string" &&
+			(parsed.previous_head === undefined || (typeof parsed.previous_head === "string" && /^[a-f0-9]{40}$/.test(parsed.previous_head)))
 		) {
-			return { commit: parsed.commit, parent_head: parsed.parent_head };
+			return { commit: parsed.commit, parent_head: parsed.parent_head,
+				...(typeof parsed.previous_head === "string" ? { previous_head: parsed.previous_head } : {}) };
 		}
 	} catch {
 		return null;
@@ -506,6 +510,31 @@ export async function commitBatchChild(input: {
 	const scopeHint = Array.isArray(intentSnapshot.scope_hint)
 		? intentSnapshot.scope_hint.filter((s): s is string => typeof s === "string")
 		: [];
+
+	if (usesBranchDelivery(root, taskId)) {
+		const currentBranch = spawnSync("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], { encoding: "utf8" });
+		if (expectedBranch !== undefined && currentBranch.stdout.trim() !== expectedBranch)
+			throw new Error("batch_head_lineage_broken: Lane branch changed before commit");
+		const head = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+		if (spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", expectedHead, head]).status !== 0)
+			throw new Error("batch_head_lineage_broken: Lane base is not an ancestor of HEAD");
+		const flagged = getUnsupportedIndexFlags(root);
+		if (flagged.length) throw scopeRefusal("unsupported_index_flags", flagged);
+		assertReviewedDelivery(root, authoritative, scopeHint, taskId);
+		const captured = captureGitTaskRevisionSnapshot(root, scopeHint, expectedHead, taskId);
+		const deliveryHash = `sha256:${createHash("sha256").update(JSON.stringify(captured)).digest("hex")}`;
+		const paths = [...Object.keys(captured.changed_paths), auditPaths.record, auditPaths.proof];
+		const message = `imm(${taskId}): ${goal.trim().split(/\r?\n/)[0]?.trim() || taskId}\n\n${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${batchId}`}\n`;
+		const commit = buildScopedCommit(root, { parent: expectedHead, paths, message });
+		if (taskCommitRevisionIdentity(root, scopeHint, expectedHead, commit).diff_hash !== deliveryHash)
+			throw new Error("batch commit drifted from the reviewed delivery identity");
+		writeBatchCommitEvidence(root, { batchId: batchId ?? "native-task", taskId, commit, parentHead: expectedHead, previousHead: head });
+		const moved = spawnSync("git", ["-C", root, "update-ref", "HEAD", commit, head], { encoding: "utf8" });
+		if (moved.status !== 0) throw new Error(`batch_head_lineage_broken: ${moved.stderr.trim()}`);
+		const indexed = spawnSync("git", ["-C", root, "read-tree", commit], { encoding: "utf8" });
+		if (indexed.status !== 0) throw new Error(`failed to index Lane delivery: ${indexed.stderr.trim()}`);
+		return { commit };
+	}
 
 	if (isProgressRef(expectedBranch)) {
 		const tip = readBatchRef(root, expectedBranch);
@@ -820,6 +849,8 @@ export async function lookupBatchCommit(input: {
 	// Every adopted delivery must be in the current history, even without a predecessor assertion.
 	const parentsResult = spawnSync("git", ["-C", root, "rev-parse", `${commit}^@`], { encoding: "utf8" });
 	const parents = parentsResult.stdout.trim().split(/\s+/).filter(Boolean);
+	let pendingLaneHead: string | null = null;
+	let indexLaneDelivery = false;
 	if (isProgressRef(expectedBranch)) {
 		// The hidden ref is the batch's history. A commit built but not yet reached by
 		// the ref (evidence written, ref not moved) is completed here.
@@ -833,9 +864,14 @@ export async function lookupBatchCommit(input: {
 	} else {
 		const currentHeadResult = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
 		const currentHead = currentHeadResult.stdout.trim();
-		if (currentHeadResult.status !== 0 || (currentHead !== commit &&
-			spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", commit, currentHead], { stdio: "ignore" }).status !== 0))
-			throw new Error(`batch_head_lineage_broken: current HEAD ${currentHead} diverged from adopted commit ${commit}`);
+		if (currentHeadResult.status !== 0)
+			throw new Error("batch_head_lineage_broken: unreadable Lane HEAD");
+		indexLaneDelivery = usesBranchDelivery(root, taskId) && evidence?.previous_head !== undefined;
+		if (currentHead !== commit && spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", commit, currentHead], { stdio: "ignore" }).status !== 0) {
+			if (indexLaneDelivery && evidence?.previous_head === currentHead) pendingLaneHead = currentHead;
+			else throw new Error(`batch_head_lineage_broken: current HEAD ${currentHead} diverged from adopted commit ${commit}`);
+		}
+		indexLaneDelivery &&= pendingLaneHead !== null || currentHead === commit;
 	}
 	if (parentsResult.status !== 0 || parents.length !== 1 || (retained && parents[0] !== retained.parent_head) ||
 		(expectedHead !== undefined && parents[0] !== expectedHead))
@@ -845,9 +881,24 @@ export async function lookupBatchCommit(input: {
 	const deltaResult = spawnSync("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", parents[0]!, commit],
 		{ encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 	if (deltaResult.status !== 0) throw new Error("batch_head_lineage_broken: failed to inspect adopted commit delta");
-	const outside = deltaResult.stdout.split("\0").filter(p => p.length > 0 && !isPathAllowedForChild(p, taskId, scopeHint));
+	const outside = deltaResult.stdout.split("\0").filter(p => p.length > 0 && !isPathAllowedForChild(p, taskId,
+		usesBranchDelivery(root, taskId) || input.lane ? ["**"] : scopeHint));
 	if (outside.length > 0)
 		throw new Error(`batch_head_lineage_broken: adopted commit contains out-of-scope changes: ${outside.join(", ")}`);
+
+	if (indexLaneDelivery) {
+		// Revalidate both the produced commit and live delivery before finishing an interrupted ref/index write.
+		assertReviewedDelivery(root, authoritative, scopeHint, taskId);
+		const qa = "attestations" in authoritative ? [...authoritative.attestations].reverse().find(item => item.kind === "qa") : undefined;
+		if (qa && taskCommitRevisionIdentity(root, scopeHint, parents[0]!, commit).diff_hash !== qa.diff_hash)
+			throw new Error("batch commit drifted from the reviewed delivery identity");
+		if (pendingLaneHead !== null) {
+			const moved = spawnSync("git", ["-C", root, "update-ref", "HEAD", commit, pendingLaneHead], { encoding: "utf8" });
+			if (moved.status !== 0) throw new Error(`batch_head_lineage_broken: ${moved.stderr.trim()}`);
+		}
+		const indexed = spawnSync("git", ["-C", root, "read-tree", commit], { encoding: "utf8" });
+		if (indexed.status !== 0) throw new Error(`failed to index Lane delivery: ${indexed.stderr.trim()}`);
+	}
 
 	return { commit };
 }

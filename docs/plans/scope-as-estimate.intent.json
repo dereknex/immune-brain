@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "scope-as-estimate",
-  "owner": "user",
   "goal": "A batch or Lane child's delivery boundary is its branch: a file outside scope_hint is no longer refused but listed in Review evidence as beyond_estimate, the child's diff, task diff hash, QA tracked drift and batch commit use base..HEAD of the child branch, the scheduler runs overlapping estimates concurrently, and dead assertChangedFilesWithinScope is deleted (Spec branch-boundary-r2 D19).",
   "acceptance": [
     {
@@ -32,11 +31,13 @@
     "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
     "plugins/immune-brain/runtime/unattended/batch_schedule.ts",
     "plugins/immune-brain/runtime/workspace_scope.ts",
+    "tests/batch-retro-201.test.ts",
     "tests/batch-scope-estimate.test.ts",
     "tests/scope-revision-envelope.test.ts",
     "tests/unattended-batch-commit.test.ts",
     "tests/unattended-batch-schedule.test.ts"
   ],
   "risk": "critical",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

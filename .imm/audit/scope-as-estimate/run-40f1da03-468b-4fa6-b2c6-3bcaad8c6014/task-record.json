@@ -1,0 +1,361 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "scope-as-estimate",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "scope-as-estimate",
+    "goal": "A batch or Lane child's delivery boundary is its branch: a file outside scope_hint is no longer refused but listed in Review evidence as beyond_estimate, the child's diff, task diff hash, QA tracked drift and batch commit use base..HEAD of the child branch, the scheduler runs overlapping estimates concurrently, and dead assertChangedFilesWithinScope is deleted (Spec branch-boundary-r2 D19).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "A Lane child that commits a file outside its scope_hint settles and integrates, and its Review evidence lists that file under beyond_estimate.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-scope-estimate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "A Lane child's task diff hash, QA tracked drift and integrated commit cover exactly the files changed in base..HEAD of its branch: an uncommitted file left in the coordinator working tree is not attributed to it.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-scope-estimate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Two children whose scope_hint entries overlap and that have no blocked_by edge are started concurrently under max_parallel 2, and a blocked_by edge still orders them.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-schedule.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/branch-boundary-r2-scope-as-estimate.md",
+      "docs/plans/scope-as-estimate.intent.json",
+      "docs/specs/branch-boundary-r2.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/assurance/qa.ts",
+      "plugins/immune-brain/runtime/assurance/review_evidence.ts",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_schedule.ts",
+      "plugins/immune-brain/runtime/workspace_scope.ts",
+      "tests/batch-retro-201.test.ts",
+      "tests/batch-scope-estimate.test.ts",
+      "tests/scope-revision-envelope.test.ts",
+      "tests/unattended-batch-commit.test.ts",
+      "tests/unattended-batch-schedule.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/scope-as-estimate.intent.json",
+    "content_hash": "sha256:b8951ece66d8b58b20b54de53a436055d51432b9ca166ab5e1d58ae46cfa53ab"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:3c8a4c2fb2fda7891645f081183c1c49c720ab7f537b9d5e6aba85c8cdd8670b",
+  "git_base_head": "56d7290569e2dc4b08d3633a9cfeaa4c29d2cce1",
+  "attestations": [
+    {
+      "id": "approval-qa-f3a14909",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:b8951ece66d8b58b20b54de53a436055d51432b9ca166ab5e1d58ae46cfa53ab",
+      "diff_hash": "sha256:37a379be3316dac006b39b22b155c03eb30b9352e590dcef6aaed324aa7498b2",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:33a328d5665ad37e6403aeeba86213b129a8911c3b7af2f4ccb567f31556bf4f",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:33a328d5665ad37e6403aeeba86213b129a8911c3b7af2f4ccb567f31556bf4f"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:33a328d5665ad37e6403aeeba86213b129a8911c3b7af2f4ccb567f31556bf4f"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:33a328d5665ad37e6403aeeba86213b129a8911c3b7af2f4ccb567f31556bf4f"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-4cf0d14c",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:b8951ece66d8b58b20b54de53a436055d51432b9ca166ab5e1d58ae46cfa53ab",
+      "diff_hash": "sha256:853443f2e8b8f34bc1ec95472076656bcbd2b0b3d659c1b40ab9fbd4eb621963",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:164990af6d9fdb69c5f64460bf0faf7223339f03de92823fcd0aefd00ecb749d",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:164990af6d9fdb69c5f64460bf0faf7223339f03de92823fcd0aefd00ecb749d"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:164990af6d9fdb69c5f64460bf0faf7223339f03de92823fcd0aefd00ecb749d"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:164990af6d9fdb69c5f64460bf0faf7223339f03de92823fcd0aefd00ecb749d"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-a7503523",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:b8951ece66d8b58b20b54de53a436055d51432b9ca166ab5e1d58ae46cfa53ab",
+      "diff_hash": "sha256:fec7e2efd045d0b8b59d8629ca811a10bc10918e3bb32ec128f7c61d44283116",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:ccfb487e7a79d8024cad98af09343d114bb2abef6ac1ca588249bf085cfcd9d0",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:ccfb487e7a79d8024cad98af09343d114bb2abef6ac1ca588249bf085cfcd9d0"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:ccfb487e7a79d8024cad98af09343d114bb2abef6ac1ca588249bf085cfcd9d0"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:ccfb487e7a79d8024cad98af09343d114bb2abef6ac1ca588249bf085cfcd9d0"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-bf333156",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:b8951ece66d8b58b20b54de53a436055d51432b9ca166ab5e1d58ae46cfa53ab",
+      "diff_hash": "sha256:fec7e2efd045d0b8b59d8629ca811a10bc10918e3bb32ec128f7c61d44283116",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 manifest digest、revision 的单一 parent、tree 及全部 changed-path object IDs；本轮 delta 的中断恢复、交付身份复验和拒绝漂移路径未发现阻断问题。其余路径沿用前轮审查覆盖，测试结果采用 Kernel 内嵌 QA outcomes，未重跑测试。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "56d7290569e2dc4b08d3633a9cfeaa4c29d2cce1",
+        "review_commit": "1bf87d56c0d595c0946ea9bf5dbb22f768b8333a",
+        "review_tree": "ad926969b192bc9c96e83552064d8c33fe541287",
+        "manifest_digest": "sha256:450443a4f37d22027845f296640a33b3f89b01a4f4e81b9c657a5f4b182437e5"
+      },
+      "reviewer_verdict_sha256": "sha256:47fd34b0fbe6a3097b6f0c8df47237447a712c8621a9543e625a4072398232ac"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-109d9e5309ea-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "[P2] QA drift 未覆盖 branch delta 中的删除路径。qa.ts:89–93 将 deleted.txt 交给 inScopeTrackedDrift，但 workspace_scope.ts:1098–1100 仅遍历 frozen tree 与当前 index 中存在的路径；已提交的删除在两处都不存在，重新创建该文件不会被检查。应显式检查交付路径的预期缺失状态，并在 tests/batch-scope-estimate.test.ts 增加重新创建已删除文件时 QA 拒绝的测试。",
+      "anchor": "sha256:50e98bfba7f139b6d47bb0b80607ea254d23e5d56d04d307562d598ea757a445",
+      "evidence": {
+        "trigger": "Lane 提交删除 scope_hint 之外的 deleted.txt，QA prepare 重新创建该文件 → deleted.txt 虽在 changed_paths 中，却既不在 frozen tree 中，也不在当前 index 中，clean() 返回无 drift，后续 acceptance 可使用交付物中不存在的文件执行并通过；若检查结束时删除该临时文件，最终交付 identity 也保持不变。这违反完整 branch-delta drift 覆盖不变量。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/qa.ts:runDeterministicQa",
+          "plugins/immune-brain/runtime/workspace_scope.ts:inScopeTrackedDrift"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-1716067dc892-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "[P1] Lane 提交中断后无法恢复：plugins/immune-brain/runtime/unattended/batch_git.ts:529 在移动 HEAD 前写入 production evidence，但 lookupBatchCommit 在 :857 要求该提交已经可从 HEAD 到达。应记录预期的旧 Lane HEAD，并在核对交付、audit 和 lineage 后安全完成尚未执行的 ref 更新；补充 evidence 写入后、ref 更新前中断的恢复测试。",
+      "anchor": "sha256:84cfe4be3deedb97e2f29bfd6a8bdc7f19c523417e3d6bd4555917cb0f032a9d",
+      "evidence": {
+        "trigger": "已通过 QA 并 settled 的 Lane 在 commitBatchChild 写入新提交 C 的 durable evidence 后、update-ref HEAD 前中断；HEAD 仍为原实现提交 H（仅 staged 的情况则仍为 base B），而 C 是以 B 为 parent 的新提交 → 重启后 lookupBatchCommit 读取 C，却因 C 不是当前 HEAD 的祖先而抛出 batch_head_lineage_broken；batch_lanes 将整个 batch 标记 failed，已审查的 beyond-estimate 交付无法继续集成。现有测试只在 commitBatchChild 完整返回后调用 lookup，未覆盖此中断窗口。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:1229-1249",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:commitBatchChild",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:writeBatchCommitEvidence",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:lookupBatchCommit"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "revise_intent:scope-as-estimate:2026-10-22T07:04:18.291Z",
+      "at": "2026-10-22T07:04:18.291Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\nscope_added:tests/batch-retro-201.test.ts\naction_v2_sha256:d9022f3ee93691e13774e29a671254869e7446da2f4e7ee958b9d1af0294d5aa"
+    },
+    {
+      "id": "freeze_artifacts:scope-as-estimate:2026-10-22T07:07:31.953Z",
+      "at": "2026-10-22T07:07:31.953Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/scope-as-estimate.intent.json"
+    },
+    {
+      "id": "record_approval:scope-as-estimate:2026-10-22T07:08:10.212Z",
+      "at": "2026-10-22T07:08:10.212Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-f3a14909\naction_v2_sha256:f019c077987558e13b4c381f5b19082a6fc16ecf71985773542108232190686a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-14154b290b1075e3",
+        "issued_at": "2026-10-22T07:08:10.212Z"
+      }
+    },
+    {
+      "id": "request_rework:scope-as-estimate:2026-10-22T07:23:54.499Z",
+      "at": "2026-10-22T07:23:54.499Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:0f530e2732deb143522294ae99c199059a2fa468f57becfc781bdd86d67654f8",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-d5b7846d3e8429ba",
+        "issued_at": "2026-10-22T07:23:54.499Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "56d7290569e2dc4b08d3633a9cfeaa4c29d2cce1",
+        "review_commit": "81ad78377072f397439712827f94e01dedc7b215",
+        "review_tree": "f113bdbdf57b18392f2bd4a9c0e0bfe7d51923b4",
+        "manifest_digest": "sha256:8ceb9bbc4fc2ffb3c6609b08c012c422fc5eea40a79a85889354f7eb818cddf7"
+      }
+    },
+    {
+      "id": "resolve_finding:scope-as-estimate:2026-10-22T07:27:02.402Z",
+      "at": "2026-10-22T07:27:02.402Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-109d9e5309ea-1-review-1\naction_v2_sha256:989d93ad4df80437dd61fb429efa936363f47925a4f5daea0ab3a773cb1475bc"
+    },
+    {
+      "id": "freeze_artifacts:scope-as-estimate:2026-10-22T07:27:09.890Z",
+      "at": "2026-10-22T07:27:09.890Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/scope-as-estimate.intent.json"
+    },
+    {
+      "id": "record_approval:scope-as-estimate:2026-10-22T07:27:49.488Z",
+      "at": "2026-10-22T07:27:49.488Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-4cf0d14c\naction_v2_sha256:80464b0d26caaaec323e2e337177f2b44b710f78d1f20908f73df46077d3859b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-18adf4d0054e7311",
+        "issued_at": "2026-10-22T07:27:49.489Z"
+      }
+    },
+    {
+      "id": "request_rework:scope-as-estimate:2026-10-22T07:30:36.631Z",
+      "at": "2026-10-22T07:30:36.631Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:b0d6a1751b85ef53b7ebff193f7a7f1bd3e8c2169ef6457d04b2127eef5c6fbc",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-492a02f4c32ced33",
+        "issued_at": "2026-10-22T07:30:36.632Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "56d7290569e2dc4b08d3633a9cfeaa4c29d2cce1",
+        "review_commit": "ed8400630b064e01d1e2beab10d245bf50202236",
+        "review_tree": "8c270720de291b754b03cd8551b78deeca774f32",
+        "manifest_digest": "sha256:3f7c530ba2e449fc9c9f913262512509fa7d97f10830bddf68d198dc9a7bf99c"
+      }
+    },
+    {
+      "id": "resolve_finding:scope-as-estimate:2026-10-22T07:34:31.635Z",
+      "at": "2026-10-22T07:34:31.635Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-1716067dc892-1-review-1\naction_v2_sha256:b3b43e8525f178bdbb93b236ca1f2ff3f674b9a2398b0a2b84ecc0ced4735463"
+    },
+    {
+      "id": "freeze_artifacts:scope-as-estimate:2026-10-22T07:34:38.839Z",
+      "at": "2026-10-22T07:34:38.839Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/scope-as-estimate.intent.json"
+    },
+    {
+      "id": "record_approval:scope-as-estimate:2026-10-22T07:35:51.804Z",
+      "at": "2026-10-22T07:35:51.804Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-a7503523\naction_v2_sha256:e098a60fac8fe8df5ab14644bd03a49b92055faefd78ea2a81e1fcf2b6e98dd8",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-33645200be592bb2",
+        "issued_at": "2026-10-22T07:35:51.804Z"
+      }
+    },
+    {
+      "id": "record_approval:scope-as-estimate:2026-10-22T07:37:42.513Z",
+      "at": "2026-10-22T07:37:42.513Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-bf333156\naction_v2_sha256:e68fda38d0d72e9cbe434f7e31151ef3a0d39abdaf4041a471b4d321f6f01bfb",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-26bdab346c516e4d",
+        "issued_at": "2026-10-22T07:37:42.513Z"
+      }
+    },
+    {
+      "id": "complete:scope-as-estimate:2026-10-22T07:37:44.267Z",
+      "at": "2026-10-22T07:37:44.267Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:6a1f38efc62703d44d92a08c5a5be1bb996a0520cf51daec8f89e5017251ce64"
+    }
+  ]
+}

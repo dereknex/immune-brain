@@ -87,6 +87,13 @@ function readEnrollmentBaseline(root: string): GitWorkspaceSnapshot | null {
 	}
 }
 
+/** Runtime-created Lane branches deliver their whole branch delta. */
+export function usesBranchDelivery(root: string, taskId?: string): boolean {
+	const branch = git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"])?.trim();
+	if (!branch || !/^imm-lane\/[^/]+\/[^/]+$/.test(branch)) return false;
+	return taskId === undefined || branch.endsWith(`/${taskId}`);
+}
+
 function assertNoEnvelopeEscape(
 	root: string,
 	stagedPaths: readonly string[],
@@ -94,6 +101,7 @@ function assertNoEnvelopeEscape(
 	taskId?: string,
 	outOfScope?: string[],
 ): void {
+	if (usesBranchDelivery(root, taskId)) return;
 	// A read-only status collects escaped paths for a warning; frozen snapshots refuse them.
 	const refuse = (paths: string[]) => {
 		if (!outOfScope) throw new Error(`task delivery contains paths outside the authorization envelope: ${paths.join(", ")}`);
@@ -456,10 +464,12 @@ function taskSnapshotOnce(root: string, scope: string[], taskId?: string, tolera
 		throw new Error("task snapshot does not support sparse checkout or sparse index");
 	if (gitBytes(root, ["ls-files", "--unmerged", "-z"]).length > 0)
 		throw new Error("task snapshot does not support unmerged index entries");
-	assertNoScopedIndexFlags(root, scope, "task snapshot");
+	const branchDelivery = usesBranchDelivery(root, taskId);
+	const baseHead = branchDelivery ? readEnrollmentBaseline(root)?.head ?? head : head;
+	assertNoScopedIndexFlags(root, branchDelivery ? ["**"] : scope, "task snapshot");
 
 	const stagedPaths = decodeNullPaths(
-		gitBytes(root, ["diff", "--cached", "--no-renames", "--name-only", "-z", head, "--"]),
+		gitBytes(root, ["diff", "--cached", "--no-renames", "--name-only", "-z", baseHead, "--"]),
 		"staged task paths",
 	);
 	const unstagedPaths = decodeNullPaths(
@@ -473,7 +483,7 @@ function taskSnapshotOnce(root: string, scope: string[], taskId?: string, tolera
 	assertNoCaseFoldCollisions([...stagedPaths, ...unstagedPaths, ...untrackedPaths], "Git task paths");
 	assertNoEnvelopeEscape(root, stagedPaths, scope, taskId, outOfScope);
 	const uncommittedInScope = [...new Set([...unstagedPaths, ...untrackedPaths])]
-		.filter((path) => taskPathMatchesScope(path, scope))
+		.filter((path) => !isNonDeliveryPath(path) && (branchDelivery || taskPathMatchesScope(path, scope)))
 		.sort(comparePaths);
 	if (uncommittedInScope.length > 0) {
 		if (!tolerated) throw new Error(`task scope contains unstaged or untracked changes: ${uncommittedInScope.join(", ")}`);
@@ -481,13 +491,13 @@ function taskSnapshotOnce(root: string, scope: string[], taskId?: string, tolera
 	}
 
 	const taskPaths = [...new Set(stagedPaths)]
-		.filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope))
+		.filter((path) => !isNonDeliveryPath(path) && (branchDelivery || taskPathMatchesScope(path, scope)))
 		.sort(comparePaths);
 	assertNoPreEnrollmentScopeChanges(root, taskPaths, taskId);
 	const stagedFiles: Record<string, GitTaskIndexEntry> = {};
 	for (const path of taskPaths) {
 		const current = indexEntry(root, path);
-		const base = headEntry(root, head, path);
+		const base = headEntry(root, baseHead, path);
 		if (!current && !base) throw new Error(`task path has no index or HEAD identity: ${path}`);
 		stagedFiles[path] = {
 			status: !base ? "added" : !current ? "deleted" : "modified",
@@ -541,6 +551,11 @@ export function taskDiffIdentity(
 	scopeHint: unknown,
 	taskId?: string,
 ): GitTaskDiffIdentity {
+	if (usesBranchDelivery(projectRoot, taskId)) {
+		const baseline = readEnrollmentBaseline(projectRoot);
+		if (!baseline) throw new Error("Lane task diff requires its Enrollment baseline");
+		return taskRevisionIdentity(projectRoot, scopeHint, baseline.head, taskId);
+	}
 	const snapshot = captureGitTaskSnapshot(projectRoot, scopeHint, taskId);
 	return {
 		diff_hash: hashTaskSnapshot(snapshot),
@@ -601,7 +616,9 @@ function taskRevisionSnapshotOnce(
 		throw new Error("task revision does not support sparse checkout or sparse index");
 	if (gitBytes(root, ["ls-files", "--unmerged", "-z"]).length > 0)
 		throw new Error("task revision does not support unmerged index entries");
-	assertNoScopedIndexFlags(root, scope, "task revision");
+	const branchDelivery = usesBranchDelivery(root, taskId);
+	const delivered = (path: string) => !isNonDeliveryPath(path) && (branchDelivery || taskPathMatchesScope(path, scope));
+	assertNoScopedIndexFlags(root, branchDelivery ? ["**"] : scope, "task revision");
 
 	const stagedPaths = decodeNullPaths(
 		gitBytes(root, ["diff", "--cached", "--no-renames", "--name-only", "-z", baseHead, "--"]),
@@ -616,10 +633,10 @@ function taskRevisionSnapshotOnce(
 		"untracked task revision paths",
 	);
 	assertNoEnvelopeEscape(root, stagedPaths, scope, taskId, outOfScope);
-	const scopedStagedPaths = stagedPaths.filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope));
+	const scopedStagedPaths = stagedPaths.filter(delivered);
 	assertNoPreEnrollmentScopeChanges(root, scopedStagedPaths, taskId);
-	const scopedUnstagedPaths = unstagedPaths.filter((path) => taskPathMatchesScope(path, scope));
-	const scopedUntrackedPaths = untrackedPaths.filter((path) => taskPathMatchesScope(path, scope));
+	const scopedUnstagedPaths = unstagedPaths.filter(delivered);
+	const scopedUntrackedPaths = untrackedPaths.filter(delivered);
 	assertNoCaseFoldCollisions(
 		[...scopedStagedPaths, ...scopedUnstagedPaths, ...scopedUntrackedPaths],
 		"Git task revision paths",
@@ -789,8 +806,9 @@ export function taskCommitRevisionIdentity(projectRoot: string, scopeHint: unkno
 	if (gitRequired(root, ["cat-file", "-t", baseHead], "unreadable task base") !== "commit" ||
 		gitRequired(root, ["cat-file", "-t", commit], "unreadable task commit") !== "commit" ||
 		git(root, ["merge-base", "--is-ancestor", baseHead, commit]) === null) throw new Error("invalid task commit ancestry");
+	const branchDelivery = usesBranchDelivery(root);
 	const paths = decodeNullPaths(gitBytes(root, ["diff", "--no-renames", "--name-only", "-z", baseHead, commit, "--"]), "task commit paths")
-		.filter(path => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope)).sort(comparePaths);
+		.filter(path => !isNonDeliveryPath(path) && (branchDelivery || taskPathMatchesScope(path, scope))).sort(comparePaths);
 	assertNoCaseFoldCollisions(paths, "task commit paths");
 	const changed_paths: Record<string, GitTaskIndexEntry> = {};
 	for (const path of paths) {
@@ -1040,31 +1058,6 @@ export function assertCheckCommandsCiteExistingTests(
 	}
 }
 
-export function assertChangedFilesWithinScope(
-	changedFiles: string[],
-	scope: unknown,
-	boundaryName: string,
-): void {
-	if (!Array.isArray(scope) || scope.length === 0) return;
-	const scopePaths = scope.filter(
-		(value): value is string =>
-			typeof value === "string" && value.trim().length > 0,
-	);
-	if (scopePaths.length !== scope.length) {
-		throw new Error(`${boundaryName} contains an invalid path.`);
-	}
-	if (scopePaths.length === 0) return;
-	const outside = changedFiles.filter(
-		(path) =>
-			!scopePaths.some((scopePath) => pathMatchesScope(path, scopePath)),
-	);
-	if (outside.length > 0) {
-		throw new Error(
-			`Changed files outside the ${boundaryName}: ${outside.join(", ")}. Allowed: ${scopePaths.join(", ")}.`,
-		);
-	}
-}
-
 function gitBlobId(body: Buffer, length: number): string {
 	const hash = createHash(length === 64 ? "sha256" : "sha1");
 	hash.update(`blob ${body.length}\0`);
@@ -1085,7 +1078,7 @@ const GIT_REPOSITORY_BINDINGS = [
 	"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_NAMESPACE", "GIT_PREFIX",
 ];
 
-export function inScopeTrackedDrift(projectRoot: string, tree: string, scopeHint: unknown): string[] {
+export function inScopeTrackedDrift(projectRoot: string, tree: string, scopeHint: unknown, deliveryPaths: readonly string[] = []): string[] {
 	const root = resolve(projectRoot);
 	const env = { ...process.env };
 	for (const name of GIT_REPOSITORY_BINDINGS) delete env[name];
@@ -1103,7 +1096,8 @@ export function inScopeTrackedDrift(projectRoot: string, tree: string, scopeHint
 	const tracked = splitNull(gitBytes(root, ["ls-files", "-z"], env).toString("utf8")).filter(inScope);
 	const regular: string[] = [];
 	const drift = new Set<string>();
-	for (const path of new Set([...expected.keys(), ...tracked])) {
+	// Deleted delivery paths are absent from both the frozen tree and the index.
+	for (const path of new Set([...expected.keys(), ...tracked, ...deliveryPaths.filter(inScope)])) {
 		const want = expected.get(path);
 		let stat;
 		try { stat = lstatSync(join(root, path)); } catch { stat = null; }

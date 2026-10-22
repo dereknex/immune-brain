@@ -470,11 +470,7 @@ function consumedSlots(record: BatchLaneRunStateRecord): number {
 	return record.children.filter((child) => child.state !== "pending" && child.state !== "skipped_blocked").length;
 }
 
-/**
- * The scope a child's delivery may touch, read from its published TaskIntent at
- * the coordinator. A child whose scope cannot be read is treated as overlapping
- * everything, so an unreadable intent serializes instead of running in parallel.
- */
+/** The child's planning estimate; scheduling orders only by blocked_by. */
 export function scopeOfChild(root: string, child: { task_id: string; intent_path: string | null }): string[] {
 	try {
 		return [...readTaskIntent(root, child.task_id, child.intent_path ?? undefined).intent.scope_hint];

@@ -64,16 +64,16 @@ describe("startable children", () => {
 		expect(startableChildren(children, Number.POSITIVE_INFINITY)).toEqual(["a", "b", "c"]);
 	});
 
-	it("serializes identical, nested and pattern scopes", () => {
-		expect(startableChildren([child("a", ["runtime/a.ts"]), child("b", ["runtime/a.ts"])], 4)).toEqual(["a"]);
-		expect(startableChildren([child("a", ["runtime"]), child("b", ["runtime/b.ts"])], 4)).toEqual(["a"]);
-		expect(startableChildren([child("a", ["runtime/**"]), child("b", ["runtime/x/y.ts"])], 4)).toEqual(["a"]);
-		expect(startableChildren([child("a", ["**/*.ts"]), child("b", ["docs/b.md"])], 4)).toEqual(["a"]);
+	it("starts identical, nested and pattern estimates concurrently", () => {
+		expect(startableChildren([child("a", ["runtime/a.ts"]), child("b", ["runtime/a.ts"])], 2)).toEqual(["a", "b"]);
+		expect(startableChildren([child("a", ["runtime"]), child("b", ["runtime/b.ts"])], 2)).toEqual(["a", "b"]);
+		expect(startableChildren([child("a", ["runtime/**"]), child("b", ["runtime/x/y.ts"])], 2)).toEqual(["a", "b"]);
+		expect(startableChildren([child("a", ["**/*.ts"]), child("b", ["docs/b.md"])], 2)).toEqual(["a", "b"]);
 	});
 
-	it("skips an overlapping child but still starts a later disjoint one", () => {
+	it("starts overlapping and disjoint estimates in record order", () => {
 		const children = [child("a", ["runtime/a.ts"]), child("b", ["runtime/a.ts"]), child("c", ["docs/c.md"])];
-		expect(startableChildren(children, 3)).toEqual(["a", "c"]);
+		expect(startableChildren(children, 3)).toEqual(["a", "b", "c"]);
 	});
 
 	it("never starts a child with an unmet blocked_by", () => {
@@ -86,10 +86,10 @@ describe("startable children", () => {
 				.toEqual(["b"]);
 	});
 
-	it("holds a child back while an in-flight sibling overlaps it, and counts in-flight against the limit", () => {
+	it("counts in-flight siblings against the limit regardless of estimate overlap", () => {
 		const inFlight: ScheduleChildState[] = ["lane_admitted", "enrolled", "settled", "lane_committed"];
 		for (const state of inFlight) {
-			expect(startableChildren([child("a", ["runtime/a.ts"], state), child("b", ["runtime/a.ts"])], 4)).toEqual([]);
+			expect(startableChildren([child("a", ["runtime/a.ts"], state), child("b", ["runtime/a.ts"])], 4)).toEqual(["b"]);
 			expect(startableChildren([child("a", ["runtime/a.ts"], state), child("b", ["docs/b.md"])], 4)).toEqual(["b"]);
 			expect(startableChildren([child("a", ["runtime/a.ts"], state), child("b", ["docs/b.md"])], 1)).toEqual([]);
 		}
@@ -110,17 +110,10 @@ describe("startable children", () => {
 	});
 
 	it("yields exactly the serial runner's choice when max_parallel is 1", () => {
-		// Reference: the serial runner's `nextEnrollableChild`, copied as the oracle.
-		// A child also waits for every earlier child sharing its scope that it
-		// is not itself a declared dependency of (D8).
+		// A single free slot chooses the first ready declared dependent.
 		const serialNext = (children: ScheduleChild[]): string[] => {
-			const waitsFor = (candidate: ScheduleChild, index: number) => children.filter((other, otherIndex) =>
-				candidate.blocked_by.includes(other.task_id) || (otherIndex < index && !other.blocked_by.includes(candidate.task_id)
-					&& other.scope_hint[0] === candidate.scope_hint[0]));
-			const next = children.find(
-				(candidate, index) =>
-					candidate.state === "pending" && waitsFor(candidate, index).every((other) => other.state === "committed"),
-			);
+			const next = children.find(candidate => candidate.state === "pending"
+				&& candidate.blocked_by.every(id => children.find(other => other.task_id === id)?.state === "committed"));
 			return next ? [next.task_id] : [];
 		};
 		const states: ScheduleChildState[] = ["pending", "committed", "needs_human", "skipped_blocked"];
@@ -138,15 +131,15 @@ describe("startable children", () => {
 		}
 	});
 
-	it("holds a later overlapping child until the earlier one in Slice order is done (D8)", () => {
+	it("uses declared dependencies without adding Slice order between overlapping estimates", () => {
 		// B is listed first but is the later Slice; no declared dependency links them.
 		const pair = (state: ScheduleChildState): ScheduleChild[] => [
 			{ ...child("b", ["runtime/shared.ts"]), slice_id: "S10" },
 			{ ...child("a", ["runtime/shared.ts"], state), slice_id: "S2" },
 		];
-		expect(startableChildren(pair("pending"), 4)).toEqual(["a"]);
+		expect(startableChildren(pair("pending"), 2)).toEqual(["b", "a"]);
 		for (const state of ["enrolled", "lane_admitted", "settled", "lane_committed", "needs_human", "skipped_blocked"] as const)
-			expect(startableChildren(pair(state), 4), state).toEqual([]);
+			expect(startableChildren(pair(state), 2), state).toEqual(["b"]);
 		for (const state of ["committed", "integrated", "released"] as const)
 			expect(startableChildren(pair(state), 4), state).toEqual(["b"]);
 		// Disjoint children are unaffected by each other's state.
@@ -175,15 +168,15 @@ describe("startable children", () => {
 });
 
 describe("plan parallel groups", () => {
-	it("reports waves and the children that serialize behind an overlapping sibling", () => {
+	it("reports dependency waves without serializing overlapping estimates", () => {
 		const projection = projectParallelGroups([
 			{ task_id: "a", blocked_by: [], scope_hint: ["runtime/a/**"] },
 			{ task_id: "b", blocked_by: [], scope_hint: ["docs/b.md"] },
 			{ task_id: "c", blocked_by: [], scope_hint: ["runtime/a/deep.ts"] },
 			{ task_id: "d", blocked_by: ["a", "b"], scope_hint: ["tests/d.ts"] },
 		]);
-		expect(projection.parallel_groups).toEqual([["a", "b"], ["c", "d"]]);
-		expect(projection.scope_conflicts).toEqual([{ task_id: "c", overlaps_with: ["a"] }]);
+		expect(projection.parallel_groups).toEqual([["a", "b", "c"], ["d"]]);
+		expect(projection.scope_conflicts).toEqual([]);
 	});
 
 	it("reports a strictly serial plan as one child per wave", () => {
@@ -203,16 +196,16 @@ describe("plan parallel groups", () => {
 			{ task_id: "s4", slice_id: "S4", blocked_by: [], scope_hint: ["dist/bundle.mjs"] },
 			{ task_id: "s10", slice_id: "S10", blocked_by: [], scope_hint: ["dist/bundle.mjs"] },
 		];
-		expect(projectParallelGroups(children).parallel_groups).toEqual([["s4"], ["s10"], ["s2"], ["s3"]]);
-		expect(startableChildren(children.map((entry) => ({ ...entry, state: "pending" as const })), 4)).toEqual(["s4"]);
+		expect(projectParallelGroups(children).parallel_groups).toEqual([["s4", "s10"], ["s2"], ["s3"]]);
+		expect(startableChildren(children.map((entry) => ({ ...entry, state: "pending" as const })), 2)).toEqual(["s4", "s10"]);
 	});
 
-	it("keeps Slice order between overlapping children that declared dependencies leave unordered", () => {
+	it("keeps independent children in the same wave regardless of Slice order", () => {
 		const projection = projectParallelGroups([
 			{ task_id: "late", slice_id: "S10", blocked_by: [], scope_hint: ["runtime/x.ts"] },
 			{ task_id: "early", slice_id: "S2", blocked_by: [], scope_hint: ["runtime/x.ts"] },
 		]);
-		expect(projection.parallel_groups).toEqual([["early"], ["late"]]);
+		expect(projection.parallel_groups).toEqual([["late", "early"]]);
 	});
 
 	it("rejects a cyclic dependency graph", () => {
@@ -225,15 +218,15 @@ describe("plan parallel groups", () => {
 	});
 });
 
-describe("blockedByParked (run-entry decision hosting D8)", () => {
-	it("skips a later overlapping child, and its dependents, behind a parked one; a disjoint child stays", () => {
+describe("blockedByParked", () => {
+	it("blocks declared dependents transitively while overlapping independent children stay ready", () => {
 		const blocked = blockedByParked([
 			{ ...child("a", ["src/a/**"], "needs_human"), slice_id: "S1" },
-			{ ...child("b", ["src/b/**"]), slice_id: "S2" },
+			{ ...child("b", ["src/b/**"], "pending", ["a"]), slice_id: "S2" },
 			{ ...child("c", ["src/a/x.ts"]), slice_id: "S3" },
-			{ ...child("d", ["docs/**"], "pending", ["c"]), slice_id: "S4" },
+			{ ...child("d", ["docs/**"], "pending", ["b"]), slice_id: "S4" },
 		]);
-		expect(Object.fromEntries(blocked)).toEqual({ c: "a", d: "a" });
+		expect(Object.fromEntries(blocked)).toEqual({ b: "a", d: "a" });
 	});
 });
 

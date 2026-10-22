@@ -5328,7 +5328,15 @@ function readEnrollmentBaseline(root) {
     throw new Error("enrollment baseline is unreadable");
   }
 }
+function usesBranchDelivery(root, taskId) {
+  const branch = git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"])?.trim();
+  if (!branch || !/^imm-lane\/[^/]+\/[^/]+$/.test(branch))
+    return false;
+  return taskId === undefined || branch.endsWith(`/${taskId}`);
+}
 function assertNoEnvelopeEscape(root, stagedPaths, scope, taskId, outOfScope) {
+  if (usesBranchDelivery(root, taskId))
+    return;
   const refuse = (paths) => {
     if (!outOfScope)
       throw new Error(`task delivery contains paths outside the authorization envelope: ${paths.join(", ")}`);
@@ -5561,24 +5569,26 @@ function taskSnapshotOnce(root, scope, taskId, tolerated, outOfScope) {
     throw new Error("task snapshot does not support sparse checkout or sparse index");
   if (gitBytes(root, ["ls-files", "--unmerged", "-z"]).length > 0)
     throw new Error("task snapshot does not support unmerged index entries");
-  assertNoScopedIndexFlags(root, scope, "task snapshot");
-  const stagedPaths = decodeNullPaths(gitBytes(root, ["diff", "--cached", "--no-renames", "--name-only", "-z", head, "--"]), "staged task paths");
+  const branchDelivery = usesBranchDelivery(root, taskId);
+  const baseHead = branchDelivery ? readEnrollmentBaseline(root)?.head ?? head : head;
+  assertNoScopedIndexFlags(root, branchDelivery ? ["**"] : scope, "task snapshot");
+  const stagedPaths = decodeNullPaths(gitBytes(root, ["diff", "--cached", "--no-renames", "--name-only", "-z", baseHead, "--"]), "staged task paths");
   const unstagedPaths = decodeNullPaths(gitBytes(root, ["diff", "--no-renames", "--name-only", "-z", "--"]), "unstaged task paths");
   const untrackedPaths = decodeNullPaths(gitBytes(root, ["ls-files", "--others", "--exclude-standard", "-z", "--"]), "untracked task paths");
   assertNoCaseFoldCollisions([...stagedPaths, ...unstagedPaths, ...untrackedPaths], "Git task paths");
   assertNoEnvelopeEscape(root, stagedPaths, scope, taskId, outOfScope);
-  const uncommittedInScope = [...new Set([...unstagedPaths, ...untrackedPaths])].filter((path) => taskPathMatchesScope(path, scope)).sort(comparePaths);
+  const uncommittedInScope = [...new Set([...unstagedPaths, ...untrackedPaths])].filter((path) => !isNonDeliveryPath(path) && (branchDelivery || taskPathMatchesScope(path, scope))).sort(comparePaths);
   if (uncommittedInScope.length > 0) {
     if (!tolerated)
       throw new Error(`task scope contains unstaged or untracked changes: ${uncommittedInScope.join(", ")}`);
     tolerated.splice(0, tolerated.length, ...uncommittedInScope);
   }
-  const taskPaths = [...new Set(stagedPaths)].filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope)).sort(comparePaths);
+  const taskPaths = [...new Set(stagedPaths)].filter((path) => !isNonDeliveryPath(path) && (branchDelivery || taskPathMatchesScope(path, scope))).sort(comparePaths);
   assertNoPreEnrollmentScopeChanges(root, taskPaths, taskId);
   const stagedFiles = {};
   for (const path of taskPaths) {
     const current = indexEntry(root, path);
-    const base = headEntry(root, head, path);
+    const base = headEntry(root, baseHead, path);
     if (!current && !base)
       throw new Error(`task path has no index or HEAD identity: ${path}`);
     stagedFiles[path] = {
@@ -5615,6 +5625,12 @@ function hashTaskSnapshot(snapshot) {
   return `sha256:${createHash9("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
 }
 function taskDiffIdentity(projectRoot, scopeHint, taskId) {
+  if (usesBranchDelivery(projectRoot, taskId)) {
+    const baseline = readEnrollmentBaseline(projectRoot);
+    if (!baseline)
+      throw new Error("Lane task diff requires its Enrollment baseline");
+    return taskRevisionIdentity(projectRoot, scopeHint, baseline.head, taskId);
+  }
   const snapshot = captureGitTaskSnapshot(projectRoot, scopeHint, taskId);
   return {
     diff_hash: hashTaskSnapshot(snapshot),
@@ -5650,15 +5666,17 @@ function taskRevisionSnapshotOnce(root, scope, baseHead, taskId, tolerated, outO
     throw new Error("task revision does not support sparse checkout or sparse index");
   if (gitBytes(root, ["ls-files", "--unmerged", "-z"]).length > 0)
     throw new Error("task revision does not support unmerged index entries");
-  assertNoScopedIndexFlags(root, scope, "task revision");
+  const branchDelivery = usesBranchDelivery(root, taskId);
+  const delivered = (path) => !isNonDeliveryPath(path) && (branchDelivery || taskPathMatchesScope(path, scope));
+  assertNoScopedIndexFlags(root, branchDelivery ? ["**"] : scope, "task revision");
   const stagedPaths = decodeNullPaths(gitBytes(root, ["diff", "--cached", "--no-renames", "--name-only", "-z", baseHead, "--"]), "task revision paths");
   const unstagedPaths = decodeNullPaths(gitBytes(root, ["diff", "--no-renames", "--name-only", "-z", "--"]), "unstaged task revision paths");
   const untrackedPaths = decodeNullPaths(gitBytes(root, ["ls-files", "--others", "--exclude-standard", "-z", "--"]), "untracked task revision paths");
   assertNoEnvelopeEscape(root, stagedPaths, scope, taskId, outOfScope);
-  const scopedStagedPaths = stagedPaths.filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope));
+  const scopedStagedPaths = stagedPaths.filter(delivered);
   assertNoPreEnrollmentScopeChanges(root, scopedStagedPaths, taskId);
-  const scopedUnstagedPaths = unstagedPaths.filter((path) => taskPathMatchesScope(path, scope));
-  const scopedUntrackedPaths = untrackedPaths.filter((path) => taskPathMatchesScope(path, scope));
+  const scopedUnstagedPaths = unstagedPaths.filter(delivered);
+  const scopedUntrackedPaths = untrackedPaths.filter(delivered);
   assertNoCaseFoldCollisions([...scopedStagedPaths, ...scopedUnstagedPaths, ...scopedUntrackedPaths], "Git task revision paths");
   const drift = [...new Set([...scopedUnstagedPaths, ...scopedUntrackedPaths])].sort(comparePaths);
   if (drift.length > 0) {
@@ -5755,6 +5773,39 @@ function scopedContentIdentity(projectRoot, scopes) {
   const entries = [...new Set(splitNull(listed))].filter((path) => !isNonDeliveryPath(path) && !isRuntimeAuthorityPath(path) && taskPathMatchesScope(path, [...scopes])).sort(comparePaths).map((path) => [path, fileFingerprint(root, path)]).filter(([, fingerprint]) => fingerprint !== "missing");
   return hashTaskSnapshot({ kind: "scoped-content-v1", scopes: [...new Set(scopes)].sort(comparePaths), entries });
 }
+function taskCommitRevisionIdentity(projectRoot, scopeHint, baseHead, commit) {
+  const requested = resolve7(projectRoot);
+  if (lstatSync8(requested).isSymbolicLink())
+    throw new Error("task commit root must be a real directory");
+  const root = realpathSync6(requested), scope = assertCanonicalTaskScope(scopeHint);
+  if (!GIT_OBJECT_ID3.test(baseHead) || !GIT_OBJECT_ID3.test(commit))
+    throw new Error("invalid task commit identity");
+  if (gitRequired(root, ["cat-file", "-t", baseHead], "unreadable task base") !== "commit" || gitRequired(root, ["cat-file", "-t", commit], "unreadable task commit") !== "commit" || git(root, ["merge-base", "--is-ancestor", baseHead, commit]) === null)
+    throw new Error("invalid task commit ancestry");
+  const branchDelivery = usesBranchDelivery(root);
+  const paths = decodeNullPaths(gitBytes(root, ["diff", "--no-renames", "--name-only", "-z", baseHead, commit, "--"]), "task commit paths").filter((path) => !isNonDeliveryPath(path) && (branchDelivery || taskPathMatchesScope(path, scope))).sort(comparePaths);
+  assertNoCaseFoldCollisions(paths, "task commit paths");
+  const changed_paths = {};
+  for (const path of paths) {
+    const current = headEntry(root, commit, path), base = headEntry(root, baseHead, path);
+    changed_paths[path] = {
+      status: !base ? "added" : !current ? "deleted" : "modified",
+      mode: current?.mode ?? null,
+      oid: current?.oid ?? null,
+      base_mode: base?.mode ?? null,
+      base_oid: base?.oid ?? null
+    };
+  }
+  const snapshot = {
+    kind: "git-task-revision-v1",
+    repository_root: root,
+    base_head: baseHead,
+    base_tree: gitRequired(root, ["rev-parse", `${baseHead}^{tree}`], "unreadable task base tree"),
+    scope,
+    changed_paths
+  };
+  return { diff_hash: hashTaskSnapshot(snapshot), changed_paths: paths };
+}
 function isGitWorkspaceSnapshot(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value) && value.kind === "git-workspace-v1" && typeof value.repository_root === "string" && typeof value.head === "string" && typeof value.dirty_files === "object" && value.dirty_files !== null;
 }
@@ -5806,7 +5857,7 @@ function gitBlobId(body, length) {
   hash.update(body);
   return hash.digest("hex");
 }
-function inScopeTrackedDrift(projectRoot, tree, scopeHint) {
+function inScopeTrackedDrift(projectRoot, tree, scopeHint, deliveryPaths = []) {
   const root = resolve7(projectRoot);
   const env = { ...process.env };
   for (const name of GIT_REPOSITORY_BINDINGS)
@@ -5828,7 +5879,7 @@ function inScopeTrackedDrift(projectRoot, tree, scopeHint) {
   const tracked = splitNull(gitBytes(root, ["ls-files", "-z"], env).toString("utf8")).filter(inScope);
   const regular = [];
   const drift = new Set;
-  for (const path of new Set([...expected.keys(), ...tracked])) {
+  for (const path of new Set([...expected.keys(), ...tracked, ...deliveryPaths.filter(inScope)])) {
     const want = expected.get(path);
     let stat;
     try {
@@ -8608,6 +8659,7 @@ function captureReviewManifest(root, input) {
     review_commit: revision.review_commit,
     review_ref: revision.review_ref,
     changed_paths: snapshot.changed_paths,
+    beyond_estimate: Object.keys(snapshot.changed_paths).filter((path) => !snapshot.scope.some((entry) => pathMatchesScope(path, entry))).sort(compareRevisionPaths),
     diff_hash: revision.diff_hash,
     outcomes: Object.fromEntries(Object.entries(input.outcomes).map(([id, outcome]) => [id, { ...outcome }])),
     record_revision: input.recordRevision,
@@ -10553,7 +10605,12 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
     groups.set(key, group);
   }
   const tree = options._frozenTree?.tree ?? deliveryTreeForSnapshot(snapshot);
-  const drift = materialized ? null : options._frozenTree ? options._frozenTree.drift ?? (() => []) : ((scope) => () => inScopeTrackedDrift(snapshot.root, tree, scope))(recordForSnapshot(snapshot).intent_snapshot.scope_hint);
+  const drift = materialized ? null : options._frozenTree ? options._frozenTree.drift ?? (() => []) : (() => {
+    const record = recordForSnapshot(snapshot);
+    const branchDelivery = usesBranchDelivery(snapshot.root, snapshot.task_id);
+    const paths = branchDelivery ? Object.keys(captureGitTaskRevisionSnapshot(snapshot.root, record.intent_snapshot.scope_hint, record.git_base_head, snapshot.task_id).changed_paths) : record.intent_snapshot.scope_hint;
+    return () => inScopeTrackedDrift(snapshot.root, tree, paths, branchDelivery ? paths : []);
+  })();
   const path = verificationPath();
   const failsIdenticallyAtBase = async (item, observed, baseTree) => {
     live();
@@ -12692,61 +12749,7 @@ var init_github_issue_tracker = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/unattended/batch_schedule.ts
-function scopePrefix(entry) {
-  if (typeof entry !== "string")
-    return [];
-  let value = entry.trim().toLowerCase();
-  while (value.startsWith("./"))
-    value = value.slice(2);
-  if (!value || value.startsWith("/") || value.includes("\\"))
-    return [];
-  const wildcard = value.search(WILDCARD);
-  const literal = wildcard === -1 ? value : value.slice(0, value.lastIndexOf("/", wildcard) + 1);
-  const segments = literal.split("/").filter((segment) => segment.length > 0);
-  if (segments.some((segment) => segment === "." || segment === ".."))
-    return [];
-  return segments;
-}
-function prefixOverlaps(left, right) {
-  if (!left.length || !right.length)
-    return true;
-  const shared = Math.min(left.length, right.length);
-  for (let index = 0;index < shared; index += 1)
-    if (left[index] !== right[index])
-      return false;
-  return true;
-}
-function scopesOverlap(left, right) {
-  if (!left.length || !right.length)
-    return true;
-  const rightPrefixes = right.map(scopePrefix);
-  return left.some((entry) => {
-    const prefix = scopePrefix(entry);
-    return rightPrefixes.some((other) => prefixOverlaps(prefix, other));
-  });
-}
-function implicitScopeDependencies(children) {
-  const bySlice = children.map((child, index) => ({ child, index })).sort((left, right) => left.child.slice_id !== undefined && right.child.slice_id !== undefined ? SLICE_ORDER.compare(left.child.slice_id, right.child.slice_id) || left.index - right.index : left.index - right.index).map(({ child }) => child);
-  const known = new Set(children.map((child) => child.task_id));
-  const ordered = [];
-  const placed = new Set;
-  while (ordered.length < bySlice.length) {
-    const next = bySlice.find((child) => !placed.has(child.task_id) && child.blocked_by.every((id) => placed.has(id) || !known.has(id)));
-    if (!next)
-      throw new Error("Initiative Task dependencies must form an acyclic graph");
-    ordered.push(next);
-    placed.add(next.task_id);
-  }
-  const implicit = new Map;
-  for (let later = 0;later < ordered.length; later += 1) {
-    const child = ordered[later];
-    const earlier = ordered.slice(0, later).filter((other) => !other.blocked_by.includes(child.task_id) && !child.blocked_by.includes(other.task_id) && scopesOverlap(child.scope_hint, other.scope_hint));
-    implicit.set(child.task_id, earlier.map((other) => other.task_id));
-  }
-  return implicit;
-}
 function blockedByParked(children) {
-  const implicit = implicitScopeDependencies(children);
   const blocker = new Map;
   for (const child of children)
     if (PARKED_STATES.has(child.state))
@@ -12757,7 +12760,7 @@ function blockedByParked(children) {
     for (const child of children) {
       if (child.state !== "pending" || blocker.has(child.task_id))
         continue;
-      const parked = [...child.blocked_by, ...implicit.get(child.task_id)].find((id) => blocker.has(id));
+      const parked = child.blocked_by.find((id) => blocker.has(id));
       if (parked === undefined)
         continue;
       blocker.set(child.task_id, blocker.get(parked));
@@ -12778,16 +12781,13 @@ function startableChildren(children, maxParallel) {
   const limit = positiveLimit(maxParallel);
   const done = new Set(children.filter((child) => DONE_STATES.has(child.state)).map((child) => child.task_id));
   const occupied = children.filter((child) => IN_FLIGHT_STATES.has(child.state));
-  const implicit = implicitScopeDependencies(children);
   const startable = [];
   for (const child of children) {
     if (occupied.length >= limit)
       break;
     if (child.state !== "pending")
       continue;
-    if (![...child.blocked_by, ...implicit.get(child.task_id)].every((id) => done.has(id)))
-      continue;
-    if (occupied.some((other) => scopesOverlap(child.scope_hint, other.scope_hint)))
+    if (!child.blocked_by.every((id) => done.has(id)))
       continue;
     startable.push(child.task_id);
     occupied.push(child);
@@ -12798,9 +12798,8 @@ function projectParallelGroups(children) {
   const remaining = [...children];
   const placed = new Set;
   const groups = [];
-  const implicit = implicitScopeDependencies(children);
   while (remaining.length) {
-    const wave = remaining.filter((child) => [...child.blocked_by, ...implicit.get(child.task_id)].every((id) => placed.has(id)));
+    const wave = remaining.filter((child) => child.blocked_by.every((id) => placed.has(id)));
     if (!wave.length)
       throw new Error("Initiative Task dependencies must form an acyclic graph");
     groups.push(wave.map((child) => child.task_id));
@@ -12809,10 +12808,9 @@ function projectParallelGroups(children) {
       remaining.splice(remaining.indexOf(child), 1);
     }
   }
-  const scopeConflicts = children.filter((child) => implicit.get(child.task_id).length > 0).map((child) => ({ task_id: child.task_id, overlaps_with: [...implicit.get(child.task_id)].sort() }));
-  return { parallel_groups: groups, scope_conflicts: scopeConflicts };
+  return { parallel_groups: groups, scope_conflicts: [] };
 }
-var IN_FLIGHT_STATES, DONE_STATES, WILDCARD, SLICE_ORDER, PARKED_STATES;
+var IN_FLIGHT_STATES, DONE_STATES, PARKED_STATES;
 var init_batch_schedule = __esm(() => {
   IN_FLIGHT_STATES = new Set([
     "lane_admitted",
@@ -12821,8 +12819,6 @@ var init_batch_schedule = __esm(() => {
     "lane_committed"
   ]);
   DONE_STATES = new Set(["committed", "integrated", "released"]);
-  WILDCARD = /[*?[\]{}!]/;
-  SLICE_ORDER = new Intl.Collator("en", { numeric: true });
   PARKED_STATES = new Set(["needs_human", "skipped_blocked"]);
 });
 
@@ -13303,6 +13299,7 @@ function writeBatchCommitEvidence(root, evidence) {
     task_id: evidence.taskId,
     commit: evidence.commit,
     parent_head: evidence.parentHead,
+    ...evidence.previousHead ? { previous_head: evidence.previousHead } : {},
     created_at: new Date().toISOString()
   };
   writeFileAtomically2(root, path, `${JSON.stringify(payload, null, 2)}
@@ -13316,8 +13313,12 @@ function readBatchCommitEvidence(root, batchId, taskId) {
   try {
     const content = readSecureProjectFile(root, path);
     const parsed = JSON.parse(content);
-    if (parsed.contract === "assurance_kernel/batch_commit_evidence/v1" && parsed.batch_id === batchId && parsed.task_id === taskId && typeof parsed.commit === "string" && typeof parsed.parent_head === "string") {
-      return { commit: parsed.commit, parent_head: parsed.parent_head };
+    if (parsed.contract === "assurance_kernel/batch_commit_evidence/v1" && parsed.batch_id === batchId && parsed.task_id === taskId && typeof parsed.commit === "string" && typeof parsed.parent_head === "string" && (parsed.previous_head === undefined || typeof parsed.previous_head === "string" && /^[a-f0-9]{40}$/.test(parsed.previous_head))) {
+      return {
+        commit: parsed.commit,
+        parent_head: parsed.parent_head,
+        ...typeof parsed.previous_head === "string" ? { previous_head: parsed.previous_head } : {}
+      };
     }
   } catch {
     return null;
@@ -13376,6 +13377,36 @@ async function commitBatchChild(input) {
   const intentSnapshot = authoritative.intent_snapshot;
   const goal = typeof intentSnapshot.goal === "string" ? intentSnapshot.goal : "";
   const scopeHint = Array.isArray(intentSnapshot.scope_hint) ? intentSnapshot.scope_hint.filter((s) => typeof s === "string") : [];
+  if (usesBranchDelivery(root, taskId)) {
+    const currentBranch = spawnSync14("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], { encoding: "utf8" });
+    if (expectedBranch !== undefined && currentBranch.stdout.trim() !== expectedBranch)
+      throw new Error("batch_head_lineage_broken: Lane branch changed before commit");
+    const head = spawnSync14("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+    if (spawnSync14("git", ["-C", root, "merge-base", "--is-ancestor", expectedHead, head]).status !== 0)
+      throw new Error("batch_head_lineage_broken: Lane base is not an ancestor of HEAD");
+    const flagged = getUnsupportedIndexFlags(root);
+    if (flagged.length)
+      throw scopeRefusal("unsupported_index_flags", flagged);
+    assertReviewedDelivery(root, authoritative, scopeHint, taskId);
+    const captured = captureGitTaskRevisionSnapshot(root, scopeHint, expectedHead, taskId);
+    const deliveryHash = `sha256:${createHash20("sha256").update(JSON.stringify(captured)).digest("hex")}`;
+    const paths = [...Object.keys(captured.changed_paths), auditPaths.record, auditPaths.proof];
+    const message = `imm(${taskId}): ${goal.trim().split(/\r?\n/)[0]?.trim() || taskId}
+
+${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${batchId}`}
+`;
+    const commit = buildScopedCommit(root, { parent: expectedHead, paths, message });
+    if (taskCommitRevisionIdentity(root, scopeHint, expectedHead, commit).diff_hash !== deliveryHash)
+      throw new Error("batch commit drifted from the reviewed delivery identity");
+    writeBatchCommitEvidence(root, { batchId: batchId ?? "native-task", taskId, commit, parentHead: expectedHead, previousHead: head });
+    const moved = spawnSync14("git", ["-C", root, "update-ref", "HEAD", commit, head], { encoding: "utf8" });
+    if (moved.status !== 0)
+      throw new Error(`batch_head_lineage_broken: ${moved.stderr.trim()}`);
+    const indexed = spawnSync14("git", ["-C", root, "read-tree", commit], { encoding: "utf8" });
+    if (indexed.status !== 0)
+      throw new Error(`failed to index Lane delivery: ${indexed.stderr.trim()}`);
+    return { commit };
+  }
   if (isProgressRef(expectedBranch)) {
     const tip = readBatchRef(root, expectedBranch);
     if (tip !== expectedHead)
@@ -13606,6 +13637,8 @@ async function lookupBatchCommit(input) {
   }
   const parentsResult = spawnSync14("git", ["-C", root, "rev-parse", `${commit}^@`], { encoding: "utf8" });
   const parents = parentsResult.stdout.trim().split(/\s+/).filter(Boolean);
+  let pendingLaneHead = null;
+  let indexLaneDelivery = false;
   if (isProgressRef(expectedBranch)) {
     const tip = readBatchRef(root, expectedBranch);
     const reachable = tip !== null && (tip === commit || spawnSync14("git", ["-C", root, "merge-base", "--is-ancestor", commit, tip], { stdio: "ignore" }).status === 0);
@@ -13618,8 +13651,16 @@ async function lookupBatchCommit(input) {
   } else {
     const currentHeadResult = spawnSync14("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
     const currentHead = currentHeadResult.stdout.trim();
-    if (currentHeadResult.status !== 0 || currentHead !== commit && spawnSync14("git", ["-C", root, "merge-base", "--is-ancestor", commit, currentHead], { stdio: "ignore" }).status !== 0)
-      throw new Error(`batch_head_lineage_broken: current HEAD ${currentHead} diverged from adopted commit ${commit}`);
+    if (currentHeadResult.status !== 0)
+      throw new Error("batch_head_lineage_broken: unreadable Lane HEAD");
+    indexLaneDelivery = usesBranchDelivery(root, taskId) && evidence?.previous_head !== undefined;
+    if (currentHead !== commit && spawnSync14("git", ["-C", root, "merge-base", "--is-ancestor", commit, currentHead], { stdio: "ignore" }).status !== 0) {
+      if (indexLaneDelivery && evidence?.previous_head === currentHead)
+        pendingLaneHead = currentHead;
+      else
+        throw new Error(`batch_head_lineage_broken: current HEAD ${currentHead} diverged from adopted commit ${commit}`);
+    }
+    indexLaneDelivery &&= pendingLaneHead !== null || currentHead === commit;
   }
   if (parentsResult.status !== 0 || parents.length !== 1 || retained && parents[0] !== retained.parent_head || expectedHead !== undefined && parents[0] !== expectedHead)
     throw new Error(`batch_head_lineage_broken: adopted commit parent ${parents.join(",")} does not match expected_head ${expectedHead ?? "single-parent delivery"}`);
@@ -13627,9 +13668,23 @@ async function lookupBatchCommit(input) {
   const deltaResult = spawnSync14("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", parents[0], commit], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   if (deltaResult.status !== 0)
     throw new Error("batch_head_lineage_broken: failed to inspect adopted commit delta");
-  const outside = deltaResult.stdout.split("\x00").filter((p) => p.length > 0 && !isPathAllowedForChild(p, taskId, scopeHint));
+  const outside = deltaResult.stdout.split("\x00").filter((p) => p.length > 0 && !isPathAllowedForChild(p, taskId, usesBranchDelivery(root, taskId) || input.lane ? ["**"] : scopeHint));
   if (outside.length > 0)
     throw new Error(`batch_head_lineage_broken: adopted commit contains out-of-scope changes: ${outside.join(", ")}`);
+  if (indexLaneDelivery) {
+    assertReviewedDelivery(root, authoritative, scopeHint, taskId);
+    const qa = "attestations" in authoritative ? [...authoritative.attestations].reverse().find((item) => item.kind === "qa") : undefined;
+    if (qa && taskCommitRevisionIdentity(root, scopeHint, parents[0], commit).diff_hash !== qa.diff_hash)
+      throw new Error("batch commit drifted from the reviewed delivery identity");
+    if (pendingLaneHead !== null) {
+      const moved = spawnSync14("git", ["-C", root, "update-ref", "HEAD", commit, pendingLaneHead], { encoding: "utf8" });
+      if (moved.status !== 0)
+        throw new Error(`batch_head_lineage_broken: ${moved.stderr.trim()}`);
+    }
+    const indexed = spawnSync14("git", ["-C", root, "read-tree", commit], { encoding: "utf8" });
+    if (indexed.status !== 0)
+      throw new Error(`failed to index Lane delivery: ${indexed.stderr.trim()}`);
+  }
   return { commit };
 }
 async function retainIntegratedLaneEvidence(input) {

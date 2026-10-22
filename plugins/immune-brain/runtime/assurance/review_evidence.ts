@@ -280,6 +280,8 @@ export interface ReviewManifestV5 {
 	review_commit: string;
 	review_ref: string;
 	changed_paths: Record<string, GitTaskIndexEntry>;
+	/** Delivered paths outside the TaskIntent estimate. */
+	beyond_estimate?: string[];
 	diff_hash: string;
 	outcomes: Record<string, ReviewOutcome>;
 	record_revision: string;
@@ -546,6 +548,7 @@ export function captureReviewManifest(
 		review_commit: revision.review_commit,
 		review_ref: revision.review_ref,
 		changed_paths: snapshot.changed_paths,
+		beyond_estimate: Object.keys(snapshot.changed_paths).filter(path => !snapshot.scope.some(entry => pathMatchesScope(path, entry))).sort(compareRevisionPaths),
 		diff_hash: revision.diff_hash,
 		outcomes: Object.fromEntries(
 			Object.entries(input.outcomes).map(([id, outcome]) => [id, { ...outcome }]),

@@ -4,7 +4,7 @@ export { QaPreparationError, type QaCheckDiagnostic, type QaPreparationReason, t
 import { assertDeliveryClean, materializeDeliveryWorkspace, writeDeliveryTree } from "./delivery_workspace";
 import { runFixedVerification, resolveVerificationCommand, assertCommandIdentity, verificationPath, readQaBaseline, VerificationAbortedError, VerificationCleanupError, VerificationLaunchError, type FrozenCommand, type VerificationDescriptor, type VerificationCommand, type QaBaseline } from "./verification";
 import { qaFindingId, qaBaselineFindingId, PRE_EXISTING_BASELINE_PREFIX } from "./qa_findings";
-import { captureGitTaskRevisionSnapshot, inScopeTrackedDrift } from "../workspace_scope";
+import { captureGitTaskRevisionSnapshot, inScopeTrackedDrift, usesBranchDelivery } from "../workspace_scope";
 import { readTaskRecordRaw } from "../kernel/storage";
 
 function recordForSnapshot(snapshot: SnapshotDescriptor) {
@@ -84,7 +84,14 @@ export async function runDeterministicQa(
 	const tree = options._frozenTree?.tree ?? deliveryTreeForSnapshot(snapshot);
 	const drift = materialized ? null : options._frozenTree
 		? options._frozenTree.drift ?? (() => [])
-		: ((scope: unknown) => () => inScopeTrackedDrift(snapshot.root, tree, scope))(recordForSnapshot(snapshot).intent_snapshot.scope_hint);
+		: (() => {
+			const record = recordForSnapshot(snapshot);
+			const branchDelivery = usesBranchDelivery(snapshot.root, snapshot.task_id);
+			const paths = branchDelivery
+				? Object.keys(captureGitTaskRevisionSnapshot(snapshot.root, record.intent_snapshot.scope_hint, record.git_base_head, snapshot.task_id).changed_paths)
+				: record.intent_snapshot.scope_hint;
+			return () => inScopeTrackedDrift(snapshot.root, tree, paths, branchDelivery ? paths : []);
+		})();
 	const path = verificationPath();
 	// Rerun one failed baseline check against the materialized base_head tree,
 	// under the same descriptor. Anything short of the identical failure, a

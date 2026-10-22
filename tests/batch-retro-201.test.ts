@@ -21,12 +21,12 @@ describe("machine-checked scope overlap", () => {
 	const s3 = "docs/plans/user-scenarios-s3-reviewer-coverage.intent.json";
 	const read = (rel: string) => JSON.parse(readFileSync(resolve(REPO_ROOT, rel), "utf8")) as { task_id: string; scope_hint: string[] };
 
-	it("reports the Spec path the #187 S2 and S3 Intents share and orders them serially", () => {
+	it("reports the Spec path the #187 S2 and S3 estimates share without serializing them", () => {
 		const children = [read(s2), read(s3)].map((intent) => ({ task_id: intent.task_id, blocked_by: [], scope_hint: intent.scope_hint }));
 		const report = projectScopeOverlap(children);
 		expect(report.overlaps).toHaveLength(1);
 		expect(report.overlaps[0]!.entries).toContainEqual(["docs/specs/user-acceptance-scenarios.spec.md", "docs/specs/user-acceptance-scenarios.spec.md"]);
-		expect(report.parallel_groups).toEqual([[children[0]!.task_id], [children[1]!.task_id]]);
+		expect(report.parallel_groups).toEqual([[children[0]!.task_id, children[1]!.task_id]]);
 	});
 
 	it("is exposed read-only as imm-kernel intent overlap", () => {
