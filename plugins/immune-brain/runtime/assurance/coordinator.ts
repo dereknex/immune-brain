@@ -28,6 +28,8 @@ import { scopeAdditionsFromHistory } from "../kernel/intent";
 import type { AssuranceHostPort, HostReviewReservation } from "./host_port";
 import type { GithubTrackerResult as GithubTrackerProjectionResult } from "../github_issue_tracker";
 import { isLaneWorkspaceForTask } from "../unattended/lane_workspace";
+import { findExistingActiveBatch, findSettledBatchRecord, type BatchRecordLookup } from "../unattended/batch_preflight";
+import { readAnyBatchRunState } from "../unattended/batch_state";
 
 
 export type AssuranceRole = "qa" | "review";
@@ -373,6 +375,8 @@ export interface StatusProjectionWarning {
 	message: string;
 }
 export type StatusProjectionResult = AssuranceProjectionResult & {
+	/** Parent-slug batch evidence, independent of the TaskRecord projection; never execution authority. */
+	batch?: NonNullable<BatchRecordLookup>;
 	/** The resolved `Git integration` preference (ADR 0024); set by the status read only. */
 	git_integration?: { mode: GitIntegrationMode; source: GitIntegrationPreference["source"] };
 	warnings?: StatusProjectionWarning[];
@@ -412,7 +416,16 @@ export async function projectTaskStatus(root: string, taskId: string, loadedFrom
 	const preference = readGitIntegrationPreference(root);
 	if (preference.diagnostic) warnings.push({ code: "invalid_git_integration", paths: preference.source ? [preference.source] : [], message: preference.diagnostic });
 	const git_integration = { mode: preference.mode, source: preference.source };
-	return warnings.length === 0 ? { ...result, git_integration } : { ...result, git_integration, warnings };
+	let batch = findExistingActiveBatch(root, taskId);
+	if (batch === null) {
+		const settled = findSettledBatchRecord(root, taskId);
+		if (settled) {
+			const record = readAnyBatchRunState(root, settled.batch_id);
+			if (record) batch = { corrupt: false, record };
+		}
+	}
+	const status = { ...result, git_integration, ...(batch ? { batch } : {}) };
+	return warnings.length === 0 ? status : { ...status, warnings };
 }
 
 /** Observation only; fresh Kernel facts remain the sole owner of the obligation. */

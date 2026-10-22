@@ -76,29 +76,20 @@ const TASK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const MAX_LANE_OFFERS = 64;
 const MAX_PATH_LENGTH = 4096;
 
-/**
- * `lane_offers` without `max_parallel` is a resume of a recorded lane batch: the
- * recorded `max_parallel` applies. Without a recorded active lane batch there is
- * nothing to resume, so the call is refused before any gate opens. A
- * `max_parallel` of 1 or less is treated as absent (run-entry decision hosting
- * D7): one Lane at a time is the serial runner, not Lane mode.
- */
+/** New batches default to one Lane; a resume keeps its recorded parallelism. */
 export function resolveLaneParallel(
 	root: string,
 	initiativeSlug: string,
 	maxParallel: number | undefined,
 	laneOffers: unknown,
-	laneInstruction?: unknown,
-): number | undefined {
+	_laneInstruction?: unknown,
+): number {
 	const existing = findExistingActiveBatch(root, initiativeSlug);
+	if (existing && !existing.corrupt && !isLaneBatchRecord(existing.record))
+		throw new Error("batch_record_shape_retired: inspect the record, then use retire_stale_batch in the current Host");
 	if (laneOffers !== undefined && (!existing || (!existing.corrupt && isParentBranch(existing.record.branch))))
 		throw new Error("lane_offers_retired: new batches create their own Lanes");
-	if (maxParallel !== undefined && maxParallel <= 1) maxParallel = undefined;
-	if (maxParallel !== undefined || (laneOffers === undefined && laneInstruction === undefined)) return maxParallel;
-	const lookup = findExistingActiveBatch(root, initiativeSlug);
-	if (lookup === null || lookup.corrupt || !isLaneBatchRecord(lookup.record))
-		throw new Error(`${laneOffers !== undefined ? "lane_offers" : "lane_instruction"} requires max_parallel unless a recorded lane batch is being resumed`);
-	return lookup.record.max_parallel;
+	return parseMaxParallel(maxParallel) ?? (existing && !existing.corrupt && isLaneBatchRecord(existing.record) ? existing.record.max_parallel : 1);
 }
 
 /** A positive safe integer, or undefined when the parameter is absent. */
@@ -812,7 +803,7 @@ export async function runLaneBatch(
 	persisted: AnyBatchRunStateRecord | null,
 ): Promise<BatchLaneRunReport> {
 	if (persisted && !isLaneBatchRecord(persisted))
-		return refuse(input, persisted, PARALLEL_MISMATCH, "the recorded batch runs serially; max_parallel cannot be added on a resume");
+		return { ...refuse(input, persisted, "batch_record_shape_retired", "v1 serial batch records are read-and-retire only"), next_action: "Inspect the recorded batch, then use retire_stale_batch for this Initiative in the current Host." };
 	if (persisted && input.max_parallel !== undefined && input.max_parallel !== persisted.max_parallel)
 		return refuse(input, persisted, PARALLEL_MISMATCH, `the recorded batch runs with max_parallel ${persisted.max_parallel}`);
 	if (input.lane_offers !== undefined && (!persisted || isParentBranch(persisted.branch)))
@@ -883,6 +874,7 @@ export async function runLaneBatch(
 		});
 		if (!preflight.ok) return refuse(input, null, preflight.reason, preflight.message || "Correct the preflight condition and re-confirm.");
 		record = prepareBatchLaneRunState({
+			topology_digest: input.topology_digest,
 			batch_id: input.batch_id,
 			initiative_slug: input.initiative_slug,
 			children: input.children,

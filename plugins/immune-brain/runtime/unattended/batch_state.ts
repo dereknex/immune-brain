@@ -2,7 +2,7 @@
 // State lives at .imm/state/batches/<batch_id>.json, written only under the
 // kernel store lock, and is Git-ignored with the rest of .imm/state/.
 import { existsSync, mkdirSync, openSync, closeSync, writeFileSync, renameSync, lstatSync, constants, rmSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { readSecureProjectFile, readSecureProjectBytes, withKernelStoreLock } from "../kernel/storage";
 import { parseFinalVerification, parseFinalVerificationReport } from "./batch_final_verification";
@@ -160,6 +160,8 @@ export interface LaneIntervention {
  */
 export interface BatchLaneRunStateRecord {
 	contract: "assurance_kernel/batch_run_state/v2";
+	/** Complete confirmed Parent topology, including excluded prerequisites. */
+	topology_digest?: string;
 	progress_mode?: "parent_branch";
 	batch_id: string;
 	initiative_slug: string;
@@ -611,6 +613,8 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 	const record = value as Record<string, unknown>;
 	if (record.contract !== "assurance_kernel/batch_run_state/v2")
 		throw new Error(`batch run state ${batchId} has an unknown contract`);
+	if (record.topology_digest !== undefined && (typeof record.topology_digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(record.topology_digest)))
+		throw new Error(`batch run state ${batchId} has an invalid topology_digest`);
 	if (record.progress_mode !== undefined && (record.progress_mode !== "parent_branch" || record.branch !== `refs/heads/imm/${record.initiative_slug}`))
 		throw new Error(`batch run state ${batchId} has an invalid progress_mode`);
 	if (record.batch_id !== batchId)
@@ -804,7 +808,14 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 		throw new Error(`batch run state ${batchId} is completed but a child is not integrated`);
 }
 
+export function batchTopologyDigest(tasks: Array<{ task_id: string; slice_id: string; blocked_by: string[] }>): string {
+	const topology = tasks.map(task => ({ task_id: task.task_id, slice_id: task.slice_id,
+		blocked_by: [...task.blocked_by].sort() })).sort((a, b) => a.task_id < b.task_id ? -1 : a.task_id > b.task_id ? 1 : 0);
+	return `sha256:${createHash("sha256").update(JSON.stringify(topology)).digest("hex")}`;
+}
+
 export function prepareBatchLaneRunState(input: {
+	topology_digest?: string;
 	batch_id: string;
 	initiative_slug: string;
 	children: BatchPlanChild[];
@@ -822,6 +833,7 @@ export function prepareBatchLaneRunState(input: {
 	validateBatchId(input.batch_id);
 	return {
 		contract: "assurance_kernel/batch_run_state/v2",
+		topology_digest: input.topology_digest ?? batchTopologyDigest(input.children),
 		batch_id: input.batch_id,
 		initiative_slug: input.initiative_slug,
 		plan_digest: input.plan_digest,

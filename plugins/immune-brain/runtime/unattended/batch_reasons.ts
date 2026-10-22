@@ -12,6 +12,7 @@
 export type BatchReasonKey =
 	| "invalid_slug"
 	| "batch_state_unreadable"
+	| "batch_record_shape_retired"
 	| "claim_already_active"
 	| "kernel_authority_conflict"
 	| "git_head_unreadable"
@@ -49,6 +50,11 @@ export interface BatchReasonSpec {
 }
 
 export const BATCH_REASONS: Readonly<Record<BatchReasonKey, BatchReasonSpec>> = Object.freeze({
+	batch_record_shape_retired: {
+		state: "rejected",
+		reason: "batch_record_shape_retired: v1 serial batch records are read-and-retire only",
+		recovery_action: "Inspect the recorded batch, then use retire_stale_batch for this Initiative in the current Host.",
+	},
 	batch_parent_branch_exists: {
 		state: "rejected",
 		reason: detail => `batch_parent_branch_exists: ${detail} does not point at base_head`,

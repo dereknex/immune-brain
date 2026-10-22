@@ -1,0 +1,639 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "serial-runner-retirement",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "serial-runner-retirement",
+    "goal": "A batch started without max_parallel runs as a Lane batch with max_parallel 1, the serial runner path and plan reconfirmation are deleted, and a v1 serial batch record stays readable by status and retireable while resuming it refuses with batch_record_shape_retired (Spec branch-boundary-r2 D18).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "A batch started without max_parallel, and one started with max_parallel 1, runs its children one at a time in runtime-created worktrees and records a v2 Lane record with max_parallel 1.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-serial-retirement.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "A v1 serial batch record on disk is reported by status and retired by retire_stale_batch, and an attempt to resume it refuses with batch_record_shape_retired and the retire recovery action.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-serial-retirement.test.ts\",\n      \"tests/batch-stale-disposition.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "The Claude start_unattended_batch tool and the Pi batch tool accept a call without max_parallel as a one-Lane batch and their descriptions and confirmation text no longer describe a serial run.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/branch-boundary-r2-serial-runner-retirement.md",
+      "IMMUNE.md",
+      "README.md",
+      "docs/plans/serial-runner-retirement.intent.json",
+      "docs/specs/branch-boundary-r2.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/.pi-extension/pi-run-continuation.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run-batch.md",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/assurance/run_continuation.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/claude/run_continuation.ts",
+      "plugins/immune-brain/runtime/unattended/batch_disposition.ts",
+      "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reconfirmation.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_start.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "tests/batch-plan-reconfirmation.test.ts",
+      "tests/batch-serial-retirement.test.ts",
+      "tests/batch-stale-disposition.test.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/goal-driven-batch-run.test.ts",
+      "tests/pi-batch-acceptance-integration.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/unattended-batch-commit.test.ts",
+      "tests/unattended-batch-lanes.test.ts",
+      "tests/unattended-batch-run.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/serial-runner-retirement.intent.json",
+    "content_hash": "sha256:41f32a04bbda338ba3db1a5d11995e6a1473ba18a7dcb6230c9c7a2fe148be51"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:41f32a04bbda338ba3db1a5d11995e6a1473ba18a7dcb6230c9c7a2fe148be51",
+  "git_base_head": "58d39bff39eb489653dc1de51e5768c31adf851c",
+  "attestations": [
+    {
+      "id": "approval-qa-134281a3",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:41f32a04bbda338ba3db1a5d11995e6a1473ba18a7dcb6230c9c7a2fe148be51",
+      "diff_hash": "sha256:b334c213fb14d543295d4db113701660d4a01539706750d09e8f29625f44ce82",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:2d512acf49ba00ed37d684fd0998f4b95c325c99d826bea6eab732b7b9aab752",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:2d512acf49ba00ed37d684fd0998f4b95c325c99d826bea6eab732b7b9aab752"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:2d512acf49ba00ed37d684fd0998f4b95c325c99d826bea6eab732b7b9aab752"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:2d512acf49ba00ed37d684fd0998f4b95c325c99d826bea6eab732b7b9aab752"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-9a860410",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:41f32a04bbda338ba3db1a5d11995e6a1473ba18a7dcb6230c9c7a2fe148be51",
+      "diff_hash": "sha256:4f88d4090ecae8a936d24495a0ec832c4e96ceede62ba39ed244f75045db1a5d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:d0d510276e228b2c19a0d0854785a37fb6d566cf9775eac62e57438531403b11",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:d0d510276e228b2c19a0d0854785a37fb6d566cf9775eac62e57438531403b11"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:d0d510276e228b2c19a0d0854785a37fb6d566cf9775eac62e57438531403b11"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:d0d510276e228b2c19a0d0854785a37fb6d566cf9775eac62e57438531403b11"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-871057be",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:41f32a04bbda338ba3db1a5d11995e6a1473ba18a7dcb6230c9c7a2fe148be51",
+      "diff_hash": "sha256:2eb00e290a7f3d4cfc42d01e0466cedf337bdc5f0b3d569f445c0256acf21167",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:018586a11e357a52fa2d9593e1207762e3b1c79cc23f39c1b8fddba3ba180fad",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:018586a11e357a52fa2d9593e1207762e3b1c79cc23f39c1b8fddba3ba180fad"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:018586a11e357a52fa2d9593e1207762e3b1c79cc23f39c1b8fddba3ba180fad"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:018586a11e357a52fa2d9593e1207762e3b1c79cc23f39c1b8fddba3ba180fad"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-ba7bb0d0",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:41f32a04bbda338ba3db1a5d11995e6a1473ba18a7dcb6230c9c7a2fe148be51",
+      "diff_hash": "sha256:4625dab794ff3732cde2d367acec13ddb54114316718029cd7eb300b7f77bb4d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:e5ee3b281275b4a5c2678f5c841ce281b844b35856614496936fb440714802c3",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e5ee3b281275b4a5c2678f5c841ce281b844b35856614496936fb440714802c3"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e5ee3b281275b4a5c2678f5c841ce281b844b35856614496936fb440714802c3"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e5ee3b281275b4a5c2678f5c841ce281b844b35856614496936fb440714802c3"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-45be982a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:41f32a04bbda338ba3db1a5d11995e6a1473ba18a7dcb6230c9c7a2fe148be51",
+      "diff_hash": "sha256:a2b22766d58d4622fcf6d1a630927929e574d19f8c51451876767cd9439fcffa",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:a2312700fd588ea59163000c7670bcfe4396212c589ffd956caacc75cfe312f0",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:a2312700fd588ea59163000c7670bcfe4396212c589ffd956caacc75cfe312f0"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:a2312700fd588ea59163000c7670bcfe4396212c589ffd956caacc75cfe312f0"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:a2312700fd588ea59163000c7670bcfe4396212c589ffd956caacc75cfe312f0"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-2bbc7148",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:41f32a04bbda338ba3db1a5d11995e6a1473ba18a7dcb6230c9c7a2fe148be51",
+      "diff_hash": "sha256:a2b22766d58d4622fcf6d1a630927929e574d19f8c51451876767cd9439fcffa",
+      "actor_id": "parent-mediated-review",
+      "summary": "Verified manifest digest, immutable commit identity, single parent, tree, and changed-path inventory. Round 6 has no delta from the prior reviewed commit; prior inspection coverage carries forward, and embedded Kernel QA outcomes pass AC1–AC3. No new blocking findings.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "58d39bff39eb489653dc1de51e5768c31adf851c",
+        "review_commit": "c87ba82a5cf06b22e628e1a825a9c7ede23e645e",
+        "review_tree": "8d5bbffa9dd01281550b71be2b73189bd120ef43",
+        "manifest_digest": "sha256:b0508efc7c17aea9eb0cc466ed62c4b76f0298627c2193341c49678211e6b26a"
+      },
+      "reviewer_verdict_sha256": "sha256:a7bead033f9c4cd1a68e7052a31f1f220a43436b585686737a9e2834d7cbcfb9"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-272352ff0040-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Parent topology 校验晚于 critical delivery integration：Pi 的 imm-unattended-batch.ts:189–192 和 Claude 的 kernel_ports.ts:882–885 在 preflight 前调用 integrateSettledCriticalSlices，可能先推进 Parent ref，再因 plan_changed 拒绝。应在该 integration 的任何写入前验证已确认的完整 topology，并补充两个 Host 入口的零写入回归测试。",
+      "anchor": "sha256:54342b4afb33c098919287c569cb4cee96d8291f320a65605e64ddb6ff97dc6e",
+      "evidence": {
+        "trigger": "validation precedes merge 不变量覆盖缺口：一个 running v2 batch 已记录 topology_digest；其原先排除的 critical child C 经独立 Enrollment 完成且交付尚未集成，随后用户修改 Parent 中 C 的 blocked_by 或 slice_id，再调用 start_unattended_batch → 两个 Host 都先调用 integrateSettledCriticalSlices；该函数按当前 Parent 枚举 C，通过 commitBatchChild 推进 Parent ref 并持久化 adopted_heads，之后 projectPlanSurface 才发现 topology_digest 不符并返回 plan_changed。现有 topology_digest 修复只覆盖后续 preflight/confirmation/Lane admission，没有覆盖更早的 integration 写入，因此拒绝发生时批次已被修改。未修改的 batch_git.ts:1086–1136 是 changed caller 直接调用的同一 Parent 状态机，读取它用于确认具体写入；其中 commitBatchChild:510–526 确实创建提交并移动 ref。TaskIntent goal 引用的 Spec D18 要求其他 plan change 使批次失败，而不是先接受该变更下的交付。",
+        "caller_chain": [
+          "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:executePreparedPiBatch",
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.startUnattendedBatch",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:integrateSettledCriticalSlices",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:commitBatchChild",
+          "plugins/immune-brain/runtime/unattended/batch_preflight.ts:projectPlanSurface"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-6f7111e5fc25-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "[P1] Terminal history permanently blocks a fresh batch after topology drift. Both plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:192-198 and plugins/immune-brain/runtime/claude/kernel_ports.ts:885-891 apply the old topology binding to findSettledBatchRecord(), including superseded records. Consequently, retiring a drifted batch does not restore the ability to authorize its replacement. Restrict old-topology enforcement to continuation and integration under that authorization; when terminal history no longer matches, skip its integration/completion replay and allow the existing fresh-plan/native-confirmation path. Add a regression for actual observation.tasks drift followed by retirement and a fresh default-one-Lane start on both Hosts.",
+      "anchor": "sha256:f08edcd780d1efb7fa127d4dead3dd4b1c2d613bd941e1e83e20ea95a5444d98",
+      "evidence": {
+        "trigger": "A running v2 batch records topology A → the trusted Parent plan adds a child or changes a dependency to topology B → resume correctly refuses → retire_stale_batch changes the record to superseded → a fresh explicit start_unattended_batch call without max_parallel retrieves that same terminal record and rejects with plan_changed before native confirmation. The replacement batch can never start, despite retirement having ended the old authorization.",
+        "caller_chain": [
+          "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:executePreparedPiBatch",
+          "plugins/immune-brain/runtime/unattended/batch_preflight.ts:findSettledBatchRecord",
+          "plugins/immune-brain/runtime/unattended/batch_preflight.ts:readConfirmedBatchTopology"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-829221eeaf93-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "review",
+      "review_round": 3,
+      "summary": "活动的 needs_human 批次绕过 topology 校验，可能返回旧批次的 completed 报告。plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:194-206 和 plugins/immune-brain/runtime/claude/kernel_ports.ts:887-899 新增的状态过滤只校验 running/completed，却仍调用 completedParentReport。应在历史完成报告查询前校验所有活动 v2 批次，包括 needs_human；仅对 integration 保留状态过滤，并为两个 Host 增加含历史 completed 记录的 parked-batch topology drift 回归测试。",
+      "anchor": "sha256:25fd485090bba2786de25926cafe9b87ff1d87381c721c2105f68d3e9aa09d6e",
+      "evidence": {
+        "trigger": "已完成批次 A 在 Parent tip H 留有通过的 final verification 和任务 t1 的 terminal evidence；用户将 coordinator 更新到 H，并为新增 t2 启动批次 B，B 在尚未推进 Parent tip 时因 t2 失败停为 needs_human。随后 carrier 移除 t2，再调用任一 Host 的 start_unattended_batch → integrationBatch 选择活动 B，但新的 running/completed 过滤跳过 B 的 topology 校验，replayCompleted 仍为 true；completedParentReport 查询历史 A，而 observeParentCompletion 对当前仅含 t1 的图及同一 H 返回 complete，导致 Host 返回 A 的 completed 报告并可执行 tracker synchronization，而不是拒绝 B 的 plan_changed。此为同一“验证完整 confirmed topology 后才能产生 Parent 效果或完成结果”不变量的覆盖缺口：此前修复覆盖 running 活动记录，本轮状态过滤使 needs_human 活动记录不再受保护。读取未修改的 plugins/immune-brain/runtime/unattended/batch_git.ts 是因为 completedParentReport 直接调用其中 observeParentCompletion，必须核实其历史 final proof 和 Parent tip 选择行为。",
+        "caller_chain": [
+          "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+          "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-944ff93a1a74-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "review",
+      "review_round": 4,
+      "summary": "Topology-validation coverage gap before completion replay: Claude kernel_ports.ts:887–900 and Pi imm-unattended-batch.ts:194–207 validate one Initiative observation, but completedParentReport subsequently reads another unvalidated observation. Reuse the validated observation for completion replay, or validate the exact observation consumed there, and add a dual-host regression with topology changing between those reads.",
+      "anchor": "sha256:1e6fbb17f0daad85e5b1eef309b593be9657a25787ed00665639b03e46b68ef0",
+      "evidence": {
+        "trigger": "A valid needs_human v2 authorization and a historical completed batch exist for independent children A and B, as in the delivered parked-record replay fixture. The first Initiative read matches the active record's topology_digest; before completedParentReport performs its second read, the carrier changes B.blocked_by to [A]. The prior accepted fix covers drift already present at the first read, but not this validation-before-use invariant class: the completion read adopts the changed graph. batch_runner.ts:29–31 passes only its task IDs to unchanged batch_git.ts:916–956 (inspected because it owns completion proof), which checks delivery and final verification but not dependencies. Both Hosts consequently return state started with the historical completed report instead of rejecting the changed active plan, bypassing the later preflight topology check.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+          "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+          "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-e159689d07d7-1-review-coverage-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "review",
+      "review_round": 5,
+      "summary": "Review coverage is incomplete, not a demonstrated code defect: commit parent, tree, and manifest digest were verified and the complete round-5 delta was inspected, but several aggregate diff reads were truncated and the remaining full per-file diffs, including retired regression tests, were not fully inspected. Complete those immutable diff reads before approval; no implementation change is requested on this evidence alone.",
+      "anchor": "sha256:69152254bf0b3edba8b660aa7f6137ec007f17120ac839fcb745f15baf32be4d",
+      "evidence": {
+        "trigger": "The immutable revision replaces serial execution and removes extensive regression coverage, but complete per-file diff inspection remains unfinished → this review cannot establish the regression coverage required to approve AC1.",
+        "caller_chain": [
+          "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+          "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+          "tests/unattended-batch-run.test.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:serial-runner-retirement:2026-10-21T12:07:53.584Z",
+      "at": "2026-10-21T12:07:53.584Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/serial-runner-retirement.intent.json"
+    },
+    {
+      "id": "record_approval:serial-runner-retirement:2026-10-21T12:09:43.395Z",
+      "at": "2026-10-21T12:09:43.395Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-134281a3\naction_v2_sha256:d0c79b8d97a9203313d5754a1f536babb69730e8f5befa0dd144a8125e2238d7",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-ca6f9babe5743c65",
+        "issued_at": "2026-10-21T12:09:43.395Z"
+      }
+    },
+    {
+      "id": "request_rework:serial-runner-retirement:2026-10-21T12:14:00.579Z",
+      "at": "2026-10-21T12:14:00.579Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:49fd9143ac6e683b3791cdb34e3796304843b7028afba67f9c30d7c05c87bda0",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-f93878d0cc355f0b",
+        "issued_at": "2026-10-21T12:14:00.579Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "58d39bff39eb489653dc1de51e5768c31adf851c",
+        "review_commit": "251c9c3c12559a2bc0d4c7252260ca42ec397701",
+        "review_tree": "f0523d8229e91142a05567dc00dd1bcc02bea7bd",
+        "manifest_digest": "sha256:2776062ebbe224e2074b9015ced5171bf2a196d7a2a66ad654bc96bf58b8e85b"
+      }
+    },
+    {
+      "id": "resolve_finding:serial-runner-retirement:2026-10-21T12:21:27.673Z",
+      "at": "2026-10-21T12:21:27.673Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-272352ff0040-1-review-1\naction_v2_sha256:10aa3e7b7b20912f959961c9126a98963c5b135b465c69bccf42ece50c4c57d7"
+    },
+    {
+      "id": "freeze_artifacts:serial-runner-retirement:2026-10-21T12:21:36.416Z",
+      "at": "2026-10-21T12:21:36.416Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/serial-runner-retirement.intent.json"
+    },
+    {
+      "id": "record_approval:serial-runner-retirement:2026-10-21T12:23:23.476Z",
+      "at": "2026-10-21T12:23:23.476Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-9a860410\naction_v2_sha256:e56f64ed1b7a746d7d1c22e3129bddd48c46666b246b95fcc485e95e69a67687",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-815788ad7cb61dae",
+        "issued_at": "2026-10-21T12:23:23.477Z"
+      }
+    },
+    {
+      "id": "request_rework:serial-runner-retirement:2026-10-21T12:26:55.273Z",
+      "at": "2026-10-21T12:26:55.273Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:79cb79f2e56c8751abffcbd54c14bf770ca3bba651b625110cccf7cf015d0c3e",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-7b404f8b2eca901b",
+        "issued_at": "2026-10-21T12:26:55.273Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "58d39bff39eb489653dc1de51e5768c31adf851c",
+        "review_commit": "2ec4bef839575d7891c8a8b17a594002e9a5de60",
+        "review_tree": "9696d38191df7a11b9edb0644c6eda1459b8679e",
+        "manifest_digest": "sha256:a9a3b035b7e5c18b852b7a449fc5c5583737e453af400396ee81aed643dbab4e"
+      }
+    },
+    {
+      "id": "resolve_finding:serial-runner-retirement:2026-10-21T12:32:23.301Z",
+      "at": "2026-10-21T12:32:23.301Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-6f7111e5fc25-1-review-1\naction_v2_sha256:ac133660bc662821db72cd7caf92dbb27873e1593c0448851d8e99af95bcbed4"
+    },
+    {
+      "id": "freeze_artifacts:serial-runner-retirement:2026-10-21T12:32:32.347Z",
+      "at": "2026-10-21T12:32:32.347Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/serial-runner-retirement.intent.json"
+    },
+    {
+      "id": "record_approval:serial-runner-retirement:2026-10-21T12:34:28.702Z",
+      "at": "2026-10-21T12:34:28.702Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-871057be\naction_v2_sha256:1730afbfb9014cfa96ce22d24c9c464493afb2f6fe998509cdeb9603c9a8781a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-b33d3c932f35f21d",
+        "issued_at": "2026-10-21T12:34:28.702Z"
+      }
+    },
+    {
+      "id": "request_rework:serial-runner-retirement:2026-10-21T12:50:49.376Z",
+      "at": "2026-10-21T12:50:49.376Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_3\naction_v2_sha256:56eb914712112143a1db2c5de7e9a9bd9c95c324a4a675741966d1a030310262",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-5c7872638e1bb840",
+        "issued_at": "2026-10-21T12:50:49.376Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "58d39bff39eb489653dc1de51e5768c31adf851c",
+        "review_commit": "d81c7ad0440c57c6adf1c36ae2cba9593272efa2",
+        "review_tree": "da5f6ead247dc847a0251f8c7385b41ae36dce04",
+        "manifest_digest": "sha256:1eccd8541018535979762cb43d3241ac2196df47b64193975e6e3ad0d9dee5ca"
+      }
+    },
+    {
+      "id": "resolve_finding:serial-runner-retirement:2026-10-21T12:58:55.441Z",
+      "at": "2026-10-21T12:58:55.441Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-829221eeaf93-1-review-1\naction_v2_sha256:8fde1f40f4ead9b093c05480df7e4645786108834174f9bc65a86e50074f77f3"
+    },
+    {
+      "id": "freeze_artifacts:serial-runner-retirement:2026-10-21T12:59:04.685Z",
+      "at": "2026-10-21T12:59:04.685Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/serial-runner-retirement.intent.json"
+    },
+    {
+      "id": "record_approval:serial-runner-retirement:2026-10-21T13:01:04.275Z",
+      "at": "2026-10-21T13:01:04.275Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ba7bb0d0\naction_v2_sha256:b3de3da06a205c80e7aeb68f0fc9d11f03dcc6d7f7de4cb63517e138d7c23712",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-280af4449e96a3cd",
+        "issued_at": "2026-10-21T13:01:04.275Z"
+      }
+    },
+    {
+      "id": "request_rework:serial-runner-retirement:2026-10-21T13:06:05.395Z",
+      "at": "2026-10-21T13:06:05.395Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_4\naction_v2_sha256:2f33b548649ede0c315c71af8f5aa799993fa488de56fe5dac470fccde0b2052",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-d82e8ee15274bd01",
+        "issued_at": "2026-10-21T13:06:05.395Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "58d39bff39eb489653dc1de51e5768c31adf851c",
+        "review_commit": "e5bc80a09afb7ae259091cc07a35c0b1563a61b9",
+        "review_tree": "2c622b8ae1431bde0ae98cfc1ecf5f3cabae5bc9",
+        "manifest_digest": "sha256:8b00dec3ba40e3d93a3bb4b964c78774a763a67a8ca1fab78fdecb80858a208f"
+      }
+    },
+    {
+      "id": "resolve_finding:serial-runner-retirement:2026-10-21T13:14:39.543Z",
+      "at": "2026-10-21T13:14:39.543Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-944ff93a1a74-1-review-1\naction_v2_sha256:f657b7938f8e37013ce9231c40016b63e1b6c958e4e8c4a3506f65cddde72247"
+    },
+    {
+      "id": "freeze_artifacts:serial-runner-retirement:2026-10-21T13:14:50.561Z",
+      "at": "2026-10-21T13:14:50.561Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/serial-runner-retirement.intent.json"
+    },
+    {
+      "id": "record_approval:serial-runner-retirement:2026-10-21T13:16:51.037Z",
+      "at": "2026-10-21T13:16:51.037Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-45be982a\naction_v2_sha256:9d2841c4d55906f0c7349956691d56e4a3fdf2eb133bbfbb30d472bf43e019ec",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-ad3f04e2eba534ad",
+        "issued_at": "2026-10-21T13:16:51.037Z"
+      }
+    },
+    {
+      "id": "request_rework:serial-runner-retirement:2026-10-21T13:30:01.659Z",
+      "at": "2026-10-21T13:30:01.659Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_5\naction_v2_sha256:5d1904b7573c647a33075265277c52d472872a8b7597c3dd2f6d909a1debe961",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-80d55a0ade9e4130",
+        "issued_at": "2026-10-21T13:30:01.659Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "58d39bff39eb489653dc1de51e5768c31adf851c",
+        "review_commit": "c87ba82a5cf06b22e628e1a825a9c7ede23e645e",
+        "review_tree": "8d5bbffa9dd01281550b71be2b73189bd120ef43",
+        "manifest_digest": "sha256:42bdfe34f0289f8b3047b9589d4f2d0e5529d603b3786514a5ede3c762801a46"
+      }
+    },
+    {
+      "id": "resolve_finding:serial-runner-retirement:2026-10-21T13:47:33.735Z",
+      "at": "2026-10-21T13:47:33.735Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-e159689d07d7-1-review-coverage-1\naction_v2_sha256:d8ad41f9150ed2a0f61c7e6f21a5f4119bea0fee9bb91cac81854007d3a19dfa"
+    },
+    {
+      "id": "freeze_artifacts:serial-runner-retirement:2026-10-21T13:47:44.541Z",
+      "at": "2026-10-21T13:47:44.541Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/serial-runner-retirement.intent.json"
+    },
+    {
+      "id": "record_approval:serial-runner-retirement:2026-10-21T13:50:44.123Z",
+      "at": "2026-10-21T13:50:44.123Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-2bbc7148\naction_v2_sha256:6e2ef2c04057d7d2353a0790ebd81da69d81b6eda829b913b46f1eb0276a1db4",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-d958d2acce768b99",
+        "issued_at": "2026-10-21T13:50:44.123Z"
+      }
+    },
+    {
+      "id": "complete:serial-runner-retirement:2026-10-21T13:50:47.048Z",
+      "at": "2026-10-21T13:50:47.048Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:15a53d556e3ed53f0b5d20d8a487b49c69f1b5210bb2c21d6fb37ed45b9f2114"
+    }
+  ]
+}

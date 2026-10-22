@@ -1,27 +1,20 @@
 import { execFileSync } from "node:child_process";
-import { intentAuthorityHash, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
-import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
-import { describe, expect, it, spyOn } from "bun:test";
-import { mkdtempSync, rmSync, existsSync, writeFileSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync } from "node:fs";
+import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync, existsSync, writeFileSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { BatchPlanChild } from "../plugins/immune-brain/runtime/unattended/types";
 import {
 	prepareBatchRunState,
+	prepareBatchLaneRunState,
+	writeBatchLaneRunState,
 	readBatchRunState,
 	writeBatchRunState,
 	writeBatchRunReport,
 	isTerminalBatchState,
 	type BatchRunStateRecord,
 } from "../plugins/immune-brain/runtime/unattended/batch_state";
-import {
-	startBatch as startBatchOnce,
-	resumeBatch as resumeBatchOnce,
-	type BatchRunnerKernelPort,
-	type StartBatchInput,
-	type BatchChildAdvanceResult,
-} from "../plugins/immune-brain/runtime/unattended/batch_runner";
-import type { BatchRunnerGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import { createBatchKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
 import type { AssuranceProjectionResult } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 import type { EnrollmentAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
@@ -35,7 +28,6 @@ import {
 } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
 import { BATCH_REASONS, batchReason } from "../plugins/immune-brain/runtime/unattended/batch_reasons";
 import { createBatchAuthorityRegistry,
-	deriveChildEnrollment,
 	computeBatchPlanDigest,
 } from "../plugins/immune-brain/runtime/kernel/batch_authority";
 import { createEnrollmentAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
@@ -53,33 +45,6 @@ function projectionFacts(): AssuranceProjectionResult["projection"] {
 	};
 }
 
-// Scripted unit fixtures model a Parent-ready snapshot between foreground calls.
-// The handoff tests below call the raw driver against scripted projections; real
-// implementation, QA and Git through the registered entry are covered by
-// tests/pi-batch-acceptance-integration.test.ts.
-async function consumeScriptedHandoffs(request: StartBatchInput, report: Awaited<ReturnType<typeof startBatchOnce>>) {
-	while (report.handoff) {
-		const taskId = report.handoff.task_id;
-		expect(report.batch_state).toBe("running");
-		expect(report.children.find((c) => c.task_id === taskId)?.state).toBe("enrolled");
-		const project = request.kernel.projectTask.bind(request.kernel);
-		request.kernel.projectTask = async (root, id) => {
-			const fresh = await project(root, id);
-			return id === taskId && fresh.claim?.task_id === id
-				? { ...fresh, projection: { ...fresh.projection, artifact_state: "frozen" } }
-				: fresh;
-		};
-		report = await startBatchOnce(request);
-	}
-	return report;
-}
-async function startBatch(request: StartBatchInput) {
-	return consumeScriptedHandoffs(request, await startBatchOnce(request));
-}
-async function resumeBatch(request: StartBatchInput, project: Parameters<typeof resumeBatchOnce>[1]) {
-	return consumeScriptedHandoffs(request, await resumeBatchOnce(request, project));
-}
-
 function child(taskId: string, sliceId: string, blockedBy: string[] = []): BatchPlanChild {
 	return {
 		task_id: taskId,
@@ -93,396 +58,13 @@ function child(taskId: string, sliceId: string, blockedBy: string[] = []): Batch
 	};
 }
 
-/**
- * Publishes and commits each child's TaskIntent so the runner can read its
- * scope for implicit ordering; an unreadable scope overlaps every other one.
- */
-function publishScopedIntents(root: string, scopes: Record<string, string[]>): (...args: string[]) => string {
-	mkdirSync(join(root, "docs/plans"), { recursive: true });
-	for (const [taskId, scope] of Object.entries(scopes)) {
-		writeFileSync(join(root, `docs/plans/${taskId}.intent.json`), JSON.stringify({
-			contract: "assurance_kernel/task_intent/v1", task_id: taskId, owner: "user", revision: 1,
-			goal: taskId, risk: "routine", scope_hint: scope,
-			acceptance: [{ id: "acc-1", assertion: taskId, verification: "bun test tests/example.test.ts" }],
-		}));
-	}
-	const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8", env: {
-		...process.env, GIT_AUTHOR_NAME: "test", GIT_AUTHOR_EMAIL: "test@example.test",
-		GIT_COMMITTER_NAME: "test", GIT_COMMITTER_EMAIL: "test@example.test",
-	} }).trim();
-	git("init", "-q", "-b", "main");
-	git("config", "core.hooksPath", "/dev/null");
-	git("add", "docs/plans");
-	git("commit", "-qm", "intents");
-	return git;
-}
-
 function tempRoot(): string {
 	return mkdtempSync(join(tmpdir(), "imm-batch-run-"));
 }
 
-function input(
-	root: string,
-	children: BatchPlanChild[],
-	kernel: BatchRunnerKernelPort,
-	overrides: Partial<StartBatchInput> = {},
-): StartBatchInput {
-	const registry = createBatchAuthorityRegistry();
-	const planDigest = computeBatchPlanDigest(children);
-	const confirmationTime = overrides.confirmation_time ?? "2026-01-01T00:00:00.000Z";
-	const budget = overrides.budget ?? { max_children: children.length, qa_failure_limit: 3 };
-	const capability = overrides.capability ?? registry.issue(
-		{
-			batch_id: "batch-001",
-			initiative_slug: "initiative-slug",
-			plan_digest: planDigest,
-			branch: "main",
-			base_head: overrides.base_head ?? "b".repeat(40),
-			budget,
-			actor_id: "user",
-			confirmation_ref: "confirm",
-			nonce: "n",
-		},
-		children,
-		confirmationTime,
-	);
-	return {
-		root,
-		batch_id: "batch-001",
-		initiative_slug: "initiative-slug",
-		registry,
-		capability,
-		children,
-		plan_digest: planDigest,
-		base_head: "b".repeat(40),
-		confirmation_time: confirmationTime,
-		budget,
-		now: FAR_FUTURE,
-		kernel,
-		git: overrides.git ?? ({
-			preflight: () => ({ ok: true, branch: `imm/${overrides.initiative_slug ?? "initiative-slug"}` }),
-			commitChild: kernel.commitChild
-				? (root, taskId, batchId, expectedHead, intentPath) =>
-					kernel.commitChild(root, taskId, batchId, expectedHead, intentPath)
-				: async () => ({ commit: "c".padEnd(40, "0") }),
-			lookupBatchCommit: kernel.lookupBatchCommit
-				? (root, taskId, batchId, expectedHead) => kernel.lookupBatchCommit(root, taskId, batchId, expectedHead)
-				: async () => null,
-		} satisfies BatchRunnerGitPort),
-		...overrides,
-	};
-}
-
-/** Kernel port scripted by a queue of advance results per task. */
-function scriptedKernel(advances: Record<string, BatchChildAdvanceResult[]>): BatchRunnerKernelPort & {
-	enrolled: string[];
-	commits: { task_id: string; batch_id: string }[];
-	foreignClaims: Set<string>;
-	commitChild: NonNullable<BatchRunnerGitPort["commitChild"]>;
-	lookupBatchCommit: NonNullable<BatchRunnerGitPort["lookupBatchCommit"]>;
-} {
-	const queue = new Map(Object.entries(advances).map(([k, v]) => [k, [...v]]));
-	return {
-		enrolled: [],
-		commits: [],
-		foreignClaims: new Set(),
-		async enrollTask({ task_id, batch }) {
-			if (batch.binding.batch_id !== "batch-001") throw new Error("batch mismatch");
-			this.enrolled.push(task_id);
-			return { record_revision: "r" };
-		},
-		async advanceTask(_root, taskId) {
-			const list = queue.get(taskId);
-			const next = list?.shift();
-			if (!next) throw new Error(`no scripted advance for ${taskId}`);
-			return next;
-		},
-		async commitChild(_root, taskId, batchId) {
-			this.commits.push({ task_id: taskId, batch_id: batchId });
-			const commit = `c${this.commits.length}`.padEnd(40, "0");
-			return { commit };
-		},
-		async lookupBatchCommit(_root, taskId, batchId) {
-			const hit = this.commits.find(
-				(c) => c.task_id === taskId && c.batch_id === batchId,
-			);
-			if (!hit) return null;
-			const idx = this.commits.indexOf(hit) + 1;
-			return { commit: `c${idx}`.padEnd(40, "0") };
-		},
-		async projectTask(_root, taskId): Promise<AssuranceProjectionResult> {
-			const claimed = this.enrolled.includes(taskId);
-			if (claimed) {
-				return {
-					contract: "assurance_kernel/assurance_projection/v1",
-					task_id: taskId,
-					error: null,
-					claim: { task_id: taskId, lifecycle_status: "active" },
-					projection: { ...projectionFacts(), lifecycle: "active", completion_ready: false } as never,
-				};
-			}
-			return {
-					contract: "assurance_kernel/assurance_projection/v1",
-					task_id: taskId,
-					error: null,
-					claim: null,
-					projection: { ...projectionFacts(), lifecycle: "active", completion_ready: false } as never,
-			};
-		},
-		ownsTaskClaim(taskId) {
-			return this.enrolled.includes(taskId) && !this.foreignClaims.has(taskId);
-		},
-		validateBatchAuthorization({ registry, capability, binding }) {
-			// Kernel-side gate: the presented capability must be genuinely
-			// issued (inspect rejects fabricated objects) and bound
-			// to the presented batch_id/plan_digest/base_head.
-			return registry.inspect(capability, {
-				...binding, branch: "main", actor_id: "user", confirmation_ref: "confirm", nonce: "n",
-			});
-		},
-	} as BatchRunnerKernelPort & { enrolled: string[]; commits: { task_id: string; batch_id: string }[]; foreignClaims: Set<string> };
-}
-
-describe("foreground Executor handoff", () => {
-	it("returns the enrolled child before QA and repeats the handoff until Parent freezes implementation", async () => {
-		const root = tempRoot();
-		try {
-			const kernel = scriptedKernel({ "task-a": [{ state: "completed" }] });
-			const advance = spyOn(kernel, "advanceTask");
-			kernel.projectTask = async (_root, taskId) => ({
-				contract: "assurance_kernel/assurance_projection/v1", task_id: taskId, error: null,
-				claim: kernel.enrolled.includes(taskId) ? { task_id: taskId, lifecycle_status: "active" } : null,
-				projection: {
-					...projectionFacts(),
-					run_id: kernel.enrolled.includes(taskId) ? "run-parent-handoff" : null,
-					record_revision: "revision-parent-handoff", lifecycle: "active", artifact_state: "active",
-					next_obligation: "submit_assurance", completion_ready: false,
-				} as never,
-			});
-			const args = input(root, [child("task-a", "S1"), child("task-b", "S2", ["task-a"])], kernel);
-			for (let attempt = 0; attempt < 2; attempt++) {
-				const report = await startBatchOnce(args);
-				expect(report.batch_state).toBe("running");
-				expect(report.handoff).toEqual({
-					role: "executor", task_id: "task-a", run_id: "run-parent-handoff",
-					record_revision: "revision-parent-handoff", next_obligation: "submit_assurance",
-				});
-				expect(report.children.map((c) => c.state)).toEqual(["enrolled", "pending"]);
-				expect(existsSync(join(root, ".imm/state/batches/batch-001.report.json"))).toBe(false);
-			}
-			expect(advance).not.toHaveBeenCalled();
-			expect(kernel.enrolled).toEqual(["task-a"]);
-			expect(kernel.commits).toEqual([]);
-		} finally { rmSync(root, { recursive: true, force: true }); }
-	});
-});
-
-describe("renewed authorization with real enrollment derivation", () => {
-	for (const recoveredClaim of [false, true]) {
-		for (const proof of ["valid", "missing", "mismatch"] as const) {
-		it(`restores commit-backed consumption before enrollment: recoveredClaim=${recoveredClaim} proof=${proof}`, async () => {
-			const root = tempRoot();
-			try {
-				const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8", env: {
-					...process.env, GIT_AUTHOR_NAME: "test", GIT_AUTHOR_EMAIL: "test@example.test",
-					GIT_COMMITTER_NAME: "test", GIT_COMMITTER_EMAIL: "test@example.test",
-				} }).trim();
-				git("init", "-q");
-				git("config", "core.hooksPath", "/dev/null");
-				mkdirSync(join(root, "docs/plans"), { recursive: true });
-				for (const taskId of ["task-a", "task-b"]) {
-					writeFileSync(join(root, `docs/plans/${taskId}.intent.json`), JSON.stringify({
-						contract: "assurance_kernel/task_intent/v1", task_id: taskId, owner: "user", revision: 1,
-						goal: taskId, risk: "routine", scope_hint: ["docs/plans"],
-						acceptance: [{ id: "acc-1", assertion: taskId, verification: "bun test tests/example.test.ts" }],
-					}));
-				}
-				git("add", "docs/plans"); git("commit", "-qm", "fixture");
-				const base = git("rev-parse", "HEAD");
-				const plan = ["task-a", "task-b"].map((taskId, index) => {
-					const intent = preparePiCanary(root, { task_id: taskId, now: "2026-01-01T00:00:00.000Z" }).intent!;
-					return { ...child(taskId, `S${index}`, index ? ["task-a"] : []), intent_path: intent.path,
-						intent_revision: intent.revision, intent_content_hash: intent.content_hash };
-				});
-				const kernel = scriptedKernel({ "task-a": [{ state: "completed" }], "task-b": [{ state: "completed" }] });
-				const evidence = new Map<string, string>();
-				kernel.lookupBatchCommit = async (_root, taskId, batchId) => {
-					expect(batchId).toBe("batch-001");
-					if (proof === "missing") return null;
-					return evidence.has(taskId) ? { commit: proof === "mismatch" ? "f".repeat(40) : evidence.get(taskId)! } : null;
-				};
-				kernel.commitChild = async (_root, taskId) => {
-					git("commit", "--allow-empty", "-qm", taskId);
-					const commit = git("rev-parse", "HEAD"); evidence.set(taskId, commit); return { commit };
-				};
-				const request = input(root, plan, kernel, { base_head: base, confirmation_time: "2026-02-01T00:00:00.000Z" });
-				const binding = { batch_id: request.batch_id, initiative_slug: request.initiative_slug,
-					plan_digest: request.plan_digest, branch: "main", base_head: base, budget: request.budget,
-					actor_id: "user", confirmation_ref: "confirm", nonce: "n" };
-				const enroll = kernel.enrollTask.bind(kernel);
-				kernel.enrollTask = async (args) => {
-					deriveChildEnrollment(root, request.registry, { capability: request.capability, binding,
-						task_id: args.task_id, expected_head: args.batch.binding.expected_head, now: new Date().toISOString() });
-					request.registry.consumeChild(request.capability, binding, args.task_id);
-					return enroll(args);
-				};
-				const prepared = prepareBatchRunState({ ...request, confirmation_time: "2026-01-01T00:00:00.000Z" });
-				// Recovery fixture reflects post-preflight reality: the batch branch exists and is checked out.
-				git("checkout", "-qb", prepared.branch ?? `imm/${request.initiative_slug}`);
-				if (recoveredClaim) kernel.enrolled.push("task-a");
-				else await kernel.commitChild(root, "task-a", request.batch_id, base);
-				writeBatchRunState(root, { ...prepared, batch_state: "needs_human",
-					commits: recoveredClaim ? [] : [evidence.get("task-a")!], children: prepared.children.map((item) => ({ ...item,
-						state: item.task_id === "task-a" && !recoveredClaim ? "committed" : item.task_id === "task-a" || !recoveredClaim ? "needs_human" : "skipped_blocked",
-						commit: item.task_id === "task-a" && !recoveredClaim ? evidence.get("task-a")! : null,
-						reason: "parked for confirmation",
-					})),
-				});
-				if (proof !== "valid") {
-					await expect(startBatch(request)).rejects.toThrow("lacks evidence");
-					expect(request.registry.consumedChildren(request.capability)).toEqual([]);
-					expect(kernel.enrolled).not.toContain("task-b");
-					return;
-				}
-				const report = await startBatch(request);
-				expect(report.batch_state).toBe("completed");
-				expect(kernel.enrolled.filter((taskId) => taskId === "task-b")).toHaveLength(1);
-				expect(request.registry.consumedChildren(request.capability).sort()).toEqual(["task-a", "task-b"]);
-			} finally { rmSync(root, { recursive: true, force: true }); }
-		});
-		}
-	}
-});
-
-// Spec branch-boundary D7/D8/D9: a serial batch binds each child's frozen
-// authority subject, so a scope-only or revision-only edit enrolls under the
-// same authorization and a changed subject parks only that child.
-describe("serial batch authority subject", () => {
-	const IDS = ["task-a", "task-b", "task-c"] as const;
-	const intentOf = (taskId: string, extra: Record<string, unknown> = {}) => ({
-		contract: "assurance_kernel/task_intent/v1", task_id: taskId, owner: "user", revision: 1,
-		goal: taskId, risk: "routine", scope_hint: [`src/${taskId}/a.ts`],
-		acceptance: [{ id: "acc-1", assertion: taskId, verification: JSON.stringify({
-			contract: "assurance_kernel/verification_descriptor/v2",
-			command: { executable: "bun", argv: ["test", `tests/${taskId}.test.ts`], cwd: ".", timeout_ms: 60000, max_output_bytes: 8192 },
-			environment: { prepare: null, writable_paths: [] },
-		}) }],
-		...extra,
-	});
-
-	/** task-b depends on task-a; task-c is independent. `legacy` drops the subject binding (D9). */
-	function fixture(legacy = false) {
-		const root = tempRoot();
-		const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8", env: {
-			...process.env, GIT_AUTHOR_NAME: "test", GIT_AUTHOR_EMAIL: "test@example.test",
-			GIT_COMMITTER_NAME: "test", GIT_COMMITTER_EMAIL: "test@example.test",
-		} }).trim();
-		git("init", "-q", "-b", "main");
-		git("config", "core.hooksPath", "/dev/null");
-		mkdirSync(join(root, "docs/plans"), { recursive: true });
-		for (const taskId of IDS) writeFileSync(join(root, `docs/plans/${taskId}.intent.json`), JSON.stringify(intentOf(taskId)));
-		git("add", "docs/plans"); git("commit", "-qm", "fixture");
-		const base = git("rev-parse", "HEAD");
-		git("checkout", "-qb", "imm/initiative-slug");
-		const plan = IDS.map((taskId, index) => {
-			const read = readTaskIntent(root, taskId);
-			return { ...child(taskId, `S${index + 1}`, taskId === "task-b" ? ["task-a"] : []), intent_path: read.intent_ref.path,
-				intent_revision: read.intent_ref.revision, intent_content_hash: read.content_hash,
-				...(legacy ? {} : { intent_authority_hash: intentAuthorityHash(read.intent) }) };
-		});
-		const kernel = scriptedKernel(Object.fromEntries(IDS.map((taskId) => [taskId, [{ state: "completed" as const }]])));
-		const evidence = new Map<string, string>();
-		kernel.lookupBatchCommit = async (_root, taskId) => (evidence.has(taskId) ? { commit: evidence.get(taskId)! } : null);
-		kernel.commitChild = async (_root, taskId) => {
-			git("commit", "--allow-empty", "-qm", taskId);
-			const commit = git("rev-parse", "HEAD"); evidence.set(taskId, commit); return { commit };
-		};
-		const request = input(root, plan, kernel, { base_head: base });
-		const binding = { batch_id: request.batch_id, initiative_slug: request.initiative_slug,
-			plan_digest: request.plan_digest, branch: "main", base_head: base, budget: request.budget,
-			actor_id: "user", confirmation_ref: "confirm", nonce: "n" };
-		const enroll = kernel.enrollTask.bind(kernel);
-		// The real Kernel derivation decides, per child, whether its authorization still holds.
-		kernel.enrollTask = async (args) => {
-			deriveChildEnrollment(root, request.registry, { capability: request.capability, binding,
-				task_id: args.task_id, expected_head: args.batch.binding.expected_head, now: new Date().toISOString() });
-			request.registry.consumeChild(request.capability, binding, args.task_id);
-			return enroll(args);
-		};
-		const revise = (taskId: string, extra: Record<string, unknown>) =>
-			writeFileSync(join(root, `docs/plans/${taskId}.intent.json`), JSON.stringify(intentOf(taskId, extra)));
-		return { root, request, kernel, revise };
-	}
-
-	it.each([
-		["a same-directory scope revision", { revision: 2, scope_hint: ["src/task-a/a.ts", "src/task-a/b.ts"] }],
-		["a revision-only bump", { revision: 2 }],
-	])("AC3: %s after confirmation enrolls and completes under the same authorization", async (_label, extra) => {
-		const f = fixture();
-		try {
-			f.revise("task-a", extra);
-			const report = await startBatch(f.request);
-			expect(report.batch_state).toBe("completed");
-			expect(report.children.map((c) => [c.task_id, c.state, c.reason])).toEqual(IDS.map((id) => [id, "committed", null]));
-			expect(f.kernel.enrolled).toEqual([...IDS]);
-		} finally { rmSync(f.root, { recursive: true, force: true }); }
-	});
-
-	it.each([
-		["an acceptance assertion", { revision: 2, acceptance: [{ ...intentOf("task-a").acceptance[0]!, assertion: "rewritten" }] }],
-		["a verification argv", { revision: 2, acceptance: [{ ...intentOf("task-a").acceptance[0]!,
-			verification: intentOf("task-a").acceptance[0]!.verification.replace("tests/task-a.test.ts", "tests/other.test.ts") }] }],
-	])("AC4: a changed %s parks only that child and its dependents", async (_label, extra) => {
-		const f = fixture();
-		try {
-			f.revise("task-a", extra);
-			const report = await startBatch(f.request);
-			// The run ends normally from the remaining children: none is left pending or
-			// enrolled, and the parked child gives the usual needs_human end state.
-			expect(report.batch_state).toBe("needs_human");
-			expect(report.children.every((c) => c.state !== "pending" && c.state !== "enrolled")).toBe(true);
-			const states = Object.fromEntries(report.children.map((c) => [c.task_id, [c.state, c.reason]]));
-			expect(states["task-a"]).toEqual(["needs_human", "batch_child_authority_changed: task-a"]);
-			expect(states["task-b"]).toEqual(["skipped_blocked", "dependency task-a parked"]);
-			expect(states["task-c"]).toEqual(["committed", null]);
-			expect(f.kernel.enrolled).toEqual(["task-c"]);
-			expect(report.reason).not.toContain("plan_changed");
-		} finally { rmSync(f.root, { recursive: true, force: true }); }
-	});
-
-	it("AC4: a changed child order or dependency still refuses the run as a different plan", async () => {
-		const f = fixture();
-		try {
-			for (const children of [
-				[...f.request.children].reverse(),
-				f.request.children.map((c) => (c.task_id === "task-c" ? { ...c, blocked_by: ["task-a"] } : c)),
-			]) {
-				const report = await startBatch({ ...f.request, children });
-				expect(report.batch_state).toBe("rejected");
-				expect(report.reason).toContain("does not match the authorized plan");
-			}
-			expect(f.kernel.enrolled).toEqual([]);
-		} finally { rmSync(f.root, { recursive: true, force: true }); }
-	});
-
-	it("AC6: a record without the subject binding keeps whole-intent comparison", async () => {
-		const f = fixture(true);
-		try {
-			f.revise("task-a", { revision: 2 });
-			const report = await startBatch(f.request);
-			expect(report.batch_state).toBe("needs_human");
-			expect(report.children[0]).toMatchObject({ task_id: "task-a", state: "needs_human" });
-			expect(report.children[0]!.reason).toStartWith("batch_child_intent_changed: task-a");
-			expect(readBatchRunState(f.root, "batch-001")!.intent_identities).toBeUndefined();
-			expect(f.kernel.enrolled).toEqual([]);
-		} finally { rmSync(f.root, { recursive: true, force: true }); }
-	});
-});
-
-// S5/AC1: the one production child Kernel port in runtime/unattended. A Host
-// contributes advanceTask only; enrollment, projection and ownership are shared.
 describe("one production batch child Kernel port", () => {
 	const root = tempRoot();
+	afterAll(() => rmSync(root, { recursive: true, force: true }));
 
 	/** The batch binding the shared port validates against. */
 	function sharedBinding(planDigest: string = "0".repeat(64), baseHead = "b".repeat(40)) {
@@ -697,192 +279,22 @@ describe("one production batch child Kernel port", () => {
 	});
 });
 
-// S5/AC2: git operations go through BatchRunnerGitPort alone. The runner has no
-// git fallback chain over optional Kernel-port members.
-describe("one batch git seam", () => {
-	/** One real git repository root with a committed HEAD and no branch yet. */
-	function gitRoot(baseHead: { value: string }): string {
-		const root = tempRoot();
-		const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8", env: {
-			...process.env, GIT_AUTHOR_NAME: "test", GIT_AUTHOR_EMAIL: "test@example.test",
-			GIT_COMMITTER_NAME: "test", GIT_COMMITTER_EMAIL: "test@example.test",
-		} }).trim();
-		git("init", "-q");
-		git("config", "core.hooksPath", "/dev/null");
-		mkdirSync(join(root, "docs/plans"), { recursive: true });
-		writeFileSync(join(root, "docs/plans/seed.json"), "{}");
-		git("add", "docs/plans"); git("commit", "-qm", "seed");
-		baseHead.value = git("rev-parse", "HEAD");
-		return root;
-	}
-
-	it("AC2: with no git port injected the runner uses createDefaultBatchGitPort", async () => {
+describe("batch plan authority boundaries", () => {
+	it.each([
+		[child("task-a", "S1", ["task-a"])],
+		[child("task-a", "S1", ["task-b"]), child("task-b", "S2", ["task-a"])],
+		[child("task-free", "S0"), child("task-a", "S1", ["task-b"]), child("task-b", "S2", ["task-c"]), child("task-c", "S3", ["task-a"])],
+	].map(children => ({ children })))("rejects cyclic plans before issuing authority or writing batch state: %j", ({ children }) => {
 		const root = tempRoot();
 		try {
-			const plan = [child("task-a", "S1")];
-			// No `git` member: the runner must fall back to the default adapter,
-			// whose preflight rejects a root that is not a Git repository. A Host
-			// KERNEL-only override cannot supply git, so this exercises the
-			// default path with no seam supplied at all.
-			const request = input(root, plan, scriptedKernel({ "task-a": [{ state: "completed" }] }));
-			const { git: _omit, ...noGitSeam } = request;
-			const report = await startBatch(noGitSeam as never);
-			expect(report.batch_state).toBe("rejected");
-			expect(report.reason).toBe("not_a_git_repository");
-			expect(report.children.every((c) => c.state === "pending")).toBe(true);
+			const registry = createBatchAuthorityRegistry();
+			expect(() => registry.issue({ batch_id: "batch-001", initiative_slug: "initiative-slug",
+				plan_digest: computeBatchPlanDigest(children), branch: "main", base_head: "b".repeat(40),
+				budget: { max_children: children.length, qa_failure_limit: 3 }, actor_id: "user", confirmation_ref: "confirm", nonce: "n",
+			}, children, FAR_FUTURE)).toThrow("dependency cycle");
+			expect(existsSync(join(root, ".imm"))).toBe(false);
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
-
-	it("AC2: an injected BatchRunnerGitPort fully replaces the default and no default git operation runs", async () => {
-		const root = tempRoot();
-		try {
-			const plan = [child("task-a", "S1")];
-			const kernel = scriptedKernel({ "task-a": [{ state: "completed" }] });
-			const seen: string[] = [];
-			// One injected port: every git operation the runner needs reaches it.
-			// The root has no Git repository at all, so any default-adapter git
-			// operation would either fail the run or leave its durable evidence.
-			const committed = new Map<string, string>();
-			const request = input(root, plan, kernel, {
-				git: {
-					preflight: (input) => {
-						seen.push(`preflight:${input.initiative_slug}`);
-						return { ok: true as const, branch: `imm/${input.initiative_slug}` };
-					},
-					commitChild: async (_root, taskId, batchId) => {
-						seen.push(`commit:${taskId}`);
-						committed.set(taskId, "f".repeat(40));
-						return { commit: committed.get(taskId)! };
-					},
-					lookupBatchCommit: async (_root, taskId, batchId) => {
-						seen.push(`lookup:${taskId}`);
-						const commit = committed.get(taskId);
-						// Before the commit exists the runner must create it, never
-						// adopt one; afterwards it must find its own evidence.
-						return commit ? { commit } : null;
-					},
-				},
-			});
-			const report = await startBatch(request);
-			expect(report.batch_state).toBe("completed");
-			// Every git operation the runner needs reached the injected port, and
-			// nothing else touched the repository: the recovery lookup, the
-			// mandatory preflight, the commit and its post-commit verification.
-			expect(seen).toEqual([
-				"preflight:initiative-slug", "lookup:task-a", "commit:task-a", "lookup:task-a",
-			]);
-			// No default git operation ran: the default adapter cannot act without
-			// a repository, and it persists durable commit evidence when it does.
-			expect(existsSync(join(root, ".git"))).toBe(false);
-			expect(existsSync(join(root, ".imm/state/batches/commits"))).toBe(false);
-		} finally { rmSync(root, { recursive: true, force: true }); }
-	});
-
-	it("AC2: BatchRunnerKernelPort overrides still apply to the remaining members", async () => {
-		const root = tempRoot();
-		try {
-			const plan = [child("task-a", "S1")];
-			const kernel = scriptedKernel({ "task-a": [{ state: "completed" }] });
-			// The overrides object is a Partial<KernelPort>; supplying only
-			// advanceTask keeps the shared production members for the rest.
-			const request = input(root, plan, {
-				...kernel,
-				advanceTask: async (_root, taskId) => {
-					expect(taskId).toBe("task-a");
-					return { state: "completed" };
-				},
-			});
-			const report = await startBatch(request);
-			expect(report.batch_state).toBe("completed");
-			expect(kernel.enrolled).toEqual(["task-a"]);
-		} finally { rmSync(root, { recursive: true, force: true }); }
-	});
-});
-
-describe("single-claim recovery matrix", () => {
-	for (const entry of ["start", "resume"] as const) {
-		for (const reverse of [false, true]) {
-			{
-				for (const checkpoint of ["enrollment", "settlement", "commit", "foreign"] as const) {
-					it(`${entry}: reverse=${reverse} after ${checkpoint}`, async () => {
-						const root = tempRoot();
-						try {
-							const a = child("task-a", "S1");
-							const b = child("task-b", "S2", [a.task_id]);
-							const kernel = scriptedKernel({
-								"task-a": [{ state: "review_ready", operation_id: "recovered-review" }, { state: "completed" }],
-								"task-b": [{ state: "completed" }],
-							});
-							let claim: string | null = checkpoint === "enrollment" || checkpoint === "foreign" ? a.task_id : null;
-							const settled = new Set(checkpoint === "settlement" || checkpoint === "commit" ? [a.task_id] : []);
-							kernel.enrolled.push(a.task_id);
-							if (checkpoint === "foreign") kernel.foreignClaims.add(a.task_id);
-							if (checkpoint === "commit") kernel.commits.push({ task_id: a.task_id, batch_id: "batch-001" });
-							const project = kernel.projectTask.bind(kernel);
-							kernel.projectTask = async (cwd, taskId) => {
-								const result = await project(cwd, taskId);
-								return { ...result,
-									claim: claim ? { task_id: claim, lifecycle_status: "active" } : null,
-									error: claim && claim !== taskId ? `backend claim belongs to ${claim}, not ${taskId}` : null,
-									projection: { ...result.projection, lifecycle: settled.has(taskId) ? "done" : "active", completion_ready: settled.has(taskId) },
-								};
-							};
-							const enroll = kernel.enrollTask.bind(kernel);
-							kernel.enrollTask = async (args) => {
-								expect(claim).toBeNull();
-								expect(kernel.enrolled).not.toContain(args.task_id);
-								const result = await enroll(args);
-								claim = args.task_id;
-								return result;
-							};
-							const advance = kernel.advanceTask.bind(kernel);
-							kernel.advanceTask = async (cwd, taskId) => {
-								expect(claim).toBe(taskId);
-								expect(settled.has(taskId)).toBe(false);
-								const result = await advance(cwd, taskId);
-								if (result.state === "completed") { settled.add(taskId); claim = null; }
-								return result;
-							};
-							const commit = kernel.commitChild.bind(kernel);
-							kernel.commitChild = async (cwd, taskId, batchId, head) => {
-								expect(claim).toBeNull();
-								expect(settled.has(taskId)).toBe(true);
-								expect(kernel.commits.some((item) => item.task_id === taskId)).toBe(false);
-								return commit(cwd, taskId, batchId, head);
-							};
-							const request = input(root, reverse ? [b, a] : [a, b], kernel);
-							const prepared = prepareBatchRunState(request);
-							writeBatchRunState(root, { ...prepared, batch_state: "running",
-								children: prepared.children.map((item) => item.task_id !== a.task_id ? item : {
-									...item, state: checkpoint === "commit" ? "settled" : checkpoint === "settlement" ? "enrolled" : "pending",
-								}),
-							});
-							const run = () => entry === "start" ? startBatch(request) : resumeBatch(request, kernel.projectTask);
-							let report = await run();
-							if (checkpoint === "enrollment") {
-								expect(report.batch_state).toBe("running");
-								expect(claim).toBe(a.task_id);
-								expect(kernel.enrolled).toEqual([a.task_id]);
-								report = await run();
-							}
-							if (checkpoint === "foreign") {
-								expect(report.batch_state).toBe("needs_human");
-								expect(report.children.find((item) => item.task_id === b.task_id)?.state).toBe("skipped_blocked");
-								expect(kernel.commits).toEqual([]);
-								expect(claim).toBe(a.task_id);
-							} else {
-								expect(report.batch_state).toBe("completed");
-								expect(claim).toBeNull();
-								expect(kernel.commits.map((item) => item.task_id)).toEqual([a.task_id, b.task_id]);
-								await run();
-							}
-							expect(kernel.enrolled).toEqual(checkpoint === "foreign" ? [a.task_id] : [a.task_id, b.task_id]);
-						} finally { rmSync(root, { recursive: true, force: true }); }
-					});
-				}
-			}
-		}
-	}
 });
 
 describe("batch run state persistence", () => {
@@ -927,6 +339,8 @@ describe("batch run state persistence", () => {
 			});
 			writeBatchRunState(root, record);
 			expect(() => readBatchRunState(root, "batch-001")).not.toThrow();
+			writeFileSync(join(root, ".imm/state/batches/batch-001.json"), JSON.stringify({ ...record, batch_id: "foreign" }));
+			expect(() => readBatchRunState(root, "batch-001")).toThrow(/carries batch_id foreign/);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
@@ -951,7 +365,11 @@ describe("batch run state persistence", () => {
 		"rejects unsafe persistence identity %s before any writes", (batch_id) => {
 			const root = tempRoot();
 			try {
-				const record = prepareBatchRunState(input(root, [child("task-a", "S1")], scriptedKernel({})));
+				const record = prepareBatchRunState({
+					batch_id: "batch-001", initiative_slug: "initiative-slug", children: [child("task-a", "S1")],
+					plan_digest: "d".repeat(64), base_head: "b".repeat(40), confirmation_time: FAR_FUTURE,
+					budget: { max_children: 1, qa_failure_limit: 3 }, now: FAR_FUTURE,
+				});
 				expect(() => readBatchRunState(root, batch_id)).toThrow(/safe file identity/);
 				expect(() => writeBatchRunState(root, { ...record, batch_id })).toThrow(/safe file identity/);
 				expect(() => writeBatchRunReport(root, { ...record, batch_id,
@@ -1032,1243 +450,6 @@ describe("batch run state persistence", () => {
 	});
 });
 
-describe("batch boundary regressions", () => {
-	it.each([
-		[child("task-a", "S1", ["task-a"])],
-		[child("task-a", "S1", ["task-b"]), child("task-b", "S2", ["task-a"])],
-		[child("task-free", "S0"), child("task-a", "S1", ["task-b"]), child("task-b", "S2", ["task-c"]), child("task-c", "S3", ["task-a"])],
-	].map((children) => ({ children })))("rejects cyclic plans before issuing authority or writing batch state: %j", ({ children }) => {
-		const root = tempRoot();
-		const kernel = scriptedKernel({});
-		try {
-			expect(() => input(root, children, kernel)).toThrow("dependency cycle");
-			expect(kernel.enrolled).toEqual([]);
-			expect(existsSync(join(root, ".imm"))).toBe(false);
-		} finally { rmSync(root, { recursive: true, force: true }); }
-	});
-	it("replays commit evidence when dependency order differs from plan array order", async () => {
-		const root = tempRoot();
-		try {
-			const kernel = scriptedKernel({ "task-a": [{ state: "completed" }], "task-b": [{ state: "completed" }] });
-			const request = input(root, [child("task-b", "S2", ["task-a"]), child("task-a", "S1")], kernel);
-			expect((await startBatch(request)).batch_state).toBe("completed");
-			expect((await startBatch(request)).batch_state).toBe("completed");
-			expect(kernel.enrolled).toEqual(["task-a", "task-b"]);
-			expect(kernel.commits).toHaveLength(2);
-		} finally { rmSync(root, { recursive: true, force: true }); }
-	});
-	it.each(["start", "resume"] as const)("%s rejects fabricated completion without writes", async (entry) => {
-		const root = tempRoot();
-		try {
-			const kernel = scriptedKernel({});
-			const request = input(root, [child("task-a", "S1")], kernel);
-			const prepared = prepareBatchRunState(request);
-			const commit = "a".repeat(40);
-			writeBatchRunState(root, { ...prepared, batch_state: "completed", commits: [commit],
-				children: prepared.children.map((c) => ({ ...c, state: "committed", commit })),
-			});
-			const path = join(root, ".imm/state/batches/batch-001.json");
-			const before = readFileSync(path, "utf8");
-			await expect(entry === "start" ? startBatch(request) : resumeBatch(request, kernel.projectTask.bind(kernel)))
-				.rejects.toThrow("lacks evidence");
-			expect(readFileSync(path, "utf8")).toBe(before);
-			expect(existsSync(join(root, ".imm/state/batches/batch-001.report.json"))).toBe(false);
-			expect(kernel.enrolled).toEqual([]);
-		} finally { rmSync(root, { recursive: true, force: true }); }
-	});
-
-	it("rejects a truncated persisted plan even when it claims completion", async () => {
-		const root = tempRoot();
-		try {
-			const request = input(root, [child("task-a", "S1"), child("task-b", "S2")], scriptedKernel({}));
-			const prepared = prepareBatchRunState(request);
-			const commit = "a".repeat(40);
-			writeBatchRunState(root, { ...prepared, batch_state: "completed", commits: [commit],
-				children: [{ ...prepared.children[0]!, state: "committed", commit }],
-			});
-			await expect(startBatch(request)).rejects.toThrow("authorized plan");
-			expect(existsSync(join(root, ".imm/state/batches/batch-001.report.json"))).toBe(false);
-		} finally { rmSync(root, { recursive: true, force: true }); }
-	});
-
-	it("rejects a fabricated aggregate commit list despite real child evidence", async () => {
-		const root = tempRoot();
-		try {
-			const kernel = scriptedKernel({ "task-a": [{ state: "completed" }] });
-			const request = input(root, [child("task-a", "S1")], kernel);
-			await startBatch(request);
-			const saved = readBatchRunState(root, request.batch_id)!;
-			writeBatchRunState(root, { ...saved, commits: [...saved.commits, "a".repeat(40)] });
-			await expect(startBatch(request)).rejects.toThrow("commit list");
-			expect(kernel.commits).toHaveLength(1);
-		} finally { rmSync(root, { recursive: true, force: true }); }
-	});
-	it.each(["enrolled", "settled", "pending"] as const)(
-		"completes a last %s child decades after confirmation without new enrollment", async (state) => {
-			const root = tempRoot();
-			const clock = spyOn(Date, "now").mockReturnValue(Date.parse("2098-01-01T00:00:00.000Z"));
-			try {
-				const kernel = scriptedKernel({ "task-a": [{ state: "completed" }] });
-				const request = input(root, [child("task-a", "S1")], kernel, {
-				});
-				kernel.enrolled.push("task-a");
-				const prepared = prepareBatchRunState(request);
-				writeBatchRunState(root, { ...prepared, batch_state: "running",
-					children: prepared.children.map((c) => ({ ...c, state })),
-				});
-				const report = await startBatch(request);
-				expect(report.batch_state).toBe("completed");
-				expect(report.children[0]!.state).toBe("committed");
-				expect(kernel.enrolled).toEqual(["task-a"]);
-				expect(kernel.commits).toHaveLength(1);
-			} finally { clock.mockRestore(); rmSync(root, { recursive: true, force: true }); }
-		},
-	);
-
-	it.each(["intent_path", "intent_revision", "intent_content_hash"] as const)(
-		"rejects missing %s before any writes", async (field) => {
-			const root = tempRoot();
-			try {
-				const kernel = scriptedKernel({});
-				const request = input(root, [child("task-a", "S1")], kernel);
-				request.children[0] = { ...request.children[0]!, [field]: null };
-				const report = await startBatch(request);
-				expect(report.batch_state).toBe("rejected");
-				expect(report.reason).toContain("no complete intent identity");
-				expect(kernel.enrolled).toEqual([]);
-				expect(existsSync(join(root, ".imm"))).toBe(false);
-			} finally { rmSync(root, { recursive: true, force: true }); }
-		},
-	);
-	it.each(["confirmation", "base_head"])("parked resume rejects reused authority with forged %s", async (field) => {
-		const root = tempRoot();
-		try {
-			const kernel = scriptedKernel({ "task-a": [{ state: "blocked", reason: "human decision" }] });
-			const original = input(root, [child("task-a", "S1")], kernel);
-			await startBatch(original);
-			const path = join(root, ".imm/state/batches/batch-001.json");
-			const before = readFileSync(path, "utf8");
-			const replacement = field === "base_head"
-				? input(root, original.children, kernel, {
-					confirmation_time: "2026-01-02T00:00:00.000Z", base_head: "a".repeat(40),
-				})
-				: { ...original, confirmation_time: "2026-01-02T00:00:00.000Z" };
-			await expect(startBatch(replacement)).rejects.toThrow(/confirmation|base_head/);
-			expect(readFileSync(path, "utf8")).toBe(before);
-			expect(kernel.enrolled).toEqual(["task-a"]);
-			expect(kernel.commits).toHaveLength(0);
-		} finally { rmSync(root, { recursive: true, force: true }); }
-	});
-
-	it.each(["order", "dependency", "budget"])("rejects changed %s before initial writes", async (field) => {
-		const root = tempRoot();
-		try {
-			const kernel = scriptedKernel({});
-			const original = input(root, [child("task-a", "S1"), child("task-b", "S2", ["task-a"])], kernel);
-			const tampered = { ...original };
-			if (field === "order") tampered.children = [...original.children].reverse();
-			if (field === "dependency") tampered.children = original.children.map((c) => ({ ...c, blocked_by: [] }));
-			if (field === "budget") tampered.budget = { ...original.budget, qa_failure_limit: 100 };
-			const report = await startBatch(tampered);
-			expect(report.batch_state).toBe("rejected");
-			expect(report.reason).toMatch(/authorized plan|budget mismatch/);
-			expect(existsSync(join(root, ".imm"))).toBe(false);
-			expect(kernel.enrolled).toEqual([]);
-		} finally { rmSync(root, { recursive: true, force: true }); }
-	});
-
-	it.each(["start", "resume"])("%s hands technical Review rework to Parent without consuming QA budget or asking for authorization", async (entry) => {
-		const root = tempRoot();
-		try {
-			const secret = "review-raw-output-canary";
-			const kernel = scriptedKernel({ "task-a": [{ state: "rework", operation: "review", summary: secret }] });
-			let repaired = false, calls = 0;
-			const advance = kernel.advanceTask.bind(kernel), project = kernel.projectTask.bind(kernel);
-			kernel.advanceTask = async (...args) => { calls++; const result = await advance(...args); repaired = true; return result; };
-			kernel.projectTask = async (...args) => {
-				const fresh = await project(...args);
-				return { ...fresh, projection: { ...fresh.projection, artifact_state: repaired ? "active" : "frozen",
-					next_obligation: repaired ? "resolve_findings" : "run_review", blocking_finding_ids: repaired ? ["review-A1"] : [], missing_acceptance_ids: ["A1"] } };
-			};
-			const request = input(root, [child("task-a", "S1"), child("task-b", "S2", ["task-a"]), child("task-c", "S3")], kernel);
-			if (entry === "resume") {
-				const prepared = prepareBatchRunState(request);
-				writeBatchRunState(root, { ...prepared, batch_state: "running", children: prepared.children.map(c => c.task_id === "task-a" ? { ...c, state: "enrolled" } : c) });
-				kernel.enrolled.push("task-a");
-			} else await startBatchOnce(request);
-			const report = entry === "start" ? await startBatchOnce(request) : await resumeBatchOnce(request, kernel.projectTask);
-			expect(report.batch_state).toBe("running");
-			expect(report.children.map(c => c.state)).toEqual(["enrolled", "pending", "pending"]);
-			expect(report.recovery).toMatchObject({ category: "repair", acceptance_ids: ["A1"], finding_ids: ["review-A1"], next_obligation: "resolve_findings" });
-			expect(report.next_action).toContain("resolve_finding");
-			expect(JSON.stringify(report)).not.toContain(secret);
-			await startBatchOnce(request);
-			expect(calls).toBe(1);
-			expect(readBatchRunState(root, "batch-001")!.consecutive_qa_failures).toBe(0);
-			expect(kernel.enrolled).toEqual(["task-a"]);
-			expect(kernel.commits).toEqual([]);
-		} finally { rmSync(root, { recursive: true, force: true }); }
-	});
-
-	it("recovery retries only QA failures and parks at the limit", async () => {
-		const root = tempRoot();
-		try {
-			const kernel = scriptedKernel({ "task-a": [
-				{ state: "rework", operation: "qa", summary: "first failure" },
-				{ state: "rework", operation: "qa", summary: "second failure" },
-			] });
-			const request = input(root, [child("task-a", "S1")], kernel, {
-				budget: { max_children: 1, qa_failure_limit: 2 },
-			});
-			const prepared = prepareBatchRunState(request);
-			writeBatchRunState(root, { ...prepared, batch_state: "running",
-				children: prepared.children.map((c) => ({ ...c, state: "enrolled" })) });
-			kernel.enrolled.push("task-a");
-			const report = await resumeBatch(request, kernel.projectTask);
-			expect(report.batch_state).toBe("needs_human");
-			expect(readBatchRunState(root, "batch-001")!.consecutive_qa_failures).toBe(2);
-			expect(kernel.enrolled).toEqual(["task-a"]);
-		} finally { rmSync(root, { recursive: true, force: true }); }
-	});
-
-	it.each(["start", "resume"])("%s preserves QA failure accounting and resumes dependents only after success", async (entry) => {
-		const root = tempRoot();
-		try {
-			const children = [child("task-a", "S1"), child("task-b", "S2", ["task-a"])];
-			const kernel = scriptedKernel({
-				"task-a": [
-					{ state: "rework", operation: "qa", summary: "first failure" },
-					{ state: "rework", operation: "qa", summary: "limit reached" },
-					{ state: "rework", operation: "qa", summary: "first retry after confirmation" },
-					{ state: "completed" },
-				],
-				"task-b": [{ state: "completed" }],
-			});
-			const budget = { max_children: 2, qa_failure_limit: 2 };
-			const request = input(root, children, kernel, { budget });
-			const parked = await startBatch(request);
-			expect(parked.children.map((c) => c.state)).toEqual(["needs_human", "skipped_blocked"]);
-			expect(readBatchRunState(root, "batch-001")!.consecutive_qa_failures).toBe(2);
-			const repeated = await startBatch(request);
-			expect(repeated.batch_state).toBe("needs_human");
-			expect(readBatchRunState(root, "batch-001")!.consecutive_qa_failures).toBe(2);
-			const renewed = input(root, children, kernel, { budget, confirmation_time: "2026-01-02T00:00:00.000Z" });
-			const retried = entry === "start" ? await startBatch(renewed) : await resumeBatch(renewed, kernel.projectTask);
-			expect(retried.batch_state).toBe("needs_human");
-			expect(readBatchRunState(root, "batch-001")!.consecutive_qa_failures).toBe(3);
-			expect(retried.children.map((c) => c.state)).toEqual(["needs_human", "skipped_blocked"]);
-			expect(kernel.enrolled).toEqual(["task-a"]);
-			expect(kernel.commits).toEqual([]);
-			const repaired = input(root, children, kernel, { budget, confirmation_time: "2026-01-03T00:00:00.000Z" });
-			const report = entry === "start" ? await startBatch(repaired) : await resumeBatch(repaired, kernel.projectTask);
-			expect(report.batch_state).toBe("completed");
-			expect(readBatchRunState(root, "batch-001")!.consecutive_qa_failures).toBe(0);
-			expect(report.children.map((c) => c.state)).toEqual(["committed", "committed"]);
-			expect(kernel.enrolled).toEqual(["task-a", "task-b"]);
-		} finally { rmSync(root, { recursive: true, force: true }); }
-	});
-
-	it("crash recovery persists the exact new Review reservation before returning", async () => {
-		const root = tempRoot();
-		try {
-			const kernel = scriptedKernel({ "task-a": [
-				{ state: "review_ready", operation_id: "op-before-crash" },
-				{ state: "review_ready", operation_id: "op-after-crash" },
-			] });
-			const request = input(root, [child("task-a", "S1")], kernel);
-			await startBatch(request);
-			const report = await resumeBatch(request, kernel.projectTask);
-			expect(report.children[0]!.reason).toBe("review reservation op-after-crash open");
-			expect(readBatchRunState(root, "batch-001")!.children[0]!.reason).toBe(report.children[0]!.reason);
-			expect(kernel.enrolled).toEqual(["task-a"]);
-		} finally { rmSync(root, { recursive: true, force: true }); }
-	});
-
-	it("re-park traverses an already-skipped intermediate dependency", async () => {
-		const root = tempRoot();
-		try {
-			const kernel = scriptedKernel({ "task-a": [{ state: "blocked", reason: "human decision" }] });
-			const children = [child("task-a", "S1"), child("task-b", "S2", ["task-a"]), child("task-c", "S3", ["task-b"])];
-			await startBatch(input(root, children, kernel));
-			const parked = readBatchRunState(root, "batch-001")!;
-			writeBatchRunState(root, { ...parked, children: parked.children.map((c) =>
-				c.task_id === "task-c" ? { ...c, state: "pending", reason: null } : c) });
-			kernel.foreignClaims.add("task-a");
-			const report = await startBatch(input(root, children, kernel, { confirmation_time: "2026-01-02T00:00:00.000Z" }));
-			expect(report.children.map((c) => c.state)).toEqual(["needs_human", "skipped_blocked", "skipped_blocked"]);
-			expect(kernel.enrolled).toEqual(["task-a"]);
-		} finally { rmSync(root, { recursive: true, force: true }); }
-	});
-});
-
-describe("startBatch state machine", () => {
-	it("runs serial happy path: enroll → advance → commit per child in dependency order", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const b = child("task-b", "S2", ["task-a"]);
-			const kernel = scriptedKernel({
-				"task-a": [{ state: "completed" }],
-				"task-b": [{ state: "completed" }],
-			});
-			const report = await startBatch(input(root, [b, a], kernel));
-			expect(kernel.enrolled).toEqual(["task-a", "task-b"]);
-			expect(kernel.commits.map((c) => c.task_id)).toEqual(["task-a", "task-b"]);
-			expect(report.batch_state).toBe("completed");
-			expect(report.commits).toHaveLength(2);
-			const stored = readBatchRunState(root, "batch-001")!;
-			expect(stored.children.every((c) => c.state === "committed")).toBe(true);
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("empty plan is rejected with zero writes", async () => {
-		const root = tempRoot();
-		try {
-			// The registry rejects empty plans at issue(); the driver must
-			// independently reject before the first write, so skip issuing.
-			const kernel = scriptedKernel({});
-			const base = input(root, [child("placeholder", "S0")], kernel);
-			const report = await startBatch({ ...base, children: [] });
-			expect(report.batch_state).toBe("rejected");
-			expect(existsSync(join(root, ".imm", "state", "batches", "batch-001.json"))).toBe(false);
-			// Zero writes includes the run report: nothing may be persisted.
-			expect(existsSync(join(root, ".imm", "state", "batches", "batch-001.report.json"))).toBe(false);
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("a parked child skips its dependents and parks the batch", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const b = child("task-b", "S2", ["task-a"]);
-			const kernel = scriptedKernel({
-				"task-a": [{ state: "blocked", reason: "resolve_user_decision: needs scope choice" }],
-			});
-			const report = await startBatch(input(root, [a, b], kernel));
-			expect(report.batch_state).toBe("needs_human");
-			// review-3(6th round): a needs_human park ends the run, so the run
-			// report is written even though the batch stays resumable.
-			const reportBytes = readFileSync(
-				join(root, ".imm", "state", "batches", "batch-001.report.json"),
-				"utf8",
-			);
-			const parkedReport = JSON.parse(reportBytes) as { batch_state: string; next_action: string };
-			expect(parkedReport.batch_state).toBe("needs_human");
-			expect(parkedReport.next_action.length).toBeGreaterThan(0);
-			const stored = readBatchRunState(root, "batch-001")!;
-			expect(stored.children.find((c) => c.task_id === "task-a")!.state).toBe("needs_human");
-			expect(stored.children.find((c) => c.task_id === "task-b")!.state).toBe("skipped_blocked");
-			// No commit was attempted.
-			expect(kernel.commits).toHaveLength(0);
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("an enrollment failure that mentions expiry parks needs_human like any other failure", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const kernel = {
-				...scriptedKernel({}),
-				async enrollTask() {
-					// No error is classified as an intentional stop any more.
-					throw new Error("batch authorization expired");
-				},
-			};
-			const report = await startBatch(input(root, [a], kernel as unknown as BatchRunnerKernelPort));
-			expect(report.batch_state).toBe("needs_human");
-			const stored = readBatchRunState(root, "batch-001")!;
-			expect(stored.children[0]!.state).toBe("needs_human");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("parking a child stops the batch before any independent sibling is enrolled", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const b = child("task-b", "S2");
-			const kernel = scriptedKernel({
-				"task-a": [{ state: "blocked", reason: "resolve_user_decision: scope" }],
-				"task-b": [{ state: "completed" }],
-			});
-			const report = await startBatch(input(root, [a, b], kernel));
-			expect(report.batch_state).toBe("needs_human");
-			// The parked child still holds its Kernel claim: the driver must
-			// stop immediately, never select or enroll an independent sibling.
-			expect(kernel.enrolled).toEqual(["task-a"]);
-			const stored = readBatchRunState(root, "batch-001")!;
-			expect(stored.children.find((c) => c.task_id === "task-b")!.state).toBe("pending");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("max_children budget stops before enrolling the next child", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const b = child("task-b", "S2");
-			const kernel = scriptedKernel({
-				"task-a": [{ state: "completed" }],
-			});
-			const report = await startBatch(
-				input(root, [a, b], kernel, {
-					budget: { max_children: 1, qa_failure_limit: 3 },
-				}),
-			);
-			expect(report.batch_state).toBe("budget_stopped");
-			expect(kernel.enrolled).toEqual(["task-a"]);
-			const stored = readBatchRunState(root, "batch-001")!;
-			expect(stored.children.find((c) => c.task_id === "task-b")!.state).toBe("pending");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("qa failure limit parks the child and batch", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const kernel = scriptedKernel({
-				"task-a": [
-					{ state: "rework", operation: "qa", summary: "first failure" },
-					{ state: "rework", operation: "qa", summary: "second failure" },
-					{ state: "rework", operation: "qa", summary: "third failure" },
-				],
-			});
-			const report = await startBatch(input(root, [a], kernel));
-			expect(report.batch_state).toBe("needs_human");
-			const stored = readBatchRunState(root, "batch-001")!;
-			expect(stored.consecutive_qa_failures).toBe(3);
-			expect(stored.children[0]!.state).toBe("needs_human");
-			expect(stored.children[0]!.reason).toContain("QA failure limit");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("rework below the limit retries the same child to completion", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const kernel = scriptedKernel({
-				"task-a": [
-					{ state: "rework", operation: "qa", summary: "fix the test" },
-					{ state: "completed" },
-				],
-			});
-			const report = await startBatch(input(root, [a], kernel));
-			expect(report.batch_state).toBe("completed");
-			const stored = readBatchRunState(root, "batch-001")!;
-			// review-6: a successful settlement resets the counter, so the
-			// rework then completion run ends at zero.
-			expect(stored.consecutive_qa_failures).toBe(0);
-			expect(stored.children[0]!.state).toBe("committed");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("an open review reservation pauses the batch without parking", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const kernel = scriptedKernel({
-				"task-a": [{ state: "review_ready", operation_id: "op-1" }],
-			});
-			const report = await startBatch(input(root, [a], kernel));
-			expect(report.batch_state).toBe("running");
-			expect(report.next_action).toContain("Review verdict");
-			const stored = readBatchRunState(root, "batch-001")!;
-			expect(stored.children[0]!.state).toBe("enrolled");
-			expect(stored.children[0]!.reason).toContain("op-1");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("a stopped claimless Child parks only its dependent subtree while an independent authorized Child delivers", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1"), c = child("task-c", "S3", ["task-a"]), b = child("task-b", "S2");
-			// task-d declares no dependency, but its scope overlaps task-a's, so it waits on task-a (D8).
-			const d = child("task-d", "S4");
-			const git = publishScopedIntents(root, {
-				"task-a": ["src/a/**"], "task-b": ["src/b/**"], "task-c": ["src/a/**"], "task-d": ["src/a/shared.ts"],
-			});
-			const kernel = scriptedKernel({ "task-a": [{ state: "stopped" }], "task-b": [{ state: "completed" }] });
-			const stopped = new Set<string>();
-			const advance = kernel.advanceTask.bind(kernel), project = kernel.projectTask.bind(kernel);
-			kernel.advanceTask = async (root, id) => { const result = await advance(root, id); if (result.state === "stopped") {
-				stopped.add(id); kernel.enrolled = kernel.enrolled.filter(task => task !== id);
-			} return result; };
-			kernel.projectTask = async (root, id) => { const fresh = await project(root, id); return stopped.has(id)
-				? { ...fresh, claim: null, projection: { ...fresh.projection, lifecycle: "stopped", completion_ready: false } } : fresh; };
-			const evidence = new Map<string, string>();
-			kernel.commitChild = async (_root, taskId, batchId) => {
-				git("commit", "--allow-empty", "-qm", taskId);
-				kernel.commits.push({ task_id: taskId, batch_id: batchId });
-				evidence.set(taskId, git("rev-parse", "HEAD"));
-				return { commit: evidence.get(taskId)! };
-			};
-			kernel.lookupBatchCommit = async (_root, taskId) => evidence.has(taskId) ? { commit: evidence.get(taskId)! } : null;
-			const request = input(root, [a, b, c, d], kernel, { base_head: git("rev-parse", "HEAD") });
-			git("checkout", "-qb", prepareBatchRunState(request).branch!);
-			const report = await startBatch(request);
-			expect(report.batch_state).toBe("needs_human");
-			expect(report.children.find(child => child.task_id === "task-b")?.state).toBe("committed");
-			expect(report.children.find(child => child.task_id === "task-a")?.state).toBe("needs_human");
-			expect(report.children.find(child => child.task_id === "task-c")?.state).toBe("skipped_blocked");
-			expect(report.children.find(child => child.task_id === "task-d")).toMatchObject({
-				state: "skipped_blocked", reason: "dependency task-a parked",
-			});
-			expect(kernel.commits.map(commit => commit.task_id)).toEqual(["task-b"]);
-		} finally { rmSync(root, { recursive: true, force: true }); }
-	});
-
-	it("a child stop parks it and skips dependents", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const b = child("task-b", "S2", ["task-a"]);
-			const kernel = scriptedKernel({
-				"task-a": [{ state: "stopped" }],
-			});
-			const report = await startBatch(input(root, [a, b], kernel));
-			expect(report.batch_state).toBe("needs_human");
-			const stored = readBatchRunState(root, "batch-001")!;
-			expect(stored.children.find((c) => c.task_id === "task-a")!.state).toBe("needs_human");
-			expect(stored.children.find((c) => c.task_id === "task-b")!.state).toBe("skipped_blocked");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("a commit failure fails the whole batch (Invariant I-2)", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const kernel = {
-				...scriptedKernel({ "task-a": [{ state: "completed" }] }),
-				async commitChild() {
-					throw new Error("lineage check failed: HEAD moved");
-				},
-			};
-			const report = await startBatch(input(root, [a], kernel as unknown as BatchRunnerKernelPort));
-			expect(report.batch_state).toBe("failed");
-			const stored = readBatchRunState(root, "batch-001")!;
-			expect(stored.children[0]!.state).toBe("needs_human");
-			expect(stored.children[0]!.reason).toContain("HEAD moved");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("infrastructure failure parks the child without mutating kernel state directly", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const kernel = scriptedKernel({
-				"task-a": [{ state: "failed", reason: "storage unreachable" }],
-			});
-			const report = await startBatch(input(root, [a], kernel));
-			expect(report.batch_state).toBe("needs_human");
-			const stored = readBatchRunState(root, "batch-001")!;
-			expect(stored.children[0]!.state).toBe("needs_human");
-			expect(stored.children[0]!.reason).toContain("storage unreachable");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("terminal replay is idempotent: second startBatch does not re-enroll", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const kernel = scriptedKernel({ "task-a": [{ state: "completed" }] });
-			const first = await startBatch(input(root, [a], kernel));
-			expect(first.batch_state).toBe("completed");
-			const enrolledBefore = kernel.enrolled.length;
-			const second = await startBatch(input(root, [a], kernel));
-			expect(second.batch_state).toBe("completed");
-			expect(kernel.enrolled.length).toBe(enrolledBefore);
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("needs_human without a newer confirmation stays parked", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const kernel = scriptedKernel({
-				"task-a": [{ state: "blocked", reason: "resolve_user_decision: scope" }],
-			});
-			await startBatch(input(root, [a], kernel));
-			const stored = readBatchRunState(root, "batch-001")!;
-			writeBatchRunState(root, {
-				...stored,
-			});
-			const report = await resumeBatch(
-				input(root, [a], scriptedKernel({})),
-				async () => ({
-					contract: "assurance_kernel/assurance_projection/v1",
-					task_id: "task-a",
-					error: null,
-					claim: null,
-					projection: { ...projectionFacts(), lifecycle: "active", completion_ready: false } as never,
-				}) as never,
-			);
-			expect(report.batch_state).toBe("needs_human");
-			expect(readBatchRunState(root, "batch-001")!.batch_state).toBe("needs_human");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("a fresh confirmation resumes a parked batch and replaces its stop report", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const parkedKernel = scriptedKernel({
-				"task-a": [{ state: "blocked", reason: "resolve_user_decision: scope" }],
-			});
-			await startBatch(input(root, [a], parkedKernel, {
-				confirmation_time: "2098-01-01T00:00:00.000Z",
-			}));
-			const reportPath = join(root, ".imm/state/batches/batch-001.report.json");
-			expect(JSON.parse(readFileSync(reportPath, "utf8")).batch_state).toBe("needs_human");
-
-			const resumedKernel = scriptedKernel({ "task-a": [{ state: "completed" }] });
-			const report = await startBatch(input(root, [a], resumedKernel, {
-				confirmation_time: "2098-01-02T00:00:00.000Z",
-			}));
-			expect(report.batch_state).toBe("completed");
-			expect(resumedKernel.enrolled).toEqual(["task-a"]);
-			expect(JSON.parse(readFileSync(reportPath, "utf8")).batch_state).toBe("completed");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("review-1(7th): a parked child with a foreign claim keeps the batch parked on resume", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const b = child("task-b", "S2");
-			const kernel = scriptedKernel({
-				"task-a": [{ state: "blocked", reason: "resolve_user_decision: scope" }],
-			});
-			await startBatch(input(root, [a, b], kernel, {
-				confirmation_time: "2098-01-01T00:00:00.000Z",
-			}));
-			const stored = readBatchRunState(root, "batch-001")!;
-			expect(stored.batch_state).toBe("needs_human");
-			// The parked child's claim is then re-bound to a foreign batch.
-			const resumeKernel = scriptedKernel({
-				"task-a": [{ state: "completed" }],
-			});
-			resumeKernel.enrolled.push("task-a");
-			resumeKernel.foreignClaims.add("task-a");
-			const report = await resumeBatch(
-				input(root, [a, b], resumeKernel, {
-					confirmation_time: "2098-01-02T00:00:00.000Z",
-				}),
-				async () =>
-					({
-						contract: "assurance_kernel/assurance_projection/v1",
-						task_id: "task-a",
-						error: null,
-						claim: { task_id: "task-a", lifecycle_status: "active" },
-						projection: { lifecycle: "active", completion_ready: false } as never,
-					}) as never,
-			);
-			expect(report.batch_state).toBe("needs_human");
-			// task-b is an independent sibling: it stays pending — never enrolled —
-			// while the parked child's claim is foreign. Dependent marking on
-			// re-park is covered by the 8th-round test below.
-			expect(resumeKernel.enrolled).toEqual(["task-a"]);
-			const after = readBatchRunState(root, "batch-001")!;
-			expect(after.batch_state).toBe("needs_human");
-			expect(after.children.find((c) => c.task_id === "task-b")!.state).toBe("pending");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("review-1(8th): re-parking a foreign-claim child re-marks missed dependents", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const b = child("task-b", "S2", ["task-a"]);
-			const kernel = scriptedKernel({
-				"task-a": [{ state: "blocked", reason: "resolve_user_decision: scope" }],
-			});
-			await startBatch(input(root, [a, b], kernel, {
-				confirmation_time: "2098-01-01T00:00:00.000Z",
-			}));
-			const stored = readBatchRunState(root, "batch-001")!;
-			expect(stored.children.find((c) => c.task_id === "task-b")!.state).toBe("skipped_blocked");
-			// Simulate a historical park that missed the dependent marking: the
-			// dependent sits pending in the durable record when the batch is
-			// resumed with a fresh confirmation.
-			writeBatchRunState(root, {
-				...stored,
-				children: stored.children.map((c) =>
-					c.task_id === "task-b" ? { ...c, state: "pending", reason: null } : c,
-				),
-			});
-			const resumeKernel = scriptedKernel({});
-			resumeKernel.enrolled.push("task-a");
-			resumeKernel.foreignClaims.add("task-a");
-			const report = await resumeBatch(
-				input(root, [a, b], resumeKernel, {
-					confirmation_time: "2098-01-02T00:00:00.000Z",
-				}),
-				async () =>
-					({
-						contract: "assurance_kernel/assurance_projection/v1",
-						task_id: "task-a",
-						error: null,
-						claim: { task_id: "task-a", lifecycle_status: "active" },
-						projection: { lifecycle: "active", completion_ready: false } as never,
-					}) as never,
-			);
-			expect(report.batch_state).toBe("needs_human");
-			const after = readBatchRunState(root, "batch-001")!;
-			expect(after.children.find((c) => c.task_id === "task-a")!.state).toBe("needs_human");
-			// The re-park marks the missed dependent skipped_blocked.
-			expect(after.children.find((c) => c.task_id === "task-b")!.state).toBe("skipped_blocked");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("review-1(8th): a commit-lookup failure park skips its dependents", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const b = child("task-b", "S2", ["task-a"]);
-			const kernel = scriptedKernel({
-				"task-a": [{ state: "review_ready", operation_id: "op-1" }],
-			});
-			await startBatch(input(root, [a, b], kernel));
-			// Crash after settlement but before the committed-persist: the
-			// persisted child is settled; a resume must drive it to commit.
-			const stored = readBatchRunState(root, "batch-001")!;
-			writeBatchRunState(root, {
-				...stored,
-				children: stored.children.map((c) =>
-					c.state === "enrolled" ? { ...c, state: "settled", reason: null } : c,
-				),
-			});
-			const resumeKernel = scriptedKernel({ "task-a": [{ state: "completed" }] });
-			resumeKernel.enrolled.push("task-a");
-			// The commit lookup throws at the Kernel boundary: the driver parks
-			// the child as needs_human and must skip its dependents.
-			resumeKernel.lookupBatchCommit = async () => {
-				throw new Error("lookup unavailable");
-			};
-			// The resume path converts the abort into a parked report; the
-			// commit-lookup park marks transitive dependents skipped_blocked.
-			const report = await resumeBatch(
-				input(root, [a, b], resumeKernel),
-				async () =>
-					({
-						contract: "assurance_kernel/assurance_projection/v1",
-						task_id: "task-a",
-						error: null,
-						claim: null,
-						projection: { lifecycle: "", completion_ready: false },
-					}) as never,
-			);
-			expect(report.batch_state).toBe("needs_human");
-			const after = readBatchRunState(root, "batch-001")!;
-			expect(after.batch_state).toBe("needs_human");
-			expect(after.children.find((c) => c.task_id === "task-a")!.state).toBe("needs_human");
-			expect(after.children.find((c) => c.task_id === "task-b")!.state).toBe("skipped_blocked");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("review-1: resume drives an interrupted enrolled child to settlement and commit before anything else", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			// First run pauses with an open review reservation, leaving the child
-			// enrolled but unsettled.
-			const kernel = scriptedKernel({
-				"task-a": [{ state: "review_ready", operation_id: "op-1" }],
-			});
-			await startBatch(input(root, [a], kernel));
-			// Resume: the interrupted child must be driven to its own
-			// settlement and commit first.
-			const resumeKernel = scriptedKernel({
-				"task-a": [{ state: "completed" }],
-			});
-			// The interrupted child's Kernel claim is still open: the fake
-			// kernel's projectTask must report it so the runner adopts the
-			// claim rather than re-enrolling.
-			resumeKernel.enrolled.push("task-a");
-			const report = await resumeBatch(
-				input(root, [a], resumeKernel),
-				async () => ({
-					contract: "assurance_kernel/assurance_projection/v1",
-					task_id: "task-a",
-					error: null,
-					claim: { task_id: "task-a", lifecycle_status: "active" },
-					projection: { lifecycle: "active", completion_ready: false } as never,
-				}) as never,
-			);
-			expect(resumeKernel.commits.length).toBe(1);
-			const after = readBatchRunState(root, "batch-001")!;
-			expect(after.children[0]!.state).toBe("committed");
-			expect(after.batch_state).toBe("completed");
-			expect(report.batch_state).toBe("completed");
-			expect(resumeKernel.enrolled).toEqual(["task-a"]);
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("review-3: budget counts enrollments, so parked children consume the budget", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const b = child("task-b", "S2");
-			const kernel = scriptedKernel({
-				"task-a": [{ state: "blocked", reason: "resolve_user_decision: scope" }],
-			});
-			// max_children=1: after parking task-a the batch must not enroll task-b.
-			const report = await startBatch(input(root, [a, b], kernel, { budget: { max_children: 1, qa_failure_limit: 3 } }));
-			expect(report.batch_state).toBe("needs_human");
-			expect(kernel.enrolled).toEqual(["task-a"]);
-			const stored = readBatchRunState(root, "batch-001")!;
-			expect(stored.children.find((c) => c.task_id === "task-b")!.state).toBe("pending");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("review-1(6th): a claim held by another batch is not adopted and blocks for human attention", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const kernel = scriptedKernel({
-				"task-a": [{ state: "review_ready", operation_id: "op-1" }],
-			});
-			await startBatch(input(root, [a], kernel));
-			const stored = readBatchRunState(root, "batch-001")!;
-			writeBatchRunState(root, {
-				...stored,
-				children: stored.children.map((c) => ({ ...c, state: "pending", reason: null })),
-			});
-			// task-a's claim was re-bound to a different batch after the crash:
-			// the runner must not adopt it and must not re-enroll (both would
-			// steal the claim); it parks the child for human resolution.
-			const resumeKernel = scriptedKernel({
-				"task-a": [{ state: "completed" }],
-			});
-			resumeKernel.enrolled.push("task-a");
-			resumeKernel.foreignClaims.add("task-a");
-			const report = await resumeBatch(
-				input(root, [a], resumeKernel),
-			async () =>
-			({
-					contract: "assurance_kernel/assurance_projection/v1",
-					task_id: "task-a",
-					error: null,
-					claim: { task_id: "task-a", lifecycle_status: "active" },
-					projection: { lifecycle: "active", completion_ready: false } as never,
-				}) as never,
-			);
-			expect(report.batch_state).toBe("needs_human");
-			const after = readBatchRunState(root, "batch-001")!;
-			expect(after.children[0]!.state).toBe("needs_human");
-			expect(resumeKernel.commits.length).toBe(0);
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("review-2(5th): a pending child that already holds the batch claim is adopted without re-enrolling", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			// First run parks the batch with a needs_human child after the
-			// durable enrollment, then the state write reverts it to pending
-			// (crash between enrollTask and persist).
-			const kernel = scriptedKernel({
-				"task-a": [{ state: "review_ready", operation_id: "op-1" }],
-			});
-			await startBatch(input(root, [a], kernel));
-			const stored = readBatchRunState(root, "batch-001")!;
-			writeBatchRunState(root, {
-				...stored,
-				children: stored.children.map((c) => ({ ...c, state: "pending", reason: null })),
-			});
-			// Resume: kernel.enrolled already contains task-a, so the fresh
-			// projection sees the claim and the child is adopted, not
-			// re-enrolled (a duplicate enrollment would throw here).
-			const resumeKernel = scriptedKernel({
-				"task-a": [{ state: "completed" }],
-			});
-			resumeKernel.enrolled.push("task-a");
-			const enrollCalls: string[] = [];
-			const origEnroll = resumeKernel.enrollTask.bind(resumeKernel);
-			resumeKernel.enrollTask = (args) => {
-				enrollCalls.push(args.task_id);
-				return origEnroll(args);
-			};
-			await resumeBatch(
-				input(root, [a], resumeKernel),
-				async () =>
-				({
-					contract: "assurance_kernel/assurance_projection/v1",
-					task_id: "task-a",
-					error: null,
-					claim: null,
-					projection: { lifecycle: "", completion_ready: false },
-				}) as never,
-			);
-			expect(enrollCalls.length).toBe(0);
-			const after = readBatchRunState(root, "batch-001")!;
-			expect(after.children[0]!.state).toBe("committed");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("review-2(6th): an enrolled child whose claim was re-bound to a foreign batch parks without stealing it", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const b = child("task-b", "S2", ["task-a"]);
-			const kernel = scriptedKernel({
-				"task-a": [{ state: "review_ready", operation_id: "op-1" }],
-			});
-			await startBatch(input(root, [a, b], kernel));
-			// Durable state stays enrolled, but the claim moved to another batch.
-			const resumeKernel = scriptedKernel({
-				"task-a": [{ state: "completed" }],
-			});
-			resumeKernel.enrolled.push("task-a");
-			resumeKernel.foreignClaims.add("task-a");
-			const enrollCalls: string[] = [];
-			const origEnroll = resumeKernel.enrollTask.bind(resumeKernel);
-			resumeKernel.enrollTask = (args) => {
-				enrollCalls.push(args.task_id);
-				return origEnroll(args);
-			};
-			const report = await resumeBatch(
-				input(root, [a, b], resumeKernel),
-				async () =>
-				({
-					contract: "assurance_kernel/assurance_projection/v1",
-					task_id: "task-a",
-					error: null,
-					claim: { task_id: "task-a", lifecycle_status: "active" },
-					projection: { lifecycle: "active", completion_ready: false } as never,
-				}) as never,
-			);
-			expect(report.batch_state).toBe("needs_human");
-			expect(enrollCalls.length).toBe(0);
-			const after = readBatchRunState(root, "batch-001")!;
-			expect(after.children[0]!.state).toBe("needs_human");
-			// review-7: the parked child's dependent subtree is skipped_blocked.
-			expect(after.children[1]!.state).toBe("skipped_blocked");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("review-7: a pending child with a foreign claim parks and skips its dependents in the main loop", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const b = child("task-b", "S2", ["task-a"]);
-			const c = child("task-c", "S1");
-			const kernel = scriptedKernel({});
-			kernel.enrolled.push("task-a");
-			kernel.foreignClaims.add("task-a");
-			const report = await startBatch(input(root, [a, b, c], kernel));
-			expect(report.batch_state).toBe("needs_human");
-			const after = readBatchRunState(root, "batch-001")!;
-			expect(after.children.find((x) => x.task_id === "task-a")!.state).toBe("needs_human");
-			expect(after.children.find((x) => x.task_id === "task-b")!.state).toBe("skipped_blocked");
-			expect(after.children.find((x) => x.task_id === "task-c")!.state).toBe("pending");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("review-7: a pending child with a foreign claim parks and skips dependents on crash-recovery adoption", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const b = child("task-b", "S2", ["task-a"]);
-			const kernel = scriptedKernel({
-				"task-a": [{ state: "review_ready", operation_id: "op-1" }],
-			});
-			await startBatch(input(root, [a, b], kernel));
-			// Simulate a crash between durable enrollTask and the enrolled-persist:
-			// the child is stored pending while its claim is held by another batch.
-			const stored = readBatchRunState(root, "batch-001")!;
-			writeBatchRunState(root, {
-				...stored,
-				children: stored.children.map((c) =>
-					c.task_id === "task-a" ? { ...c, state: "pending", reason: null } : c,
-				),
-			});
-			const resumeKernel = scriptedKernel({});
-			resumeKernel.enrolled.push("task-a");
-			resumeKernel.foreignClaims.add("task-a");
-			const enrollCalls: string[] = [];
-			resumeKernel.enrollTask = (args) => {
-				enrollCalls.push(args.task_id);
-				throw new Error("must not re-enroll a foreign claim");
-			};
-			const report = await resumeBatch(
-				input(root, [a, b], resumeKernel),
-				async () =>
-				({
-					contract: "assurance_kernel/assurance_projection/v1",
-					task_id: "task-a",
-					error: null,
-					claim: { task_id: "task-a", lifecycle_status: "active" },
-					projection: { lifecycle: "active", completion_ready: false } as never,
-				}) as never,
-			);
-			expect(report.batch_state).toBe("needs_human");
-			expect(enrollCalls.length).toBe(0);
-			const after = readBatchRunState(root, "batch-001")!;
-			expect(after.children[0]!.state).toBe("needs_human");
-			expect(after.children[1]!.state).toBe("skipped_blocked");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("review-8: a parked-batch resume with a fabricated authorization fails closed", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const kernel = scriptedKernel({});
-			kernel.enrolled.push("task-a");
-			kernel.foreignClaims.add("task-a");
-			await startBatch(input(root, [a], kernel));
-			expect(readBatchRunState(root, "batch-001")!.batch_state).toBe("needs_human");
-			// Fresh-looking caller timestamps are not authority: a capability
-			// that no registry issued must be rejected before any remap.
-			await expect(
-				startBatch(input(root, [a], kernel, {
-					confirmation_time: "2099-01-02T00:00:00.000Z",
-					capability: {},
-				})),
-			).rejects.toThrow(/not recognized/);
-			// Zero writes: the batch stays parked exactly as before.
-			const after = readBatchRunState(root, "batch-001")!;
-			expect(after.batch_state).toBe("needs_human");
-			expect(after.confirmation_time).toBe("2026-01-01T00:00:00.000Z");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("review-8: a parked-batch resume bound to a different plan fails closed", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const kernel = scriptedKernel({});
-			kernel.enrolled.push("task-a");
-			kernel.foreignClaims.add("task-a");
-			await startBatch(input(root, [a], kernel));
-			// A genuinely issued capability, but issued over a different plan.
-			const foreignRegistry = createBatchAuthorityRegistry();
-			const foreignCapability = foreignRegistry.issue(
-				{
-					batch_id: "batch-001",
-					initiative_slug: "initiative-slug",
-					plan_digest: computeBatchPlanDigest([child("task-a", "S1"), child("task-x", "S2")]),
-					branch: "main",
-					base_head: "b".repeat(40),
-					budget: { max_children: 1, qa_failure_limit: 3 },
-					actor_id: "user",
-					confirmation_ref: "confirm",
-					nonce: "n",
-				},
-				[child("task-a", "S1"), child("task-x", "S2")],
-			);
-			await expect(
-				startBatch(input(root, [a], kernel, {
-					confirmation_time: "2099-01-02T00:00:00.000Z",
-					registry: foreignRegistry,
-					capability: foreignCapability,
-				})),
-			).rejects.toThrow(/plan_digest mismatch/);
-			const after = readBatchRunState(root, "batch-001")!;
-			expect(after.batch_state).toBe("needs_human");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("review-3(5th): a settled child whose commit already exists adopts it idempotently", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const kernel = scriptedKernel({
-				"task-a": [{ state: "review_ready", operation_id: "op-1" }],
-			});
-			await startBatch(input(root, [a], kernel));
-			// Simulate crash after settlement AND commitChild but before the
-			// committed-persist: kernel holds the commit, persisted child is
-			// settled (settlement persisted, commit did not).
-			const stored = readBatchRunState(root, "batch-001")!;
-			writeBatchRunState(root, {
-				...stored,
-				children: stored.children.map((c) =>
-					c.state === "enrolled" ? { ...c, state: "settled", reason: null } : c,
-				),
-			});
-			const settleKernel = scriptedKernel({
-				"task-a": [{ state: "completed" }],
-			});
-			settleKernel.enrolled.push("task-a");
-			settleKernel.commits.push({ task_id: "task-a", batch_id: "batch-001" });
-			const commitCalls: string[] = [];
-			const origCommit = settleKernel.commitChild.bind(settleKernel);
-			settleKernel.commitChild = (root2, taskId, batchId, head) => {
-				commitCalls.push(taskId);
-				return origCommit(root2, taskId, batchId, head);
-			};
-			await resumeBatch(
-				input(root, [a], settleKernel),
-				async () =>
-				({
-					contract: "assurance_kernel/assurance_projection/v1",
-					task_id: "task-a",
-					error: null,
-					claim: null,
-					projection: { lifecycle: "", completion_ready: false },
-				}) as never,
-			);
-			// The existing commit is adopted; commitChild is not called again.
-			expect(commitCalls.length).toBe(0);
-			const after = readBatchRunState(root, "batch-001")!;
-			expect(after.children[0]!.state).toBe("committed");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("projection errors never re-enroll an interrupted child", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const kernel = scriptedKernel({});
-			const record = prepareBatchRunState({
-				batch_id: "batch-001",
-				initiative_slug: "initiative-slug",
-				children: [a],
-				plan_digest: computeBatchPlanDigest([a]),
-				base_head: "b".repeat(40),
-				confirmation_time: FAR_FUTURE,
-				budget: { max_children: 1, qa_failure_limit: 3 },
-				now: FAR_FUTURE,
-			});
-			writeBatchRunState(root, {
-				...record,
-				batch_state: "running",
-				children: record.children.map((entry) => ({ ...entry, state: "enrolled" })),
-			});
-			kernel.projectTask = async () => ({
-				contract: "assurance_kernel/assurance_projection/v1",
-				task_id: "task-a",
-				error: "storage unavailable",
-				claim: null,
-				projection: { lifecycle: "active", completion_ready: false } as never,
-			});
-			await expect(
-				resumeBatch(input(root, [a], kernel), kernel.projectTask),
-			).rejects.toThrow(/cannot reconcile Kernel projection.*storage unavailable/);
-			expect(kernel.enrolled).toEqual([]);
-			expect(readBatchRunState(root, "batch-001")!.children[0]!.state).toBe("enrolled");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("review-5: a terminal run report is persisted exactly once", async () => {
-		const root = tempRoot();
-		try {
-			const a = child("task-a", "S1");
-			const kernel = scriptedKernel({ "task-a": [{ state: "completed" }] });
-			const report = await startBatch(input(root, [a], kernel));
-			expect(report.batch_state).toBe("completed");
-			const reportPath = join(root, ".imm", "state", "batches", "batch-001.report.json");
-			expect(existsSync(reportPath)).toBe(true);
-			const persisted = JSON.parse(readFileSync(reportPath, "utf8"));
-			expect(persisted.batch_state).toBe("completed");
-			expect(persisted.reason).toBe("all enrollable children committed");
-			// A non-terminal pause must not write a report file.
-			const root2 = tempRoot();
-			try {
-				const pausedKernel = scriptedKernel({ "task-a": [{ state: "review_ready", operation_id: "op-1" }] });
-				await startBatch(input(root2, [child("task-a", "S1")], pausedKernel));
-				expect(existsSync(join(root2, ".imm", "state", "batches", "batch-001.report.json"))).toBe(false);
-			} finally {
-				rmSync(root2, { recursive: true, force: true });
-			}
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it.each([".imm", ".imm/state", ".imm/state/batches"])("rejects pre-existing %s symlink for state and report writes", (segment) => {
-		const root = tempRoot();
-		const outside = mkdtempSync(join(tmpdir(), "imm-outside-"));
-		try {
-			const parent = segment.split("/").slice(0, -1).join("/");
-			mkdirSync(join(root, parent), { recursive: true });
-			symlinkSync(outside, join(root, segment));
-			const record = prepareBatchRunState({
-				batch_id: "batch-001",
-				initiative_slug: "initiative-slug",
-				children: [child("task-a", "S1")],
-				plan_digest: "d".repeat(64),
-				base_head: "b".repeat(40),
-				confirmation_time: FAR_FUTURE,
-				budget: { max_children: 1, qa_failure_limit: 3 },
-				now: FAR_FUTURE,
-			});
-			expect(() => writeBatchRunState(root, record)).toThrow();
-			expect(() => writeBatchRunReport(root, {
-				contract: "immune_brain/batch_run_report/v1",
-				batch_id: record.batch_id,
-				batch_state: "completed",
-				children: [], commits: [], reason: null, next_action: "",
-			})).toThrow();
-			expect(readdirSync(outside)).toEqual([]);
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-			rmSync(outside, { recursive: true, force: true });
-		}
-	});
-});
-
-// The shared batch preflight: the Host-independent projection both adapters
-// route through. Covered here for its own contract; the dirty-tree and
-// authorized-scope branches are exercised end-to-end by the dual-host
-// conformance suite, which drives both adapters through them.
 describe("shared batch preflight projection", () => {
 	const SLUG = "preflight-initiative";
 	const NOW = "2026-01-01T00:00:00.000Z";
@@ -2312,6 +493,14 @@ describe("shared batch preflight projection", () => {
 		return root;
 	}
 
+	function conflictingParent(root: string): string {
+		const head = headOf(root);
+		const tree = execFileSync("git", ["rev-parse", `${head}^{tree}`], { cwd: root, encoding: "utf8" }).trim();
+		const other = execFileSync("git", ["commit-tree", tree, "-p", head, "-m", "foreign Parent tip"], { cwd: root, encoding: "utf8" }).trim();
+		execFileSync("git", ["update-ref", `refs/heads/imm/${SLUG}`, other], { cwd: root });
+		return other;
+	}
+
 	function writeBatch(
 		root: string,
 		batchState: string,
@@ -2344,6 +533,23 @@ describe("shared batch preflight projection", () => {
 		);
 	}
 
+	function writeLaneBatch(root: string): void {
+		const children = [child("child-a", "S1"), child("child-b", "S2", ["child-a"])].map(c => {
+			const identity = readTaskIntent(root, c.task_id, c.intent_path!);
+			return { ...c, intent_revision: identity.intent.revision, intent_content_hash: identity.content_hash };
+		});
+		const record = prepareBatchLaneRunState({ batch_id: "batch-1", initiative_slug: SLUG,
+			branch: "refs/imm/batches/batch-1", base_head: headOf(root), plan_digest: computeBatchPlanDigest(children),
+			confirmation_time: NOW, now: NOW, max_parallel: 1, budget: { max_children: 2, qa_failure_limit: 2 }, children });
+		record.batch_state = "running";
+		record.children[0]!.state = "integrated";
+		record.children[0]!.commit = headOf(root);
+		record.children[0]!.lane = { path: join(root, "../delivered-lane"), branch: "imm/lane/child-a", base_head: headOf(root), lane_commit: headOf(root), run_id: "run-a" };
+		record.commits = [headOf(root)];
+		execFileSync("git", ["update-ref", record.branch, headOf(root)], { cwd: root });
+		writeBatchLaneRunState(root, record);
+	}
+
 	function snapshot(root: string): Record<string, string> {
 		const files: Record<string, string> = {};
 		const visit = (directory: string) => {
@@ -2372,6 +578,10 @@ describe("shared batch preflight projection", () => {
 			writeFileSync(join(root, "docs/plans/draft.md"), "plan");
 			writeFileSync(join(root, "outside.txt"), "staged"); git("add", "outside.txt");
 			writeFileSync(join(root, "outside.txt"), "worktree");
+			// Legacy Lane records still guard pending-child dirt; new Parent batches
+			// deliberately leave coordinator dirt alone and copy planning input only.
+			writeLaneBatch(root);
+			const before = snapshot(root);
 			const head = headOf(root); const branch = git("branch", "--show-current"); const log = git("log", "--format=%H");
 			const index = git("ls-files", "--stage"); const status = git("status", "--porcelain");
 			const staged = git("show", ":outside.txt"); const worktree = readFileSync(join(root, "outside.txt"));
@@ -2387,7 +597,7 @@ describe("shared batch preflight projection", () => {
 			expect(git("status", "--porcelain")).toBe(status);
 			expect(git("show", ":outside.txt")).toBe(staged);
 			expect(readFileSync(join(root, "outside.txt"))).toEqual(worktree);
-			expect(readdirSync(join(root, ".imm/state/batches"))).toEqual([]);
+			expect(snapshot(root)).toEqual(before);
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
@@ -2433,14 +643,18 @@ describe("shared batch preflight projection", () => {
 	it("projects a resume from the record and writes nothing", async () => {
 		const root = fixture();
 		try {
-			writeBatch(root, "running");
+			writeLaneBatch(root);
 			const before = snapshot(root);
-			const outcome = await projectBatchPreflight({ root, initiative_slug: SLUG, now: NOW });
+			const outcome = await projectBatchPreflight({ root, initiative_slug: SLUG, now: NOW,
+				readInitiative: async () => ({ contract: "immune_brain/github_initiative_observation/v1", initiative_id: SLUG, issue_number: 1,
+					tasks: [{ task_id: "child-a", slice_id: "S1", issue_number: 2, blocked_by: [] },
+						{ task_id: "child-b", slice_id: "S2", issue_number: 3, blocked_by: ["child-a"] }] }),
+			});
 
 			if (!outcome.ok) throw new Error(`preflight rejected: ${outcome.reason}`);
 			expect(outcome.ok).toBe(true);
 			expect(outcome.projection.is_resuming).toBe(true);
-			expect(outcome.projection.batch_branch).toBe(`imm/${SLUG}`);
+			expect(outcome.projection.batch_branch).toBe("refs/imm/batches/batch-1");
 			expect(outcome.projection.base_head).toBe(headOf(root));
 			expect(outcome.projection.recovery_children.map((c) => [c.task_id, c.status])).toEqual([
 				["child-a", "already_settled"],
@@ -2506,15 +720,12 @@ describe("shared batch preflight projection", () => {
 	it("rejects a batch branch no record of this initiative created", async () => {
 		const root = fixture();
 		try {
-			execFileSync("git", ["branch", `imm/${SLUG}`], { cwd: root });
-			const outcome = await projectBatchPreflight({ root, initiative_slug: SLUG, now: NOW });
-
-			expect(outcome).toMatchObject({
-				ok: false,
-				state: "rejected",
-				reason: `branch preflight failed: branch refs/heads/imm/${SLUG} already exists`,
-			});
-			expect(execFileSync("git", ["branch", "--list", `imm/${SLUG}`], { cwd: root, encoding: "utf8" }).trim()).not.toBe("");
+			const tip = conflictingParent(root);
+			const before = snapshot(root);
+			const outcome = await projectBatchPreflight({ root, initiative_slug: SLUG, now: NOW, readInitiative: readNextInitiative });
+			expect(outcome).toMatchObject({ ok: false, ...batchReason("batch_parent_branch_exists", `refs/heads/imm/${SLUG}`) });
+			expect(execFileSync("git", ["rev-parse", `refs/heads/imm/${SLUG}`], { cwd: root, encoding: "utf8" }).trim()).toBe(tip);
+			expect(snapshot(root)).toEqual(before);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
@@ -2536,10 +747,10 @@ describe("shared batch preflight projection", () => {
 	it("renders its rejections from the frozen shared reason table", async () => {
 		const root = fixture();
 		try {
-			// A condition the table owns: a batch branch no record created.
-			execFileSync("git", ["branch", `imm/${SLUG}`], { cwd: root });
-			const outcome = await projectBatchPreflight({ root, initiative_slug: SLUG, now: NOW });
-			expect(outcome).toMatchObject(batchReason("branch_already_exists", `imm/${SLUG}`));
+			// A condition the table owns: a Parent branch with a different tip.
+			conflictingParent(root);
+			const outcome = await projectBatchPreflight({ root, initiative_slug: SLUG, now: NOW, readInitiative: readNextInitiative });
+			expect(outcome).toMatchObject(batchReason("batch_parent_branch_exists", `refs/heads/imm/${SLUG}`));
 
 			// The table is frozen: no caller can reword a Host's operator-visible text.
 			expect(Object.isFrozen(BATCH_REASONS)).toBe(true);
@@ -2562,6 +773,8 @@ describe("shared batch preflight projection", () => {
 			kernel_authority_conflict: ["Kernel authority conflict: <detail>", "resolve the Kernel storage conflict before resuming in the current Host"],
 			git_head_unreadable: ["<detail>", "commit working changes and ensure a committed Git HEAD exists in the current Host"],
 			branch_already_exists: ["branch preflight failed: branch refs/heads/<detail> already exists", "delete or rename the conflicting branch, or commit working changes in the current Host"],
+			batch_parent_branch_exists: ["batch_parent_branch_exists: <detail> does not point at base_head", "inspect the existing Parent branch and retry with a reconciled base in the current Host"],
+			batch_record_shape_retired: ["batch_record_shape_retired: v1 serial batch records are read-and-retire only", "Inspect the recorded batch, then use retire_stale_batch for this Initiative in the current Host."],
 			git_status_unreadable: ["branch preflight failed: git status is unreadable", "check the repository integrity and retry in the current Host"],
 			working_tree_dirty: ["branch preflight failed: working tree is dirty: <detail>", "resolve the listed remaining paths outside the batch committable set, then retry in the current Host"],
 			authorized_scope_underivable: ["branch preflight failed: cannot derive the in-flight child's authorized scope", "resolve the child's intent record, then retry in the current Host"],

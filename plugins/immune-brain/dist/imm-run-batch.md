@@ -15,12 +15,13 @@ verifies predecessor settlement and Git integration. Reading Parent context
 grants no authority to start predecessors or siblings. A standalone task id uses
 single-task Enrollment.
 
-Before confirmation, choose execution mode from dependency readiness, scope
-conflicts, configured Lane capacity and available supervised Executor capability.
-Use Lane mode up to the project limit when supervision is available; otherwise
-choose Managed serial execution in this Host. Both modes record and execute the
-same `final_verification` commands. A mode change after confirmation needs a fresh
-native authorization. See [Parallel Batch Opt-In](#parallel-batch-opt-in).
+Every new batch uses runtime-created Lanes. Before confirmation, select capacity
+from dependency readiness, scope conflicts, configured Lane capacity and available
+supervised Executor capability. Omitting `max_parallel` defaults to 1, as does
+explicitly passing 1; both run one Lane at a time. If no Executor can be supervised,
+report the blocker rather than implementing in the coordinator checkout. The
+confirmed batch records `final_verification` commands. See
+[Parallel Batch Opt-In](#parallel-batch-opt-in).
 
 The Initiative's carrier decides where the children are read from. When
 `docs/initiatives/<initiative_slug>.md` exists, the Host reads that Local carrier
@@ -54,11 +55,12 @@ fresh-authorization recovery before considering retirement. For provider or
 Review interruptions follow [Decisions and Recovery](imm-run.md#decisions-and-recovery);
 Herdr idle/done is only a session signal, never terminal Kernel proof.
 
-A successful child Enrollment returns a `running` report with `handoff.role`
-`executor`; the child remains `enrolled`. The Parent implements that TaskIntent
-in the current foreground conversation, stages only its scoped changes, and
-runs focused diagnostics before Kernel Assurance. Re-entering the batch before
-implementation returns the same handoff without QA or another confirmation.
+A successful child Enrollment returns a `running` report with an `executor`
+entry in `handoffs[]`; the child remains `enrolled` in its Lane. The Parent
+supervises an Executor Host at the returned worktree path; that Executor implements
+the TaskIntent, stages only its scoped changes, and runs focused diagnostics
+before Kernel Assurance. Re-entering the batch before implementation returns the
+same handoff without QA or another confirmation.
 The runtime owns no model invocation and adds no persisted execution lifecycle.
 Keep the Parent binding across child settlement, handoffs and status questions.
 Continue filling dependency-ready, non-conflicting capacity; below-limit QA/Review
@@ -87,22 +89,19 @@ those exact commands; a decline, cancellation or missing gate leaves no command
 effect. A Parent whose final commands are already recorded needs no gate. Recorded commands rerun under that earlier
 confirmation, and changed commands need a fresh explicit Parent entry.
 
-After diagnostics pass, the Parent advances Kernel QA and dispatches any reserved
-foreground Review once using the exact returned `agent_params`, then submits its
-structured verdict. An open Review reservation stays with that Host invocation;
-batch re-entry waits for it rather than redispatching. When a batch child's
-foreground terminal mutation reaches Kernel `done`, the same tool call stages
-only that child's generated terminal audit evidence and re-enters the batch under
-the still-valid authorization, opening no gate. The driver reconciles settlement,
-records the child's settled content on the batch's progress ref, then enrolls the next ready child
-or settles the batch as `completed`; the result carries the batch report as
-`batch`. A reserved Review, a parked child and a stopped child end where they do
-today and are never recorded automatically. If the re-entry fails, the Kernel
-result is unchanged and `batch` carries one recovery action: call
-`start_unattended_batch` with the same slug, which is also how to continue by
-hand. Your own commits, amends and branch switches never move the batch, which
-advances only its recorded progress ref; a progress ref rewritten outside the runner fails closed. Ordinary Executor handoff and below-limit
-QA repair do not park the batch; genuine budget/authority stops remain fail-closed.
+After diagnostics pass, the Lane Executor advances Kernel QA and dispatches any
+reserved foreground Review once using the exact returned `agent_params`, then
+submits its structured verdict. An open Review reservation stays with that Host
+invocation. A Lane settlement changes only its local Kernel state and does not
+re-enter the coordinator. The Parent observes settlement, then calls
+`start_unattended_batch` with the same slug under the still-valid authorization.
+The driver commits the child's scoped delivery and terminal audit evidence,
+integrates it onto the Parent ref, and enrolls the next ready child or completes
+the batch. A reserved Review, parked child or stopped child is never integrated
+automatically. Your own commits, amends and branch switches never move the batch;
+a progress ref rewritten outside the runner fails closed. Ordinary Executor handoff
+and below-limit QA repair do not park the batch; genuine budget/authority stops
+remain fail-closed.
 
 Batch execution never pushes a ref, opens or updates a pull request, or resolves a
 user decision. New Lane batches keep progress on `refs/heads/imm/<slug>`, created
@@ -110,15 +109,16 @@ at `base_head` and never checked out by the runtime. A different existing tip
 refuses with `batch_parent_branch_exists` before creating refs, worktrees or a
 batch record. The coordinator's HEAD, branch, index and working tree stay
 untouched. Existing hidden-ref and legacy branch records retain their recorded
-behavior; serial execution is unchanged in this Slice. A native Parent writes
-no Git effect.
+behavior. A v1 serial record remains readable by status and explicitly retireable
+through `retire_stale_batch`, but any resume refuses with
+`batch_record_shape_retired` and that retirement recovery action. There is no
+serial runner or plan reconfirmation path. A native Parent writes no Git effect.
 
 ### Parallel Batch Opt-In
 
-Lane mode uses the optional `max_parallel` parameter of `start_unattended_batch`,
-selected by the Parent before native confirmation; without Lane supervision the
-confirmed run stays Managed serial on this Host. A `max_parallel` of 1 is the same
-as omitting it: the batch runs serially, not in Lane mode. `max_parallel` is a positive integer; the
+Every new `start_unattended_batch` call uses Lane mode. The optional positive
+integer `max_parallel` is selected before native confirmation; omitted or 1
+means one Lane at a time and records a v2 Lane batch with `max_parallel: 1`. The
 runtime creates each new batch's Lane under the Git common directory at
 `imm/worktrees/<slug>/<task_id>`, on `imm-lane/<slug>/<task_id>` at the current
 Parent tip. The report returns its absolute path in an `executor` handoff;
@@ -133,7 +133,7 @@ an absolute worktree path; admission requires the same repository, a separate
 clean worktree on the expected Lane branch and base, and no active run. These
 legacy instructions retire when the old records drain (runtime owner).
 
-In a Lane the child is enrolled, assured and settled exactly as in a serial batch.
+In each Lane the child has its own Enrollment, full Assurance and settlement.
 The runner then commits the settled delivery on the Lane branch and fast-forwards
 the recorded progress ref only to a candidate whose changed paths and per-path content equal
 that commit; a mismatch or conflict moves nothing and parks the child. New
@@ -166,6 +166,16 @@ child's TaskIntent equals the last revision applied under that grant, the runner
 reseals `plan_digest` and records both digests in `reseals`, so later children
 continue without retiring the batch. Any other Intent change still fails closed
 as `plan_changed` and takes the ADR 0016 retirement path.
+On either Host, status queried with the Parent slug as `task_id` reports the
+persisted batch in `batch.record`, including v1 identity, state and child
+progress, even without an enrolled Parent TaskRecord. This evidence-only read
+never grants execution authority; retired records remain visible.
+
+The v2 record also fixes the complete confirmed Parent topology in
+`topology_digest`, including excluded prerequisites. Confirmation drift and
+resume compare that identity before Lane admission; changed topology, or an
+older record without that evidence, refuses as `plan_changed` rather than
+reconstructing authorization from the current carrier.
 
 Before a new lane batch provisions any Lane, the runner compares the Kernel
 contract identifiers (TaskRecord, tombstone, projection, store schema) of the
@@ -189,8 +199,8 @@ the runner restores after the batch is authorized. The bytes are
 backed up first under `.imm/state/batches/restores/`, and the backup is recorded
 in the batch record and report as `restores`. If any change has another origin,
 or is staged or deleted, no file is touched and the refusal names it; never
-stage such changes to get past the refusal. A resume with a different
-`max_parallel` above 1 is refused with `batch_parallel_mismatch`. A Lane holds no batch
+stage such changes to get past the refusal. A resume with any different explicit
+`max_parallel` is refused with `batch_parallel_mismatch`. A Lane holds no batch
 state and its Host session never re-enters the batch.
 
 #### Lane Preferences
@@ -208,7 +218,7 @@ source directly rather than assuming the Host injected it into context:
 
 | Directive | Value | Effect | Without it |
 | --- | --- | --- | --- |
-| `Lane max parallel: <n>` | positive integer | The Parent passes it as `max_parallel` when it starts a batch, which selects lane mode. The native confirmation still shows it. | No `max_parallel`: the batch is serial unless the user asks otherwise |
+| `Lane max parallel: <n>` | positive integer | The Parent passes it as `max_parallel` when it starts a batch. The native confirmation shows the Lane capacity. | No `max_parallel`: one Lane at a time |
 | `Lane Executor Host: <host>` | `claude-code` or `pi` | Every Lane's Executor Host is that Host. When the `lane-steward` did not report it available in a Lane, that Lane has no Executor Host; the Parent does not fall back to the other one. | The Parent's own Host type, else the other allowlisted Host |
 | `Lane Executor model: <model>` | a model identifier of the configured Executor Host | Passed to the Executor Host as `--model <model>` | The Executor Host's own default |
 | `Lane Executor effort: <level>` | a level the configured Executor Host accepts | Passed as `--effort <level>` to `claude-code` and as `--thinking <level>` to `pi` | The Executor Host's own default |

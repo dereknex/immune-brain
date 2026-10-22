@@ -146,6 +146,7 @@ export async function observeParentRun(binding: RunBinding & { kind: "parent" },
 	const record = readAnyBatchRunState(root, binding.batch_id);
 	if (!record || record.initiative_slug !== binding.initiative_slug || record.plan_digest !== binding.plan_digest)
 		throw new Error("Parent continuation has no matching persisted batch identity");
+	if (!isLaneBatchRecord(record)) throw new Error("batch_record_shape_retired: inspect the record, then use retire_stale_batch in the current Host");
 	const plan = await observeInitiative(root, binding.initiative_slug);
 	const completion = await observeParentCompletion(root, binding.initiative_slug, plan.tasks.map(child => child.task_id));
 	let runnable = false;
@@ -156,7 +157,7 @@ export async function observeParentRun(binding: RunBinding & { kind: "parent" },
 	const nativeTask = activeTask && !record.children.some(child => child.task_id === activeTask) &&
 		(plan.tasks.some(child => child.task_id === activeTask) || record.repair_tasks?.some(task => task.task_id === activeTask));
 	const activeChild = nativeTask ? { task_id: activeTask } : record.children.find(child => child.state === "enrolled" || child.state === "settled");
-	if (activeChild && (!isLaneBatchRecord(record) || nativeTask)) {
+	if (activeChild && nativeTask) {
 		const status = await projectTaskStatus(root, activeChild.task_id);
 		if (status.error) throw new Error(status.error);
 		if (status.projection.lifecycle === "active" && status.projection.run_id) {
@@ -173,13 +174,13 @@ export async function observeParentRun(binding: RunBinding & { kind: "parent" },
 			childProgress = decision.state.progress_digest;
 		} else if (status.projection.lifecycle === "done") runnable = true;
 	} else {
-		const live = isLaneBatchRecord(record) ? record.children.filter(child => ["lane_admitted", "enrolled", "settled", "lane_committed"].includes(child.state)) : [];
+		const live = record.children.filter(child => ["lane_admitted", "enrolled", "settled", "lane_committed"].includes(child.state));
 		running = live.length > 0;
 		const schedule = plan.tasks.map(task => ({ task_id: task.task_id, blocked_by: task.blocked_by,
 			scope_hint: readTaskIntent(root, task.task_id).intent.scope_hint,
 			state: completion.integrated_task_ids.includes(task.task_id) ? "committed" as const :
 				record.children.find(child => child.task_id === task.task_id)?.state ?? "needs_human" as const }));
-		runnable = record.batch_state === "running" && (startableChildren(schedule, isLaneBatchRecord(record) ? record.max_parallel : 1).length > 0 ||
+		runnable = record.batch_state === "running" && (startableChildren(schedule, record.max_parallel).length > 0 ||
 			live.length > 0);
 		if (running && runnable) nextAction = `Supervise the observed Lane Executor handoff for ${binding.initiative_slug}; use the Host's live-session wait/observation before resuming the batch, rather than repeatedly observing an unchanged batch`;
 	}

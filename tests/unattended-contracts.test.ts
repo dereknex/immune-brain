@@ -228,8 +228,8 @@ function recordedInvocations(logPath: string): string[][] {
 
 /**
  * The child-process drive: the Git layer's branch preflight, scope-bounded child
- * commit, and commit lookup, then the runner's persisted-state inspections. Every
- * step asserts the path really ran, so the guard cannot pass by driving nothing.
+ * commit and commit lookup. Lane lifecycle worktree operations are owned by the
+ * Lane driver, not this Git seam; every driven operation must actually run.
  */
 function driveSource(runtimeDir: string): string {
 	const runtimePath = (relativePath: string) => JSON.stringify(join(runtimeDir, relativePath));
@@ -237,10 +237,6 @@ function driveSource(runtimeDir: string): string {
 import { join } from "node:path";
 const git = await import(${runtimePath("unattended/batch_git.ts")});
 const { batchRefName } = await import(${runtimePath("unattended/batch_ref.ts")});
-const { createBatchAuthorityRegistry, computeBatchPlanDigest } = await import(${runtimePath("kernel/batch_authority.ts")});
-const { prepareBatchRunState, writeBatchRunState } = await import(${runtimePath("unattended/batch_state.ts")});
-const { resumeBatch } = await import(${runtimePath("unattended/batch_runner.ts")});
-
 const [root, taskId, batchId, head, commit] = process.argv.slice(2);
 
 const preflight = git.runBatchGitPreflight({ root, initiative_slug: "initiative-slug", base_head: head, batch_id: batchId });
@@ -250,246 +246,7 @@ if (committed.commit !== commit) throw new Error(\`unexpected child commit \${co
 const adopted = await git.lookupBatchCommit({ root, taskId, batchId, expectedHead: head, branch: batchRefName(batchId) });
 if (!adopted || adopted.commit !== commit) throw new Error("commit lookup did not adopt the child commit");
 
-const farFuture = "2099-01-01T00:00:00.000Z";
-const confirmationTime = "2026-01-01T00:00:00.000Z";
-const children = [
-	{
-		task_id: "child-1",
-		slice_id: "S1",
-		blocked_by: [],
-		status: "enrollable",
-		reason: null,
-		intent_path: "docs/plans/child-1.intent.json",
-		intent_revision: 1,
-		intent_content_hash: "0".repeat(64),
-	},
-];
-const planDigest = computeBatchPlanDigest(children);
-const registry = createBatchAuthorityRegistry();
-const budget = { max_children: 1, qa_failure_limit: 3 };
 
-/** Persist a batch record, then resume it so the runner inspects Git itself. */
-const resumePersisted = async (state, recordCommit) => {
-	const id = \`batch-\${state}\`;
-	const capability = registry.issue(
-		{
-			batch_id: id,
-			initiative_slug: "initiative-slug",
-			plan_digest: planDigest,
-			branch: "imm/initiative-slug",
-			base_head: head,
-			budget,
-			actor_id: "user",
-			confirmation_ref: "confirm",
-			nonce: "n",
-		},
-		children,
-		confirmationTime,
-	);
-	const input = {
-		root,
-		batch_id: id,
-		initiative_slug: "initiative-slug",
-		registry,
-		capability,
-		children,
-		plan_digest: planDigest,
-		base_head: head,
-		confirmation_time: confirmationTime,
-		budget,
-		now: farFuture,
-		kernel: {},
-		git: {
-			preflight: (request) => git.runBatchGitPreflight(request),
-			commitChild: (r, t, b, h, branch, intentPath) =>
-				git.commitBatchChild({ root: r, taskId: t, batchId: b, expectedHead: h, branch, intentPath }),
-			lookupBatchCommit: (r, t, b, expectedHead, branch) =>
-				git.lookupBatchCommit({ root: r, taskId: t, batchId: b, expectedHead, branch }),
-		},
-	};
-	const prepared = prepareBatchRunState(input);
-	writeBatchRunState(root, {
-		...prepared,
-		batch_state: "running",
-		children: prepared.children.map((child) => ({
-			...child,
-			state,
-			...(recordCommit ? { commit: recordCommit } : {}),
-		})),
-		commits: recordCommit ? [recordCommit] : [],
-	});
-	try {
-		return {
-			report: await resumeBatch(input, () => {
-				throw new Error("no projection is expected on this path");
-			}),
-			error: null,
-		};
-	} catch (error) {
-		return { report: null, error: String(error) };
-	}
-};
-
-mkdirSync(join(root, ".git"), { recursive: true });
-const drift = await resumePersisted("enrolled", null);
-if (!drift.report || drift.report.batch_state !== "failed" || !String(drift.report.reason).includes("lineage")) {
-	throw new Error(\`the runner's head-drift inspection did not run: \${JSON.stringify(drift)}\`);
-}
-const unreachable = await resumePersisted("committed", "3".repeat(40));
-if (!unreachable.error || !unreachable.error.includes("lacks evidence")) {
-	throw new Error(\`the runner's unreachable-commit inspection did not run: \${JSON.stringify(unreachable)}\`);
-}
-`;
-}
-
-/**
- * Host SDK seams for a spawned drive process.
- *
- * Two properties make an unconditional seam correct here, unlike the in-process
- * seams this repo requires to be guarded by a failed import:
- *
- * 1. The child is a disposable one-shot process that runs only this script, so a
- *    process-level `mock.module` entry cannot leak into another test.
- * 2. Attempting the real import stalls: under deterministic QA (a delivery
- *    checkout with no node_modules, network reachable) Bun auto-installs on
- *    demand and fetching `@earendil-works/pi-coding-agent` costs ~24s, which
- *    exceeds the 20s timeout this test gives its own child.
- *
- * Only the extension module's import-time bindings are stubbed; the drive itself
- * never renders a TUI or builds a tool schema, so the stubs are never called.
- */
-function hostSeamPreamble(): string {
-	return `import { mock } from "bun:test";
-mock.module("typebox", () => ({ Type: new Proxy({}, { get: () => () => ({}) }) }));
-mock.module("@earendil-works/pi-coding-agent", () => ({ DynamicBorder: class { render() { return []; } } }));
-mock.module("@earendil-works/pi-tui", () => ({
-	Text: class { render() { return []; } },
-	Container: class { render() { return []; } },
-	SelectList: class { render() { return []; } },
-	sliceByColumn: () => "",
-	truncateToWidth: (text) => text,
-	visibleWidth: () => 0,
-}));
-`;
-}
-
-/**
- * Drive both Host entries through the real shared runner and Git implementation.
- * Only the tracker and Kernel work are scripted; a Review pause leaves durable
- * enrolled state that the next adapter call must resume without re-enrollment.
- */
-function adapterDriveSource(runtimeDir: string): string {
-	const extensionPath = JSON.stringify(join(runtimeDir, "..", ".pi-extension", "imm-unattended-batch.ts"));
-	const claudePath = JSON.stringify(join(runtimeDir, "claude", "kernel_ports.ts"));
-	const reviewHostPath = JSON.stringify(join(runtimeDir, "claude", "review_host.ts"));
-	return `${hostSeamPreamble()}import assert from "node:assert/strict";
-import { cpSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-const { executePiUnattendedBatch } = await import(${extensionPath});
-const { ClaudeRuntime } = await import(${claudePath});
-const { ClaudeReviewHost } = await import(${reviewHostPath});
-
-const [root, scratch, host, scenario] = process.argv.slice(2);
-const taskId = ${JSON.stringify(GUARD_TASK_ID)};
-const slug = "initiative-slug";
-const events = [];
-let enrolled = false;
-let implementationReady = false;
-let advances = 0;
-const observation = {
-	contract: "immune_brain/github_initiative_observation/v1",
-	initiative_id: slug,
-	issue_number: 1,
-	tasks: [{ task_id: taskId, slice_id: "S1", issue_number: 2, blocked_by: [] }],
-};
-const batchKernel = {
-	enrollTask: async ({ root: taskRoot, task_id }) => {
-		assert.equal(taskRoot, root);
-		assert.equal(task_id, taskId);
-		assert.equal(enrolled, false);
-		events.push("enroll");
-		enrolled = true;
-		return { record_revision: "fixture-revision" };
-	},
-	projectTask: async () => ({
-		contract: "assurance_kernel/assurance_projection/v1",
-		task_id: taskId,
-		error: null,
-		claim: enrolled ? { task_id: taskId, lifecycle_status: "active" } : null,
-		projection: { lifecycle: "active", artifact_state: implementationReady ? "frozen" : "active",
-			next_obligation: implementationReady ? (scenario === "resume" && advances === 0 ? "run_review" : "complete") : "run_qa",
-			completion_ready: implementationReady && (scenario !== "resume" || advances > 0),
-			record_revision: "fixture-revision", run_id: "fixture-run", missing_acceptance_ids: [],
-			blocking_finding_ids: [], unresolved_user_decision_ids: [], replan_required_ids: [], authorization: { state: "none", blocked: null } },
-	}),
-	ownsTaskClaim: (id) => enrolled && id === taskId,
-	advanceTask: async (taskRoot, id) => {
-		assert.equal(taskRoot, root);
-		assert.equal(id, taskId);
-		assert.equal(enrolled, true);
-		events.push("advance");
-		if (++advances === 1 && scenario === "resume") {
-			return { state: "review_ready", operation_id: "guard-review" };
-		}
-		cpSync(join(scratch, "audit-fixture", ".imm", "audit"), join(root, ".imm", "audit"), { recursive: true });
-		return { state: "completed" };
-	},
-};
-const confirm = async (details) => {
-	assert.ok(JSON.stringify(details).includes(taskId), "confirmation must offer the fixture child");
-	events.push("confirm");
-	return "accept";
-};
-const options = { interactive: true, readInitiative: async () => observation, batchKernel };
-const invoke = host === "pi"
-	? () => executePiUnattendedBatch({
-		...options, root, initiativeSlug: slug, confirmBatch: confirm,
-	})
-	: () => {
-		// A fresh Host instance must resume the persisted runner state.
-		const claude = new ClaudeRuntime({
-			...options,
-			cwd: root,
-			env: { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" },
-			host: new ClaudeReviewHost(),
-			requestConfirmation: async (details) => ({ decision: await confirm(details), requestId: "recorded" }),
-		});
-		claude.bindHostVersion("2.1.236");
-		return claude.startUnattendedBatch(slug, {
-			toolCallId: "recorded", sessionId: "recorded", interactive: true, permissionMode: "manual",
-		});
-	};
-
-const handoff = await invoke();
-assert.equal(handoff.state, "started", JSON.stringify(handoff));
-assert.equal(handoff.report.handoff.role, "executor");
-assert.deepEqual(events, ["confirm", "enroll"]);
-implementationReady = true;
-const initial = await invoke();
-assert.equal(initial.state, "started", JSON.stringify(initial));
-assert.deepEqual(events, ["confirm", "enroll", "advance"]);
-cpSync(join(scratch, "invocations.log"), join(scratch, "initial.log"));
-let resumed = null;
-if (scenario === "resume") {
-	assert.equal(initial.report.batch_state, "running");
-	assert.equal(initial.report.children[0].state, "enrolled");
-	assert.match(initial.report.children[0].reason, /guard-review/);
-	assert.deepEqual(initial.report.commits, []);
-	const persisted = JSON.parse(readFileSync(join(root, ".imm", "state", "batches", initial.batch_id + ".json"), "utf8"));
-	assert.equal(persisted.batch_state, "running");
-	assert.equal(persisted.children[0].state, "enrolled");
-	resumed = await invoke();
-	assert.equal(resumed.state, "started", JSON.stringify(resumed));
-	assert.equal(resumed.batch_id, initial.batch_id);
-	assert.deepEqual(events, ["confirm", "enroll", "advance", "advance"]);
-}
-const final = resumed ?? initial;
-assert.equal(final.report.batch_state, "completed", JSON.stringify(final));
-assert.equal(final.report.children.length, 1);
-assert.equal(final.report.children[0].task_id, taskId);
-assert.equal(final.report.children[0].state, "committed");
-assert.deepEqual(final.report.commits, [${JSON.stringify(GUARD_COMMIT)}]);
-writeFileSync(join(scratch, "result.json"), JSON.stringify({ initial, resumed, events }));
 `;
 }
 
@@ -513,7 +270,7 @@ describe("unattended batch contract text", () => {
 
 	it("states the restrictions the runner actually enforces", async () => {
 		const optIn = section(BATCH_CONTRACT, "## Unattended Batch Opt-In");
-		for (const claim of ["never pushes a ref", "pull request", "user decision", "Git worktree"]) {
+		for (const claim of ["never pushes a ref", "pull request", "user decision", "refs/heads/imm/<slug>"]) {
 			expect(optIn).toContain(claim);
 		}
 		expect(optIn).toContain("`critical`");
@@ -697,6 +454,8 @@ describe("unattended batch contract text", () => {
 			),
 		).toEqual([
 			"contract",
+			"topology_digest",
+			"progress_mode",
 			"batch_id",
 			"initiative_slug",
 			"plan_digest",
@@ -770,7 +529,7 @@ describe("unattended batch contract text", () => {
 		}
 	});
 
-	it("never produces a worktree invocation while the batch runtime runs", () => {
+	it("child Git preflight, bounded commit and lookup never mutate worktrees or push", () => {
 		const scratch = mkdtempSync(join(tmpdir(), "imm-git-guard-"));
 		const root = join(scratch, "repo");
 		const binDir = join(scratch, "bin");
@@ -810,73 +569,12 @@ describe("unattended batch contract text", () => {
 			for (const mutation of ["update-ref", "add", "commit-tree"]) expect(subcommands).toContain(mutation);
 			// The user's branch, HEAD and index are never touched.
 			for (const forbidden of ["checkout", "commit", "switch", "reset"]) expect(subcommands).not.toContain(forbidden);
-			// The prohibition the contract states, over the vectors this runtime can
-			// actually produce: no push, no worktree mutation.
+			// This low-level seam owns no Lane lifecycle or remote delivery.
+			// The Lane driver separately creates/removes worktrees and never pushes.
 			for (const forbidden of ["worktree", "push"]) expect(subcommands).not.toContain(forbidden);
 		} finally {
 			rmSync(scratch, { recursive: true, force: true });
 		}
 	});
 
-	for (const host of ["pi", "claude"]) for (const scenario of ["initial", "resume"]) {
-		it(`never produces worktree or push from ${host} during ${scenario} execution`, () => {
-			const scratch = mkdtempSync(join(tmpdir(), "imm-adapter-git-guard-"));
-			const root = join(scratch, "repo");
-			const binDir = join(scratch, "bin");
-			const logPath = join(scratch, "invocations.log");
-			const drivePath = join(scratch, "adapter-drive.ts");
-			try {
-				mkdirSync(join(root, ".git"), { recursive: true });
-				mkdirSync(join(root, "docs/plans"), { recursive: true });
-				mkdirSync(binDir);
-				// Keep terminal evidence outside the repo until the scripted Kernel settles.
-				const auditFixture = join(scratch, "audit-fixture");
-				writeAuditPair(auditFixture, GUARD_TASK_ID);
-				const { intent_snapshot } = JSON.parse(readFileSync(
-					join(auditFixture, ".imm", "audit", GUARD_TASK_ID, "task-record.json"), "utf8",
-				));
-				writeFileSync(join(root, "docs/plans", `${GUARD_TASK_ID}.intent.json`), JSON.stringify(intent_snapshot));
-				installRecordingGit({
-					binDir,
-					logPath,
-					committedMarker: join(scratch, "committed"),
-					stagedMarker: join(scratch, "staged"),
-					root,
-				});
-				writeFileSync(drivePath, adapterDriveSource(join(REPO_ROOT, "plugins/immune-brain/runtime")));
-				// Same `--no-install` rationale as the Git-layer drive above: the drive's
-				// `mock.module` seam must not trigger an auto-install fetch.
-				const drive = spawnSync("bun", ["--no-install", drivePath, root, scratch, host, scenario], {
-					cwd: REPO_ROOT,
-					encoding: "utf8",
-					env: { ...process.env, PATH: `${binDir}:${process.env.PATH ?? ""}` },
-					timeout: 20_000,
-				});
-				expect({ status: drive.status, stderr: drive.stderr.trim().slice(0, 2000) }).toEqual({ status: 0, stderr: "" });
-				const { initial, resumed, events } = JSON.parse(readFileSync(join(scratch, "result.json"), "utf8"));
-				expect(events).toEqual(scenario === "resume"
-					? ["confirm", "enroll", "advance", "advance"] : ["confirm", "enroll", "advance"]);
-				expect(initial.report.batch_state).toBe(scenario === "resume" ? "running" : "completed");
-				expect((resumed ?? initial).report.commits).toEqual([GUARD_COMMIT]);
-
-				const invocations = recordedInvocations(logPath);
-				const initialCommands = recordedInvocations(join(scratch, "initial.log")).map(gitSubcommand);
-				expect(initialCommands.filter((command) => command === "checkout")).toHaveLength(0);
-				const completionCommands = scenario === "resume"
-					? invocations.slice(initialCommands.length).map(gitSubcommand) : initialCommands;
-				if (scenario === "resume") {
-					expect(initialCommands).not.toContain("commit-tree");
-					expect(resumed.batch_id).toBe(initial.batch_id);
-				}
-				for (const mutation of ["add", "commit-tree"]) {
-					expect(completionCommands.filter((command) => command === mutation)).toHaveLength(1);
-				}
-				// Inspect every actual Git vector, including calls an adapter might add
-				// around the runner. The temporary-index add and commit-tree are legitimate here.
-				expect(invocations.filter((args) => ["worktree", "push"].includes(gitSubcommand(args)))).toEqual([]);
-			} finally {
-				rmSync(scratch, { recursive: true, force: true });
-			}
-		}, 30_000);
-	}
 });

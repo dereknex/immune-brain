@@ -21,6 +21,8 @@ import { PHASE_ENTRY_RECOVERY, RUN_ENTRY_REQUIRED } from "../plugins/immune-brai
 import { consumePhaseAdmission, laneGuardHookOutput, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import { BATCH_REASONS, batchReason } from "../plugins/immune-brain/runtime/unattended/batch_reasons";
+import { batchTopologyDigest, prepareBatchRunState, writeBatchRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
+import { computeBatchPlanDigest } from "../plugins/immune-brain/runtime/kernel/batch_authority";
 import {
 	captureStagedIntent,
 	restoreStagedIntent,
@@ -39,7 +41,6 @@ import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canar
 import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { withKernelTransaction } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
-import { createDefaultBatchGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 
 // The phase entry gate (ADR 0019) sits in front of `enroll` and
@@ -229,6 +230,31 @@ function piCanaryCtx(root: string) {
 		},
 	};
 }
+
+test.each([false, true])("status exposes v1 batch evidence on both Hosts (Parent TaskRecord: %s)", async hasParentRecord => {
+	const taskId = "legacy-status-child", root = enrolledHostFixture(taskId);
+	try {
+		const slug = hasParentRecord ? taskId : "legacy-status-parent";
+		const intent = readTaskIntent(root, taskId);
+		const children = [{ task_id: taskId, slice_id: "S1", blocked_by: [], intent_path: intent.path,
+			intent_revision: intent.intent.revision, intent_content_hash: intent.content_hash }];
+		const record = prepareBatchRunState({ batch_id: "legacy-status-batch", initiative_slug: slug,
+			plan_digest: computeBatchPlanDigest(children), base_head: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
+			branch: "imm/legacy-status", budget: { max_children: 1, qa_failure_limit: 3 }, actor_id: "user",
+			confirmation_ref: "legacy", confirmation_time: FIXTURE_NOW, children, now: FIXTURE_NOW });
+		record.batch_state = "running"; writeBatchRunState(root, record);
+		const path = join(root, ".imm/state/batches/legacy-status-batch.json"), before = readFileSync(path);
+		const expected = { corrupt: false, record: { contract: record.contract, batch_id: record.batch_id,
+			initiative_slug: slug, batch_state: "running", children: record.children, branch: record.branch } };
+		const runtime = new ClaudeRuntime({ cwd: root, env: HOST_ENV });
+		expect((await runtime.status(slug)).batch).toMatchObject(expected);
+		const pi = await piCanaryTool({}).execute("legacy-status", { task_id: slug, action: { op: "status" } },
+			undefined, undefined, piCanaryCtx(root)) as { content: Array<{ text: string }>; details: Record<string, unknown> };
+		expect(pi.details.state).toBe("status"); expect(pi.details.batch).toMatchObject(expected);
+		expect(JSON.parse(pi.content[0]!.text).batch).toMatchObject(expected);
+		expect(readFileSync(path)).toEqual(before);
+	} finally { rmSync(root, { recursive: true, force: true }); }
+});
 
 /** The Pi Host's message when a post-stage failure tries to undo the staging. */
 async function piBreakingFailure(root: string, taskId: string): Promise<string> {
@@ -1162,24 +1188,11 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => claudeFixture.observation,
 				batchKernel: {
-				enrollTask: async () => ({ record_revision: "r" }),
-				advanceTask: async () => ({ state: "completed" }),
 				validateBatchAuthorization: (input) => {
 						const validated = input.registry.inspect(input.capability, input.binding as never);
 						claudeBinding = validated;
 						return validated;
 					},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async () => {
-						writeFileSync(join(claudeFixture.root, "dummy.txt"), "c");
-						execFileSync("git", ["add", "dummy.txt"], { cwd: claudeFixture.root });
-						execFileSync("git", ["commit", "-q", "-m", "c commit"], { cwd: claudeFixture.root });
-						const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: claudeFixture.root, encoding: "utf8" }).trim();
-						return { commit };
-					},
-				lookupBatchCommit: async () => null,
 			},
 				requestConfirmation: async () => ({ decision: "accept", requestId: "req-c-acc" }),
 			});
@@ -1198,24 +1211,11 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => piFixture.observation,
 				batchKernel: {
-				enrollTask: async () => ({ record_revision: "r" }),
-				advanceTask: async () => ({ state: "completed" }),
 				validateBatchAuthorization: (input) => {
 						const validated = input.registry.inspect(input.capability, input.binding as never);
 						piBinding = validated;
 						return validated;
 					},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async () => {
-						writeFileSync(join(piFixture.root, "dummy.txt"), "p");
-						execFileSync("git", ["add", "dummy.txt"], { cwd: piFixture.root });
-						execFileSync("git", ["commit", "-q", "-m", "p commit"], { cwd: piFixture.root });
-						const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: piFixture.root, encoding: "utf8" }).trim();
-						return { commit };
-					},
-				lookupBatchCommit: async () => null,
 			},
 				confirmBatch: async () => "accept",
 			});
@@ -1363,12 +1363,15 @@ describe("dual-host assurance conformance", () => {
 			assertZeroWrites(cf, pf);
 		}
 
-		// 6. Parity scenario: BRANCH PREFLIGHT FAILED
+		// 6. Parity scenario: PARENT BRANCH PREFLIGHT FAILED
 		{
 			const cf = createConformanceFixture("conf-branchfail-c");
 			const pf = createConformanceFixture("conf-branchfail-p");
-			execFileSync("git", ["branch", "imm/conf-branchfail-c"], { cwd: cf.root });
-			execFileSync("git", ["branch", "imm/conf-branchfail-p"], { cwd: pf.root });
+			for (const fixture of [cf, pf]) {
+				execFileSync("git", ["branch", fixture === cf ? "imm/conf-branchfail-c" : "imm/conf-branchfail-p"], { cwd: fixture.root });
+				execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-qm", "Parent base moved"], { cwd: fixture.root });
+				fixture.head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+			}
 
 			const cr = createMcpRuntime({
 				cwd: cf.root,
@@ -1390,8 +1393,8 @@ describe("dual-host assurance conformance", () => {
 
 			expect(cRes.state).toBe("rejected");
 			expect(pRes.state).toBe("rejected");
-			expect(cRes.reason).toContain("already exists");
-			expect(pRes.reason).toContain("already exists");
+			expect(cRes.reason).toContain("batch_parent_branch_exists");
+			expect(pRes.reason).toContain("batch_parent_branch_exists");
 			expect(cRes.recovery_action).toBe(pRes.recovery_action);
 			assertZeroWrites(cf, pf, false);
 		}
@@ -1433,567 +1436,62 @@ describe("dual-host assurance conformance", () => {
 			assertZeroWrites(cf, pf);
 		}
 
-		// 8. Parity scenario: BATCH RESUMPTION CONFORMANCE
-		{
-			const sharedResumeSlug = "conf-resume";
-			const cf = createConformanceFixture(`${sharedResumeSlug}-c`);
-			const pf = createConformanceFixture(`${sharedResumeSlug}-p`);
+		// Child scope checks belong to the Lane, never the coordinator checkout.
+		// Preserve staged/unstaged, archive, glob and rename protection on real children.
+		for (const variant of ["staged", "outside", "unstaged", "archived", "directory", "glob", "rename"]) {
+			for (const host of ["claude", "pi"] as const) {
+				const slug = `conf-lane-${variant}-${host}`;
+				const f = createConformanceFixture(slug, [variant === "directory" ? "src" : variant === "glob" ? "src/**" : "src/impl.ts"]);
+				let gates = 0;
+				const cr = createMcpRuntime({ cwd: f.root, env: ENV, interactive: true, readInitiative: async () => f.observation,
+					requestConfirmation: async () => { gates++; return { decision: "accept", requestId: "lane-gate" }; } });
+				cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
+				const piOptions = { root: f.root, initiativeSlug: slug, interactive: true, readInitiative: async () => f.observation,
+					confirmBatch: async () => { gates++; return "accept" as const; } };
+				const tick = () => host === "claude" ? cr.callTool("start_unattended_batch", { initiative_slug: slug }, { toolCallId: "lane-tick" }) : executePiUnattendedBatch(piOptions);
+				const first = await tick();
+				expect(first.state).toBe("started");
+				const lane = first.report.handoffs.find((handoff: any) => handoff.role === "executor").lane_path;
+				const task = `${slug}-c1`;
+				const laneRuntime = createMcpRuntime({ cwd: lane, env: ENV, interactive: true });
+				const ports = host === "claude" ? laneRuntime.runtime.kernelPorts() : createPiAssuranceProgressionPorts();
 
-			// Run round 1 pausing for review on both hosts
-			let cStep = 0;
-			let cLastCommit: string | null = null;
-			// Native gates opened per Host. One authorization covers the whole batch:
-			// the resume below must add none on either Host.
-			let cGates = 0;
-			let pGates = 0;
-			const cr = createMcpRuntime({
-				cwd: cf.root,
-				env: ENV,
-				interactive: true,
-				readInitiative: async () => cf.observation,
-				batchKernel: {
-				advanceTask: async () => {
-						cStep++;
-						if (cStep === 1) return { state: "review_ready", operation_id: "c-op", agent_params: { prompt: "review" } as never };
-						releaseWorkspaceForTest(cf.root);
-						return { state: "completed" };
-					},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async () => {
-						writeFileSync(join(cf.root, "dummy.txt"), `${Date.now()}`);
-						execFileSync("git", ["add", "dummy.txt"], { cwd: cf.root });
-						execFileSync("git", ["commit", "-q", "-m", "c commit"], { cwd: cf.root });
-						const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: cf.root, encoding: "utf8" }).trim();
-						cLastCommit = commit;
-						return { commit };
-					},
-				lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
-			},
-				requestConfirmation: async () => {
-					cGates++;
-					return { decision: "accept", requestId: "r-c1" };
-				},
-			});
-			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-			const cRes1 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedResumeSlug}-c` }, { toolCallId: "toolu-cr1" });
+				if (variant === "archived") {
+					mkdirSync(join(lane, "docs/plans/archive"), { recursive: true });
+					renameSync(join(lane, `docs/plans/${task}.intent.json`), join(lane, `docs/plans/archive/${task}.intent.json`));
+				}
+				if (variant === "rename") renameSync(join(lane, "src/other.ts"), join(lane, "src/impl.ts"));
+				else writeFileSync(join(lane, variant === "outside" ? "src/other.ts" : "src/impl.ts"), "export const changed = true;\n");
+				if (variant !== "unstaged") execFileSync("git", ["add", "-A"], { cwd: lane });
+				const projection = await ports.projectTask(lane, task);
+				if (variant === "outside" || variant === "rename") expect(projection.error).toContain("outside the authorization envelope: src/other.ts");
+				else if (variant === "unstaged") expect(projection.error).toMatch(/unstaged or untracked/);
+				else expect(projection.error).toBeNull();
+				if (variant === "rename") expect(projection.error).toContain("src/other.ts");
 
-			let pStep = 0;
-			let pLastCommit: string | null = null;
-			const pRes1 = await executePiUnattendedBatch({
-				root: pf.root,
-				initiativeSlug: `${sharedResumeSlug}-p`,
-				interactive: true,
-				readInitiative: async () => pf.observation,
-				batchKernel: {
-				advanceTask: async () => {
-						pStep++;
-						if (pStep === 1) return { state: "review_ready", operation_id: "p-op", agent_params: { prompt: "review" } as never };
-						return { state: "completed" };
-					},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async () => {
-						writeFileSync(join(pf.root, "dummy.txt"), `${Date.now()}`);
-						execFileSync("git", ["add", "dummy.txt"], { cwd: pf.root });
-						execFileSync("git", ["commit", "-q", "-m", "p commit"], { cwd: pf.root });
-						const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim();
-						pLastCommit = commit;
-						return { commit };
-					},
-				lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
-			},
-				confirmBatch: async () => {
-					pGates++;
-					return "accept";
-				},
-			});
-
-			expect(cRes1.state).toBe("started");
-			expect(pRes1.state).toBe("started");
-			expect(cRes1.report.batch_state).toBe(pRes1.report.batch_state);
-
-			// Staged in-flight change to a tracked, in-scope path. Both hosts must resume:
-			// the Kernel projection accepts staged in-scope work.
-			writeFileSync(join(cf.root, "src", "impl.ts"), "export const impl = 2; // in-flight\n");
-			execFileSync("git", ["add", "src/impl.ts"], { cwd: cf.root });
-			writeFileSync(join(pf.root, "src", "impl.ts"), "export const impl = 2; // in-flight\n");
-			execFileSync("git", ["add", "src/impl.ts"], { cwd: pf.root });
-
-			// Run round 2 resuming the in-flight batch on both hosts
-			const cRes2 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedResumeSlug}-c` }, { toolCallId: "toolu-cr2" });
-			const pRes2 = await executePiUnattendedBatch({
-				root: pf.root,
-				initiativeSlug: `${sharedResumeSlug}-p`,
-				interactive: true,
-				readInitiative: async () => pf.observation,
-				batchKernel: {
-				advanceTask: async () => {
-						releaseWorkspaceForTest(pf.root);
-						return { state: "completed" };
-					},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async () => {
-						writeFileSync(join(pf.root, "dummy.txt"), `${Date.now()}`);
-						execFileSync("git", ["add", "dummy.txt"], { cwd: pf.root });
-						execFileSync("git", ["commit", "-q", "-m", "p commit 2"], { cwd: pf.root });
-						const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim();
-						pLastCommit = commit;
-						return { commit };
-					},
-				lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
-			},
-				confirmBatch: async () => {
-					pGates++;
-					return "accept";
-				},
-			});
-
-			expect(cRes2.state).toBe("started");
-			expect(pRes2.state).toBe("started");
-			expect(cRes2.batch_id).toBe(cRes1.batch_id);
-			expect(pRes2.batch_id).toBe(pRes1.batch_id);
-			expect(cRes2.report.batch_state).toBe(pRes2.report.batch_state);
-			// ADR-0005 Decision 1: resuming the authorized batch opens no second gate
-			// on either Host, so both hosts agree on the count and the outcome.
-			expect({ claude: cGates, pi: pGates }).toEqual({ claude: 1, pi: 1 });
-		}
-
-		// 9. Parity scenario: OUT-OF-SCOPE STAGED CHANGE BLOCKS RESUME IDENTICALLY
-		{
-			const sharedScopeSlug = "conf-scope";
-			const cf = createConformanceFixture(`${sharedScopeSlug}-c`);
-			const pf = createConformanceFixture(`${sharedScopeSlug}-p`);
-
-			let cStep = 0;
-			let cLastCommit: string | null = null;
-			const cr = createMcpRuntime({
-				cwd: cf.root,
-				env: ENV,
-				interactive: true,
-				readInitiative: async () => cf.observation,
-				batchKernel: {
-				advanceTask: async () => {
-						cStep++;
-						if (cStep === 1) return { state: "review_ready", operation_id: "c-op", agent_params: { prompt: "review" } as never };
-						return { state: "completed" };
-					},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async () => {
-						writeFileSync(join(cf.root, "dummy.txt"), `${Date.now()}`);
-						execFileSync("git", ["add", "dummy.txt"], { cwd: cf.root });
-						execFileSync("git", ["commit", "-q", "-m", "c commit"], { cwd: cf.root });
-						const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: cf.root, encoding: "utf8" }).trim();
-						cLastCommit = commit;
-						return { commit };
-					},
-				lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
-			},
-				requestConfirmation: async () => ({ decision: "accept", requestId: "r-scope-c1" }),
-			});
-			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-			const cRes1 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedScopeSlug}-c` }, { toolCallId: "toolu-cs1" });
-
-			let pStep = 0;
-			let pLastCommit: string | null = null;
-			const pRes1 = await executePiUnattendedBatch({
-				root: pf.root,
-				initiativeSlug: `${sharedScopeSlug}-p`,
-				interactive: true,
-				readInitiative: async () => pf.observation,
-				batchKernel: {
-				advanceTask: async () => {
-						pStep++;
-						if (pStep === 1) return { state: "review_ready", operation_id: "p-op", agent_params: { prompt: "review" } as never };
-						return { state: "completed" };
-					},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async () => {
-						writeFileSync(join(pf.root, "dummy.txt"), `${Date.now()}`);
-						execFileSync("git", ["add", "dummy.txt"], { cwd: pf.root });
-						execFileSync("git", ["commit", "-q", "-m", "p commit"], { cwd: pf.root });
-						const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim();
-						pLastCommit = commit;
-						return { commit };
-					},
-				lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
-			},
-				confirmBatch: async () => "accept",
-			});
-
-			expect(cRes1.state).toBe("started");
-			expect(pRes1.state).toBe("started");
-
-			const cBatchPath = join(cf.root, ".imm", "state", "batches", `${cRes1.batch_id}.json`);
-			const pBatchPath = join(pf.root, ".imm", "state", "batches", `${pRes1.batch_id}.json`);
-			const cBatchBefore = readFileSync(cBatchPath, "utf8");
-			const pBatchBefore = readFileSync(pBatchPath, "utf8");
-			const cHeadBefore = execFileSync("git", ["rev-parse", "HEAD"], { cwd: cf.root, encoding: "utf8" }).trim();
-			const pHeadBefore = execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim();
-
-			// Staged modification to a tracked path outside the authorized child scope
-			writeFileSync(join(cf.root, "src", "other.ts"), "export const other = 2; // out of scope\n");
-			execFileSync("git", ["add", "src/other.ts"], { cwd: cf.root });
-			writeFileSync(join(pf.root, "src", "other.ts"), "export const other = 2; // out of scope\n");
-			execFileSync("git", ["add", "src/other.ts"], { cwd: pf.root });
-
-			const cRes2 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedScopeSlug}-c` }, { toolCallId: "toolu-cs2" });
-			const pRes2 = await executePiUnattendedBatch({
-				root: pf.root,
-				initiativeSlug: `${sharedScopeSlug}-p`,
-				interactive: true,
-				readInitiative: async () => pf.observation,
-				confirmBatch: async () => "accept",
-			});
-
-			expect(cRes2.state).toBe("rejected");
-			expect(pRes2.state).toBe("rejected");
-			expect(cRes2.reason).toBe(pRes2.reason);
-			expect(cRes2.reason).toContain("outside the authorized child scope");
-			expect(cRes2.recovery_action).toBe(pRes2.recovery_action);
-			expect(readFileSync(cBatchPath, "utf8")).toBe(cBatchBefore);
-			expect(readFileSync(pBatchPath, "utf8")).toBe(pBatchBefore);
-			expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: cf.root, encoding: "utf8" }).trim()).toBe(cHeadBefore);
-			expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim()).toBe(pHeadBefore);
-		}
-
-		// 10. Parity scenario: UNSTAGED IN-SCOPE CHANGE BLOCKS RESUME IDENTICALLY
-		// (regression for porcelain status-column parsing: a trimmed parser reads
-		// " M src/impl.ts" as "rc/impl.ts" and misreports it as out of scope).
-		{
-			const sharedDirtySlug = "conf-dirty";
-			const cf = createConformanceFixture(`${sharedDirtySlug}-c`);
-			const pf = createConformanceFixture(`${sharedDirtySlug}-p`);
-
-			let cStep = 0;
-			let cLastCommit: string | null = null;
-			const cr = createMcpRuntime({
-				cwd: cf.root,
-				env: ENV,
-				interactive: true,
-				readInitiative: async () => cf.observation,
-				batchKernel: {
-				advanceTask: async () => {
-						cStep++;
-						if (cStep === 1) return { state: "review_ready", operation_id: "c-op", agent_params: { prompt: "review" } as never };
-						return { state: "completed" };
-					},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async () => {
-						writeFileSync(join(cf.root, "dummy.txt"), `${Date.now()}`);
-						execFileSync("git", ["add", "dummy.txt"], { cwd: cf.root });
-						execFileSync("git", ["commit", "-q", "-m", "c commit"], { cwd: cf.root });
-						const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: cf.root, encoding: "utf8" }).trim();
-						cLastCommit = commit;
-						return { commit };
-					},
-				lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
-			},
-				requestConfirmation: async () => ({ decision: "accept", requestId: "r-dirty-c1" }),
-			});
-			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-			const cRes1 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedDirtySlug}-c` }, { toolCallId: "toolu-cd1" });
-
-			let pStep = 0;
-			let pLastCommit: string | null = null;
-			const pRes1 = await executePiUnattendedBatch({
-				root: pf.root,
-				initiativeSlug: `${sharedDirtySlug}-p`,
-				interactive: true,
-				readInitiative: async () => pf.observation,
-				batchKernel: {
-				advanceTask: async () => {
-						pStep++;
-						if (pStep === 1) return { state: "review_ready", operation_id: "p-op", agent_params: { prompt: "review" } as never };
-						return { state: "completed" };
-					},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async () => {
-						writeFileSync(join(pf.root, "dummy.txt"), `${Date.now()}`);
-						execFileSync("git", ["add", "dummy.txt"], { cwd: pf.root });
-						execFileSync("git", ["commit", "-q", "-m", "p commit"], { cwd: pf.root });
-						const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim();
-						pLastCommit = commit;
-						return { commit };
-					},
-				lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
-			},
-				confirmBatch: async () => "accept",
-			});
-
-			expect(cRes1.state).toBe("started");
-			expect(pRes1.state).toBe("started");
-
-			const cBatchPath = join(cf.root, ".imm", "state", "batches", `${cRes1.batch_id}.json`);
-			const pBatchPath = join(pf.root, ".imm", "state", "batches", `${pRes1.batch_id}.json`);
-			const cBatchBefore = readFileSync(cBatchPath, "utf8");
-			const pBatchBefore = readFileSync(pBatchPath, "utf8");
-
-			// Unstaged modification to a tracked in-scope path: the Kernel projection
-			// refuses unstaged bytes, so both hosts must refuse identically.
-			writeFileSync(join(cf.root, "src", "impl.ts"), "export const impl = 3; // unstaged\n");
-			writeFileSync(join(pf.root, "src", "impl.ts"), "export const impl = 3; // unstaged\n");
-
-			const cRes2 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedDirtySlug}-c` }, { toolCallId: "toolu-cd2" });
-			const pRes2 = await executePiUnattendedBatch({
-				root: pf.root,
-				initiativeSlug: `${sharedDirtySlug}-p`,
-				interactive: true,
-				readInitiative: async () => pf.observation,
-				confirmBatch: async () => "accept",
-			});
-
-			expect(cRes2.state).toBe("rejected");
-			expect(pRes2.state).toBe("rejected");
-			expect(cRes2.reason).toBe(pRes2.reason);
-			expect(cRes2.reason).toContain("unstaged or untracked changes");
-			expect(cRes2.recovery_action).toBe(pRes2.recovery_action);
-			expect(readFileSync(cBatchPath, "utf8")).toBe(cBatchBefore);
-			expect(readFileSync(pBatchPath, "utf8")).toBe(pBatchBefore);
-		}
-
-		// 14. Parity scenario: ARCHIVED CHILD SIDECAR KEEPS STAGED IN-SCOPE RESUME
-		// (authorized scope must come from the TaskRecord, not the active sidecar)
-		{
-			const sharedArchivedSlug = "conf-archived";
-			const cf = createConformanceFixture(`${sharedArchivedSlug}-c`);
-			const pf = createConformanceFixture(`${sharedArchivedSlug}-p`);
-
-			let cStep = 0;
-			let cLastCommit: string | null = null;
-			const cr = createMcpRuntime({
-				cwd: cf.root,
-				env: ENV,
-				interactive: true,
-				readInitiative: async () => cf.observation,
-				batchKernel: {
-				advanceTask: async () => {
-						cStep++;
-						if (cStep === 1) return { state: "review_ready", operation_id: "c-op", agent_params: { prompt: "review" } as never };
-						releaseWorkspaceForTest(cf.root);
-						const claimPath = join(cf.root, ".imm", "state", "active-claim.json");
-						if (existsSync(claimPath)) rmSync(claimPath, { force: true });
-						return { state: "completed" };
-					},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async () => {
-						writeFileSync(join(cf.root, "dummy.txt"), `${Date.now()}`);
-						execFileSync("git", ["add", "dummy.txt"], { cwd: cf.root });
-						execFileSync("git", ["commit", "-q", "-m", "c commit"], { cwd: cf.root });
-						const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: cf.root, encoding: "utf8" }).trim();
-						cLastCommit = commit;
-						return { commit };
-					},
-				lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
-			},
-				requestConfirmation: async () => ({ decision: "accept", requestId: "r-ar-c1" }),
-			});
-			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-			const cRes1 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedArchivedSlug}-c` }, { toolCallId: "toolu-ar1" });
-
-			let pStep = 0;
-			let pLastCommit: string | null = null;
-			const pRes1 = await executePiUnattendedBatch({
-				root: pf.root,
-				initiativeSlug: `${sharedArchivedSlug}-p`,
-				interactive: true,
-				readInitiative: async () => pf.observation,
-				batchKernel: {
-				advanceTask: async () => {
-						pStep++;
-						if (pStep === 1) return { state: "review_ready", operation_id: "p-op", agent_params: { prompt: "review" } as never };
-						releaseWorkspaceForTest(pf.root);
-						const claimPath = join(pf.root, ".imm", "state", "active-claim.json");
-						if (existsSync(claimPath)) rmSync(claimPath, { force: true });
-						return { state: "completed" };
-					},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async () => {
-						writeFileSync(join(pf.root, "dummy.txt"), `${Date.now()}`);
-						execFileSync("git", ["add", "dummy.txt"], { cwd: pf.root });
-						execFileSync("git", ["commit", "-q", "-m", "p commit"], { cwd: pf.root });
-						const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim();
-						pLastCommit = commit;
-						return { commit };
-					},
-				lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
-			},
-				confirmBatch: async () => "accept",
-			});
-
-			expect(cRes1.state).toBe("started");
-			expect(pRes1.state).toBe("started");
-
-			// Freeze the in-flight child's sidecar into archive (Kernel artifact move,
-			// staged) on both hosts, then stage an in-scope source change.
-			for (const [root, slugPart] of [[cf.root, `${sharedArchivedSlug}-c`], [pf.root, `${sharedArchivedSlug}-p`]] as const) {
-				mkdirSync(join(root, "docs", "plans", "archive"), { recursive: true });
-				renameSync(
-					join(root, "docs", "plans", `${slugPart}-c1.intent.json`),
-					join(root, "docs", "plans", "archive", `${slugPart}-c1.intent.json`),
-				);
-				writeFileSync(join(root, "src", "impl.ts"), "export const impl = 2; // in-flight\n");
-				execFileSync("git", ["add", "-A"], { cwd: root });
+				writeFileSync(join(f.root, "out.ts"), "export const user = true;\n");
+				execFileSync("git", ["add", "out.ts"], { cwd: f.root });
+				writeFileSync(join(f.root, "src/impl.ts"), "export const userUnstaged = true;\n");
+				const snapshot = () => ({ index: readFileSync(join(f.root, ".git/index")),
+					diff: execFileSync("git", ["diff", "HEAD"], { cwd: f.root, encoding: "utf8" }),
+					head: execFileSync("git", ["rev-parse", "HEAD"], { cwd: f.root, encoding: "utf8" }) });
+				const before = snapshot();
+				const batchPath = join(f.root, `.imm/state/batches/${first.batch_id}.json`);
+				const batchBefore = readFileSync(batchPath);
+				const second = await tick();
+				expect(second.state).toBe("started");
+				expect(second.batch_id).toBe(first.batch_id);
+				if (["outside", "unstaged", "rename"].includes(variant)) {
+					expect(second.report.children[0]).toMatchObject({ state: "needs_human", reason: expect.stringContaining("batch_lane_unreadable") });
+					expect(second.report.handoffs).toEqual([]);
+				} else {
+					expect(second.report.handoffs).toEqual(first.report.handoffs);
+					expect(readFileSync(batchPath)).toEqual(batchBefore);
+				}
+				expect(second.report.commits).toEqual([]);
+				expect(gates).toBe(1);
+				expect(snapshot()).toEqual(before);
 			}
-
-			const cRes2 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedArchivedSlug}-c` }, { toolCallId: "toolu-ar2" });
-			const pRes2 = await executePiUnattendedBatch({
-				root: pf.root,
-				initiativeSlug: `${sharedArchivedSlug}-p`,
-				interactive: true,
-				readInitiative: async () => pf.observation,
-				batchKernel: {
-				advanceTask: async () => {
-						releaseWorkspaceForTest(pf.root);
-						return { state: "completed" };
-					},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async () => {
-						writeFileSync(join(pf.root, "dummy.txt"), `${Date.now()}`);
-						execFileSync("git", ["add", "dummy.txt"], { cwd: pf.root });
-						execFileSync("git", ["commit", "-q", "-m", "p commit 2"], { cwd: pf.root });
-						const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim();
-						pLastCommit = commit;
-						return { commit };
-					},
-				lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
-			},
-				confirmBatch: async () => "accept",
-			});
-
-			expect(cRes2.state).toBe("started");
-			expect(pRes2.state).toBe("started");
-			expect(cRes2.batch_id).toBe(cRes1.batch_id);
-			expect(pRes2.batch_id).toBe(pRes1.batch_id);
-		}
-
-		// 11. Parity scenario: DIRECTORY AND GLOB SCOPE ACCEPT STAGED IN-SCOPE RESUME
-		for (const scopeExtra of ["src", "src/**"]) {
-			const sharedDirSlug = `conf-scope-${scopeExtra === "src" ? "dir" : "glob"}`;
-			const cf = createConformanceFixture(`${sharedDirSlug}-c`, [scopeExtra]);
-			const pf = createConformanceFixture(`${sharedDirSlug}-p`, [scopeExtra]);
-
-			let cStep = 0;
-			let cLastCommit: string | null = null;
-			const cr = createMcpRuntime({
-				cwd: cf.root,
-				env: ENV,
-				interactive: true,
-				readInitiative: async () => cf.observation,
-				batchKernel: {
-				advanceTask: async () => {
-						cStep++;
-						if (cStep === 1) return { state: "review_ready", operation_id: "c-op", agent_params: { prompt: "review" } as never };
-						releaseWorkspaceForTest(cf.root);
-						return { state: "completed" };
-					},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async () => {
-						writeFileSync(join(cf.root, "dummy.txt"), `${Date.now()}`);
-						execFileSync("git", ["add", "dummy.txt"], { cwd: cf.root });
-						execFileSync("git", ["commit", "-q", "-m", "c commit"], { cwd: cf.root });
-						const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: cf.root, encoding: "utf8" }).trim();
-						cLastCommit = commit;
-						return { commit };
-					},
-				lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
-			},
-				requestConfirmation: async () => ({ decision: "accept", requestId: "r-di1" }),
-			});
-			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-			const cRes1 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedDirSlug}-c` }, { toolCallId: "toolu-di1" });
-
-			let pStep = 0;
-			let pLastCommit: string | null = null;
-			const pRes1 = await executePiUnattendedBatch({
-				root: pf.root,
-				initiativeSlug: `${sharedDirSlug}-p`,
-				interactive: true,
-				readInitiative: async () => pf.observation,
-				batchKernel: {
-				advanceTask: async () => {
-						pStep++;
-						if (pStep === 1) return { state: "review_ready", operation_id: "p-op", agent_params: { prompt: "review" } as never };
-						releaseWorkspaceForTest(pf.root);
-						return { state: "completed" };
-					},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async () => {
-						writeFileSync(join(pf.root, "dummy.txt"), `${Date.now()}`);
-						execFileSync("git", ["add", "dummy.txt"], { cwd: pf.root });
-						execFileSync("git", ["commit", "-q", "-m", "p commit"], { cwd: pf.root });
-						const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim();
-						pLastCommit = commit;
-						return { commit };
-					},
-				lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
-			},
-				confirmBatch: async () => "accept",
-			});
-
-			expect(cRes1.state).toBe("started");
-			expect(pRes1.state).toBe("started");
-
-			// Staged in-scope file under a directory/glob scope must not be rejected as
-			// out-of-scope on either host.
-			writeFileSync(join(cf.root, "src", "impl.ts"), "export const impl = 2; // in-flight\n");
-			execFileSync("git", ["add", "src/impl.ts"], { cwd: cf.root });
-			writeFileSync(join(pf.root, "src", "impl.ts"), "export const impl = 2; // in-flight\n");
-			execFileSync("git", ["add", "src/impl.ts"], { cwd: pf.root });
-
-			const cRes2 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedDirSlug}-c` }, { toolCallId: "toolu-di2" });
-			const pRes2 = await executePiUnattendedBatch({
-				root: pf.root,
-				initiativeSlug: `${sharedDirSlug}-p`,
-				interactive: true,
-				readInitiative: async () => pf.observation,
-				batchKernel: {
-				advanceTask: async () => {
-						releaseWorkspaceForTest(pf.root);
-						return { state: "completed" };
-					},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async () => {
-						writeFileSync(join(pf.root, "dummy.txt"), `${Date.now()}`);
-						execFileSync("git", ["add", "dummy.txt"], { cwd: pf.root });
-						execFileSync("git", ["commit", "-q", "-m", "p commit 2"], { cwd: pf.root });
-						const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim();
-						pLastCommit = commit;
-						return { commit };
-					},
-				lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
-			},
-				confirmBatch: async () => "accept",
-			});
-
-			expect(cRes2.state).toBe("started");
-			expect(pRes2.state).toBe("started");
-			expect(cRes2.batch_id).toBe(cRes1.batch_id);
-			expect(pRes2.batch_id).toBe(pRes1.batch_id);
 		}
 
 		// 12. Parity scenario: CLAIM SWAPPED DURING CONFIRMATION STAYS BLOCKED
@@ -2003,7 +1501,6 @@ describe("dual-host assurance conformance", () => {
 			const pf = createConformanceFixture(`${sharedSwapSlug}-p`);
 
 			let cStep = 0;
-			let cLastCommit: string | null = null;
 			const cr = createMcpRuntime({
 				cwd: cf.root,
 				env: ENV,
@@ -2016,25 +1513,12 @@ describe("dual-host assurance conformance", () => {
 						return { state: "completed" };
 					},
 			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async () => {
-						writeFileSync(join(cf.root, "dummy.txt"), `${Date.now()}`);
-						execFileSync("git", ["add", "dummy.txt"], { cwd: cf.root });
-						execFileSync("git", ["commit", "-q", "-m", "c commit"], { cwd: cf.root });
-						const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: cf.root, encoding: "utf8" }).trim();
-						cLastCommit = commit;
-						return { commit };
-					},
-				lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
-			},
 				requestConfirmation: async () => ({ decision: "accept", requestId: "r-sw-c1" }),
 			});
 			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
 			const cRes1 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedSwapSlug}-c` }, { toolCallId: "toolu-sw1" });
 
 			let pStep = 0;
-			let pLastCommit: string | null = null;
 			const pRes1 = await executePiUnattendedBatch({
 				root: pf.root,
 				initiativeSlug: `${sharedSwapSlug}-p`,
@@ -2046,18 +1530,6 @@ describe("dual-host assurance conformance", () => {
 						if (pStep === 1) return { state: "review_ready", operation_id: "p-op", agent_params: { prompt: "review" } as never };
 						return { state: "completed" };
 					},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async () => {
-						writeFileSync(join(pf.root, "dummy.txt"), `${Date.now()}`);
-						execFileSync("git", ["add", "dummy.txt"], { cwd: pf.root });
-						execFileSync("git", ["commit", "-q", "-m", "p commit"], { cwd: pf.root });
-						const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim();
-						pLastCommit = commit;
-						return { commit };
-					},
-				lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
 			},
 				confirmBatch: async () => "accept",
 			});
@@ -2135,111 +1607,6 @@ describe("dual-host assurance conformance", () => {
 			expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim()).toBe(pHeadBefore);
 		}
 
-		// 13. Parity scenario: CROSS-SCOPE RENAME BLOCKS RESUME IDENTICALLY
-		// (rename detection must not hide the out-of-scope source deletion)
-		{
-			const sharedRenameSlug = "conf-rename";
-			const cf = createConformanceFixture(`${sharedRenameSlug}-c`);
-			const pf = createConformanceFixture(`${sharedRenameSlug}-p`);
-
-			let cStep = 0;
-			let cLastCommit: string | null = null;
-			const cr = createMcpRuntime({
-				cwd: cf.root,
-				env: ENV,
-				interactive: true,
-				readInitiative: async () => cf.observation,
-				batchKernel: {
-				advanceTask: async () => {
-						cStep++;
-						if (cStep === 1) return { state: "review_ready", operation_id: "c-op", agent_params: { prompt: "review" } as never };
-						return { state: "completed" };
-					},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async () => {
-						writeFileSync(join(cf.root, "dummy.txt"), `${Date.now()}`);
-						execFileSync("git", ["add", "dummy.txt"], { cwd: cf.root });
-						execFileSync("git", ["commit", "-q", "-m", "c commit"], { cwd: cf.root });
-						const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: cf.root, encoding: "utf8" }).trim();
-						cLastCommit = commit;
-						return { commit };
-					},
-				lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
-			},
-				requestConfirmation: async () => ({ decision: "accept", requestId: "r-rn-c1" }),
-			});
-			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-			const cRes1 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedRenameSlug}-c` }, { toolCallId: "toolu-rn1" });
-
-			let pStep = 0;
-			let pLastCommit: string | null = null;
-			const pRes1 = await executePiUnattendedBatch({
-				root: pf.root,
-				initiativeSlug: `${sharedRenameSlug}-p`,
-				interactive: true,
-				readInitiative: async () => pf.observation,
-				batchKernel: {
-				advanceTask: async () => {
-						pStep++;
-						if (pStep === 1) return { state: "review_ready", operation_id: "p-op", agent_params: { prompt: "review" } as never };
-						return { state: "completed" };
-					},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async () => {
-						writeFileSync(join(pf.root, "dummy.txt"), `${Date.now()}`);
-						execFileSync("git", ["add", "dummy.txt"], { cwd: pf.root });
-						execFileSync("git", ["commit", "-q", "-m", "p commit"], { cwd: pf.root });
-						const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim();
-						pLastCommit = commit;
-						return { commit };
-					},
-				lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
-			},
-				confirmBatch: async () => "accept",
-			});
-
-			expect(cRes1.state).toBe("started");
-			expect(pRes1.state).toBe("started");
-
-			const cBatchPath = join(cf.root, ".imm", "state", "batches", `${cRes1.batch_id}.json`);
-			const pBatchPath = join(pf.root, ".imm", "state", "batches", `${pRes1.batch_id}.json`);
-			const cBatchBefore = readFileSync(cBatchPath, "utf8");
-			const pBatchBefore = readFileSync(pBatchPath, "utf8");
-			const cHeadBefore = execFileSync("git", ["rev-parse", "HEAD"], { cwd: cf.root, encoding: "utf8" }).trim();
-			const pHeadBefore = execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim();
-
-			// Rename an out-of-scope tracked file into an in-scope path and stage it:
-			// without --no-renames the parser only sees the in-scope destination.
-			for (const root of [cf.root, pf.root]) {
-				writeFileSync(join(root, "src", "impl.ts"), "export const impl = 9; // renamed over\n");
-				rmSync(join(root, "src", "other.ts"), { force: true });
-				execFileSync("git", ["add", "-A"], { cwd: root });
-			}
-
-			const cRes2 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedRenameSlug}-c` }, { toolCallId: "toolu-rn2" });
-			const pRes2 = await executePiUnattendedBatch({
-				root: pf.root,
-				initiativeSlug: `${sharedRenameSlug}-p`,
-				interactive: true,
-				readInitiative: async () => pf.observation,
-				confirmBatch: async () => "accept",
-			});
-
-			expect(cRes2.state).toBe("rejected");
-			expect(pRes2.state).toBe("rejected");
-			expect(cRes2.reason).toBe(pRes2.reason);
-			expect(cRes2.reason).toContain("outside the authorized child scope");
-			expect(cRes2.recovery_action).toBe(pRes2.recovery_action);
-			expect(readFileSync(cBatchPath, "utf8")).toBe(cBatchBefore);
-			expect(readFileSync(pBatchPath, "utf8")).toBe(pBatchBefore);
-			expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: cf.root, encoding: "utf8" }).trim()).toBe(cHeadBefore);
-			expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim()).toBe(pHeadBefore);
-		}
-
 		// 15. A completed batch is not resumed through the Initiative entry.
 		// With no new child, both Hosts refuse without changing terminal evidence.
 		{
@@ -2256,26 +1623,30 @@ describe("dual-host assurance conformance", () => {
 				execFileSync("git", ["commit", "-qm", "structured replay verification"], { cwd: fixture.root });
 			}
 
+			let cReplayReader: (() => typeof cf.observation) | undefined;
 			const cr = createMcpRuntime({
 				cwd: cf.root,
 				env: ENV,
 				interactive: true,
-				readInitiative: async () => cf.observation,
+				readInitiative: async () => cReplayReader ? cReplayReader() : cf.observation,
 				batchKernel: {
 			},
+				batchTracker: { markTerminal: async () => ({ status: "synced", message: "fixture" }) },
 				requestConfirmation: async () => ({ decision: "accept", requestId: "r-rp1" }),
 			});
 			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-			let cRes1 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedReplaySlug}-c` }, { toolCallId: "toolu-rp1" });
-			expect(cRes1.report.handoff.role).toBe("executor");
-			mkdirSync(join(cf.root, "docs/specs"), { recursive: true });
-			writeFileSync(join(cf.root, `docs/specs/${sharedReplaySlug}-c-c1.spec.md`), "# Replay fixture Spec\n");
-			execFileSync("git", ["add", `docs/specs/${sharedReplaySlug}-c-c1.spec.md`], { cwd: cf.root });
-			await cr.runtime.kernelPorts().applyOrdinaryOperation({ cwd: cf.root }, {
+			let cRes1 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedReplaySlug}-c`, final_verification: ["bun --version"] }, { toolCallId: "toolu-rp1" });
+			expect(cRes1.report.handoffs[0].role).toBe("executor");
+			const cLane = cRes1.report.handoffs[0].lane_path;
+			const laneRuntime = createMcpRuntime({ cwd: cLane, env: ENV, interactive: true });
+			mkdirSync(join(cLane, "docs/specs"), { recursive: true });
+			writeFileSync(join(cLane, `docs/specs/${sharedReplaySlug}-c-c1.spec.md`), "# Replay fixture Spec\n");
+			execFileSync("git", ["add", `docs/specs/${sharedReplaySlug}-c-c1.spec.md`], { cwd: cLane });
+			await laneRuntime.runtime.kernelPorts().applyOrdinaryOperation({ cwd: cLane }, {
 				taskId: `${sharedReplaySlug}-c-c1`, operation: { op: "freeze_artifacts", actor_id: "executor" },
 			});
-			expect((await cr.runtime.advance(`${sharedReplaySlug}-c-c1`)).state).toBe("completed");
-			execFileSync("git", ["add", `.imm/audit/${sharedReplaySlug}-c-c1`], { cwd: cf.root });
+			expect((await laneRuntime.runtime.advance(`${sharedReplaySlug}-c-c1`)).state).toBe("completed");
+			execFileSync("git", ["add", `.imm/audit/${sharedReplaySlug}-c-c1`], { cwd: cLane });
 			cRes1 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedReplaySlug}-c` }, { toolCallId: "toolu-rp-ready" });
 
 						const replayOptions: Parameters<typeof executePiUnattendedBatch>[0] = {
@@ -2283,22 +1654,25 @@ describe("dual-host assurance conformance", () => {
 				initiativeSlug: `${sharedReplaySlug}-p`,
 				interactive: true,
 				readInitiative: async () => pf.observation,
+				final_verification: ["bun --version"],
+				batchTracker: { markTerminal: async () => ({ status: "synced", message: "fixture" }) },
 				batchKernel: {
 			},
 				confirmBatch: async () => "accept",
 			};
 			let pRes1 = await executePiUnattendedBatch(replayOptions);
-			expect(pRes1.report.handoff.role).toBe("executor");
-			mkdirSync(join(pf.root, "docs/specs"), { recursive: true });
-			writeFileSync(join(pf.root, `docs/specs/${sharedReplaySlug}-p-c1.spec.md`), "# Replay fixture Spec\n");
-			execFileSync("git", ["add", `docs/specs/${sharedReplaySlug}-p-c1.spec.md`], { cwd: pf.root });
-			await createPiAssuranceProgressionPorts().applyOrdinaryOperation({ cwd: pf.root }, {
+			expect(pRes1.report.handoffs[0].role).toBe("executor");
+			const pLane = pRes1.report.handoffs[0].lane_path;
+			mkdirSync(join(pLane, "docs/specs"), { recursive: true });
+			writeFileSync(join(pLane, `docs/specs/${sharedReplaySlug}-p-c1.spec.md`), "# Replay fixture Spec\n");
+			execFileSync("git", ["add", `docs/specs/${sharedReplaySlug}-p-c1.spec.md`], { cwd: pLane });
+			await createPiAssuranceProgressionPorts().applyOrdinaryOperation({ cwd: pLane }, {
 				taskId: `${sharedReplaySlug}-p-c1`, operation: { op: "freeze_artifacts", actor_id: "executor" },
 			});
 			const { AssuranceCoordinator: PiCoordinator } = await import("../plugins/immune-brain/runtime/assurance/coordinator");
 			const piProgression = new PiCoordinator(createPiAssuranceProgressionPorts() as never);
-			expect((await piProgression.advance(`${sharedReplaySlug}-p-c1`, { cwd: pf.root })).state).toBe("completed");
-			execFileSync("git", ["add", `.imm/audit/${sharedReplaySlug}-p-c1`], { cwd: pf.root });
+			expect((await piProgression.advance(`${sharedReplaySlug}-p-c1`, { cwd: pLane })).state).toBe("completed");
+			execFileSync("git", ["add", `.imm/audit/${sharedReplaySlug}-p-c1`], { cwd: pLane });
 			pRes1 = await executePiUnattendedBatch(replayOptions);
 
 			expect(cRes1.state).toBe("started");
@@ -2313,7 +1687,52 @@ describe("dual-host assurance conformance", () => {
 			const cHeadBefore = execFileSync("git", ["rev-parse", "HEAD"], { cwd: cf.root, encoding: "utf8" }).trim();
 			const pHeadBefore = execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim();
 
-			// Direct startBatch(batch_id) replay remains covered by unattended-batch-run.
+			// A parked authorization must reject graph drift before historical completion replay.
+			const { completedParentReport } = await import("../plugins/immune-brain/runtime/unattended/batch_runner");
+			for (const [f, history] of [[cf, cBatchBefore], [pf, pBatchBefore]] as const) {
+				expect(await completedParentReport(f.root, f.observation.initiative_id, async () => f.observation,
+					{ markTerminal: async () => ({ status: "synced", message: "fixture" }) })).not.toBeNull();
+				const parked = { ...JSON.parse(history), batch_id: "parked", batch_state: "needs_human",
+					topology_digest: batchTopologyDigest([...f.observation.tasks,
+						{ task_id: "removed-task", slice_id: "S2", blocked_by: [] }]) };
+				delete parked.final_verification_result;
+				writeFileSync(join(f.root, ".imm/state/batches/parked.json"), JSON.stringify(parked));
+			}
+			const parkedBefore = [cf, pf].map(f => readFileSync(join(f.root, ".imm/state/batches/parked.json")));
+			const cParked = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedReplaySlug}-c` }, { toolCallId: "parked" });
+			const pParked = await executePiUnattendedBatch(replayOptions);
+			expect(cParked).toMatchObject({ state: "rejected", reason: expect.stringContaining("batch plan changed") });
+			expect(pParked).toMatchObject({ state: "rejected", reason: expect.stringContaining("batch plan changed") });
+			for (const [i, f] of [cf, pf].entries()) {
+				const path = join(f.root, ".imm/state/batches/parked.json");
+				expect(readFileSync(path)).toEqual(parkedBefore[i]); rmSync(path);
+			}
+
+			// Completion must consume the same confirmed graph, not a later carrier read.
+			for (const [f, history] of [[cf, cBatchBefore], [pf, pBatchBefore]] as const) {
+				const path = join(f.root, ".imm/state/batches/parked.json");
+				const parked = { ...JSON.parse(history), batch_id: "parked", batch_state: "needs_human" };
+				delete parked.final_verification_result;
+				writeFileSync(path, JSON.stringify(parked));
+				const before = readFileSync(path);
+				let reads = 0;
+				const reader = () => ++reads === 1 ? structuredClone(f.observation) : {
+					...f.observation, tasks: [...f.observation.tasks,
+						{ task_id: "new-undelivered-task", slice_id: "S2", blocked_by: [] }],
+				};
+				cReplayReader = reader;
+				const replay = f === cf
+					? await cr.callTool("start_unattended_batch", { initiative_slug: f.observation.initiative_id }, { toolCallId: "snapshot-replay" })
+					: await executePiUnattendedBatch({ ...replayOptions, readInitiative: async () => reader() });
+				expect(replay).toMatchObject({ state: "started", report: { batch_state: "completed" } });
+				expect(replay.report.children.map((child: { task_id: string }) => child.task_id))
+					.toEqual(f.observation.tasks.map(child => child.task_id));
+				expect(readFileSync(path)).toEqual(before);
+				rmSync(path);
+			}
+			cReplayReader = undefined;
+
+			// An empty revised plan cannot replay or overwrite the completed Parent ref.
 			cf.observation.tasks = [];
 			pf.observation.tasks = [];
 			const cRes2 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedReplaySlug}-c` }, { toolCallId: "toolu-rp2" });
@@ -2324,17 +1743,14 @@ describe("dual-host assurance conformance", () => {
 				readInitiative: async () => pf.observation,
 				batchKernel: {
 			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
-			},
 				confirmBatch: async () => "accept",
 			});
 
 			expect(cRes2.state).toBe("rejected");
 			expect(pRes2.state).toBe("rejected");
-			expect(cRes2.reason).toContain("empty enrollable child set");
-			expect(pRes2.reason).toBe(cRes2.reason);
+			expect(cRes2.reason).toContain("batch_parent_branch_exists");
+			expect(pRes2.reason).toContain("batch_parent_branch_exists");
+			expect(pRes2.recovery_action).toBe(cRes2.recovery_action);
 			expect(readFileSync(cBatchPath, "utf8")).toBe(cBatchBefore);
 			expect(readFileSync(pBatchPath, "utf8")).toBe(pBatchBefore);
 			expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: cf.root, encoding: "utf8" }).trim()).toBe(cHeadBefore);
@@ -2442,7 +1858,7 @@ describe("dual-host assurance conformance", () => {
 			const cf = createConformanceFixture(`${sharedPendingSlug}-c`);
 			const pf = createConformanceFixture(`${sharedPendingSlug}-p`);
 
-			/** Every byte under .imm/state, so any Kernel write is visible. */
+			/** Every durable byte under .imm/state; SQLite's SHM read marks are not authority. */
 			const snapshotState = (root: string): string => {
 				const base = join(root, ".imm", "state");
 				const out: string[] = [];
@@ -2451,7 +1867,7 @@ describe("dual-host assurance conformance", () => {
 					for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
 						const full = join(dir, entry.name);
 						if (entry.isDirectory()) walk(full);
-						else out.push(`${full.slice(base.length)}:${readFileSync(full, "utf8")}`);
+						else if (entry.name !== "kernel.sqlite-shm") out.push(`${full.slice(base.length)}:${readFileSync(full).toString("base64")}`);
 					}
 				};
 				walk(base);
@@ -2459,7 +1875,6 @@ describe("dual-host assurance conformance", () => {
 			};
 
 			let cStep = 0;
-			let cLastCommit: string | null = null;
 			const cr = createMcpRuntime({
 				cwd: cf.root,
 				env: ENV,
@@ -2472,38 +1887,18 @@ describe("dual-host assurance conformance", () => {
 						return { state: "completed" };
 					},
 			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async () => {
-						writeFileSync(join(cf.root, "src", "impl.ts"), `export const impl = ${cStep}; // pending\n`);
-						execFileSync("git", ["add", "-A"], { cwd: cf.root });
-						execFileSync("git", ["commit", "-q", "-m", "c pending commit"], { cwd: cf.root });
-						cLastCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: cf.root, encoding: "utf8" }).trim();
-						return { commit: cLastCommit };
-					},
-				lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
-			},
 				requestConfirmation: async () => ({ decision: "accept", requestId: "r-pending-1" }),
 			});
 			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
 			const cFirst = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedPendingSlug}-c` }, { toolCallId: "toolu-pending1" });
 
 			let pStep = 0;
-			let pLastCommit: string | null = null;
 			const pBatchKernel = {
 				advanceTask: async () => {
 					pStep++;
 					if (pStep === 1) return { state: "review_ready", operation_id: "p-pending", agent_params: { prompt: "review" } as never };
 					return { state: "completed" };
 				},
-				commitChild: async () => {
-					writeFileSync(join(pf.root, "src", "impl.ts"), `export const impl = ${pStep}; // pending\n`);
-					execFileSync("git", ["add", "-A"], { cwd: pf.root });
-					execFileSync("git", ["commit", "-q", "-m", "p pending commit"], { cwd: pf.root });
-					pLastCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim();
-					return { commit: pLastCommit };
-				},
-				lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
 			};
 			const pFirst = await executePiUnattendedBatch({
 				root: pf.root,
@@ -2521,6 +1916,9 @@ describe("dual-host assurance conformance", () => {
 			// SQLite store: both Hosts must stop on it with the marker untouched
 			// and no authority written.
 			for (const [root, taskId] of [[cf.root, `${sharedPendingSlug}-c-c1`], [pf.root, `${sharedPendingSlug}-p-c1`]] as const) {
+				// A competing coordinator claim forces the preflight's read-only
+				// authority probe; the actual batch child's store is in its Lane.
+				seedInFlightOwner(root, taskId);
 				mkdirSync(join(root, ".imm", "state", "transactions"), { recursive: true });
 				writeFileSync(
 					join(root, ".imm", "state", "transactions", "workspace-transaction-v2.json"),
@@ -2578,7 +1976,6 @@ describe("dual-host assurance conformance", () => {
 			const pf = createConformanceFixture(`${sharedRenewSlug}-p`, ["src/impl.ts"], true);
 
 			let cStep = 0;
-			let cLastCommit: string | null = null;
 			const cr = createMcpRuntime({
 				cwd: cf.root,
 				env: ENV,
@@ -2594,24 +1991,12 @@ describe("dual-host assurance conformance", () => {
 						return { state: "completed" };
 					},
 			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async () => {
-						writeFileSync(join(cf.root, "src", "impl.ts"), `export const impl = ${cStep}; // renew\n`);
-						execFileSync("git", ["add", "-A"], { cwd: cf.root });
-						execFileSync("git", ["commit", "-q", "-m", "c renew commit"], { cwd: cf.root });
-						cLastCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: cf.root, encoding: "utf8" }).trim();
-						return { commit: cLastCommit };
-					},
-				lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
-			},
 				requestConfirmation: async () => ({ decision: "accept", requestId: "r-renew-1" }),
 			});
 			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
 			const cRes1 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedRenewSlug}-c` }, { toolCallId: "toolu-renew1" });
 
 			let pStep = 0;
-			let pLastCommit: string | null = null;
 			const pBatchKernel = {
 				advanceTask: async () => {
 					pStep++;
@@ -2621,14 +2006,6 @@ describe("dual-host assurance conformance", () => {
 					if (existsSync(claimPath)) rmSync(claimPath, { force: true });
 					return { state: "completed" };
 				},
-				commitChild: async () => {
-					writeFileSync(join(pf.root, "src", "impl.ts"), `export const impl = ${pStep}; // renew\n`);
-					execFileSync("git", ["add", "-A"], { cwd: pf.root });
-					execFileSync("git", ["commit", "-q", "-m", "p renew commit"], { cwd: pf.root });
-					pLastCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim();
-					return { commit: pLastCommit };
-				},
-				lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
 			};
 			const pRes1 = await executePiUnattendedBatch({
 				root: pf.root,
@@ -2667,8 +2044,8 @@ describe("dual-host assurance conformance", () => {
 			expect(pRes2.state).toBe("started");
 			expect(cRes2.report.batch_state).toBe("running");
 			expect(pRes2.report.batch_state).toBe("running");
-			expect(cRes2.report.handoff).toMatchObject({ role: "executor", task_id: `${sharedRenewSlug}-c-c1` });
-			expect(pRes2.report.handoff).toMatchObject({ role: "executor", task_id: `${sharedRenewSlug}-p-c1` });
+			expect(cRes2.report.handoffs).toMatchObject([{ role: "executor", task_id: `${sharedRenewSlug}-c-c1` }]);
+			expect(pRes2.report.handoffs).toMatchObject([{ role: "executor", task_id: `${sharedRenewSlug}-p-c1` }]);
 			for (const result of [cRes2, pRes2]) {
 				expect(result.report.children.map((child: { state: string }) => child.state)).toEqual(["enrolled", "pending"]);
 				expect(result.report.commits).toEqual([]);

@@ -27,10 +27,9 @@ import { isWorkflowAuthoringPath } from "./batch_git";
 import { readTaskRecordRaw, readSettledTaskEvidence, readWorkspaceStateRaw, enrollmentEventIdFor, reconcileKernelAuthority } from "../kernel/storage";
 import type { TaskRecord } from "../kernel/types";
 import { pathMatchesScope } from "../workspace_scope";
-import { captureBatchReconfirmation, retainReconfirmation, ownUnpersistedBatchHead, type ReconfirmationSnapshot } from "./batch_reconfirmation";
-import { projectBatchPlan } from "./batch_plan";
+import { observeInitiative, projectBatchPlan } from "./batch_plan";
 import { batchReason, type BatchReasonKey } from "./batch_reasons";
-import { BATCH_RUN_STATES, isLaneBatchRecord, isTerminalBatchState, readAnyBatchRunState, recordedAuthorityHashes, type AnyBatchRunStateRecord, type BatchRunStateRecord } from "./batch_state";
+import { BATCH_RUN_STATES, batchTopologyDigest, isLaneBatchRecord, isTerminalBatchState, readAnyBatchRunState, recordedAuthorityHashes, type AnyBatchRunStateRecord } from "./batch_state";
 import { planLaneLeakRestore } from "./batch_leak_restore";
 import type {
 	BatchPlanBudget,
@@ -51,8 +50,7 @@ export interface BatchPreflightOptions {
 }
 
 export interface BatchPreflightProjection {
-	/** Captured observations only; never serialized or used as capability. */
-	reconfirmation?: ReconfirmationSnapshot;
+	topology_digest?: string;
 	initiative_slug: string;
 	batch_branch: string;
 	is_resuming: boolean;
@@ -426,6 +424,7 @@ export function porcelainEntries(root: string): Array<{ code: string; path: stri
  * it performs no confirmation, mints no capability, and branches on no Host.
  */
 interface PlanSurface {
+	topology_digest: string;
 	budget: BatchPlanBudget;
 	plan_digest: string;
 	recovery_children: BatchPlanChild[];
@@ -438,6 +437,29 @@ interface PlanSurface {
 type PlanSurfaceOutcome =
 	| { ok: true; surface: PlanSurface }
 	| { ok: false; key: BatchReasonKey; detail: string };
+
+/** Validate the whole confirmed graph before any Parent integration can write. */
+export async function readConfirmedBatchTopology(root: string, batch: AnyBatchRunStateRecord,
+	readInitiative: InitiativeObservationReader = observeInitiative) {
+	const observation = await readInitiative(root, batch.initiative_slug);
+	if (observation.initiative_id !== batch.initiative_slug) throw new Error("Initiative identity changed");
+	const tasks = [...observation.tasks].sort((a, b) => a.task_id < b.task_id ? -1 : a.task_id > b.task_id ? 1 : 0);
+	if (new Set(tasks.map(task => task.task_id)).size !== tasks.length) throw new Error("duplicate Initiative Task");
+	const remaining = [...tasks];
+	const visited = new Set<string>();
+	while (remaining.length) {
+		const ready = remaining.filter(task => task.blocked_by.every(dependency => visited.has(dependency)));
+		if (!ready.length) throw new Error("Initiative dependencies contain a cycle or unknown Task");
+		for (const task of ready) {
+			visited.add(task.task_id);
+			remaining.splice(remaining.indexOf(task), 1);
+		}
+	}
+	const topology_digest = batchTopologyDigest(tasks);
+	if (!isLaneBatchRecord(batch) || batch.topology_digest !== topology_digest)
+		throw new Error("confirmed Parent topology changed or its recorded identity is missing");
+	return { observation, topology_digest };
+}
 
 /**
  * The plan half of the projection: the confirmed plan surface for a fresh run,
@@ -456,6 +478,7 @@ async function projectPlanSurface(input: {
 	const { root, initiative_slug: initiativeSlug, is_resuming: isResuming, existing_batch: existingBatch, now } = input;
 	let recoveryChildren: BatchPlanChild[] = [];
 	let planDigest: string;
+	let topologyDigest: string;
 	let excluded: Array<{ task_id: string; slice_id: string; reason: string }> = [];
 	let parallelGroups: string[][] = [];
 	let scopeConflicts: Array<{ task_id: string; overlaps_with: string[] }> = [];
@@ -465,6 +488,13 @@ async function projectPlanSurface(input: {
 	let budget: BatchPlanBudget;
 
 	if (isResuming && existingBatch) {
+		// Re-read topology, not child subjects: pending subject drift remains a
+		// per-child enrollment refusal, but an old graph never authorizes a new one.
+		try {
+			topologyDigest = (await readConfirmedBatchTopology(root, existingBatch, input.readInitiative)).topology_digest;
+		} catch (error) {
+			return { ok: false, key: "plan_changed", detail: error instanceof Error ? error.message : String(error) };
+		}
 		// A resume keeps the confirmed count limits of the persisted record.
 		budget = {
 			max_children: existingBatch.budget.max_children,
@@ -474,7 +504,7 @@ async function projectPlanSurface(input: {
 		// scope-only revision leaves its digest unchanged. A child that has not
 		// enrolled keeps the subject the user authorized: a changed one parks only
 		// that child at enrollment (Spec branch-boundary D8). A child that has run
-		// is read live, so a changed subject still reaches reconfirmation.
+		// is read live, so any later subject drift fails the batch plan check.
 		const authorized = recordedAuthorityHashes(existingBatch);
 		const unenrolled = new Set(["pending", "lane_admitted", "skipped_blocked", "needs_human"]);
 		try {
@@ -546,6 +576,7 @@ async function projectPlanSurface(input: {
 		if (!plan.enrollable.length)
 			return { ok: false, key: "empty_enrollable_set", detail: "" };
 
+		topologyDigest = batchTopologyDigest(plan.tracker_observation.tasks);
 		budget = plan.budget;
 		parallelGroups = plan.parallel_groups;
 		scopeConflicts = plan.scope_conflicts;
@@ -582,6 +613,7 @@ async function projectPlanSurface(input: {
 		surface: {
 			budget,
 			plan_digest: planDigest,
+			topology_digest: topologyDigest,
 			recovery_children: recoveryChildren,
 			risk_by_task: Object.fromEntries(
 				[...riskByTask.entries()].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
@@ -622,10 +654,11 @@ async function projectPreflight(
 		return reject("batch_state_unreadable", found.path);
 	// Settled records retain branch provenance; only active records are resumed.
 	const activeRecord: AnyBatchRunStateRecord | null = found ? found.record : null;
+	if (activeRecord && !isLaneBatchRecord(activeRecord)) return reject("batch_record_shape_retired");
 	const existingBatch: AnyBatchRunStateRecord | null = activeRecord ?? findSettledBatchRecord(root, initiativeSlug);
 	const isResuming = activeRecord !== null;
 	// A batch records the branch it advances: its hidden ref, or a legacy imm/<slug> branch.
-	const batchBranch = activeRecord?.branch ?? (options.max_parallel !== undefined ? parentBranchRef(initiativeSlug) : `imm/${initiativeSlug}`);
+	const batchBranch = activeRecord?.branch ?? parentBranchRef(initiativeSlug);
 
 	// 1. Active workspace claim (pre-confirmation).
 	const activeTaskId = readActiveClaimTaskId(root);
@@ -738,6 +771,8 @@ async function projectPreflight(
 	});
 	if (!planSurface.ok)
 		return reject(planSurface.key, planSurface.detail);
+	if (activeRecord && activeRecord.plan_digest !== planSurface.surface.plan_digest)
+		return reject("plan_changed", "the recorded authorization cannot adopt a revised plan");
 	// Each child's commit carries its terminal audit pair; an ignored pair would be
 	// dropped without error and then refused at integration, after the work ran.
 	const auditProbes = planSurface.surface.recovery_children.flatMap((child) =>
@@ -756,13 +791,6 @@ async function projectPreflight(
 		const blocking = statusEntries.filter(({ path }) => !isWorkflowAuthoringPath(path) && scopes.some((scope) => pathMatchesScope(path, scope)));
 		if (blocking.length > 0) return reject("working_tree_dirty", blocking.map(({ path }) => path).join(", "));
 	}
-	let reconfirmation: ReconfirmationSnapshot | undefined;
-	if (activeRecord && !isLaneBatchRecord(activeRecord) && activeRecord.plan_digest !== planSurface.surface.plan_digest) {
-		try { reconfirmation = await captureBatchReconfirmation(root, activeRecord, planSurface.surface.recovery_children); }
-		catch { return reject("plan_projection_failed", activeRecord.commits.length
-			? `batch plan changed after ${activeRecord.commits.length} recorded child commit(s). The old authorization cannot execute the revised plan. Preserve the batch record, report, commit evidence and audit; inspect each remaining child's Kernel run before an explicit imm-run handoff. Do not re-enroll settled children or manufacture batch trailers. To close the parked record explicitly, dispose it with the retire_stale_batch Tool for this Initiative; a child whose Kernel run is still live must settle first, while one that already ended outside the batch does not block the disposition. This rejection neither terminates the old batch nor authorizes the revised plan.`
-			: "batch plan reconfirmation is not eligible"); }
-	}
 
 	const projection: BatchPreflightProjection = {
 		initiative_slug: initiativeSlug,
@@ -772,13 +800,13 @@ async function projectPreflight(
 		base_head: baseHead,
 		budget: planSurface.surface.budget,
 		plan_digest: planSurface.surface.plan_digest,
+		topology_digest: planSurface.surface.topology_digest,
 		recovery_children: planSurface.surface.recovery_children,
 		risk_by_task: planSurface.surface.risk_by_task,
 		excluded: planSurface.surface.excluded,
 		parallel_groups: planSurface.surface.parallel_groups,
 		scope_conflicts: planSurface.surface.scope_conflicts,
 	};
-	if (reconfirmation) Object.defineProperty(projection, "reconfirmation", { value: reconfirmation });
 	return { ok: true, projection };
 }
 
@@ -789,6 +817,7 @@ async function projectPreflight(
  * read at all, which a Host reports as unreadable rather than changed.
  */
 export interface BatchDriftProjection {
+	topology_digest?: string | null;
 	active_claim_task_id: string | null;
 	own_claim: boolean;
 	base_head: string | null;
@@ -829,6 +858,7 @@ export async function projectBatchDrift(options: BatchPreflightOptions): Promise
 			isResuming && activeClaimTaskId !== null && isOwnBatchClaim(root, existingBatch!, activeClaimTaskId, batchBranch),
 		base_head: baseHead,
 		plan_digest: surface.ok ? surface.surface.plan_digest : null,
+		topology_digest: surface.ok ? surface.surface.topology_digest : null,
 		plan_unavailable_reason: surface.ok ? null : batchReason(surface.key, surface.detail).reason,
 	};
 }
@@ -919,12 +949,10 @@ export async function authorizeBatch<HostRejection>(
 	// ADR-0005 Decision 1: a resume of an intact, still-binding authorization
 	// reuses it instead of opening a second native gate. Anything that no longer
 	// binds falls through to the gate below, which names the reason.
-	const ownsUnpersistedHead = isResuming && existingBatch !== null && !isLaneBatchRecord(existingBatch) && existingBatch.plan_digest === planDigest &&
-		expectedBatchHead(existingBatch) !== baseHead && ownUnpersistedBatchHead(root, existingBatch, baseHead);
 	// A fast-forward on the batch branch is the user's own work: the runner adopts
 	// it, so it neither blocks reuse nor counts as moved provenance.
 	const fastForwardsRecordedHead = isResuming && existingBatch !== null && existingBatch.branch === batchBranch &&
-		expectedBatchHead(existingBatch) !== baseHead && !ownsUnpersistedHead &&
+		expectedBatchHead(existingBatch) !== baseHead &&
 		classifyBatchLineage({
 			root,
 			branch: batchBranch,
@@ -933,14 +961,14 @@ export async function authorizeBatch<HostRejection>(
 			batchId: existingBatch.batch_id,
 		}).kind === "fast_forward";
 	if (isResuming && existingBatch && !existingBatch.commits.length && existingBatch.children[0]?.state === "settled" &&
-		expectedBatchHead(existingBatch) !== baseHead && !ownsUnpersistedHead && !fastForwardsRecordedHead)
+		expectedBatchHead(existingBatch) !== baseHead && !fastForwardsRecordedHead)
 		return { outcome: "rejected", rejection: batchRejection("head_moved", "first unpersisted commit provenance is invalid") };
 	const reuseBlockers: string[] = [];
 	if (isResuming && existingBatch) {
 		if (existingBatch.batch_state !== "running") reuseBlockers.push("batch_not_running");
 		if (existingBatch.plan_digest !== planDigest) reuseBlockers.push("batch_plan_digest_changed");
 		if (existingBatch.branch !== batchBranch) reuseBlockers.push("batch_branch_changed");
-		if (expectedBatchHead(existingBatch) !== baseHead && !ownsUnpersistedHead && !fastForwardsRecordedHead)
+		if (expectedBatchHead(existingBatch) !== baseHead && !fastForwardsRecordedHead)
 				reuseBlockers.push("batch_head_lineage_moved");
 	}
 	const reuseAuthorization = isResuming && reuseBlockers.length === 0;
@@ -986,10 +1014,10 @@ export async function authorizeBatch<HostRejection>(
 		return { outcome: "rejected", rejection: batchRejection("claim_appeared_during_confirmation", drift.active_claim_task_id) };
 	if (drift.plan_digest === null)
 		return { outcome: "rejected", rejection: batchRejection("plan_became_unreadable", drift.plan_unavailable_reason ?? "") };
-	if (drift.plan_digest !== planDigest)
+	if (drift.plan_digest !== planDigest || drift.topology_digest !== projection.topology_digest)
 		return { outcome: "rejected", rejection: batchRejection("plan_changed", drift.plan_digest) };
 	if (drift.base_head === null) return { outcome: "rejected", rejection: batchRejection("repository_became_unreadable") };
-	if (drift.base_head !== baseHead || (ownsUnpersistedHead && !ownUnpersistedBatchHead(root, existingBatch as BatchRunStateRecord, baseHead)))
+	if (drift.base_head !== baseHead)
 		return { outcome: "rejected", rejection: batchRejection("head_moved", drift.base_head) };
 
 	// The drift projection's own claim read happened before its plan read; this
@@ -1012,10 +1040,6 @@ export async function authorizeBatch<HostRejection>(
 	if (branchAfter.status !== 0 || branchAfter.stdout !== branchBefore.stdout)
 		return { outcome: "rejected", rejection: batchRejection("confirmation_failed", "Git branch moved after native confirmation") };
 
-	if (projection.reconfirmation) {
-		try { projection.reconfirmation.assertUnchanged(); }
-		catch { return { outcome: "rejected", rejection: batchRejection("plan_changed") }; }
-	}
 	const binding: BatchAuthorizationBinding = {
 		batch_id: batchId,
 		initiative_slug: initiativeSlug,
@@ -1027,7 +1051,6 @@ export async function authorizeBatch<HostRejection>(
 		confirmation_ref: options.confirmationRef({ batch_id: batchId, request_id: requestId }),
 		nonce: options.nonce,
 	};
-	if (projection.reconfirmation) retainReconfirmation(binding.nonce, projection.reconfirmation);
 	return {
 		outcome: "authorized",
 		batch_id: batchId,

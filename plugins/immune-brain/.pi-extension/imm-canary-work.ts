@@ -727,6 +727,13 @@ export default function (
 			const projection: StatusProjectionResult = action.op === "status"
 				? await projectTaskStatus(ctx.cwd, taskId)
 				: await projectAssuranceForTask(ctx.cwd, taskId, requested);
+			if (action.op === "status" && projection.error && projection.batch) {
+				const details = { state: "status", operation: "status", plugin_version: PLUGIN_VERSION,
+					batch: projection.batch, task_error: projection.error,
+					next_action: "Inspect batch evidence; this read grants no execution authority." };
+				presentTaskRailResult(ctx, taskId, details);
+				return toolResult(JSON.stringify(details, null, 2), details);
+			}
 			if (projection.error) {
 				const nextAction = recoveryActionForAssuranceFailure(projection.error) ?? "inspect authority state";
 				const details = {
@@ -747,7 +754,8 @@ export default function (
 					+ state.replan_required_ids.length;
 				const warnings = projection.warnings ?? [];
 				const gitIntegration = projection.git_integration ? { git_integration: projection.git_integration } : {};
-				const status = { plugin_version: PLUGIN_VERSION, ...state, ...gitIntegration, ...(warnings.length > 0 ? { warnings } : {}) };
+				const batchEvidence = projection.batch ? { batch: projection.batch } : {};
+				const status = { plugin_version: PLUGIN_VERSION, ...state, ...gitIntegration, ...batchEvidence, ...(warnings.length > 0 ? { warnings } : {}) };
 				const details = {
 					state: "status",
 					operation: "status",
@@ -756,6 +764,7 @@ export default function (
 					artifact_state: state.artifact_state,
 					task_state: state,
 					...gitIntegration,
+					...batchEvidence,
 					...(warnings.length > 0 ? { warnings } : {}),
 					result: `${fresh}/${total} acceptance items fresh; ${blockers} blocker${blockers === 1 ? "" : "s"}${warnings.map((warning) => `; ${warning.message}`).join("")}`,
 					next_action: state.next_obligation,

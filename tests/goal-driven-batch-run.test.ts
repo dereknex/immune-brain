@@ -8,10 +8,10 @@ import { deliveryHash, settledDeliveryFixture } from "./fixtures/settled-deliver
 import { withCompletionDelivery } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
-import { prepareBatchRunState, prepareBatchLaneRunState, writeBatchRunState, writeBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
+import { prepareBatchLaneRunState, writeBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { assertIsolatedTaskPrerequisites } from "../plugins/immune-brain/runtime/github_issue_tracker";
 import { observeNativeParent } from "../plugins/immune-brain/runtime/unattended/batch_git";
-import { readBatchRunState, writeNativeParentFinalReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
+import { readBatchLaneRunState, writeNativeParentFinalReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { observeParentRun } from "../plugins/immune-brain/runtime/assurance/run_continuation";
 import { registerPiRunContinuation } from "../plugins/immune-brain/.pi-extension/pi-run-continuation";
 import { recognizePhaseEntry } from "../plugins/immune-brain/runtime/assurance/phase_entry";
@@ -50,7 +50,8 @@ function parentFixture(nativeRoot: boolean) {
   lifecycle: "active", artifact_state: "active", baseline: `sha256:${"a".repeat(64)}`, git_base_head: head,
   attestations: [], findings: [], history: [],
  } });
- const child = nativeRoot ? other : owner;
+ // The main-workspace task is native; batch children now always run in Lanes.
+ const child = other;
  const now = new Date().toISOString();
  const args = { batch_id: "parent-batch", initiative_slug: "parent", plan_digest: `sha256:${"b".repeat(64)}`, base_head: head,
   branch: execFileSync("git", ["symbolic-ref", "--short", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
@@ -59,8 +60,8 @@ function parentFixture(nativeRoot: boolean) {
    risk: child.risk, intent_path: `docs/plans/${child.task_id}.intent.json`, intent_revision: 1,
    intent_content_hash: canonicalIntentHash(child), scope_hint: child.scope_hint, reason: null, exclusion: null }],
  };
- if (nativeRoot) { const state = prepareBatchLaneRunState({ ...args, max_parallel: 4 }); state.batch_state = "running"; writeBatchLaneRunState(root, state); }
- else { const state = prepareBatchRunState(args); state.batch_state = "running"; state.children[0]!.state = "enrolled"; writeBatchRunState(root, state); }
+ const state = prepareBatchLaneRunState({ ...args, max_parallel: nativeRoot ? 4 : 1 });
+ state.batch_state = "running"; writeBatchLaneRunState(root, state);
  return { root, binding: { kind: "parent" as const, workspace: root, session_id: "parent-session", initiative_slug: "parent",
   batch_id: args.batch_id, plan_digest: args.plan_digest } };
 }
@@ -86,7 +87,7 @@ describe("native task transitions inside a Parent", () => {
    const final = (duration_ms: number) => ({ passed: false, head, results: [{ command: "bun --version", exit_code: 1, signal: null, passed: false, duration_ms }] });
    const write = (duration: number) => {
     if (native) writeNativeParentFinalReport(h.root, { contract: "assurance_kernel/parent_final_report/v1", initiative_slug: "parent", task_ids: ["s5", "s6"], final_verification: final(duration) });
-    else { const record = readBatchRunState(h.root, h.binding.batch_id)!; record.children[0]!.reason = `unchanged outcome observed in ${duration}ms`; writeBatchRunState(h.root, record); }
+    else { const record = readBatchLaneRunState(h.root, h.binding.batch_id)!; record.children[0]!.reason = `unchanged outcome observed in ${duration}ms`; writeBatchLaneRunState(h.root, record); }
    };
    write(10); const first = await observeParentRun(binding, "one");
    write(200); const second = await observeParentRun(binding, "two");

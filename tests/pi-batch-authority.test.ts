@@ -1,31 +1,26 @@
 import { afterAll, describe, expect, it, mock, spyOn } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { copyGitTemplate } from "./helpers/git-template";
-import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
+import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
+import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
+
 // Delivery QA has no node_modules; use host seams only when the real package is absent.
 try { await import("typebox"); } catch {
 	const optional = Symbol("optional");
-	// Reuse the schema constructors from pi-canary-work-extension's delivery seam:
-	// the foreground Review regression also loads imm-canary-work's schemas.
 	mock.module("typebox", () => ({ Type: {
-		Array: (items: object) => ({ type: "array", items }),
-		Boolean: () => ({ type: "boolean" }),
-		Literal: (value: unknown) => ({ const: value }),
-		Null: () => ({ type: "null" }),
+		Array: (items: object) => ({ type: "array", items }), Boolean: () => ({ type: "boolean" }),
+		Literal: (value: unknown) => ({ const: value }), Null: () => ({ type: "null" }),
 		Number: (options: object = {}) => ({ type: "number", ...options }),
-		Object: (properties: Record<string, any>, options: object = {}) => ({
-			type: "object", properties,
-			required: Object.entries(properties).filter(([, value]) => !value[optional]).map(([key]) => key),
-			...options,
-		}),
+		Object: (properties: Record<string, any>, options: object = {}) => ({ type: "object", properties,
+			required: Object.entries(properties).filter(([, value]) => !value[optional]).map(([key]) => key), ...options }),
 		Optional: (schema: Record<string, unknown>) => ({ ...schema, [optional]: true }),
 		Record: (_key: object, value: object) => ({ type: "object", additionalProperties: value }),
-		String: (options: object = {}) => ({ type: "string", ...options }),
-		Union: (anyOf: object[]) => ({ anyOf }),
-		Unknown: () => ({}),
+		String: (options: object = {}) => ({ type: "string", ...options }), Union: (anyOf: object[]) => ({ anyOf }), Unknown: () => ({}),
 	} }));
 }
 try { await import("@earendil-works/pi-coding-agent"); } catch {
@@ -37,21 +32,16 @@ try { await import("@earendil-works/pi-coding-agent"); } catch {
 }
 try { await import("@earendil-works/pi-tui"); } catch {
 	class Text {
-		constructor(private text: string) {}
-		setText(text: string) { this.text = text; }
-		render() { return this.text.split("\n"); }
-		invalidate() {}
+		constructor(private text: string) {} setText(text: string) { this.text = text; }
+		render() { return this.text.split("\n"); } invalidate() {}
 	}
 	class Container {
 		private children: Array<{ render(width: number): string[] }> = [];
 		addChild(child: { render(width: number): string[] }) { this.children.push(child); }
-		render(width: number) { return this.children.flatMap((child) => child.render(width)); }
-		invalidate() {}
+		render(width: number) { return this.children.flatMap((child) => child.render(width)); } invalidate() {}
 	}
 	class SelectList {
-		onSelect?: (item: any) => void;
-		onCancel?: () => void;
-		private selected = 0;
+		onSelect?: (item: any) => void; onCancel?: () => void; private selected = 0;
 		constructor(private items: any[]) {}
 		render() { return this.items.map((item, index) => `${index === this.selected ? "> " : "  "}${item.label}`); }
 		handleInput(input: string) {
@@ -61,1734 +51,303 @@ try { await import("@earendil-works/pi-tui"); } catch {
 			else if (input === "\u001b") this.onCancel?.();
 		}
 	}
-	mock.module("@earendil-works/pi-tui", () => ({
-		Container, SelectList, Text,
+	mock.module("@earendil-works/pi-tui", () => ({ Container, SelectList, Text,
 		sliceByColumn: (text: string, start: number, width?: number) => text.slice(start, width === undefined ? undefined : start + width),
 		truncateToWidth: (text: string, width: number, marker = "") => text.length <= width ? text : `${text.slice(0, Math.max(0, width - marker.length))}${marker}`,
 		visibleWidth: (text: string) => text.length,
 	}));
 }
 afterAll(() => mock.restore());
-
-const {
-	executePiUnattendedBatch: executePiBatchOnce,
-	default: registerBatchExtension,
-} = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
-import { projectAssurance } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
-import { diffSnapshotOf } from "../plugins/immune-brain/runtime/claude/kernel_ports";
-import { buildScopedCommit, isBatchRef, moveBatchRef } from "../plugins/immune-brain/runtime/unattended/batch_ref";
-
-// These authority fixtures script Assurance. Model the explicit Parent turn
-// between Tool returns. Nothing in this file runs real QA or real batch commits;
-// tests/pi-batch-acceptance-integration.test.ts drives the registered entry
-// through real Kernel ownership, QA and Git instead of this seam.
-async function executePiUnattendedBatch(options: Parameters<typeof executePiBatchOnce>[0]) {
-	if (!options.batchKernel?.advanceTask || options.batchKernel.enrollTask) return executePiBatchOnce(options);
-	const ready = new Set<string>();
-	const project = options.batchKernel.projectTask ?? ((root: string, task: string) => projectAssurance(root, task, diffSnapshotOf));
-	const staged = { ...options, batchKernel: { ...options.batchKernel, projectTask: async (root: string, task: string) => {
-		const fresh = await project(root, task);
-		return ready.has(task) && fresh.claim?.task_id === task
-			? { ...fresh, projection: { ...fresh.projection, artifact_state: "frozen" } } : fresh;
-	} } };
-	let result = await executePiBatchOnce(staged);
-	while (result.state === "started" && result.report.handoff) {
-		expect(result.report.batch_state).toBe("running");
-		ready.add(result.report.handoff.task_id);
-		result = await executePiBatchOnce(staged);
-	}
-	return result;
-}
-
-import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { revisionForContent } from "../plugins/immune-brain/runtime/kernel/storage";
-import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
-import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
-import { readRunRowByTask, withKernelRead, withKernelTransaction } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
-import { commitTerminalLocked, readWorkspaceStateRaw, retryStoreFollowUps, serializeWorkspace } from "../plugins/immune-brain/runtime/kernel/storage";
-import { createDefaultBatchGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
-
-// Test double for a batch child commit under the hidden-ref model (S2): built from the working
-// tree with Git plumbing so only the batch's own ref advances, never the fixture's HEAD or index.
-/** Commits a revision outside the authority subject: a bump, plus a scope addition unless `revisionOnly`. */
-function reviseCompatibly(root: string, taskId: string, revisionOnly = true): void {
-	const path = join(root, "docs", "plans", `${taskId}.intent.json`);
-	const intent = JSON.parse(readFileSync(path, "utf8"));
-	intent.revision += 1;
-	if (!revisionOnly) intent.scope_hint = [...intent.scope_hint, `docs/plans/${taskId}.notes.md`];
-	writeFileSync(path, `${JSON.stringify(intent, null, 2)}\n`);
-	execFileSync("git", ["commit", "-qm", `revise ${taskId}`, "--only", "--", `docs/plans/${taskId}.intent.json`], { cwd: root });
-}
-
-function commitOnBatchRef(root: string, head: string, branch: string | undefined, paths: string[], message: string): string {
-	if (!isBatchRef(branch)) throw new Error(`fixture expected a hidden batch ref, got ${branch ?? "no branch"}`);
-	const commit = buildScopedCommit(root, { parent: head, paths, message });
-	moveBatchRef(root, branch, head, commit);
-	return commit;
-}
-
-/** Claim the workspace for a fixture task through the store. */
-/** Make the live owner run look foreign to an approved batch lineage. */
-function makeOwnerForeignForTest(root: string, taskId: string): void {
-	const run = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
-	if (!run) throw new Error(`fixture run ${taskId} is missing`);
-	const record = JSON.parse(run.record_json) as Record<string, unknown>;
-	record.git_base_head = "b".repeat(40);
-	withKernelTransaction(root, (db) => {
-		db.prepare("UPDATE runs SET record_json = ?, enrollment_event_id = ? WHERE run_id = ?").run(
-			`${JSON.stringify(record, null, 2)}\n`,
-			`foreign-${taskId}`,
-			run.run_id,
-		);
-	});
-}
-
-/**
- * Replace the live owner with an unproven claim: the run mirrors the Kernel's
- * event-id derivation and task identity, but its enrollment event was created
- * after the batch's last durable write, so the batch cannot adopt it.
- */
-function forgeUnprovenClaimForTest(
-	root: string,
-	taskId: string,
-	enrollmentEventId: string,
-	createdAt: string,
-): void {
-	const run = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
-	if (!run) throw new Error(`fixture run ${taskId} is missing`);
-	withKernelTransaction(root, (db) => {
-		db.prepare("UPDATE runs SET enrollment_event_id = ?, updated_at = ? WHERE run_id = ?").run(
-			enrollmentEventId,
-			createdAt,
-			run.run_id,
-		);
-	});
-}
-
-/** Settle the live owner into its terminal audit pair through the store. */
-function settleOwnerForTest(root: string, taskId: string): void {
-	const run = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
-	if (!run) throw new Error(`fixture run ${taskId} is missing`);
-	const record = JSON.parse(run.record_json) as Record<string, unknown>;
-	record.lifecycle = "done";
-	record.artifact_state = "frozen";
-	record.intent_ref = {
-		...((record.intent_ref as Record<string, unknown>) ?? {}),
-		path: `docs/plans/archive/${taskId}.intent.json`,
-	};
-	const terminalBytes = `${JSON.stringify(record, null, 2)}\n`;
-	const tombstone = {
-		contract: "assurance_kernel/task_tombstone/v2",
-		task_id: taskId,
-		lifecycle_status: "terminal",
-		terminal_lifecycle: "done",
-		terminal_event_id: `complete:${taskId}:2026-08-12T10:00:04.000Z`,
-		final_record_hash: revisionForContent(terminalBytes),
-		terminalized_at: "2026-08-12T10:00:04.000Z",
-	};
-	const workspace = readWorkspaceStateRaw(root);
-	commitTerminalLocked(
-		root,
-		taskId,
-		{
-			contract: "assurance_kernel/workspace_transaction/v2",
-			task_id: taskId,
-			expected_record_hash: revisionForContent(run.record_json),
-			next_record_content: terminalBytes,
-			expected_workspace_hash: workspace.revision,
-			next_workspace_content: serializeWorkspace({
-				contract: "assurance_kernel/workspace/v1",
-				current_working: null,
-			}),
-		},
-		tombstone as never,
-	);
-	retryStoreFollowUps(root);
-}
-
-function claimWorkspaceForTest(root: string, taskId: string): void {
-	const intent = {
-		contract: "assurance_kernel/task_intent/v1",
-		task_id: taskId,
-		goal: "drift fixture",
-		acceptance: [{ id: "A1", assertion: "a1", verification: "bun test tests/x.test.ts" }],
-		scope_hint: ["docs/plans"],
-		risk: "routine" as const,
-		revision: 1,
-		owner: "user",
-	};
-	seedKernelRunForTest(root, {
-		task_id: taskId,
-		record: {
-			contract: "assurance_kernel/task_record/v4",
-			task_id: taskId,
-			intent_snapshot: intent,
-			intent_ref: {
-				path: `docs/plans/${taskId}.intent.json`,
-				content_hash: canonicalIntentHash(parseTaskIntentV1(intent)),
-			},
-			lifecycle: "active",
-			artifact_state: "active",
-			baseline: `sha256:${"a".repeat(64)}`,
-			git_base_head: "a".repeat(40),
-			attestations: [],
-			findings: [],
-			history: [],
-		},
-	});
-}
-
-/** Release the workspace: the owner settles and no active run remains. */
-function releaseWorkspaceForTest(root: string): void {
-	withKernelTransaction(root, (db) => {
-		db.prepare("UPDATE workspace SET current_run_id = NULL WHERE id = 1").run();
-		db.prepare("DELETE FROM runs WHERE state = 'active'").run();
-	});
-}
-
-/** Seed one active run: ownership is derived, so the claim is real state. */
-function seedInFlightOwner(root: string, taskId: string): void {
-	const intent = {
-		contract: "assurance_kernel/task_intent/v1",
-		task_id: taskId,
-		goal: "in-flight fixture",
-		acceptance: [{ id: "A1", assertion: "a1", verification: "bun test tests/x.test.ts" }],
-		scope_hint: ["docs/plans"],
-		risk: "routine" as const,
-		revision: 1,
-		owner: "user",
-	};
-	seedKernelRunForTest(root, {
-		task_id: taskId,
-		record: {
-			contract: "assurance_kernel/task_record/v4",
-			task_id: taskId,
-			intent_snapshot: intent,
-			intent_ref: {
-				path: `docs/plans/${taskId}.intent.json`,
-				content_hash: canonicalIntentHash(parseTaskIntentV1(intent)),
-			},
-			lifecycle: "active",
-			artifact_state: "active",
-			baseline: `sha256:${"a".repeat(64)}`,
-			git_base_head: "a".repeat(40),
-			attestations: [],
-			findings: [],
-			history: [],
-		},
-	});
-}
-
-function assertZeroWrites(root: string, expectedHead?: string, slug?: string): void {
-	expect(existsSync(join(root, ".imm", "state", "batch"))).toBe(false);
-	expect(existsSync(join(root, ".imm", "state", "batches"))).toBe(false);
-	expect(existsSync(join(root, ".imm", "state", "tasks"))).toBe(false);
-	if (expectedHead) {
-		const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
-		expect(head).toBe(expectedHead);
-	}
-	if (slug) {
-		const branchCheck = execFileSync("git", ["branch", "--list", `imm/${slug}`], { cwd: root, encoding: "utf8" }).trim();
-		expect(branchCheck).toBe("");
-	}
-}
-
-function createBatchFixture(slug = "pi-batch"): {
-	root: string;
-	head: string;
-	observation: GithubInitiativeObservation;
-} {
-	const root = mkdtempSync(join(tmpdir(), "pi-batch-test-"));
-	const head = copyGitTemplate(root);
-	mkdirSync(join(root, "docs", "plans"), { recursive: true });
-
-	// Child 1: routine
-	const intent1 = {
-		contract: "assurance_kernel/task_intent/v1",
-		task_id: `${slug}-c1`,
-		owner: "user",
-		goal: "child 1",
-		acceptance: [{ id: "acc-1", assertion: "c1 assertion", verification: "bun test" }],
-		scope_hint: [`docs/plans/${slug}-c1.intent.json`, `docs/specs/${slug}-c1.spec.md`, `docs/specs/archive/${slug}-c1.spec.md`],
-		risk: "routine",
-		revision: 1,
-	};
-	writeFileSync(join(root, "docs", "plans", `${slug}-c1.intent.json`), `${JSON.stringify(intent1, null, 2)}\n`);
-
-	// Child 2: material, blocked by c1
-	const intent2 = {
-		contract: "assurance_kernel/task_intent/v1",
-		task_id: `${slug}-c2`,
-		owner: "user",
-		goal: "child 2",
-		acceptance: [{ id: "acc-2", assertion: "c2 assertion", verification: "bun test" }],
-		scope_hint: [`docs/plans/${slug}-c2.intent.json`, `docs/specs/${slug}-c2.spec.md`, `docs/specs/archive/${slug}-c2.spec.md`],
-		risk: "material",
-		revision: 1,
-	};
-	writeFileSync(join(root, "docs", "plans", `${slug}-c2.intent.json`), `${JSON.stringify(intent2, null, 2)}\n`);
-
-	// Child 3: critical (must be excluded from batch)
-	const intent3 = {
-		contract: "assurance_kernel/task_intent/v1",
-		task_id: `${slug}-c3`,
-		owner: "user",
-		goal: "child 3 critical",
-		acceptance: [{ id: "acc-3", assertion: "c3 assertion", verification: "bun test" }],
-		scope_hint: [`docs/plans/${slug}-c3.intent.json`, `docs/specs/${slug}-c3.spec.md`, `docs/specs/archive/${slug}-c3.spec.md`],
-		risk: "critical",
-		revision: 1,
-	};
-	writeFileSync(join(root, "docs", "plans", `${slug}-c3.intent.json`), `${JSON.stringify(intent3, null, 2)}\n`);
-
-	execFileSync("git", ["add", "docs/plans/"], { cwd: root });
-	execFileSync("git", ["commit", "-q", "-m", "add child intents"], { cwd: root });
-	const updatedHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
-
-	const observation: GithubInitiativeObservation = {
-		contract: "immune_brain/github_initiative_observation/v1",
-		initiative_id: slug,
-		issue_number: 100,
-		tasks: [
-			{ task_id: `${slug}-c1`, slice_id: "S1", issue_number: 101, blocked_by: [] },
-			{ task_id: `${slug}-c2`, slice_id: "S2", issue_number: 102, blocked_by: [`${slug}-c1`] },
-			{ task_id: `${slug}-c3`, slice_id: "S3", issue_number: 103, blocked_by: [] },
-		],
-	};
-
-	return { root, head: updatedHead, observation };
-}
-
-type BatchToolDouble = {
-	name: string;
-	execute: (
-		toolCallId: string,
-		params: { initiative_slug: string },
-		signal: AbortSignal | undefined,
-		onUpdate: unknown,
-		ctx: unknown,
-	) => Promise<{ content: Array<{ type: string; text: string }>; details: unknown }>;
-};
-
-/**
- * Register the real extension with injectable seams and hand back the batch Tool
- * so tests can drive its `execute`, which is the path that shapes the
- * model-visible content.
- */
-function registerBatchTool(dependencies: {
-	readInitiative: () => Promise<GithubInitiativeObservation>;
-	batchKernel?: Record<string, unknown>;
-}): BatchToolDouble {
-	const tools: BatchToolDouble[] = [];
-	const ready = new Set<string>();
-	const project = (dependencies.batchKernel?.projectTask as any) ?? ((root: string, task: string) => projectAssurance(root, task, diffSnapshotOf));
-	const configured = dependencies.batchKernel?.advanceTask ? { ...dependencies, batchKernel: {
-		...dependencies.batchKernel, projectTask: async (root: string, task: string) => {
-			const fresh = await project(root, task);
-			return ready.has(task) && fresh.claim?.task_id === task
-				? { ...fresh, projection: { ...fresh.projection, artifact_state: "frozen" } } : fresh;
-		},
-	} } : dependencies;
-	registerBatchExtension(
-		{ registerTool: (tool: BatchToolDouble) => tools.push(tool), events: { emit: () => {} } } as unknown as ExtensionAPI,
-		configured as never,
-	);
-	const tool = tools.find((t) => t.name === "start_unattended_batch");
-	if (!tool) throw new Error("start_unattended_batch was not registered");
-	const execute = tool.execute.bind(tool);
-	tool.execute = async (...args: Parameters<typeof execute>) => {
-		let result = await execute(...args);
-		let content = JSON.parse(textOf(result));
-		while (dependencies.batchKernel?.advanceTask && content.report?.handoff) {
-			ready.add(content.report.handoff.task_id);
-			result = await execute(...args);
-			content = JSON.parse(textOf(result));
-		}
-		return result;
-	};
-	return tool;
-}
-
-function textOf(response: { content: Array<{ type: string; text: string }> }): string {
-	return response.content.map((entry) => entry.text).join("\n");
-}
-
-// The phase entry gate (ADR 0019) sits in front of this Tool. These tests
-// exercise what lies behind it, so their session records a real run entry
-// through the function the input handler calls; the entry is bound to the
-// workspace it was made in (ADR 0025), so each fixture root records its own.
-// tests/pi-phase-entry-gate.test.ts owns the refusals.
+const { executePiUnattendedBatch: runBatch, default: registerBatchExtension, mapDialogSelection } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
 const { recordPiPhaseInput } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
-const RUN_ENTRY_SESSION = { getSessionId: () => "pi-batch-authority-tests" };
+const SESSION = { getSessionId: () => "pi-batch-authority-tests" };
+const roots: string[] = [];
+afterAll(() => { for (const root of roots) rmSync(root, { recursive: true, force: true }); });
+const git = (root: string, ...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
 
-/** Minimal TUI context: the native confirm surface resolves to one selection. */
-function fakeTuiContext(root: string, selection: "confirm" | "decline" | "cancel"): unknown {
-	recordPiPhaseInput({ text: "/skill:imm-run", source: "interactive" }, { cwd: root, sessionManager: RUN_ENTRY_SESSION });
-	return {
-		cwd: root,
-		mode: "tui",
-		sessionManager: RUN_ENTRY_SESSION,
-		ui: { custom: async (factory: unknown) => {
-			const done = (value: unknown) => value;
-			void factory;
-			return done(selection);
-		} },
-	};
+function fixture(slug: string) {
+	const root = mkdtempSync(join(tmpdir(), "pi-batch-test-")); roots.push(root); copyGitTemplate(root);
+	mkdirSync(join(root, "docs/plans"), { recursive: true });
+	for (const [n, risk] of [[1, "routine"], [2, "material"], [3, "critical"]] as const) {
+		const task_id = `${slug}-c${n}`;
+		writeFileSync(join(root, `docs/plans/${task_id}.intent.json`), `${JSON.stringify({ contract: "assurance_kernel/task_intent/v1", task_id, owner: "user", goal: `child ${n}`,
+			acceptance: [{ id: `acc-${n}`, assertion: `c${n} assertion`, verification: "bun test" }],
+			scope_hint: [`docs/plans/${task_id}.intent.json`, `docs/specs/${task_id}.spec.md`, `docs/specs/archive/${task_id}.spec.md`], risk, revision: 1 }, null, 2)}\n`);
+	}
+	git(root, "add", "docs"); git(root, "commit", "-qm", "child intents");
+	const observation: GithubInitiativeObservation = { contract: "immune_brain/github_initiative_observation/v1", initiative_id: slug, issue_number: 100,
+		tasks: [1, 2, 3].map(n => ({ task_id: `${slug}-c${n}`, slice_id: `S${n}`, issue_number: 100 + n, blocked_by: n === 2 ? [`${slug}-c1`] : [] })) };
+	return { root, slug, head: git(root, "rev-parse", "HEAD"), observation };
 }
+function claim(root: string, task_id: string) {
+	const intent = parseTaskIntentV1({ contract: "assurance_kernel/task_intent/v1", task_id, owner: "user", goal: "claim fixture",
+		acceptance: [{ id: "A1", assertion: "a1", verification: "bun test" }], scope_hint: ["docs/plans"], risk: "routine", revision: 1 });
+	seedKernelRunForTest(root, { task_id, record: { contract: "assurance_kernel/task_record/v4", task_id, intent_snapshot: intent,
+		intent_ref: { path: `docs/plans/${task_id}.intent.json`, content_hash: canonicalIntentHash(intent) }, lifecycle: "active", artifact_state: "active",
+		baseline: `sha256:${"a".repeat(64)}`, git_base_head: git(root, "rev-parse", "HEAD"), attestations: [], findings: [], history: [] } });
+}
+function snapshot(root: string) {
+	return { head: git(root, "rev-parse", "HEAD"), branch: git(root, "symbolic-ref", "HEAD"), refs: git(root, "show-ref"),
+		index: readFileSync(join(root, ".git/index")), status: git(root, "status", "--porcelain=v1") };
+}
+function noBatchWrites(root: string) {
+	for (const path of [".imm/state/batch", ".imm/state/batches", ".imm/state/tasks"]) expect(existsSync(join(root, path))).toBe(false);
+}
+function register(readInitiative: () => Promise<GithubInitiativeObservation>) {
+	const tools: any[] = [];
+	registerBatchExtension({ registerTool: (tool: unknown) => tools.push(tool), events: { emit: () => {} } } as unknown as ExtensionAPI, { readInitiative });
+	return tools.find(tool => tool.name === "start_unattended_batch")!;
+}
+function context(root: string, selection: string, opened = { count: 0 }) {
+	recordPiPhaseInput({ text: "/skill:imm-run", source: "interactive" }, { cwd: root, sessionManager: SESSION });
+	return { cwd: root, mode: "tui", sessionManager: SESSION, ui: { custom: async () => { opened.count++; return selection; } } };
+}
+const textOf = (result: any) => JSON.parse(result.content.map((item: any) => item.text).join("\n"));
 
 describe("acc-pi-batch-gate", () => {
-	it("registers start_unattended_batch tool in Pi extension factory", () => {
-		const tools: Array<{ name: string; parameters?: unknown }> = [];
-		registerBatchExtension({
-			registerTool: (tool: { name: string; parameters?: unknown }) => tools.push(tool),
-		} as unknown as ExtensionAPI);
-
-		const batchTool = tools.find((t) => t.name === "start_unattended_batch");
-		expect(batchTool).toBeDefined();
-	});
-
-	it("rejects non-interactive invocation with unsupported_host reason", async () => {
-		const fixture = createBatchFixture("non-inter");
-		const result = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "non-inter",
-			interactive: false,
-			readInitiative: async () => fixture.observation,
-		});
-
-		expect(result).toEqual({
-			state: "rejected",
-			reason: "interactive TUI elicitation is unavailable in non-interactive mode",
-			recovery_action: "invoke through an interactive Pi TUI session in the current Host",
-		});
-	});
-
-	it("renders confirmation details derived from projectBatchPlan and Kernel state", async () => {
-		const fixture = createBatchFixture("content-derive");
-		let capturedConfirmation: { title: string; summary: string; details: string; planDigest: string } | null = null;
-
-		const result = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "content-derive",
-			readInitiative: async () => fixture.observation,
-			confirmBatch: async (details) => {
-				capturedConfirmation = details;
-				return "decline";
-			},
-		});
-
-		expect(result.state).toBe("rejected");
-		expect(result.reason).toBe("native interaction declined");
-		expect(capturedConfirmation).not.toBeNull();
-		const conf = capturedConfirmation!;
-		expect(conf.title).toContain("Authorize Unattended Batch: content-derive");
-		expect(conf.summary).toContain("Initiative: content-derive");
-		expect(conf.summary).toContain("Batch branch: imm/content-derive");
-		expect(conf.summary).toContain("Plan digest: sha256:");
-		// A valid critical child is an ordinary batch child (run-entry decision hosting D5).
-		expect(conf.details).toContain("Ordered children (3):");
-		expect(conf.details).toContain("content-derive-c1 (S1) [risk: routine]");
-		expect(conf.details).toContain("content-derive-c2 (S2) [risk: material]");
-		expect(conf.details).toContain("content-derive-c3 (S3) [risk: critical]");
-		expect(conf.details).not.toContain("Excluded children:");
-	});
-
-	it("rejects fail-closed with zero writes when confirmation port is missing or invalid", async () => {
-		const fixture = createBatchFixture("missing-port");
-
-		// 1. Missing confirmBatch port entirely
-		const missingPort = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "missing-port",
-			readInitiative: async () => fixture.observation,
-		});
-
-		expect(missingPort).toEqual({
-			state: "rejected",
-			reason: "native confirmation port is unavailable",
-			recovery_action: "retry through a fresh native gate in the current Host",
-		});
-		assertZeroWrites(fixture.root, fixture.head, "missing-port");
-
-		// 2. confirmBatch returns invalid / unexpected value
-		const invalidDecision = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "missing-port",
-			readInitiative: async () => fixture.observation,
-			confirmBatch: async () => "unexpected" as never,
-		});
-
-		expect(invalidDecision.state).toBe("rejected");
-		expect(invalidDecision.reason).toBe("native interaction returned no decision");
-		assertZeroWrites(fixture.root, fixture.head, "missing-port");
-	});
-
-	it.each([
-		["decline produces zero Kernel writes, zero batch state, and no new Git ref", "decline-zero", "decline", { state: "rejected", reason: "native interaction declined", recovery_action: "wait for a fresh literal-user request" }],
-		["cancel produces zero writes and cancelled state", "cancel-zero", "cancel", { state: "cancelled", reason: "native interaction cancelled", recovery_action: "wait for a fresh literal-user request" }],
-	] as [string, string, "decline" | "cancel", { state: string; reason: string; recovery_action: string }][])("%s", async (_title, slug, decision, expected) => {
-		const fixture = createBatchFixture(slug);
-		const priorHead = fixture.head;
-
-		const result = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: slug,
-			readInitiative: async () => fixture.observation,
-			confirmBatch: async () => decision,
-		});
-
-		expect(result).toEqual(expected);
-
-		assertZeroWrites(fixture.root, priorHead, slug);
-	});
-
-
-	it("a pending confirmation settles only on the caller's cancellation signal, with zero writes", async () => {
-		const fixture = createBatchFixture("pending-cancel");
-		const priorHead = fixture.head;
-		// The dialog either resolves "cancel" or rejects when its signal aborts.
-		for (const settle of ["resolve", "reject"] as const) {
-			const controller = new AbortController();
-			let settled = false;
-			const pending = executePiUnattendedBatch({
-				root: fixture.root,
-				initiativeSlug: "pending-cancel",
-				signal: controller.signal,
-				readInitiative: async () => fixture.observation,
-				confirmBatch: (details) =>
-					new Promise((resolve, reject) => {
-						details.signal?.addEventListener(
-							"abort",
-							() => (settle === "resolve" ? resolve("cancel") : reject(new Error("dialog aborted"))),
-							{ once: true },
-						);
-					}),
-			}).finally(() => {
-				settled = true;
-			});
-
-			// Nothing but the caller ends the wait: the gate has no window of its own.
-			await new Promise((resolve) => setTimeout(resolve, 150));
-			expect(settled).toBe(false);
-			controller.abort();
-
-			expect(await pending).toEqual({
-				state: "cancelled",
-				reason: "native interaction cancelled",
-				recovery_action: "wait for a fresh literal-user request",
-			});
-			assertZeroWrites(fixture.root, priorHead, "pending-cancel");
-		}
-	});
-
-	it("active workspace claim blocks execution with state: blocked and zero writes", async () => {
-		const fixture = createBatchFixture("active-claim");
-		seedInFlightOwner(fixture.root, "in-flight-task");
-		let dialogOpened = false;
-
-		const result = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "active-claim",
-			readInitiative: async () => fixture.observation,
-			confirmBatch: async () => {
-				dialogOpened = true;
-				return "accept";
-			},
-		});
-
-		expect(dialogOpened).toBe(false);
-		expect(result.state).toBe("blocked");
-		expect(result.reason).toContain("in-flight-task");
-		expect(result.recovery_action).toContain("resolve or stop the active task");
-		expect(existsSync(join(fixture.root, ".imm", "state", "batches"))).toBe(false);
-	});
-
-	it("failing branch preflight rejects with state: rejected and zero writes", async () => {
-		const fixture = createBatchFixture("branch-preflight");
-		execFileSync("git", ["branch", "imm/branch-preflight"], { cwd: fixture.root });
-		let dialogOpened = false;
-
-		const result = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "branch-preflight",
-			readInitiative: async () => fixture.observation,
-			confirmBatch: async () => {
-				dialogOpened = true;
-				return "accept";
-			},
-		});
-
-		expect(dialogOpened).toBe(false);
-		expect(result.state).toBe("rejected");
-		expect(result.reason).toContain("branch refs/heads/imm/branch-preflight already exists");
-		expect(result.recovery_action).toContain("delete or rename the conflicting branch");
-		assertZeroWrites(fixture.root, fixture.head);
-	});
-
-	it("critical-only Parent opens the ordinary batch gate instead of a native single-task handoff (D5)", async () => {
-		const fixture = createBatchFixture("empty-enrollable");
-		const observation: GithubInitiativeObservation = {
-			contract: "immune_brain/github_initiative_observation/v1",
-			initiative_id: "empty-enrollable",
-			issue_number: 101,
-			tasks: [
-				{ task_id: "empty-enrollable-c3", slice_id: "S3", issue_number: 103, blocked_by: [] },
-			],
-		};
-		let details = "";
-
-		const result = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "empty-enrollable",
-			readInitiative: async () => observation,
-			confirmBatch: async (confirmation) => {
-				details = confirmation.details;
-				return "decline";
-			},
-		});
-
-		expect(details).toContain("empty-enrollable-c3 (S3) [risk: critical]");
-		expect(result.state).toBe("rejected");
-		assertZeroWrites(fixture.root, fixture.head, "empty-enrollable");
-	});
-
-	// Spec branch-boundary D5/D8: a changed authority subject and a changed
-	// dependency are both a different plan at the gate.
-	it.each(["subject", "dependency"])("plan digest drift (%s) after confirmation rejects execution", async (drift) => {
-		const fixture = createBatchFixture("drift-plan");
-		let confirmed = false;
-
-		const result = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "drift-plan",
-			readInitiative: async () => {
-				if (confirmed && drift === "subject") {
-					// Mutate plan on disk before accept continues; the goal is part of the authority subject.
-					const c1Path = join(fixture.root, "docs", "plans", "drift-plan-c1.intent.json");
-					const c1 = JSON.parse(readFileSync(c1Path, "utf8"));
-					writeFileSync(c1Path, `${JSON.stringify({ ...c1, revision: 2, goal: "revised goal" }, null, 2)}\n`);
-				}
-				if (confirmed && drift === "dependency")
-					return { ...fixture.observation, tasks: fixture.observation.tasks.map((t) => ({ ...t, blocked_by: [] })) };
-				return fixture.observation;
-			},
-			confirmBatch: async () => {
-				confirmed = true;
-				return "accept";
-			},
-		});
-
-		expect(result.state).toBe("rejected");
-		expect(result.reason).toContain("batch plan changed after native confirmation");
-		expect(result.recovery_action).toContain("retry through a fresh native gate");
-	});
-
-	// Spec branch-boundary D7 / AC3: a revision-only bump and a same-directory scope
-	// edit mid-batch leave the authority subject unchanged, so the batch
-	// runs to completion through the real Kernel enrollment.
-	it("a compatible revision mid-batch still enrolls every child and completes", async () => {
-		const fixture = createBatchFixture("compatible-revision");
-		const commitsByTask = new Map<string, string>();
-		let revised = false;
-		const enrolledRevisions: Array<[string, number]> = [];
-
-		const result = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "compatible-revision",
-			readInitiative: async () => fixture.observation,
-			batchKernel: {
-				advanceTask: async (_root: string, taskId: string) => {
-					enrolledRevisions.push([taskId, readTaskRecordRaw(fixture.root, taskId).record!.intent_snapshot.revision]);
-					// While the first child runs, its pending siblings are revised compatibly.
-					if (!revised) {
-						revised = true;
-						reviseCompatibly(fixture.root, "compatible-revision-c2", false);
-						reviseCompatibly(fixture.root, "compatible-revision-c3");
-					}
-					releaseWorkspaceForTest(fixture.root);
-					return { state: "completed" };
-				},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
-					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "child commit");
-					commitsByTask.set(taskId, commit);
-					return { commit };
-				},
-				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
-			},
-			confirmBatch: async () => "accept",
-		});
-
-		expect(result.state).toBe("started");
-		expect(result.report.batch_state).toBe("completed");
-		expect(result.report.children.map((c: { state: string; reason: string | null }) => [c.state, c.reason])).toEqual([["committed", null], ["committed", null], ["committed", null]]);
-		// Each revised child enrolled its revised sidecar under the original authorization.
-		expect(Object.fromEntries(enrolledRevisions)).toEqual({ "compatible-revision-c1": 1, "compatible-revision-c2": 2, "compatible-revision-c3": 2 });
-	});
-
-	it("an answer given after any delay is accepted and the authorization it issues carries no expiry", async () => {
-		const fixture = createBatchFixture("pi-ttl");
-		const commitsByTask = new Map<string, string>();
-		const confirmed: Array<{ summary: string }> = [];
-		let clock: ReturnType<typeof spyOn> | undefined;
-
-		const result = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "pi-ttl",
-			readInitiative: async () => fixture.observation,
-			batchKernel: {
-				advanceTask: async () => {
-					// Clear task claim as each child completes
-					releaseWorkspaceForTest(fixture.root);
-					return { state: "completed" };
-				},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
-					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "child commit");
-					commitsByTask.set(taskId, commit);
-					return { commit };
-				},
-				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
-			},
-			confirmBatch: async (details) => {
-				confirmed.push(details);
-				// The user answers a year later by the wall clock.
-				const answeredAt = Date.now() + 365 * 24 * 60 * 60 * 1000;
-				clock = spyOn(Date, "now").mockReturnValue(answeredAt);
-				return "accept";
-			},
-		}).finally(() => clock?.mockRestore());
-		expect(result.state).toBe("started");
-
-		const state = JSON.parse(
-			readFileSync(join(fixture.root, ".imm", "state", "batches", `${result.batch_id}.json`), "utf8"),
-		);
-		expect(state).not.toHaveProperty("authorization_expires_at");
-		expect(state.budget).toEqual({ max_children: state.budget.max_children, qa_failure_limit: state.budget.qa_failure_limit });
-		// The gate shows only the bounds that still exist.
-		expect(confirmed[0]!.summary).toContain(`Budget: max_children=${state.budget.max_children}, qa_failure_limit=${state.budget.qa_failure_limit}`);
-		expect(confirmed[0]!.summary).not.toMatch(/expires|deadline/i);
-	});
-
-	it("review-2: cancellation right before batch execution produces cancelled state with zero writes", async () => {
-		const fixture = createBatchFixture("cancel-pre-issue");
-		const controller = new AbortController();
-
-		const result = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "cancel-pre-issue",
-			signal: controller.signal,
-			readInitiative: async () => fixture.observation,
-			confirmBatch: async () => {
-				// Abort right before the issuance boundary
-				controller.abort();
-				return "accept";
-			},
-		});
-
-		expect(result.state).toBe("cancelled");
-		expect(result.reason).toContain("cancelled");
-		expect(existsSync(join(fixture.root, ".imm", "state", "batch"))).toBe(false);
-		const branchCheck = execFileSync("git", ["branch", "--list", "imm/cancel-pre-issue"], { cwd: fixture.root, encoding: "utf8" }).trim();
-		expect(branchCheck).toBe("");
-	});
-
-	it("review-pi-batch-projection-scope: projectAssuranceForTask successfully projects existing enrolled records", async () => {
-		const fixture = createBatchFixture("proj-scope");
-		const { projectAssuranceForTask } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
-
-		// The enrolled record lives in the store; the workspace itself stays free.
-		const { readTaskIntent } = await import("../plugins/immune-brain/runtime/kernel/intent");
-		const read = await readTaskIntent(fixture.root, "proj-scope-c1", "docs/plans/proj-scope-c1.intent.json");
-		seedKernelRunForTest(fixture.root, {
-			task_id: "proj-scope-c1",
-			record: {
-				contract: "assurance_kernel/task_record/v4",
-				task_id: "proj-scope-c1",
-				git_base_head: fixture.head,
-				baseline: `sha256:${"0".repeat(64)}`,
-				intent_snapshot: read.intent,
-				intent_ref: { path: "docs/plans/proj-scope-c1.intent.json", content_hash: read.content_hash },
-				lifecycle: "active",
-				artifact_state: "active",
-				attestations: [],
-				findings: [],
-				history: [],
-			},
-		});
-
-		const proj = await projectAssuranceForTask(fixture.root, "proj-scope-c1");
-		expect(proj.error).toBeNull();
-		expect(proj.projection.lifecycle).toBe("active");
-	});
-
-	it("review-pi-batch-review-handoff: batch pausing for review resumes under same batch identity", async () => {
-		const fixture = createBatchFixture("review-resume");
-		const commitsByTask = new Map<string, string>();
-		let step = 0;
-
-		const result1 = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "review-resume",
-			readInitiative: async () => fixture.observation,
-			batchKernel: {
-				advanceTask: async () => {
-					step++;
-					if (step === 1) {
-						// Pauses for review
-						return { state: "review_ready", operation_id: "op-1", agent_params: { prompt: "review" } as never };
-					}
-					return { state: "completed" };
-				},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string) => {
-					// Simulate artifact freeze transition during review
-					const activePath = join(fixture.root, "docs", "plans", "review-resume-c1.intent.json");
-					const archiveDir = join(fixture.root, "docs", "plans", "archive");
-					mkdirSync(archiveDir, { recursive: true });
-					const archivePath = join(archiveDir, "review-resume-c1.intent.json");
-					if (existsSync(activePath)) {
-						renameSync(activePath, archivePath);
-						const recPath = join(fixture.root, ".imm", "state", "tasks", "review-resume-c1.json");
-						if (existsSync(recPath)) {
-							const rec = JSON.parse(readFileSync(recPath, "utf8"));
-							rec.intent_ref.path = "docs/plans/archive/review-resume-c1.intent.json";
-							rec.artifact_state = "frozen";
-							writeFileSync(recPath, JSON.stringify(rec, null, 2) + "\n");
-						}
-					}
-					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					execFileSync("git", ["add", "-A"], { cwd: fixture.root });
-					execFileSync("git", ["commit", "-q", "-m", "child commit with frozen artifacts"], { cwd: fixture.root });
-					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-					commitsByTask.set(taskId, commit);
-					return { commit };
-				},
-				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
-			},
-			confirmBatch: async () => "accept",
-		});
-
-		expect(result1.state).toBe("started");
-		expect(result1.report.batch_state).toBe("running");
-		expect(result1.report.next_action).toContain("Submit the reserved foreground Review verdict");
-		expect(result1.review_dispatch).toBeDefined();
-		expect(result1.review_dispatch?.operation_id).toBe("op-1");
-		expect(result1.review_dispatch?.agent_params).toBeDefined();
-		const batchId = result1.batch_id;
-
-		// Simulate in-flight staged changes strictly within authorized child scope: the
-		// child's own spec path is in its scope_hint, a shared spec path is not.
-		const inScopeSpecPath = join(fixture.root, "docs", "specs", "review-resume-c1.spec.md");
-		mkdirSync(join(fixture.root, "docs", "specs"), { recursive: true });
-		writeFileSync(inScopeSpecPath, "# Staged in-flight spec modification\n");
-		execFileSync("git", ["add", "docs/specs/review-resume-c1.spec.md"], { cwd: fixture.root });
-
-		// Resuming the same batch with frozen/archived child sidecar and in-flight authorized uncommitted changes must succeed!
-		const result2 = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "review-resume",
-			readInitiative: async () => fixture.observation,
-			batchKernel: {
-				advanceTask: async () => {
-					releaseWorkspaceForTest(fixture.root);
-					return { state: "completed" };
-				},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
-					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "child commit 2");
-					commitsByTask.set(taskId, commit);
-					return { commit };
-				},
-				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
-			},
-			confirmBatch: async () => "accept",
-		});
-
-		expect(result2.state).toBe("started");
-		expect(result2.batch_id).toBe(batchId);
-		expect(result2.report.batch_state).toBe("completed");
-	});
-
-	it("review-3: a parked batch carrying a retired past expiry resumes on fresh confirmation, and a decline leaves it byte-identical", async () => {
-		const fixture = createBatchFixture("expiry-resume");
-		const commitsByTask = new Map<string, string>();
-		let step = 0;
-
-		const result1 = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "expiry-resume",
-			readInitiative: async () => fixture.observation,
-			batchKernel: {
-				advanceTask: async () => {
-					step++;
-					if (step === 1) {
-						return { state: "review_ready", operation_id: "op-exp", agent_params: { prompt: "review" } as never };
-					}
-					return { state: "completed" };
-				},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
-					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "child commit");
-					commitsByTask.set(taskId, commit);
-					return { commit };
-				},
-				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
-			},
-			confirmBatch: async () => "accept",
-		});
-
-		expect(result1.state).toBe("started");
-		const batchId = result1.batch_id;
-
-		// Mutate the persisted batch state to have an expired authorization_expires_at (in the past)
-		const batchStatePath = join(fixture.root, ".imm", "state", "batches", `${batchId}.json`);
-		const batchState = JSON.parse(readFileSync(batchStatePath, "utf8"));
-		batchState.authorization_expires_at = "2020-01-01T00:00:00.000Z";
-		batchState.batch_state = "needs_human";
-		const priorBytes = JSON.stringify(batchState, null, 2) + "\n";
-		writeFileSync(batchStatePath, priorBytes);
-
-		// If user declines, the persisted batch record must remain byte-for-byte unchanged!
-		const declineResult = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "expiry-resume",
-			readInitiative: async () => fixture.observation,
-			confirmBatch: async () => "decline",
-		});
-		expect(declineResult.state).toBe("rejected");
-		expect(readFileSync(batchStatePath, "utf8")).toBe(priorBytes);
-
-		// Resuming the batch with new user confirmation must issue a fresh future expiry and complete!
-		const result2 = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "expiry-resume",
-			readInitiative: async () => fixture.observation,
-			batchKernel: {
-				advanceTask: async () => {
-					releaseWorkspaceForTest(fixture.root);
-					return { state: "completed" };
-				},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
-					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "child commit 2");
-					commitsByTask.set(taskId, commit);
-					return { commit };
-				},
-				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
-			},
-			confirmBatch: async () => "accept",
-		});
-
-		expect(result2.state).toBe("started");
-		expect(result2.batch_id).toBe(batchId);
-		expect(result2.report.batch_state).toBe("completed");
-	});
-
-	it("review-3: foreign claim on child task blocks resumption with zero writes", async () => {
-		const fixture = createBatchFixture("foreign-claim");
-		const commitsByTask = new Map<string, string>();
-		let step = 0;
-
-		const result1 = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "foreign-claim",
-			readInitiative: async () => fixture.observation,
-			batchKernel: {
-				advanceTask: async () => {
-					step++;
-					if (step === 1) {
-						return { state: "review_ready", operation_id: "op-fc", agent_params: { prompt: "review" } as never };
-					}
-					return { state: "completed" };
-				},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
-					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "child commit");
-					commitsByTask.set(taskId, commit);
-					return { commit };
-				},
-				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
-			},
-			confirmBatch: async () => "accept",
-		});
-
-		expect(result1.state).toBe("started");
-
-		// 1. Foreign claim case A: Same branch (imm/foreign-claim), same HEAD, empty history: [], but pending in batch state
-		const batchStatePath = join(fixture.root, ".imm", "state", "batches", `${result1.batch_id}.json`);
-		const batchState = JSON.parse(readFileSync(batchStatePath, "utf8"));
-		batchState.children = batchState.children.map((c: any) => c.task_id === "foreign-claim-c1" ? { ...c, state: "pending" } : c);
-		writeFileSync(batchStatePath, JSON.stringify(batchState, null, 2) + "\n");
-
-		const child1RecordPath = join(fixture.root, ".imm", "state", "tasks", "foreign-claim-c1.json");
-		if (existsSync(child1RecordPath)) {
-			const record = JSON.parse(readFileSync(child1RecordPath, "utf8"));
-			record.history = [];
-			writeFileSync(child1RecordPath, JSON.stringify(record, null, 2) + "\n");
-		}
-
-		// Make the live owner foreign to this batch: its recorded lineage is not
-		// any head the approved batch produced.
-		makeOwnerForeignForTest(fixture.root, "foreign-claim-c1");
-
-		const batchStateBefore = readFileSync(batchStatePath, "utf8");
-		const headBefore = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-
-		// Resuming on same branch at same HEAD with foreign claim must fail closed with state: blocked!
-		const result2 = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "foreign-claim",
-			readInitiative: async () => fixture.observation,
-			confirmBatch: async () => "accept",
-		});
-
-		expect(result2.state).toBe("blocked");
-		expect(result2.reason).toContain("foreign-claim-c1");
-		expect(readFileSync(batchStatePath, "utf8")).toBe(batchStateBefore);
-		expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim()).toBe(headBefore);
-	});
-
-	it("review-3b: unproven enrolled/needs_human claim keeps resumption blocked with zero writes", async () => {
-		const fixture = createBatchFixture("unproven-claim");
-		const commitsByTask = new Map<string, string>();
-		let step = 0;
-
-		const result1 = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "unproven-claim",
-			readInitiative: async () => fixture.observation,
-			batchKernel: {
-				advanceTask: async () => {
-					step++;
-					if (step === 1) {
-						return { state: "review_ready", operation_id: "op-uc", agent_params: { prompt: "review" } as never };
-					}
-					return { state: "completed" };
-				},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
-					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "child commit");
-					commitsByTask.set(taskId, commit);
-					return { commit };
-				},
-				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
-			},
-			confirmBatch: async () => "accept",
-		});
-
-		expect(result1.state).toBe("started");
-
-		const batchStatePath = join(fixture.root, ".imm", "state", "batches", `${result1.batch_id}.json`);
-
-		// Forge an independent claim that mirrors the Kernel's event-id derivation and
-		// the task identity, but was created after the batch's last durable write.
-		const batchUpdatedAt = JSON.parse(readFileSync(batchStatePath, "utf8")).updated_at;
-		const foreignCreatedAt = new Date(Date.parse(batchUpdatedAt) + 1000).toISOString();
-		forgeUnprovenClaimForTest(
-			fixture.root,
-			"unproven-claim-c1",
-			`enroll-unproven-claim-c1-${foreignCreatedAt}`,
-			foreignCreatedAt,
-		);
-
-		const headBefore = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-
-		for (const childState of ["enrolled", "needs_human"]) {
-			const batchState = JSON.parse(readFileSync(batchStatePath, "utf8"));
-			batchState.children = batchState.children.map((c: { task_id: string }) =>
-				c.task_id === "unproven-claim-c1"
-					? { ...c, state: childState, reason: childState === "needs_human" ? "parked for test" : null }
-					: c,
-			);
-			const mutatedBytes = JSON.stringify(batchState, null, 2) + "\n";
-			writeFileSync(batchStatePath, mutatedBytes);
-
-			const result2 = await executePiUnattendedBatch({
-				root: fixture.root,
-				initiativeSlug: "unproven-claim",
-				readInitiative: async () => fixture.observation,
-				confirmBatch: async () => "accept",
-			});
-
-			expect(result2.state).toBe("blocked");
-			expect(result2.reason).toContain("unproven-claim-c1");
-			expect(readFileSync(batchStatePath, "utf8")).toBe(mutatedBytes);
-			expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim()).toBe(headBefore);
-		}
-	});
-
-	it("corrupt batch state fails closed with zero writes", async () => {
-		const fixture = createBatchFixture("corrupt-batch");
-		const headBefore = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-		const batchesDir = join(fixture.root, ".imm", "state", "batches");
-		mkdirSync(batchesDir, { recursive: true });
-		writeFileSync(join(batchesDir, "batch-corrupt-batch-123.json"), "{ not valid json");
-
-		const result = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "corrupt-batch",
-			readInitiative: async () => fixture.observation,
-			confirmBatch: async () => "accept",
-		});
-
-		expect(result.state).toBe("blocked");
-		expect(result.reason).toContain("unreadable or invalid");
-		expect(result.recovery_action).toContain("resolve or remove");
-		expect(existsSync(join(fixture.root, ".imm", "state", "tasks"))).toBe(false);
-		expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim()).toBe(headBefore);
-	});
-
-	it("review-1: shared progression retains review reservation for foreground submit_review", async () => {
-		const { getSharedPiProgression } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
-		const progression1 = await getSharedPiProgression();
-		const progression2 = await getSharedPiProgression();
-		expect(progression1).toBe(progression2);
-	});
-
-	it("native-decline-unreachable: dialog exposes decline; mapping covers cancel and Escape with zero writes", async () => {
-		const { mapDialogSelection } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
-		const fixture = createBatchFixture("native-decline");
-		const headBefore = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-
-		// The registered dialog exposes three actions; the mapping is the testable
-		// unit because the dialog sits behind plan projection. Escape is cancel.
-		expect(mapDialogSelection("confirm")).toBe("accept");
-		expect(mapDialogSelection("confirm_delegate")).toBe("accept_delegate");
-		expect(mapDialogSelection("decline")).toBe("decline");
-		expect(mapDialogSelection("cancel")).toBe("cancel");
-		expect(mapDialogSelection(undefined)).toBe("cancel");
-
-		// The tool registers the start_unattended_batch entry.
-		const tools: Array<{ name: string }> = [];
-		registerBatchExtension({ registerTool: (tool: { name: string }) => tools.push(tool) } as unknown as ExtensionAPI);
-		expect(tools.some((t) => t.name === "start_unattended_batch")).toBe(true);
-
-		// The mapped decisions flow into the gate the same suite exercises directly;
-		// here we assert those outcomes plus zero writes end to end.
-		const declineResult = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "native-decline",
-			readInitiative: async () => fixture.observation,
-			confirmBatch: async () => mapDialogSelection("decline"),
-		});
-		expect(declineResult.state).toBe("rejected");
-		expect(declineResult.reason).toContain("native interaction declined");
-
-		const escapeResult = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "native-decline",
-			readInitiative: async () => fixture.observation,
-			confirmBatch: async () => mapDialogSelection(undefined),
-		});
-		expect(escapeResult.state).toBe("cancelled");
-		expect(escapeResult.reason).toContain("native interaction cancelled");
-
-		expect(existsSync(join(fixture.root, ".imm", "state", "batches"))).toBe(false);
-		expect(existsSync(join(fixture.root, ".imm", "state", "tasks"))).toBe(false);
-		expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim()).toBe(headBefore);
-	});
-
-	it("frozen-child-risk-fallback: archived routine sidecar keeps routine risk in resume confirmation", async () => {
-		const fixture = createBatchFixture("frozen-risk");
-		const commitsByTask = new Map<string, string>();
-		let step = 0;
-
-		const result1 = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "frozen-risk",
-			readInitiative: async () => fixture.observation,
-			batchKernel: {
-				advanceTask: async () => {
-					step++;
-					if (step === 1) return { state: "review_ready", operation_id: "op-fr", agent_params: { prompt: "review" } as never };
-					return { state: "completed" };
-				},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
-					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "child commit");
-					commitsByTask.set(taskId, commit);
-					return { commit };
-				},
-				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
-			},
-			confirmBatch: async () => "accept",
-		});
-
-		expect(result1.state).toBe("started");
-
-		// Simulate a real freeze before the first resume: the child sidecar is moved
-		// to archive and the relocation is staged (Kernel-owned artifact transition).
-		const activePath = join(fixture.root, "docs", "plans", "frozen-risk-c1.intent.json");
-		const archiveDir = join(fixture.root, "docs", "plans", "archive");
-		mkdirSync(archiveDir, { recursive: true });
-		renameSync(activePath, join(archiveDir, "frozen-risk-c1.intent.json"));
-		execFileSync("git", ["add", "-A"], { cwd: fixture.root });
-
-		// An intact, still-binding authorization is reused without a second gate, so
-		// park the persisted batch for a human to keep this resume re-confirming.
-		const batchStatePath = join(fixture.root, ".imm", "state", "batches", `${result1.batch_id}.json`);
-		const batchState = JSON.parse(readFileSync(batchStatePath, "utf8"));
-		batchState.batch_state = "needs_human";
-		writeFileSync(batchStatePath, `${JSON.stringify(batchState, null, 2)}\n`);
-
-		let capturedConfirmation: { details: string } | null = null;
-		const result2 = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "frozen-risk",
-			readInitiative: async () => fixture.observation,
-			confirmBatch: async (details) => {
-				capturedConfirmation = details;
-				return "decline";
-			},
-		});
-
-		expect(result2.state).toBe("rejected");
-		expect(capturedConfirmation).not.toBeNull();
-		// The routine child must keep its real risk; a stale reconstructed path must
-		// never fabricate "material".
-		expect(capturedConfirmation!.details).toContain("frozen-risk-c1 (S1) [risk: routine]");
-		expect(capturedConfirmation!.details).not.toContain("frozen-risk-c1 (S1) [risk: material]");
-	});
-
-	it("review-pi-batch-package-runtime: package.json files whitelist includes runtime/unattended", async () => {
-		const pkg = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8"));
-		expect(pkg.files).toContain("plugins/immune-brain/runtime/unattended");
-		const mod = await import("../plugins/immune-brain/runtime/unattended/batch_plan");
-		expect(mod.projectBatchPlan).toBeDefined();
-
-		const piExtPkg = JSON.parse(
-			readFileSync(join(process.cwd(), "plugins/immune-brain/.pi-extension/package.json"), "utf8"),
-		);
-		expect(piExtPkg.pi?.extensions).toContain("./imm-unattended-batch.ts");
-	});
-
-	// review-f72ae870f4f0-2: the Parent consumes the model-visible content, so the
-	// full structured result must reach it through the registered Tool, not only
-	// through Tool details. These tests drive the registered Tool `execute`.
-	it("review-tool-content-review-dispatch: registered Tool content carries report and review_dispatch", async () => {
-		const fixture = createBatchFixture("tool-content-review");
-		const commitsByTask = new Map<string, string>();
-		let step = 0;
-
-		const tool = registerBatchTool({
-			readInitiative: async () => fixture.observation,
-			batchKernel: {
-				advanceTask: async () => {
-					step++;
-					if (step === 1) return { state: "review_ready", operation_id: "op-content", agent_params: { prompt: "review" } as never };
-					return { state: "completed" };
-				},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
-					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "tool content commit");
-					commitsByTask.set(taskId, commit);
-					return { commit };
-				},
-				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
-			},
-		});
-
-		const response = await tool.execute("tool-call-content", { initiative_slug: "tool-content-review" }, undefined, undefined, fakeTuiContext(fixture.root, "confirm"));
-		const content = JSON.parse(textOf(response));
-
-		expect(content.state).toBe("started");
-		expect(content.report.batch_state).toBe("running");
-		expect(content.review_dispatch.operation_id).toBe("op-content");
-		expect(content.review_dispatch.agent_params.prompt).toBe("review");
-		expect(content.report.next_action).toContain("Review");
-	});
-
-	it("review-tool-content-needs-human: registered Tool content exposes the parked reason", async () => {
-		const fixture = createBatchFixture("tool-content-parked");
-
-		const tool = registerBatchTool({
-			readInitiative: async () => fixture.observation,
-			batchKernel: {
-				advanceTask: async () => ({ state: "failed", reason: "projection unavailable" }),
-			},
-		});
-
-		const response = await tool.execute("tool-call-parked", { initiative_slug: "tool-content-parked" }, undefined, undefined, fakeTuiContext(fixture.root, "confirm"));
-		const content = JSON.parse(textOf(response));
-
-		expect(content.state).toBe("started");
-		expect(content.report.batch_state).toBe("needs_human");
-		expect(content.report.children.some((child: { reason: string | null }) => (child.reason ?? "").includes("projection unavailable"))).toBe(true);
-		expect(content.report.next_action.length).toBeGreaterThan(0);
-	});
-
-	it("a confirmed start returns the non-blocking manifest of every child (Spec D6)", async () => {
-		const fixture = createBatchFixture("tool-content-manifest");
-		// The confirmed start itself, before any Parent turn resumes the batch.
-		const result = await executePiBatchOnce({
-			root: fixture.root,
-			initiativeSlug: "tool-content-manifest",
-			readInitiative: async () => fixture.observation,
-			batchKernel: { advanceTask: async () => ({ state: "failed", reason: "projection unavailable" }) } as never,
-			confirmBatch: async () => "accept",
-		});
-
-		if (result.state !== "started") throw new Error(`expected started, got ${result.state}`);
-		const child = (n: number, slice: string, risk: string) => ({
-			task_id: `tool-content-manifest-c${n}`,
-			slice_id: slice,
-			risk,
-			scope: [`docs/plans/tool-content-manifest-c${n}.intent.json`, `docs/specs/archive/tool-content-manifest-c${n}.spec.md`, `docs/specs/tool-content-manifest-c${n}.spec.md`],
-			verification: ["bun test"],
-		});
-		expect(result.manifest?.children).toEqual(expect.arrayContaining([child(1, "S1", "routine"), child(2, "S2", "material"), child(3, "S3", "critical")]));
-		expect(result.manifest?.children).toHaveLength(3);
-	});
-});
-
-describe("settled-child resume preflight", () => {
-	it("review-settled-child-resume-scope: resumes a settled child with legitimate staged in-scope work", async () => {
-		const fixture = createBatchFixture("settled-scope");
-		// Give the child an in-scope source path so its staged work is legitimate.
-		const c1IntentPath = join(fixture.root, "docs", "plans", "settled-scope-c1.intent.json");
-		const c1Intent = JSON.parse(readFileSync(c1IntentPath, "utf8"));
-		c1Intent.scope_hint = [...c1Intent.scope_hint, "src/impl.ts"];
-		writeFileSync(c1IntentPath, `${JSON.stringify(c1Intent, null, 2)}\n`);
-		execFileSync("git", ["add", c1IntentPath], { cwd: fixture.root });
-		execFileSync("git", ["commit", "-q", "-m", "widen child scope"], { cwd: fixture.root });
-
-		let step = 0;
-		const commitsByTask = new Map<string, string>();
-
-		// First run pauses on the reserved Review, so the child stays in-flight.
-		const first = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "settled-scope",
-			readInitiative: async () => fixture.observation,
-			batchKernel: {
-				advanceTask: async () => {
-					step++;
-					if (step === 1) return { state: "review_ready", operation_id: "op-settled", agent_params: { prompt: "review" } as never };
-					return { state: "completed" };
-				},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
-					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "settled commit");
-					commitsByTask.set(taskId, commit);
-					return { commit };
-				},
-				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
-			},
-			confirmBatch: async () => "accept",
-		});
-		expect(first.state).toBe("started");
-
-		// The Kernel settles the child before the batch commits it: the terminal run
-		// replaces the active owner, and only the immutable audit pair remains as
-		// tracked evidence (staged, because terminal evidence is Git-tracked).
-		settleOwnerForTest(fixture.root, "settled-scope-c1");
-		execFileSync("git", ["add", ".imm/audit"], { cwd: fixture.root });
-
-		const batchPath = join(fixture.root, ".imm", "state", "batches", `${first.batch_id}.json`);
-		const batchRecord = JSON.parse(readFileSync(batchPath, "utf8"));
-		batchRecord.children = batchRecord.children.map((child: { task_id: string }) => child.task_id === "settled-scope-c1" ? { ...child, state: "settled" } : child);
-		writeFileSync(batchPath, `${JSON.stringify(batchRecord, null, 2)}\n`);
-
-		// A legitimate in-scope staged change from the settled child.
-		mkdirSync(join(fixture.root, "src"), { recursive: true });
-		writeFileSync(join(fixture.root, "src", "impl.ts"), "export const impl = 7; // settled work\n");
-		execFileSync("git", ["add", "src/impl.ts"], { cwd: fixture.root });
-
-		const resumed = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "settled-scope",
-			readInitiative: async () => fixture.observation,
-			batchKernel: {
-				advanceTask: async () => ({ state: "completed" }),
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string) => {
-					execFileSync("git", ["add", "-A"], { cwd: fixture.root });
-					execFileSync("git", ["commit", "-q", "-m", "settled resume commit"], { cwd: fixture.root });
-					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-					commitsByTask.set(taskId, commit);
-					return { commit };
-				},
-				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
-			},
-			confirmBatch: async () => "accept",
-		});
-
-		// A settled child's staged in-scope work must not be misread as out-of-scope.
-		expect(resumed.state).toBe("started");
-	});
-});
-
-describe("batch authorization reuse (ADR-0005 Decision 1)", () => {
-	/** Round 1 leaves a running batch whose child paused for foreground Review. */
-	async function startRunningBatch(slug: string) {
-		const fixture = createBatchFixture(slug);
-		const commitsByTask = new Map<string, string>();
-		let step = 0;
-		const result = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: slug,
-			readInitiative: async () => fixture.observation,
-			batchKernel: {
-				advanceTask: async () => {
-					step++;
-					if (step === 1) return { state: "review_ready", operation_id: "op-reuse", agent_params: { prompt: "review" } as never };
-					return { state: "completed" };
-				},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
-					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "child commit");
-					commitsByTask.set(taskId, commit);
-					return { commit };
-				},
-				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
-			},
-			confirmBatch: async () => "accept",
-		});
-		if (result.state !== "started") throw new Error(`batch did not start: ${JSON.stringify(result)}`);
-		return { fixture, batchId: result.batch_id };
-	}
-
-	/** Round 2: resume, completing the batch unless the confirmation declines. */
-	async function resumeBatch(
-		fixture: { root: string; observation: GithubInitiativeObservation },
-		slug: string,
-		confirmBatch: (details: { details: string }) => Promise<"accept" | "decline" | "cancel">,
-	) {
-		const commitsByTask = new Map<string, string>();
-		return executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: slug,
-			readInitiative: async () => fixture.observation,
-			batchKernel: {
-				advanceTask: async () => {
-					releaseWorkspaceForTest(fixture.root);
-					return { state: "completed" };
-				},
-			},
-			batchGit: {
-				...createDefaultBatchGitPort(),
-				commitChild: async (_root: string, taskId: string, _batchId: string, head: string, branch?: string) => {
-					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
-					const commit = commitOnBatchRef(fixture.root, head, branch, ["dummy.txt"], "child commit 2");
-					commitsByTask.set(taskId, commit);
-					return { commit };
-				},
-				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
-			},
-			confirmBatch,
-		});
-	}
-
-	function rewriteBatchState(root: string, batchId: string, mutate: (state: Record<string, any>) => void): void {
-		const path = join(root, ".imm", "state", "batches", `${batchId}.json`);
-		const state = JSON.parse(readFileSync(path, "utf8"));
-		mutate(state);
-		writeFileSync(path, `${JSON.stringify(state, null, 2)}\n`);
-	}
-
-	it("reuses an intact, still-binding authorization with zero additional native gates", async () => {
-		const { fixture, batchId } = await startRunningBatch("reuse-intact");
-		const gates: string[] = [];
-		const resumed = await resumeBatch(fixture, "reuse-intact", async (details) => {
-			gates.push(details.details);
-			return "accept";
-		});
-
-		expect(gates).toEqual([]);
-		expect(resumed.state).toBe("started");
-		expect(resumed.batch_id).toBe(batchId);
-		expect(resumed.report.batch_state).toBe("completed");
-	});
-
-	it("reuses a record carrying the retired expiry fields with past timestamps, and rewrites it without them", async () => {
-		const { fixture, batchId } = await startRunningBatch("reuse-legacy-expiry");
-		rewriteBatchState(fixture.root, batchId, (state) => {
-			state.authorization_expires_at = "2020-01-01T00:00:00.000Z";
-			state.budget.deadline_at = "2020-01-01T00:00:00.000Z";
-		});
-
-		const gates: string[] = [];
-		const resumed = await resumeBatch(fixture, "reuse-legacy-expiry", async (details) => {
-			gates.push(details.details);
-			return "accept";
-		});
-
-		expect(gates).toEqual([]);
-		expect(resumed.state).toBe("started");
-		expect(resumed.batch_id).toBe(batchId);
-		expect(resumed.report.batch_state).toBe("completed");
-		const rewritten = JSON.parse(
-			readFileSync(join(fixture.root, ".imm", "state", "batches", `${batchId}.json`), "utf8"),
-		);
-		expect(rewritten).not.toHaveProperty("authorization_expires_at");
-		expect(rewritten.budget).not.toHaveProperty("deadline_at");
-	});
-
-	// D10 (content-delivery-authority S2): the batch advances a hidden ref, so the user's own
-	// commits and amends on their branch neither move the batch nor need to be adopted.
-	// Replaces the retired "adopts a fast-forward commit on the batch branch" case.
-	it("keeps the authorization when the user commits and amends on their own branch", async () => {
-		const { fixture, batchId } = await startRunningBatch("reuse-user-commit");
-		writeFileSync(join(fixture.root, "outside.txt"), "external commit\n");
-		execFileSync("git", ["add", "outside.txt"], { cwd: fixture.root });
-		execFileSync("git", ["commit", "-q", "-m", "external commit"], { cwd: fixture.root });
-		execFileSync("git", ["commit", "-q", "--amend", "-m", "external commit, amended"], { cwd: fixture.root });
-		const userHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-
-		const gates: string[] = [];
-		const resumed = await resumeBatch(fixture, "reuse-user-commit", async (details) => {
-			gates.push(details.details);
-			return "accept";
-		});
-
-		expect(gates).toEqual([]);
-		expect(resumed.state).toBe("started");
-		expect(resumed.batch_id).toBe(batchId);
-		expect(resumed.report.batch_state).toBe("completed");
-		expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim()).toBe(userHead);
-		const stored = JSON.parse(readFileSync(join(fixture.root, ".imm", "state", "batches", `${batchId}.json`), "utf8"));
-		expect(stored.adopted_heads ?? []).toEqual([]);
-	});
-
-	it("demands a fresh gate when the hidden ref lineage was rewritten, then fails closed on the drift", async () => {
-		const { fixture, batchId } = await startRunningBatch("reuse-head");
-		const stored = JSON.parse(readFileSync(join(fixture.root, ".imm", "state", "batches", `${batchId}.json`), "utf8"));
-		const emptyTree = execFileSync("git", ["mktree"], { cwd: fixture.root, input: "", encoding: "utf8" }).trim();
-		const unrelated = execFileSync("git", ["commit-tree", emptyTree, "-m", "unrelated history"], { cwd: fixture.root, encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } }).trim();
-		execFileSync("git", ["update-ref", stored.branch, unrelated], { cwd: fixture.root });
-
-		const gates: string[] = [];
-		const resumed = await resumeBatch(fixture, "reuse-head", async (details) => {
-			gates.push(details.details);
-			return "accept";
-		});
-
-		expect(gates).toHaveLength(1);
-		expect(gates[0]).toContain("batch_head_lineage_moved");
-		expect(resumed.state).toBe("started");
-		expect(resumed.report.batch_state).toBe("failed");
-		expect(String(resumed.report.reason)).toContain("lineage");
-	});
-
-	it("rejects a corrupted persisted digest before opening a reconfirmation gate", async () => {
-		const { fixture, batchId } = await startRunningBatch("reuse-digest");
-		rewriteBatchState(fixture.root, batchId, (state) => {
-			state.plan_digest = `sha256:${"0".repeat(64)}`;
-		});
-
-		const gates: string[] = [];
-		let failure: string | null = null;
-		try {
-			const resumed = await resumeBatch(fixture, "reuse-digest", async (details) => {
-				gates.push(details.details);
-				return "accept";
-			});
-			failure = resumed.state === "rejected" ? resumed.reason : "a drifted plan resumed instead of failing closed";
-		} catch (error) {
-			failure = error instanceof Error ? error.message : String(error);
-		}
-
-		expect(gates).toHaveLength(0);
-		expect(String(failure)).toContain("batch plan reconfirmation is not eligible");
-	});
-
-	it("demands a fresh gate for a parked batch, which then resumes on the newer confirmation", async () => {
-		const { fixture, batchId } = await startRunningBatch("reuse-parked");
-		rewriteBatchState(fixture.root, batchId, (state) => {
-			state.batch_state = "needs_human";
-		});
-
-		const gates: string[] = [];
-		const resumed = await resumeBatch(fixture, "reuse-parked", async (details) => {
-			gates.push(details.details);
-			return "accept";
-		});
-
-		expect(gates).toHaveLength(1);
-		expect(gates[0]).toContain("batch_not_running");
-		expect(resumed.state).toBe("started");
-		expect(resumed.report.batch_state).toBe("completed");
-	});
-});
-
-describe("lane mode parameters (parallel-batch-lanes)", () => {
-	/** A TUI context whose native gate counts how often it opens. */
-	function countingTuiContext(root: string, opened: { count: number }): unknown {
-		recordPiPhaseInput({ text: "/skill:imm-run", source: "interactive" }, { cwd: root, sessionManager: RUN_ENTRY_SESSION });
-		return { cwd: root, mode: "tui", sessionManager: RUN_ENTRY_SESSION, ui: { custom: async () => { opened.count++; return "decline"; } } };
-	}
-
-	it("declares exactly the supported batch parameters", () => {
-		const tool = registerBatchTool({ readInitiative: async () => createBatchFixture("lane-schema").observation }) as unknown as {
-			parameters: { properties: Record<string, unknown>; required?: string[] };
-		};
+	it("registers the Lane tool and exactly its supported parameters", () => {
+		const tool = register(async () => { throw new Error("schema does not read a plan"); });
+		expect(tool).toBeDefined(); expect(tool.description).toContain("Lane"); expect(tool.description).not.toMatch(/serial/i);
 		expect(Object.keys(tool.parameters.properties)).toEqual(["initiative_slug", "max_parallel", "lane_offers", "final_verification", "lane_instruction", "lane_revision"]);
 		expect(tool.parameters.required).toEqual(["initiative_slug"]);
+		const schema = tool.parameters.properties.max_parallel;
+		expect(schema.minimum).toBe(1); expect(schema.type === "integer" || schema.multipleOf === 1).toBe(true);
 	});
-
-	it("declares max_parallel as an integer of at least 1, as Claude Code does", () => {
-		const tool = registerBatchTool({ readInitiative: async () => createBatchFixture("lane-int-schema").observation }) as unknown as {
-			parameters: { properties: Record<string, Record<string, unknown>> };
-		};
-		const schema = tool.parameters.properties.max_parallel!;
-		expect(schema.minimum).toBe(1);
-		expect(schema.type === "integer" || schema.multipleOf === 1).toBe(true);
+	it("rejects non-interactive invocation with an interactive-TUI recovery and zero writes", async () => {
+		const f = fixture("non-inter"); const before = snapshot(f.root);
+		const result = await runBatch({ root: f.root, initiativeSlug: f.slug, interactive: false, readInitiative: async () => f.observation });
+		expect(result).toEqual({ state: "rejected", reason: "interactive TUI elicitation is unavailable in non-interactive mode", recovery_action: "invoke through an interactive Pi TUI session in the current Host" });
+		expect(snapshot(f.root)).toEqual(before); noBatchWrites(f.root);
 	});
-
-	it("refuses lane_offers without max_parallel on a fresh start before any gate opens", async () => {
-		const fixture = createBatchFixture("lane-offers-only");
-		const tool = registerBatchTool({ readInitiative: async () => fixture.observation });
-		const opened = { count: 0 };
-		await expect(
-			tool.execute("tc", { initiative_slug: "lane-offers-only", lane_offers: [] }, undefined, undefined, countingTuiContext(fixture.root, opened) as never),
-		).rejects.toThrow(/lane_offers_retired/);
-		expect(opened.count).toBe(0);
-		assertZeroWrites(fixture.root, fixture.head, "lane-offers-only");
+	for (const max_parallel of [undefined, 1, 2]) it(`renders authoritative Lane confirmation at max_parallel=${max_parallel ?? "omitted"}`, async () => {
+		const f = fixture(`confirm-${max_parallel ?? "default"}`); const confirmations: any[] = [];
+		const result = await runBatch({ root: f.root, initiativeSlug: f.slug, max_parallel, readInitiative: async () => f.observation,
+			confirmBatch: async details => { confirmations.push(details); return "decline"; } });
+		expect(result.state).toBe("rejected"); expect(confirmations).toHaveLength(1);
+		const details = confirmations[0];
+		expect(details.title).toContain(`Authorize Unattended Batch: ${f.slug}`);
+		expect(details.summary).toContain(`Initiative: ${f.slug}`); expect(details.summary).toContain(`Batch branch: refs/heads/imm/${f.slug}`);
+		expect(details.summary).toMatch(/Plan digest: sha256:[a-f0-9]{64}/); expect(details.summary).toContain(`Lane mode: max_parallel=${max_parallel ?? 1}`);
+		expect(details.summary).toContain("Budget: max_children="); expect(details.summary).not.toMatch(/expires|deadline|serial/i);
+		expect(details.details).toContain("Ordered children (3):"); expect(details.details).toContain("Parallel groups (");
+		for (const [n, risk] of [[1, "routine"], [2, "material"], [3, "critical"]]) expect(details.details).toContain(`${f.slug}-c${n} (S${n}) [risk: ${risk}]`);
+		noBatchWrites(f.root);
 	});
-
-	it("refuses an invalid max_parallel or a malformed lane offer before any gate opens, with zero writes", async () => {
-		const fixture = createBatchFixture("lane-invalid");
-		const tool = registerBatchTool({ readInitiative: async () => fixture.observation });
-		const invalid: Array<Record<string, unknown>> = [
-			{ max_parallel: 0 },
-			{ max_parallel: -1 },
-			{ max_parallel: 1.5 },
-			{ max_parallel: "1" },
-			{ lane_offers: [{ task_id: "lane-invalid-c1", path: "/tmp/x" }] },
-			{ max_parallel: 1, lane_offers: [{ task_id: "lane-invalid-c1", path: "relative" }] },
-			{ max_parallel: 1, lane_offers: [{ task_id: "../escape", path: "/tmp/x" }] },
-			{ max_parallel: 1, lane_offers: [{ task_id: "lane-invalid-c1", path: "/tmp/x", extra: 1 }] },
-		];
-		for (const extra of invalid) {
-			const opened = { count: 0 };
-			await expect(
-				tool.execute("tc", { initiative_slug: "lane-invalid", ...extra }, undefined, undefined, countingTuiContext(fixture.root, opened) as never),
-			).rejects.toThrow();
-			expect(opened.count).toBe(0);
-			assertZeroWrites(fixture.root, fixture.head, "lane-invalid");
+	it.each([undefined, null, "invalid", 42])("fails closed when the confirmation port is missing or invalid (%p)", async confirmBatch => {
+		const f = fixture("invalid-port"); const before = snapshot(f.root);
+		const result = await runBatch({ root: f.root, initiativeSlug: f.slug, readInitiative: async () => f.observation, confirmBatch: confirmBatch as never });
+		expect(result.state).toBe("rejected"); expect(snapshot(f.root)).toEqual(before); noBatchWrites(f.root);
+	});
+	it.each(["decline", "cancel", undefined])("native selection %p preserves refs, index and dirty bytes", async selection => {
+		const f = fixture(`selection-${selection ?? "escape"}`);
+		writeFileSync(join(f.root, "staged.txt"), "staged bytes\n"); git(f.root, "add", "staged.txt");
+		writeFileSync(join(f.root, "staged.txt"), "unstaged bytes\n"); const before = snapshot(f.root);
+		const result = await runBatch({ root: f.root, initiativeSlug: f.slug, readInitiative: async () => f.observation,
+			confirmBatch: async () => mapDialogSelection(selection) });
+		expect(result.state).toBe(selection === "decline" ? "rejected" : "cancelled");
+		expect(result.reason).toContain(selection === "decline" ? "native interaction declined" : "native interaction cancelled");
+		expect(snapshot(f.root)).toEqual(before); expect(readFileSync(join(f.root, "staged.txt"), "utf8")).toBe("unstaged bytes\n"); noBatchWrites(f.root);
+	});
+	it("maps all dialog decisions, including revision delegation and Escape", () => {
+		expect(mapDialogSelection("confirm")).toBe("accept"); expect(mapDialogSelection("confirm_delegate")).toBe("accept_delegate");
+		expect(mapDialogSelection("decline")).toBe("decline"); expect(mapDialogSelection("cancel")).toBe("cancel"); expect(mapDialogSelection(undefined)).toBe("cancel");
+	});
+	it("pending confirmation settles on caller cancellation without writes", async () => {
+		const f = fixture("pending-cancel"); const before = snapshot(f.root); const controller = new AbortController();
+		let opened!: () => void; const opening = new Promise<void>(resolve => { opened = resolve; });
+		const pending = runBatch({ root: f.root, initiativeSlug: f.slug, signal: controller.signal, readInitiative: async () => f.observation,
+			confirmBatch: async details => { opened(); return new Promise(resolve => details.signal!.addEventListener("abort", () => resolve("cancel"), { once: true })); } });
+		await opening; controller.abort(); const result = await pending;
+		expect(result.state).toBe("cancelled"); expect(snapshot(f.root)).toEqual(before); noBatchWrites(f.root);
+	});
+	it("cancellation at issuance produces no batch writes", async () => {
+		const f = fixture("cancel-issue"); const before = snapshot(f.root); const controller = new AbortController();
+		const result = await runBatch({ root: f.root, initiativeSlug: f.slug, signal: controller.signal, readInitiative: async () => f.observation,
+			confirmBatch: async () => { controller.abort(); return "accept"; } });
+		expect(result.state).toBe("cancelled"); expect(snapshot(f.root)).toEqual(before); noBatchWrites(f.root);
+	});
+	it("active workspace claim blocks before the gate without changing authority", async () => {
+		const f = fixture("claim-block"); claim(f.root, "foreign-task"); const before = snapshot(f.root); let gates = 0;
+		const result = await runBatch({ root: f.root, initiativeSlug: f.slug, readInitiative: async () => f.observation, confirmBatch: async () => { gates++; return "accept"; } });
+		expect(result.state).toBe("blocked"); expect(result.reason).toContain("foreign-task"); expect(gates).toBe(0);
+		expect(snapshot(f.root)).toEqual(before); expect(existsSync(join(f.root, ".imm/state/batches"))).toBe(false);
+	});
+	it("conflicting Parent branch rejects before the gate and preserves all refs", async () => {
+		const f = fixture("branch-conflict"); git(f.root, "branch", `imm/${f.slug}`, "HEAD~1"); const before = snapshot(f.root); let gates = 0;
+		const result = await runBatch({ root: f.root, initiativeSlug: f.slug, readInitiative: async () => f.observation, confirmBatch: async () => { gates++; return "accept"; } });
+		expect(result.state).toBe("rejected"); expect(result.reason).toContain("branch"); expect(result.recovery_action).toContain("branch");
+		expect(gates).toBe(0); expect(snapshot(f.root)).toEqual(before); noBatchWrites(f.root);
+	});
+	it("critical-only Parent uses the ordinary batch gate", async () => {
+		const f = fixture("critical-only"); let details = "";
+		const result = await runBatch({ root: f.root, initiativeSlug: f.slug, readInitiative: async () => ({ ...f.observation, tasks: f.observation.tasks.slice(2) }),
+			confirmBatch: async conf => { details = conf.details; return "decline"; } });
+		expect(details).toContain(`${f.slug}-c3 (S3) [risk: critical]`); expect(result.state).toBe("rejected"); noBatchWrites(f.root);
+	});
+	it.each(["subject", "dependency"])("rejects %s drift after confirmation", async drift => {
+		const f = fixture(`drift-${drift}`); let confirmed = false;
+		const result = await runBatch({ root: f.root, initiativeSlug: f.slug, readInitiative: async () => confirmed && drift === "dependency"
+			? { ...f.observation, tasks: f.observation.tasks.map(task => ({ ...task, blocked_by: [] })) } : f.observation,
+			confirmBatch: async () => { confirmed = true; if (drift === "subject") {
+				const path = join(f.root, `docs/plans/${f.slug}-c1.intent.json`); const intent = JSON.parse(readFileSync(path, "utf8")); intent.goal = "different authority subject";
+				writeFileSync(path, `${JSON.stringify(intent, null, 2)}\n`);
+			} return "accept"; } });
+		expect(result.state).toBe("rejected"); expect(result.reason).toContain("batch plan changed after native confirmation");
+		expect(result.recovery_action).toContain("fresh native gate"); noBatchWrites(f.root);
+	});
+	it.each(["dependency", "external-slice", "removed-external", "missing-identity", "at-gate", "at-port"])("refuses %s drift of an excluded prerequisite before Lane admission", async drift => {
+		const f = fixture(`external-${drift}`); let gates = 0;
+		f.observation.tasks = f.observation.tasks.slice(0, 2);
+		const first = f.observation.tasks[0]!.task_id;
+		const intent = parseTaskIntentV1(JSON.parse(readFileSync(join(f.root, `docs/plans/${first}.intent.json`), "utf8")));
+		seedKernelRunForTest(f.root, { task_id: first, terminal: { lifecycle: "done" }, record: {
+			contract: "assurance_kernel/task_record/v4", task_id: first, intent_snapshot: intent,
+			intent_ref: { path: `docs/plans/${first}.intent.json`, content_hash: canonicalIntentHash(intent) }, lifecycle: "done", artifact_state: "frozen",
+			baseline: `sha256:${"a".repeat(64)}`, git_base_head: f.head, attestations: [], findings: [], history: [],
+		} });
+		const { readSettledRunEvidence } = await import("../plugins/immune-brain/runtime/kernel/storage");
+		const evidence = readSettledRunEvidence(f.root, first)!;
+		const audit = join(f.root, `.imm/audit/${first}/${evidence.run_id}`);
+		mkdirSync(audit, { recursive: true });
+		writeFileSync(join(audit, "task-record.json"), evidence.record_json);
+		writeFileSync(join(audit, "terminal-proof.json"), evidence.proof_json);
+		let confirmedReads = 0;
+		const options = { root: f.root, initiativeSlug: f.slug, readInitiative: async () => {
+			if (gates && ++confirmedReads === 2 && drift === "at-port") f.observation.tasks[1]!.blocked_by = [];
+			return f.observation;
+		},
+			confirmBatch: async () => { gates++; if (drift === "at-gate") f.observation.tasks[1]!.blocked_by = []; return "accept" as const; } };
+		const started = await runBatch(options);
+		if (drift === "at-gate" || drift === "at-port") {
+			expect(started.state).toBe("rejected"); expect(started.reason).toContain("plan changed");
+			expect(gates).toBe(1); noBatchWrites(f.root); return;
 		}
+		expect(started.state).toBe("started");
+		if (started.state !== "started") throw new Error(started.reason);
+		expect(started.report.children).toMatchObject([{ task_id: `${f.slug}-c2`, state: "pending", lane: null }]);
+		expect(started.report.handoffs).toEqual([]);
+		// An unchanged graph still waits for A's actual delivery on the Parent ref.
+		expect((await runBatch(options)).state).toBe("started");
+		const path = join(f.root, `.imm/state/batches/${started.batch_id}.json`);
+		if (drift === "dependency") f.observation.tasks[1]!.blocked_by = [];
+		if (drift === "external-slice") f.observation.tasks[0]!.slice_id = "changed";
+		if (drift === "removed-external") f.observation.tasks = [{ ...f.observation.tasks[1]!, blocked_by: [] }];
+		if (drift === "missing-identity") {
+			const record = JSON.parse(readFileSync(path, "utf8")); delete record.topology_digest;
+			writeFileSync(path, JSON.stringify(record));
+		}
+		const bytes = readFileSync(path), before = snapshot(f.root), worktrees = git(f.root, "worktree", "list", "--porcelain");
+		const refused = await runBatch(options);
+		expect(refused.state).toBe("rejected"); expect(refused.reason).toContain("plan changed");
+		expect(gates).toBe(1); expect(readFileSync(path)).toEqual(bytes); expect(snapshot(f.root)).toEqual(before);
+		expect(git(f.root, "worktree", "list", "--porcelain")).toBe(worktrees);
+		expect(JSON.parse(readFileSync(path, "utf8")).children).toMatchObject([{ state: "pending", lane: null }]);
 	});
-
-	it("accepts max_parallel above 1 through the same single gate", async () => {
-		const fixture = createBatchFixture("lane-wide");
-		let gates = 0;
-		const result = await executePiUnattendedBatch({
-			root: fixture.root,
-			initiativeSlug: "lane-wide",
-			max_parallel: 2,
-			readInitiative: async () => fixture.observation,
-			confirmBatch: async () => { gates++; return "accept"; },
+	it("compatible revision at the gate retains the authorization", async () => {
+		const f = fixture("compatible-revision"); let gates = 0;
+		const result = await runBatch({ root: f.root, initiativeSlug: f.slug, readInitiative: async () => f.observation, confirmBatch: async () => {
+			gates++; const path = join(f.root, `docs/plans/${f.slug}-c1.intent.json`); const intent = JSON.parse(readFileSync(path, "utf8")); intent.revision++;
+			intent.scope_hint.push(`docs/plans/${f.slug}-notes.md`); writeFileSync(path, `${JSON.stringify(intent, null, 2)}\n`);
+			return "accept";
+		} });
+		expect(result.state).toBe("started"); expect(gates).toBe(1);
+	});
+	it("a delayed answer is accepted without adding expiry or deadline", async () => {
+		const f = fixture("pi-ttl"); let clock: ReturnType<typeof spyOn> | undefined; let shown = "";
+		const result = await runBatch({ root: f.root, initiativeSlug: f.slug, readInitiative: async () => f.observation, confirmBatch: async details => {
+			shown = details.summary; clock = spyOn(Date, "now").mockReturnValue(Date.now() + 365 * 24 * 60 * 60 * 1000); return "accept";
+		} }).finally(() => clock?.mockRestore());
+		expect(result.state).toBe("started"); if (result.state !== "started") throw new Error(result.reason);
+		const record = JSON.parse(readFileSync(join(f.root, `.imm/state/batches/${result.batch_id}.json`), "utf8"));
+		expect(record).not.toHaveProperty("authorization_expires_at"); expect(Object.keys(record.budget).sort()).toEqual(["max_children", "qa_failure_limit"]);
+		expect(shown).not.toMatch(/expires|deadline/i);
+	});
+	it("corrupt batch state fails closed before any gate with byte preservation", async () => {
+		const f = fixture("corrupt-batch"); const path = join(f.root, ".imm/state/batches/batch-corrupt.json"); mkdirSync(join(f.root, ".imm/state/batches"), { recursive: true });
+		writeFileSync(path, "{ not valid json"); const before = snapshot(f.root); let gates = 0;
+		const result = await runBatch({ root: f.root, initiativeSlug: f.slug, readInitiative: async () => f.observation, confirmBatch: async () => { gates++; return "accept"; } });
+		expect(result.state).toBe("blocked"); expect(result.reason).toContain("unreadable or invalid"); expect(gates).toBe(0);
+		expect(readFileSync(path, "utf8")).toBe("{ not valid json"); expect(snapshot(f.root)).toEqual(before);
+	});
+	it("projects existing enrolled records and shares the foreground Review reservation", async () => {
+		const f = fixture("proj-scope"); claim(f.root, `${f.slug}-c1`);
+		const { projectAssuranceForTask, getSharedPiProgression } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
+		const projection = await projectAssuranceForTask(f.root, `${f.slug}-c1`);
+		expect(projection.error).toBeNull(); expect(projection.projection.lifecycle).toBe("active");
+		expect(await getSharedPiProgression()).toBe(await getSharedPiProgression());
+	});
+	it("the package includes the batch runtime and Pi extension", async () => {
+		expect(JSON.parse(readFileSync(join(import.meta.dir, "../package.json"), "utf8")).files).toContain("plugins/immune-brain/runtime/unattended");
+		expect((await import("../plugins/immune-brain/runtime/unattended/batch_plan")).projectBatchPlan).toBeDefined();
+		expect(JSON.parse(readFileSync(join(import.meta.dir, "../plugins/immune-brain/.pi-extension/package.json"), "utf8")).pi.extensions).toContain("./imm-unattended-batch.ts");
+	});
+	it("registered Tool content exposes the Lane report, Executor handoffs and every child manifest", async () => {
+		const f = fixture("tool-content-manifest"); const tool = register(async () => f.observation);
+		const response = await tool.execute("manifest", { initiative_slug: f.slug }, undefined, undefined, context(f.root, "confirm")); const content = textOf(response);
+		expect(content.state).toBe("started"); expect(content.report.batch_state).toBe("running"); expect(content.report.max_parallel).toBe(1);
+		expect(content.report.handoffs[0]).toMatchObject({ role: "executor", task_id: `${f.slug}-c1`, next_obligation: "submit_assurance" });
+		expect(content.report).not.toHaveProperty("handoff"); expect(content.report.next_action.length).toBeGreaterThan(0);
+		expect(content.manifest.children).toHaveLength(3);
+		for (const [n, risk] of [[1, "routine"], [2, "material"], [3, "critical"]]) expect(content.manifest.children).toContainEqual({
+			task_id: `${f.slug}-c${n}`, slice_id: `S${n}`, risk, scope: [`docs/plans/${f.slug}-c${n}.intent.json`, `docs/specs/archive/${f.slug}-c${n}.spec.md`, `docs/specs/${f.slug}-c${n}.spec.md`], verification: ["bun test"],
 		});
-		expect(gates).toBe(1);
-		expect(String((result as { reason?: string }).reason ?? "")).not.toMatch(/batch_parallel_unsupported/);
 	});
+});
 
-	it("shows max_parallel and the parallel groups in the confirmation only in lane mode", async () => {
-		const confirmations: Array<{ summary: string; details: string }> = [];
-		for (const maxParallel of [undefined, 1, 2] as const) {
-			const fixture = createBatchFixture(`lane-confirm-${maxParallel ?? "serial"}`);
-			await executePiUnattendedBatch({
-				root: fixture.root,
-				initiativeSlug: `lane-confirm-${maxParallel ?? "serial"}`,
-				...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
-				readInitiative: async () => fixture.observation,
-				confirmBatch: async (details) => { confirmations.push(details); return "decline"; },
-			});
+describe("lane mode parameters and authorization reuse", () => {
+	it("refuses lane_offers without max_parallel on a fresh start before any gate opens", async () => {
+		const f = fixture("lane-offers-only"); const tool = register(async () => f.observation); const opened = { count: 0 };
+		await expect(tool.execute("tc", { initiative_slug: f.slug, lane_offers: [] }, undefined, undefined, context(f.root, "decline", opened))).rejects.toThrow(/lane_offers_retired/);
+		expect(opened.count).toBe(0); noBatchWrites(f.root);
+	});
+	it("refuses invalid max_parallel and malformed offers before any gate with zero writes", async () => {
+		const f = fixture("lane-invalid"); const tool = register(async () => f.observation); const before = snapshot(f.root);
+		for (const extra of [{ max_parallel: 0 }, { max_parallel: -1 }, { max_parallel: 1.5 }, { max_parallel: "1" },
+			{ lane_offers: [{ task_id: `${f.slug}-c1`, path: "/tmp/x" }] }, { max_parallel: 1, lane_offers: [{ task_id: `${f.slug}-c1`, path: "relative" }] },
+			{ max_parallel: 1, lane_offers: [{ task_id: "../escape", path: "/tmp/x" }] }, { max_parallel: 1, lane_offers: [{ task_id: `${f.slug}-c1`, path: "/tmp/x", extra: 1 }] }]) {
+			const opened = { count: 0 }; await expect(tool.execute("tc", { initiative_slug: f.slug, ...extra }, undefined, undefined, context(f.root, "decline", opened))).rejects.toThrow();
+			expect(opened.count).toBe(0); expect(snapshot(f.root)).toEqual(before); noBatchWrites(f.root);
 		}
-		// max_parallel 1 is the serial runner (run-entry decision hosting D7).
-		const [serial, one, lane] = confirmations;
-		for (const confirmation of [serial!, one!]) {
-			expect(confirmation.summary).not.toContain("Lane mode");
-			expect(confirmation.details).not.toContain("Parallel groups");
-		}
-		expect(lane!.summary).toContain("Lane mode: max_parallel=2");
-		expect(lane!.details).toContain("Parallel groups (");
+	});
+	for (const max_parallel of [1, 2]) it(`reuses max_parallel=${max_parallel} Lane authorization without a second native gate`, async () => {
+		const f = fixture(`lane-reuse-${max_parallel}`); let gates = 0;
+		const options = { root: f.root, initiativeSlug: f.slug, readInitiative: async () => f.observation, confirmBatch: async () => { gates++; return "accept" as const; } };
+		const first = await runBatch({ ...options, max_parallel }); const second = await runBatch(options);
+		expect(first.state).toBe("started"); expect(second.state).toBe("started"); expect(gates).toBe(1);
+		if (first.state !== "started" || second.state !== "started") throw new Error("Lane did not start");
+		expect(second.batch_id).toBe(first.batch_id); expect(second.report.max_parallel).toBe(max_parallel);
+		const path = join(f.root, `.imm/state/batches/${first.batch_id}.json`); const bytes = readFileSync(path);
+		const mismatch = await runBatch({ ...options, max_parallel: max_parallel + 1 });
+		expect(JSON.stringify(mismatch)).toContain("batch_parallel_mismatch"); expect(gates).toBe(1); expect(readFileSync(path)).toEqual(bytes);
+	});
+	it("accepts max_parallel above 1 through one gate", async () => {
+		const f = fixture("lane-wide"); let gates = 0;
+		const result = await runBatch({ root: f.root, initiativeSlug: f.slug, max_parallel: 2, readInitiative: async () => f.observation, confirmBatch: async () => { gates++; return "accept"; } });
+		expect(gates).toBe(1); expect(result.state).toBe("started");
 	});
 });
 
 describe("native Parent final verification gate", () => {
-	it("opens the Pi confirmation with the exact commands before any Git or command effect", async () => {
-		const root = mkdtempSync(join(tmpdir(), "pi-native-final-"));
-		const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
-		try {
-			copyGitTemplate(root);
-			const taskId = "delivered";
-			const paths = ["src/delivered.ts", `docs/plans/${taskId}.intent.json`, `docs/plans/archive/${taskId}.intent.json`];
-			const intent = { contract: "assurance_kernel/task_intent/v1", task_id: taskId, owner: "user", goal: "Deliver", scope_hint: paths,
-				acceptance: [{ id: "acc-1", assertion: "delivered", verification: "bun test" }], risk: "material", revision: 1 };
-			mkdirSync(join(root, "docs", "plans", "archive"), { recursive: true });
-			for (const path of paths.slice(1)) writeFileSync(join(root, path), `${JSON.stringify(intent, null, 2)}\n`);
-			const ran = `${root}.ran`;
-			writeFileSync(join(root, "marker.ts"), `require('node:fs').writeFileSync(${JSON.stringify(ran)}, 'ran');\n`);
-			git("add", "docs", "marker.ts"); git("commit", "-q", "-m", "plan");
-			const baseline = git("rev-parse", "HEAD");
-			const parsed = parseTaskIntentV1(intent), hash = canonicalIntentHash(parsed);
-			const audit = join(root, ".imm", "audit", taskId); mkdirSync(audit, { recursive: true });
-			const record = `${JSON.stringify({ contract: "assurance_kernel/task_record/v4", task_id: taskId, intent_snapshot: parsed,
-				intent_ref: { path: paths[2], content_hash: hash }, lifecycle: "done", artifact_state: "frozen", baseline: hash,
-				git_base_head: baseline, attestations: [], findings: [], history: [] }, null, 2)}\n`;
-			writeFileSync(join(audit, "task-record.json"), record);
-			writeFileSync(join(audit, "terminal-proof.json"), `${JSON.stringify({ contract: "assurance_kernel/task_tombstone/v2", task_id: taskId,
-				lifecycle_status: "terminal", terminal_lifecycle: "done", terminal_event_id: "evt-term-delivered",
-				final_record_hash: `sha256:${new Bun.CryptoHasher("sha256").update(record).digest("hex")}`, terminalized_at: new Date().toISOString() }, null, 2)}\n`);
-			mkdirSync(join(root, "src")); writeFileSync(join(root, paths[0]!), "export const delivered = true;\n");
-			const observation = { initiative_slug: "native-final", carrier: "local" as const, tasks: [{ task_id: taskId, slice_id: "S1", blocked_by: [] }] };
-			const seen: Array<{ title: string; summary: string; details: string }> = [];
-			const run = (decision: "accept" | "decline") => executePiUnattendedBatch({ root, initiativeSlug: "native-final",
-				final_verification: ["bun marker.ts"], readInitiative: async () => observation,
-				confirmBatch: async (details) => { seen.push(details); return decision; } });
-
-			const declined = await run("decline");
-			expect(declined).toMatchObject({ state: "rejected" });
-			expect(seen).toHaveLength(1);
-			expect(seen[0]!.title).toContain("Parent Final Verification");
-			expect(seen[0]!.summary).toContain("bun marker.ts");
-			expect(seen[0]!.details).toContain(taskId);
-			expect(git("rev-parse", "HEAD")).toBe(baseline);
-			expect(existsSync(ran)).toBe(false);
-
-			const accepted = await run("accept");
-			expect(accepted).toMatchObject({ state: "native_parent", action: "complete", proof: { complete: true } });
-			expect(existsSync(ran)).toBe(true);
-		} finally { rmSync(root, { recursive: true, force: true }); rmSync(`${root}.ran`, { force: true }); }
+	it("shows exact commands before any Git or command effect", async () => {
+		const root = mkdtempSync(join(tmpdir(), "pi-native-final-")); roots.push(root); copyGitTemplate(root);
+		const taskId = "delivered", paths = ["src/delivered.ts", `docs/plans/${taskId}.intent.json`, `docs/plans/archive/${taskId}.intent.json`];
+		const intent = parseTaskIntentV1({ contract: "assurance_kernel/task_intent/v1", task_id: taskId, owner: "user", goal: "Deliver", scope_hint: paths,
+			acceptance: [{ id: "acc-1", assertion: "delivered", verification: "bun test" }], risk: "material", revision: 1 });
+		mkdirSync(join(root, "docs/plans/archive"), { recursive: true }); for (const path of paths.slice(1)) writeFileSync(join(root, path), `${JSON.stringify(intent, null, 2)}\n`);
+		const ran = join(root, ".imm-ran"); writeFileSync(join(root, "marker.ts"), `require('node:fs').writeFileSync(${JSON.stringify(ran)}, 'ran');\n`);
+		git(root, "add", "docs", "marker.ts"); git(root, "commit", "-qm", "plan"); const baseline = git(root, "rev-parse", "HEAD"); const hash = canonicalIntentHash(intent);
+		const audit = join(root, ".imm/audit", taskId); mkdirSync(audit, { recursive: true });
+		const record = `${JSON.stringify({ contract: "assurance_kernel/task_record/v4", task_id: taskId, intent_snapshot: intent,
+			intent_ref: { path: paths[2], content_hash: hash }, lifecycle: "done", artifact_state: "frozen", baseline: hash, git_base_head: baseline, attestations: [], findings: [], history: [] }, null, 2)}\n`;
+		writeFileSync(join(audit, "task-record.json"), record); writeFileSync(join(audit, "terminal-proof.json"), `${JSON.stringify({ contract: "assurance_kernel/task_tombstone/v2", task_id: taskId,
+			lifecycle_status: "terminal", terminal_lifecycle: "done", terminal_event_id: "evt-term-delivered", final_record_hash: `sha256:${new Bun.CryptoHasher("sha256").update(record).digest("hex")}`, terminalized_at: new Date().toISOString() }, null, 2)}\n`);
+		mkdirSync(join(root, "src")); writeFileSync(join(root, paths[0]!), "export const delivered = true;\n");
+		const seen: any[] = []; const observation = { initiative_slug: "native-final", carrier: "local" as const, tasks: [{ task_id: taskId, slice_id: "S1", blocked_by: [] }] };
+		const run = (decision: "accept" | "decline") => runBatch({ root, initiativeSlug: "native-final", final_verification: ["bun marker.ts"], readInitiative: async () => observation,
+			confirmBatch: async details => { seen.push(details); return decision; } });
+		expect(await run("decline")).toMatchObject({ state: "rejected" }); expect(seen).toHaveLength(1);
+		expect(seen[0].title).toContain("Parent Final Verification"); expect(seen[0].summary).toContain("bun marker.ts"); expect(seen[0].details).toContain(taskId);
+		expect(git(root, "rev-parse", "HEAD")).toBe(baseline); expect(existsSync(ran)).toBe(false);
+		expect(await run("accept")).toMatchObject({ state: "native_parent", action: "complete", proof: { complete: true } }); expect(existsSync(ran)).toBe(true);
 	});
 });

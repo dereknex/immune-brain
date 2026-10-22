@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, it, mock, setSystemTime } from "bun:test";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -37,7 +37,7 @@ const { default: registerPiWork, recordPiPhaseInput } = await import("../plugins
 const RUN_ENTRY_SESSION = { getSessionId: () => "pi-batch-acceptance-tests" };
 recordPiPhaseInput({ text: "/skill:imm-run", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION });
 import { readAuditTaskPair } from "../plugins/immune-brain/runtime/kernel/storage";
-import { readBatchRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
+import { readAnyBatchRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
 
 // Real-ports acceptance seam for the registered Pi batch entry. Every fixture
@@ -45,10 +45,8 @@ import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtim
 // ownership, deterministic QA in a delivery materialization, settlement/export
 // and the runner's Git commits. They carry no Review coverage, and a green run
 // here is not evidence of a loaded live build or of native Host interaction.
-const VERIFIER = join(process.cwd(), "scripts/verify-batch-completion.ts");
-const RUNBOOK = readFileSync(join(process.cwd(), "docs/agents/pi-batch-acceptance.md"), "utf8");
-const RUNBOOK_COMMANDS = [...RUNBOOK.matchAll(/```sh\n([\s\S]*?)```/g)]
-	.flatMap(block => block[1]!.split("\n").map(line => line.trim()).filter(line => line && !line.startsWith("#")));
+// The serial runbook/S0 examples are retired here; Lane commits and their real
+// Kernel evidence are checked directly, without claiming live Host acceptance.
 const PROGRESSION = Symbol.for("immune_brain.pi_assurance_progression");
 const priorProgression = Object.getOwnPropertyDescriptor(globalThis, PROGRESSION);
 const roots: string[] = [];
@@ -115,64 +113,60 @@ async function fixture(slug: string) {
 		enrollmentTool = tools.find(t => t.name === "imm_canary_enrollment");
 	};
 	restart();
-	const ctx = () => ({ cwd: root, mode: "tui", sessionManager: RUN_ENTRY_SESSION, ui: { setWidget() {}, setStatus() {}, notify() {}, custom: async () => { gates++; return answer(); } } });
-	const emit = async (name: string, event: object) => { for (const callback of handlers.get(name) ?? []) await callback(event, ctx()); };
-	const enter = async (text: string) => { entryPending = false; await emit("input", { text, source: "interactive" }); };
-	const call = async (tool: any, params: unknown): Promise<any> => {
-		if (entryPending) await enter(`/imm-run ${slug}`);
+	const lanePaths = new Map<string, string>();
+	const lane = (task: string) => {
+		const path = lanePaths.get(task);
+		if (!path) throw new Error(`no enrolled Lane for ${task}`);
+		return path;
+	};
+	const ctx = (cwd: string) => ({ cwd, mode: "tui", sessionManager: RUN_ENTRY_SESSION, ui: { setWidget() {}, setStatus() {}, notify() {}, custom: async () => { gates++; return answer(); } } });
+	const emit = async (name: string, event: object, cwd: string) => { for (const callback of handlers.get(name) ?? []) await callback(event, ctx(cwd)); };
+	const enter = async (text: string, cwd = root) => { entryPending = false; await emit("input", { text, source: "interactive" }, cwd); };
+	const call = async (tool: any, params: any, cwd = root): Promise<any> => {
+		if (entryPending) await enter(`/imm-run ${slug}`, root);
 		const id = randomUUID(), event = { toolName: tool.name, toolCallId: id, input: params };
 		try {
-			await emit("tool_call", event);
-			const response = await tool.execute(id, params, undefined, undefined, ctx());
-			await emit("tool_result", { ...response, ...event, isError: false });
+			await emit("tool_call", event, cwd);
+			const response = await tool.execute(id, params, undefined, undefined, ctx(cwd));
+			await emit("tool_result", { ...response, ...event, isError: false }, cwd);
 			return tool.name === "imm_canary_enrollment" ? response.details : JSON.parse(response.content[0].text);
 		} catch (error) {
-			await emit("tool_result", { ...event, isError: true, content: [{ type: "text", text: String(error) }] });
+			await emit("tool_result", { ...event, isError: true, content: [{ type: "text", text: String(error) }] }, cwd);
 			return { state: "refused", reason: error instanceof Error ? error.message : String(error) };
 		}
 	};
 	return { root, slug, tasks, base, restart, observation, enter,
 		enroll: (task: string) => call(enrollmentTool, { action: "new", task_id: task }),
-		batch: () => call(batchTool, { initiative_slug: slug }),
-		kernel: (task: string, action: Record<string, unknown>) => call(workTool, { task_id: task, action }),
-		implement: (n: number, content = "implemented\n") => { writeFileSync(join(root, `src/child-${n}.txt`), content); git(root, "add", `src/child-${n}.txt`); },
+		batch: async () => {
+			const result = await call(batchTool, { initiative_slug: slug, final_verification: ["bun --version"] });
+			for (const child of result.report?.children ?? []) if (child.lane) lanePaths.set(child.task_id, child.lane.path);
+			return result;
+		},
+		lane,
+		coordinatorStatus: (task: string) => call(workTool, { task_id: task, action: { op: "status" } }),
+		kernel: (task: string, action: Record<string, unknown>) => call(workTool, { task_id: task, action }, lane(task)),
+		implement: (n: number, content = "implemented\n") => { const cwd = lane(tasks[n - 1]!); writeFileSync(join(cwd, `src/child-${n}.txt`), content); git(cwd, "add", `src/child-${n}.txt`); },
 		gates: () => gates,
 		answer: (fn: typeof answer) => { answer = fn; },
-		state: (batchId: string) => readBatchRunState(root, batchId)!,
-		verify: (batchId: string) => {
-			const result = spawnSync("bun", [VERIFIER, "--batch-id", batchId, "--json"], { cwd: root, encoding: "utf8" });
-			return { status: result.status, out: JSON.parse(result.stdout) };
-		},
+		state: (batchId: string) => readAnyBatchRunState(root, batchId)!,
 		statePath: (batchId: string) => join(root, ".imm/state/batches", `${batchId}.json`),
 		head: () => git(root, "rev-parse", "HEAD"),
-		// Batch progress lives on the hidden ref; the user's HEAD never moves (S2).
-		batchRef: () => git(root, "for-each-ref", "--format=%(refname)", "refs/imm/batches/").split("\n").filter(Boolean)[0] ?? "HEAD",
-		commits: () => git(root, "rev-list", "--reverse", `${base}..${git(root, "for-each-ref", "--format=%(refname)", "refs/imm/batches/").split("\n").filter(Boolean)[0] ?? "HEAD"}`).split("\n").filter(Boolean),
+		// Runtime advances the Parent branch without moving the user's HEAD/index.
+		batchRef: () => `refs/heads/imm/${slug}`,
+		commits: () => git(root, "rev-list", "--reverse", `${base}..refs/heads/imm/${slug}`).split("\n").filter(Boolean),
 		files: (commit: string) => git(root, "show", "--name-only", "--format=", commit).split("\n").filter(Boolean).sort(),
-		// Runs one fenced `sh` example from the operator runbook against this fixture.
-		runbook: (prefix: string, vars: Record<string, string>) => {
-			const line = RUNBOOK_COMMANDS.find(command => command.startsWith(prefix));
-			if (!line) throw new Error(`runbook has no executable example starting with: ${prefix}`);
-			const command = line.replace(/<([a-z-]+)>/g, (_, key: string) => {
-				if (!(key in vars)) throw new Error(`runbook example uses an unbound placeholder: <${key}>`);
-				return vars[key]!;
-			}).replace("scripts/verify-batch-completion.ts", VERIFIER);
-			return spawnSync("sh", ["-c", command], { cwd: root, encoding: "utf8" });
-		},
+
 	};
 }
 
-/**
- * Implement and run real QA to settlement. The same call that reaches `done`
- * stages the exported evidence pair and continues the batch, so the result
- * carries the batch report as `batch`.
- */
+/** Real Lane QA settles only the child; the Parent must explicitly tick next. */
 async function settle(f: Awaited<ReturnType<typeof fixture>>, n: number) {
 	const task = f.tasks[n - 1]!;
 	f.implement(n);
 	const qa = await f.kernel(task, { op: "advance_assurance" });
 	expect(qa).toMatchObject({ state: "completed", diagnostics: [{ acceptance_id: `acc-${n}`, outcome: "passed", exit_code: 0 }],
 		task_state: { lifecycle: "done", fresh_approval_kinds: ["qa"], risk: "routine" } });
+	expect(qa).not.toHaveProperty("batch");
 	return qa;
 }
 
@@ -180,7 +174,7 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 	it("explicit Slice settles without integrating or executing its authorized sibling", async () => {
 		const f = await fixture("acceptance-isolated");
 		const first = await f.batch();
-		await f.enter(`/imm-run ${f.tasks[0]}`);
+		await f.enter(`/imm-run ${f.tasks[0]}`, f.lane(f.tasks[0]!));
 		await f.kernel(f.tasks[0]!, { op: "status" });
 		const settled = await settle(f, 1);
 		expect(settled).not.toHaveProperty("batch");
@@ -200,11 +194,11 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 		const first = await f.batch();
 		expect(first).toMatchObject({ state: "started", report: { batch_state: "running", commits: [],
 			children: [{ task_id: f.tasks[0], state: "enrolled", commit: null }, { task_id: f.tasks[1], state: "pending", commit: null }],
-			handoff: { role: "executor", task_id: f.tasks[0], next_obligation: "submit_assurance" } } });
+			handoffs: [{ role: "executor", task_id: f.tasks[0], lane_path: f.lane(f.tasks[0]!), next_obligation: "submit_assurance" }] } });
 		expect(f.gates()).toBe(1);
 		expect(f.head()).toBe(f.base);
 		const owned = await f.kernel(f.tasks[0]!, { op: "status" });
-		expect(owned).toMatchObject({ run_id: first.report.handoff.run_id, record_revision: first.report.handoff.record_revision,
+		expect(owned).toMatchObject({ run_id: first.report.handoffs[0].run_id, record_revision: first.report.handoffs[0].record_revision,
 			lifecycle: "active", artifact_state: "active", fresh_approval_kinds: [], missing_approval_kinds: ["qa"] });
 		// The runbook's loaded-build check compares this field with package.json.
 		expect(owned.plugin_version).toBe(JSON.parse(readFileSync(join(import.meta.dir, "../package.json"), "utf8")).version);
@@ -212,56 +206,74 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 
 		const again = await f.batch();
 		expect(again.batch_id).toBe(first.batch_id);
-		expect(again.report.handoff).toEqual(first.report.handoff);
+		expect(again.report.handoffs).toEqual(first.report.handoffs);
 		expect(again.report.children).toEqual(first.report.children);
 		expect(f.gates()).toBe(1);
 		expect(f.head()).toBe(f.base);
 		expect(await f.kernel(f.tasks[0]!, { op: "status" })).toMatchObject({ run_id: owned.run_id, record_revision: owned.record_revision });
-		expect((await f.kernel(f.tasks[1]!, { op: "status" })).state).toBe("refused");
-		expect(f.verify(first.batch_id)).toMatchObject({ out: { complete: false } });
-		expect(f.verify(first.batch_id).status).not.toBe(0);
+		for (const task of f.tasks) {
+			const status = await f.coordinatorStatus(task);
+			expect(status.run_id).toBeNull();
+			expect(status.lifecycle).not.toBe("active");
+		}
+		expect(first.report).not.toHaveProperty("handoff");
+		expect(f.state(first.batch_id)).toMatchObject({ contract: "assurance_kernel/batch_run_state/v2", max_parallel: 1, branch: f.batchRef() });
+		expect(readAuditTaskPair(f.lane(f.tasks[0]!), f.tasks[0]!)).toBeNull();
 	}, 120000);
 
-	it("commits each settled child exactly once in order and reports a completion the S0 verifier accepts, using the runbook commands", async () => {
-		const f = await fixture("acceptance-serial");
+	it("commits each settled Lane exactly once in order on the Parent branch without changing the user branch/index", async () => {
+		const f = await fixture("acceptance-lanes");
+		// Unrelated staged and unstaged user bytes must survive every Lane tick.
+		writeFileSync(join(f.root, "user.txt"), "staged\n"); git(f.root, "add", "user.txt");
+		writeFileSync(join(f.root, "user.txt"), "unstaged\n");
+		const userIndex = readFileSync(join(f.root, ".git/index"));
 		const first = await f.batch();
-		f.implement(1);
-		const done = await f.kernel(f.tasks[0]!, { op: "advance_assurance" });
-		expect(done).toMatchObject({ state: "completed", task_state: { lifecycle: "done" } });
-		// The same call staged the exported evidence, committed the child and enrolled the next one.
-		const second = done.batch;
+		await settle(f, 1);
+		expect(f.state(first.batch_id).children.map(c => c.state)).toEqual(["enrolled", "pending"]);
+		expect(f.commits()).toEqual([]);
+		const second = await f.batch();
 		expect(second).toMatchObject({ state: "started", batch_id: first.batch_id, report: { batch_state: "running",
-			// The runbook tells operators this reason is the normal path, not a failure.
-			children: [{ task_id: f.tasks[0], state: "committed", reason: "crash after settlement; resuming at commit" }, { task_id: f.tasks[1], state: "enrolled", commit: null }],
-			handoff: { role: "executor", task_id: f.tasks[1], next_obligation: "submit_assurance" } } });
+			children: [{ task_id: f.tasks[0], state: "released" }, { task_id: f.tasks[1], state: "enrolled", commit: null }],
+			handoffs: [{ role: "executor", task_id: f.tasks[1], next_obligation: "submit_assurance" }] } });
 		expect(f.commits()).toEqual(second.report.commits);
 		expect(f.commits()).toHaveLength(1);
-		const run1 = first.report.handoff.run_id;
+		const run1 = first.report.handoffs[0].run_id;
 		expect(f.files(f.commits()[0]!)).toEqual([`.imm/audit/${f.tasks[0]}/${run1}/task-record.json`, `.imm/audit/${f.tasks[0]}/${run1}/terminal-proof.json`, "src/child-1.txt"]);
 		// A repeated continuation neither recommits the first child nor re-enrolls the second.
 		const repeated = await f.batch();
-		expect(repeated.report.handoff).toEqual(second.report.handoff);
+		expect(repeated.report.handoffs).toEqual(second.report.handoffs);
 		expect(f.commits()).toHaveLength(1);
-		const partial = f.runbook("bun scripts/verify-batch-completion.ts", { "batch-id": first.batch_id });
-		expect(partial.status).not.toBe(0);
-		expect(JSON.parse(partial.stdout).complete).toBe(false);
+		expect(f.state(first.batch_id).batch_state).toBe("running");
 
-		const third = (await settle(f, 2)).batch;
+		await settle(f, 2);
+		const third = await f.batch();
 		expect(third).toMatchObject({ batch_id: first.batch_id, report: { batch_state: "completed",
-			children: [{ task_id: f.tasks[0], state: "committed" }, { task_id: f.tasks[1], state: "committed" }] } });
-		expect(third.report.handoff).toBeUndefined();
+			children: [{ task_id: f.tasks[0], state: "released" }, { task_id: f.tasks[1], state: "released" }] } });
+		expect(third.report.handoffs).toEqual([]);
 		expect(f.commits()).toEqual(third.report.commits);
 		expect(f.commits()).toHaveLength(2);
 		expect(f.files(f.commits()[1]!).filter(path => !path.startsWith(".imm/audit/"))).toEqual(["src/child-2.txt"]);
 		expect(f.gates()).toBe(1);
-		// Applied deltas sit staged in the working tree; the batch committed nothing to the user's branch.
-		expect(git(f.root, "status", "--porcelain", "--untracked-files=all").split("\n").map(line => line.slice(3)).filter(path => !path.startsWith(".imm/audit/")).sort()).toEqual(["src/child-1.txt", "src/child-2.txt"]);
+		expect(readFileSync(join(f.root, ".git/index"))).toEqual(userIndex);
+		expect(readFileSync(join(f.root, "user.txt"), "utf8")).toBe("unstaged\n");
+		for (const n of [1, 2]) expect(readFileSync(join(f.root, `src/child-${n}.txt`), "utf8")).toBe("original\n");
 		expect(f.head()).toBe(f.base);
 		expect(git(f.root, "rev-list", "--reverse", `${f.base}..${f.batchRef()}`).split("\n")).toEqual(third.report.commits);
-		const verified = f.runbook("bun scripts/verify-batch-completion.ts", { "batch-id": first.batch_id });
-		expect(verified.status).toBe(0);
-		expect(JSON.parse(verified.stdout)).toMatchObject({ complete: true, batch_state: "completed", report_state: "completed", code: null,
-			children: [{ task_id: f.tasks[0], commit: third.report.commits[0] }, { task_id: f.tasks[1], commit: third.report.commits[1] }] });
+		for (const [i, commit] of third.report.commits.entries()) {
+			const task = f.tasks[i]!;
+			const paths = f.files(commit).filter(path => path.startsWith(`.imm/audit/${task}/`));
+			expect(paths).toHaveLength(2);
+			const record = JSON.parse(git(f.root, "show", `${commit}:${paths.find(p => p.endsWith("task-record.json"))}`));
+			const proof = JSON.parse(git(f.root, "show", `${commit}:${paths.find(p => p.endsWith("terminal-proof.json"))}`));
+			expect(record).toMatchObject({ task_id: task, lifecycle: "done" });
+			expect(proof).toMatchObject({ task_id: task, terminal_lifecycle: "done" });
+			expect(git(f.root, "show", `${commit}:src/child-${i + 1}.txt`)).toBe("implemented");
+			expect(git(f.root, "show", "-s", "--format=%P", commit)).toBe(i ? third.report.commits[i - 1] : f.base);
+		}
+		const completed = await f.batch();
+		expect(completed).toMatchObject({ state: "started", report: { batch_state: "completed" } });
+		expect(completed.report.commits).toEqual(third.report.commits);
+		expect(f.commits()).toHaveLength(2);
 	}, 120000);
 
 	it("repairs a real failing check by its exact finding, resumes the obligation on a recreated Host adapter, and continues the same batch", async () => {
@@ -270,17 +282,17 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 		f.implement(1, "wrong\n");
 		const failed = await f.kernel(f.tasks[0]!, { op: "advance_assurance" });
 		expect(failed).toMatchObject({ state: "rework", operation: "qa", diagnostics: [{ acceptance_id: "acc-1", outcome: "nonzero_exit", exit_code: 3 }],
-			recovery: { category: "repair", task_id: f.tasks[0], run_id: first.report.handoff.run_id, next_obligation: "resolve_findings", acceptance_ids: ["acc-1"] } });
+			recovery: { category: "repair", task_id: f.tasks[0], run_id: first.report.handoffs[0].run_id, next_obligation: "resolve_findings", acceptance_ids: ["acc-1"] } });
 		const findings: string[] = failed.recovery.finding_ids;
 		expect(findings).toHaveLength(1);
 
 		// The Host adapter is recreated: only fresh Kernel projection carries the obligation.
 		f.restart();
-		expect(await f.kernel(f.tasks[0]!, { op: "status" })).toMatchObject({ run_id: first.report.handoff.run_id, lifecycle: "active",
+		expect(await f.kernel(f.tasks[0]!, { op: "status" })).toMatchObject({ run_id: first.report.handoffs[0].run_id, lifecycle: "active",
 			next_obligation: "resolve_findings", blocking_finding_ids: findings, fresh_approval_kinds: [] });
 		const parked = await f.batch();
 		expect(parked).toMatchObject({ state: "started", batch_id: first.batch_id, report: { batch_state: "running", commits: [],
-			children: [{ state: "enrolled" }, { state: "pending" }], recovery: { category: "repair", finding_ids: findings, next_obligation: "resolve_findings" } } });
+			children: [{ state: "enrolled" }, { state: "pending" }], handoffs: [{ role: "executor", task_id: f.tasks[0], next_obligation: "resolve_findings" }] } });
 		expect(f.gates()).toBe(1);
 		expect(f.commits()).toEqual([]);
 
@@ -293,25 +305,27 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 		expect(await f.kernel(f.tasks[0]!, { op: "resolve_finding", finding_id: findings[0] })).toMatchObject({ lifecycle: "active" });
 		const fresh = await f.kernel(f.tasks[0]!, { op: "advance_assurance" });
 		expect(fresh).toMatchObject({ state: "completed", diagnostics: [{ outcome: "passed", exit_code: 0 }],
-			task_state: { run_id: first.report.handoff.run_id, lifecycle: "done", blocking_finding_ids: [] } });
+			task_state: { run_id: first.report.handoffs[0].run_id, lifecycle: "done", blocking_finding_ids: [] } });
 		expect(fresh.operation_id).not.toBe(failed.operation_id);
 
-		const second = fresh.batch;
-		expect(second).toMatchObject({ batch_id: first.batch_id, report: { children: [{ state: "committed" }, { state: "enrolled" }], handoff: { task_id: f.tasks[1] } } });
+		expect(fresh).not.toHaveProperty("batch");
+		const second = await f.batch();
+		expect(second).toMatchObject({ batch_id: first.batch_id, report: { children: [{ state: "released" }, { state: "enrolled" }], handoffs: [{ task_id: f.tasks[1] }] } });
 		expect(second.report.recovery).toBeUndefined();
 		f.restart();
 		// Re-select the Parent from its persisted batch receipt in the recreated adapter.
-		expect((await f.batch()).report.handoff.task_id).toBe(f.tasks[1]);
-		expect((await settle(f, 2)).batch.report.batch_state).toBe("completed");
+		expect((await f.batch()).report.handoffs[0].task_id).toBe(f.tasks[1]);
+		await settle(f, 2);
+		expect((await f.batch()).report.batch_state).toBe("completed");
 		expect(f.commits()).toHaveLength(2);
 		expect(f.gates()).toBe(1);
-		expect(f.verify(first.batch_id)).toMatchObject({ status: 0, out: { complete: true } });
 	}, 120000);
 
-	it("resumes a child parked on foreground Review with no gate however far the clock advanced, then completes", async () => {
+	it("resumes an active routine Lane with no gate however far the clock advanced, then completes", async () => {
 		const f = await fixture("acceptance-clockless");
 		const first = await f.batch();
-		const second = (await settle(f, 1)).batch;
+		await settle(f, 1);
+		const second = await f.batch();
 		f.implement(2);
 		const before = f.state(first.batch_id);
 		expect(before).not.toHaveProperty("authorization_expires_at");
@@ -325,15 +339,15 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 		f.answer(() => { throw new Error("a clockless resume must not open a gate"); });
 		const resumed = await f.batch();
 		expect(resumed).toMatchObject({ state: "started", batch_id: first.batch_id, report: { batch_state: "running", commits: second.report.commits,
-			children: [{ state: "committed" }, { state: "enrolled" }], handoff: second.report.handoff } });
+			children: [{ state: "released" }, { state: "enrolled" }], handoffs: second.report.handoffs } });
 		expect(f.gates()).toBe(1);
 		expect(evidence()).toEqual(kept);
-		expect(await f.kernel(f.tasks[1]!, { op: "status" })).toMatchObject({ run_id: second.report.handoff.run_id, lifecycle: "active", next_obligation: "submit_assurance" });
+		expect(await f.kernel(f.tasks[1]!, { op: "status" })).toMatchObject({ run_id: second.report.handoffs[0].run_id, lifecycle: "active", next_obligation: "submit_assurance" });
 
 		// Thirty days on, the closeout still continues without a gate.
-		expect((await settle(f, 2)).batch.report.batch_state).toBe("completed");
+		await settle(f, 2);
+		expect((await f.batch()).report.batch_state).toBe("completed");
 		expect(f.gates()).toBe(1);
 		expect(f.commits()).toHaveLength(2);
-		expect(f.verify(first.batch_id)).toMatchObject({ status: 0, out: { complete: true } });
 	}, 120000);
 });

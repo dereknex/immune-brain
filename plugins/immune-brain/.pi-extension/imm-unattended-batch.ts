@@ -32,9 +32,12 @@ import { createBatchTrackerPort, laneRuntimeContractRefusal, parseLaneInstructio
 import {
 	authorizeBatch,
 	prepareBatchPreflight,
+	readConfirmedBatchTopology,
+	findExistingActiveBatch,
+	findSettledBatchRecord,
 } from "../runtime/unattended/batch_preflight";
 import { retireStaleBatch, type StaleBatchFacts } from "../runtime/unattended/batch_disposition";
-import type { BatchLaneRunReport } from "../runtime/unattended/batch_state";
+import { batchTopologyDigest, isLaneBatchRecord, type BatchLaneRunReport } from "../runtime/unattended/batch_state";
 
 import {
 	presentTaskRail,
@@ -111,7 +114,7 @@ export interface PiBatchExecutionOptions {
 	 */
 	reuseOnly?: boolean;
 	signal?: AbortSignal;
-	/** Lane mode: how many children may run at once. Absent selects the serial path. */
+	/** Lane mode: how many children may run at once. Absent defaults to one Lane. */
 	max_parallel?: number;
 	/** Lane mode: Lanes someone else created, offered to the batch. */
 	lane_offers?: LaneOffer[];
@@ -184,8 +187,28 @@ async function executePreparedPiBatch(
 	if (!reuseOnly && !interactive) return { state: "rejected", ...nonInteractiveRefusal() };
 	if (!reuseOnly && !options.confirmBatch) return batchReason("confirmation_port_unavailable");
 
-	await integrateSettledCriticalSlices(root, initiativeSlug, options.readInitiative);
-	const completed = await completedParentReport(root, initiativeSlug, options.readInitiative, options.batchTracker);
+	const existing = findExistingActiveBatch(root, initiativeSlug);
+	if (existing && !existing.corrupt && !isLaneBatchRecord(existing.record)) return batchReason("batch_record_shape_retired");
+	const integrationBatch = existing && !existing.corrupt ? existing.record : existing ? null : findSettledBatchRecord(root, initiativeSlug);
+	let replayCompleted = true;
+	let replayReader = options.readInitiative;
+	if (integrationBatch && isLaneBatchRecord(integrationBatch) && (existing || integrationBatch.batch_state === "completed")) {
+		let confirmed: Awaited<ReturnType<typeof readConfirmedBatchTopology>> | undefined;
+		try {
+			confirmed = await readConfirmedBatchTopology(root, integrationBatch, options.readInitiative);
+		} catch (error) {
+			if (existing) return batchReason("plan_changed", error instanceof Error ? error.message : String(error));
+			// Terminal history owns no new plan; do not replay its writes or completion.
+			replayCompleted = false;
+		}
+		if (confirmed) {
+			const { observation } = confirmed;
+			replayReader = async () => observation;
+			if (["running", "completed"].includes(integrationBatch.batch_state))
+				await integrateSettledCriticalSlices(root, initiativeSlug, replayReader);
+		}
+	}
+	const completed = replayCompleted ? await completedParentReport(root, initiativeSlug, replayReader, options.batchTracker) : null;
 	if (completed) return { state: "started", batch_id: completed.batch_id, report: completed };
 	const native = await advanceNativeParent(root, initiativeSlug, options.final_verification, options.readInitiative, options.batchTracker ?? createBatchTrackerPort(root, initiativeSlug),
 		async (effects) => {
@@ -344,9 +367,12 @@ async function executePreparedPiBatch(
 	};
 	// The production child Kernel port is the shared runtime/unattended one;
 	// this Host supplies only its own advanceTask progression seam (D5).
+	const parent = await (options.readInitiative ?? observeInitiative)(root, initiativeSlug);
+	if (parent.initiative_id !== initiativeSlug || batchTopologyDigest(parent.tasks) !== preflight.projection.topology_digest)
+		return batchReason("plan_changed");
 	const kernelPort = createBatchKernelPort({
 		root,
-		parent: await (options.readInitiative ?? observeInitiative)(root, initiativeSlug),
+		parent,
 		enrollmentRegistry,
 		registry: batchRegistry,
 		capability,
@@ -357,6 +383,7 @@ async function executePreparedPiBatch(
 	});
 
 	let report = await startBatch({
+		topology_digest: preflight.projection.topology_digest,
 		root,
 		batch_id: batchId,
 		initiative_slug: initiativeSlug,
@@ -488,7 +515,7 @@ export default function (
 	pi.registerTool({
 		name: "start_unattended_batch",
 		label: "Start unattended batch",
-		description: "Start an unattended serial batch run for an Initiative after native confirmation.",
+		description: "Start an unattended Lane batch run for an Initiative after native confirmation.",
 		promptSnippet: "Start unattended batch run: invoke once in foreground after plan confirmation.",
 		promptGuidelines: [
 			"Call only inside an explicit imm-run entry, after plan confirmation; execute once in the foreground and consume the direct terminal result.",
@@ -588,7 +615,7 @@ export default function (
 							details: details.details,
 							signal: details.signal,
 							actions: [
-								{ value: "confirm", label: "Authorize batch run", description: "Start the unattended serial batch run" },
+								{ value: "confirm", label: "Authorize batch run", description: "Start the unattended Lane batch run" },
 								...(details.offerRevisionDelegation
 									? [{ value: "confirm_delegate", label: "Authorize and delegate in-Lane revisions", description: REVISION_DELEGATION_TEXT }]
 									: []),

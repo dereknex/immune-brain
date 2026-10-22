@@ -62,7 +62,10 @@ import { readTaskTombstone } from "../kernel/backend_claim";
 import {
 	authorizeBatch,
 	prepareBatchPreflight,
+	readConfirmedBatchTopology,
 	findResumableBatchSlugForTask,
+	findExistingActiveBatch,
+	findSettledBatchRecord,
 } from "../unattended/batch_preflight";
 import {
 	startBatch, completedParentReport,
@@ -75,7 +78,7 @@ import type { LaneRevisionRequest } from "../unattended/batch_delegation";
 import { createBatchTrackerPort, laneRuntimeContractRefusal, type LaneInstructionRequest, type LaneOffer } from "../unattended/batch_lanes";
 import { retireStaleBatch } from "../unattended/batch_disposition";
 import { runEntryManifest, type RunEntryManifest } from "../unattended/run_entry_manifest";
-import type { BatchLaneRunReport } from "../unattended/batch_state";
+import { batchTopologyDigest, isLaneBatchRecord, type BatchLaneRunReport } from "../unattended/batch_state";
 import {
 	createBatchAuthorityRegistry,
 } from "../kernel/batch_authority";
@@ -877,8 +880,28 @@ export class ClaudeRuntime {
 			throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
 		let manifestChildren: ReadonlyArray<{ task_id: string; slice_id: string; risk?: string }> | null = null;
 
-		await integrateSettledCriticalSlices(this.cwd, initiativeSlug, this.readInitiative);
-		const completed = await completedParentReport(this.cwd, initiativeSlug, this.readInitiative, this.batchTracker);
+		const existing = findExistingActiveBatch(this.cwd, initiativeSlug);
+		if (existing && !existing.corrupt && !isLaneBatchRecord(existing.record)) return batchReason("batch_record_shape_retired");
+		const integrationBatch = existing && !existing.corrupt ? existing.record : existing ? null : findSettledBatchRecord(this.cwd, initiativeSlug);
+		let replayCompleted = true;
+		let replayReader = this.readInitiative;
+		if (integrationBatch && isLaneBatchRecord(integrationBatch) && (existing || integrationBatch.batch_state === "completed")) {
+			let confirmed: Awaited<ReturnType<typeof readConfirmedBatchTopology>> | undefined;
+			try {
+				confirmed = await readConfirmedBatchTopology(this.cwd, integrationBatch, this.readInitiative);
+			} catch (error) {
+				if (existing) return batchReason("plan_changed", error instanceof Error ? error.message : String(error));
+				// Terminal history owns no new plan; do not replay its writes or completion.
+				replayCompleted = false;
+			}
+			if (confirmed) {
+				const { observation } = confirmed;
+				replayReader = async () => observation;
+				if (["running", "completed"].includes(integrationBatch.batch_state))
+					await integrateSettledCriticalSlices(this.cwd, initiativeSlug, replayReader);
+			}
+		}
+		const completed = replayCompleted ? await completedParentReport(this.cwd, initiativeSlug, replayReader, this.batchTracker) : null;
 		if (completed) return { state: "started", batch_id: completed.batch_id, report: completed };
 		const native = await advanceNativeParent(this.cwd, initiativeSlug, options.final_verification, this.readInitiative, this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug),
 			async (effects) => {
@@ -1090,9 +1113,12 @@ export class ClaudeRuntime {
 			if (result.state === "blocked") return { state: "blocked", reason: result.reason, ...facts };
 			return { state: "failed", reason: (result as { reason?: string }).reason ?? "advance failed", ...facts };
 		};
+		const parent = await (this.readInitiative ?? observeInitiative)(this.cwd, initiativeSlug);
+		if (parent.initiative_id !== initiativeSlug || batchTopologyDigest(parent.tasks) !== preflight.projection.topology_digest)
+			return batchReason("plan_changed");
 		const kernelPort = createBatchKernelPort({
 			root: this.cwd,
-			parent: await (this.readInitiative ?? observeInitiative)(this.cwd, initiativeSlug),
+			parent,
 			enrollmentRegistry: this.enrollmentRegistry,
 			registry: this.batchRegistry,
 			capability,
@@ -1102,6 +1128,7 @@ export class ClaudeRuntime {
 			overrides: this.batchKernel,
 		});
 		let report = await startBatch({
+			topology_digest: preflight.projection.topology_digest,
 			root: this.cwd,
 			batch_id: batchId,
 			initiative_slug: initiativeSlug,

@@ -215,6 +215,9 @@ function request(
 	kernel: BatchRunnerKernelPort,
 	overrides: Partial<StartBatchInput> = {},
 ): StartBatchInput {
+	children = children.map(c => c.intent_content_hash === "0".repeat(64)
+		? { ...c, intent_content_hash: canonicalIntentHash(readTaskIntent(fx.repo, c.task_id).intent) }
+		: c);
 	const registry = createBatchAuthorityRegistry();
 	const planDigest = computeBatchPlanDigest(children);
 	const budget = overrides.budget ?? { max_children: children.length, qa_failure_limit: 3 };
@@ -857,60 +860,63 @@ describe("max_parallel 1 end to end through a real second worktree", () => {
 		}
 	});
 
-	it("treats a host max_parallel of 1 as absent: a serial batch with no Lane record (D7)", async () => {
+	it("defaults omitted and explicit max_parallel 1 to a v2 Lane batch", async () => {
 		const fx = fixture();
 		try {
 			const kernel = laneKernel();
 			const resolved = resolveLaneParallel(fx.repo, SLUG, parseMaxParallel(1), undefined);
-			expect(resolved).toBeUndefined();
+			expect(resolved).toBe(1);
 			expect(resolveLaneParallel(fx.repo, SLUG, parseMaxParallel(2), undefined)).toBe(2);
 			const { max_parallel: _omitted, ...serial } = request(fx, [child("task-a", "S1")], kernel);
 			const report = await startBatch({ ...serial, ...(resolved !== undefined ? { max_parallel: resolved } : {}) });
-			expect(report).not.toHaveProperty("max_parallel");
-			expect(readAnyBatchRunState(fx.repo, BATCH_ID)?.contract).toBe("assurance_kernel/batch_run_state/v1");
-			// Lane offers with nothing recorded to resume are still refused, not turned serial.
+			expect(report).toMatchObject({ max_parallel: 1 });
+			expect(readAnyBatchRunState(fx.repo, BATCH_ID)?.contract).toBe("assurance_kernel/batch_run_state/v2");
+			// New batches create their own Lanes; external offers remain retired.
 			expect(() => resolveLaneParallel(fx.repo, "other-initiative", parseMaxParallel(1), [])).toThrow(/lane_offers_retired/);
 		} finally {
 			fx.cleanup();
 		}
 	});
 
-	it("resumes a recorded max_parallel 2 Lane batch at 2 when the host passes max_parallel 1 with lane_offers", async () => {
+	it("refuses an explicit max_parallel change when resuming a recorded two-Lane batch", async () => {
 		const fx = fixture();
 		try {
 			const kernel = laneKernel();
 			const args = { ...request(fx, [child("task-a", "S1"), child("task-b", "S2")], kernel), max_parallel: 2 };
 			await startBatch(args);
 			const resolved = resolveLaneParallel(fx.repo, SLUG, parseMaxParallel(1), []);
-			expect(resolved).toBe(2);
+			expect(resolved).toBe(1);
+			const before = readFileSync(join(fx.repo, `.imm/state/batches/${BATCH_ID}.json`));
 			const resumed = lanes(await startBatch({ ...args, max_parallel: resolved }));
-			expect(resumed.reason ?? "").not.toMatch(/batch_parallel_mismatch/);
+			expect(resumed.reason).toMatch(/^batch_parallel_mismatch/);
+			expect(readFileSync(join(fx.repo, `.imm/state/batches/${BATCH_ID}.json`))).toEqual(before);
 			expect(resumed.max_parallel).toBe(2);
 		} finally {
 			fx.cleanup();
 		}
 	});
 
-	it("keeps the serial contract when max_parallel is absent", async () => {
+	it("uses the Lane contract when max_parallel is absent", async () => {
 		const fx = fixture();
 		try {
 			const kernel = laneKernel();
 			const { max_parallel: _omitted, ...serial } = request(fx, [child("task-a", "S1")], kernel);
 			await startBatch(serial);
-			expect(readAnyBatchRunState(fx.repo, BATCH_ID)?.contract).toBe("assurance_kernel/batch_run_state/v1");
+			expect(readAnyBatchRunState(fx.repo, BATCH_ID)).toMatchObject({ contract: "assurance_kernel/batch_run_state/v2", max_parallel: 1 });
 		} finally {
 			fx.cleanup();
 		}
 	});
 
-	it("rejects a serial record when a resume adds max_parallel", async () => {
+	it("resumes an omitted-parameter Lane record with explicit max_parallel 1", async () => {
 		const fx = fixture();
 		try {
 			const kernel = laneKernel();
 			const { max_parallel: _omitted, ...serial } = request(fx, [child("task-a", "S1")], kernel);
 			await startBatch(serial);
 			const report = lanes(await runLaneBatch({ ...serial, max_parallel: 1 }, readAnyBatchRunState(fx.repo, BATCH_ID)));
-			expect(report.reason).toMatch(/^batch_parallel_mismatch/);
+			expect(report.batch_state).toBe("running");
+			expect(report.max_parallel).toBe(1);
 		} finally {
 			fx.cleanup();
 		}
@@ -1559,7 +1565,8 @@ describe("lane reader and guidance accuracy", () => {
 			const { args, laneA, report } = await integrateTaskA(fx, laneGitWithAudit());
 			expect(report.children.map((c) => c.state)).toEqual(["integrated", "pending"]);
 			const status = async () => {
-				const outcome = await projectBatchPreflight({ root: fx.repo, initiative_slug: SLUG, now: FAR_FUTURE });
+				const outcome = await projectBatchPreflight({ root: fx.repo, initiative_slug: SLUG, now: FAR_FUTURE,
+					readInitiative: async () => ({ contract: "immune_brain/local_initiative_observation/v1", initiative_id: SLUG, tasks: args.children }) });
 				if (!outcome.ok) throw new Error(`preflight rejected: ${JSON.stringify(outcome)}`);
 				return outcome.projection.recovery_children.map((c) => [c.task_id, c.status]);
 			};
@@ -1881,7 +1888,8 @@ describe("Lane write guard and leak restore (#200)", () => {
 		await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] });
 		return { laneA };
 	}
-	const preflight = () => projectBatchPreflight({ root: fx_root!, initiative_slug: SLUG, now: FAR_FUTURE });
+	const preflight = () => projectBatchPreflight({ root: fx_root!, initiative_slug: SLUG, now: FAR_FUTURE,
+		readInitiative: async () => ({ contract: "immune_brain/local_initiative_observation/v1", initiative_id: SLUG, tasks: [child("task-a", "S1")] }) });
 	let fx_root: string | null = null;
 
 	it("restores leaked Lane writes whose bytes are provably the Lane's, backs them up reversibly, and records the backup", async () => {
@@ -2228,7 +2236,8 @@ describe("delegated in-Lane Intent revision and plan_digest reseal (ADR 0018, #1
 			expect(after.plan_digest).not.toBe(before);
 			expect(after.commits).toEqual(integrated.commits);
 			// The resealed digest is what the next resume's preflight computes, so S2 continues without retiring the batch.
-			const outcome = await projectBatchPreflight({ root: fx.repo, initiative_slug: SLUG, now: FAR_FUTURE });
+			const outcome = await projectBatchPreflight({ root: fx.repo, initiative_slug: SLUG, now: FAR_FUTURE,
+				readInitiative: async () => ({ contract: "immune_brain/local_initiative_observation/v1", initiative_id: SLUG, tasks: args.children }) });
 			expect(outcome.ok).toBe(true);
 			expect((outcome as { projection: { plan_digest: string } }).projection.plan_digest).toBe(after.plan_digest);
 		} finally {
@@ -2377,7 +2386,8 @@ describe("Lane batch authority subject", () => {
 			expect(next.reseals).toBeUndefined();
 			expect(readAnyBatchRunState(fx.repo, BATCH_ID)!.plan_digest).toBe(before);
 			// The next resume's preflight computes the same digest from the revised sidecar.
-			const outcome = await projectBatchPreflight({ root: fx.repo, initiative_slug: SLUG, now: FAR_FUTURE });
+			const outcome = await projectBatchPreflight({ root: fx.repo, initiative_slug: SLUG, now: FAR_FUTURE,
+				readInitiative: async () => ({ contract: "immune_brain/local_initiative_observation/v1", initiative_id: SLUG, tasks: args.children }) });
 			expect(outcome.ok).toBe(true);
 			expect((outcome as { projection: { plan_digest: string } }).projection.plan_digest).toBe(before);
 		} finally {
@@ -2410,7 +2420,8 @@ describe("Lane batch authority subject", () => {
 			const after = readAnyBatchRunState(fx.repo, BATCH_ID)!;
 			expect(after.plan_digest).toBe(integrated.reseals![0]!.to_digest);
 			expect((after as { intent_identities?: Record<string, { intent_authority_hash?: string }> }).intent_identities?.["task-a"]?.intent_authority_hash).toBe(authority);
-			const outcome = await projectBatchPreflight({ root: fx.repo, initiative_slug: SLUG, now: FAR_FUTURE });
+			const outcome = await projectBatchPreflight({ root: fx.repo, initiative_slug: SLUG, now: FAR_FUTURE,
+				readInitiative: async () => ({ contract: "immune_brain/local_initiative_observation/v1", initiative_id: SLUG, tasks: args.children }) });
 			expect(outcome.ok).toBe(true);
 			expect((outcome as { projection: { plan_digest: string } }).projection.plan_digest).toBe(after.plan_digest);
 		} finally {
@@ -2494,13 +2505,14 @@ describe("loaded plugin build preflight (Spec branch-boundary D4)", () => {
 		}
 	});
 
-	it("leaves a serial batch start unaffected by a differing loaded build", async () => {
+	it("refuses a differing loaded build even when max_parallel is omitted", async () => {
 		const fx = withWorkspacePlugin(fixture(), "// another build\n");
 		try {
 			const { max_parallel: _serial, ...serial } = request(fx, [child("task-a", "S1")], laneKernel());
 			const report = await startBatch(serial);
-			expect(report.batch_state).not.toBe("rejected");
-			expect(report.reason ?? "").not.toContain("batch_runtime_contract_mismatch");
+			expect(report.batch_state).toBe("rejected");
+			expect(report.reason).toStartWith("batch_runtime_contract_mismatch:");
+			expect(readAnyBatchRunState(fx.repo, BATCH_ID)).toBeNull();
 		} finally {
 			fx.cleanup();
 		}

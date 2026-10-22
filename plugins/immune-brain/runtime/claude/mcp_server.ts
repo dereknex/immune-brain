@@ -39,7 +39,7 @@ export const TOOLS = [
 	{ name: "revise_intent", description: "Apply a compatible TaskIntent revision.", privileged: false },
 	{ name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
 	{ name: "stop", description: "Stop the active task with literal-user authority.", privileged: true },
-	{ name: "start_unattended_batch", description: "Start an unattended serial batch run for an Initiative under the literal-user imm-run entry.", privileged: true },
+	{ name: "start_unattended_batch", description: "Start an unattended Lane batch run for an Initiative under the literal-user imm-run entry.", privileged: true },
 	{ name: "retire_stale_batch", description: "Retire an Initiative's parked or drifted batch record to the terminal superseded state under the literal-user imm-run entry.", privileged: true },
 	{ name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false },
 	{ name: "resolve_finding", description: "Resolve one open blocking or advisory finding whose cause is fixed and verified.", privileged: false },

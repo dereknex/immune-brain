@@ -558,18 +558,15 @@ Key invariants:
 
 Enter `imm-run <Parent Issue>` to execute its complete approved plan through the Host's `start_unattended_batch` tool and native authorization. Enter `imm-run <Slice/Child Issue>` to execute only that Slice after prerequisite delivery checks; it starts no siblings or predecessors.
 
-The Parent chooses **Managed Serial Mode** or **Parallel Batch Lanes** before confirmation, using dependency readiness, scope conflicts, Lane capacity and supervised Host capability. Without Lane supervision it runs serially in the same Host. Status questions preserve the binding; explicit cancellation releases continuation.
+Every new batch uses **runtime-created Lanes**. Omitted `max_parallel` and explicit `max_parallel: 1` both run one Lane at a time; larger values allow scope-disjoint children to run concurrently. The Parent chooses capacity before confirmation using dependencies, scope conflicts and supervised Host capability. Without a supervised Executor it reports a blocker, not a coordinator-execution fallback. Status questions preserve the binding; explicit cancellation releases continuation.
 
-### 1. Batch Execution Modes Overview
+### 1. Batch Execution Overview
 
-| Dimension | Serial Batch (Default) | Parallel Batch Lanes |
-|---|---|---|
-| **Activation** | Call `start_unattended_batch(slug)` directly | Pass `max_parallel` or configure `Lane max parallel: <n>` |
-| **Workspace Topology** | Shared single batch branch (`imm-batch/<slug>`) | Coordinator manages batch branch; each concurrent task owns a Git worktree (`imm-lane/<task-id>`) |
-| **Scheduling** | Strict sequential execution ordered by dependency layers | Scope-disjoint children execute concurrently in parallel Lanes |
-| **Authority Boundaries** | Single local Authority Store advanced sequentially | Each Lane owns its own local Authority Store, running isolated with zero global CAS contention |
-| **Integration** | Direct commit on batch branch after task QA/Review passes | Reconciles via Git plumbing, reruns Integration Guard descriptors, then fast-forwards batch branch |
-| **Ideal For** | Small initiatives, tight file coupling, resource-constrained environments | Medium/large initiatives, decoupled modules, high-compute environments |
+- **Activation:** call `start_unattended_batch(slug)` for capacity 1, or pass `max_parallel` / configure `Lane max parallel: <n>`.
+- **Workspace topology:** the runtime creates each child's worktree under the Git common directory at `imm/worktrees/<slug>/<task_id>` and keeps Parent progress on `refs/heads/imm/<slug>` without changing the coordinator checkout.
+- **Authority:** each Lane has its own Authority Store, Enrollment, QA, Review and settlement.
+- **Integration:** the runtime commits scoped delivery, reruns Integration Guard descriptors and fast-forwards the Parent ref before admitting dependent work.
+- **Retired records:** query status with the Parent slug as `task_id` to read the persisted batch identity, state and child progress in `batch.record`, including v1 serial records. This is read-only evidence; a missing Parent TaskRecord does not hide it or grant execution authority. `retire_stale_batch` explicitly retires active records. Resuming one refuses with `batch_record_shape_retired`; the serial runner and plan reconfirmation path are removed.
 
 ### 2. Batch Authority & Invariants
 
@@ -579,7 +576,7 @@ The Parent chooses **Managed Serial Mode** or **Parallel Batch Lanes** before co
 
 ### 3. Parallel Batch Lanes Lifecycle & Architecture
 
-In parallel lane mode, the Coordinator (Parent Host), `lane-steward` internal role, and Lane Executor Hosts coordinate to provide physical concurrency isolation:
+The Coordinator (Parent Host), runtime and Lane Executor Hosts coordinate isolated execution at every capacity:
 
 ```mermaid
 sequenceDiagram
@@ -591,15 +588,11 @@ sequenceDiagram
 
     Note over P,B: 1. Scheduling & Scope-Disjoint Analysis
     P->>B: start_unattended_batch(slug, max_parallel)
-    B-->>P: handoffs: provision Lane A, Lane B
+    Note over P,B: 2. Runtime Worktree Provisioning
+    B->>B: Create dependency-ready Lane worktrees at Parent tip
 
-    Note over P,S: 2. Physical Worktree Provisioning (Provision & Admit)
-    P->>S: Provision worktree (branch imm-lane/..., base batch base)
-    S-->>P: Return isolated worktree paths
-    P->>B: Submit lane_offers admission check (cleanliness, branch, base)
-
-    Note over P,L: 3. Supervised Parallel Execution
-    B-->>P: handoffs: launch Executor A, Executor B
+    Note over P,L: 3. Supervised Lane Execution
+    B-->>P: handoffs: Executor paths (up to confirmed capacity)
     P->>L: Launch background session for imm-run (configurable Host/model)
     L->>K: Run loop: Scope freeze -> Deterministic QA -> Review -> Settle
 
@@ -609,7 +602,8 @@ sequenceDiagram
     B->>K: Read Lane evidence & commit
     B->>B: Build candidate commit + rerun Integration Guard descriptors
     B->>B: Fast-forward batch branch (1 child 1 commit)
-    B-->>P: handoffs: release Lane A / provision Lane C
+    B->>B: Remove clean idle Lane A; create next ready Lane
+    B-->>P: integration report and next Executor handoffs
 ```
 
 #### Core Mechanisms:
@@ -618,7 +612,7 @@ sequenceDiagram
 2. **Supervised Host Sessions:** The Parent Host launches an independent Executor Host process for each Lane (configurable across Hosts, models, and effort tiers, such as Pi or Claude Code). The Parent is reactively notified on session completion, polling nothing. When running inside Herdr, it opens one tab per Lane and never answers trust/login dialogs on behalf of the user.
 3. **Integration Guard:** To eliminate silent semantic conflicts, settled deliveries are not blindly merged. The Coordinator constructs candidate commits via Git plumbing and reruns deterministic descriptors for both the candidate child and all sibling tasks integrated since the lane's base. Fast-forward proceeds only if all tests pass.
 4. **Fault Isolation:** If a Lane encounters a QA failure, review rejection, or integration conflict, the batch branch stays untouched (zero-write). The failing child is parked as `needs_human`, its dependents are marked `skipped_blocked`, while independent sibling Lanes proceed unaffected.
-5. **Agents Only Create:** The Parent and `lane-steward` provision Lanes and terminal tabs but never kill sessions or delete worktrees. Once integrated, the system reports safe-to-release Lanes for the developer to inspect and clean up.
+5. **Runtime-Owned Lifecycle:** The runtime creates Lanes and removes clean, unoccupied Lane worktrees and branches after integration. Dirty Lanes are retained and reported. Agents never kill unrelated sessions or delete user work; legacy external-Lane records retain their existing release handoffs until drained.
 
 
 ---
@@ -631,7 +625,7 @@ Immune-Brain has **no separate config file**. Preferences live in your host's ag
 ## Immune-Brain Preferences
 
 - Initiative carrier default: github   # or: local
-- Lane max parallel: 4                 # optional; enables lane mode
+- Lane max parallel: 4                 # optional; default: one Lane at a time
 - Lane Executor Host: claude-code      # optional; or: pi
 - Lane Executor model: <model id>      # optional; needs Lane Executor Host
 - Lane Executor effort: high           # optional; needs Lane Executor Host
