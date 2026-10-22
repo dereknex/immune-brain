@@ -4862,6 +4862,7 @@ function createBatchAuthorityRegistry() {
   }, "batch authorization");
   const plans = new WeakMap;
   const consumed = new WeakMap;
+  const redos = new WeakMap;
   function planOf(capability) {
     const plan = plans.get(capability);
     if (!plan)
@@ -4882,6 +4883,7 @@ function createBatchAuthorityRegistry() {
       const capability = inner.issue(binding, issuedAt);
       plans.set(capability, children.map((child) => ({ ...child, blocked_by: [...child.blocked_by] })));
       consumed.set(capability, new Set);
+      redos.set(capability, new Map);
       return capability;
     },
     inspect(capability, expected) {
@@ -4911,6 +4913,32 @@ function createBatchAuthorityRegistry() {
     releaseChild(capability, taskId) {
       slotsOf(capability).delete(taskId);
     },
+    reissueChild(capability, expected, taskId) {
+      this.inspect(capability, expected);
+      if (!planOf(capability).some((child) => child.task_id === taskId))
+        throw new Error(`batch_child_not_in_plan: ${taskId}`);
+      if (!slotsOf(capability).has(taskId))
+        throw new Error(`batch_child_slot_not_consumed: ${taskId}`);
+      const count = this.redoGrants(capability, taskId);
+      if (count >= 2)
+        throw new Error(`batch_child_redo_exhausted: ${taskId}`);
+      redos.get(capability).set(taskId, count + 1);
+      slotsOf(capability).delete(taskId);
+      return count + 1;
+    },
+    redoGrants(capability, taskId) {
+      if (!planOf(capability).some((child) => child.task_id === taskId))
+        throw new Error(`batch_child_not_in_plan: ${taskId}`);
+      return redos.get(capability).get(taskId) ?? 0;
+    },
+    restoreChild(capability, expected, taskId, count) {
+      this.inspect(capability, expected);
+      const current = this.redoGrants(capability, taskId);
+      if (!Number.isInteger(count) || count < current || count > 2)
+        throw new Error(`batch_child_redo_count_invalid: ${taskId}`);
+      redos.get(capability).set(taskId, count);
+      slotsOf(capability).add(taskId);
+    },
     isExhausted(capability) {
       return slotsOf(capability).size >= planOf(capability).length;
     }
@@ -4926,11 +4954,17 @@ function assertBatchLineageOrigin(root, baseHead, expectedHead) {
     throw new Error(`batch_head_lineage_broken: the first child must enroll on the confirmed base_head ${baseHead} or a fast-forward of it, not ${expectedHead}`);
 }
 function deriveChildEnrollment(root, registry, input) {
+  return prepareChildEnrollment(root, registry, input, false);
+}
+function prepareChildEnrollment(root, registry, input, redo) {
   const validated = registry.inspect(input.capability, input.binding);
   const child = registry.children(input.capability).find((entry) => entry.task_id === input.task_id);
   if (!child)
     throw new Error(`batch_child_not_in_plan: ${input.task_id}`);
-  if (registry.isChildConsumed(input.capability, input.task_id))
+  const consumed = registry.isChildConsumed(input.capability, input.task_id);
+  if (redo && !consumed)
+    throw new Error(`batch_child_slot_not_consumed: ${input.task_id}`);
+  if (!redo && consumed)
     throw new Error(`batch_child_slot_consumed: ${input.task_id}`);
   if (!GIT_COMMIT_ID.test(input.expected_head))
     throw new Error("batch_head_lineage_broken: expected_head is not a commit id");
@@ -4941,6 +4975,8 @@ function deriveChildEnrollment(root, registry, input) {
     throw new Error(`batch_head_lineage_broken: expected ${input.expected_head}, found ${preparation.git_base_head}`);
   if (!preparation.intent)
     throw new Error(`batch_child_intent_changed: ${input.task_id} intent sidecar is unreadable`);
+  if (redo && preparation.intent.content_hash !== child.intent_content_hash)
+    throw new Error(`batch_child_intent_changed: ${input.task_id}`);
   if (child.intent_authority_hash) {
     let live = null;
     try {
@@ -5914,7 +5950,7 @@ function removeLaneWorktree(root, path, branch, commit) {
   if (!existsSync4(path))
     return false;
   const directory = worktreeDirectory(root);
-  if (!path.startsWith(`${directory}/`) || realpathSync7(path) !== path || git2(path, ["symbolic-ref", "--short", "HEAD"]) !== branch || git2(path, ["rev-parse", "HEAD"]) !== commit || git2(path, ["status", "--porcelain", "--untracked-files=all"]))
+  if (!path.startsWith(`${directory}/`) || realpathSync7(path) !== path || realpathSync7(git2(path, ["rev-parse", "--path-format=absolute", "--git-common-dir"])) !== realpathSync7(git2(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"])) || git2(path, ["symbolic-ref", "--short", "HEAD"]) !== branch || git2(path, ["rev-parse", "HEAD"]) !== commit || git2(path, ["status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none"]))
     return false;
   git2(root, ["worktree", "remove", path]);
   git2(root, ["update-ref", "-d", `refs/heads/${branch}`, commit]);
@@ -17780,10 +17816,14 @@ function rehydrateConsumption(input, record) {
     }
   });
   for (const child of record.children) {
-    if (child.state === "pending" || child.state === "skipped_blocked" || child.state === "lane_admitted")
+    const recorded = child.redo_grants;
+    const grants = recorded === undefined ? 0 : recorded;
+    const consumed = child.state !== "pending" && child.state !== "skipped_blocked" && child.state !== "lane_admitted";
+    if (!consumed && grants === 0)
       continue;
-    if (!input.registry.isChildConsumed(input.capability, child.task_id))
-      input.registry.consumeChild(input.capability, binding, child.task_id);
+    input.registry.restoreChild(input.capability, binding, child.task_id, grants);
+    if (!consumed)
+      input.registry.releaseChild(input.capability, child.task_id);
   }
 }
 function failLineage(root, record, message) {

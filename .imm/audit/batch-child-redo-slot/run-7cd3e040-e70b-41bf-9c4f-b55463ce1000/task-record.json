@@ -1,0 +1,163 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "batch-child-redo-slot",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "batch-child-redo-slot",
+    "goal": "A Lane batch can rerun one already-enrolled child under its original Batch Authorization for an integration redo: the authority registry re-issues that child's consumed slot at most twice, bound to the unchanged plan binding, and the redo enrolls in a freshly recreated Lane worktree at the new Parent tip with an empty Lane store, so neither terminal same-task re-enrollment nor prior QA or Review evidence is reused (Spec branch-boundary-r2 D16, T7). No user-visible change: this is Kernel authority plumbing consumed by S2 merge-queue-redo.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "The batch authority registry re-issues a consumed child's slot for a redo under the same capability and binding, recording one redo grant each time; a third redo for the same child is refused with batch_child_redo_exhausted, and a redo is refused for a child whose slot was never consumed (batch_child_slot_not_consumed), for a task absent from the plan (batch_child_not_in_plan), and for a mismatched binding. Seam: tests/kernel-batch-authority.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Deriving a redo enrollment through the batch Kernel port succeeds only when the child's prior Lane run is done or stopped and bound to the recorded run id; it is refused while that run is still active, when the Lane store holds a different run, and when the child's TaskIntent content hash differs from the authorized one, and a refused derivation leaves the redo grant count unchanged. Seam: tests/batch-redo-slot.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-redo-slot.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Recreating a child's Lane removes the old clean Lane worktree and its lane branch and creates a fresh one on imm-lane/<slug>/<task_id> at the given new Parent tip, whose Lane store has no run for the task, so the same task enrolls there and its TaskRecord carries no QA or Review approval from the earlier run; recreation is refused without touching the old Lane when it has uncommitted or untracked edits. Seam: tests/batch-redo-slot.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-redo-slot.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "Resuming a Lane batch on a fresh capability restores each child's consumed slot together with its recorded redo grant count, so a restart neither grants extra redos nor refuses a redo still within the limit. Seam: tests/batch-redo-slot.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-redo-slot.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "The committed Claude MCP bundle matches the runtime source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/build-claude-plugin.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/branch-boundary-r2-batch-child-redo-slot.md",
+      "docs/plans/batch-child-redo-slot.intent.json",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+      "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_worktrees.ts",
+      "tests/batch-redo-slot.test.ts",
+      "tests/kernel-batch-authority.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/batch-child-redo-slot.intent.json",
+    "content_hash": "sha256:0b8c3ebbcfce627a02be1747ba589253094016bf156903cf5c40ce0879b420a6"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:0b8c3ebbcfce627a02be1747ba589253094016bf156903cf5c40ce0879b420a6",
+  "git_base_head": "f2e41dff91e14d96eb65fe5edb0b78baf9f6d510",
+  "attestations": [
+    {
+      "id": "approval-qa-50056501",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:0b8c3ebbcfce627a02be1747ba589253094016bf156903cf5c40ce0879b420a6",
+      "diff_hash": "sha256:29f097e6e31f5b1003d636d3f2ba1920bd84568abd6ba1c1fd91509f37ec0ea6",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 project verification check(s) passed; execution=sha256:5176a8999c4cebb2eeceae831d996bcf065b3d8ced59b70d069b7e62a1616967",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:5176a8999c4cebb2eeceae831d996bcf065b3d8ced59b70d069b7e62a1616967"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:5176a8999c4cebb2eeceae831d996bcf065b3d8ced59b70d069b7e62a1616967"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:5176a8999c4cebb2eeceae831d996bcf065b3d8ced59b70d069b7e62a1616967"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:5176a8999c4cebb2eeceae831d996bcf065b3d8ced59b70d069b7e62a1616967"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:5176a8999c4cebb2eeceae831d996bcf065b3d8ced59b70d069b7e62a1616967"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-908833d2",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:0b8c3ebbcfce627a02be1747ba589253094016bf156903cf5c40ce0879b420a6",
+      "diff_hash": "sha256:29f097e6e31f5b1003d636d3f2ba1920bd84568abd6ba1c1fd91509f37ec0ea6",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 manifest digest、commit 唯一 parent、tree 与全部 changed objects，完整审查八个文件的 diff，并追踪 settlement、Lane 清理及计数恢复；未发现阻断问题。执行验证沿用 Kernel 提供的 AC1–AC5 passed outcomes，未重复运行测试。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "f2e41dff91e14d96eb65fe5edb0b78baf9f6d510",
+        "review_commit": "c727c69835e87788cac02297a5a87fb2d91c1bc0",
+        "review_tree": "85508f36796d3294abd8526acf4ed58b068519e4",
+        "manifest_digest": "sha256:fd77bf79e0e482bbe4e31451010c87ee52b2fd945336ea915a9a4835c4e039cd"
+      },
+      "reviewer_verdict_sha256": "sha256:c0968a3aa12a0094fa50670a2a90107c679784644e5591f1f2fe44796581a23d"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:batch-child-redo-slot:2026-10-22T03:03:22.059Z",
+      "at": "2026-10-22T03:03:22.059Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-child-redo-slot.intent.json"
+    },
+    {
+      "id": "record_approval:batch-child-redo-slot:2026-10-22T03:18:52.985Z",
+      "at": "2026-10-22T03:18:52.985Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-50056501\naction_v2_sha256:e5aabed167002c88e16a812d7967180b5a9fbca2aaaa94cdc40490102e393f0e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-ad26833576ef3c62",
+        "issued_at": "2026-10-22T03:18:52.985Z"
+      }
+    },
+    {
+      "id": "record_approval:batch-child-redo-slot:2026-10-22T03:22:41.751Z",
+      "at": "2026-10-22T03:22:41.751Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-908833d2\naction_v2_sha256:b5ab03b8c071cb9eb1ae3fded47149b8bc2cb1b70d4d3eb5b881e627a51ef9d3",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-91eff41d5b836716",
+        "issued_at": "2026-10-22T03:22:41.751Z"
+      }
+    },
+    {
+      "id": "complete:batch-child-redo-slot:2026-10-22T03:22:43.236Z",
+      "at": "2026-10-22T03:22:43.236Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:dd197e1665db87cbc3fdaf3fae3ca0769d3ee34c479b7d4f227cd430542e9f1d"
+    }
+  ]
+}

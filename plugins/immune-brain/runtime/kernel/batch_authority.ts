@@ -90,6 +90,11 @@ export interface BatchAuthorityRegistry {
 	): ValidatedBatchAuthorization;
 	/** Undo one slot consumption when the bound write did not commit. */
 	releaseChild(capability: object, taskId: string): void;
+	/** Re-open a consumed slot, spending one of the child's two integration redos. */
+	reissueChild(capability: object, expected: BatchAuthorizationBinding, taskId: string): number;
+	redoGrants(capability: object, taskId: string): number;
+	/** Restore durable consumption and redo spend on a freshly issued capability. */
+	restoreChild(capability: object, expected: BatchAuthorizationBinding, taskId: string, redoGrants: number): void;
 	isExhausted(capability: object): boolean;
 }
 
@@ -263,6 +268,7 @@ export function createBatchAuthorityRegistry(): BatchAuthorityRegistry {
 
 	const plans = new WeakMap<object, BatchPlanChild[]>();
 	const consumed = new WeakMap<object, Set<string>>();
+	const redos = new WeakMap<object, Map<string, number>>();
 
 	function planOf(capability: object): BatchPlanChild[] {
 		const plan = plans.get(capability);
@@ -287,6 +293,7 @@ export function createBatchAuthorityRegistry(): BatchAuthorityRegistry {
 				children.map((child) => ({ ...child, blocked_by: [...child.blocked_by] })),
 			);
 			consumed.set(capability, new Set<string>());
+			redos.set(capability, new Map());
 			return capability;
 		},
 		inspect(capability, expected) {
@@ -314,6 +321,31 @@ export function createBatchAuthorityRegistry(): BatchAuthorityRegistry {
 		},
 		releaseChild(capability, taskId) {
 			slotsOf(capability).delete(taskId);
+		},
+		reissueChild(capability, expected, taskId) {
+			this.inspect(capability, expected);
+			if (!planOf(capability).some(child => child.task_id === taskId))
+				throw new Error(`batch_child_not_in_plan: ${taskId}`);
+			if (!slotsOf(capability).has(taskId))
+				throw new Error(`batch_child_slot_not_consumed: ${taskId}`);
+			const count = this.redoGrants(capability, taskId);
+			if (count >= 2) throw new Error(`batch_child_redo_exhausted: ${taskId}`);
+			redos.get(capability)!.set(taskId, count + 1);
+			slotsOf(capability).delete(taskId);
+			return count + 1;
+		},
+		redoGrants(capability, taskId) {
+			if (!planOf(capability).some(child => child.task_id === taskId))
+				throw new Error(`batch_child_not_in_plan: ${taskId}`);
+			return redos.get(capability)!.get(taskId) ?? 0;
+		},
+		restoreChild(capability, expected, taskId, count) {
+			this.inspect(capability, expected);
+			const current = this.redoGrants(capability, taskId);
+			if (!Number.isInteger(count) || count < current || count > 2)
+				throw new Error(`batch_child_redo_count_invalid: ${taskId}`);
+			redos.get(capability)!.set(taskId, count);
+			slotsOf(capability).add(taskId);
 		},
 		isExhausted(capability) {
 			return slotsOf(capability).size >= planOf(capability).length;
@@ -363,13 +395,34 @@ export function deriveChildEnrollment(
 	registry: BatchAuthorityRegistry,
 	input: DeriveChildEnrollmentInput,
 ): DerivedChildEnrollment {
+	return prepareChildEnrollment(root, registry, input, false);
+}
+
+/** The Kernel port proves prior-run settlement before requesting a redo binding. */
+export function reissueChildEnrollment(
+	root: string,
+	registry: BatchAuthorityRegistry,
+	input: DeriveChildEnrollmentInput,
+): DerivedChildEnrollment {
+	const derived = prepareChildEnrollment(root, registry, input, true);
+	registry.reissueChild(input.capability, input.binding, input.task_id);
+	return derived;
+}
+
+function prepareChildEnrollment(
+	root: string,
+	registry: BatchAuthorityRegistry,
+	input: DeriveChildEnrollmentInput,
+	redo: boolean,
+): DerivedChildEnrollment {
 	const validated = registry.inspect(input.capability, input.binding);
 	const child = registry
 		.children(input.capability)
 		.find((entry) => entry.task_id === input.task_id);
 	if (!child) throw new Error(`batch_child_not_in_plan: ${input.task_id}`);
-	if (registry.isChildConsumed(input.capability, input.task_id))
-		throw new Error(`batch_child_slot_consumed: ${input.task_id}`);
+	const consumed = registry.isChildConsumed(input.capability, input.task_id);
+	if (redo && !consumed) throw new Error(`batch_child_slot_not_consumed: ${input.task_id}`);
+	if (!redo && consumed) throw new Error(`batch_child_slot_consumed: ${input.task_id}`);
 	if (!GIT_COMMIT_ID.test(input.expected_head))
 		throw new Error("batch_head_lineage_broken: expected_head is not a commit id");
 
@@ -382,6 +435,8 @@ export function deriveChildEnrollment(
 		);
 	if (!preparation.intent)
 		throw new Error(`batch_child_intent_changed: ${input.task_id} intent sidecar is unreadable`);
+	if (redo && preparation.intent.content_hash !== child.intent_content_hash)
+		throw new Error(`batch_child_intent_changed: ${input.task_id}`);
 	if (child.intent_authority_hash) {
 		// Spec branch-boundary D7: only the frozen subject binds; a scope-only or
 		// run-parameter revision enrolls under the same authorization.

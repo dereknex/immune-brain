@@ -751,8 +751,11 @@ function validateNewAuthorization(input: StartBatchInput): string | null {
 	}
 }
 
-/** Slots held by integrated and in-flight children are re-consumed on a fresh capability. */
-function rehydrateConsumption(input: StartBatchInput, record: BatchLaneRunStateRecord): void {
+/** Durable redo spend, written by the integration redo coordinator (S2). */
+export type BatchLaneRedoChildRun = BatchLaneChildRun & { redo_grants?: number };
+
+/** Restore slots and redo spend together, including a granted redo not yet enrolled. */
+export function rehydrateConsumption(input: StartBatchInput, record: BatchLaneRunStateRecord): void {
 	const { issued_at: _issuedAt, ...binding } = input.kernel.validateBatchAuthorization({
 		registry: input.registry,
 		capability: input.capability,
@@ -765,9 +768,12 @@ function rehydrateConsumption(input: StartBatchInput, record: BatchLaneRunStateR
 		},
 	});
 	for (const child of record.children) {
-		if (child.state === "pending" || child.state === "skipped_blocked" || child.state === "lane_admitted") continue;
-		if (!input.registry.isChildConsumed(input.capability, child.task_id))
-			input.registry.consumeChild(input.capability, binding, child.task_id);
+		const recorded = (child as BatchLaneRedoChildRun).redo_grants;
+		const grants = recorded === undefined ? 0 : recorded;
+		const consumed = child.state !== "pending" && child.state !== "skipped_blocked" && child.state !== "lane_admitted";
+		if (!consumed && grants === 0) continue;
+		input.registry.restoreChild(input.capability, binding, child.task_id, grants);
+		if (!consumed) input.registry.releaseChild(input.capability, child.task_id);
 	}
 }
 

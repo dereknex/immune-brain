@@ -43,6 +43,19 @@ export function createLaneWorktree(root: string, slug: string, taskId: string, h
 	return path;
 }
 
+/** Recreate only the runtime-owned clean Lane; its ignored Authority Store is discarded. */
+export function recreateLaneWorktree(root: string, slug: string, taskId: string, head: string): string {
+	parentBranchRef(slug);
+	parentBranchRef(taskId);
+	// Resolve the new base before deleting anything, including on a malformed ref.
+	const target = git(root, ["rev-parse", "--verify", "--end-of-options", `${head}^{commit}`]);
+	const path = join(worktreeDirectory(root), slug, taskId);
+	const branch = `imm-lane/${slug}/${taskId}`;
+	if (!existsSync(path) || !removeLaneWorktree(root, path, branch, git(path, ["rev-parse", "HEAD"])))
+		throw new Error("batch_worktree_failed: redo requires the existing clean owned Lane");
+	return createLaneWorktree(root, slug, taskId, target);
+}
+
 /** Carry only planning inputs, never arbitrary coordinator edits or its index. */
 export function copyLanePlanningInput(root: string, lane: string, taskId: string, kind: "intent" | "spec"): void {
 	const read = observeEnrollmentTaskIntent(root, taskId);
@@ -71,9 +84,11 @@ export function removeLaneWorktree(root: string, path: string, branch: string, c
 	if (!existsSync(path)) return false;
 	const directory = worktreeDirectory(root);
 	if (!path.startsWith(`${directory}/`) || realpathSync(path) !== path ||
+		realpathSync(git(path, ["rev-parse", "--path-format=absolute", "--git-common-dir"])) !==
+		realpathSync(git(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"])) ||
 		git(path, ["symbolic-ref", "--short", "HEAD"]) !== branch ||
 		git(path, ["rev-parse", "HEAD"]) !== commit ||
-		git(path, ["status", "--porcelain", "--untracked-files=all"])) return false;
+		git(path, ["status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none"])) return false;
 	git(root, ["worktree", "remove", path]);
 	git(root, ["update-ref", "-d", `refs/heads/${branch}`, commit]);
 	return true;
