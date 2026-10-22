@@ -322,7 +322,7 @@ describe("runtime-owned Parent Lane lifecycle", () => {
 			const advance = kernel.advanceTask;
 			kernel.advanceTask = async (root, taskId) => {
 				const read = readTaskIntent(root, taskId);
-				seedKernelRunForTest(root, { task_id: taskId, terminal: { lifecycle: "done" }, record: {
+				seedKernelRunForTest(root, { task_id: taskId, run_id: "run-1", terminal: { lifecycle: "done" }, record: {
 					contract: "assurance_kernel/task_record/v4", task_id: taskId, intent_snapshot: read.intent,
 					intent_ref: { path: read.intent_ref.path, content_hash: read.content_hash }, lifecycle: "done", artifact_state: "frozen", baseline: read.content_hash,
 					git_base_head: git(root, "rev-parse", "HEAD"), attestations: [], findings: [], history: [],
@@ -367,6 +367,12 @@ describe("runtime-owned Parent Lane lifecycle", () => {
 			expect(done.batch_state).toBe("completed");
 			expect(done.commits).toHaveLength(2);
 			expect(done.final_verification).toMatchObject({ passed: true, head: done.commits[1] });
+			expect(done.final_report).toMatchObject({
+				head: done.commits[1],
+				children: [{ task_id: "task-a", redo_count: 0 }, { task_id: "task-b", redo_count: 0 }],
+				return_to_coordinator: { mode: "manual", status: "manual", reason: null },
+			});
+			expect(lanes(await startBatch(args)).final_report).toEqual(done.final_report);
 			expect(git(fx.repo, "rev-parse", "HEAD")).toBe(fx.base);
 			expect(git(fx.repo, "diff", "HEAD")).toBe("");
 			expect(existsSync(join(fx.repo, "a.txt"))).toBe(false);

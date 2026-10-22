@@ -169,6 +169,8 @@ export interface BatchLaneRunStateRecord {
 	/** Complete confirmed Parent topology, including excluded prerequisites. */
 	topology_digest?: string;
 	progress_mode?: "parent_branch";
+	/** D24 delivery observation, retained on replay without repeating the return step. */
+	final_report?: import("./batch_final_report").BatchFinalReport;
 	batch_id: string;
 	initiative_slug: string;
 	plan_digest: string;
@@ -966,6 +968,7 @@ export interface BatchLaneRunReport {
 	children: BatchLaneChildRun[];
 	commits: string[];
 	reason: string | null;
+	final_report?: import("./batch_final_report").BatchFinalReport;
 	handoffs: BatchLaneHandoff[];
 	/** Offers refused at admission; a refused offer wrote nothing. */
 	lane_refusals?: Array<{ task_id: string; path: string; reason: string }>;

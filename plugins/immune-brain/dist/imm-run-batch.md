@@ -67,6 +67,15 @@ Continue filling dependency-ready, non-conflicting capacity; below-limit QA/Revi
 failures return to bounded repair in this Loop. Repeated failures use the existing
 coordinator correction limits, retaining failure history and counters.
 
+A new Parent-branch batch includes `final_report` when it finishes or parks:
+approved acceptance ids against QA results, beyond-estimate files, declared and
+projected risk, redo counts and parked reasons. Unknown evidence is `null`, not a
+pass. `manual` leaves the coordinator and Parent branch unchanged. `auto` returns
+the coordinator's existing branch by fast-forward only after final verification
+passes on the Parent tip, with a clean working tree and ancestor HEAD. Otherwise
+`return_to_coordinator` records the blocking reason and retains the Parent branch;
+there is no reset, forced update, push or automatic retry on terminal replay.
+
 A batch `completed` flag proves only the ordinary child driver finished. Parent
 success requires all necessary Slices and separately enrolled repairs settled
 `done` with current Intent evidence, and recorded final commands passing on the

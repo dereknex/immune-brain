@@ -7,8 +7,9 @@ status: accepted
 Accepted by the repository owner with Slice S1 of Initiative `branch-boundary-r2`
 (`batch-parent-branch`): Parent-branch Lane lifecycle and final verification
 (decisions D11–D14 in `docs/specs/branch-boundary-r2.spec.md`). Merge redo,
-derived regeneration, serial retirement and return-to-main remain the later
-Slices defined by that Spec (D15–D18 and D24), not S1 delivery claims. It delivers
+derived regeneration and serial retirement remain the later Slices defined by
+that Spec (D15–D18), not S1 delivery claims. Slice S9 (`final-report-return`)
+delivers D24's final report and preference-controlled coordinator return. It delivers
 [ADR 0026](0026-branch-boundary-frozen-acceptance.md) item 5. It supersedes
 [ADR 0005](0005-unattended-initiative-batch-run.md) §6 and
 [ADR 0013](0013-optional-parallel-batch-lanes.md) §3 for worktree management,
@@ -43,8 +44,14 @@ result, and nothing returns the work to main.
    worktree at the Parent tip.
 5. **Return to main.** Batches follow the Git integration preference: `manual`
    stops with a final report and leaves the Parent branch; `auto`
-   fast-forwards the user's branch when possible and otherwise stops with the
-   report.
+   fast-forwards the coordinator's existing branch only after final verification
+   passes on the Parent tip, with a clean working tree and an ancestor HEAD.
+   Dirty, diverged or detached checkouts, failed verification and Git failures
+   stop with an explicit reason; the Parent branch remains. The report records
+   each child's approved acceptance ids against QA results, files beyond the
+   estimate, declared and projected risk, redo count and parked reason. Missing
+   evidence is unknown, never a pass. Terminal replay returns the recorded
+   observation without repeating the return step.
 
 ## Consequences
 

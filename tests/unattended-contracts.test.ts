@@ -456,6 +456,7 @@ describe("unattended batch contract text", () => {
 			"contract",
 			"topology_digest",
 			"progress_mode",
+			"final_report",
 			"batch_id",
 			"initiative_slug",
 			"plan_digest",

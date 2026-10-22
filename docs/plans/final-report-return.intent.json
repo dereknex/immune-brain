@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "final-report-return",
-  "owner": "user",
   "goal": "When a new-mode batch has integrated its children and run final verification it writes a final report of per-child approved acceptance against QA results, files beyond the estimate, declared versus projected risk, redo count and parked reason; under manual it stops with that report, and under auto it fast-forwards the coordinator's branch to the Parent branch when possible and otherwise stops with the reason (Spec branch-boundary-r2 D24).",
   "acceptance": [
     {
@@ -34,8 +33,11 @@
     "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
     "plugins/immune-brain/runtime/unattended/batch_state.ts",
     "tests/batch-final-report.test.ts",
-    "tests/git-integration-preference.test.ts"
+    "tests/git-integration-preference.test.ts",
+    "tests/unattended-batch-lanes.test.ts",
+    "tests/unattended-contracts.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 3,
+  "owner": "user"
 }

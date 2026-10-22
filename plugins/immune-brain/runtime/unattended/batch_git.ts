@@ -25,6 +25,7 @@ import { captureGitTaskRevisionSnapshot, pathMatchesScope, scopedContentIdentity
 import { readNativeParentFinalReport, writeNativeParentFinalReport, readAnyBatchRunState, isLaneBatchRecord, writeBatchRunState, writeBatchLaneRunState, type AnyBatchRunStateRecord } from "./batch_state";
 import { laneCandidateMatches } from "./batch_integration";
 import { runFinalVerification } from "./batch_final_verification";
+import { buildBatchFinalReport, returnBatchToCoordinator } from "./batch_final_report";
 import { withParentWorktree } from "./batch_worktrees";
 import type { InitiativeObservationReader } from "./types";
 import { readTaskIntent, observeEnrollmentTaskIntent } from "../kernel/intent";
@@ -1191,7 +1192,15 @@ export async function integrateSettledCriticalSlices(root: string, initiativeSlu
 	if (batch.batch_state === "completed" && batch.final_verification?.length && !batch.final_verification_result) {
 		const proof = await observeParentCompletion(root, parent.initiative_id, parent.tasks.map(child => child.task_id));
 		if (!proof.missing_task_ids.length) {
-			batch.final_verification_result = await runFinalVerification(root, batch.final_verification, { declaration_head: batch.base_head });
+			batch.final_verification_result = await runFinalVerification(root, batch.final_verification, {
+				declaration_head: batch.base_head,
+				...(isParentBranch(batch.branch) ? { parent_head: expectedBatchHead(batch) } : {}),
+			});
+			if (isLaneBatchRecord(batch) && isParentBranch(batch.branch)) {
+				batch.final_report = await buildBatchFinalReport(root, batch);
+				persist();
+				batch.final_report.return_to_coordinator = returnBatchToCoordinator(root, batch.final_report.head, batch.final_verification_result);
+			}
 			persist();
 		}
 	}

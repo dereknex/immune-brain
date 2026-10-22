@@ -1,0 +1,233 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "final-report-return",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "final-report-return",
+    "goal": "When a new-mode batch has integrated its children and run final verification it writes a final report of per-child approved acceptance against QA results, files beyond the estimate, declared versus projected risk, redo count and parked reason; under manual it stops with that report, and under auto it fast-forwards the coordinator's branch to the Parent branch when possible and otherwise stops with the reason (Spec branch-boundary-r2 D24).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "A completed new-mode batch writes a final report that lists, for each child, its approved acceptance ids with their QA results, its beyond_estimate files, its declared and projected risk, its redo count, and for a parked child its reason.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-final-report.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Under the manual preference the batch stops with the report, leaves imm/<slug> in place and does not move the coordinator's branch.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-final-report.test.ts\",\n      \"tests/git-integration-preference.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Under the auto preference the coordinator's branch fast-forwards to imm/<slug> when its HEAD is an ancestor and its working tree is clean, and stops with the report and the reason when HEAD has diverged or the working tree is dirty.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-final-report.test.ts\",\n      \"tests/git-integration-preference.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/branch-boundary-r2-final-report-return.md",
+      "docs/adr/0027-parent-branch-merge-queue.md",
+      "docs/plans/final-report-return.intent.json",
+      "docs/specs/branch-boundary-r2.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run-batch.md",
+      "plugins/immune-brain/runtime/git_integration_preference.ts",
+      "plugins/immune-brain/runtime/unattended/batch_final_report.ts",
+      "plugins/immune-brain/runtime/unattended/batch_final_verification.ts",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "tests/batch-final-report.test.ts",
+      "tests/git-integration-preference.test.ts",
+      "tests/unattended-batch-lanes.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "risk": "material",
+    "revision": 3,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/final-report-return.intent.json",
+    "content_hash": "sha256:6335852fd845e93bd08712616dbb8122e4d673e8238bf11da5b5e691238fae97"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:3f8456957c8967b8272f04a3b4f064ebaf8de2b4583ae11444e96f1100759b6b",
+  "git_base_head": "593a52e55eba934031f631f445e4070e796c0aab",
+  "attestations": [
+    {
+      "id": "approval-qa-16d82439",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:6335852fd845e93bd08712616dbb8122e4d673e8238bf11da5b5e691238fae97",
+      "diff_hash": "sha256:5d4a1e03cce59ecda3e84366b906c80e59499a7b5419dd7782edc96142d86ad3",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:15f2bad6310fa93ad9fc40b710a1ef8ffbcb6a559fe05fcc5036edbbcf0d33f7",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:15f2bad6310fa93ad9fc40b710a1ef8ffbcb6a559fe05fcc5036edbbcf0d33f7"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:15f2bad6310fa93ad9fc40b710a1ef8ffbcb6a559fe05fcc5036edbbcf0d33f7"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:15f2bad6310fa93ad9fc40b710a1ef8ffbcb6a559fe05fcc5036edbbcf0d33f7"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-8b84570c",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:6335852fd845e93bd08712616dbb8122e4d673e8238bf11da5b5e691238fae97",
+      "diff_hash": "sha256:6a269059cd7ea25907d1cf0844f7eb7c103dc9ed2ee06f3fe7a1f2567b30e713",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:d14868d8f9ef7cf4e5cb6b8009283035c1f34b1e5cafc55d40c62a5ffdd11c61",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:d14868d8f9ef7cf4e5cb6b8009283035c1f34b1e5cafc55d40c62a5ffdd11c61"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:d14868d8f9ef7cf4e5cb6b8009283035c1f34b1e5cafc55d40c62a5ffdd11c61"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:d14868d8f9ef7cf4e5cb6b8009283035c1f34b1e5cafc55d40c62a5ffdd11c61"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-ea4e9c13",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:6335852fd845e93bd08712616dbb8122e4d673e8238bf11da5b5e691238fae97",
+      "diff_hash": "sha256:6a269059cd7ea25907d1cf0844f7eb7c103dc9ed2ee06f3fe7a1f2567b30e713",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 manifest digest、revision 的唯一父提交、tree 及全部变更对象，并读完所有文件 diff；结合 Kernel QA 结果，未发现阻断性问题。已检查报告生成、terminal replay、manual 保留分支及 auto 的失败验证、脏工作区和分叉保护；未重跑测试或修改文件。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "593a52e55eba934031f631f445e4070e796c0aab",
+        "review_commit": "dceff897a9fc4d42b8260af8b4991b23b0506ffe",
+        "review_tree": "8cbb616cf5e9e824f2bf26c45aec76b2af26e917",
+        "manifest_digest": "sha256:bf5e926866e1705f6f1420b6afc67872f7baec6599089f33c6cb1531e3f87fd1"
+      },
+      "reviewer_verdict_sha256": "sha256:1255a3e5284ddff0afe2398eb010c7a74bd2663e06374ee93a2d74076d137413"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "execution",
+      "review_round": null,
+      "summary": "Confirmed defect from the unobserved reviewer: a parked or dependency-skipped child whose approved Intent exists only in coordinator uncommitted planning files makes buildBatchFinalReport throw when it reads the Intent from the Parent commit. Resolve nonintegrated children from bound approved planning evidence; retain Parent-commit audits for integrated children, and add a focused uncommitted-Intent regression test."
+    }
+  ],
+  "history": [
+    {
+      "id": "revise_intent:final-report-return:2026-10-22T13:00:05.802Z",
+      "at": "2026-10-22T13:00:05.802Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\nscope_added:tests/unattended-batch-lanes.test.ts\naction_v2_sha256:537b0649a46c0178f149e40d31514fb8e4f597276b4098f94c3b39cf969c45f8"
+    },
+    {
+      "id": "revise_intent:final-report-return:2026-10-22T13:04:04.663Z",
+      "at": "2026-10-22T13:04:04.663Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\nscope_added:tests/unattended-contracts.test.ts\naction_v2_sha256:5a18f44c18dc1c659f2d37201385153dd3e2d3a9235b6d2b95c3445d76e1a0b5"
+    },
+    {
+      "id": "freeze_artifacts:final-report-return:2026-10-22T13:04:40.968Z",
+      "at": "2026-10-22T13:04:40.968Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/final-report-return.intent.json"
+    },
+    {
+      "id": "record_approval:final-report-return:2026-10-22T13:05:03.335Z",
+      "at": "2026-10-22T13:05:03.335Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-16d82439\naction_v2_sha256:b3b08cf0044805fcaab54ff85b1c2797b7fc6073149a0b5d580ca523c61d65b4",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-a881ba49ce44c37a",
+        "issued_at": "2026-10-22T13:05:03.335Z"
+      }
+    },
+    {
+      "id": "record_finding:final-report-return:2026-10-22T13:17:00.777Z",
+      "at": "2026-10-22T13:17:00.777Z",
+      "type": "record_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-1\naction_v2_sha256:636d3dc596792b4c25285f60dc616fbb7771ec0471fc96fe6ea664f25cccce5b"
+    },
+    {
+      "id": "resolve_finding:final-report-return:2026-10-22T13:21:08.401Z",
+      "at": "2026-10-22T13:21:08.401Z",
+      "type": "resolve_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-1\naction_v2_sha256:99879873706288323eaa63ae9af4a1dbcad4d8eaa306dcdbd11d0e1894c46600"
+    },
+    {
+      "id": "record_approval:final-report-return:2026-10-22T13:21:43.731Z",
+      "at": "2026-10-22T13:21:43.731Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-8b84570c\naction_v2_sha256:7a205691c5fdc8c3b1f75a458bdc7a427fae8e84098a8ebbcb706e97cb24d1b0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-ac06e780c7b84de0",
+        "issued_at": "2026-10-22T13:21:43.731Z"
+      }
+    },
+    {
+      "id": "record_approval:final-report-return:2026-10-22T13:26:57.852Z",
+      "at": "2026-10-22T13:26:57.852Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-ea4e9c13\naction_v2_sha256:95f0556f3b602d66a67eed46f1eabe823ece7431fd7c8d9fa2b7d43691dba71d",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-3c6c7dd085d29af5",
+        "issued_at": "2026-10-22T13:26:57.852Z"
+      }
+    },
+    {
+      "id": "complete:final-report-return:2026-10-22T13:26:59.324Z",
+      "at": "2026-10-22T13:26:59.324Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:7faaef45488ae00781e97382dc92844456e2d38a50a3dc6211a0bef7188667a1"
+    }
+  ]
+}

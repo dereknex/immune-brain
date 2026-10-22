@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "final-report-return",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:final-report-return:2026-10-22T13:26:59.324Z",
+  "final_record_hash": "sha256:da843097cb437203b1861569904e9b6bc324455a3cd89e7419e5c205f14cfba8",
+  "terminalized_at": "2026-10-22T13:26:59.324Z"
+}

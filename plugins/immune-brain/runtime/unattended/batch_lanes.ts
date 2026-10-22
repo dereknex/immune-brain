@@ -21,6 +21,7 @@ import {
 import { readFileSync } from "node:fs";
 import { readDerivedFilesAt } from "../derived_files";
 import { runFinalVerification, type FinalVerificationReport } from "./batch_final_verification";
+import { buildBatchFinalReport, returnBatchToCoordinator } from "./batch_final_report";
 import { runGithubTrackerOperation } from "../github_issue_tracker";
 import { hasLocalInitiative } from "../local_initiative";
 import type { BatchTrackerPort, StartBatchInput } from "./batch_runner";
@@ -588,11 +589,14 @@ function laneReport(
 		...(extra.tracker?.length ? { tracker_observations: extra.tracker } : {}),
 		...(record.restores?.length ? { restores: record.restores } : {}),
 		...(extra.final ? { final_verification: extra.final } : {}),
+		...(record.final_report ? { final_report: record.final_report } : {}),
 		...(record.interventions?.length ? { interventions: record.interventions } : {}),
 		...(extra.instruction ? { lane_instruction: extra.instruction } : {}),
 		...(record.delegated_revisions?.length ? { delegated_revisions: record.delegated_revisions } : {}),
 		...(record.reseals?.length ? { reseals: record.reseals } : {}),
-		next_action: nextAction || (TERMINAL_NEXT_ACTIONS[record.batch_state] ?? "Inspect the batch run state."),
+		next_action: nextAction || (record.final_report?.return_to_coordinator.status === "blocked"
+			? `Review the final report; coordinator return stopped: ${record.final_report.return_to_coordinator.reason}. The Parent branch is retained.`
+			: TERMINAL_NEXT_ACTIONS[record.batch_state] ?? "Inspect the batch run state."),
 		created_at: record.updated_at,
 	};
 }
@@ -1279,6 +1283,11 @@ export async function runLaneBatch(
 				{ declaration_head: record.base_head, ...(isParentBranch(record.branch) ? { parent_head: expectedBatchHead(record) } :
 				isBatchRef(record.branch) ? { scopes: unsettledChildScopes(input.root, input.children) } : {}) })
 			: undefined;
+		if (isParentBranch(record.branch)) {
+			record.final_report = await buildBatchFinalReport(input.root, { ...record, final_verification_result: final });
+			persist(); // Keep the report even if the return step is interrupted.
+			record.final_report.return_to_coordinator = returnBatchToCoordinator(input.root, record.final_report.head, final ?? null);
+		}
 		record.batch_state = "completed";
 		if (final) record.final_verification_result = final;
 		persist();
@@ -1335,6 +1344,10 @@ export async function runLaneBatch(
 	if (!inFlight.length && (!startable.length || overBudget)) {
 		const parked = record.children.some((c) => c.state === "needs_human" || c.state === "skipped_blocked");
 		record.batch_state = parked ? "needs_human" : overBudget ? "budget_stopped" : "needs_human";
+		if (isParentBranch(record.branch)) {
+			record.final_report = await buildBatchFinalReport(input.root, record);
+			record.final_report.return_to_coordinator.reason = "children_not_integrated";
+		}
 		persist();
 		return finalizeLane(
 			input.root,
