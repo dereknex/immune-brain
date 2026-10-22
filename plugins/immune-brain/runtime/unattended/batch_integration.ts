@@ -6,6 +6,8 @@
 // index; the only ref it moves is the hidden ref the batch already owns.
 // Defined by docs/specs/parallel-batch-lanes.spec.md (Temporal sequence, step 2).
 import { spawnSync } from "node:child_process";
+import { materializeDeliveryWorkspace } from "../assurance/delivery_workspace";
+import { readDerivedFilesAt, runDerivedCommand } from "../derived_files";
 import type { SnapshotDescriptor } from "../assurance/coordinator";
 import { runDeterministicQa } from "../assurance/qa";
 import { VerificationAbortedError, type VerificationDescriptor } from "../assurance/verification";
@@ -112,19 +114,46 @@ function isAncestor(root: string, ancestor: string, descendant: string): boolean
  * change is replayed onto the batch head with a tree-level merge that moves no
  * ref and no working tree; a content conflict is an integration conflict.
  */
-export function buildCandidate(input: { root: string; batch_head: string; lane_base: string; lane_commit: string }): string {
+export function buildCandidate(input: { root: string; batch_head: string; lane_base: string; lane_commit: string; declaration_head?: string }): string {
 	const { root, batch_head: head, lane_base: base, lane_commit: laneCommit } = input;
 	if (head === base) return laneCommit;
-	const merged = git(root, ["merge-tree", "--write-tree", `--merge-base=${base}`, head, laneCommit]);
-	if (merged.status === 1)
-		throw new BatchIntegrationError(
-			"batch_integration_conflict",
-			`batch_integration_conflict: lane commit ${laneCommit} does not apply cleanly onto batch head ${head}`,
-		);
-	if (merged.status !== 0)
+	const merged = git(root, ["merge-tree", "--write-tree", "--name-only", "-z", `--merge-base=${base}`, head, laneCommit]);
+	if (merged.status !== 0 && merged.status !== 1)
 		throw new Error(`failed to build integration candidate: ${merged.stderr.trim() || "git merge-tree failed"}`);
-	const tree = merged.stdout.split("\n")[0]?.trim();
+	let tree = merged.stdout.split("\0")[0]?.trim();
 	if (!tree) throw new Error("failed to build integration candidate: no tree produced");
+	if (merged.status === 1) {
+		const conflicts = merged.stdout.split("\0").slice(1);
+		const paths = conflicts.slice(0, conflicts.indexOf(""));
+		const delivery = materializeDeliveryWorkspace(root, tree);
+		try {
+			const entries = readDerivedFilesAt(root, input.declaration_head ?? base);
+			const selected = entries.filter(entry => entry.outputs.some(path => paths.includes(path)));
+			const outputs = new Set(selected.flatMap(entry => entry.outputs));
+			if (!paths.length || paths.some(path => !outputs.has(path))) throw new Error("conflicts include undeclared outputs");
+			for (const entry of selected) {
+				runDerivedCommand(delivery.root, entry.generate, root);
+				runDerivedCommand(delivery.root, entry.check, root);
+			}
+			const changed = gitOut(delivery.root, ["diff", "--name-only", "-z", "HEAD"], "inspect generated delta").split("\0").filter(Boolean);
+			const untracked = gitOut(delivery.root, ["ls-files", "--others", "--exclude-standard", "-z"], "inspect generated files").split("\0").filter(Boolean);
+			if ([...changed, ...untracked].some(path => !outputs.has(path))) throw new Error("generate changed an undeclared output");
+			gitOut(delivery.root, ["add", "--", ...outputs], "stage regenerated outputs");
+			const generatedTree = gitOut(delivery.root, ["write-tree"], "write regenerated tree").trim();
+			if ([...changeIdentity(delivery.root, tree, generatedTree).keys()].some(path => !outputs.has(path)))
+				throw new Error("generate changed an undeclared tree entry");
+			tree = generatedTree;
+			const commit = git(delivery.root, ["commit-tree", tree, "-m", "regenerated integration"], {
+				env: { GIT_AUTHOR_NAME: COMMITTER_ENV.GIT_COMMITTER_NAME, GIT_AUTHOR_EMAIL: COMMITTER_ENV.GIT_COMMITTER_EMAIL },
+			});
+			if (commit.status !== 0) throw new Error("write regenerated commit failed");
+			gitOut(root, ["fetch", "--no-write-fetch-head", "--no-tags", delivery.root, commit.stdout.trim()], "import regenerated tree");
+		} catch (error) {
+			throw new BatchIntegrationError("batch_integration_conflict", `batch_integration_conflict: ${error instanceof Error ? error.message : String(error)}`);
+		} finally {
+			delivery.cleanup();
+		}
+	}
 	const message = gitOut(root, ["log", "-n", "1", "--format=%B", laneCommit], "failed to read lane commit message");
 	const author = gitOut(root, ["log", "-n", "1", "--format=%an%x00%ae%x00%aI", laneCommit], "failed to read lane commit author")
 		.trim()
@@ -143,7 +172,22 @@ export function buildCandidate(input: { root: string; batch_head: string; lane_b
 	return candidate;
 }
 
+/** Rebuilt derived outputs may differ; require the exact reproducible merged tree. */
+export function laneCandidateMatches(input: { root: string; lane_base: string; lane_commit: string; batch_head: string; candidate: string; declaration_head?: string }): boolean {
+	const { root, lane_base, lane_commit, batch_head, candidate } = input;
+	if (identitiesEqual(changeIdentity(root, lane_base, lane_commit), changeIdentity(root, batch_head, candidate))) return true;
+	try {
+		const merged = git(root, ["merge-tree", "--write-tree", `--merge-base=${lane_base}`, batch_head, lane_commit]);
+		if (merged.status !== 1) return false;
+		const expected = buildCandidate({ root, lane_base, lane_commit, batch_head, declaration_head: input.declaration_head });
+		return gitOut(root, ["rev-parse", `${expected}^{tree}`], "read rebuilt tree") ===
+			gitOut(root, ["rev-parse", `${candidate}^{tree}`], "read candidate tree");
+	} catch { return false; }
+}
+
 export interface IntegrateLaneInput {
+	/** Declaration authority is frozen at batch start, including after a Lane redo. */
+	declaration_head?: string;
 	/** Coordinator worktree root, checked out on the batch branch. */
 	root: string;
 	branch: string;
@@ -192,8 +236,8 @@ export function prepareLaneCandidate(input: IntegrateLaneInput): string {
 			`batch_head_lineage_broken: lane base ${base} is not an ancestor of batch head ${head}`,
 		);
 
-	const candidate = buildCandidate({ root, batch_head: head, lane_base: base, lane_commit: laneCommit });
-	if (!identitiesEqual(changeIdentity(root, base, laneCommit), changeIdentity(root, head, candidate)))
+	const candidate = buildCandidate(input);
+	if (!laneCandidateMatches({ root, lane_base: base, lane_commit: laneCommit, batch_head: head, candidate, declaration_head: input.declaration_head }))
 		throw new BatchIntegrationError(
 			"batch_integration_conflict",
 			`batch_integration_conflict: candidate ${candidate} does not carry the lane commit ${laneCommit} change`,
@@ -431,6 +475,7 @@ export function findIntegratedCandidate(input: {
 	batch_id: string;
 	/** The hidden ref the batch advances; absent for a legacy branch batch, searched through HEAD. */
 	branch?: string;
+	declaration_head?: string;
 	from_head: string;
 	lane_base: string;
 	lane_commit: string;
@@ -446,12 +491,11 @@ export function findIntegratedCandidate(input: {
 		`${from}..${tip}`,
 	]);
 	if (listed.status !== 0) throw new Error(`failed to search for integrated ${taskId}: ${listed.stderr.trim()}`);
-	const lane = changeIdentity(root, base, laneCommit);
 	for (const record of listed.stdout.split("\x01")) {
 		const [commit, trailer, subject] = record.split("\0");
 		if (!commit || trailer?.trim() !== batchId || !subject?.trim().startsWith(`imm(${taskId}):`)) continue;
 		const parent = git(root, ["rev-parse", `${commit}^`]).stdout.trim();
-		if (parent && identitiesEqual(lane, changeIdentity(root, parent, commit))) return commit;
+		if (parent && laneCandidateMatches({ root, lane_base: base, lane_commit: laneCommit, batch_head: parent, candidate: commit, declaration_head: input.declaration_head })) return commit;
 	}
 	return null;
 }

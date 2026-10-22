@@ -7,9 +7,11 @@
 // A native Parent binds the report to the scoped content identity of the
 // required Tasks' scopes instead of HEAD: Git is the user's carrier, so a
 // commit, amend or stash round trip with equal content keeps it passed.
+import { delimiter, join } from "node:path";
 import { createHash } from "node:crypto";
 import { parseTaskIntentV1 } from "../kernel/intent";
 import { spawn, spawnSync } from "node:child_process";
+import { readDerivedFiles, readDerivedFilesAt, type DerivedCommand } from "../derived_files";
 import { scopedContentIdentity } from "../workspace_scope";
 import { withParentWorktree } from "./batch_worktrees";
 
@@ -31,6 +33,7 @@ export interface FinalVerificationReport {
 	/** Present when the report is bound to scoped content rather than HEAD. */
 	content_identity?: string;
 	results: FinalVerificationResult[];
+	derived_checks?: Array<FinalVerificationResult & { id: string; invocation: DerivedCommand }>;
 }
 
 /** Untrusted tool input: a short list of plain commands, split on whitespace and never run through a shell. */
@@ -52,23 +55,32 @@ export function parseFinalVerificationReport(value: unknown, commands?: readonly
 	const report = value as FinalVerificationReport;
 	if (typeof report.passed !== "boolean" || !(report.head === null || typeof report.head === "string") ||
 		!(report.content_identity === undefined || typeof report.content_identity === "string") ||
-		!Array.isArray(report.results) || !report.results.length || report.results.some(result =>
+		!Array.isArray(report.results) || (!report.results.length && !report.derived_checks?.length) || report.results.some(result =>
 			!result || typeof result.command !== "string" || typeof result.passed !== "boolean" ||
 			!(result.exit_code === null || Number.isInteger(result.exit_code)) ||
 			!(result.signal === null || typeof result.signal === "string") ||
 			!Number.isFinite(result.duration_ms) || result.duration_ms < 0 ||
 			result.passed !== (result.exit_code === 0 && result.signal === null)))
 		throw new Error("invalid final verification result");
-	parseFinalVerification(report.results.map(result => result.command));
+	if (report.results.length) parseFinalVerification(report.results.map(result => result.command));
 	if (report.passed && report.results.some(result => !result.passed)) throw new Error("contradictory final verification result");
+	if (report.derived_checks !== undefined) {
+		if (!Array.isArray(report.derived_checks) || report.derived_checks.some(result =>
+			!result || typeof result.id !== "string" || !result.invocation || typeof result.invocation.executable !== "string" ||
+			!Array.isArray(result.invocation.argv) || result.invocation.argv.some(arg => typeof arg !== "string") ||
+			!(result.exit_code === null || Number.isInteger(result.exit_code)) || !(result.signal === null || typeof result.signal === "string") ||
+			!Number.isFinite(result.duration_ms) || result.duration_ms < 0 || result.passed !== (result.exit_code === 0 && result.signal === null)))
+			throw new Error("invalid derived verification result");
+		if (report.passed && report.derived_checks.some(result => !result.passed)) throw new Error("contradictory derived verification result");
+	}
 	if (commands && JSON.stringify(report.results.map(result => result.command)) !== JSON.stringify(commands))
 		throw new Error("final verification commands changed");
 	return report;
 }
 
 /** One command, asynchronously, so a long suite never blocks the Host's event loop. */
-function runOne(root: string, command: string, timeoutMs: number): Promise<FinalVerificationResult> {
-	const [executable, ...argv] = command.split(" ");
+function runOne(root: string, command: string, timeoutMs: number, invocation?: DerivedCommand, dependencyRoot = root): Promise<FinalVerificationResult> {
+	const [executable, ...argv] = invocation ? [invocation.executable, ...invocation.argv] : command.split(" ");
 	const started = Date.now();
 	return new Promise((resolve) => {
 		let settled = false;
@@ -78,7 +90,9 @@ function runOne(root: string, command: string, timeoutMs: number): Promise<Final
 			clearTimeout(timer);
 			resolve({ command, exit_code: exitCode, signal, passed: exitCode === 0 && signal === null, duration_ms: Date.now() - started });
 		};
-		const child = spawn(executable!, argv, { cwd: root, stdio: "ignore", env: process.env });
+		const child = spawn(executable!, argv, { cwd: root, stdio: "ignore", env: invocation
+			? { ...process.env, NODE_PATH: [join(dependencyRoot, "node_modules"), process.env.NODE_PATH].filter(Boolean).join(delimiter) }
+			: process.env });
 		const timer = setTimeout(() => {
 			child.kill("SIGKILL");
 			finish(null, "timeout");
@@ -94,16 +108,18 @@ export function prepareFinalRepairCandidate(input: {
 }) {
 	const failure = parseFinalVerificationReport(input.failure);
 	if (failure.passed || (!failure.head && !failure.content_identity)) throw new Error("repair candidate requires a failed final verification bound to delivered content");
-	if (!failure.results.some(result => !result.passed)) throw new Error("reconcile the verification environment or delivery HEAD before preparing a code repair");
+	if (![...failure.results, ...(failure.derived_checks ?? [])].some(result => !result.passed)) throw new Error("reconcile the verification environment or delivery HEAD before preparing a code repair");
 	if (!Number.isInteger(input.prior_repairs) || input.prior_repairs < 0 || input.prior_repairs >= 2)
 		throw new Error("Parent coordinator correction budget exhausted");
 	const identity = createHash("sha256").update(JSON.stringify({ head: failure.content_identity ?? failure.head,
-		results: failure.results.map(({ command, exit_code, signal }) => ({ command, exit_code, signal })) })).digest("hex");
+		results: [...failure.results, ...(failure.derived_checks ?? [])].map(({ command, exit_code, signal }) => ({ command, exit_code, signal })) })).digest("hex");
 	const taskId = `${input.initiative_slug.slice(0, 96)}-repair-${identity.slice(0, 12)}`;
+	const repairResults: Array<FinalVerificationResult & { invocation?: DerivedCommand }> = [...failure.results, ...(failure.derived_checks ?? [])];
 	const candidate = parseTaskIntentV1({ contract: "assurance_kernel/task_intent/v1", task_id: taskId,
 		goal: input.original_goal, owner: "user", revision: 1, risk: "material", scope_hint: [...new Set([...input.scope_hint, `docs/plans/${taskId}.intent.json`])],
-		acceptance: failure.results.map((result, index) => {
-			const [executable, ...argv] = result.command.split(" ");
+		acceptance: repairResults.map((result, index) => {
+			const [executable, ...argv] = result.invocation
+				? [result.invocation.executable, ...result.invocation.argv] : result.command.split(" ");
 			return { id: `final-${index + 1}`, assertion: `Restore the original goal and pass final command ${index + 1}`,
 				verification: JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v2",
 					command: { executable, argv, cwd: ".", timeout_ms: 120000, max_output_bytes: 131072 },
@@ -115,22 +131,33 @@ export function prepareFinalRepairCandidate(input: {
 export async function runFinalVerification(
 	root: string,
 	commands: readonly string[],
-	options: { timeoutMs?: number; scopes?: readonly string[]; parent_head?: string } = {},
+	options: { timeoutMs?: number; scopes?: readonly string[]; parent_head?: string; dependencyRoot?: string; declaration_head?: string } = {},
 ): Promise<FinalVerificationReport> {
 	if (options.parent_head) {
 		return withParentWorktree(root, options.parent_head, path =>
-			runFinalVerification(path, commands, { timeoutMs: options.timeoutMs }));
+			runFinalVerification(path, commands, { timeoutMs: options.timeoutMs, dependencyRoot: root, declaration_head: options.declaration_head }));
 	}
-	const verifiedCommands = parseFinalVerification([...commands])!;
+	const entries = options.declaration_head ? readDerivedFilesAt(root, options.declaration_head) : readDerivedFiles(root);
+	const verifiedCommands = commands.length === 0 && entries.length > 0 ? [] : parseFinalVerification([...commands])!;
+	const runDerivedChecks = async () => {
+		const results: NonNullable<FinalVerificationReport["derived_checks"]> = [];
+		for (const entry of entries) results.push({
+			...await runOne(root, JSON.stringify(entry.check), options.timeoutMs ?? DEFAULT_TIMEOUT_MS, entry.check, options.dependencyRoot),
+			id: entry.id, invocation: entry.check,
+		});
+		return results;
+	};
 	const head = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
 	if (options.scopes) {
 		// Content-bound: no clean-tree, HEAD or commit requirement; only the scoped bytes must hold still.
 		const before = scopedContentIdentity(root, options.scopes);
 		const results: FinalVerificationResult[] = [];
 		for (const command of verifiedCommands) results.push(await runOne(root, command, options.timeoutMs ?? DEFAULT_TIMEOUT_MS));
+		const derived_checks = await runDerivedChecks();
 		const unchanged = scopedContentIdentity(root, options.scopes) === before;
-		return { passed: results.every(result => result.passed) && unchanged,
-			head: head.status === 0 ? head.stdout.trim() : null, content_identity: before, results };
+		return { passed: [...results, ...derived_checks].every(result => result.passed) && unchanged,
+			head: head.status === 0 ? head.stdout.trim() : null, content_identity: before, results,
+			...(derived_checks.length ? { derived_checks } : {}) };
 	}
 	const clean = () => {
 		const tracked = spawnSync("git", ["-C", root, "diff", "--quiet", "HEAD"]);
@@ -140,8 +167,10 @@ export async function runFinalVerification(
 	const cleanBefore = clean();
 	const results: FinalVerificationResult[] = [];
 	for (const command of verifiedCommands) results.push(await runOne(root, command, options.timeoutMs ?? DEFAULT_TIMEOUT_MS));
+	const derived_checks = await runDerivedChecks();
 	const after = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
 	const unchangedHead = head.status === 0 && after.status === 0 && head.stdout.trim() === after.stdout.trim();
 	const cleanAfter = clean();
-	return { passed: results.every(result => result.passed) && unchangedHead && cleanBefore && cleanAfter, head: head.status === 0 ? head.stdout.trim() : null, results };
+	return { passed: [...results, ...derived_checks].every(result => result.passed) && unchangedHead && cleanBefore && cleanAfter,
+		head: head.status === 0 ? head.stdout.trim() : null, results, ...(derived_checks.length ? { derived_checks } : {}) };
 }

@@ -26,7 +26,7 @@ function git(root: string, ...args: string[]): string {
 	}).trim();
 }
 
-function fixture(scripts: Record<string, string>, dependencies: Record<string, string[]> = {}) {
+function fixture(scripts: Record<string, string>, dependencies: Record<string, string[]> = {}, setup?: (root: string) => void) {
 	const root = realpathSync(mkdtempSync(join(tmpdir(), "batch-queue-")));
 	roots.push(root);
 	git(root, "init", "-q", "-b", "main");
@@ -42,6 +42,7 @@ function fixture(scripts: Record<string, string>, dependencies: Record<string, s
 			}) }], scope_hint: [`${id}.txt`], risk: "material", revision: 1,
 		}));
 	}
+	setup?.(root);
 	git(root, "add", "-A"); git(root, "commit", "-qm", "base");
 	const base = git(root, "rev-parse", "HEAD");
 	const children = Object.keys(scripts).map((id, i) => {
@@ -102,6 +103,35 @@ const pass = "process.exit(0)";
 const mergedCheck = "const fs=require('node:fs'); process.exit(fs.existsSync('a.txt') && fs.readFileSync('b.txt','utf8').trim() === 'old' ? 1 : 0)";
 
 describe("Parent merge queue", () => {
+	test("derived outputs regenerate from both settled children without spending a redo", async () => {
+		const fx = fixture({ a: pass, b: pass }, {}, root => {
+			mkdirSync(join(root, "docs/agents"), { recursive: true });
+			writeFileSync(join(root, "bundle.txt"), "base");
+			writeFileSync(join(root, "generate.ts"), `const fs=require('node:fs'); const expected=['a','b'].map(id=>fs.existsSync(id+'.txt')?fs.readFileSync(id+'.txt','utf8'):'').join('');
+if(process.argv.includes('--check')) process.exit(fs.readFileSync('bundle.txt','utf8')===expected?0:1); fs.writeFileSync('bundle.txt',expected);`);
+			writeFileSync(join(root, "docs/agents/derived-files.json"), JSON.stringify({ contract: "immune_brain/derived_files/v1", entries: [{
+				id: "bundle", sources: ["a.txt", "b.txt", "generate.ts"], outputs: ["bundle.txt"],
+				generate: { executable: "bun", argv: ["generate.ts"] }, check: { executable: "bun", argv: ["generate.ts", "--check"] },
+			}] }));
+		});
+		const integrate = fx.lanePort.integrate;
+		fx.lanePort.integrate = input => {
+			expect(input.declaration_head).toBe(fx.base);
+			return integrate(input);
+		};
+		await fx.tick();
+		for (const [id, second] of [["a", 1], ["b", 2]] as const) {
+			writeFileSync(join(fx.laneOf(id), "bundle.txt"), `${id}\n`);
+			fx.settle(id, `${id}\n`, second);
+		}
+		const report = await fx.tick();
+		expect(report.batch_state).toBe("completed");
+		expect(report.children.map(child => child.redo_grants ?? 0)).toEqual([0, 0]);
+		expect(git(fx.root, "show", `${report.commits[1]}:bundle.txt`)).toBe("a\nb");
+		expect(readBatchLaneRunState(fx.root, "queue")!.final_verification_result).toMatchObject({ passed: true, derived_checks: [{ id: "bundle", passed: true }] });
+		expect((await fx.tick()).commits).toEqual(report.commits);
+	}, 30000);
+
 	test("AC1: integrates in settlement order, rebuilding the second on the first Parent tip", async () => {
 		const fx = fixture({ a: pass, b: pass });
 		await fx.tick();

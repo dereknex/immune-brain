@@ -21,6 +21,7 @@ import {
 	runtimeContractDifferences,
 } from "../kernel/runtime_contracts";
 import { readFileSync } from "node:fs";
+import { readDerivedFilesAt } from "../derived_files";
 import { runFinalVerification, type FinalVerificationReport } from "./batch_final_verification";
 import { applyDelegatedIntentRevision, delegatedConfirmationRef, delegatedRevisionRefusal } from "./batch_delegation";
 import { runGithubTrackerOperation } from "../github_issue_tracker";
@@ -281,6 +282,7 @@ export interface BatchLaneGitPort {
 		batch_head: string;
 		lane_base: string;
 		lane_commit: string;
+		declaration_head?: string;
 		child: IntegrationCheckChild;
 		siblings: Array<IntegrationCheckChild & { commit: string | null }>;
 	}): Promise<{ commit: string }> | { commit: string };
@@ -290,6 +292,7 @@ export interface BatchLaneGitPort {
 		batch_id: string;
 		branch?: string;
 		from_head: string;
+		declaration_head?: string;
 		lane_base: string;
 		lane_commit: string;
 	}): string | null;
@@ -936,6 +939,7 @@ export async function runLaneBatch(
 			batch_id: record.batch_id,
 			...(record.branch ? { branch: record.branch } : {}),
 			from_head: expectedBatchHead(record),
+			declaration_head: record.base_head,
 			lane_base: child.lane.base_head,
 			lane_commit: child.lane.lane_commit,
 		});
@@ -1261,6 +1265,7 @@ export async function runLaneBatch(
 				root: input.root,
 				branch: record.branch ?? "",
 				batch_head: expectedBatchHead(record),
+				declaration_head: record.base_head,
 				lane_base: child.lane.base_head,
 				lane_commit: child.lane.lane_commit,
 				child: { task_id: child.task_id, intent_path: intentPathOf(child.task_id) },
@@ -1386,10 +1391,10 @@ export async function runLaneBatch(
 		// completion report is written. A failure is reported, never rolled back.
 		// A hidden-ref batch leaves its delivery in the user's working tree, so the check is
 		// bound to the children's scoped content rather than to a clean tree at HEAD.
-		const final = record.final_verification?.length
-			? await runFinalVerification(input.root, record.final_verification,
-				isParentBranch(record.branch) ? { parent_head: expectedBatchHead(record) } :
-				isBatchRef(record.branch) ? { scopes: unsettledChildScopes(input.root, input.children) } : {})
+		const final = record.final_verification?.length || readDerivedFilesAt(input.root, record.base_head).length
+			? await runFinalVerification(input.root, record.final_verification ?? [],
+				{ declaration_head: record.base_head, ...(isParentBranch(record.branch) ? { parent_head: expectedBatchHead(record) } :
+				isBatchRef(record.branch) ? { scopes: unsettledChildScopes(input.root, input.children) } : {}) })
 			: undefined;
 		record.batch_state = "completed";
 		if (final) record.final_verification_result = final;
@@ -1398,7 +1403,7 @@ export async function runLaneBatch(
 			input.root,
 			record,
 			final && !final.passed
-				? `all enrollable children integrated; final verification did not pass: ${final.results.filter((r) => !r.passed).map((r) => r.command).join(", ")}`
+				? `all enrollable children integrated; final verification did not pass: ${[...final.results, ...(final.derived_checks ?? [])].filter((r) => !r.passed).map((r) => r.command).join(", ")}`
 				: "all enrollable children integrated",
 			final && !final.passed
 				? "Every child is integrated but the batch did not pass its final verification; inspect the failing commands against the delivered content. Integrated commits were not rolled back."

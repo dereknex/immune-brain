@@ -23,7 +23,7 @@ import { readSettledTaskEvidence, readAuditTaskPair, readSecureProjectFile } fro
 import { serializeTaskTombstone, readTaskTombstone, type TaskTombstone } from "../kernel/backend_claim";
 import { captureGitTaskRevisionSnapshot, pathMatchesScope, scopedContentIdentity } from "../workspace_scope";
 import { readNativeParentFinalReport, writeNativeParentFinalReport, readAnyBatchRunState, isLaneBatchRecord, writeBatchRunState, writeBatchLaneRunState, type AnyBatchRunStateRecord } from "./batch_state";
-import { changeIdentity, identitiesEqual } from "./batch_integration";
+import { laneCandidateMatches } from "./batch_integration";
 import { runFinalVerification } from "./batch_final_verification";
 import { withParentWorktree } from "./batch_worktrees";
 import type { InitiativeObservationReader } from "./types";
@@ -702,7 +702,8 @@ export async function lookupBatchCommit(input: {
 		const parents = candidateParent.stdout.trim().split(/\s+/).filter(Boolean);
 		if (common(lane.path) !== common(root) || sourceParent.status !== 0 || sourceParent.stdout.trim() !== lane.base_head ||
 			candidateParent.status !== 0 || parents.length !== 1 ||
-			!identitiesEqual(changeIdentity(root, lane.base_head, lane.lane_commit), changeIdentity(root, parents[0]!, lane.integrated_commit)))
+			!laneCandidateMatches({ root, lane_base: lane.base_head, lane_commit: lane.lane_commit, batch_head: parents[0]!, candidate: lane.integrated_commit,
+				declaration_head: input.batchId ? readAnyBatchRunState(root, input.batchId)?.base_head ?? lane.base_head : lane.base_head }))
 			throw new Error("batch_head_lineage_broken: integrated candidate differs from produced Lane delivery");
 	}
 	const recordedCommit = input.lane?.integrated_commit ?? evidence?.commit;
@@ -865,7 +866,8 @@ export async function retainIntegratedLaneEvidence(input: Parameters<typeof look
 		const tip = readBatchRef(input.root, input.branch);
 		if (source?.commit !== lane.lane_commit || parent.status !== 0 || parents.length !== 1 || !tip ||
 			spawnSync("git", ["-C", input.root, "merge-base", "--is-ancestor", lane.integrated_commit, tip]).status !== 0 ||
-			!identitiesEqual(changeIdentity(input.root, lane.base_head, lane.lane_commit), changeIdentity(input.root, parents[0]!, lane.integrated_commit)))
+			!laneCandidateMatches({ root: input.root, lane_base: lane.base_head, lane_commit: lane.lane_commit, batch_head: parents[0]!, candidate: lane.integrated_commit,
+				declaration_head: input.batchId ? readAnyBatchRunState(input.root, input.batchId)?.base_head ?? lane.base_head : lane.base_head }))
 			throw new Error("batch_head_lineage_broken: Parent candidate differs from produced Lane delivery");
 		writeBatchCommitEvidence(input.root, { batchId: input.batchId ?? "native-task", taskId: input.taskId,
 			commit: lane.integrated_commit, parentHead: parents[0]! });
@@ -1138,7 +1140,7 @@ export async function integrateSettledCriticalSlices(root: string, initiativeSlu
 	if (batch.batch_state === "completed" && batch.final_verification?.length && !batch.final_verification_result) {
 		const proof = await observeParentCompletion(root, parent.initiative_id, parent.tasks.map(child => child.task_id));
 		if (!proof.missing_task_ids.length) {
-			batch.final_verification_result = await runFinalVerification(root, batch.final_verification);
+			batch.final_verification_result = await runFinalVerification(root, batch.final_verification, { declaration_head: batch.base_head });
 			persist();
 		}
 	}

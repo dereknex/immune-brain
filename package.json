@@ -77,6 +77,7 @@
     "plugins/immune-brain/runtime/staged_intent.ts",
     "plugins/immune-brain/runtime/workspace_scope.ts",
     "plugins/immune-brain/runtime/git_integration_preference.ts",
+    "plugins/immune-brain/runtime/derived_files.ts",
     "plugins/immune-brain/runtime/managed_task_routing_policy.ts",
     "plugins/immune-brain/runtime/github_issue_tracker.ts",
     "plugins/immune-brain/runtime/local_initiative.ts",

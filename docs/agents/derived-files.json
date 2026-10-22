@@ -1,0 +1,31 @@
+{
+  "contract": "immune_brain/derived_files/v1",
+  "entries": [
+    {
+      "id": "claude-mcp-bundle",
+      "sources": [
+        "plugins/immune-brain/runtime/**/*.ts",
+        "scripts/build-claude-plugin.ts",
+        "scripts/plugin_versioning.ts",
+        "package.json",
+        "bun.lock"
+      ],
+      "outputs": [
+        "plugins/immune-brain/dist/claude/mcp-server.mjs"
+      ],
+      "generate": {
+        "executable": "bun",
+        "argv": [
+          "scripts/build-claude-plugin.ts"
+        ]
+      },
+      "check": {
+        "executable": "bun",
+        "argv": [
+          "scripts/build-claude-plugin.ts",
+          "--check"
+        ]
+      }
+    }
+  ]
+}

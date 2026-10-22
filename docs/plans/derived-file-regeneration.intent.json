@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "derived-file-regeneration",
-  "owner": "user",
   "goal": "A repository declares derived files in docs/agents/derived-files.json; when every file conflicting in the merge queue is a declared output the queue regenerates it from the merged sources and runs its check instead of reporting a conflict, final verification runs every declared check, and this repository declares the Claude MCP bundle (Spec branch-boundary-r2 D17).",
   "acceptance": [
     {
@@ -30,14 +29,18 @@
     "docs/agents/derived-files.json",
     "docs/plans/derived-file-regeneration.intent.json",
     "docs/specs/branch-boundary-r2.spec.md",
+    "package.json",
     "plugins/immune-brain/dist/claude/mcp-server.mjs",
     "plugins/immune-brain/runtime/derived_files.ts",
     "plugins/immune-brain/runtime/unattended/batch_final_verification.ts",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
     "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
     "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
     "tests/batch-merge-queue.test.ts",
     "tests/derived-files.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 4,
+  "owner": "user"
 }

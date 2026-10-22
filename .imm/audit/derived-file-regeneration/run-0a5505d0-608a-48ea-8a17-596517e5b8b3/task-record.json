@@ -1,0 +1,328 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "derived-file-regeneration",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "derived-file-regeneration",
+    "goal": "A repository declares derived files in docs/agents/derived-files.json; when every file conflicting in the merge queue is a declared output the queue regenerates it from the merged sources and runs its check instead of reporting a conflict, final verification runs every declared check, and this repository declares the Claude MCP bundle (Spec branch-boundary-r2 D17).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "The derived-files reader accepts a valid immune_brain/derived_files/v1 declaration and rejects, naming the field, an entry with no check command, an output path outside the repository, an unknown field, and an unknown contract.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/derived-files.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Two children that both changed a declared source and its declared output integrate without a conflict: the queue runs generate then check on the merged sources and the integrated output equals a fresh generate.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/derived-files.test.ts\",\n      \"tests/batch-merge-queue.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "A conflict set that includes a file that is not a declared output, or a declared check that fails after generate, is treated as a conflict.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/derived-files.test.ts\",\n      \"tests/batch-merge-queue.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "Final verification runs every declared check command and reports a failing one, and this repository's docs/agents/derived-files.json declares plugins/immune-brain/dist/claude/mcp-server.mjs with bun scripts/build-claude-plugin.ts and its --check.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/derived-files.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/branch-boundary-r2-derived-file-regeneration.md",
+      "docs/agents/derived-files.json",
+      "docs/plans/derived-file-regeneration.intent.json",
+      "docs/specs/branch-boundary-r2.spec.md",
+      "package.json",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/derived_files.ts",
+      "plugins/immune-brain/runtime/unattended/batch_final_verification.ts",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "tests/batch-merge-queue.test.ts",
+      "tests/derived-files.test.ts"
+    ],
+    "risk": "material",
+    "revision": 4,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/derived-file-regeneration.intent.json",
+    "content_hash": "sha256:52cefdda05c5fdc11cc2e6c045fda226ee0c9676ed18cde2909d618d5aaa7169"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:a34c19276ccec9574ecece1fe105c6b183a7f47de87f9a6e053bf4b4552ab818",
+  "git_base_head": "6592ab53b7b671aac7961b90e5dc3fb3646425d8",
+  "attestations": [
+    {
+      "id": "approval-qa-7f530220",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:80e4bc121fbde682afa83b91dd4310e586126c9d5d80e897d2a6203bbab181d3",
+      "diff_hash": "sha256:82f17f85a8d08e91e34824e244c3393ffa5619e4aa14d0a136a31da5e86314ae",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:e2084bab865586a605aed0232944c44bd471111a2e5183e87b5b2d0d59bc7cd4",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:e2084bab865586a605aed0232944c44bd471111a2e5183e87b5b2d0d59bc7cd4"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:e2084bab865586a605aed0232944c44bd471111a2e5183e87b5b2d0d59bc7cd4"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:e2084bab865586a605aed0232944c44bd471111a2e5183e87b5b2d0d59bc7cd4"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:e2084bab865586a605aed0232944c44bd471111a2e5183e87b5b2d0d59bc7cd4"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-253621ea",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:52cefdda05c5fdc11cc2e6c045fda226ee0c9676ed18cde2909d618d5aaa7169",
+      "diff_hash": "sha256:881df60a0ad1c397597a7eeca9f92461b30b0a8290706ebe5c925e72b68c3ccf",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:6b0293099c185671ac7967e08592e9e3f5423b72a749b947bb23ac7d2c857152",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:6b0293099c185671ac7967e08592e9e3f5423b72a749b947bb23ac7d2c857152"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:6b0293099c185671ac7967e08592e9e3f5423b72a749b947bb23ac7d2c857152"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:6b0293099c185671ac7967e08592e9e3f5423b72a749b947bb23ac7d2c857152"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:6b0293099c185671ac7967e08592e9e3f5423b72a749b947bb23ac7d2c857152"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-940c02ad",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:52cefdda05c5fdc11cc2e6c045fda226ee0c9676ed18cde2909d618d5aaa7169",
+      "diff_hash": "sha256:881df60a0ad1c397597a7eeca9f92461b30b0a8290706ebe5c925e72b68c3ccf",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 manifest digest、提交父子关系、tree 及全部变更路径；审查声明校验、冲突再生成、候选恢复和最终检查后，未发现阻断问题。AC1–AC4 采用 Kernel 提供的通过证据，未重新执行测试。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "6592ab53b7b671aac7961b90e5dc3fb3646425d8",
+        "review_commit": "d4d94e1454012c314d7336c985866636322e54e1",
+        "review_tree": "e9da6911a2e6fc562213844fa5258e8e93d8033a",
+        "manifest_digest": "sha256:f8605d3d83e642a788b96f34c649e533dd2c23af3d2c3ff4e146c194c1e721e8"
+      },
+      "reviewer_verdict_sha256": "sha256:915d47c0611cf4107fae60747d51adcb95ac6548394249af681abafe3e4dab78"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-fc9ced8411fd-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "batch_integration.ts:130 从包含 Lane 修改的 merged tree 读取 declaration，使执行模型能够扩大自动解决冲突的权限。应使用 batch 启动时冻结的 declaration，并补充 Lane 擅自增加 output 或替换 check 时仍拒绝冲突的测试。docs/specs/branch-boundary-r2.spec.md 的 Threat model 明确只信任 batch 启动时提交的 docs/agents/ 声明；读取该未修改文件是为核实本变更跨越的 authority boundary。",
+      "anchor": "sha256:49403639d873e803c23912d76f4a1a4160e7c9db995f2dd1114c8ac53a0de3d3",
+      "evidence": {
+        "trigger": "batch 启动时 ordinary.txt 不是 declared output；Parent 与 Lane 对它产生冲突，而 Lane 同时修改 docs/agents/derived-files.json，将 ordinary.txt 加入 outputs 并提供覆盖它的 generate 和恒成功 check → buildCandidate 使用 merged declaration 接受该源文件冲突并覆盖 Parent 的内容，而不是报告 conflict。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_integration.ts::prepareLaneCandidate",
+          "plugins/immune-brain/runtime/unattended/batch_integration.ts::buildCandidate",
+          "plugins/immune-brain/runtime/derived_files.ts::readDerivedFiles",
+          "plugins/immune-brain/runtime/derived_files.ts::runDerivedCommand"
+        ],
+        "violated": {
+          "kind": "security_boundary",
+          "ref": "batch-start-derived-declaration-authority"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-fc9ced8411fd-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "batch_integration.ts:138–142 检查工作树，却用可被 generator 修改的 index 构建最终 tree，未能保证 merged sources 保持不变。应在 write-tree 后比较初始 merged tree 与最终 tree 的实际路径、blob 和 mode，仅允许 declared outputs 变化，并补充 index-only 源文件篡改的拒绝测试。",
+      "anchor": "sha256:cb41f029bb591540b058c1b870a07926e8e5eb3ff3903f4271f3bc6bb04c6b21",
+      "evidence": {
+        "trigger": "declared output 发生冲突；Lane 修改的 generator 正常生成 output，同时通过 git update-index --cacheinfo 把未声明源文件 a.txt 的另一个 blob 写入临时 index，保持 a.txt 工作树内容不变，check 返回成功 → git diff HEAD 看不到 a.txt 的 index-only 修改，但 write-tree 将被篡改的 a.txt 纳入候选；重复构建得到同一 tree 后 laneCandidateMatches 也会接受，导致集成内容包含并非来自 merged sources 的源文件修改。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_integration.ts::prepareLaneCandidate",
+          "plugins/immune-brain/runtime/unattended/batch_integration.ts::buildCandidate",
+          "plugins/immune-brain/runtime/derived_files.ts::runDerivedCommand",
+          "plugins/immune-brain/runtime/unattended/batch_integration.ts::laneCandidateMatches"
+        ],
+        "violated": {
+          "kind": "security_boundary",
+          "ref": "derived-regeneration-preserves-merged-source-tree"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "revise_intent:derived-file-regeneration:2026-10-22T05:18:25.207Z",
+      "at": "2026-10-22T05:18:25.207Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\nscope_added:plugins/immune-brain/runtime/unattended/batch_git.ts\naction_v2_sha256:93c86152984d49c317b314b0d0cb3c4bf1d79809d6b998205de346105f52b5b4"
+    },
+    {
+      "id": "approve_breaking_intent_revision:derived-file-regeneration:2026-10-22T05:20:46.687Z",
+      "at": "2026-10-22T05:20:46.687Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\naction_v2_sha256:0f758a427800e08385c6e232f8002f946075a53362915b647e3d7fe26a4a88f3",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-ec06f3a9a225f8c0",
+        "issued_at": "2026-10-22T05:20:47.133Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:derived-file-regeneration:2026-10-22T05:28:20.948Z",
+      "at": "2026-10-22T05:28:20.948Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/derived-file-regeneration.intent.json"
+    },
+    {
+      "id": "record_approval:derived-file-regeneration:2026-10-22T05:29:54.373Z",
+      "at": "2026-10-22T05:29:54.373Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-7f530220\naction_v2_sha256:80ed12fc9a4fde9304d9e210c01edea0dd37a1acd1bb573bf4687df4288e33f0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-1c032aff55886690",
+        "issued_at": "2026-10-22T05:29:54.373Z"
+      }
+    },
+    {
+      "id": "request_rework:derived-file-regeneration:2026-10-22T05:33:38.773Z",
+      "at": "2026-10-22T05:33:38.773Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:8dc5e82358895c215d1dc1f84203e2d2a30b1297004a99d0202d30aa8b6bc37c",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-a842ea7c5471538b",
+        "issued_at": "2026-10-22T05:33:38.773Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "6592ab53b7b671aac7961b90e5dc3fb3646425d8",
+        "review_commit": "3992c1f456824c43d88fc0cc562ad44476abc44e",
+        "review_tree": "884e2fe129e67873be7ff3c2c540e23087870991",
+        "manifest_digest": "sha256:0457bd85e79fda2b1b97e5ec2a629bc4429c597db16186775abf68e278127e87"
+      }
+    },
+    {
+      "id": "revise_intent:derived-file-regeneration:2026-10-22T05:34:22.137Z",
+      "at": "2026-10-22T05:34:22.137Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_4\nscope_added:plugins/immune-brain/runtime/unattended/batch_lanes.ts\naction_v2_sha256:6981071f185d0dd962f87e9358d90a8a7391dc45b4e197dfaee8e189a7746ab0"
+    },
+    {
+      "id": "resolve_finding:derived-file-regeneration:2026-10-22T05:38:54.614Z",
+      "at": "2026-10-22T05:38:54.614Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-fc9ced8411fd-1-review-1\naction_v2_sha256:8c186dc017003838827ad0f201603cf877dc822c09a7362b888cf425d746216e"
+    },
+    {
+      "id": "resolve_finding:derived-file-regeneration:2026-10-22T05:39:00.821Z",
+      "at": "2026-10-22T05:39:00.821Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-fc9ced8411fd-2-review-2\naction_v2_sha256:5ba2b0cc94768a75c1b13a0c99358947e65677cf2eeef32cac77989e2353a9c2"
+    },
+    {
+      "id": "freeze_artifacts:derived-file-regeneration:2026-10-22T05:39:05.831Z",
+      "at": "2026-10-22T05:39:05.831Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/derived-file-regeneration.intent.json"
+    },
+    {
+      "id": "record_approval:derived-file-regeneration:2026-10-22T05:40:53.661Z",
+      "at": "2026-10-22T05:40:53.661Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-253621ea\naction_v2_sha256:b0d83d8345bfdc8da9569c78293abb00040336b371b889631e39c2d6d68c3502",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-391c0f280acf1ad3",
+        "issued_at": "2026-10-22T05:40:53.661Z"
+      }
+    },
+    {
+      "id": "record_approval:derived-file-regeneration:2026-10-22T05:42:51.838Z",
+      "at": "2026-10-22T05:42:51.838Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-940c02ad\naction_v2_sha256:17f10f3d949ce55b2a849160737dfc9e777885187f8866c3532508c34f9c76c2",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-d462abfa3d249404",
+        "issued_at": "2026-10-22T05:42:51.838Z"
+      }
+    },
+    {
+      "id": "complete:derived-file-regeneration:2026-10-22T05:42:53.622Z",
+      "at": "2026-10-22T05:42:53.622Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:0f7261496ca8d2880bf3752902aae376b9b447ebf95f593d2fb13345509b8d21"
+    }
+  ]
+}
