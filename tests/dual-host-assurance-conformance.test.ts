@@ -65,7 +65,11 @@ function withRunEntry(workspace?: string): { consumePhaseAdmission: (toolCallId:
 	};
 }
 function createMcpRuntime(options: Parameters<typeof createMcpRuntimeUngated>[0] = {}) {
-	return createMcpRuntimeUngated({ ...withRunEntry(options.cwd), ...options });
+	const runtime = createMcpRuntimeUngated({ ...withRunEntry(options.cwd), ...options });
+	const callTool = runtime.callTool.bind(runtime);
+	runtime.callTool = (name, args, meta) => callTool(name, name === "start_unattended_batch"
+		? { final_verification: ["bun --version"], ...args } : args, meta);
+	return runtime;
 }
 
 // The Kernel QA delivery workspace is a dependency-free checkout of the frozen
@@ -103,7 +107,8 @@ if (!(await hostPackagesAvailable())) {
 }
 
 const { AssuranceProgression } = await import("../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts");
-const { default: registerPiBatch, executePiUnattendedBatch } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
+const { default: registerPiBatch, executePiUnattendedBatch: executePiBatch } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
+const executePiUnattendedBatch = (options: Parameters<typeof executePiBatch>[0]) => executePiBatch({ final_verification: ["bun --version"], ...options });
 const { default: registerPiEnroll } = await import("../plugins/immune-brain/.pi-extension/imm-canary-enroll");
 const { createPiAssuranceProgressionPorts } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
 

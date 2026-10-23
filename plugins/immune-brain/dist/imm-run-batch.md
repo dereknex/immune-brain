@@ -20,7 +20,12 @@ from dependency readiness, scope conflicts, configured Lane capacity and availab
 supervised Executor capability. Omitting `max_parallel` defaults to 1, as does
 explicitly passing 1; both run one Lane at a time. If no Executor can be supervised,
 report the blocker rather than implementing in the coordinator checkout. The
-confirmed batch records `final_verification` commands. See
+new batch must supply a non-empty `final_verification` list (normally `bun test`
+and `bun run typecheck` for this repository), or the Host refuses it with
+`final_verification_required` before authorization or batch creation. Resuming an
+existing batch may omit the field and keeps its recorded commands. The confirmed
+batch records these commands; a legacy run without commands or derived checks
+reports `final verification not run` at completion. See
 [Parallel Batch Opt-In](#parallel-batch-opt-in).
 
 The Initiative's carrier decides where the children are read from. When

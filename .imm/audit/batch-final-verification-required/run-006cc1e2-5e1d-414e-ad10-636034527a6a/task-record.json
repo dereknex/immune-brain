@@ -1,0 +1,278 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "batch-final-verification-required",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "batch-final-verification-required",
+    "goal": "A new unattended batch cannot start without final verification on either Host, and a batch that integrates every child without running final verification says so in its completion summary (Spec branch-boundary-r2-followups D1).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "A new batch start through the Claude `start_unattended_batch` tool and through the Pi batch tool with `final_verification` absent or an empty list is refused with `final_verification_required` before any batch record, Parent branch or Lane worktree exists; the same start with `[\"bun test\",\"bun run typecheck\"]` proceeds, and resuming an existing batch record without the field is not refused.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-final-verification-required.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "A Lane batch record whose children all integrate with no final verification commands and no declared derived files ends with a completion summary naming `final verification not run` instead of `all enrollable children integrated`, while a batch with passing final verification keeps `all enrollable children integrated`.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-final-verification-required.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Packaged dist docs and role prompts match their canonical sources.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/sync-dist-docs.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "The generated Claude MCP bundle matches the runtime source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/build-claude-plugin.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "The project typechecks.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/batch-final-verification-required.md",
+      "docs/plans/batch-final-verification-required.intent.json",
+      "docs/specs/branch-boundary-r2-followups.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run-batch.md",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "tests/batch-final-verification-required.test.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/unattended-batch-lanes.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/batch-final-verification-required.intent.json",
+    "content_hash": "sha256:ba241b6c279b4a39eaf2b6f2c558bc75dc0e1e0be1a4e367102286258c85d59f"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:ba241b6c279b4a39eaf2b6f2c558bc75dc0e1e0be1a4e367102286258c85d59f",
+  "git_base_head": "1c4fbf6085d83fc63e135fa26bb1f0d53c32e0e6",
+  "attestations": [
+    {
+      "id": "approval-qa-d2f56cc0",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ba241b6c279b4a39eaf2b6f2c558bc75dc0e1e0be1a4e367102286258c85d59f",
+      "diff_hash": "sha256:388023047b7a131c771363a00596cbe191cd5dee50c4c17e6392a093dd389558",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 project verification check(s) passed; execution=sha256:0de44d3c129d462e46ff6f7bf559511b0880fda421ee096842e8c73a21f73d12",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:0de44d3c129d462e46ff6f7bf559511b0880fda421ee096842e8c73a21f73d12"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:0de44d3c129d462e46ff6f7bf559511b0880fda421ee096842e8c73a21f73d12"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:0de44d3c129d462e46ff6f7bf559511b0880fda421ee096842e8c73a21f73d12"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:0de44d3c129d462e46ff6f7bf559511b0880fda421ee096842e8c73a21f73d12"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:0de44d3c129d462e46ff6f7bf559511b0880fda421ee096842e8c73a21f73d12"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-45628695",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ba241b6c279b4a39eaf2b6f2c558bc75dc0e1e0be1a4e367102286258c85d59f",
+      "diff_hash": "sha256:dfd776e5879ab5f7f1571fdef3d3884a4e258308a73300899c92ce99e8cf2880",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 project verification check(s) passed; execution=sha256:2242a6027375114d83db220fc757f8ff7d91e3a1fb0f246419e33eda852b505f",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:2242a6027375114d83db220fc757f8ff7d91e3a1fb0f246419e33eda852b505f"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:2242a6027375114d83db220fc757f8ff7d91e3a1fb0f246419e33eda852b505f"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:2242a6027375114d83db220fc757f8ff7d91e3a1fb0f246419e33eda852b505f"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:2242a6027375114d83db220fc757f8ff7d91e3a1fb0f246419e33eda852b505f"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:2242a6027375114d83db220fc757f8ff7d91e3a1fb0f246419e33eda852b505f"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-7194c3db",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ba241b6c279b4a39eaf2b6f2c558bc75dc0e1e0be1a4e367102286258c85d59f",
+      "diff_hash": "sha256:dfd776e5879ab5f7f1571fdef3d3884a4e258308a73300899c92ce99e8cf2880",
+      "actor_id": "parent-mediated-review",
+      "summary": "已验证 immutable revision 的 parent、tree、manifest digest 和全部 changed blob OID；完整检查各文件 diff、双 Host 调用路径及负向测试，未发现阻断问题。验证结果采用 Kernel 提供的 AC1–AC5 passed evidence，未重复运行测试。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "1c4fbf6085d83fc63e135fa26bb1f0d53c32e0e6",
+        "review_commit": "99377c883519b4f6bf0acabe511bdd45fffd11b9",
+        "review_tree": "2601510d42c748a817bf21205877122aed135511",
+        "manifest_digest": "sha256:7feca6b7e95d5fb8343a80762cdac147dd9ca04bcb1854e7fc53e78abf93bda8"
+      },
+      "reviewer_verdict_sha256": "sha256:430e25860dd7def1e925b8904a88f687a7fef08ee0554e91e8c19a7e84b6b65a"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-3d2724ac9af2-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/claude/mcp_server.ts:243–248 将「没有 active batch」误判为「启动新 batch」，阻断原有 native Parent 续跑。已有 parent_final_report 且已记录 final verification commands 的 Parent，通过 Claude tool 省略 final_verification 时现在直接被拒绝；原本应复用记录的命令，返回或推进 native Parent，而不创建 batch。应在 native Parent/completed-report 路由之后、实际新 batch 授权之前实施检查，并在约定验收 seam 添加 Claude native Parent 省略字段续跑的回归测试。",
+      "anchor": "sha256:5eb9b6122fab0dc3749428f276115818e7728a50d91ac612c475339d6ac9adf0",
+      "evidence": {
+        "trigger": "Parent 的所有 Tasks 已 settlement，已有记录 final verification commands 的 native parent_final_report，且没有 active batch；用户通过 Claude start_unattended_batch 省略 final_verification → MCP 返回 final_verification_required，无法进入原有的 native Parent 报告或验证续跑路径，即使此次操作不启动任何新 batch。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/mcp_server.ts:createMcpRuntime.callTool",
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.startPreparedBatch（直接调用方；913–950 行在 batch preflight 前处理 completed report 和 native Parent）",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:advanceNativeParent（同一 Parent 状态机；1065–1101 行从 parent_final_report 复用 recordedCommands）"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:batch-final-verification-required:2026-10-23T05:00:34.622Z",
+      "at": "2026-10-23T05:00:34.622Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-final-verification-required.intent.json"
+    },
+    {
+      "id": "record_approval:batch-final-verification-required:2026-10-23T05:01:24.260Z",
+      "at": "2026-10-23T05:01:24.260Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-d2f56cc0\naction_v2_sha256:cbd83a48f1b070a07a8e61cf77dabb8640984cd75288fd7c42bbf0331f0eccf7",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-a428e86b97829083",
+        "issued_at": "2026-10-23T05:01:24.260Z"
+      }
+    },
+    {
+      "id": "request_rework:batch-final-verification-required:2026-10-23T05:04:58.969Z",
+      "at": "2026-10-23T05:04:58.969Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:688c3b11e3e6716f9b2fe46de997c766f3e22bc4da8a987c37c0378a5a8aa38a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-3c7b42992f8fca44",
+        "issued_at": "2026-10-23T05:04:58.969Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "1c4fbf6085d83fc63e135fa26bb1f0d53c32e0e6",
+        "review_commit": "209b7434bf3118c08e1ae61e304389b8ad4762b7",
+        "review_tree": "24a2103056ee3eab44b10db697a45e76926aa761",
+        "manifest_digest": "sha256:8aa668c988e34d03b9841975ee10137b9a07aafeb8ebfc03924829b94f9211b4"
+      }
+    },
+    {
+      "id": "resolve_finding:batch-final-verification-required:2026-10-23T05:11:58.877Z",
+      "at": "2026-10-23T05:11:58.877Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-3d2724ac9af2-1-review-1\naction_v2_sha256:f8b8d093dae551a8be3f4327c590e692aed9f9333674913875e8a9fa5da69227"
+    },
+    {
+      "id": "freeze_artifacts:batch-final-verification-required:2026-10-23T05:12:06.527Z",
+      "at": "2026-10-23T05:12:06.527Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-final-verification-required.intent.json"
+    },
+    {
+      "id": "record_approval:batch-final-verification-required:2026-10-23T05:13:07.155Z",
+      "at": "2026-10-23T05:13:07.155Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-45628695\naction_v2_sha256:2ca107e60b9ba0d0e25cc18e55b4c4e4b54dc300d0cb256cb7704e51c6297d97",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-0e3426c6482b72cc",
+        "issued_at": "2026-10-23T05:13:07.155Z"
+      }
+    },
+    {
+      "id": "record_approval:batch-final-verification-required:2026-10-23T05:15:18.267Z",
+      "at": "2026-10-23T05:15:18.267Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-7194c3db\naction_v2_sha256:83ffa649ac0bf25668f9b691a8ae669bb67de5278aac7764c9af03f8fe930bed",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-39d667a706fa0ddf",
+        "issued_at": "2026-10-23T05:15:18.267Z"
+      }
+    },
+    {
+      "id": "complete:batch-final-verification-required:2026-10-23T05:15:20.208Z",
+      "at": "2026-10-23T05:15:20.208Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:390a26b9877f3b93aab127f87dc75f51854c9fcb3aa5a8cb037201a1aa8be796"
+    }
+  ]
+}

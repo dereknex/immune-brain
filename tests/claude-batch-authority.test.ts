@@ -50,7 +50,8 @@ try { await import("@earendil-works/pi-tui"); } catch {
 	}));
 }
 afterAll(() => mock.restore());
-const { executePiUnattendedBatch: runPiBatch } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
+const { executePiUnattendedBatch } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
+const runPiBatch = (options: Parameters<typeof executePiUnattendedBatch>[0]) => executePiUnattendedBatch({ final_verification: ["bun test", "bun run typecheck"], ...options });
 const ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
 const roots: string[] = [];
 afterAll(() => { for (const root of roots) rmSync(root, { recursive: true, force: true }); });
@@ -85,7 +86,11 @@ function withRunEntry(workspace: string, prompt = "/imm-run") {
 }
 function client(f: ReturnType<typeof fixture>, options: Partial<Parameters<typeof createMcpRuntime>[0]> = {}) {
 	const runtime = createMcpRuntime({ ...withRunEntry(f.root), cwd: f.root, env: ENV, interactive: true, readInitiative: async () => f.observation, ...options });
-	runtime.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" }); return runtime;
+	runtime.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
+	const callTool = runtime.callTool.bind(runtime);
+	runtime.callTool = (name, args, meta) => callTool(name, name === "start_unattended_batch"
+		? { final_verification: ["bun test", "bun run typecheck"], ...args } : args, meta);
+	return runtime;
 }
 function snapshot(root: string) {
 	return { head: git(root, "rev-parse", "HEAD"), branch: git(root, "symbolic-ref", "HEAD"), refs: git(root, "show-ref"), index: readFileSync(join(root, ".git/index")), status: git(root, "status", "--porcelain=v1") };
@@ -133,7 +138,7 @@ describe("record and topology validation before Host batch effects", () => {
 			const readInitiative = async () => { reads++; return f.observation; };
 			const runtime = client(f, { readInitiative, requestConfirmation: async () => { gates++; return { decision: "decline", requestId: "declined-new-batch" }; } });
 			const result = host === "claude"
-				? await runtime.runtime.startUnattendedBatch(f.slug, { toolCallId: "retired", interactive: true }, { reuseOnly })
+				? await runtime.runtime.startUnattendedBatch(f.slug, { toolCallId: "retired", interactive: true }, { reuseOnly, final_verification: ["bun test", "bun run typecheck"] })
 				: await runPiBatch({ root: f.root, initiativeSlug: f.slug, reuseOnly, readInitiative, confirmBatch: async () => { gates++; return "decline"; } });
 			if (state === "running") {
 				expect(result).toMatchObject({ state: "rejected", reason: expect.stringContaining("batch_record_shape_retired"), recovery_action: expect.stringContaining("retire_stale_batch") });
@@ -147,7 +152,7 @@ describe("record and topology validation before Host batch effects", () => {
 			expect(readFileSync(path)).toEqual(bytes); expect(snapshot(f.root)).toEqual(before);
 			if (state === "completed" && !reuseOnly) {
 				const next = host === "claude"
-					? await client(f, { requestConfirmation: async () => ({ decision: "accept", requestId: "fresh-after-history" }) }).runtime.startUnattendedBatch(f.slug, { toolCallId: "fresh-after-history", interactive: true })
+					? await client(f, { requestConfirmation: async () => ({ decision: "accept", requestId: "fresh-after-history" }) }).runtime.startUnattendedBatch(f.slug, { toolCallId: "fresh-after-history", interactive: true }, { final_verification: ["bun test", "bun run typecheck"] })
 					: await runPiBatch({ root: f.root, initiativeSlug: f.slug, readInitiative: async () => f.observation, confirmBatch: async () => "accept" });
 				expect(next.state).toBe("started"); if (next.state !== "started") throw new Error(next.reason);
 				expect(next.batch_id).not.toBe(record.batch_id);
@@ -186,6 +191,14 @@ describe("record and topology validation before Host batch effects", () => {
 });
 
 describe("acc-claude-batch-gate", () => {
+	it.each([{ final_verification: undefined }, { final_verification: [] }])("requires final verification on a new Claude tool start (%p)", async ({ final_verification }) => {
+		const f = fixture("final-required"); const before = snapshot(f.root); let gates = 0;
+		const runtime = client(f, { requestConfirmation: async () => { gates++; return { decision: "accept", requestId: "final" }; } });
+		expect(await runtime.callTool("start_unattended_batch", { initiative_slug: f.slug, final_verification }))
+			.toMatchObject({ state: "rejected", reason: "final_verification_required" });
+		expect(gates).toBe(0); expect(snapshot(f.root)).toEqual(before); noBatchWrites(f.root);
+	});
+
 	it("registers the privileged Lane tool, destructive annotation and supported schema", () => {
 		expect(PRIVILEGED_OPERATIONS).toContain("start_unattended_batch"); const tool = listMcpTools().find(t => t.name === "start_unattended_batch")!;
 		expect(tool).toBeDefined(); expect(tool.annotations).toEqual({ destructiveHint: true }); expect(tool.description).toContain("Lane"); expect(tool.description).not.toMatch(/serial/i);
@@ -310,13 +323,43 @@ describe("acc-claude-batch-fail-closed", () => {
 	});
 });
 
+describe("native Parent final verification gate", () => {
+	it("preserves native Parent final verification resume without supplied commands", async () => {
+		const root = mkdtempSync(join(tmpdir(), "pi-native-final-")); roots.push(root); copyGitTemplate(root);
+		const taskId = "delivered", paths = ["src/delivered.ts", `docs/plans/${taskId}.intent.json`, `docs/plans/archive/${taskId}.intent.json`];
+		const intent = parseTaskIntentV1({ contract: "assurance_kernel/task_intent/v1", task_id: taskId, owner: "user", goal: "Deliver", scope_hint: paths,
+			acceptance: [{ id: "acc-1", assertion: "delivered", verification: "bun test" }], risk: "material", revision: 1 });
+		mkdirSync(join(root, "docs/plans/archive"), { recursive: true }); for (const path of paths.slice(1)) writeFileSync(join(root, path), `${JSON.stringify(intent, null, 2)}\n`);
+		const ran = join(root, ".imm-ran"); writeFileSync(join(root, "marker.ts"), `require('node:fs').writeFileSync(${JSON.stringify(ran)}, 'ran');\n`);
+		git(root, "add", "docs", "marker.ts"); git(root, "commit", "-qm", "plan"); const baseline = git(root, "rev-parse", "HEAD"); const hash = canonicalIntentHash(intent);
+		const audit = join(root, ".imm/audit", taskId); mkdirSync(audit, { recursive: true });
+		const record = `${JSON.stringify({ contract: "assurance_kernel/task_record/v4", task_id: taskId, intent_snapshot: intent,
+			intent_ref: { path: paths[2], content_hash: hash }, lifecycle: "done", artifact_state: "frozen", baseline: hash, git_base_head: baseline, attestations: [], findings: [], history: [] }, null, 2)}\n`;
+		writeFileSync(join(audit, "task-record.json"), record); writeFileSync(join(audit, "terminal-proof.json"), `${JSON.stringify({ contract: "assurance_kernel/task_tombstone/v2", task_id: taskId,
+			lifecycle_status: "terminal", terminal_lifecycle: "done", terminal_event_id: "evt-term-delivered", final_record_hash: `sha256:${new Bun.CryptoHasher("sha256").update(record).digest("hex")}`, terminalized_at: new Date().toISOString() }, null, 2)}\n`);
+		mkdirSync(join(root, "src")); writeFileSync(join(root, paths[0]!), "export const delivered = true;\n");
+		const seen: any[] = []; const observation = { initiative_slug: "native-final", carrier: "local" as const, tasks: [{ task_id: taskId, slice_id: "S1", blocked_by: [] }] };
+		const runtime = createMcpRuntime({ ...withRunEntry(root), cwd: root, env: ENV, interactive: true, readInitiative: async () => observation,
+			requestConfirmation: async details => { seen.push(details); return { decision: seen.length === 1 ? "decline" : "accept", requestId: "native-final" }; } });
+		runtime.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
+		const run = (_decision: "accept" | "decline") => runtime.callTool("start_unattended_batch", { initiative_slug: "native-final", final_verification: ["bun marker.ts"] });
+		expect(await run("decline")).toMatchObject({ state: "rejected" }); expect(seen).toHaveLength(1);
+		expect(seen[0].batchDetails.parent_final_verification).toEqual({}); expect(seen[0].batchDetails.final_verification).toEqual(["bun marker.ts"]);
+		expect(git(root, "rev-parse", "HEAD")).toBe(baseline); expect(existsSync(ran)).toBe(false);
+		expect(await run("accept")).toMatchObject({ state: "native_parent", action: "complete", proof: { complete: true } }); expect(existsSync(ran)).toBe(true);
+		expect(await runtime.callTool("start_unattended_batch", { initiative_slug: "native-final" }))
+			.toMatchObject({ state: "native_parent", action: "complete", final_verification_commands: ["bun marker.ts"] });
+		expect(seen).toHaveLength(2);
+	});
+});
+
 describe("Claude wire native authority", () => {
 	it.each([false, true])("wire correlation and live-only elicitation (correlated: %p)", async correlated => {
 		const f = fixture(`wire-${correlated}`), input = new PassThrough(), output = new PassThrough(), next = jsonLineReader(output);
 		const server = serveStdio({ input, output, runtime: createMcpRuntime({ ...withRunEntry(f.root), cwd: f.root, env: ENV, readInitiative: async () => f.observation }), exit: () => undefined });
 		const send = (message: unknown) => input.write(`${JSON.stringify(message)}\n`);
 		send({ jsonrpc: "2.0", id: "init", method: "initialize", params: { protocolVersion: "2025-06-18", clientInfo: { name: "claude-code", version: "2.1.236" }, capabilities: { elicitation: {} } } }); await next();
-		send({ jsonrpc: "2.0", id: "outer", method: "tools/call", params: { name: "start_unattended_batch", arguments: { initiative_slug: f.slug }, ...(correlated ? { _meta: { "claudecode/toolUseId": "wire" } } : {}) } });
+		send({ jsonrpc: "2.0", id: "outer", method: "tools/call", params: { name: "start_unattended_batch", arguments: { initiative_slug: f.slug, final_verification: ["bun test", "bun run typecheck"] }, ...(correlated ? { _meta: { "claudecode/toolUseId": "wire" } } : {}) } });
 		if (!correlated) { expect(JSON.stringify(await next())).toContain("correlation_missing"); }
 		else {
 			const elicitation = await next(); send({ jsonrpc: "2.0", id: "old-request-id", result: { action: "accept" } }); const settled = next();
@@ -382,7 +425,7 @@ describe("lane mode parameters and resume", () => {
 			let gates = 0;
 			const runtime = client(f, { requestConfirmation: async () => { gates++; return { decision: "accept", requestId: "fresh" }; } });
 			const start = (): Promise<any> => host === "claude"
-				? runtime.runtime.startUnattendedBatch(f.slug, { toolCallId: "fresh", interactive: true })
+				? runtime.runtime.startUnattendedBatch(f.slug, { toolCallId: "fresh", interactive: true }, { final_verification: ["bun test", "bun run typecheck"] })
 				: runPiBatch({ root: f.root, initiativeSlug: f.slug, readInitiative: async () => f.observation,
 					confirmBatch: async () => { gates++; return "accept"; } });
 			const path = join(f.root, ".imm/state/batches/old-batch.json"), activeBytes = readFileSync(path), before = snapshot(f.root);
@@ -422,7 +465,7 @@ describe("lane mode parameters and resume", () => {
 		const runtime = client(claude, { requestConfirmation: async () => { claudeGates++; return { decision: "accept", requestId: "resume" }; } });
 		const options = { root: pi.root, initiativeSlug: slug, readInitiative: async () => pi.observation, confirmBatch: async () => { piGates++; return "accept" as const; } };
 		const first = await runtime.callTool("start_unattended_batch", { initiative_slug: slug, max_parallel }); await runPiBatch({ ...options, max_parallel });
-		const a = await runtime.callTool("start_unattended_batch", { initiative_slug: slug }), b = await runPiBatch(options);
+		const a = await runtime.callTool("start_unattended_batch", { initiative_slug: slug, final_verification: undefined }), b = await runPiBatch({ ...options, final_verification: undefined });
 		expect(a.state).toBe("started"); expect(b.state).toBe("started"); if (b.state !== "started") throw new Error(b.reason);
 		expect(a.batch_id).toBe(first.batch_id); expect(a.report.max_parallel).toBe(max_parallel); expect(b.report.max_parallel).toBe(max_parallel);
 		expect(claudeGates).toBe(1); expect(piGates).toBe(1); expect(normalize(a.report, claude)).toEqual(normalize(b.report, pi));

@@ -249,6 +249,11 @@ async function executePreparedPiBatch(
 		return { state: preflight.state, reason: preflight.reason, recovery_action: preflight.recovery_action };
 	}
 	const isResuming = preflight.projection.is_resuming;
+	if (!isResuming && !options.final_verification?.length) return {
+		state: "rejected",
+		reason: "final_verification_required",
+		recovery_action: "Pass the project's final_verification commands when starting a new batch in the current Host.",
+	};
 	const batchBranch = preflight.projection.batch_branch;
 	const existingBatch = preflight.projection.existing_batch;
 	const budget = preflight.projection.budget;
@@ -519,7 +524,7 @@ export default function (
 			lane_offers: Type.Optional(Type.Array(
 				Type.Object({ task_id: Type.String(), path: Type.String() }, { additionalProperties: false }),
 			)),
-			final_verification: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 8 })),
+			final_verification: Type.Optional(Type.Array(Type.String(), { maxItems: 8 })),
 			lane_instruction: Type.Optional(Type.Object({
 				task_id: Type.String(),
 				kind: Type.Optional(Type.Union([Type.Literal("instruction"), Type.Literal("correction")])),
@@ -564,7 +569,7 @@ export default function (
 
 			const maxParallel = parseMaxParallel(params.max_parallel);
 			const laneOffers = parseLaneOffers(params.lane_offers);
-			const finalVerification = parseFinalVerification(params.final_verification);
+			const finalVerification = params.final_verification?.length === 0 ? undefined : parseFinalVerification(params.final_verification);
 			const laneInstruction = parseLaneInstruction(params.lane_instruction);
 
 			const result = await executePiUnattendedBatch({

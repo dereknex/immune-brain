@@ -969,6 +969,11 @@ export class ClaudeRuntime {
 			};
 		}
 		const isResuming = preflight.projection.is_resuming;
+		if (!isResuming && !options.final_verification?.length) return {
+			state: "rejected",
+			reason: "final_verification_required",
+			recovery_action: "Pass the project's final_verification commands when starting a new batch in the current Host.",
+		};
 		const batchBranch = preflight.projection.batch_branch;
 		const existingBatch = preflight.projection.existing_batch;
 		const budget = preflight.projection.budget;

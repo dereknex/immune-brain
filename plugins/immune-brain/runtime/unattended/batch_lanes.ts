@@ -1296,7 +1296,7 @@ export async function runLaneBatch(
 			record,
 			final && !final.passed
 				? `all enrollable children integrated; final verification did not pass: ${[...final.results, ...(final.derived_checks ?? [])].filter((r) => !r.passed).map((r) => r.command).join(", ")}`
-				: "all enrollable children integrated",
+				: final ? "all enrollable children integrated" : "final verification not run",
 			final && !final.passed
 				? "Every child is integrated but the batch did not pass its final verification; inspect the failing commands against the delivered content. Integrated commits were not rolled back."
 				: "",

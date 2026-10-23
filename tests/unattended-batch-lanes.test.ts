@@ -1953,7 +1953,7 @@ describe("Lane write guard and leak restore (#200)", () => {
 });
 
 describe("final verification in the completion report (#201)", () => {
-	for (const [label, commands, passed] of [["passes", ["git status"], true], ["fails", ["git status", "git no-such-subcommand"], false]] as const) {
+	for (const [label, commands, passed] of [["passes", ["git status"], true], ["fails", ["git status", "git no-such-subcommand"], false], ["does not run", [], undefined]] as const) {
 		it(`runs the recorded commands on the batch branch once every child is integrated and ${label}`, async () => {
 			const fx = fixture();
 			try {
@@ -1968,13 +1968,15 @@ describe("final verification in the completion report (#201)", () => {
 				const done = lanes(await startBatch(args));
 				expect(done.batch_state).toBe("completed");
 				expect(done.final_verification?.passed).toBe(passed);
-				expect(done.final_verification?.results.map((r) => r.command)).toEqual([...commands]);
-				expect(done.final_verification?.head).toBe(done.commits[0]);
-				if (!passed) expect(done.reason).toContain("final verification did not pass: git no-such-subcommand");
+				expect(done.final_verification?.results.map((r) => r.command)).toEqual(commands.length ? [...commands] : undefined);
+				expect(done.final_verification?.head).toBe(commands.length ? done.commits[0] : undefined);
+				if (passed === undefined) expect(done.reason).toBe("final verification not run");
+				else if (passed) expect(done.reason).toBe("all enrollable children integrated");
+				if (passed === false) expect(done.reason).toContain("final verification did not pass: git no-such-subcommand");
 				// Integrated commits stay.
 				expect(git(fx.repo, "rev-parse", "HEAD")).toBe(done.commits[0]!);
 				const persisted = JSON.parse(readFileSync(join(fx.repo, `.imm/state/batches/${BATCH_ID}.report.json`), "utf8"));
-				expect(persisted.final_verification.passed).toBe(passed);
+				expect(persisted.final_verification?.passed).toBe(passed);
 			} finally {
 				fx.cleanup();
 			}

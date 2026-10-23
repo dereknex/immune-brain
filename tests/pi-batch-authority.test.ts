@@ -58,8 +58,9 @@ try { await import("@earendil-works/pi-tui"); } catch {
 	}));
 }
 afterAll(() => mock.restore());
-const { executePiUnattendedBatch: runBatch, default: registerBatchExtension, mapDialogSelection } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
+const { executePiUnattendedBatch, default: registerBatchExtension, mapDialogSelection } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
 const { recordPiPhaseInput } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
+const runBatch = (options: Parameters<typeof executePiUnattendedBatch>[0]) => executePiUnattendedBatch({ final_verification: ["bun test", "bun run typecheck"], ...options });
 const SESSION = { getSessionId: () => "pi-batch-authority-tests" };
 const roots: string[] = [];
 afterAll(() => { for (const root of roots) rmSync(root, { recursive: true, force: true }); });
@@ -105,6 +106,13 @@ function context(root: string, selection: string, opened = { count: 0 }) {
 const textOf = (result: any) => JSON.parse(result.content.map((item: any) => item.text).join("\n"));
 
 describe("acc-pi-batch-gate", () => {
+	it.each([{ final_verification: undefined }, { final_verification: [] }])("requires final verification on a new Pi tool start (%p)", async ({ final_verification }) => {
+		const f = fixture("final-required"); const before = snapshot(f.root); const opened = { count: 0 };
+		await expect(register(async () => f.observation).execute("final-required", {
+			initiative_slug: f.slug, final_verification,
+		}, undefined, undefined, context(f.root, "confirm", opened))).rejects.toThrow("final_verification_required");
+		expect(opened.count).toBe(0); expect(snapshot(f.root)).toEqual(before); noBatchWrites(f.root);
+	});
 	it("registers the Lane tool and exactly its supported parameters", () => {
 		const tool = register(async () => { throw new Error("schema does not read a plan"); });
 		expect(tool).toBeDefined(); expect(tool.description).toContain("Lane"); expect(tool.description).not.toMatch(/serial/i);
@@ -291,7 +299,7 @@ describe("acc-pi-batch-gate", () => {
 	});
 	it("registered Tool content exposes the Lane report, Executor handoffs and every child manifest", async () => {
 		const f = fixture("tool-content-manifest"); const tool = register(async () => f.observation);
-		const response = await tool.execute("manifest", { initiative_slug: f.slug }, undefined, undefined, context(f.root, "confirm")); const content = textOf(response);
+		const response = await tool.execute("manifest", { initiative_slug: f.slug, final_verification: ["bun test", "bun run typecheck"] }, undefined, undefined, context(f.root, "confirm")); const content = textOf(response);
 		expect(content.state).toBe("started"); expect(content.report.batch_state).toBe("running"); expect(content.report.max_parallel).toBe(1);
 		expect(content.report.handoffs[0]).toMatchObject({ role: "executor", task_id: `${f.slug}-c1`, next_obligation: "submit_assurance" });
 		expect(content.report).not.toHaveProperty("handoff"); expect(content.report.next_action.length).toBeGreaterThan(0);
@@ -320,7 +328,7 @@ describe("lane mode parameters and authorization reuse", () => {
 	for (const max_parallel of [1, 2]) it(`reuses max_parallel=${max_parallel} Lane authorization without a second native gate`, async () => {
 		const f = fixture(`lane-reuse-${max_parallel}`); let gates = 0;
 		const options = { root: f.root, initiativeSlug: f.slug, readInitiative: async () => f.observation, confirmBatch: async () => { gates++; return "accept" as const; } };
-		const first = await runBatch({ ...options, max_parallel }); const second = await runBatch(options);
+		const first = await runBatch({ ...options, max_parallel }); const second = await runBatch({ ...options, final_verification: undefined });
 		expect(first.state).toBe("started"); expect(second.state).toBe("started"); expect(gates).toBe(1);
 		if (first.state !== "started" || second.state !== "started") throw new Error("Lane did not start");
 		expect(second.batch_id).toBe(first.batch_id); expect(second.report.max_parallel).toBe(max_parallel);
@@ -357,5 +365,8 @@ describe("native Parent final verification gate", () => {
 		expect(seen[0].title).toContain("Parent Final Verification"); expect(seen[0].summary).toContain("bun marker.ts"); expect(seen[0].details).toContain(taskId);
 		expect(git(root, "rev-parse", "HEAD")).toBe(baseline); expect(existsSync(ran)).toBe(false);
 		expect(await run("accept")).toMatchObject({ state: "native_parent", action: "complete", proof: { complete: true } }); expect(existsSync(ran)).toBe(true);
+		expect(await runBatch({ root, initiativeSlug: "native-final", final_verification: undefined, readInitiative: async () => observation,
+			confirmBatch: async () => { throw new Error("recorded Parent commands need no new gate"); } }))
+			.toMatchObject({ state: "native_parent", action: "complete", final_verification_commands: ["bun marker.ts"] });
 	});
 });

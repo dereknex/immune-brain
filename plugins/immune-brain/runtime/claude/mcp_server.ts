@@ -67,7 +67,7 @@ export function listMcpTools() {
 											additionalProperties: false,
 										},
 									},
-									final_verification: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 8 },
+									final_verification: { type: "array", items: { type: "string" }, maxItems: 8 },
 									lane_instruction: {
 										type: "object",
 										properties: {
@@ -240,7 +240,7 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				// A lane_offers-only call resumes the recorded lane batch; refused before any gate otherwise.
 				const laneInstruction = parseLaneInstruction(args.lane_instruction);
 				const maxParallel = resolveLaneParallel(options.cwd ?? process.cwd(), initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction);
-				const finalVerification = parseFinalVerification(args.final_verification);
+				const finalVerification = Array.isArray(args.final_verification) && args.final_verification.length === 0 ? undefined : parseFinalVerification(args.final_verification);
 				return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
 					...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
 					...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),

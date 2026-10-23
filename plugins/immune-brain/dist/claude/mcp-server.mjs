@@ -18663,7 +18663,7 @@ async function runLaneBatch(input, persisted) {
     if (final)
       record.final_verification_result = final;
     persist();
-    return finalizeLane(input.root, record, final && !final.passed ? `all enrollable children integrated; final verification did not pass: ${[...final.results, ...final.derived_checks ?? []].filter((r) => !r.passed).map((r) => r.command).join(", ")}` : "all enrollable children integrated", final && !final.passed ? "Every child is integrated but the batch did not pass its final verification; inspect the failing commands against the delivered content. Integrated commits were not rolled back." : "", { handoffs: releaseHandoffs(input, record, lanes), refusals, tracker, instruction, ...final ? { final } : {} });
+    return finalizeLane(input.root, record, final && !final.passed ? `all enrollable children integrated; final verification did not pass: ${[...final.results, ...final.derived_checks ?? []].filter((r) => !r.passed).map((r) => r.command).join(", ")}` : final ? "all enrollable children integrated" : "final verification not run", final && !final.passed ? "Every child is integrated but the batch did not pass its final verification; inspect the failing commands against the delivered content. Integrated commits were not rolled back." : "", { handoffs: releaseHandoffs(input, record, lanes), refusals, tracker, instruction, ...final ? { final } : {} });
   }
   const handoffs = [];
   for (const child of record.children) {
@@ -19633,6 +19633,12 @@ class ClaudeRuntime {
       };
     }
     const isResuming = preflight.projection.is_resuming;
+    if (!isResuming && !options.final_verification?.length)
+      return {
+        state: "rejected",
+        reason: "final_verification_required",
+        recovery_action: "Pass the project's final_verification commands when starting a new batch in the current Host."
+      };
     const batchBranch = preflight.projection.batch_branch;
     const existingBatch = preflight.projection.existing_batch;
     const budget = preflight.projection.budget;
@@ -19946,7 +19952,7 @@ function listMcpTools() {
                 additionalProperties: false
               }
             },
-            final_verification: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 8 },
+            final_verification: { type: "array", items: { type: "string" }, maxItems: 8 },
             lane_instruction: {
               type: "object",
               properties: {
@@ -20081,7 +20087,7 @@ function createMcpRuntime(options = {}) {
         const laneOffers = parseLaneOffers(args.lane_offers);
         const laneInstruction = parseLaneInstruction(args.lane_instruction);
         const maxParallel = resolveLaneParallel(options.cwd ?? process.cwd(), initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction);
-        const finalVerification = parseFinalVerification(args.final_verification);
+        const finalVerification = Array.isArray(args.final_verification) && args.final_verification.length === 0 ? undefined : parseFinalVerification(args.final_verification);
         return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
           ...maxParallel !== undefined ? { max_parallel: maxParallel } : {},
           ...laneOffers !== undefined ? { lane_offers: laneOffers } : {},
