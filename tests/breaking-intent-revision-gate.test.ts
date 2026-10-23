@@ -592,8 +592,9 @@ describe("breaking intent revision gate", () => {
 
 // CT-S2-A1 on the Pi Host (D6, I5): a scope revision is judged against the NEXT
 // intent's scope. A staged path only the next scope covers is accepted
-// (compatible: no gate; breaking: one gate); a staged path outside both scopes
-// refuses and restores the sidecar. Mirrors tests/scope-revision-envelope.test.ts.
+// (compatible: no gate; breaking: one gate); since Spec branch-boundary-r2
+// D20/D23 a path outside both scopes is disclosed rather than refused and a
+// scope-only change is compatible. Mirrors tests/scope-revision-envelope.test.ts.
 describe("scope revision is judged against its next scope", () => {
 	const SIDECAR = `docs/plans/${TASK}.intent.json`;
 	const ANCHOR = "src/mod/task.ts";
@@ -705,22 +706,20 @@ describe("scope revision is judged against its next scope", () => {
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
-	test("compatible: a staged path outside both scopes refuses and restores the sidecar", async () => {
+	// Spec branch-boundary-r2 D23: single-task delivery is the whole workspace
+	// since Enrollment, so a path outside both scopes is disclosed, not refused.
+	test("compatible: a staged path outside both scopes applies without a gate", async () => {
 		const root = makeScopeRoot();
 		try {
 			stage(root, "src/mod/sibling.ts");
 			stage(root, "src/stray.ts");
-			const before = readFileSync(join(root, SIDECAR), "utf8");
 			const next = scopeIntent(["src/mod/sibling.ts"], 2);
 			const ui = makeUI();
 
-			const failure = await captureToolFailure(loadSurface().tool.execute("c2", { task_id: TASK, action: { op: "revise_intent", next_intent: next } }, undefined, undefined, makeCtx(root, ui)));
+			await loadSurface().tool.execute("c2", { task_id: TASK, action: { op: "revise_intent", next_intent: next } }, undefined, undefined, makeCtx(root, ui));
 
-			expect(failure.message).toContain("outside the authorization envelope: src/stray.ts");
 			expect(ui.dialogCalls).toHaveLength(0);
-			expect(readFileSync(join(root, SIDECAR), "utf8")).toBe(before);
-			expect(execFileSync("git", ["show", `:${SIDECAR}`], { cwd: root, encoding: "utf8" })).toBe(before);
-			expect(storedRecord(root).intent_snapshot.scope_hint).toEqual(scopeIntent([]).scope_hint);
+			expect(storedRecord(root).intent_snapshot.scope_hint).toEqual(next.scope_hint);
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
@@ -739,7 +738,9 @@ describe("scope revision is judged against its next scope", () => {
 	});
 
 
-	test("breaking: a staged path outside both scopes refuses before the gate and leaves the sidecar", async () => {
+	// Spec branch-boundary-r2 D20: a scope-only change keeping the bound Spec path
+	// is compatible, so the breaking route refuses it before the gate.
+	test("breaking: a scope-only revision refuses before the gate and leaves the sidecar", async () => {
 		const root = makeScopeRoot();
 		try {
 			stage(root, "tests/envelope.test.ts");
@@ -750,7 +751,7 @@ describe("scope revision is judged against its next scope", () => {
 
 			const failure = await captureToolFailure(loadSurface().tool.execute("b2", { task_id: TASK, action: { op: "approve_breaking_intent_revision", next_intent: scopeIntent(["tests/envelope.test.ts"], 2) } }, undefined, undefined, makeCtx(root, ui)));
 
-			expect(failure.message).toContain("outside the authorization envelope: src/stray.ts");
+			expect(failure.message).toContain("approve_breaking_intent_revision requires a breaking revision");
 			expect(ui.dialogCalls).toHaveLength(0);
 			expect(readFileSync(join(root, SIDECAR), "utf8")).toBe(before);
 			expect(execFileSync("git", ["show", `:${SIDECAR}`], { cwd: root, encoding: "utf8" })).toBe(before);
@@ -778,7 +779,7 @@ describe("scope revision is judged against its next scope", () => {
 				},
 			});
 
-			const failure = await captureToolFailure(tool.execute("b3", { task_id: TASK, action: { op: "approve_breaking_intent_revision", next_intent: scopeIntent(["tests/envelope.test.ts"], 2) } }, undefined, undefined, makeCtx(root, ui)));
+			const failure = await captureToolFailure(tool.execute("b3", { task_id: TASK, action: { op: "approve_breaking_intent_revision", next_intent: { ...scopeIntent(["tests/envelope.test.ts"], 2), acceptance: [{ ...INTENT.acceptance[0]!, assertion: "revised" }] } } }, undefined, undefined, makeCtx(root, ui)));
 
 			expect(failure.message).toBe("simulated precommit failure");
 			expect(ui.dialogCalls).toHaveLength(1);

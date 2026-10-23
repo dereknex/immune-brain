@@ -328,16 +328,11 @@ describe("unattended batch plan projection", () => {
 				max_children: 5,
 				qa_failure_limit: 2,
 			});
-			// Every fixture child shares `tests/**`, so none can start together: each
-			// waits for every earlier Slice it does not already declare, so the
-			// S10 child runs last although it has no declared dependency.
-			expect(first.parallel_groups).toEqual([["base"], ["critical"], ["dependent"], ["final"], ["unbound"]]);
-			expect(first.scope_conflicts).toEqual([
-				{ task_id: "critical", overlaps_with: ["base"] },
-				{ task_id: "unbound", overlaps_with: ["base", "critical", "dependent", "final"] },
-				{ task_id: "dependent", overlaps_with: ["base"] },
-				{ task_id: "final", overlaps_with: ["dependent"] },
-			]);
+			// Spec branch-boundary-r2 D19: shared `tests/**` scopes no longer serialize
+			// the children; only blocked_by orders them, so every unblocked child,
+			// including the undeclared S10 one, starts in the first wave.
+			expect(first.parallel_groups).toEqual([["base", "critical", "unbound"], ["dependent", "final"]]);
+			expect(first.scope_conflicts).toEqual([]);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
@@ -533,7 +528,7 @@ describe("batch plan parallel groups", () => {
 		}));
 	}
 
-	it("groups ready children with provably disjoint scopes and leaves plan_digest unchanged", async () => {
+	it("groups ready children by blocked_by alone and leaves plan_digest unchanged", async () => {
 		const root = planRoot({
 			alpha: ["runtime/alpha/**"],
 			beta: ["runtime/beta/b.ts"],
@@ -545,9 +540,10 @@ describe("batch plan parallel groups", () => {
 			const plan = await projectBatchPlan(root, "batch", { confirmation_time: CONFIRMATION_TIME }, async () =>
 				observation(tasks({ alpha: [], beta: [], gamma: [], delta: [], omega: ["alpha", "beta"] })));
 
-			// delta nests under alpha's pattern prefix, so it waits for the next wave.
-			expect(plan.parallel_groups).toEqual([["alpha", "beta", "gamma"], ["delta", "omega"]]);
-			expect(plan.scope_conflicts).toEqual([{ task_id: "delta", overlaps_with: ["alpha"] }]);
+			// Spec branch-boundary-r2 D19: delta nests under alpha's pattern prefix,
+			// but an overlapping estimate is no longer a conflict and does not delay it.
+			expect(plan.parallel_groups).toEqual([["alpha", "beta", "delta", "gamma"], ["omega"]]);
+			expect(plan.scope_conflicts).toEqual([]);
 			const digestInput = plan.enrollable;
 			expect(plan.plan_digest).toBe(`sha256:${createHash("sha256").update(stableStringify(digestInput)).digest("hex")}`);
 			expect(digestInput.every((child) => !("scope_hint" in child))).toBe(true);

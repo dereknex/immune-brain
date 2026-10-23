@@ -324,7 +324,12 @@ describe("Claude phase entry gate: start_unattended_batch", () => {
 		// The batch's own child Enrollment is authorized by the batch, not by the
 		// phase entry gate: exactly one admission was consumed for the whole run.
 		expect(s.consumed()).toBe(1);
-		expect(readActiveClaimTaskId(s.cwd)).toBe(`${slug}-c1`);
+		// Spec branch-boundary-r2 D18: the child enrolls inside its runtime-created
+		// Lane, so the claim is held there and the coordinating checkout stays free.
+		const lane = result.report.children[0].lane;
+		expect(lane.branch).toBe(`imm-lane/${slug}/${slug}-c1`);
+		expect(readActiveClaimTaskId(lane.path)).toBe(`${slug}-c1`);
+		expect(readActiveClaimTaskId(s.cwd)).toBeNull();
 	});
 });
 

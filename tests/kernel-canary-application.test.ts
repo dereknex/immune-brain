@@ -58,6 +58,9 @@ beforeEach(() => {
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	writeFileSync(join(root, "docs", "plans", `${TASK}.intent.json`), `${JSON.stringify(INTENT, null, 2)}\n`);
 	writeFileSync(join(root, "docs", "specs", `${TASK}.spec.md`), "# Canary app task\n");
+	// Runtime authority state is ignored as in a real workspace; a staged
+	// .imm/state path is a hard no-touch delivery (branch-boundary-r2 D22).
+	writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
 	const enrollmentRegistry = createEnrollmentAuthorityRegistry();

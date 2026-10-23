@@ -668,7 +668,9 @@ describe("pi canary enroll handler integration", () => {
 		}
 	});
 
-	for (const outcome of ["confirmed", "declined", "hook-refused"] as const) {
+	// Spec branch-boundary-r2 D23: unrelated dirt now refuses Enrollment before
+	// the gate, after the migration commit that leaves it untouched.
+	for (const outcome of ["confirmed", "declined", "hook-refused", "unrelated-dirt"] as const) {
 		test(`pending migration commits before Enrollment ${outcome} and preserves unrelated dirt`, async () => {
 			const root = mkdtempSync(join(tmpdir(), "s4-enroll-migration-"));
 			try {
@@ -683,9 +685,12 @@ describe("pi canary enroll handler integration", () => {
 				mkdirSync(join(root, ".imm/audit/legacy-v3"), { recursive: true });
 				const path = ".imm/audit/legacy-v3/MEMORY.md";
 				writeFileSync(join(root, path), "pending migration evidence\n");
-				writeFileSync(join(root, "notes.txt"), "staged notes\n");
-				git(root, ["add", "--", "notes.txt"]);
-				writeFileSync(join(root, "notes.txt"), "working notes\n");
+				const withNotes = outcome === "hook-refused" || outcome === "unrelated-dirt";
+				if (withNotes) {
+					writeFileSync(join(root, "notes.txt"), "staged notes\n");
+					git(root, ["add", "--", "notes.txt"]);
+					writeFileSync(join(root, "notes.txt"), "working notes\n");
+				}
 				const entry = inspectGit("ls-files", "--stage", "--", "notes.txt");
 				if (outcome === "hook-refused") {
 					git(root, ["config", "core.hooksPath", ".git/hooks"]);
@@ -697,6 +702,12 @@ describe("pi canary enroll handler integration", () => {
 					expect(failure.message).toContain("enrollment-migration-refused");
 					expect(inspectGit("rev-parse", "HEAD").trim()).toBe(before);
 					expect(ui.confirmCalls).toHaveLength(0);
+					expect(authoritySnapshot(root)).toBe(beforeAuthority);
+				} else if (outcome === "unrelated-dirt") {
+					const failure = await capturedToolFailure(runTool(root, ui));
+					expect(failure.message).toContain("workspace_not_clean: notes.txt");
+					expect(ui.confirmCalls).toHaveLength(0);
+					expect(inspectGit("diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").trim()).toBe(path);
 					expect(authoritySnapshot(root)).toBe(beforeAuthority);
 				} else {
 					const result = await runTool(root, ui);
@@ -711,48 +722,27 @@ describe("pi canary enroll handler integration", () => {
 					}
 				}
 				expect(inspectGit("ls-files", "--stage", "--", "notes.txt")).toBe(entry);
-				expect(readFileSync(join(root, "notes.txt"), "utf8")).toBe("working notes\n");
+				if (withNotes) expect(readFileSync(join(root, "notes.txt"), "utf8")).toBe("working notes\n");
 			} finally {
 				rmSync(root, { recursive: true, force: true });
 			}
 		});
 	}
-	// Spec host-owned-environment D8 / SCN-7: the gate lists in-scope changes
-	// that already exist, and confirming it makes them task work.
-	test("the gate lists in-scope changes that already exist and confirmation claims them", async () => {
+	// Spec host-owned-environment D8 / SCN-7, narrowed by Spec branch-boundary-r2
+	// D23: a single task may start with only its intent and bound Spec dirty, so
+	// any other dirt, in scope or not, refuses before the gate opens.
+	test("dirt outside the intent and Spec refuses before the gate and claims nothing", async () => {
 		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
 		try {
 			makeEligibleRepo(root, TASK);
 			mkdirSync(join(root, "publish"), { recursive: true });
 			writeFileSync(join(root, "publish", "early.txt"), "written before Enrollment\n");
 			writeFileSync(join(root, "outside.txt"), "not task work\n");
-			const ui = makeFakeUI(true);
-			const result = await runTool(root, ui, [], "new");
-			expect(ui.confirmCalls).toHaveLength(1);
-			expect(ui.confirmCalls[0].body).toContain(
-				"In-scope changes that already exist (1) and become task work on confirmation: publish/early.txt",
-			);
-			expect(ui.confirmCalls[0].body).not.toContain("outside.txt");
-			expect(result.details.state).toBe("completed");
-			const baseline = JSON.parse(readFileSync(join(root, ".imm/state/enrollment-baseline.json"), "utf8"));
-			expect(Object.keys(baseline.dirty_files)).toContain("outside.txt");
-			expect(Object.keys(baseline.dirty_files)).not.toContain("publish/early.txt");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	test("a declined gate over a dirty scope claims nothing", async () => {
-		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
-		try {
-			makeEligibleRepo(root, TASK);
-			mkdirSync(join(root, "publish"), { recursive: true });
-			writeFileSync(join(root, "publish", "early.txt"), "written before Enrollment\n");
 			const before = authoritySnapshot(root);
-			const ui = makeFakeUI(false);
-			const result = await runTool(root, ui, [], "new");
-			expect(ui.confirmCalls[0].body).toContain("publish/early.txt");
-			expect(result.details.state).toBe("rejected");
+			const ui = makeFakeUI(true);
+			const failure = await capturedToolFailure(runTool(root, ui, [], "new"));
+			expect(failure.message).toContain("workspace_not_clean: outside.txt, publish/early.txt");
+			expect(ui.confirmCalls).toHaveLength(0);
 			expect(authoritySnapshot(root)).toBe(before);
 		} finally {
 			rmSync(root, { recursive: true, force: true });

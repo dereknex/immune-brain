@@ -64,7 +64,9 @@ describe("native repair recovery round trip", () => {
     scope_hint: ["integration.txt"], failure: failed!.final_verification!, prior_repairs: 0 });
    const task = prepared.candidate.task_id;
    writeFileSync(join(root, `docs/plans/${task}.intent.json`), JSON.stringify(prepared.candidate, null, 2) + "\n");
-   git("add", "docs/plans"); git("commit", "-qm", "repair candidate");
+   // Spec branch-boundary-r2 D23: a single task enrolls on a clean workspace, so
+   // the settled original's tracked audit evidence is committed with the candidate.
+   git("add", "docs/plans", ".imm/audit"); git("commit", "-qm", "repair candidate");
    const head = git("rev-parse", "HEAD"), report = readNativeParentFinalReport(root, "repair-parent");
    decision = "decline";
    await expect(runtime.enroll(task, meta(task))).rejects.toThrow();

@@ -57,6 +57,16 @@ function isOtherTaskSidecar(path: string, taskId?: string): boolean {
 	return /^docs\/plans\/(?:archive\/)?[^/]+\.intent\.json$/.test(path) && !isOwnPlanningSidecar(path, taskId);
 }
 
+/**
+ * Uncommitted work that blocks a snapshot. Under branch delivery another task's
+ * unstaged planning draft is not this task's work, as the envelope tolerated it
+ * before (Spec branch-boundary-r2 D23); staging it makes it delivered.
+ */
+function blocksAsUncommitted(path: string, scope: string[], branchDelivery: boolean, taskId?: string): boolean {
+	if (isNonDeliveryPath(path)) return false;
+	return branchDelivery ? !isOtherTaskSidecar(path, taskId) : taskPathMatchesScope(path, scope);
+}
+
 function isPlanningNoise(path: string, taskId?: string): boolean {
 	return path.startsWith("docs/plans/") && !isOtherTaskSidecar(path, taskId) && !isOwnPlanningSidecar(path, taskId);
 }
@@ -496,7 +506,7 @@ function taskSnapshotOnce(root: string, scope: string[], taskId?: string, tolera
 	assertNoCaseFoldCollisions([...stagedPaths, ...unstagedPaths, ...untrackedPaths], "Git task paths");
 	assertNoEnvelopeEscape(root, stagedPaths, scope, taskId, outOfScope);
 	const uncommittedInScope = [...new Set([...unstagedPaths, ...untrackedPaths])]
-		.filter((path) => !isNonDeliveryPath(path) && (branchDelivery || taskPathMatchesScope(path, scope)))
+		.filter((path) => blocksAsUncommitted(path, scope, branchDelivery, taskId))
 		.sort(comparePaths);
 	if (uncommittedInScope.length > 0) {
 		if (!tolerated) throw new Error(`task scope contains unstaged or untracked changes: ${uncommittedInScope.join(", ")}`);
@@ -648,8 +658,8 @@ function taskRevisionSnapshotOnce(
 	assertNoEnvelopeEscape(root, stagedPaths, scope, taskId, outOfScope);
 	const scopedStagedPaths = stagedPaths.filter(delivered);
 	assertNoPreEnrollmentScopeChanges(root, scopedStagedPaths, taskId);
-	const scopedUnstagedPaths = unstagedPaths.filter(delivered);
-	const scopedUntrackedPaths = untrackedPaths.filter(delivered);
+	const scopedUnstagedPaths = unstagedPaths.filter((path) => blocksAsUncommitted(path, scope, branchDelivery, taskId));
+	const scopedUntrackedPaths = untrackedPaths.filter((path) => blocksAsUncommitted(path, scope, branchDelivery, taskId));
 	assertNoCaseFoldCollisions(
 		[...scopedStagedPaths, ...scopedUnstagedPaths, ...scopedUntrackedPaths],
 		"Git task revision paths",

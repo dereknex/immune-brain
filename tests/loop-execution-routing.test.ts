@@ -57,7 +57,8 @@ describe("Loop execution and repair routing", () => {
 		expect(action.context.authority).toBe("executor");
 		expect(action.context.tool_policy).toBe("workspace tools");
 		expect(action.context.prompt).toContain("enrolled TaskIntent acceptance");
-		expect(action.context.prompt).toContain("scope expansion");
+		// branch-boundary-r2 D20: the Executor discloses files beyond the estimate instead of expanding scope.
+		expect(action.context.prompt).toContain("beyond_estimate");
 		const guidance = action.context.prompt.replace(/\s+/g, " ");
 		for (const requirement of [
 			"one compact row per violated acceptance or invariant only when handling rework",
@@ -190,7 +191,8 @@ describe("Loop execution and repair routing", () => {
 		expect(loop).toContain("test-fixer");
 		expect(loop).toContain("pr-fix");
 		expect(loop).toContain("Kernel ownership");
-		expect(loop).toContain("Scope expansion returns to Planner's Enrolled Intent Revision route");
+		expect(loop.replace(/\s+/g, " ")).toContain("`scope_hint` is an estimate (ADR 0028)");
+		expect(loop.replace(/\s+/g, " ")).toContain("returns to Planner's Enrolled Intent Revision route");
 		expect(loop.replace(/\s+/g, " ")).toContain("the current Loop submits it through Kernel revision authority");
 		expect(loop).not.toContain("route it through `imm-canary-work`");
 		for (const path of [

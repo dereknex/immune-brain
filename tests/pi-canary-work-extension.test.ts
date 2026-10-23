@@ -1254,18 +1254,23 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 				next_action: "invoke the foreground reviewer and submit its verdict",
 			});
 
+			// Spec branch-boundary-r2 D23: another task's sidecar is not this task's
+			// planning, so it is delivered and disclosed beyond the estimate.
 			writeFileSync(join(foreignRoot, "docs", "plans", "other-task.intent.json"), "{}\n");
 			execFileSync("git", ["add", "--", "docs/plans/other-task.intent.json"], { cwd: foreignRoot });
-			const foreignTool = loadSurface().tools[0];
-			const blocked = await capturedToolFailure(foreignTool.execute(
+			let foreignEvidence: unknown;
+			const foreignTool = loadSurface({
+				writeReviewEvidence: (payload) => { foreignEvidence = payload; return { path: join(foreignRoot, "review.json"), remove: () => {} }; },
+			}).tools[0];
+			const foreign = await foreignTool.execute(
 				"advance",
 				{ task_id: TASK, action: { op: "advance_assurance" } },
 				undefined,
 				undefined,
 				makeCtx(foreignRoot, makeUI()),
-			));
-			expect(blocked.message).toContain("task delivery contains paths outside the authorization envelope");
-			expect(blocked.next_action).toBe("reconcile the listed paths: unstage unrelated paths or revise TaskIntent scope for task-owned paths, then retry advance_assurance");
+			);
+			expect(JSON.parse(foreign.content[0].text)).toMatchObject({ state: "review_ready" });
+			expect(JSON.stringify(foreignEvidence)).toMatch(/"beyond_estimate":\[[^\]]*"docs\/plans\/other-task\.intent\.json"/);
 		} finally {
 			rmSync(ownRoot, { recursive: true, force: true });
 			rmSync(foreignRoot, { recursive: true, force: true });

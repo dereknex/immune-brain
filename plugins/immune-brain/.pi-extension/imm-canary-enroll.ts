@@ -18,7 +18,8 @@ import { createEnrollmentAuthorityRegistry } from "../runtime/kernel/enrollment_
 import { assertIsolatedTaskPrerequisites } from "../runtime/github_issue_tracker";
 import { preparePiCanary, revalidatePiCanary } from "../runtime/assurance/enrollment";
 import { evaluateCanaryEligibility } from "../runtime/kernel/canary_eligibility";
-import { enrollmentScopeDisclosure, enrollTask, EnrollmentRehearsalError } from "../runtime/kernel/enrollment";
+import { inspectSpecBinding } from "../runtime/kernel/spec_binding";
+import { enrollmentScopeDisclosure, enrollTask, EnrollmentRehearsalError, singleTaskEnrollmentDirt } from "../runtime/kernel/enrollment";
 import { reconcileKernelAuthority, withKernelStoreLock } from "../runtime/kernel/storage";
 import { inspectStorageLayout } from "../runtime/kernel/storage_paths";
 import { commitPendingMigrationDiff, migrateAndCommitLegacyLayout } from "../runtime/kernel/storage_layout_migration";
@@ -454,6 +455,13 @@ async function executeForegroundEnrollment(
 		// In-scope changes that already exist are shown in the gate and only the
 		// ones shown are claimed as task work on confirmation.
 		const disclosure = enrollmentScopeDisclosure(root, taskId);
+		// An unborn HEAD has no base to compare; the Kernel checks after it commits one.
+		// An invalid Spec binding keeps its own Kernel refusal.
+		if (gitBase.state !== "unborn" && inspectSpecBinding(taskIntent.intent).ok) {
+			const dirt = singleTaskEnrollmentDirt(root, taskIntent.intent_ref.path, taskIntent.intent);
+			if (dirt.length > 0)
+				return terminal(action, taskId, "failed", stage, new EnrollmentRehearsalError([`workspace_not_clean: ${dirt.join(", ")}`]).message, "resolve the final-lock preconditions and retry");
+		}
 		{
 			const confirmationSummary = [
 				`Task: ${taskId}`,

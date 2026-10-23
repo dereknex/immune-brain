@@ -164,7 +164,7 @@ describe("skill dist consistency", () => {
 		expect(revisionRoute).toContain("instead of standard planning:");
 		const revision = linkedSections(path, routeLine(loader, "common:")) + linkedSections(path, revisionRoute);
 		expect(revision).toContain("Planner prepares the complete proposed revision");
-		expect(revision).toContain("Return the proposal to the current Loop owner");
+		expect(revision).toContain("Return an actual revision proposal to the current Loop owner");
 		expect(revision).toContain("Preserve the prior on-disk sidecars");
 		expect(revision).toContain("approve_breaking_intent_revision");
 		expect(revision).toContain("the native Host gate is the single user decision");

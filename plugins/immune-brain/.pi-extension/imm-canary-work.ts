@@ -104,6 +104,7 @@ import { inspectStorageLayout } from "../runtime/kernel/storage_paths";
 import { migrateLegacyLayout } from "../runtime/kernel/storage_layout_migration";
 import {
 	canonicalIntentHash,
+	classifyIntentRevision,
 	parseProjectTaskIntent,
 	parseTaskIntentV1,
 	readTaskIntent,
@@ -929,6 +930,9 @@ export default function (
 					priorIntent.intent.revision !== projection.projection.intent_revision
 					|| priorIntent.content_hash !== projection.projection.intent_content_hash
 				) throw new Error("Intent changed while preparing the breaking revision");
+				// A gate the Kernel would refuse afterwards is never opened.
+				if (classifyIntentRevision(priorIntent.intent, nextIntent) !== "breaking")
+					throw new Error("approve_breaking_intent_revision requires a breaking revision");
 				writeFileSync(sidecar, `${JSON.stringify(nextIntent, null, 2)}\n`);
 				execFileSync("git", ["add", "--", priorIntent.intent_ref.path], {
 					cwd: ctx.cwd,

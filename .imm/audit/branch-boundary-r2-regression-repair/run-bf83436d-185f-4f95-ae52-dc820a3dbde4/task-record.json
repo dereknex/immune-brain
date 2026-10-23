@@ -1,0 +1,229 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "branch-boundary-r2-regression-repair",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "branch-boundary-r2-regression-repair",
+    "goal": "The 32 existing tests that the branch-boundary-r2 batch (#273, commits f2e41df, 55cdfda, d383698, b175fb2, 593a52e) broke pass again on main while every batch acceptance test still passes, each failure being repaired as either an implementation defect or an assertion outdated by a named branch-boundary-r2 Spec decision.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Lane-mode batch completion verification, batch plan projection and parallel grouping, and dual-host batch confirmation conformance pass after S5 scope-as-estimate (D19), while batch scope-estimate behavior still passes. Each repair either restores the behavior the test protects or, where a branch-boundary-r2 Spec decision deliberately retired it, updates the assertion to that decision; no assertion is deleted or weakened without that Spec decision.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v2\",\"command\":{\"executable\":\"bun\",\"argv\":[\"test\",\"tests/batch-completion-verifier.test.ts\",\"tests/unattended-batch-plan.test.ts\",\"tests/dual-host-assurance-conformance.test.ts\",\"tests/batch-scope-estimate.test.ts\"],\"cwd\":\".\",\"timeout_ms\":540000,\"max_output_bytes\":131072},\"environment\":{\"prepare\":null,\"writable_paths\":[]}}"
+      },
+      {
+        "id": "AC2",
+        "assertion": "The published Loop, Planner, Executor and dist contracts again state scope-expansion routing, in-goal rework and revision-proposal ownership that S6 delegated-reseal-removal deleted together with delegated in-Lane revision, unless the Spec retired that text. Each repair either restores the behavior the test protects or, where a branch-boundary-r2 Spec decision deliberately retired it, updates the assertion to that decision; no assertion is deleted or weakened without that Spec decision.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v2\",\"command\":{\"executable\":\"bun\",\"argv\":[\"test\",\"tests/code-review-activation-contract.test.ts\",\"tests/in-goal-finding-rework.test.ts\",\"tests/loop-execution-routing.test.ts\",\"tests/managed-authority-failure-contract.test.ts\",\"tests/skill-dist-consistency.test.ts\",\"tests/workflow-effect-boundaries.test.ts\"],\"cwd\":\".\",\"timeout_ms\":540000,\"max_output_bytes\":131072},\"environment\":{\"prepare\":null,\"writable_paths\":[]}}"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Packaged dist docs and role prompts match their canonical sources.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v2\",\"command\":{\"executable\":\"bun\",\"argv\":[\"scripts/sync-dist-docs.ts\",\"--check\"],\"cwd\":\".\",\"timeout_ms\":180000,\"max_output_bytes\":131072},\"environment\":{\"prepare\":null,\"writable_paths\":[]}}"
+      },
+      {
+        "id": "AC4",
+        "assertion": "A runtime-written authority-state file in a task's workspace does not refuse settlement, replan, residual-risk or Spec-binding paths with no_touch_path_changed, while a task-authored change to a hard no-touch path still refuses (D22). Each repair either restores the behavior the test protects or, where a branch-boundary-r2 Spec decision deliberately retired it, updates the assertion to that decision; no assertion is deleted or weakened without that Spec decision.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v2\",\"command\":{\"executable\":\"bun\",\"argv\":[\"test\",\"tests/claude-host-authority.test.ts\",\"tests/kernel-canary-application.test.ts\",\"tests/no-touch-paths.test.ts\",\"tests/risk-tier-floor.test.ts\"],\"cwd\":\".\",\"timeout_ms\":540000,\"max_output_bytes\":131072},\"environment\":{\"prepare\":null,\"writable_paths\":[]}}"
+      },
+      {
+        "id": "AC5",
+        "assertion": "Enrollment, scope-revision envelope, breaking-revision gate, Pi enroll and work extensions and native repair recovery pass under single-task clean-workspace Enrollment (D23), while workspace_not_clean still refuses a dirty non-planning path. Each repair either restores the behavior the test protects or, where a branch-boundary-r2 Spec decision deliberately retired it, updates the assertion to that decision; no assertion is deleted or weakened without that Spec decision.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v2\",\"command\":{\"executable\":\"bun\",\"argv\":[\"test\",\"tests/breaking-intent-revision-gate.test.ts\",\"tests/scope-revision-envelope.test.ts\",\"tests/pi-canary-enroll-extension.test.ts\",\"tests/pi-canary-work-extension.test.ts\",\"tests/goal-driven-run-recovery.test.ts\",\"tests/single-task-clean-workspace.test.ts\",\"tests/enrollment-dirty-scope.test.ts\"],\"cwd\":\".\",\"timeout_ms\":540000,\"max_output_bytes\":131072},\"environment\":{\"prepare\":null,\"writable_paths\":[]}}"
+      },
+      {
+        "id": "AC6",
+        "assertion": "The Claude phase entry gate for start_unattended_batch and the published goal-driven run contract pass after S4 serial-runner-retirement, while serial-retirement behavior still passes. Each repair either restores the behavior the test protects or, where a branch-boundary-r2 Spec decision deliberately retired it, updates the assertion to that decision; no assertion is deleted or weakened without that Spec decision.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v2\",\"command\":{\"executable\":\"bun\",\"argv\":[\"test\",\"tests/claude-phase-entry-gate.test.ts\",\"tests/goal-driven-run-contract.test.ts\",\"tests/batch-serial-retirement.test.ts\"],\"cwd\":\".\",\"timeout_ms\":540000,\"max_output_bytes\":131072},\"environment\":{\"prepare\":null,\"writable_paths\":[]}}"
+      },
+      {
+        "id": "AC7",
+        "assertion": "The generated Claude MCP bundle matches the runtime source.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v2\",\"command\":{\"executable\":\"bun\",\"argv\":[\"scripts/build-claude-plugin.ts\",\"--check\"],\"cwd\":\".\",\"timeout_ms\":180000,\"max_output_bytes\":131072},\"environment\":{\"prepare\":null,\"writable_paths\":[]}}"
+      },
+      {
+        "id": "AC8",
+        "assertion": "The project typechecks.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v2\",\"command\":{\"executable\":\"bun\",\"argv\":[\"run\",\"typecheck\"],\"cwd\":\".\",\"timeout_ms\":180000,\"max_output_bytes\":131072},\"environment\":{\"prepare\":null,\"writable_paths\":[]}}"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/branch-boundary-r2-regression-repair.md",
+      "docs/plans/branch-boundary-r2-regression-repair.intent.json",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/dist/imm-run-batch.md",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/dist/role-prompts/executor.md",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/kernel/completion.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment.ts",
+      "plugins/immune-brain/runtime/no_touch.ts",
+      "plugins/immune-brain/runtime/prompts/executor.md",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_schedule.ts",
+      "plugins/immune-brain/runtime/workspace_scope.ts",
+      "tests/batch-completion-verifier.test.ts",
+      "tests/breaking-intent-revision-gate.test.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/claude-phase-entry-gate.test.ts",
+      "tests/code-review-activation-contract.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/goal-driven-run-contract.test.ts",
+      "tests/goal-driven-run-recovery.test.ts",
+      "tests/in-goal-finding-rework.test.ts",
+      "tests/kernel-canary-application.test.ts",
+      "tests/loop-execution-routing.test.ts",
+      "tests/managed-authority-failure-contract.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/scope-revision-envelope.test.ts",
+      "tests/skill-dist-consistency.test.ts",
+      "tests/unattended-batch-plan.test.ts",
+      "tests/workflow-effect-boundaries.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/branch-boundary-r2-regression-repair.intent.json",
+    "content_hash": "sha256:0add1d96b478ff3f45fcc84653c3610b0c855dbee0928c6b318c7f56f503554a"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:2954adc99cd2c4e088bd3527c75292a3d9bb6d9ffb7fd7e0e42f6d9314e75028",
+  "git_base_head": "36e0208a4cc36f25350ab4d0f1d1966e1387db70",
+  "attestations": [
+    {
+      "id": "approval-qa-cbf272ba",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:0add1d96b478ff3f45fcc84653c3610b0c855dbee0928c6b318c7f56f503554a",
+      "diff_hash": "sha256:40b4c70d3fed209ec34b34c7f83d47a92f9b4a31a678b44d6a2587d54e002e28",
+      "actor_id": "deterministic-qa",
+      "summary": "all 9 project verification check(s) passed; execution=sha256:f3de259e62fea9acbde52d8d44573704b83ab12683f3342a9f47b5720b528f90",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:f3de259e62fea9acbde52d8d44573704b83ab12683f3342a9f47b5720b528f90"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:f3de259e62fea9acbde52d8d44573704b83ab12683f3342a9f47b5720b528f90"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:f3de259e62fea9acbde52d8d44573704b83ab12683f3342a9f47b5720b528f90"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:f3de259e62fea9acbde52d8d44573704b83ab12683f3342a9f47b5720b528f90"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:f3de259e62fea9acbde52d8d44573704b83ab12683f3342a9f47b5720b528f90"
+        },
+        {
+          "acceptance_id": "AC6",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:f3de259e62fea9acbde52d8d44573704b83ab12683f3342a9f47b5720b528f90"
+        },
+        {
+          "acceptance_id": "AC7",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:f3de259e62fea9acbde52d8d44573704b83ab12683f3342a9f47b5720b528f90"
+        },
+        {
+          "acceptance_id": "AC8",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:f3de259e62fea9acbde52d8d44573704b83ab12683f3342a9f47b5720b528f90"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-6d3ac9ee",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:0add1d96b478ff3f45fcc84653c3610b0c855dbee0928c6b318c7f56f503554a",
+      "diff_hash": "sha256:40b4c70d3fed209ec34b34c7f83d47a92f9b4a31a678b44d6a2587d54e002e28",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (single parent 36e0208, tree 11fb373); pre-gate workspace_not_clean and non-breaking refusals on both hosts reuse Kernel predicates, branch-delivery uncommitted filter only tolerates other-task unstaged sidecars, MCP bundle mirrors runtime, and every test assertion change cites the retiring D18-D23 decision while negative cases (dirty non-planning path, forced-staged .imm/state, unstaged drift) remain asserted.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "36e0208a4cc36f25350ab4d0f1d1966e1387db70",
+        "review_commit": "ceda735dadb5bff23d9400ecfa02d8527d13da3e",
+        "review_tree": "11fb373094e7b4023436313060cc1b515d7f7e00",
+        "manifest_digest": "sha256:8e6ef38f470fa5c13dc4e907e76f3bc023591f4a7988a730f8ee8dd9cffaa450"
+      },
+      "reviewer_verdict_sha256": "sha256:b4b0881b89abfa41925ede5a229ad82755fa3cdaf586a5acce3184adc0951d47"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:branch-boundary-r2-regression-repair:2026-10-23T01:03:06.392Z",
+      "at": "2026-10-23T01:03:06.392Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/branch-boundary-r2-regression-repair.intent.json"
+    },
+    {
+      "id": "revise_intent:branch-boundary-r2-regression-repair:2026-10-23T01:04:05.006Z",
+      "at": "2026-10-23T01:04:05.006Z",
+      "type": "revise_intent",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "intent_revision_2\naction_v2_sha256:289b7d8ae1f48aa281dc641b0963b6ab7b8710534d6ae91e51ade200935f5f79"
+    },
+    {
+      "id": "record_approval:branch-boundary-r2-regression-repair:2026-10-23T01:08:29.615Z",
+      "at": "2026-10-23T01:08:29.615Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-cbf272ba\naction_v2_sha256:3b2cfbd1761092a76bcf047ac3a13859b085a510770fc26f77257a6710e21ab4",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-23T01:08:29.616Z"
+      }
+    },
+    {
+      "id": "record_approval:branch-boundary-r2-regression-repair:2026-10-23T01:09:53.215Z",
+      "at": "2026-10-23T01:09:53.215Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-6d3ac9ee\naction_v2_sha256:0a6253ec42e2e1a4712ea3a6ad3cc76eb7bb76db046df01bd301bd6b7013cad3",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-23T01:09:53.215Z"
+      }
+    },
+    {
+      "id": "complete:branch-boundary-r2-regression-repair:2026-10-23T01:09:55.321Z",
+      "at": "2026-10-23T01:09:55.321Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:783c52dbd7367a3b5834ac9bbbc4cfc2e3e90997d429e3a559fb2accecb4a873"
+    }
+  ]
+}

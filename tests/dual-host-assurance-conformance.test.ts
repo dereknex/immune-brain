@@ -1437,7 +1437,7 @@ describe("dual-host assurance conformance", () => {
 		}
 
 		// Child scope checks belong to the Lane, never the coordinator checkout.
-		// Preserve staged/unstaged, archive, glob and rename protection on real children.
+		// Preserve staged/unstaged, archive, glob and rename handling on real children.
 		for (const variant of ["staged", "outside", "unstaged", "archived", "directory", "glob", "rename"]) {
 			for (const host of ["claude", "pi"] as const) {
 				const slug = `conf-lane-${variant}-${host}`;
@@ -1464,10 +1464,11 @@ describe("dual-host assurance conformance", () => {
 				else writeFileSync(join(lane, variant === "outside" ? "src/other.ts" : "src/impl.ts"), "export const changed = true;\n");
 				if (variant !== "unstaged") execFileSync("git", ["add", "-A"], { cwd: lane });
 				const projection = await ports.projectTask(lane, task);
-				if (variant === "outside" || variant === "rename") expect(projection.error).toContain("outside the authorization envelope: src/other.ts");
-				else if (variant === "unstaged") expect(projection.error).toMatch(/unstaged or untracked/);
+				// Spec branch-boundary-r2 D20: scope_hint is an estimate, so a staged path
+				// outside it (including a rename source) is disclosed in Review evidence
+				// as beyond_estimate rather than refused; unstaged drift still refuses.
+				if (variant === "unstaged") expect(projection.error).toMatch(/unstaged or untracked/);
 				else expect(projection.error).toBeNull();
-				if (variant === "rename") expect(projection.error).toContain("src/other.ts");
 
 				writeFileSync(join(f.root, "out.ts"), "export const user = true;\n");
 				execFileSync("git", ["add", "out.ts"], { cwd: f.root });
@@ -1481,7 +1482,7 @@ describe("dual-host assurance conformance", () => {
 				const second = await tick();
 				expect(second.state).toBe("started");
 				expect(second.batch_id).toBe(first.batch_id);
-				if (["outside", "unstaged", "rename"].includes(variant)) {
+				if (variant === "unstaged") {
 					expect(second.report.children[0]).toMatchObject({ state: "needs_human", reason: expect.stringContaining("batch_lane_unreadable") });
 					expect(second.report.handoffs).toEqual([]);
 				} else {

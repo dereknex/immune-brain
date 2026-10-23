@@ -262,8 +262,9 @@ describe("S2 exact effects and outbound research", () => {
 		]) {
 			expect(contract).toContain(fragment);
 		}
-		// Recovery rules still route rework/repair behavior as before.
-		expect(contract).toContain("Scope expansion returns to Planner's Enrolled Intent Revision route");
+		// Recovery rules still route rework/repair behavior; scope is an estimate (branch-boundary-r2 D20).
+		expect(contract).toContain("`scope_hint` is an estimate (ADR 0028)");
+		expect(contract).toContain("returns to Planner's Enrolled Intent Revision route");
 		expect(contract).toContain("Bounded test or PR repair stays inside the same");
 	});
 

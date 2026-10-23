@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "branch-boundary-r2-regression-repair",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:branch-boundary-r2-regression-repair:2026-10-23T01:09:55.321Z",
+  "final_record_hash": "sha256:ea66b80f25f6c611705cf1546a7fe21c871cbd3f0fe1240389d6510dd44e433f",
+  "terminalized_at": "2026-10-23T01:09:55.321Z"
+}

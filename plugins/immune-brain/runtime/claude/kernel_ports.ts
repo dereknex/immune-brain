@@ -26,6 +26,7 @@ import { findingsDigestV2 } from "../kernel/reducer";
 import { readTaskRecordRaw, recoverKernelStoreFollowUps } from "../kernel/storage";
 import {
 	canonicalIntentHash,
+	classifyIntentRevision,
 	parseProjectTaskIntent,
 	readTaskIntent,
 	withNextScope,
@@ -41,8 +42,9 @@ import {
 	createEnrollmentAuthorityRegistry,
 	type EnrollmentCapabilityBinding,
 } from "../kernel/enrollment_authority";
-import { enrollmentScopeDisclosure, enrollTask } from "../kernel/enrollment";
+import { enrollmentScopeDisclosure, EnrollmentRehearsalError, enrollTask, singleTaskEnrollmentDirt } from "../kernel/enrollment";
 import { reconcileKernelAuthority, repairKernelAuthority } from "../kernel/storage";
+import { inspectSpecBinding } from "../kernel/spec_binding";
 import { withSettleCommit } from "../assurance/workflow_autocommit";
 import { commitEnrollmentPreconditions, commitUnbornEnrollmentPreconditions, inspectEnrollmentGitBase, enrollmentGitBaseNotice, initializeEnrollmentGitBase, preconditionCommitNote } from "../assurance/enrollment_git_base";
 import { preparePiCanary, revalidatePiCanary } from "../kernel/pi_canary_prepare";
@@ -443,6 +445,12 @@ export class ClaudeRuntime {
 			// In-scope changes that already exist are shown in the gate and only the
 			// ones shown are claimed as task work on confirmation.
 			const disclosure = enrollmentScopeDisclosure(this.cwd, taskId);
+			// An unborn HEAD has no base to compare; the Kernel checks after it commits one.
+			// An invalid Spec binding keeps its own Kernel refusal.
+			if (gitBase.state !== "unborn" && inspectSpecBinding(intent.intent).ok) {
+				const dirt = singleTaskEnrollmentDirt(this.cwd, intent.intent_ref.path, intent.intent);
+				if (dirt.length > 0) throw new EnrollmentRehearsalError([`workspace_not_clean: ${dirt.join(", ")}`]);
+			}
 			let claimedScopePaths: string[] = [];
 			const gate = await this.gate("enroll", { ...meta, taskId }, {
 				risk: intent.intent.risk,
@@ -688,6 +696,9 @@ export class ClaudeRuntime {
 		let gate: { confirmation_ref: string; reworkChoice?: ReworkChoice };
 		try {
 			if (sidecar && nextIntent) {
+				// A gate the Kernel would refuse afterwards is never opened.
+				if (op === "approve_breaking_intent_revision" && classifyIntentRevision(priorIntent.intent, nextIntent) !== "breaking")
+					throw new Error("approve_breaking_intent_revision requires a breaking revision");
 				writeFileSync(sidecar, `${JSON.stringify(nextIntent, null, 2)}\n`);
 				execFileSync("git", ["add", "--", priorIntent.intent_ref.path], { cwd: this.cwd, stdio: ["ignore", "pipe", "pipe"] });
 				const preparedRecord = await readTaskRecordRaw(this.cwd, taskId);

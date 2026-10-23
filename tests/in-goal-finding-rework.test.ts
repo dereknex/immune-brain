@@ -20,9 +20,10 @@ const flat = (rel: string) => readFileSync(resolve(REPO_ROOT, rel), "utf-8").rep
 describe("contract distinguishes in-goal rework from Intent revision", () => {
 	test("the Loop treats an in-goal finding as rework and forbids appending a case to acceptance", () => {
 		const loop = flat("plugins/immune-brain/dist/imm-run.md");
-		expect(loop).toContain("lies inside the TaskIntent goal and `scope_hint` is ordinary rework even when no acceptance names its exact case");
+		expect(loop).toContain("lies inside the TaskIntent goal and acceptance is ordinary rework even when no acceptance names its exact case");
 		expect(loop).toContain("never append a single input case to an acceptance assertion in order to close a finding");
-		expect(loop).toContain("A breaking revision is used only when the goal, the `scope_hint`, or a user-visible commitment changes.");
+		// branch-boundary-r2 D20: scope-only changes keeping the bound Spec path are compatible.
+		expect(loop).toContain("A breaking revision is used when the authority subject changes, including acceptance or a bound Spec change; scope-only changes keeping the bound Spec path are compatible.");
 	});
 
 	test("the Executor and Reviewer role prompts carry the same rule", () => {

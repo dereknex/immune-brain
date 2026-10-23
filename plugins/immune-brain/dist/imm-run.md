@@ -199,7 +199,10 @@ is recorded as a separate follow-up rather than resolved here.
   path is `compatible` through `revise_intent`, including additions, removals,
   directories and globs; it has no same-directory exception or `scope_added:`
   history. A change of goal, bound Spec design or decomposition returns to
-  Planner without replacing the active owner.
+  Planner's Enrolled Intent Revision route: Planner prepares the complete
+  proposed revision without replacing the active owner, and the current Loop
+  submits it through Kernel revision authority. Bounded test or PR repair stays
+  inside the same TaskIntent.
 - Revision ownership: the Loop owner prepares a scope or acceptance revision in
   the executing session. Planner's route is for a change of goal, bound Spec
   design, or decomposition, and returns any other proposal to the executing

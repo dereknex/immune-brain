@@ -5287,6 +5287,11 @@ function isOwnPlanningSidecar(path, taskId) {
 function isOtherTaskSidecar(path, taskId) {
   return /^docs\/plans\/(?:archive\/)?[^/]+\.intent\.json$/.test(path) && !isOwnPlanningSidecar(path, taskId);
 }
+function blocksAsUncommitted(path, scope, branchDelivery, taskId) {
+  if (isNonDeliveryPath(path))
+    return false;
+  return branchDelivery ? !isOtherTaskSidecar(path, taskId) : taskPathMatchesScope(path, scope);
+}
 function isPlanningNoise(path, taskId) {
   return path.startsWith("docs/plans/") && !isOtherTaskSidecar(path, taskId) && !isOwnPlanningSidecar(path, taskId);
 }
@@ -5576,7 +5581,7 @@ function taskSnapshotOnce(root, scope, taskId, tolerated, outOfScope) {
   const untrackedPaths = decodeNullPaths(gitBytes(root, ["ls-files", "--others", "--exclude-standard", "-z", "--"]), "untracked task paths");
   assertNoCaseFoldCollisions([...stagedPaths, ...unstagedPaths, ...untrackedPaths], "Git task paths");
   assertNoEnvelopeEscape(root, stagedPaths, scope, taskId, outOfScope);
-  const uncommittedInScope = [...new Set([...unstagedPaths, ...untrackedPaths])].filter((path) => !isNonDeliveryPath(path) && (branchDelivery || taskPathMatchesScope(path, scope))).sort(comparePaths);
+  const uncommittedInScope = [...new Set([...unstagedPaths, ...untrackedPaths])].filter((path) => blocksAsUncommitted(path, scope, branchDelivery, taskId)).sort(comparePaths);
   if (uncommittedInScope.length > 0) {
     if (!tolerated)
       throw new Error(`task scope contains unstaged or untracked changes: ${uncommittedInScope.join(", ")}`);
@@ -5674,8 +5679,8 @@ function taskRevisionSnapshotOnce(root, scope, baseHead, taskId, tolerated, outO
   assertNoEnvelopeEscape(root, stagedPaths, scope, taskId, outOfScope);
   const scopedStagedPaths = stagedPaths.filter(delivered);
   assertNoPreEnrollmentScopeChanges(root, scopedStagedPaths, taskId);
-  const scopedUnstagedPaths = unstagedPaths.filter(delivered);
-  const scopedUntrackedPaths = untrackedPaths.filter(delivered);
+  const scopedUnstagedPaths = unstagedPaths.filter((path) => blocksAsUncommitted(path, scope, branchDelivery, taskId));
+  const scopedUntrackedPaths = untrackedPaths.filter((path) => blocksAsUncommitted(path, scope, branchDelivery, taskId));
   assertNoCaseFoldCollisions([...scopedStagedPaths, ...scopedUnstagedPaths, ...scopedUntrackedPaths], "Git task revision paths");
   const drift = [...new Set([...scopedUnstagedPaths, ...scopedUntrackedPaths])].sort(comparePaths);
   if (drift.length > 0) {
@@ -17051,6 +17056,10 @@ function enrollmentScopeDisclosure(root, taskId) {
     notice: paths.length === 0 ? null : `In-scope changes that already exist (${paths.length}) and become task work on confirmation: ${paths.join(", ")}`
   };
 }
+function singleTaskEnrollmentDirt(root, intentPath, intent) {
+  const binding = inspectSpecBinding(intent);
+  return dirtyWorkspacePaths(root, [intentPath, ...binding.ok && binding.binding ? [binding.binding.active] : []]);
+}
 
 class EnrollmentRehearsalError extends Error {
   blockers;
@@ -17115,9 +17124,8 @@ function runEnrollmentPreconditionChecks(root, input, capability, registry, mode
       try {
         if (!input.batch) {
           const binding = inspectSpecBinding(intent.intent);
-          const planning = [input.intent_path, ...binding.ok && binding.binding ? [binding.binding.active] : []];
-          claimedScopePaths = planning;
-          const dirty = dirtyWorkspacePaths(root, planning);
+          claimedScopePaths = [input.intent_path, ...binding.ok && binding.binding ? [binding.binding.active] : []];
+          const dirty = singleTaskEnrollmentDirt(root, input.intent_path, intent.intent);
           if (dirty.length > 0) {
             const message = `workspace_not_clean: ${dirty.join(", ")}`;
             fail(message, new Error(message));
@@ -17332,6 +17340,7 @@ function enrollCanaryTask(root, input, registry) {
 
 // plugins/immune-brain/runtime/claude/kernel_ports.ts
 init_storage();
+init_spec_binding();
 init_workflow_autocommit();
 
 // plugins/immune-brain/runtime/assurance/enrollment_git_base.ts
@@ -19182,6 +19191,11 @@ class ClaudeRuntime {
       const intent = await readTaskIntentForRecord(this.cwd, taskId);
       const gitBase = inspectEnrollmentGitBase(this.cwd);
       const disclosure = enrollmentScopeDisclosure(this.cwd, taskId);
+      if (gitBase.state !== "unborn" && inspectSpecBinding(intent.intent).ok) {
+        const dirt = singleTaskEnrollmentDirt(this.cwd, intent.intent_ref.path, intent.intent);
+        if (dirt.length > 0)
+          throw new EnrollmentRehearsalError([`workspace_not_clean: ${dirt.join(", ")}`]);
+      }
       let claimedScopePaths = [];
       const gate = await this.gate("enroll", { ...meta, taskId }, {
         risk: intent.intent.risk,
@@ -19365,6 +19379,8 @@ class ClaudeRuntime {
     let gate;
     try {
       if (sidecar && nextIntent) {
+        if (op === "approve_breaking_intent_revision" && classifyIntentRevision(priorIntent.intent, nextIntent) !== "breaking")
+          throw new Error("approve_breaking_intent_revision requires a breaking revision");
         writeFileSync12(sidecar, `${JSON.stringify(nextIntent, null, 2)}
 `);
         execFileSync11("git", ["add", "--", priorIntent.intent_ref.path], { cwd: this.cwd, stdio: ["ignore", "pipe", "pipe"] });

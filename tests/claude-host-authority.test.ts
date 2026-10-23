@@ -195,6 +195,9 @@ function authorityFixtureRoot(taskId: string): { root: string; intent: Record<st
 	writeFileSync(join(root, "docs", "plans", `${taskId}.intent.json`), `${JSON.stringify(intent, null, 2)}\n`);
 	mkdirSync(join(root, "docs", "specs", "archive"), { recursive: true });
 	writeFileSync(join(root, "docs", "specs", `${taskId}.spec.md`), `# ${taskId}\n`);
+	// Runtime authority state is ignored as in a real workspace; a staged
+	// .imm/state path is a hard no-touch delivery (branch-boundary-r2 D22).
+	writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "-m", "fixture"], { cwd: root });
@@ -248,6 +251,12 @@ async function runWireEnrollment(response: Record<string, unknown>, options: { c
 		params: { name: "enroll", arguments: { task_id: taskId }, _meta: { "claudecode/toolUseId": "toolu-wire" } },
 	});
 	const elicitation = await next();
+	// A refusal before the gate answers the outer call without an elicitation.
+	if (elicitation.method !== "elicitation/create") {
+		input.end();
+		await server;
+		return { taskId, root: fixture.root, elicitation, result: elicitation };
+	}
 	if (options.cancelOuter) {
 		send({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: "outer" } });
 	} else {
@@ -468,11 +477,11 @@ describe("claude host authority", () => {
 	});
 
 	// Spec host-owned-environment D8 / SCN-7: the gate lists in-scope changes
-	// that already exist, and accepting it makes them task work.
+	// that already exist, and accepting it makes them task work. Since Spec
+	// branch-boundary-r2 D23 only the intent and bound Spec may be dirty.
 	test("the Enrollment gate lists in-scope changes that already exist and acceptance claims them", async () => {
 		const dirty = (root: string, taskId: string) => {
 			writeFileSync(join(root, "docs", "specs", `${taskId}.spec.md`), `# ${taskId}\n\nwritten before Enrollment\n`);
-			writeFileSync(join(root, "outside.txt"), "not task work\n");
 		};
 		const { root, taskId, elicitation, result } = await runWireEnrollment(
 			{ result: { action: "accept", content: {} } },
@@ -481,12 +490,17 @@ describe("claude host authority", () => {
 		const path = `docs/specs/${taskId}.spec.md`;
 		const message = ((elicitation.params as { message?: string }).message ?? "");
 		expect(message).toContain(`In-scope changes that already exist (1) and become task work on confirmation: ${path}`);
-		expect(message).not.toContain("outside.txt");
 		expect(JSON.stringify(result)).not.toContain("error");
 		expect(readWorkspaceStateRaw(root).state.current_working).toBe(taskId);
 		const baseline = JSON.parse(readFileSync(join(root, ".imm/state/enrollment-baseline.json"), "utf8"));
-		expect(Object.keys(baseline.dirty_files)).toContain("outside.txt");
 		expect(Object.keys(baseline.dirty_files)).not.toContain(path);
+
+		const outside = await runWireEnrollment({ result: { action: "accept", content: {} } }, {
+			prepare: (root, taskId) => { dirty(root, taskId); writeFileSync(join(root, "outside.txt"), "not task work\n"); },
+		});
+		expect(outside.elicitation.method).toBeUndefined();
+		expect(JSON.stringify(outside.result)).toContain("workspace_not_clean: outside.txt");
+		expect(existsSync(join(outside.root, ".imm", "state", "workspace.json"))).toBe(false);
 
 		const declined = await runWireEnrollment({ result: { action: "decline" } }, { prepare: dirty });
 		expect((declined.elicitation.params as { message?: string }).message ?? "").toContain(`docs/specs/${declined.taskId}.spec.md`);

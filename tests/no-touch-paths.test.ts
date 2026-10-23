@@ -45,6 +45,16 @@ test("single-task delivery refuses every hard no-touch change before filtering a
 	}
 });
 
+test("runtime-written authority state in an ignored state directory does not refuse delivery", () => {
+	const { root } = repo(); put(root, ".gitignore", ".imm/state/\n"); git(root, "add", "."); git(root, "commit", "-qm", "ignore state");
+	const base = git(root, "rev-parse", "HEAD"); put(root, ".imm/state/kernel.sqlite", "runtime");
+	put(root, "src/a.ts", "export {};\n"); git(root, "add", "-A");
+	const record = { contract: "assurance_kernel/task_record/v4", task_id: "fixture", git_base_head: base, intent_snapshot: { scope_hint: ["src/a.ts"] } };
+	expect(taskDeliveryIdentity(root, record).changed_paths).toContain("src/a.ts");
+	git(root, "add", "-f", "--", ".imm/state/kernel.sqlite");
+	expect(() => taskDeliveryIdentity(root, record)).toThrow("no_touch_path_changed: .imm/state/kernel.sqlite");
+});
+
 test("ordinary changesets remain deliverable", () => {
 	const { root, base } = repo(); put(root, ".changeset/feature.md"); git(root, "add", ".");
 	expect(taskDeliveryIdentity(root, { contract: "assurance_kernel/task_record/v4", task_id: "fixture", git_base_head: base,

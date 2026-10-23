@@ -88,7 +88,7 @@ describe("Managed native authority failure contract", () => {
 		);
 		expect(planner).toContain("except a Loop-requested revision follows Enrolled Intent Revision");
 		expect(planner).toContain("Planner prepares the complete proposed revision");
-		expect(planner).toContain("Return the proposal to the current Loop owner");
+		expect(planner).toContain("Return an actual revision proposal to the current Loop owner");
 		expect(loop).toContain("Planner prepares the complete proposed revision without replacing the active owner");
 	});
 

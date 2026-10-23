@@ -1,8 +1,9 @@
 // CT-S2-A1 (docs/specs/ceremony-trim-r647.spec.md D6, invariant I5): a scope
 // revision is judged against the NEXT intent's scope while it is prepared. A
 // changed path that only the next scope covers must reach the gate (breaking)
-// or apply (compatible); a changed path outside both scopes refuses before the
-// gate port is called; a failed preparation restores the staged sidecar.
+// or apply (compatible); since Spec branch-boundary-r2 D20/D23 a path outside
+// both scopes is disclosed rather than refused, and a scope-only change is
+// compatible; a failed preparation restores the staged sidecar.
 
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { execFileSync } from "node:child_process";
@@ -102,7 +103,9 @@ describe("claude host: a scope revision is judged against its next scope (D6, I5
 		expect(storedScope(root, taskId)).toEqual(next.scope_hint);
 	});
 
-	test("breaking: a staged path outside both scopes refuses before the gate port is called", async () => {
+	// Spec branch-boundary-r2 D20: a scope-only change keeping the bound Spec path
+	// is compatible, so the breaking route refuses it before the gate port.
+	test("breaking: a scope-only revision refuses before the gate port is called", async () => {
 		const taskId = "envelope-breaking-outside-both";
 		const { root, sidecar, runtime, meta, gateCalls } = await enrolled(taskId);
 		stage(root, "src/newdir/c.ts");
@@ -112,7 +115,7 @@ describe("claude host: a scope revision is judged against its next scope (D6, I5
 
 		await expect(
 			runtime.authorize(taskId, "approve_breaking_intent_revision", meta("approve"), { next_intent: next }),
-		).rejects.toThrow("outside the authorization envelope: src/stray.ts");
+		).rejects.toThrow("approve_breaking_intent_revision requires a breaking revision");
 
 		expect(gateCalls).toEqual([]);
 		expect(readFileSync(join(root, sidecar), "utf8")).toBe(before);
@@ -125,7 +128,7 @@ describe("claude host: a scope revision is judged against its next scope (D6, I5
 		const { root, sidecar, runtime, meta, gateCalls } = await enrolled(taskId, "decline");
 		stage(root, "src/newdir/c.ts");
 		const before = readFileSync(join(root, sidecar), "utf8");
-		const next = intentFor(taskId, ["src/mod/a.ts", "src/newdir/c.ts"], 2);
+		const next = { ...intentFor(taskId, ["src/mod/a.ts", "src/newdir/c.ts"], 2), acceptance: [{ id: "acc-1", assertion: "revised assertion", verification: "bun test" }] };
 
 		await expect(
 			runtime.authorize(taskId, "approve_breaking_intent_revision", meta("approve"), { next_intent: next }),
@@ -150,20 +153,19 @@ describe("claude host: a scope revision is judged against its next scope (D6, I5
 		expect(storedScope(root, taskId)).toEqual(next.scope_hint);
 	});
 
-	test("compatible: a staged path outside both scopes refuses and restores the sidecar", async () => {
+	// Spec branch-boundary-r2 D23: single-task delivery is the whole workspace
+	// since Enrollment, so a path outside both scopes is disclosed, not refused.
+	test("compatible: a staged path outside both scopes applies without a gate", async () => {
 		const taskId = "envelope-compatible-outside-both";
-		const { root, sidecar, runtime, gateCalls } = await enrolled(taskId);
+		const { root, runtime, gateCalls } = await enrolled(taskId);
 		stage(root, "src/mod/b.ts");
 		stage(root, "src/stray.ts");
-		const before = readFileSync(join(root, sidecar), "utf8");
 		const next = intentFor(taskId, ["src/mod/a.ts", "src/mod/b.ts"], 2);
 
-		await expect(runtime.reviseIntent(taskId, next)).rejects.toThrow("outside the authorization envelope: src/stray.ts");
+		await runtime.reviseIntent(taskId, next);
 
 		expect(gateCalls).toEqual([]);
-		expect(readFileSync(join(root, sidecar), "utf8")).toBe(before);
-		expect(git(root, ["show", `:${sidecar}`])).toBe(before);
-		expect(storedScope(root, taskId)).toEqual(intentFor(taskId, ["src/mod/a.ts"]).scope_hint);
+		expect(storedScope(root, taskId)).toEqual(next.scope_hint);
 	});
 	test("compatible route accepts an added directory in the worktree (D20)", async () => {
 		const taskId = "envelope-added-directory";

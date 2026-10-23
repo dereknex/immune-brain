@@ -31,7 +31,7 @@ import {
 	reconcileKernelAuthority,
 	withKernelStoreLock,
 } from "./storage";
-import type { TaskRecord, TaskRecordV4, WorkspaceStateLike } from "./types";
+import type { TaskIntentV1, TaskRecord, TaskRecordV4, WorkspaceStateLike } from "./types";
 
 /**
  * Present only for a batch-derived enrollment. The child slot is consumed
@@ -81,6 +81,16 @@ export function enrollmentScopeDisclosure(root: string, taskId: string): { paths
 			? null
 			: `In-scope changes that already exist (${paths.length}) and become task work on confirmation: ${paths.join(", ")}`,
 	};
+}
+
+/**
+ * Spec branch-boundary-r2 D23: the dirt that refuses a single-task Enrollment,
+ * everything outside the Planner-produced intent and its bound Spec. Hosts
+ * check it before opening the gate so the user never confirms a refused task.
+ */
+export function singleTaskEnrollmentDirt(root: string, intentPath: string, intent: TaskIntentV1): string[] {
+	const binding = inspectSpecBinding(intent);
+	return dirtyWorkspacePaths(root, [intentPath, ...(binding.ok && binding.binding ? [binding.binding.active] : [])]);
 }
 
 /**
@@ -247,9 +257,8 @@ function runEnrollmentPreconditionChecks<T>(
 			try {
 				if (!input.batch) {
 					const binding = inspectSpecBinding(intent.intent);
-					const planning = [input.intent_path, ...(binding.ok && binding.binding ? [binding.binding.active] : [])];
-					claimedScopePaths = planning;
-					const dirty = dirtyWorkspacePaths(root, planning);
+					claimedScopePaths = [input.intent_path, ...(binding.ok && binding.binding ? [binding.binding.active] : [])];
+					const dirty = singleTaskEnrollmentDirt(root, input.intent_path, intent.intent);
 					if (dirty.length > 0) {
 						const message = `workspace_not_clean: ${dirty.join(", ")}`;
 						fail(message, new Error(message));

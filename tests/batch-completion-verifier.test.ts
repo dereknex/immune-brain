@@ -294,6 +294,9 @@ async function laneFixture() {
 		const path = join(tmpdir(), `batch-verify-lane-${task}-${Date.now()}-${index}`); const branch = `imm-lane/lanefix/${task}`;
 		git(root, ["worktree", "add", "-b", branch, path, base]);
 		mkdirSync(join(path, "src"), { recursive: true }); writeFileSync(join(path, `src/${task}.ts`), `export const value = ${JSON.stringify(task)};\n`);
+		// Spec branch-boundary-r2 D19: a Lane delivers its branch and index, so the
+		// reviewed work is staged as the Executor stages it before assurance.
+		git(path, ["add", "--", `src/${task}.ts`]);
 		const pair = record(task, runs[index]!, "done", [`src/${task}.ts`]); const audit = join(path, ".imm/audit", task, pair.run);
 		mkdirSync(audit, { recursive: true }); writeFileSync(join(audit, "task-record.json"), pair.bytes); writeFileSync(join(audit, "terminal-proof.json"), pair.proof);
 		mkdirSync(join(path, ".imm/state"), { recursive: true }); writeFileSync(join(path, ".imm/state/active-run.json"), `${JSON.stringify({ task_id: task, run_id: pair.run })}\n`);
