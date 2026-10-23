@@ -3,7 +3,7 @@ import { existsSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readActiveClaimTaskId } from "../unattended/batch_preflight";
-import { isTerminalBatchState, readAnyBatchRunState } from "../unattended/batch_state";
+import { BatchRuntimeTooOldError, isTerminalBatchState, readAnyBatchRunState } from "../unattended/batch_state";
 import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
 import type { Readable, Writable } from "node:stream";
@@ -276,7 +276,7 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 			// Read-only status must stay usable without trusted Host evidence, so it
 			// is dispatched before the capability probe rejects unversioned hosts.
 			if (name === "status") {
-				const result = { plugin_version: PLUGIN_VERSION, ...(await runtime.status(taskId)) } as Record<string, unknown>;
+				const result = { plugin_version: PLUGIN_VERSION, ...(await runtime.status(taskId)), loaded_bundle: { path: bundle.path, sha256_prefix: bundle.sha256?.slice(0, 12) ?? null } } as Record<string, unknown>;
 				if (!bundle.stale()) return result;
 				const warnings = Array.isArray(result.warnings) ? result.warnings : [];
 				return { ...result, warnings: [...warnings, { code: "plugin_bundle_stale", paths: [bundle.path], message: `${staleBundleMessage()}; authority calls refuse until the immune-brain MCP server is reconnected` }] };
@@ -874,8 +874,13 @@ async function runHook(): Promise<void> {
 		const batchesDir = join(cwd, ".imm", "state", "batches");
 		const activeBatch = existsSync(batchesDir) && readdirSync(batchesDir).some((file) => {
 			if (!file.endsWith(".json") || file.endsWith(".report.json")) return false;
-			const batch = readAnyBatchRunState(cwd, file.slice(0, -5));
-			return batch !== null && !isTerminalBatchState(batch.batch_state);
+			try {
+				const batch = readAnyBatchRunState(cwd, file.slice(0, -5));
+				return batch !== null && !isTerminalBatchState(batch.batch_state);
+			} catch (error) {
+				if (error instanceof BatchRuntimeTooOldError) return true;
+				throw error;
+			}
 		});
 		if (!activeBatch) return;
 	}

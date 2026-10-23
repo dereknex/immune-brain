@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { advanceNativeParent, observeParentCompletion, commitBatchChild } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import { settledDeliveryFixture } from "./fixtures/settled-delivery";
-import { writeNativeParentFinalReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
+import { prepareBatchLaneRunState, readAnyBatchRunState, writeBatchLaneRunState, writeNativeParentFinalReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { buildCandidate } from "../plugins/immune-brain/runtime/unattended/batch_integration";
 import { verify } from "../scripts/verify-batch-completion";
 import { readSecureProjectBytes, readSecureProjectFile } from "../plugins/immune-brain/runtime/kernel/storage";
@@ -97,6 +97,29 @@ function check(root: string, batch: string, before: ReturnType<typeof snapshot>,
 }
 
 describe("batch completion verifier", () => {
+	test("Parent completion and direct reads refuse newer batch contracts, but ignore other slugs", async () => {
+		const f = settledDeliveryFixture();
+		try {
+			const directory = join(f.root, ".imm/state/batches"); mkdirSync(directory, { recursive: true });
+			const head = f.git("rev-parse", "HEAD");
+			f.git("update-ref", "refs/heads/imm/parent", head);
+			const supported = prepareBatchLaneRunState({ batch_id: "supported", initiative_slug: "parent", children: [{ task_id: "s5", slice_id: "S5", blocked_by: [], status: "enrollable", reason: null, intent_path: "docs/plans/s5.intent.json", intent_revision: 1, intent_content_hash: "sha256:fixture" }], plan_digest: "sha256:plan",
+				base_head: head, branch: "refs/heads/imm/parent", confirmation_time: NOW, budget: { max_children: 1, qa_failure_limit: 2 }, max_parallel: 1, now: NOW });
+			writeBatchLaneRunState(f.root, supported);
+			expect((await observeParentCompletion(f.root, "parent", ["s5", "s6"])).head).toBe(head);
+			const path = join(directory, "newer.json");
+			const contract = "assurance_kernel/batch_run_state/v3";
+			writeFileSync(path, JSON.stringify({ contract, initiative_slug: "other" }));
+			expect((await observeParentCompletion(f.root, "parent", ["s5", "s6"])).complete).toBe(false);
+			const bytes = JSON.stringify({ contract, initiative_slug: "parent" }); writeFileSync(path, bytes);
+			const { runningRuntimeSource } = await import("../plugins/immune-brain/runtime/kernel/runtime_contracts");
+			for (const text of ["batch_runtime_too_old", contract, runningRuntimeSource(), path]) {
+				await expect(observeParentCompletion(f.root, "parent", ["s5", "s6"])).rejects.toThrow(text);
+				expect(() => readAnyBatchRunState(f.root, "newer")).toThrow(text);
+			}
+			expect(readFileSync(path, "utf8")).toBe(bytes);
+		} finally { rmSync(f.root, { recursive: true, force: true }); }
+	});
 	// Spec content-delivery-authority D3, D4: native final verification binds the
 	// scoped content of the delivered Tasks, never HEAD or a clean tree.
 	test("a content-bound final report survives user commit, amend and stash round trips and goes stale on an in-scope edit", async () => {

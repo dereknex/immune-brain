@@ -27,6 +27,7 @@ import { batchStatePath, KERNEL_DB_RELATIVE } from "../kernel/storage_paths";
 import { batchReason, type BatchReason } from "./batch_reasons";
 import { findExistingActiveBatch, findSettledBatchRecord, readActiveClaimTaskId, type BatchGateDecision } from "./batch_preflight";
 import {
+	BatchRuntimeTooOldError,
 	isTerminalBatchState,
 	replaceAnyBatchRunState,
 	writeBatchRunReport,
@@ -74,7 +75,7 @@ export interface StaleBatchFacts {
 export type StaleBatchLookup =
 	/** No active record for this Initiative. */
 	| { kind: "none" }
-	| { kind: "corrupt"; path: string }
+	| { kind: "corrupt"; path: string; newer_contract?: string }
 	| { kind: "terminal"; batch_id: string }
 	| { kind: "in_flight"; batch_id: string; task_id: string }
 	| { kind: "retirable"; record: AnyBatchRunStateRecord; facts: StaleBatchFacts };
@@ -164,7 +165,7 @@ export function readStaleBatchLookup(root: string, initiativeSlug: string): Stal
 		if (settled) return { kind: "terminal", batch_id: settled.batch_id };
 		return { kind: "none" };
 	}
-	if (found.corrupt) return { kind: "corrupt", path: found.path };
+	if (found.corrupt) return { kind: "corrupt", path: found.path, ...(found.newer_contract ? { newer_contract: found.newer_contract } : {}) };
 	const record = found.record;
 	if (isTerminalBatchState(record.batch_state)) return { kind: "terminal", batch_id: record.batch_id };
 	const inFlight = inFlightChildOf(root, record);
@@ -216,7 +217,9 @@ export async function retireStaleBatch<HostRejection>(options: {
 	if (lookup.kind === "none")
 		return { outcome: "rejected", rejection: batchReason("stale_batch_absent", `Initiative ${initiativeSlug} has no active batch`) };
 	if (lookup.kind === "corrupt")
-		return { outcome: "rejected", rejection: batchReason("batch_state_unreadable", lookup.path) };
+		return { outcome: "rejected", rejection: lookup.newer_contract
+			? batchReason("batch_runtime_too_old", new BatchRuntimeTooOldError(lookup.path, lookup.newer_contract).detail)
+			: batchReason("batch_state_unreadable", lookup.path) };
 	if (lookup.kind === "terminal")
 		return {
 			outcome: "rejected",
