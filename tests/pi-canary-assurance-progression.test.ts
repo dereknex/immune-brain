@@ -21,9 +21,9 @@ import {
 /** ADR 0017: record the reserved dispatch and its result, then submit the relayed verdict. */
 async function submitObserved(progression: ReturnType<typeof makeHarness>["progression"], taskId: string, verdict: unknown) {
 	const ready = await progression.advance(taskId, ctx);
-	const prompt = (ready as { agent_params?: { prompt?: string } }).agent_params?.prompt;
-	if (prompt) {
-		progression.piReviewHost.observeReviewDispatch({ prompt, subagent_type: "Review" }, "call-1");
+	const params = (ready as { agent_params?: { prompt?: string; description?: string } }).agent_params;
+	if (params?.prompt) {
+		progression.piReviewHost.observeReviewDispatch({ ...params, subagent_type: "Review" }, "call-1");
 		progression.piReviewHost.observeReviewResult("call-1", typeof verdict === "string" ? verdict : JSON.stringify(verdict));
 	}
 	return progression.submitMediated(taskId, ctx, verdict);
@@ -33,9 +33,9 @@ describe("foreground assurance progression", () => {
 	test.each([true, false])("conflict during awaited submission retains reservation (relayed=%s)", async (relayed) => {
 		const h = makeHarness();
 		const ready = await h.progression.advance(TASK, ctx);
-		const prompt = (ready as { agent_params: { prompt: string } }).agent_params.prompt;
+		const params = (ready as { agent_params: { prompt: string; description: string } }).agent_params;
 		const verdict = passVerdict(snapshot("review"));
-		h.progression.piReviewHost.observeReviewDispatch({ prompt, subagent_type: "Review" }, "interleaved");
+		h.progression.piReviewHost.observeReviewDispatch({ ...params, subagent_type: "Review" }, "interleaved");
 		h.progression.piReviewHost.observeReviewResult("interleaved", JSON.stringify(verdict));
 		const original = h.ports.projectTask;
 		let entered!: () => void;
@@ -340,8 +340,8 @@ describe("foreground assurance progression", () => {
 			...passVerdict(snapshot("review")),
 			approval: { ...passVerdict(snapshot("review")).approval, inspected_paths: paths },
 		});
-		const prompt = (ready as { agent_params: { prompt: string } }).agent_params.prompt;
-		h.progression.piReviewHost.observeReviewDispatch({ prompt, subagent_type: "Review" }, "call-1");
+		const params = (ready as { agent_params: { prompt: string; description: string } }).agent_params;
+		h.progression.piReviewHost.observeReviewDispatch({ ...params, subagent_type: "Review" }, "call-1");
 		h.progression.piReviewHost.observeReviewResult("call-1", JSON.stringify(claim(["src/change.ts"])));
 		// Missing-path control: rejected as a correctable invalid verdict, the
 		// reservation survives, and nothing is applied.
@@ -358,8 +358,8 @@ describe("foreground assurance progression", () => {
 		const h = makeHarness();
 		const ready = await h.progression.advance(TASK, ctx);
 		expect(ready.state).toBe("review_ready");
-		const prompt = (ready as { agent_params: { prompt: string } }).agent_params.prompt;
-		h.progression.piReviewHost.observeReviewDispatch({ prompt, subagent_type: "Review" }, "call-1");
+		const params = (ready as { agent_params: { prompt: string; description: string } }).agent_params;
+		h.progression.piReviewHost.observeReviewDispatch({ ...params, subagent_type: "Review" }, "call-1");
 		h.progression.piReviewHost.observeReviewResult("call-1", JSON.stringify(passVerdict(snapshot("review"))));
 		const invalid = await h.progression.submitMediated(TASK, ctx, { decision: "pass" });
 		expect(invalid).toMatchObject({ state: "blocked", code: "verdict_invalid" });
@@ -418,8 +418,8 @@ describe("foreground assurance progression", () => {
 		} });
 		const ready = await h.progression.advance(TASK, ctx);
 		expect(ready.state).toBe("review_ready");
-		const prompt = (ready as { agent_params: { prompt: string } }).agent_params.prompt;
-		h.progression.piReviewHost.observeReviewDispatch({ prompt, subagent_type: "Review" }, "call-1");
+		const params = (ready as { agent_params: { prompt: string; description: string } }).agent_params;
+		h.progression.piReviewHost.observeReviewDispatch({ ...params, subagent_type: "Review" }, "call-1");
 		h.progression.piReviewHost.observeReviewResult("call-1", JSON.stringify(passVerdict(snapshot("review"))));
 		stale = true;
 		expect((await h.progression.submitMediated(TASK, ctx, passVerdict(snapshot("review")))).state).toBe("blocked");

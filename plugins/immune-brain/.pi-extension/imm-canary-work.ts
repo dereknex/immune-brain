@@ -494,7 +494,7 @@ export default function (
 		if (laneRefusal) return { block: true, reason: laneRefusal };
 		if (event.toolName === "Agent") {
 			// ADR 0017: correlate a reserved reviewer dispatch to its reservation.
-			progression.piReviewHost.observeReviewDispatch(event.input as { prompt?: unknown; subagent_type?: unknown } | undefined, event.toolCallId);
+			return progression.piReviewHost.observeReviewDispatch(event.input as { description?: unknown; prompt?: unknown; subagent_type?: unknown } | undefined, event.toolCallId);
 		}
 		if (event.toolName === "imm_canary_enrollment" && ctx) {
 			const input = event.input as { task_id?: string } | undefined;

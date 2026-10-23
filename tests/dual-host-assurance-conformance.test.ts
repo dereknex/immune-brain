@@ -822,9 +822,9 @@ describe("dual-host assurance conformance", () => {
 
 		const piKernel = sharedKernel("material");
 		const pi = piKernel.pi();
-		const piReady = await pi.advance(TASK, ctx as never) as { state: string; agent_params: { prompt: string } };
+		const piReady = await pi.advance(TASK, ctx as never) as { state: string; agent_params: { prompt: string; description: string } };
 		expect(piReady.state).toBe("review_ready");
-		pi.piReviewHost.observeReviewDispatch({ prompt: piReady.agent_params.prompt, subagent_type: "Review" }, "pi-call-1");
+		pi.piReviewHost.observeReviewDispatch({ ...piReady.agent_params, subagent_type: "Review" }, "pi-call-1");
 		pi.piReviewHost.observeReviewResult("pi-call-1", "Agent completed.\n\n" + JSON.stringify(passVerdict(snapshot("review")), null, 2));
 		expect(await pi.submitMediated(TASK, ctx as never, undefined)).toEqual({ state: "completed" });
 		expect(piKernel.executionCounts).toEqual({ qa: 1, completion: 1 });
@@ -847,8 +847,8 @@ describe("dual-host assurance conformance", () => {
 				expect(h.coordinator.active(TASK)).toBeNull();
 			} else {
 				const h = kernel.pi();
-				const ready = await h.advance(TASK, ctx as never) as { agent_params: { prompt: string } };
-				h.piReviewHost.observeReviewDispatch({ prompt: ready.agent_params.prompt, subagent_type: "Review" }, "rework");
+				const ready = await h.advance(TASK, ctx as never) as { agent_params: { prompt: string; description: string } };
+				h.piReviewHost.observeReviewDispatch({ ...ready.agent_params, subagent_type: "Review" }, "rework");
 				h.piReviewHost.observeReviewResult("rework", JSON.stringify(verdict));
 				expect(await h.submitMediated(TASK, ctx as never, undefined)).toMatchObject({ state: "rework" });
 				expect(h.active(TASK)).toBeNull();
@@ -876,9 +876,9 @@ describe("dual-host assurance conformance", () => {
 	test("a Pi relayed verdict must match the observed receipt", async () => {
 		const kernel = sharedKernel("material");
 		const pi = kernel.pi();
-		const ready = await pi.advance(TASK, ctx as never) as { state: string; agent_params: { prompt: string } };
+		const ready = await pi.advance(TASK, ctx as never) as { state: string; agent_params: { prompt: string; description: string } };
 		expect(ready.state).toBe("review_ready");
-		pi.piReviewHost.observeReviewDispatch({ prompt: ready.agent_params.prompt, subagent_type: "Review" }, "pi-call-1");
+		pi.piReviewHost.observeReviewDispatch({ ...ready.agent_params, subagent_type: "Review" }, "pi-call-1");
 		pi.piReviewHost.observeReviewResult("pi-call-1", JSON.stringify(passVerdict(snapshot("review"))));
 		const relaid = passVerdict(snapshot("review"));
 		const mismatched = await pi.submitMediated(TASK, ctx as never, { ...relaid, approval: { ...relaid.approval!, summary: "quietly rewritten" } }) as { state: string; reason: string };

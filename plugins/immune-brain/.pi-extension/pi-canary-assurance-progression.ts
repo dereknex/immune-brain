@@ -61,6 +61,7 @@ export type AssuranceProgressionPorts = Omit<AssuranceCoordinatorPorts, "host"> 
 
 interface RecordedReviewReceipt {
 	taskId: string;
+	description: string;
 	promptDigest: string;
 	toolCallId?: string;
 	result?: string;
@@ -80,7 +81,7 @@ class PiReviewHost implements AssuranceHostPort {
 			max_turns: request.maxTurns,
 		});
 		this.pending.add(request.operationId);
-		this.receipts.set(request.operationId, { taskId: request.taskId, promptDigest: promptDigest(params.prompt) });
+		this.receipts.set(request.operationId, { taskId: request.taskId, description: params.description, promptDigest: promptDigest(params.prompt) });
 		return { id: request.operationId, dispatch: params };
 	}
 
@@ -90,21 +91,20 @@ class PiReviewHost implements AssuranceHostPort {
 	}
 
 	/** Extension event seam: correlate one observed `Agent` dispatch to its reservation (ADR 0017). */
-	observeReviewDispatch(input: { prompt?: unknown; subagent_type?: unknown } | undefined, toolCallId: string | undefined): void {
-		if (typeof input?.prompt !== "string") return;
-		for (const record of this.receipts.values()) {
-			if (record.promptDigest !== promptDigest(input.prompt)) continue;
-			if (input.subagent_type !== "Review") {
-				record.error = "the reserved reviewer prompt was dispatched with a different Agent type";
-				return;
-			}
-			if (record.toolCallId !== undefined && record.toolCallId !== toolCallId) {
-				record.error = "the reserved reviewer was dispatched more than once";
-				return;
-			}
-			record.toolCallId = toolCallId;
-			return;
+	observeReviewDispatch(input: { description?: unknown; prompt?: unknown; subagent_type?: unknown } | undefined, toolCallId: string | undefined): { block: true; reason: string } | undefined {
+		if (input?.subagent_type !== "Review" || this.pending.size === 0) return;
+		const records = [...this.receipts.values()];
+		const record = records.find((candidate) => candidate.description === input.description);
+		if (!record || typeof input.prompt !== "string" || record.promptDigest !== promptDigest(input.prompt)) {
+			const descriptions = records.map((candidate) => candidate.description).join(", ");
+			return { block: true, reason: `Review dispatch does not match reservation ${descriptions}; dispatch the reserved description and reserved prompt verbatim.` };
 		}
+		if (record.toolCallId !== undefined && record.toolCallId !== toolCallId) {
+			record.error = "the reserved reviewer was dispatched more than once";
+			return { block: true, reason: record.error };
+		}
+		if (!toolCallId) return { block: true, reason: `Review reservation ${record.description} requires an observable tool call id.` };
+		record.toolCallId = toolCallId;
 	}
 
 	/** Extension event seam: store the observed reviewer result bytes (ADR 0017). */

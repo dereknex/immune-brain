@@ -1,0 +1,142 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "pi-review-dispatch-binding",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "pi-review-dispatch-binding",
+    "goal": "On Pi, a Review Agent dispatch whose prompt drifted from its reservation, or that matches no pending reservation, is blocked before the Reviewer runs, so no Review verdict is produced unobserved and none can be shopped for (Spec branch-boundary-r2-followups D2).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "With a pending Review reservation, a `Review` Agent dispatch carrying the reserved description and the reserved prompt bytes binds and `submit_review` accepts its result; the same dispatch with the prompt changed by one character is blocked in `tool_call` with a reason naming the reservation description and asking for the reserved prompt verbatim, and binds no receipt; a `Review` dispatch with an unreserved description while a reservation is pending is blocked; a non-Review Agent dispatch is not blocked.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-review-dispatch-resilience.test.ts\",\n      \"tests/pi-canary-work-extension.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "After a blocked drifted dispatch, a verbatim dispatch for the same reservation binds and its result submits; a second verbatim dispatch for a reservation that already bound a tool call is still refused as dispatched more than once.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-review-dispatch-resilience.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "The project typechecks.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/pi-review-dispatch-binding.md",
+      "docs/plans/pi-review-dispatch-binding.intent.json",
+      "docs/specs/branch-boundary-r2-followups.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
+      "tests/pi-canary-review-dispatch-resilience.test.ts",
+      "tests/pi-canary-work-extension.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/pi-review-dispatch-binding.intent.json",
+    "content_hash": "sha256:e7bd91636bc0720f65ae555d8beb61c1439b670280ec1ef741ba71ca7cb4f0e6"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:e7bd91636bc0720f65ae555d8beb61c1439b670280ec1ef741ba71ca7cb4f0e6",
+  "git_base_head": "1c4fbf6085d83fc63e135fa26bb1f0d53c32e0e6",
+  "attestations": [
+    {
+      "id": "approval-qa-124475ff",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e7bd91636bc0720f65ae555d8beb61c1439b670280ec1ef741ba71ca7cb4f0e6",
+      "diff_hash": "sha256:da77df7ef473fc22bc743156bff16b0e43f434c98fdc4140f338b3a21e3608ab",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:d99a96a01a0e62deddaabf4b2db20cff36bbb8de22afada30989442fce5643c6",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:d99a96a01a0e62deddaabf4b2db20cff36bbb8de22afada30989442fce5643c6"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:d99a96a01a0e62deddaabf4b2db20cff36bbb8de22afada30989442fce5643c6"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:d99a96a01a0e62deddaabf4b2db20cff36bbb8de22afada30989442fce5643c6"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-e1cc2981",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e7bd91636bc0720f65ae555d8beb61c1439b670280ec1ef741ba71ca7cb4f0e6",
+      "diff_hash": "sha256:da77df7ef473fc22bc743156bff16b0e43f434c98fdc4140f338b3a21e3608ab",
+      "actor_id": "parent-mediated-review",
+      "summary": "已验证 revision 的唯一 parent、tree、manifest digest 及全部 changed_paths 的对象身份，并完整审阅所有 diff；未发现阻断问题。保留的测试覆盖漂移拦截、无 receipt、原样重试、重复 dispatch 拒绝及非 Review 放行，AC1–AC3 均有 Kernel QA passed 证据；未重复运行检查或读取 live worktree。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "1c4fbf6085d83fc63e135fa26bb1f0d53c32e0e6",
+        "review_commit": "6883845c0d068cfc5a1932466ea6e4bfe37209f9",
+        "review_tree": "ba8db236d0ea09960b144fea8c74e36c95a7a1b5",
+        "manifest_digest": "sha256:9397e5e32f8a203d06ecd28420115d9831cfd60bb78816e91246b2ecd2d93507"
+      },
+      "reviewer_verdict_sha256": "sha256:14ae1ff4b835f71f9b771b638bfddbaf8df310d870870dc5628149af56eed2cf"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:pi-review-dispatch-binding:2026-10-23T04:53:50.474Z",
+      "at": "2026-10-23T04:53:50.474Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/pi-review-dispatch-binding.intent.json"
+    },
+    {
+      "id": "record_approval:pi-review-dispatch-binding:2026-10-23T04:54:57.614Z",
+      "at": "2026-10-23T04:54:57.614Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-124475ff\naction_v2_sha256:861b4eefed6f68e6516d3b14385c1a0d91af44ffbd73dfdc74cc142c2b8e7bf0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-cad6a1a1e022ad6f",
+        "issued_at": "2026-10-23T04:54:57.614Z"
+      }
+    },
+    {
+      "id": "record_approval:pi-review-dispatch-binding:2026-10-23T05:00:40.092Z",
+      "at": "2026-10-23T05:00:40.092Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-e1cc2981\naction_v2_sha256:253f698a855cb5e258b21798447986edebb50ecd6b3b8c24bc35ec5603c2c63f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-13c3c1ad9a3c5cb9",
+        "issued_at": "2026-10-23T05:00:40.092Z"
+      }
+    },
+    {
+      "id": "complete:pi-review-dispatch-binding:2026-10-23T05:00:41.477Z",
+      "at": "2026-10-23T05:00:41.477Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:059df5b556eff68f07c6b046f9e00b772b30a2f187f0fcaae3b6d86137140f15"
+    }
+  ]
+}

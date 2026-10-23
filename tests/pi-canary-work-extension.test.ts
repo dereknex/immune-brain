@@ -293,7 +293,10 @@ function loadSurface(dependencies: Record<string, unknown> = {}) {
 		tools, commands, events, emitted,
 		// Drive the extension's own pi.on handlers (tool_call/tool_result seams).
 		emit(name: string, payload: Record<string, unknown>) {
-			for (const handler of events[name] ?? []) handler(payload);
+			for (const handler of events[name] ?? []) {
+				const result = handler(payload);
+				if ((result as { block?: boolean } | undefined)?.block) return result;
+			}
 		},
 	};
 }
@@ -1534,7 +1537,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			const ctx = makeCtx(root, makeUI());
 			const ready = JSON.parse((await tool.execute("advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, ctx)).content[0].text);
 			const verdict = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK, snapshot_digest: snapshotDigest(review), decision: "pass", approval: { kind: "review", authority_role: "reviewer", summary: "passed", inspected_paths: [...review.dirty_files] } };
-			surface.emit("tool_call", { toolName: "Agent", input: { ...ready.agent_params, prompt: `${ready.agent_params.prompt}\nrewritten` }, toolCallId: "rewritten-call" });
+			expect(surface.emit("tool_call", { toolName: "Agent", input: { ...ready.agent_params, prompt: `${ready.agent_params.prompt}\nrewritten` }, toolCallId: "rewritten-call" })).toMatchObject({ block: true, reason: expect.stringContaining("reserved prompt verbatim") });
 			surface.emit("tool_result", { toolName: "Agent", toolCallId: "rewritten-call", content: [{ type: "text", text: JSON.stringify(verdict) }] });
 			const beforeRewrite = JSON.stringify(readTaskRecordRaw(root, TASK));
 			const rewritten = await capturedToolFailure(tool.execute("rewritten", { task_id: TASK, action: { op: "submit_review", verdict } }, undefined, undefined, ctx));
@@ -1585,7 +1588,14 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			const context = makeCtx(root, makeUI());
 			// ADR 0017: the relayed verdict must fingerprint-match the observed
 			// receipt, so record the dispatch and result through the event seam.
-			emitEvent("tool_call", { toolName: "Agent", input: advanceResult.agent_params, toolCallId: "call-1" });
+			const params = advanceResult.agent_params;
+			for (const input of [{ ...params, prompt: `${params.prompt}!` }, { ...params, description: "unreserved" }]) {
+				const blocked = emitEvent("tool_call", { toolName: "Agent", input, toolCallId: "blocked-call" });
+				expect((blocked as { reason: string }).reason).toContain("reserved prompt verbatim");
+				expect(blocked).toMatchObject({ block: true, reason: expect.stringContaining(params.description) });
+			}
+			expect(emitEvent("tool_call", { toolName: "Agent", input: { ...params, subagent_type: "Explore" }, toolCallId: "explore" })).toBeUndefined();
+			expect(emitEvent("tool_call", { toolName: "Agent", input: params, toolCallId: "call-1" })).toBeUndefined();
 			emitEvent("tool_result", { toolName: "Agent", toolCallId: "call-1", content: [{ type: "text", text: JSON.stringify(verdict) }] });
 			// Missing-path control through the real extension surface: dropping a
 			// claimed path is a correctable invalid verdict that applies nothing.

@@ -1,0 +1,35 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "pi-review-dispatch-binding",
+  "owner": "user",
+  "goal": "On Pi, a Review Agent dispatch whose prompt drifted from its reservation, or that matches no pending reservation, is blocked before the Reviewer runs, so no Review verdict is produced unobserved and none can be shopped for (Spec branch-boundary-r2-followups D2).",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "With a pending Review reservation, a `Review` Agent dispatch carrying the reserved description and the reserved prompt bytes binds and `submit_review` accepts its result; the same dispatch with the prompt changed by one character is blocked in `tool_call` with a reason naming the reservation description and asking for the reserved prompt verbatim, and binds no receipt; a `Review` dispatch with an unreserved description while a reservation is pending is blocked; a non-Review Agent dispatch is not blocked.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-review-dispatch-resilience.test.ts\",\n      \"tests/pi-canary-work-extension.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "After a blocked drifted dispatch, a verbatim dispatch for the same reservation binds and its result submits; a second verbatim dispatch for a reservation that already bound a tool call is still refused as dispatched more than once.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-review-dispatch-resilience.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "The project typechecks.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/pi-review-dispatch-binding.md",
+    "docs/plans/pi-review-dispatch-binding.intent.json",
+    "docs/specs/branch-boundary-r2-followups.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
+    "tests/pi-canary-review-dispatch-resilience.test.ts",
+    "tests/pi-canary-work-extension.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}
