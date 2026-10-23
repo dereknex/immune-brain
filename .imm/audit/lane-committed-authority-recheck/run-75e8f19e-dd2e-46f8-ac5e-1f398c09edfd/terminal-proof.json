@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "lane-committed-authority-recheck",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:lane-committed-authority-recheck:2026-10-23T04:59:43.295Z",
+  "final_record_hash": "sha256:4f2071dbd18a314b85ca050b1f6c57e8a32e676026ca4366f7f81417bc438aa3",
+  "terminalized_at": "2026-10-23T04:59:43.295Z"
+}

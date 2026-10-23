@@ -800,6 +800,11 @@ export async function runLaneBatch(
 					fresh.projection.lifecycle === "active" && fresh.claim?.task_id === child.task_id &&
 					(facts.active_claim_task_id === null || facts.active_claim_task_id === child.task_id) ? "enrolled" : null;
 				if (!state) return laneReport(record, "parked child has no recoverable owned run", LANE_NEEDS_HUMAN_NEXT_ACTION);
+				const authorityChange = state === "lane_committed" ? laneAuthorityChange(record, child.task_id, child.lane.path) : null;
+				if (authorityChange) {
+					park(record, child.task_id, authorityChange);
+					return laneReport(writeBatchLaneRunState(input.root, record), authorityChange, LANE_NEEDS_HUMAN_NEXT_ACTION);
+				}
 				resumed.push({ ...child, state, reason: null, qa_failures: 0 });
 			}
 			record = { ...record, batch_state: "running", confirmation_time: input.confirmation_time,
@@ -1149,6 +1154,11 @@ export async function runLaneBatch(
 	}
 	for (const child of queue()) {
 		if (child.state !== "lane_committed" || child.redo_head || !child.lane?.lane_commit) continue;
+		const authorityChange = laneAuthorityChange(record, child.task_id, child.lane.path);
+		if (authorityChange) {
+			parkChild(child.task_id, authorityChange);
+			continue;
+		}
 		const intentPathOf = (taskId: string) => input.children.find((c) => c.task_id === taskId)?.intent_path ?? null;
 		try {
 			const { commit } = await lanes.integrate({

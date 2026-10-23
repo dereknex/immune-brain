@@ -2202,6 +2202,58 @@ describe("Lane batch authority subject", () => {
 		30000,
 	);
 
+	for (const mode of ["tick", "resume"] as const) it.each([
+		["unchanged", null],
+		["acceptance assertion", newAssertion],
+		["verification argv", newArgv],
+	] as const)(`committed authority recheck on ${mode}: %s`, async (_label, edit) => {
+		const fx = fixture({}, SCOPES);
+		try {
+			const kernel = laneKernel();
+			const children = bound(fx, [["task-a", []], ["task-b", ["task-a"]]]);
+			const args = request(fx, children, kernel);
+			await startBatch(args);
+			const laneA = fx.lane("task-a");
+			await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] });
+			writeFileSync(join(laneA, "a.txt"), "a\n");
+			kernel.settled.add("task-a");
+			const { commit } = await args.git!.commitChild(laneA, "task-a", BATCH_ID);
+			const stored = readAnyBatchRunState(fx.repo, BATCH_ID)!;
+			if (stored.contract !== "assurance_kernel/batch_run_state/v2") throw new Error("expected Lane record");
+			writeBatchLaneRunState(fx.repo, { ...stored,
+				batch_state: mode === "resume" ? "needs_human" : "running",
+				children: stored.children.map(c => c.task_id === "task-a"
+					? { ...c, state: mode === "resume" ? "needs_human" : "lane_committed",
+						reason: mode === "resume" ? "integration interrupted" : null, lane: { ...c.lane!, lane_commit: commit } }
+					: { ...c, state: mode === "resume" ? "skipped_blocked" : "pending",
+						reason: mode === "resume" ? "dependency task-a parked" : null }),
+			});
+			if (edit) reviseIn(laneA, "task-a", edit);
+			const input = mode === "resume"
+				? request(fx, children, kernel, { confirmation_time: "2026-06-01T00:00:00.000Z" }) : args;
+			const report = lanes(await startBatch(input));
+			const durable = readAnyBatchRunState(fx.repo, BATCH_ID)!;
+			if (edit) {
+				expect(report.batch_state).toBe("needs_human");
+				expect(report.children.map(c => [c.state, c.reason])).toEqual([
+					["needs_human", "batch_child_authority_changed: task-a"],
+					["skipped_blocked", "dependency task-a parked"],
+				]);
+				expect(durable.children).toEqual(report.children);
+				expect(report.commits).toEqual([]);
+				expect(git(fx.repo, "rev-parse", "HEAD")).toBe(fx.base);
+				if (mode === "resume") expect(durable.confirmation_time).toBe(CONFIRMED_AT);
+			} else {
+				expect(report.children.map(c => c.state)).toEqual(["integrated", "pending"]);
+				expect(report.commits).toEqual([commit]);
+				expect(git(fx.repo, "rev-parse", "HEAD")).toBe(commit);
+			}
+			expect(report.children[0]!.lane?.lane_commit).toBe(commit);
+		} finally {
+			fx.cleanup();
+		}
+	}, 30000);
+
 	it("AC4: a changed child order or dependency still refuses the Lane batch as a different plan", async () => {
 		const fx = fixture({}, SCOPES);
 		try {

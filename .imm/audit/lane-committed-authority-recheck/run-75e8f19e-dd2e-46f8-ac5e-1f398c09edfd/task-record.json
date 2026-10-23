@@ -1,0 +1,150 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "lane-committed-authority-recheck",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "lane-committed-authority-recheck",
+    "goal": "A Lane child that was committed but not yet integrated is parked instead of integrated when its authority changed, both on an ordinary tick and on a parked-batch resume (Spec branch-boundary-r2-followups D4).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "A `lane_committed` child whose Lane TaskIntent changed after its Lane commit is parked on the next tick with the `laneAuthorityChange` reason and is not integrated, leaving the Parent branch tip unchanged; an unchanged `lane_committed` child still integrates.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Resuming a parked batch whose parked child is done, completion-ready and has a Lane commit keeps that child parked with the authority reason when its TaskIntent changed, and resumes it to `lane_committed` and integrates it when unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "The generated Claude MCP bundle matches the runtime source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/build-claude-plugin.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "The project typechecks.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/lane-committed-authority-recheck.md",
+      "docs/plans/lane-committed-authority-recheck.intent.json",
+      "docs/specs/branch-boundary-r2-followups.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "tests/unattended-batch-lanes.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/lane-committed-authority-recheck.intent.json",
+    "content_hash": "sha256:8845105a3bfecb290a70b5397ffa7983d5ed5f17f0368edcbd27f988469e3882"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:8845105a3bfecb290a70b5397ffa7983d5ed5f17f0368edcbd27f988469e3882",
+  "git_base_head": "1c4fbf6085d83fc63e135fa26bb1f0d53c32e0e6",
+  "attestations": [
+    {
+      "id": "approval-qa-e629fadc",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8845105a3bfecb290a70b5397ffa7983d5ed5f17f0368edcbd27f988469e3882",
+      "diff_hash": "sha256:4b1da4de87fdddd5859d334b0a71ecb7278bbb3b21d3bffd0b7ea4e0470b5366",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:57ff485af209a21baf47c9cf056af9ac107e7fbfa0ae81d9b8e3207e213235fd",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:57ff485af209a21baf47c9cf056af9ac107e7fbfa0ae81d9b8e3207e213235fd"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:57ff485af209a21baf47c9cf056af9ac107e7fbfa0ae81d9b8e3207e213235fd"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:57ff485af209a21baf47c9cf056af9ac107e7fbfa0ae81d9b8e3207e213235fd"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:57ff485af209a21baf47c9cf056af9ac107e7fbfa0ae81d9b8e3207e213235fd"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-3c178d82",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8845105a3bfecb290a70b5397ffa7983d5ed5f17f0368edcbd27f988469e3882",
+      "diff_hash": "sha256:4b1da4de87fdddd5859d334b0a71ecb7278bbb3b21d3bffd0b7ea4e0470b5366",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 immutable revision 的单一 parent、tree、manifest digest 和全部变更；integration 与 parked-resume 均复查 authority，测试覆盖变更后停车、Parent tip 不变及未变更时正常集成，生成 bundle 与 runtime 改动一致。AC1–AC4 采用 Kernel 已验证的 QA outcomes，未重复执行检查；未发现阻断问题。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "1c4fbf6085d83fc63e135fa26bb1f0d53c32e0e6",
+        "review_commit": "4f3ebd39ecc2367acc802668a0887a7d63c24cec",
+        "review_tree": "0905baf6dc9fe6f217d0f6b9c45d43e55558aa22",
+        "manifest_digest": "sha256:649d3468dd677851f500af387a7ff74b7b120e8bf394621dea54043a6083ef37"
+      },
+      "reviewer_verdict_sha256": "sha256:a41b89c0853ec792d38a670355ee1b1237fd28165959411b5ca93753a5c4b8eb"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:lane-committed-authority-recheck:2026-10-23T04:49:33.100Z",
+      "at": "2026-10-23T04:49:33.100Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/lane-committed-authority-recheck.intent.json"
+    },
+    {
+      "id": "record_approval:lane-committed-authority-recheck:2026-10-23T04:51:48.994Z",
+      "at": "2026-10-23T04:51:48.994Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e629fadc\naction_v2_sha256:7ca9f68619817cbd8d1cf2f2ae5f00cde31652de1c8c7314f3407e5e0c813287",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-e48dcc66e460bc47",
+        "issued_at": "2026-10-23T04:51:48.994Z"
+      }
+    },
+    {
+      "id": "record_approval:lane-committed-authority-recheck:2026-10-23T04:59:42.164Z",
+      "at": "2026-10-23T04:59:42.164Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-3c178d82\naction_v2_sha256:8ad1de4c6d4e3dbf6222be99bc09fc8792d7b39b856b6de12d0dafc274069ecb",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-1427445ae889fca7",
+        "issued_at": "2026-10-23T04:59:42.164Z"
+      }
+    },
+    {
+      "id": "complete:lane-committed-authority-recheck:2026-10-23T04:59:43.295Z",
+      "at": "2026-10-23T04:59:43.295Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:755eabc6bc5f7cbf4aa467d4589f157851bcd6f76f8c10b82bca5d212be1dfb5"
+    }
+  ]
+}
