@@ -27,17 +27,16 @@ describe("explicit phase entry: imm-run owns Enrollment", () => {
 		expect(entry).toContain("exactly one same-Host recovery action");
 	});
 
-	// Spec host-owned-environment D8, D9, D11.
-	test("imm-run contract states that Enrollment claims listed scope changes and status stays readable", () => {
+	// Spec host-owned-environment D11; branch-boundary-r2 D23 retired the listed-dirt claim of D8, D9.
+	test("imm-run contract states that a single task enrolls from a clean workspace and status stays readable", () => {
 		const run = readFileSync(join(PLUGIN, "dist/imm-run.md"), "utf8");
 		const entry = run
 			.slice(run.indexOf("\n## Kernel Canary Routing and Authority\n"), run.indexOf("\n## Execution Loop\n"))
 			.replace(/\s+/g, " ");
-		expect(entry).toContain("The Enrollment gate lists every in-scope path that is already staged, modified or untracked");
-		expect(entry).toContain("Confirming the gate claims exactly the listed paths as task work");
-		expect(entry).toContain("no clean scope is required");
-		expect(entry).toContain("An in-scope path that changed after the gate text was built was not shown, so it refuses the Enrollment");
-		expect(entry).toContain("Changes outside the scope stay the user's and are never claimed");
+		expect(entry).toContain("A single task starts from a clean workspace");
+		expect(entry).toContain("refuses with `workspace_not_clean: <paths>` before the gate opens");
+		expect(entry).toContain("taken from its Enrollment HEAD");
+		expect(entry).toContain("A batch child keeps its Lane's confirmed scope disclosure");
 		expect(entry).toContain("`status` is a read, not a freeze");
 		expect(entry).toContain("returns them as a `warnings` entry beside the projection");
 		expect(entry).toContain("Freezing a snapshot still refuses those paths");

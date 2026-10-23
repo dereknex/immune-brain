@@ -37,12 +37,13 @@ candidate and reports its stable reason plus exactly one same-Host recovery
 action; never recommend another Host, worktree, Direct Path, unmanaged
 implementation, or automatic retry.
 
-The Enrollment gate lists every in-scope path that is already staged, modified
-or untracked. Confirming the gate claims exactly the listed paths as task work,
-so a task may start from work the user already began; no clean scope is
-required. An in-scope path that changed after the gate text was built was not
-shown, so it refuses the Enrollment: enroll again to review it. Changes outside
-the scope stay the user's and are never claimed.
+A single task starts from a clean workspace (Spec branch-boundary-r2 D23).
+Apart from its own TaskIntent and bound Spec, any tracked or untracked
+non-ignored dirty path refuses with `workspace_not_clean: <paths>` before the
+gate opens; commit, stash or remove that work, then enroll again. The task's
+diff, attribution and changed paths are taken from its Enrollment HEAD, and
+files beyond `scope_hint` are disclosed in Review evidence, not refused. A batch
+child keeps its Lane's confirmed scope disclosure.
 
 `status` is a read, not a freeze. It stays readable while the scope holds
 unstaged or untracked paths and returns them as a `warnings` entry beside the

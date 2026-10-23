@@ -214,9 +214,10 @@ describe("S2 exact effects and outbound research", () => {
 			// Host Confirmation Boundary
 			"Under `Git integration: manual` (the default) it stages them and makes no commit; under `auto` it commits them, and the native confirmation binds the HEAD that results",
 			"for the Enrollment set: the task's own TaskIntent and the Spec its binding names",
-			"In-scope changes that already exist are not committed: the Enrollment gate lists them and only the listed paths become task work on confirmation",
+			// Spec branch-boundary-r2 D23 replaced listed in-scope dirt with a clean workspace.
+			"A single task starts from a clean workspace: any other tracked or untracked non-ignored dirty path refuses with `workspace_not_clean: <paths>` before the gate opens",
+			"A batch child keeps its Lane's confirmed scope disclosure",
 			"When no precondition fails, nothing is staged or committed",
-			"Dirty paths outside the set are left as they are and do not block Enrollment",
 			"With an unborn HEAD the empty root commit comes first in both modes; `auto` commits the scope after it, and `manual` claims the in-scope staged and untracked changes as task work instead",
 			"A commit Git refuses fails Enrollment with Git's message and is never retried with hooks bypassed",
 			"if Enrollment is declined, cancelled or fails afterwards, report the commit or staged paths that remain",
