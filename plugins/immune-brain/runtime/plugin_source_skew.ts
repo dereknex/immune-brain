@@ -5,8 +5,9 @@
 // not move during development, so the generated Claude bundle stands in for
 // the build: every runtime change regenerates it under the build parity check.
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { runningRuntimeSource } from "./kernel/runtime_contracts";
 
 const WORKSPACE_PLUGIN_DIR = join("plugins", "immune-brain");
@@ -47,10 +48,19 @@ export function pluginSourceSkewWarning(root: string, loadedFrom: string = runni
 		if (!loaded) return null;
 		const workspaceReal = realpathSync(workspace), loadedReal = realpathSync(loaded);
 		if (workspaceReal === loadedReal || sameBuild(loadedReal, workspaceReal)) return null;
+		let lane = false;
+		try {
+			const common = realpathSync(execFileSync("git", ["-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim());
+			lane = realpathSync(root).startsWith(`${join(common, "imm", "worktrees")}${sep}`);
+		} catch {
+			// Non-Git source directories retain the ordinary reload guidance.
+		}
 		return {
 			code: "loaded_plugin_differs_from_workspace",
 			paths: [loadedReal, workspaceReal],
-			message: `this Host runs Immune-Brain from ${loadedReal}, whose build differs from the workspace plugin ${workspaceReal}; tools follow the loaded build, so reload the Host with the workspace plugin before relying on workspace runtime changes`,
+			message: lane
+				? `this Host runs Immune-Brain from ${loadedReal}, whose build differs from the workspace plugin ${workspaceReal}; this skew is expected in a Lane, is non-blocking and needs no reload; continue implementing the enrolled acceptance with the loaded build`
+				: `this Host runs Immune-Brain from ${loadedReal}, whose build differs from the workspace plugin ${workspaceReal}; tools follow the loaded build, so reload the Host with the workspace plugin before relying on workspace runtime changes`,
 		};
 	} catch {
 		// An observation never blocks status.

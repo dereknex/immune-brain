@@ -9255,8 +9255,9 @@ var init_runtime_contracts = __esm(() => {
 
 // plugins/immune-brain/runtime/plugin_source_skew.ts
 import { createHash as createHash16 } from "node:crypto";
+import { execFileSync as execFileSync8 } from "node:child_process";
 import { existsSync as existsSync9, readFileSync as readFileSync16, realpathSync as realpathSync12, statSync as statSync5 } from "node:fs";
-import { dirname as dirname9, join as join18 } from "node:path";
+import { dirname as dirname9, join as join18, sep as sep6 } from "node:path";
 function pluginRootAbove(dir) {
   let current = dir;
   for (let level = 0;level < MAX_LEVELS; level++) {
@@ -9288,10 +9289,15 @@ function pluginSourceSkewWarning(root, loadedFrom = runningRuntimeSource()) {
     const workspaceReal = realpathSync12(workspace), loadedReal = realpathSync12(loaded);
     if (workspaceReal === loadedReal || sameBuild(loadedReal, workspaceReal))
       return null;
+    let lane = false;
+    try {
+      const common = realpathSync12(execFileSync8("git", ["-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim());
+      lane = realpathSync12(root).startsWith(`${join18(common, "imm", "worktrees")}${sep6}`);
+    } catch {}
     return {
       code: "loaded_plugin_differs_from_workspace",
       paths: [loadedReal, workspaceReal],
-      message: `this Host runs Immune-Brain from ${loadedReal}, whose build differs from the workspace plugin ${workspaceReal}; tools follow the loaded build, so reload the Host with the workspace plugin before relying on workspace runtime changes`
+      message: lane ? `this Host runs Immune-Brain from ${loadedReal}, whose build differs from the workspace plugin ${workspaceReal}; this skew is expected in a Lane, is non-blocking and needs no reload; continue implementing the enrolled acceptance with the loaded build` : `this Host runs Immune-Brain from ${loadedReal}, whose build differs from the workspace plugin ${workspaceReal}; tools follow the loaded build, so reload the Host with the workspace plugin before relying on workspace runtime changes`
     };
   } catch {
     return null;
@@ -9342,7 +9348,7 @@ var init_plugin_source_skew = __esm(() => {
 // plugins/immune-brain/runtime/unattended/lane_workspace.ts
 import { spawnSync as spawnSync10 } from "node:child_process";
 import { realpathSync as realpathSync13 } from "node:fs";
-import { basename, dirname as dirname10, isAbsolute as isAbsolute6, join as join19, relative as relative5, resolve as resolve12, sep as sep6 } from "node:path";
+import { basename, dirname as dirname10, isAbsolute as isAbsolute6, join as join19, relative as relative5, resolve as resolve12, sep as sep7 } from "node:path";
 function laneTaskOfWorkspace(root) {
   const branch = spawnSync10("git", ["-C", root, "symbolic-ref", "--quiet", "--short", "HEAD"], {
     encoding: "utf8",
@@ -9381,7 +9387,7 @@ function laneWriteRefusal(cwd, target) {
   const laneRoot = realpathOfNearest((top.stdout ?? "").trim());
   const resolved = realpathOfNearest(isAbsolute6(target) ? target : resolve12(cwd, target));
   const inside = relative5(laneRoot, resolved);
-  if (inside === "" || inside !== ".." && !inside.startsWith(`..${sep6}`) && !isAbsolute6(inside))
+  if (inside === "" || inside !== ".." && !inside.startsWith(`..${sep7}`) && !isAbsolute6(inside))
     return null;
   return `Lane write refused: ${resolved} is outside this Lane. In a batch Lane every edit and write stays under ${laneRoot}; use the same repository-relative path inside the Lane.`;
 }
@@ -9499,13 +9505,21 @@ function qaPrepareObservationMetadata(o) {
 async function projectTaskStatus(root, taskId, loadedFrom) {
   let unstaged = [];
   let outOfScope = [];
+  let changed = [];
   const result = await projectAssurance(root, taskId, (dir, record) => {
     const identity = taskStatusIdentity(dir, record);
+    changed = identity.changed_paths;
     unstaged = identity.unstaged_scope_paths;
     outOfScope = identity.out_of_scope_paths;
     return identity;
   });
   const warnings = [];
+  if (!result.error && result.projection.lifecycle === "active" && result.projection.artifact_state === "active" && result.projection.next_obligation === "submit_assurance" && changed.length === 0 && unstaged.length === 0 && outOfScope.length === 0)
+    warnings.push({
+      code: "implementation_pending",
+      paths: [],
+      message: "fresh enrollment: submit_assurance means implement first; implement the enrolled acceptance, run focused checks, stage task-owned changes, then call advance_assurance"
+    });
   if (!result.error && unstaged.length > 0)
     warnings.push({
       code: "unstaged_scope_paths",
@@ -10988,7 +11002,7 @@ var init_qa = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/assurance/workflow_autocommit.ts
-import { execFileSync as execFileSync8, spawnSync as spawnSync11 } from "node:child_process";
+import { execFileSync as execFileSync9, spawnSync as spawnSync11 } from "node:child_process";
 import { accessSync as accessSync2, chmodSync as chmodSync4, constants as constants5, lstatSync as lstatSync13, mkdirSync as mkdirSync8, mkdtempSync as mkdtempSync5, readdirSync as readdirSync5, realpathSync as realpathSync14, rmSync as rmSync7, writeFileSync as writeFileSync8 } from "node:fs";
 import { tmpdir as tmpdir4 } from "node:os";
 import { isAbsolute as isAbsolute7, join as join20, resolve as resolve13 } from "node:path";
@@ -11019,7 +11033,7 @@ function gitFailure(args, error) {
 }
 function git4(root, args, env = process.env) {
   try {
-    return execFileSync8("git", args, {
+    return execFileSync9("git", args, {
       cwd: root,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
@@ -11735,7 +11749,7 @@ var init_local_initiative = __esm(() => {
 // plugins/immune-brain/runtime/github_issue_tracker.ts
 import { spawn as spawn3, spawnSync as spawnSync14 } from "node:child_process";
 import { existsSync as existsSync10, readFileSync as readFileSync18, readdirSync as readdirSync6 } from "node:fs";
-import { basename as basename2, relative as relative6, resolve as resolve15, sep as sep7 } from "node:path";
+import { basename as basename2, relative as relative6, resolve as resolve15, sep as sep8 } from "node:path";
 function countLiteral(value, needle) {
   if (!needle)
     return 0;
@@ -17143,7 +17157,7 @@ init_intent();
 init_canary_application();
 init_authority_port();
 import { existsSync as existsSync17, readFileSync as readFileSync22, writeFileSync as writeFileSync12 } from "node:fs";
-import { execFileSync as execFileSync11 } from "node:child_process";
+import { execFileSync as execFileSync12 } from "node:child_process";
 import { join as join30 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/enrollment_authority.ts
@@ -17495,9 +17509,9 @@ init_workflow_autocommit();
 init_git_integration_preference();
 init_pi_canary_prepare();
 init_storage();
-import { execFileSync as execFileSync9, spawnSync as spawnSync18 } from "node:child_process";
+import { execFileSync as execFileSync10, spawnSync as spawnSync18 } from "node:child_process";
 function git8(root, args, input, env = process.env) {
-  return execFileSync9("git", args, { cwd: root, encoding: "utf8", input, env, stdio: ["pipe", "pipe", "pipe"] }).trim();
+  return execFileSync10("git", args, { cwd: root, encoding: "utf8", input, env, stdio: ["pipe", "pipe", "pipe"] }).trim();
 }
 function inspectEnrollmentGitBase(root) {
   if (git8(root, ["rev-parse", "--is-inside-work-tree"]) !== "true")
@@ -17555,7 +17569,7 @@ function freshEnrollmentAdmitted(root, taskId) {
   }
 }
 function stagePaths(root, paths) {
-  execFileSync9("git", ["add", "--", ...paths], {
+  execFileSync10("git", ["add", "--", ...paths], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, GIT_LITERAL_PATHSPECS: "1" }
@@ -17653,14 +17667,14 @@ function deriveAuthorizationOperation(input) {
 init_actor_identity();
 
 // plugins/immune-brain/runtime/staged_intent.ts
-import { execFileSync as execFileSync10 } from "node:child_process";
+import { execFileSync as execFileSync11 } from "node:child_process";
 import { readFileSync as readFileSync20, writeFileSync as writeFileSync11 } from "node:fs";
 import { join as join27 } from "node:path";
 function captureStagedIntent(root, relativePath) {
   return {
     path: relativePath,
     bytes: readFileSync20(join27(root, relativePath)),
-    index_state: execFileSync10("git", ["ls-files", "--stage", "-z", "--", relativePath], {
+    index_state: execFileSync11("git", ["ls-files", "--stage", "-z", "--", relativePath], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"]
     })
@@ -17668,12 +17682,12 @@ function captureStagedIntent(root, relativePath) {
 }
 function restoreStagedIntent(root, snapshot) {
   writeFileSync11(join27(root, snapshot.path), snapshot.bytes);
-  execFileSync10("git", ["update-index", "--force-remove", "--", snapshot.path], {
+  execFileSync11("git", ["update-index", "--force-remove", "--", snapshot.path], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
   });
   if (snapshot.index_state.length > 0) {
-    execFileSync10("git", ["update-index", "-z", "--index-info"], {
+    execFileSync11("git", ["update-index", "-z", "--index-info"], {
       cwd: root,
       input: snapshot.index_state,
       stdio: ["pipe", "ignore", "pipe"]
@@ -17683,7 +17697,7 @@ function restoreStagedIntent(root, snapshot) {
   if (!restoredBytes.equals(snapshot.bytes)) {
     throw new Error("failed to restore prior intent bytes");
   }
-  const restoredIndex = execFileSync10("git", ["ls-files", "--stage", "-z", "--", snapshot.path], {
+  const restoredIndex = execFileSync11("git", ["ls-files", "--stage", "-z", "--", snapshot.path], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -19421,7 +19435,7 @@ class ClaudeRuntime {
       if (!selectedClaudeParent(meta.toolCallId, this.cwd, slug))
         return result;
       if (existsSync17(join30(this.cwd, ".imm", "audit", taskId)))
-        execFileSync11("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
+        execFileSync12("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch, ...batch.state === "started" && batch.report?.tracker ? { tracker: batch.report.tracker } : {} };
     } catch (error) {
@@ -19537,7 +19551,7 @@ class ClaudeRuntime {
           throw new Error("approve_breaking_intent_revision requires a breaking revision");
         writeFileSync12(sidecar, `${JSON.stringify(nextIntent, null, 2)}
 `);
-        execFileSync11("git", ["add", "--", priorIntent.intent_ref.path], { cwd: this.cwd, stdio: ["ignore", "pipe", "pipe"] });
+        execFileSync12("git", ["add", "--", priorIntent.intent_ref.path], { cwd: this.cwd, stdio: ["ignore", "pipe", "pipe"] });
         const preparedRecord = await readTaskRecordRaw(this.cwd, taskId);
         if (!preparedRecord.record) {
           throw new NativeAuthorityError("workspace_changed", "TaskRecord changed before the breaking revision digest");
@@ -19660,7 +19674,7 @@ class ClaudeRuntime {
       if (priorBytes) {
         writeFileSync12(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}
 `);
-        execFileSync11("git", ["add", "--", priorIntent.intent_ref.path], {
+        execFileSync12("git", ["add", "--", priorIntent.intent_ref.path], {
           cwd: ctx.cwd,
           stdio: ["ignore", "pipe", "pipe"]
         });

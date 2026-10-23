@@ -383,7 +383,7 @@ export interface AssuranceRecovery {
 }
 
 export interface StatusProjectionWarning {
-	code: "unstaged_scope_paths" | "out_of_scope_paths" | "invalid_git_integration" | PluginSourceSkewWarning["code"];
+	code: "unstaged_scope_paths" | "out_of_scope_paths" | "invalid_git_integration" | "implementation_pending" | PluginSourceSkewWarning["code"];
 	paths: string[];
 	message: string;
 }
@@ -406,13 +406,21 @@ export type StatusProjectionResult = AssuranceProjectionResult & {
 export async function projectTaskStatus(root: string, taskId: string, loadedFrom?: string): Promise<StatusProjectionResult> {
 	let unstaged: string[] = [];
 	let outOfScope: string[] = [];
+	let changed: string[] = [];
 	const result = await projectAssurance(root, taskId, (dir, record) => {
 		const identity = taskStatusIdentity(dir, record);
+		changed = identity.changed_paths;
 		unstaged = identity.unstaged_scope_paths;
 		outOfScope = identity.out_of_scope_paths;
 		return identity;
 	});
 	const warnings: StatusProjectionWarning[] = [];
+	if (!result.error && result.projection.lifecycle === "active" && result.projection.artifact_state === "active"
+		&& result.projection.next_obligation === "submit_assurance" && changed.length === 0 && unstaged.length === 0 && outOfScope.length === 0) warnings.push({
+		code: "implementation_pending",
+		paths: [],
+		message: "fresh enrollment: submit_assurance means implement first; implement the enrolled acceptance, run focused checks, stage task-owned changes, then call advance_assurance",
+	});
 	if (!result.error && unstaged.length > 0) warnings.push({
 		code: "unstaged_scope_paths",
 		paths: unstaged,

@@ -108,7 +108,12 @@ A single Slice ends at its own terminal proof; a Parent uses whole-plan completi
 from the [batch contract](imm-run-batch.md#unattended-batch-opt-in).
 
 1. For active artifacts, implement the enrolled acceptance in the current
-   conversation. `scope_hint` is an estimate; disclose changed files beyond it
+   conversation. On a fresh enrollment, `submit_assurance` means implement first,
+   not call `advance_assurance` immediately: implement, run focused checks, stage,
+   then advance. `implementation_pending` names this no-changed-path case. Lane
+   plugin skew (`loaded_plugin_differs_from_workspace`) is expected and
+   non-blocking in a Lane; continue with the loaded build without a reload.
+   `scope_hint` is an estimate; disclose changed files beyond it
    as `beyond_estimate` in Review evidence instead of revising scope. Preserve
    frozen acceptance and the bound Spec, and respect hard no-touch paths. Run focused
    checks. Before `advance_assurance`, inspect ownership and stage only the exact

@@ -7,6 +7,12 @@ outcome and disclose changed files beyond it as `beyond_estimate` in Review
 evidence instead of revising scope. Preserve frozen acceptance and any bound
 Spec; do not stage unrelated user files. Do not discover or load a Pi Skill.
 
+On a fresh enrollment, `submit_assurance` means implement first: implement the
+enrolled acceptance, run focused checks, stage task-owned changes, then call
+`advance_assurance`. An `implementation_pending` warning names this unchanged
+case. Lane plugin skew (`loaded_plugin_differs_from_workspace`) is expected and
+non-blocking in a Lane; continue with the loaded build without a reload.
+
 On a batch `handoff.role=executor`, implement only its named enrolled child;
 the batch stays `running` with that child `enrolled`. Return to the Parent after
 scoped implementation, staging and focused diagnostics. Enrollment itself does
