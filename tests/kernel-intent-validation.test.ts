@@ -86,6 +86,60 @@ afterEach(() => {
 });
 
 describe("imm-kernel intent validate", () => {
+	it.each([
+		{ count: 15, reason: undefined, ready: true },
+		{ count: 16, reason: undefined, ready: false },
+		{ count: 16, reason: "One atomic mechanical change", ready: true },
+	])("counts candidate scope paths: %j", ({ count, reason, ready }) => {
+		withRepo((root) => {
+			const taskId = "task-002-intent-validate";
+			const path = `docs/plans/${taskId}.intent.json`;
+			mkdirSync(join(root, "docs/agents"), { recursive: true });
+			writeFileSync(join(root, "docs/agents/derived-files.json"), JSON.stringify({
+				contract: "immune_brain/derived_files/v1",
+				entries: [{ id: "bundle", sources: ["src/**"], outputs: ["dist/bundle.js"],
+					generate: { executable: "bun", argv: [] }, check: { executable: "bun", argv: [] } }],
+			}));
+			writeFileSync(join(root, path), intentBytes(taskId, {
+				scope_hint: [path, ".changeset/release.md", ".changeset/nested/release.md",
+					"docs/specs/feature.spec.md", "dist/bundle.js",
+					...Array.from({ length: count }, (_, i) => `src/file-${i}.ts`)],
+				...(reason === undefined ? {} : { scope_size_reason: reason }),
+			}));
+			git(root, ["add", path]);
+			const index = readFileSync(join(root, ".git/index"));
+			const output = JSON.parse(validate(root, path).stdout);
+			expect(output.valid).toBe(true);
+			expect(output.enrollment_ready).toBe(ready);
+			if (!ready) expect(output.code).toBe("scope_estimate_too_wide");
+			expect(readFileSync(join(root, ".git/index"))).toEqual(index);
+		});
+	});
+
+	it.each(["", " ", "x".repeat(501), 42, null, false])("rejects invalid scope_size_reason: %j", (reason) => {
+		withRepo((root) => {
+			const path = "docs/plans/task-002-intent-validate.intent.json";
+			writeFileSync(join(root, path), intentBytes(undefined, { scope_size_reason: reason }));
+			const output = JSON.parse(validate(root, path).stdout);
+			expect(output.valid).toBe(false);
+			expect(output.reason).toContain("intent.scope_size_reason");
+		});
+	});
+
+	it("counts other intents, archived Specs and undeclared outputs", () => {
+		withRepo((root) => {
+			const path = "docs/plans/task-002-intent-validate.intent.json";
+			writeFileSync(join(root, path), intentBytes(undefined, { scope_hint: [
+				...Array.from({ length: 13 }, (_, i) => `src/file-${i}.ts`),
+				"docs/plans/other.intent.json", "docs/specs/old.spec.md", "docs/specs/archive/old.spec.md", "dist/undeclared.js",
+			] }));
+			git(root, ["add", path]);
+			expect(JSON.parse(validate(root, path).stdout)).toMatchObject({
+				enrollment_ready: false, code: "scope_estimate_too_wide",
+			});
+		});
+	});
+
 	it("returns a bounded projection for a valid untracked draft", () => {
 		withRepo((root) => {
 			const path = "docs/plans/task-002-intent-validate.intent.json";

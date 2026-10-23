@@ -140,6 +140,16 @@ describe("claude host: a scope revision is judged against its next scope (D6, I5
 		expect(storedScope(root, taskId)).toEqual(intentFor(taskId, ["src/mod/a.ts"]).scope_hint);
 	});
 
+	test("Enrollment and enrolled revisions do not apply the candidate scope cap", async () => {
+		const taskId = "envelope-wide-scope";
+		const scope = Array.from({ length: 16 }, (_, i) => `src/file-${i}.ts`);
+		const { root, runtime, gateCalls } = await enrolled(taskId, "accept", scope);
+		const next = intentFor(taskId, [...scope, "src/one-more.ts"], 2);
+		await runtime.reviseIntent(taskId, next);
+		expect(gateCalls).toEqual([]);
+		expect(storedScope(root, taskId)).toEqual(next.scope_hint);
+	});
+
 	test("compatible: a staged sibling file covered only by the next scope applies without a gate", async () => {
 		const taskId = "envelope-compatible-next-scope";
 		const { root, runtime, gateCalls } = await enrolled(taskId);

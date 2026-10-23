@@ -150,6 +150,7 @@ export interface TaskIntentV1 {
 	goal: string;
 	acceptance: TaskIntentAcceptanceItemV1[];
 	scope_hint: string[];
+	scope_size_reason?: string;
 	risk: TaskRisk;
 	revision: number;
 	owner: "user";

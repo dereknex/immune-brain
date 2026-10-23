@@ -18,6 +18,16 @@ const DIST_PATH = join(
 const PLANNER_CONTRACTS = [DIST_PATH];
 
 describe("imm-planner kernel intent contract", () => {
+	test("Planner caps candidate Slice estimates and separates deletion-heavy retirement", () => {
+		const contract = readFileSync(DIST_PATH, "utf8").replace(/\s+/g, " ");
+		for (const required of ["15 counted `scope_hint` paths", ".changeset/**",
+			"docs/plans/<task_id>.intent.json", "docs/specs/*.spec.md", "docs/agents/derived-files.json",
+			"scope_size_reason", "1–500 characters", "scope_estimate_too_wide", "enrollment_ready: false",
+			"`revise_intent` do not apply this cap", "Deletion-heavy retirement is its own Slice"]) {
+			expect(contract).toContain(required);
+		}
+	});
+
 	test("Planner resolves packaged wrappers without assuming shell PATH", () => {
 		for (const path of PLANNER_CONTRACTS) {
 			const contract = readFileSync(path, "utf8").replace(/\s+/g, " ");

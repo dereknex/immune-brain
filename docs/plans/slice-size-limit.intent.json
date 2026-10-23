@@ -1,0 +1,59 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "slice-size-limit",
+  "owner": "user",
+  "goal": "TaskIntent validation refuses a candidate with more than 15 counted scope_hint paths unless it states `scope_size_reason`, and the Planner contract caps Slice size and gives deletion-heavy retirement its own Slice (Spec branch-boundary-r2-followups D6).",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "`imm-kernel intent validate` reports `scope_estimate_too_wide` with `enrollment_ready: false` for a candidate with 16 counted `scope_hint` paths and no `scope_size_reason`, and `enrollment_ready: true` for 15 counted paths and for 16 with a `scope_size_reason`; `.changeset/**`, the intent's own `docs/plans/<task_id>.intent.json`, `docs/specs/*.spec.md` and outputs declared in `docs/agents/derived-files.json` are not counted.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-intent-validation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "`scope_size_reason` that is empty, longer than 500 characters or not a string makes the intent invalid; an intent without the field parses as before; `imm-kernel intent author` refuses an over-cap candidate without a reason and creates no file.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-intent-validation.test.ts\",\n      \"tests/kernel-intent-authoring.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "A scope revision of an already enrolled TaskIntent through `revise_intent` is not refused by the cap.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/scope-revision-envelope.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "The Planner contract states the 15-path cap, the excluded paths, the `scope_size_reason` field and that deletion-heavy retirement is its own Slice.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/imm-planner-kernel-intent-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC5",
+      "assertion": "Packaged dist docs and role prompts match their canonical sources.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/sync-dist-docs.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC6",
+      "assertion": "The generated Claude MCP bundle matches the runtime source.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/build-claude-plugin.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC7",
+      "assertion": "The project typechecks.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/slice-size-limit.md",
+    "docs/plans/slice-size-limit.intent.json",
+    "docs/specs/branch-boundary-r2-followups.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/runtime/commands/kernel.ts",
+    "plugins/immune-brain/runtime/derived_files.ts",
+    "plugins/immune-brain/runtime/kernel/intent.ts",
+    "tests/imm-planner-kernel-intent-contract.test.ts",
+    "tests/kernel-intent-authoring.test.ts",
+    "tests/kernel-intent-validation.test.ts",
+    "tests/scope-revision-envelope.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

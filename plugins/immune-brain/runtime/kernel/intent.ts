@@ -209,7 +209,7 @@ export function parseTaskIntentV1(raw: unknown, noTouch: readonly string[] = [])
 	const value = objectAt(raw, "intent", violations);
 	rejectUnknown(
 		value,
-		["contract", "task_id", "goal", "acceptance", "scope_hint", "risk", "revision", "owner"],
+		["contract", "task_id", "goal", "acceptance", "scope_hint", "scope_size_reason", "risk", "revision", "owner"],
 		"intent",
 		violations,
 	);
@@ -230,6 +230,9 @@ export function parseTaskIntentV1(raw: unknown, noTouch: readonly string[] = [])
 		}
 	}
 	const scopeHint = parseScopeHintV1(value.scope_hint, violations, noTouch);
+	const scopeSizeReason = Object.hasOwn(value, "scope_size_reason")
+		? nonEmptyString(value.scope_size_reason, "intent.scope_size_reason", violations, 500)
+		: undefined;
 
 	const risk = value.risk;
 	if (typeof risk !== "string" || !TASK_RISKS.includes(risk as TaskRisk))
@@ -253,6 +256,7 @@ export function parseTaskIntentV1(raw: unknown, noTouch: readonly string[] = [])
 		goal,
 		acceptance,
 		scope_hint: scopeHint,
+		...(scopeSizeReason === undefined ? {} : { scope_size_reason: scopeSizeReason }),
 		risk: risk as TaskRisk,
 		revision,
 		owner: "user",

@@ -1388,7 +1388,7 @@ function parseScopeHintV1(value, violations, noTouch = []) {
 function parseTaskIntentV1(raw, noTouch = []) {
   const violations = [];
   const value = objectAt(raw, "intent", violations);
-  rejectUnknown(value, ["contract", "task_id", "goal", "acceptance", "scope_hint", "risk", "revision", "owner"], "intent", violations);
+  rejectUnknown(value, ["contract", "task_id", "goal", "acceptance", "scope_hint", "scope_size_reason", "risk", "revision", "owner"], "intent", violations);
   if (value.contract !== TASK_INTENT_CONTRACT_V1)
     violations.push(`contract must equal ${TASK_INTENT_CONTRACT_V1}`);
   const acceptanceRaw = value.acceptance;
@@ -1404,6 +1404,7 @@ function parseTaskIntentV1(raw, noTouch = []) {
     }
   }
   const scopeHint = parseScopeHintV1(value.scope_hint, violations, noTouch);
+  const scopeSizeReason = Object.hasOwn(value, "scope_size_reason") ? nonEmptyString(value.scope_size_reason, "intent.scope_size_reason", violations, 500) : undefined;
   const risk = value.risk;
   if (typeof risk !== "string" || !TASK_RISKS.includes(risk))
     violations.push(`intent.risk must be one of ${TASK_RISKS.join(", ")}`);
@@ -1421,6 +1422,7 @@ function parseTaskIntentV1(raw, noTouch = []) {
     goal,
     acceptance,
     scope_hint: scopeHint,
+    ...scopeSizeReason === undefined ? {} : { scope_size_reason: scopeSizeReason },
     risk,
     revision,
     owner: "user"

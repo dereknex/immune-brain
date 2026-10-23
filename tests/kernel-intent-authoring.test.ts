@@ -286,6 +286,29 @@ describe("imm-kernel intent author", () => {
 		});
 	});
 
+	it.each([
+		{ count: 15, reason: undefined, succeeds: true },
+		{ count: 16, reason: undefined, succeeds: false },
+		{ count: 16, reason: "x".repeat(500), succeeds: true },
+	])("enforces the candidate scope cap before creating a file: %j", ({ count, reason, succeeds }) => {
+		withRepo((root) => {
+			activateRetiredPolicy(root);
+			const path = "docs/plans/task-001-intent-author.intent.json";
+			const result = author(root, path, candidate({
+				scope_hint: [path, ".changeset/patch.md", "docs/specs/feature.spec.md",
+					...Array.from({ length: count }, (_, i) => `src/file-${i}.ts`)],
+				...(reason === undefined ? {} : { scope_size_reason: reason }),
+			}));
+			expect(result.returncode).toBe(succeeds ? 0 : 1);
+			expect(existsSync(join(root, path))).toBe(succeeds);
+			if (succeeds) {
+				const written = JSON.parse(readFileSync(join(root, path), "utf8"));
+				if (reason === undefined) expect(written).not.toHaveProperty("scope_size_reason");
+				else expect(written.scope_size_reason).toBe(reason);
+			} else expect(JSON.parse(result.stdout).error.code).toBe("scope_estimate_too_wide");
+		});
+	});
+
 	it("rejects strict parser violations", () => {
 		withRepo((root) => {
 			activateRetiredPolicy(root);

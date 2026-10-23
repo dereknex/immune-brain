@@ -48,6 +48,22 @@ import { commitPendingMigrationDiff, migrateAndCommitLegacyLayout } from "../ker
 import { readBackendClaim } from "../kernel/backend_claim";
 import { inspectEnrollmentGitBase, type EnrollmentGitBase } from "../assurance/enrollment_git_base";
 import { probeKernelStore } from "../kernel";
+import { readDerivedFiles } from "../derived_files";
+
+// Candidate planning guard only: enrolled reads and revisions retain their scope freedom.
+function scopeEstimateFailure(root: string, intent: TaskIntentV1): string | null {
+	if (intent.scope_size_reason !== undefined) return null;
+	const outputs = new Set(readDerivedFiles(root).flatMap((entry) => entry.outputs));
+	const counted = intent.scope_hint.filter((path) =>
+		!path.startsWith(".changeset/") &&
+		path !== `docs/plans/${intent.task_id}.intent.json` &&
+		!/^docs\/specs\/[^/]+\.spec\.md$/.test(path) &&
+		!outputs.has(path),
+	).length;
+	return counted > 15
+		? `${counted} counted scope_hint paths exceed the 15-path cap; split the Slice or provide scope_size_reason`
+		: null;
+}
 
 export interface KernelCommandResult {
 	stdout: string;
@@ -630,6 +646,14 @@ function runIntentAuthor(args: string[], root: string): KernelExecution {
 		};
 	}
 
+	let scopeFailure: string | null;
+	try { scopeFailure = scopeEstimateFailure(root, intent); }
+	catch (error) { return sourceFailure("intent", error); }
+	if (scopeFailure) return {
+		result: errorResult("scope_estimate_too_wide", scopeFailure, 1),
+		journal: journalFor("intent", null, "rejected", "intent_invalid", null, scopeFailure),
+	};
+
 	// Task/path identity: destination must be docs/plans/<task-id>.intent.json.
 	let sidecarPath: string;
 	try {
@@ -707,6 +731,7 @@ function runIntentAuthor(args: string[], root: string): KernelExecution {
 		goal: intent.goal,
 		acceptance: canonicalAcceptance,
 		scope_hint: intent.scope_hint,
+		...(intent.scope_size_reason === undefined ? {} : { scope_size_reason: intent.scope_size_reason }),
 		risk: intent.risk,
 		revision: intent.revision,
 	};
@@ -1167,7 +1192,10 @@ function runIntentValidate(args: string[], root: string): KernelExecution {
 	try { gitBase = inspectEnrollmentGitBase(canonicalRoot); }
 	catch (error) { gitBase = { state: "invalid", reason: error instanceof Error ? error.message : String(error) }; }
 	const contentHash = canonicalIntentHash(intent);
-	const enrollmentReady = gitTracked && allEligible && gitBase.state !== "invalid";
+	let scopeFailure: string | null;
+	try { scopeFailure = scopeEstimateFailure(root, intent); }
+	catch (error) { return sourceFailure("intent", error); }
+	const enrollmentReady = gitTracked && allEligible && gitBase.state !== "invalid" && !scopeFailure;
 	return {
 		result: jsonResult(
 			{
@@ -1183,6 +1211,7 @@ function runIntentValidate(args: string[], root: string): KernelExecution {
 				git_base: gitBase,
 				git_base_initialization_required: gitBase.state === "unborn",
 				enrollment_ready: enrollmentReady,
+				...(scopeFailure ? { code: "scope_estimate_too_wide", reason: scopeFailure } : {}),
 			},
 			0,
 		),
