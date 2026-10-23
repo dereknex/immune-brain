@@ -402,20 +402,9 @@ function taskDisplayNames(operation: Extract<TrackerOperation, { op: "upsert-tas
 	};
 }
 
-function taskIssueTitle(operation: Extract<TrackerOperation, { op: "upsert-task" }>, fallbackOrdinal?: number): string {
-	const { shortName, title, ordinal } = taskDisplayNames(operation);
-	return issueTitle(`[${shortName}] S${fallbackOrdinal ?? ordinal} ${title}`);
-}
-
-/**
- * The Slice position in the Initiative: the Parent's Slices checklist is the
- * declared order, so a Child keeps the same `S<n>` across amendment batches
- * instead of renumbering to its position inside the current batch.
- */
-function sliceOrdinalFromChecklist(parentBody: string, sliceId: string, fallback: number): number {
-	const declared = [...parentBody.matchAll(/^- \[[ xX]\] <!-- immune-brain:slice-id=([A-Za-z0-9._:-]+) -->/gm)].map((match) => match[1]);
-	const index = declared.indexOf(sliceId);
-	return index === -1 ? fallback : index + 1;
+function taskIssueTitle(operation: Extract<TrackerOperation, { op: "upsert-task" }>): string {
+	const { shortName, title } = taskDisplayNames(operation);
+	return issueTitle(`[${shortName}] ${operation.slice_id} ${title}`);
 }
 
 /** Labels a published Task Issue must carry; the Parent carries none of them. */
@@ -1381,7 +1370,7 @@ function approvedAmendmentContent(
 		const oversized = bodyLimitFailure("upsert-task", body, MAX_TERMINAL_SUFFIX_BYTES);
 		if (oversized) return `${oversized.status}: ${oversized.message}`;
 		pendingContent.set(operation.task_id, {
-			title: taskIssueTitle(operation, sliceOrdinalFromChecklist(parentBody, operation.slice_id, operation.projection?.slice_ordinal ?? 1)),
+			title: taskIssueTitle(operation),
 			body,
 		});
 	}
@@ -1471,7 +1460,7 @@ async function upsertTask(
 	const body = childBody(source.repository, operation, parent.issue);
 	const oversized = bodyLimitFailure(operation.op, body, MAX_TERMINAL_SUFFIX_BYTES);
 	if (oversized) return oversized;
-	const title = taskIssueTitle(operation, sliceOrdinalFromChecklist(parent.issue.body, operation.slice_id, operation.projection?.slice_ordinal ?? 1));
+	const title = taskIssueTitle(operation);
 	let child: GithubIssue;
 	let createdChild = false;
 	let labelsConverged = false;
@@ -1593,6 +1582,14 @@ async function closeTerminalIssue(
 	lookup: (issues: GithubIssue[]) => IssueLookup,
 ): Promise<GithubTrackerResult> {
 	const desiredReason = operation.phase === "done" ? "completed" : "not_planned";
+	// gh issue close does not change the reason of an already closed Issue.
+	if (issue.state === "closed" && issue.state_reason === "not_planned" && operation.phase === "done") {
+		const reopened = await gh.run([
+			"issue", "reopen", String(issue.number), "--repo", source.repository.name_with_owner,
+		], { cwd: root });
+		if (reopened.exit_code !== 0 || reopened.output_exceeded)
+			return ghFailure(operation.op, reopened, "terminal Issue reopen failed");
+	}
 	const close = await gh.run([
 		"issue", "close", String(issue.number), "--repo", source.repository.name_with_owner,
 		"--reason", operation.phase === "done" ? "completed" : "not planned",
@@ -1624,20 +1621,23 @@ async function markChildTerminal(
 	const issue = found.issue;
 	const ownership = await confirmTerminalOwnership(root, gh, operation.op, source, issue);
 	if (!("owned" in ownership)) return ownership;
-	const existingEvents = [...issue.body.matchAll(/<!-- immune-brain:terminal-event=([A-Za-z0-9._:-]+) -->/g)];
-	if (existingEvents.length > 1 || (existingEvents.length === 1 && existingEvents[0][1] !== operation.terminal_event_id))
+	const existingEvent = issueTerminalEventId(issue.body);
+	const redelivery = operation.phase === "done" && issue.state === "closed" && issue.state_reason === "not_planned";
+	if (existingEvent === "multiple" || existingEvent === "malformed"
+		|| (existingEvent !== null && existingEvent !== operation.terminal_event_id && !redelivery))
 		return result(operation.op, "ambiguous_remote_state", "terminal Issue conflicts with authoritative settlement", issue);
 	const desiredReason = operation.phase === "done" ? "completed" : "not_planned";
-	if (existingEvents.length === 1) {
-		if (issue.state === "closed")
+	if (existingEvent === operation.terminal_event_id) {
+		if (issue.state === "closed" && !redelivery)
 			return issue.state_reason === desiredReason
 				? result(operation.op, "already_current", "terminal Task Issue is current", issue)
 				: result(operation.op, "ambiguous_remote_state", "closed Issue reason conflicts with authoritative settlement", issue);
 		return closeTerminalIssue(root, gh, operation, source, issue, lookup);
 	}
-	if (issue.state === "closed")
+	if (issue.state === "closed" && existingEvent === null)
 		return result(operation.op, "ambiguous_remote_state", "a manually closed nonterminal Task Issue is preserved and never reopened automatically", issue);
-	const updated = `${issue.body.trimEnd()}${terminalSuffix(operation.terminal_event_id)}`;
+	const body = existingEvent === null ? issue.body : issue.body.slice(0, -terminalSuffix(existingEvent).length);
+	const updated = `${body.trimEnd()}${terminalSuffix(operation.terminal_event_id)}`;
 	const oversized = bodyLimitFailure(operation.op, updated);
 	if (oversized) return oversized;
 	const edited = await gh.run([
@@ -2523,7 +2523,7 @@ async function publishInitiativeDirect(
 		for (const operation of prepared.order) {
 			const issue = existingChildren.get(operation.task_id);
 			if (!issue) continue;
-			const title = taskIssueTitle(operation, sliceOrdinalFromChecklist(desiredParentBody, operation.slice_id, operation.projection?.slice_ordinal ?? 1));
+			const title = taskIssueTitle(operation);
 			const body = childBody(repository, operation, existingParent);
 			if (issue.title !== title || !sameTrackedBody(issue.body, body))
 				return publicationResultWithPlan(
@@ -2679,7 +2679,7 @@ async function publishInitiativeDirect(
 			});
 			continue;
 		}
-		const title = taskIssueTitle(operation, sliceOrdinalFromChecklist(desiredParentBody, operation.slice_id, operation.projection?.slice_ordinal ?? 1));
+		const title = taskIssueTitle(operation);
 		const body = childBody(repository, operation, parentReference);
 		const created = await gh.run(
 			[

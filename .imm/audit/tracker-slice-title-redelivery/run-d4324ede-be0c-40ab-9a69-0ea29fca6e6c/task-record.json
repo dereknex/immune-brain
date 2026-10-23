@@ -1,0 +1,162 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "tracker-slice-title-redelivery",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "tracker-slice-title-redelivery",
+    "goal": "Child Issue titles carry each TaskIntent's slice ID instead of its position, and a Child closed `not_planned` by a stopped run that is later delivered ends closed `completed` (Spec branch-boundary-r2-followups D10).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "`imm-tracker publish-initiative` composes each Child title as `[<short_name>] <slice_id> <title>` from the Child's `slice_id`, so a Child declared third with `slice_id` S2 is titled S2; the 80-character limit still fails the batch closed, and the Planner contract states the slice-ID title rule.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/github-issue-projection-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "`mark-terminal` with phase `done` for a Child closed `not_planned` with an earlier `stopped` terminal marker of the same task replaces the marker and ends the Issue closed `completed`; a Child already closed `completed` for that event is `already_current`; a manually closed nonterminal Issue is still preserved and never reopened.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/github-issue-projection-contract.test.ts\",\n      \"tests/github-initiative-recovery.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Packaged dist docs and role prompts match their canonical sources.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/sync-dist-docs.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "The generated Claude MCP bundle matches the runtime source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/build-claude-plugin.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "The project typechecks.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/tracker-slice-title-redelivery.md",
+      "docs/plans/tracker-slice-title-redelivery.intent.json",
+      "docs/specs/branch-boundary-r2-followups.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/runtime/github_issue_tracker.ts",
+      "tests/github-initiative-recovery.test.ts",
+      "tests/github-issue-projection-contract.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/tracker-slice-title-redelivery.intent.json",
+    "content_hash": "sha256:c839ba8e291d0d4ebb8511f942a404bbd8b5f1c86c00cea71491940779c5dd52"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:c839ba8e291d0d4ebb8511f942a404bbd8b5f1c86c00cea71491940779c5dd52",
+  "git_base_head": "1c4fbf6085d83fc63e135fa26bb1f0d53c32e0e6",
+  "attestations": [
+    {
+      "id": "approval-qa-3617ddc4",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c839ba8e291d0d4ebb8511f942a404bbd8b5f1c86c00cea71491940779c5dd52",
+      "diff_hash": "sha256:22449ebe58d6c62f5f2e6b2f5d788898525274af6e1d839d114e8121d0776ffa",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 project verification check(s) passed; execution=sha256:d8a1f7d0467b22949a83eb98fd8a92476ffeb4e9fbdbc3b5aeeb527c33595e2e",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:d8a1f7d0467b22949a83eb98fd8a92476ffeb4e9fbdbc3b5aeeb527c33595e2e"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:d8a1f7d0467b22949a83eb98fd8a92476ffeb4e9fbdbc3b5aeeb527c33595e2e"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:d8a1f7d0467b22949a83eb98fd8a92476ffeb4e9fbdbc3b5aeeb527c33595e2e"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:d8a1f7d0467b22949a83eb98fd8a92476ffeb4e9fbdbc3b5aeeb527c33595e2e"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:d8a1f7d0467b22949a83eb98fd8a92476ffeb4e9fbdbc3b5aeeb527c33595e2e"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-a88f0a82",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c839ba8e291d0d4ebb8511f942a404bbd8b5f1c86c00cea71491940779c5dd52",
+      "diff_hash": "sha256:22449ebe58d6c62f5f2e6b2f5d788898525274af6e1d839d114e8121d0776ffa",
+      "actor_id": "parent-mediated-review",
+      "summary": "已验证 manifest_digest、revision 的唯一父提交和 tree，完整审阅全部七个文件的 diff；未发现阻断问题。slice-ID 标题、终态重投递与手动关闭保护符合验收，AC1–AC5 使用 Kernel 已验证的 QA outcomes，未重复运行检查。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "1c4fbf6085d83fc63e135fa26bb1f0d53c32e0e6",
+        "review_commit": "bd6d100181aed935eb5efd8640d367236df6bd01",
+        "review_tree": "e85ffd53ca97d88f720a1158c45697969dcf6583",
+        "manifest_digest": "sha256:9a7e38a502368e44f7735c58fd7e68a29a1625b5c0fc938e46db3e156015a5c7"
+      },
+      "reviewer_verdict_sha256": "sha256:f3e81c2c94773f601c3221a6ddd40d3bb369b7089ea8234252aba926376fadd9"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:tracker-slice-title-redelivery:2026-10-23T04:40:23.107Z",
+      "at": "2026-10-23T04:40:23.107Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/tracker-slice-title-redelivery.intent.json"
+    },
+    {
+      "id": "record_approval:tracker-slice-title-redelivery:2026-10-23T04:40:47.228Z",
+      "at": "2026-10-23T04:40:47.228Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-3617ddc4\naction_v2_sha256:1ce980d81ff05bcb56861a76643c3772181d250a544549e07cfac88384a6cfc2",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-670dd377d73a2b60",
+        "issued_at": "2026-10-23T04:40:47.228Z"
+      }
+    },
+    {
+      "id": "record_approval:tracker-slice-title-redelivery:2026-10-23T04:43:31.009Z",
+      "at": "2026-10-23T04:43:31.009Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-a88f0a82\naction_v2_sha256:df40fcca06a4cb191319b522a74099a21bcc5e575024b5f907d834d8bc497749",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-4ef4e0d77d218e25",
+        "issued_at": "2026-10-23T04:43:31.010Z"
+      }
+    },
+    {
+      "id": "complete:tracker-slice-title-redelivery:2026-10-23T04:43:32.165Z",
+      "at": "2026-10-23T04:43:32.165Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:d387e6a77557c57ef610088efe008bc0a9fbb042ecb351e940c20f332a3b8e33"
+    }
+  ]
+}

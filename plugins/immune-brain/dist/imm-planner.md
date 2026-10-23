@@ -303,7 +303,7 @@ having no scenarios. Each Child projection requires
 `desired_behavior`, `key_interfaces`, `verification`, `blocked_by` Task IDs,
 `out_of_scope`, and `agent_handoff`. The tracker composes Issue titles from
 these display names only — the Parent as `[<short_name>] <title>` and each
-Child as `[<short_name>] S<n> <title>` with `n` the declared Slice position —
+Child as `[<short_name>] <slice_id> <title>` using the Child's `slice_id`, not its declared position —
 and fails the whole batch closed before any remote write when a display name
 is missing or the composed title exceeds 80 characters; it never falls back to
 goal prose and never truncates a title. The tracker rereads every canonical

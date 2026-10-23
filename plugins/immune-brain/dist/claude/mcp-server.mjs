@@ -11838,14 +11838,9 @@ function taskDisplayNames(operation) {
     ordinal: projection.slice_ordinal
   };
 }
-function taskIssueTitle(operation, fallbackOrdinal) {
-  const { shortName, title, ordinal } = taskDisplayNames(operation);
-  return issueTitle(`[${shortName}] S${fallbackOrdinal ?? ordinal} ${title}`);
-}
-function sliceOrdinalFromChecklist(parentBody, sliceId, fallback) {
-  const declared = [...parentBody.matchAll(/^- \[[ xX]\] <!-- immune-brain:slice-id=([A-Za-z0-9._:-]+) -->/gm)].map((match) => match[1]);
-  const index = declared.indexOf(sliceId);
-  return index === -1 ? fallback : index + 1;
+function taskIssueTitle(operation) {
+  const { shortName, title } = taskDisplayNames(operation);
+  return issueTitle(`[${shortName}] ${operation.slice_id} ${title}`);
 }
 function desiredTaskLabels(operation) {
   return (operation.projection?.blocked_by ?? []).length ? [READY_FOR_AGENT_LABEL, BLOCKED_LABEL] : [READY_FOR_AGENT_LABEL];
@@ -12566,7 +12561,7 @@ async function upsertTask(root, gh, operation, source) {
   const oversized = bodyLimitFailure(operation.op, body, MAX_TERMINAL_SUFFIX_BYTES);
   if (oversized)
     return oversized;
-  const title = taskIssueTitle(operation, sliceOrdinalFromChecklist(parent.issue.body, operation.slice_id, operation.projection?.slice_ordinal ?? 1));
+  const title = taskIssueTitle(operation);
   let child;
   let createdChild = false;
   let labelsConverged = false;
@@ -12683,6 +12678,17 @@ async function confirmTerminalOwnership(root, gh, operation, source, child) {
 }
 async function closeTerminalIssue(root, gh, operation, source, issue, lookup) {
   const desiredReason = operation.phase === "done" ? "completed" : "not_planned";
+  if (issue.state === "closed" && issue.state_reason === "not_planned" && operation.phase === "done") {
+    const reopened = await gh.run([
+      "issue",
+      "reopen",
+      String(issue.number),
+      "--repo",
+      source.repository.name_with_owner
+    ], { cwd: root });
+    if (reopened.exit_code !== 0 || reopened.output_exceeded)
+      return ghFailure(operation.op, reopened, "terminal Issue reopen failed");
+  }
   const close = await gh.run([
     "issue",
     "close",
@@ -12717,18 +12723,20 @@ async function markChildTerminal(root, gh, operation, source) {
   const ownership = await confirmTerminalOwnership(root, gh, operation.op, source, issue);
   if (!("owned" in ownership))
     return ownership;
-  const existingEvents = [...issue.body.matchAll(/<!-- immune-brain:terminal-event=([A-Za-z0-9._:-]+) -->/g)];
-  if (existingEvents.length > 1 || existingEvents.length === 1 && existingEvents[0][1] !== operation.terminal_event_id)
+  const existingEvent = issueTerminalEventId(issue.body);
+  const redelivery = operation.phase === "done" && issue.state === "closed" && issue.state_reason === "not_planned";
+  if (existingEvent === "multiple" || existingEvent === "malformed" || existingEvent !== null && existingEvent !== operation.terminal_event_id && !redelivery)
     return result(operation.op, "ambiguous_remote_state", "terminal Issue conflicts with authoritative settlement", issue);
   const desiredReason = operation.phase === "done" ? "completed" : "not_planned";
-  if (existingEvents.length === 1) {
-    if (issue.state === "closed")
+  if (existingEvent === operation.terminal_event_id) {
+    if (issue.state === "closed" && !redelivery)
       return issue.state_reason === desiredReason ? result(operation.op, "already_current", "terminal Task Issue is current", issue) : result(operation.op, "ambiguous_remote_state", "closed Issue reason conflicts with authoritative settlement", issue);
     return closeTerminalIssue(root, gh, operation, source, issue, lookup);
   }
-  if (issue.state === "closed")
+  if (issue.state === "closed" && existingEvent === null)
     return result(operation.op, "ambiguous_remote_state", "a manually closed nonterminal Task Issue is preserved and never reopened automatically", issue);
-  const updated = `${issue.body.trimEnd()}${terminalSuffix(operation.terminal_event_id)}`;
+  const body = existingEvent === null ? issue.body : issue.body.slice(0, -terminalSuffix(existingEvent).length);
+  const updated = `${body.trimEnd()}${terminalSuffix(operation.terminal_event_id)}`;
   const oversized = bodyLimitFailure(operation.op, updated);
   if (oversized)
     return oversized;
@@ -12973,6 +12981,17 @@ async function runGithubTrackerOperation(root, input, gh = createGhTransport()) 
     case "mark-terminal":
       return markTerminal(absoluteRoot, gh, operation, source);
   }
+}
+function issueTerminalEventId(body) {
+  const suffixMatch = [...body.matchAll(/<!-- immune-brain:terminal-event=([A-Za-z0-9._:-]+) -->/g)];
+  if (suffixMatch.length === 0)
+    return null;
+  if (suffixMatch.length > 1)
+    return "multiple";
+  const eventId = suffixMatch[0][1];
+  if (eventId.length > MAX_TERMINAL_EVENT_ID || !body.endsWith(terminalSuffix(eventId)))
+    return "malformed";
+  return eventId;
 }
 var CONTRACT2 = "immune_brain/github_issue_tracker_result/v1", PROTOCOL_MARKER = "<!-- immune-brain-tracker:v1 -->", KIND_INITIATIVE_MARKER = "<!-- immune-brain:kind=initiative -->", KIND_TASK_MARKER = "<!-- immune-brain:kind=task -->", ID_PATTERN2, MAX_GH_OUTPUT, MAX_DIAGNOSTIC = 512, GH_TIMEOUT_MS = 20000, MAX_SNAPSHOT_PAGES = 100, GITHUB_ISSUE_BODY_LIMIT = 65536, MAX_TERMINAL_EVENT_ID = 500, MAX_TITLE_LENGTH = 80, MAX_DISPLAY_SHORT_NAME = 32, MAX_DISPLAY_TITLE = 60, READY_FOR_AGENT_LABEL = "ready-for-agent", BLOCKED_LABEL = "blocked", MANAGED_ISSUE_LABELS, ISSUE_FOOTER = "---\n\n_Outbound visibility only: GitHub state never authorizes or settles work — Kernel TaskIntent, TaskRecord, QA, Review, and Assurance remain the execution authority. An Open Issue only means the Task still needs attention; only a claimless terminal projection closes it (`done` → Completed, `stopped` → Not planned)._", MAX_TERMINAL_SUFFIX_BYTES;
 var init_github_issue_tracker = __esm(() => {

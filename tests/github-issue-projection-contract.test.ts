@@ -125,6 +125,14 @@ class ProjectionGh implements GhTransport {
 			}
 			return ok();
 		}
+		if (args[0] === "issue" && args[1] === "reopen") {
+			this.mutations += 1;
+			const issue = this.issues.find((candidate) => candidate.number === Number(args[2]));
+			if (!issue) return { ...ok(), exit_code: 1, stderr: "not found" };
+			issue.state = "open";
+			issue.state_reason = null;
+			return ok();
+		}
 		if (args[0] === "issue" && args[1] === "close") {
 			this.mutations += 1;
 			const issue = this.issues.find((candidate) => candidate.number === Number(args[2]));
@@ -194,14 +202,53 @@ function batch(root: string, extra: { sourceIssue?: string } = {}) {
 }
 
 describe("GitHub Issue presentation contract", () => {
+	it("uses S2 for a Child declared third and documents the slice-ID rule", async () => {
+		await withRoot(async (root, gh) => {
+			const input = batch(root);
+			input.tasks.push({ slice_id: "S2", intent: writeIntent(root, "widget-c", "Deliver C"), acceptance: acceptance("widget-c"), projection: { title: "Ship C" } });
+			expect((await runGithubInitiativePublication(root, input, gh)).status).toBe("created");
+			expect(gh.issues.find((issue) => issue.body.includes("<!-- immune-brain:task-id=widget-c -->"))?.title).toBe("[widget] S2 Ship C");
+		});
+		expect(readFileSync("plugins/immune-brain/dist/imm-planner.md", "utf8")).toContain("[<short_name>] <slice_id> <title>");
+	});
+
+	it.each(["stopped", "same-event", "manual", "malformed", "completed"])("converges redelivery while preserving conflicting closures: %s", async (previous) => {
+		await withRoot(async (root, gh) => {
+			await runGithubInitiativePublication(root, batch(root), gh);
+			const child = gh.issues[1];
+			const operation = { op: "mark-terminal" as const, task_id: "widget-a", phase: "done" as const, terminal_event_id: "evt-done" };
+			if (previous !== "manual") {
+				const event = previous === "same-event" || previous === "completed" ? "evt-done" : "evt-stopped";
+				child.body += `\n\n<!-- immune-brain:terminal-event=${event} -->\nTerminal event: \`${event}\`\n`;
+				if (previous === "malformed") child.body = child.body.trimEnd();
+			}
+			child.state = "closed";
+			child.state_reason = previous === "completed" ? "completed" : "not_planned";
+			const before = gh.mutations;
+			const result = await runGithubTrackerOperation(root, operation, gh);
+			if (previous === "manual" || previous === "malformed") {
+				expect(result.status).toBe("ambiguous_remote_state");
+				expect(gh.mutations).toBe(before);
+				expect(child.state_reason).toBe("not_planned");
+			} else {
+				expect(result.status).toBe(previous === "completed" ? "already_current" : "updated");
+				expect(child.state).toBe("closed");
+				expect(child.state_reason).toBe("completed");
+				expect(child.body).not.toContain("evt-stopped");
+				const after = gh.mutations;
+				expect((await runGithubTrackerOperation(root, operation, gh)).status).toBe("already_current");
+				expect(gh.mutations).toBe(after);
+			}
+		});
+	});
 	it("composes titles from display names and fails closed on unbounded titles", async () => {
 		await withRoot(async (root, gh) => {
 			const published = await runGithubInitiativePublication(root, batch(root), gh);
 			expect(published.status).toBe("created");
 			const [parent, childA, childB] = gh.issues;
 			expect(parent.title).toBe("[widget] Track widget delivery");
-			expect(childA.title).toBe("[widget] S1 Ship Slice A");
-			expect(childB.title).toBe("[widget] S2 Ship Slice B");
+			expect(childA.title).toBe("[widget] a Ship Slice A");
+			expect(childB.title).toBe("[widget] b Ship Slice B");
 			// Goal prose stays in the body and never leaks into a title.
 			for (const issue of gh.issues) expect(issue.title).not.toContain("Deliver widget Slice");
 			expect(childA.body).toContain("Deliver widget Slice A");
@@ -366,7 +413,7 @@ describe("GitHub Issue presentation contract", () => {
 		});
 	});
 
-	it("numbers Child titles from the Slices checklist even when historical lines are checked", async () => {
+	it("keeps Child slice IDs in titles even when historical lines are checked", async () => {
 		await withRoot(async (root, gh) => {
 			const published = await runGithubInitiativePublication(root, batch(root), gh);
 			expect(published.status).toBe("created");
@@ -405,7 +452,7 @@ describe("GitHub Issue presentation contract", () => {
 				},
 			} as never, gh);
 			expect(amendment.status).toBe("updated");
-			expect(gh.issues[2].title).toBe("[widget] S2 Ship Slice B");
+			expect(gh.issues[2].title).toBe("[widget] b Ship Slice B");
 			expect(gh.issues[0].body).toContain("- [x] <!-- immune-brain:slice-id=a -->");
 		});
 	});
