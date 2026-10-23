@@ -22,7 +22,7 @@ import { auditEvidencePaths, auditRunRecordPath, auditRunTerminalProofPath } fro
 import { readSettledTaskEvidence, readAuditTaskPair, readSecureProjectFile } from "../kernel/storage";
 import { serializeTaskTombstone, readTaskTombstone, type TaskTombstone } from "../kernel/backend_claim";
 import { captureGitTaskRevisionSnapshot, pathMatchesScope, scopedContentIdentity, taskCommitRevisionIdentity, usesBranchDelivery } from "../workspace_scope";
-import { readNativeParentFinalReport, writeNativeParentFinalReport, readAnyBatchRunState, isLaneBatchRecord, writeBatchRunState, writeBatchLaneRunState, type AnyBatchRunStateRecord } from "./batch_state";
+import { BatchRuntimeTooOldError, classifyBatchRunStateContract, readNativeParentFinalReport, writeNativeParentFinalReport, readAnyBatchRunState, isLaneBatchRecord, writeBatchRunState, writeBatchLaneRunState, type AnyBatchRunStateRecord } from "./batch_state";
 import { laneCandidateMatches } from "./batch_integration";
 import { runFinalVerification } from "./batch_final_verification";
 import { buildBatchFinalReport, returnBatchToCoordinator } from "./batch_final_report";
@@ -979,8 +979,10 @@ export async function observeParentCompletion(root: string, initiativeSlug: stri
 	if (existsSync(directory)) for (const file of readdirSync(directory).sort()) {
 		if (!file.endsWith(".json")) continue;
 		const candidate = JSON.parse(readSecureProjectFile(root, `.imm/state/batches/${file}`));
-		if (!["assurance_kernel/batch_run_state/v1", "assurance_kernel/batch_run_state/v2"].includes(candidate?.contract)
-			|| candidate.initiative_slug !== initiativeSlug) continue;
+		const kind = classifyBatchRunStateContract(candidate?.contract);
+		if (kind === "foreign") continue;
+		if (typeof candidate.initiative_slug === "string" && candidate.initiative_slug !== initiativeSlug) continue;
+		if (kind === "newer") throw new BatchRuntimeTooOldError(join(directory, file), candidate.contract);
 		const record = readAnyBatchRunState(root, file.slice(0, -5));
 		if (!record) throw new Error("Parent batch record disappeared during observation");
 		records.push(record);

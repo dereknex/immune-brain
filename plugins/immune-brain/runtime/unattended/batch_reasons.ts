@@ -12,6 +12,7 @@
 export type BatchReasonKey =
 	| "invalid_slug"
 	| "batch_state_unreadable"
+	| "batch_runtime_too_old"
 	| "batch_record_shape_retired"
 	| "claim_already_active"
 	| "kernel_authority_conflict"
@@ -64,6 +65,11 @@ export const BATCH_REASONS: Readonly<Record<BatchReasonKey, BatchReasonSpec>> = 
 		state: "rejected",
 		reason: (detail: string) => `invalid initiative slug: ${detail}`,
 		recovery_action: "specify a valid initiative slug and retry in the current Host",
+	},
+	batch_runtime_too_old: {
+		state: "blocked",
+		reason: (detail: string) => `batch_runtime_too_old: ${detail}`,
+		recovery_action: "reconnect the immune-brain MCP server or upgrade the plugin so the loaded runtime supports this batch record, then retry in the current Host",
 	},
 	batch_state_unreadable: {
 		state: "blocked",

@@ -1,0 +1,57 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "batch-runtime-skew-refusal",
+  "owner": "user",
+  "goal": "A runtime that meets a batch record written under a newer assurance_kernel/batch_run_state contract refuses with batch_runtime_too_old, naming the record, its contract and the loaded runtime path, instead of skipping or misreading it; Claude status reports the loaded bundle path and a 12-hex sha256 prefix; ADR 0029 records that a change in record meaning requires a contract bump (Spec batch-runtime-skew-refusal, issue #289).",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "With a matching-slug batch record whose contract is assurance_kernel/batch_run_state/v3 or /v9 on disk, prepareBatchPreflight refuses with BATCH_REASONS.batch_runtime_too_old (state blocked, reason naming the record path, its contract and the loaded runtime path, recovery naming reconnect or upgrade), creates no batch record or branch, and leaves the record byte-identical, and resolveLaneParallel does not treat it as a Lane record; controls: a v1 record still refuses with batch_record_shape_retired, a v2 Lane record still resumes, a v3 record of a different initiative_slug does not block, a file with a non-batch contract is still skipped, a batch_run_state/vnext or /v0 record refuses with batch_state_unreadable, and every pre-existing BATCH_REASONS key keeps its exact text (Spec D1, D2, D7; seams tests/batch-serial-retirement.test.ts and tests/unattended-batch-run.test.ts).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-serial-retirement.test.ts\",\n      \"tests/unattended-batch-run.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "With a matching-slug batch_run_state/v3 record on disk, readStaleBatchLookup reports it as corrupt with newer_contract, retireStaleBatch rejects with batch_runtime_too_old without opening its gate and leaves the record byte-identical, and findSettledBatchRecord throws the runtime-too-old error for a matching-slug newer record beside a terminal v2 record instead of returning the v2 record; control: a lone terminal v2 record is still returned (Spec D2, D3, D7; seam tests/batch-stale-disposition.test.ts).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-stale-disposition.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "observeParentCompletion throws an error whose message contains batch_runtime_too_old, the record contract and the loaded runtime path when a matching-slug batch_run_state/v3 record exists, and readAnyBatchRunState throws the same error for that record id; controls: a v2 Parent-branch record is still observed, and a v3 record of a different initiative_slug does not affect observeParentCompletion (Spec D5, D6; seam tests/batch-completion-verifier.test.ts).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-completion-verifier.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "The Claude MCP status result carries loaded_bundle with the watched bundle path and sha256_prefix equal to the first 12 lowercase hex characters of the bundle's sha256 at server startup; two servers watching bundle files with different bytes report different prefixes, the prefix stays the startup value after the file changes (alongside the existing plugin_bundle_stale warning), and a bundle path unreadable at startup reports sha256_prefix null (Spec D8; seam tests/claude-bundle-staleness.test.ts).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-bundle-staleness.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC5",
+      "assertion": "docs/adr/0029-record-meaning-requires-contract-bump.md exists with status accepted and states that a change in a persisted record's meaning requires a new contract id and that readers refuse a newer id of their own record family, citing batch_run_state (Spec D10).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"f=docs/adr/0029-record-meaning-requires-contract-bump.md && grep -q '^status: accepted$' \\\"$f\\\" && grep -q 'batch_run_state' \\\"$f\\\" && grep -qi 'contract' \\\"$f\\\"\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 10000,\n    \"max_output_bytes\": 4096\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/batch-runtime-skew-refusal.md",
+    "docs/adr/0029-record-meaning-requires-contract-bump.md",
+    "docs/plans/batch-runtime-skew-refusal.intent.json",
+    "docs/specs/batch-runtime-skew-refusal.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/plugin_source_skew.ts",
+    "plugins/immune-brain/runtime/unattended/batch_disposition.ts",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "tests/batch-completion-verifier.test.ts",
+    "tests/batch-serial-retirement.test.ts",
+    "tests/batch-stale-disposition.test.ts",
+    "tests/claude-bundle-staleness.test.ts",
+    "tests/unattended-batch-run.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

@@ -10,7 +10,7 @@
 
 import { afterEach, describe, expect, it } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -37,6 +37,43 @@ import {
 	type BatchLaneRunStateRecord,
 	type BatchRunStateRecord,
 } from "../plugins/immune-brain/runtime/unattended/batch_state";
+
+it("newer batch contracts block retirement and settled-lineage reuse without a gate or writes", async () => {
+	const r = repo();
+	const settled = { ...laneRecord(r), batch_state: "completed" as const };
+	writeFileSync(join(r.root, ".imm/state/batches/a-settled.json"), JSON.stringify(settled));
+	expect(findSettledBatchRecord(r.root, SLUG)?.contract).toBe("assurance_kernel/batch_run_state/v2");
+	const path = join(r.root, ".imm/state/batches/z-newer.json");
+	const contract = "assurance_kernel/batch_run_state/v3";
+	const bytes = JSON.stringify({ contract, initiative_slug: SLUG });
+	writeFileSync(path, bytes);
+	expect(readStaleBatchLookup(r.root, SLUG)).toEqual({ kind: "corrupt", path, newer_contract: contract });
+	let gates = 0;
+	const result = await retireStaleBatch({ root: r.root, initiative_slug: SLUG, now: NOW, gate: async () => { gates++; return { kind: "confirmed", request_id: "unexpected" }; } });
+	expect(result).toMatchObject({ outcome: "rejected", rejection: { state: "blocked", reason: expect.stringContaining("batch_runtime_too_old") } });
+	expect(gates).toBe(0); expect(readFileSync(path, "utf8")).toBe(bytes);
+	expect(() => findSettledBatchRecord(r.root, SLUG)).toThrow("batch_runtime_too_old");
+});
+
+it.each(["before", "after"] as const)("a newer record listed %s an active v2 record blocks the active lookup", order => {
+	const r = repo();
+	write(r, laneRecord(r));
+	const dir = join(r.root, ".imm/state/batches");
+	const contract = "assurance_kernel/batch_run_state/v3";
+	const bytes = JSON.stringify({ contract, initiative_slug: SLUG });
+	// Directory order is filesystem-defined, so probe for a name that lands on the wanted side.
+	let path: string | null = null;
+	for (let i = 0; i < 64 && path === null; i++) {
+		const candidate = join(dir, `newer-${i}.json`);
+		writeFileSync(candidate, bytes);
+		const listed = readdirSync(dir);
+		const after = listed.indexOf(`newer-${i}.json`) > listed.indexOf(`${BATCH_ID}.json`);
+		if (after === (order === "after")) path = candidate;
+		else rmSync(candidate);
+	}
+	if (path === null) throw new Error(`no probe name listed ${order} the active record`);
+	expect(findExistingActiveBatch(r.root, SLUG)).toEqual({ corrupt: true, path, newer_contract: contract });
+});
 
 const SLUG = "parallel-batch-lanes";
 const BATCH_ID = "batch-parallel-batch-lanes-26c9dc0d";

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { computeBatchPlanDigest, createBatchAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/batch_authority";
 import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import type { AssuranceProjectionResult } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
-import { projectBatchPreflight } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
+import { prepareBatchPreflight, projectBatchPreflight } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
 import { readStaleBatchLookup, retireStaleBatch } from "../plugins/immune-brain/runtime/unattended/batch_disposition";
 import { startBatch, type BatchRunnerKernelPort, type StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_runner";
 import { prepareBatchRunState, readAnyBatchRunState, writeBatchRunState, type BatchLaneRunReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
@@ -15,6 +15,9 @@ import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 import { readSettledRunEvidence } from "../plugins/immune-brain/runtime/kernel/storage";
 import { ClaudeRuntime } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { projectTaskStatus } from "../plugins/immune-brain/runtime/assurance/coordinator";
+
+import { resolveLaneParallel } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
+import { runningRuntimeSource } from "../plugins/immune-brain/runtime/kernel/runtime_contracts";
 
 const now = "2026-01-01T00:00:00.000Z";
 const git = (root: string, ...args: string[]) => execFileSync("git", ["-C", root, "-c", "user.name=Test", "-c", "user.email=test@example.com", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
@@ -64,6 +67,41 @@ function fixture(independent = false) {
 }
 
 describe("serial runner retirement", () => {
+	it.each(["v3", "v9", "vnext", "v0"])("refuses unsupported batch contract %s without any writes", async version => {
+		const f = fixture();
+		try {
+			const dir = join(f.root, ".imm/state/batches"); mkdirSync(dir, { recursive: true });
+			const path = join(dir, "newer.json");
+			const contract = `assurance_kernel/batch_run_state/${version}`;
+			const bytes = JSON.stringify({ contract, initiative_slug: "retirement", max_parallel: 99 });
+			writeFileSync(path, bytes);
+			const before = f.snapshot();
+			const result = await prepareBatchPreflight({ root: f.root, initiative_slug: "retirement", now });
+			const newer = version === "v3" || version === "v9";
+			expect(result.ok).toBe(false);
+			if (result.ok) throw new Error("unsupported contract was accepted");
+			expect(result.state).toBe("blocked");
+			expect(result.reason).toContain(newer ? "batch_runtime_too_old" : "batch run state is unreadable");
+			if (!result.ok && newer) {
+				expect(result.reason).toContain(path); expect(result.reason).toContain(contract);
+				expect(result.reason).toContain(runningRuntimeSource());
+				expect(result.recovery_action).toContain("reconnect"); expect(result.recovery_action).toContain("upgrade");
+			}
+			expect(resolveLaneParallel(f.root, "retirement", undefined, undefined)).toBe(1);
+			expect(readFileSync(path, "utf8")).toBe(bytes); expect(f.snapshot()).toEqual(before);
+			expect(git(f.root, "for-each-ref", "--format=%(refname)")).toBe("refs/heads/main");
+		} finally { f.cleanup(); }
+	});
+	it.each(["foreign", "different-slug"])("skips %s records during batch preflight", async variant => {
+		const f = fixture();
+		try {
+			const dir = join(f.root, ".imm/state/batches"); mkdirSync(dir, { recursive: true });
+			writeFileSync(join(dir, "ignored.json"), JSON.stringify({ contract: variant === "foreign" ? "other/v3" : "assurance_kernel/batch_run_state/v3", initiative_slug: variant === "foreign" ? "retirement" : "other" }));
+			const result = await prepareBatchPreflight({ root: f.root, initiative_slug: "retirement", now,
+				readInitiative: async () => ({ contract: "immune_brain/local_initiative_observation/v1", initiative_id: "retirement", tasks: f.input.children }) });
+			expect(result.ok).toBe(true);
+		} finally { f.cleanup(); }
+	});
 	for (const max_parallel of [undefined, 1]) it(`AC1: max_parallel=${max_parallel ?? "omitted"} runs one runtime-created Lane at a time`, async () => {
 		const f = fixture();
 		try {
