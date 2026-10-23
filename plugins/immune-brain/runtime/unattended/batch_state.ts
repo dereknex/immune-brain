@@ -8,6 +8,29 @@ import { readSecureProjectFile, readSecureProjectBytes, withKernelStoreLock } fr
 import { parseFinalVerification, parseFinalVerificationReport } from "./batch_final_verification";
 import { bindsAuthoritySubject } from "../kernel/batch_authority";
 import type { BatchPlanChild } from "./types";
+import { runningRuntimeSource } from "../kernel/runtime_contracts";
+import { batchReason } from "./batch_reasons";
+
+export function classifyBatchRunStateContract(contract: unknown): "v1" | "v2" | "newer" | "unreadable" | "foreign" {
+	if (contract === "assurance_kernel/batch_run_state/v1") return "v1";
+	if (contract === "assurance_kernel/batch_run_state/v2") return "v2";
+	if (typeof contract !== "string" || !contract.startsWith("assurance_kernel/batch_run_state/")) return "foreign";
+	const version = /^assurance_kernel\/batch_run_state\/v([0-9]+)$/.exec(contract);
+	return version && BigInt(version[1]!) > 2n ? "newer" : "unreadable";
+}
+
+export class BatchRuntimeTooOldError extends Error {
+	readonly loadedFrom: string;
+	readonly detail: string;
+	constructor(readonly path: string, readonly contract: string) {
+		const loadedFrom = runningRuntimeSource();
+		const detail = `${path} uses ${contract}, newer than this runtime supports (batch_run_state/v2); runtime loaded from ${loadedFrom}`;
+		super(batchReason("batch_runtime_too_old", detail).reason);
+		this.loadedFrom = loadedFrom;
+		this.detail = detail;
+		this.name = "BatchRuntimeTooOldError";
+	}
+}
 
 export type BatchRunState =
 	| "prepared"
@@ -885,11 +908,13 @@ export function parseBatchLaneRunState(raw: string, batchId: string): BatchLaneR
 }
 
 /** Parse either record version by its contract; an unknown contract is refused. */
-export function parseAnyBatchRunState(raw: string, batchId: string): AnyBatchRunStateRecord {
+export function parseAnyBatchRunState(raw: string, batchId: string, path = statePath(batchId)): AnyBatchRunStateRecord {
 	validateBatchId(batchId);
 	const parsed: unknown = JSON.parse(raw);
-	if (typeof parsed === "object" && parsed !== null && (parsed as { contract?: unknown }).contract === "assurance_kernel/batch_run_state/v2")
-		return parseBatchLaneRunState(raw, batchId);
+	const contract = typeof parsed === "object" && parsed !== null ? (parsed as { contract?: unknown }).contract : undefined;
+	const kind = classifyBatchRunStateContract(contract);
+	if (kind === "newer") throw new BatchRuntimeTooOldError(path, contract as string);
+	if (kind === "v2") return parseBatchLaneRunState(raw, batchId);
 	return parseBatchRunState(raw, batchId);
 }
 
@@ -897,7 +922,7 @@ export function parseAnyBatchRunState(raw: string, batchId: string): AnyBatchRun
 export function readAnyBatchRunState(root: string, batchId: string): AnyBatchRunStateRecord | null {
 	const path = statePath(batchId);
 	if (!existsSync(join(root, path))) return null;
-	return parseAnyBatchRunState(readSecureProjectFile(root, path), batchId);
+	return parseAnyBatchRunState(readSecureProjectFile(root, path), batchId, join(root, path));
 }
 
 export function readBatchLaneRunState(root: string, batchId: string): BatchLaneRunStateRecord | null {

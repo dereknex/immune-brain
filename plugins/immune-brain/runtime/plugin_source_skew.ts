@@ -71,6 +71,7 @@ export function pluginSourceSkewWarning(root: string, loadedFrom: string = runni
 export interface BundleIdentityWatch {
 	/** The file whose identity was recorded at startup. */
 	readonly path: string;
+	readonly sha256: string | null;
 	/** True once the file on disk no longer matches the startup identity; stays true. */
 	stale(): boolean;
 }
@@ -97,6 +98,7 @@ export function watchBundleIdentity(path: string): BundleIdentityWatch {
 	let stale = startup === null;
 	return {
 		path,
+		sha256: startup?.hash ?? null,
 		stale() {
 			if (stale || !startup) return true;
 			let current: Stamp;

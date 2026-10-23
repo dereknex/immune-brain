@@ -29,7 +29,7 @@ import type { TaskRecord } from "../kernel/types";
 import { pathMatchesScope } from "../workspace_scope";
 import { observeInitiative, projectBatchPlan } from "./batch_plan";
 import { batchReason, type BatchReasonKey } from "./batch_reasons";
-import { BATCH_RUN_STATES, batchTopologyDigest, isLaneBatchRecord, isTerminalBatchState, readAnyBatchRunState, recordedAuthorityHashes, type AnyBatchRunStateRecord } from "./batch_state";
+import { BatchRuntimeTooOldError, classifyBatchRunStateContract, BATCH_RUN_STATES, batchTopologyDigest, isLaneBatchRecord, isTerminalBatchState, readAnyBatchRunState, recordedAuthorityHashes, type AnyBatchRunStateRecord } from "./batch_state";
 import { planLaneLeakRestore } from "./batch_leak_restore";
 import type {
 	BatchPlanBudget,
@@ -117,7 +117,7 @@ export function findResumableBatchSlugForTask(root: string, taskId: string): str
 		if (!file.endsWith(".json")) continue;
 		try {
 			const record = JSON.parse(readFileSync(join(batchesDir, file), "utf8")) as AnyBatchRunStateRecord;
-			if (record?.contract !== "assurance_kernel/batch_run_state/v1" && record?.contract !== "assurance_kernel/batch_run_state/v2") continue;
+			if (!["v1", "v2"].includes(classifyBatchRunStateContract(record?.contract))) continue;
 			if (record.batch_state !== "running" && record.batch_state !== "needs_human") continue;
 			if (record.children.some((child) => child.task_id === taskId && (child.state === "enrolled" || child.state === "settled")))
 				return record.initiative_slug;
@@ -134,11 +134,12 @@ export function findResumableBatchSlugForTask(root: string, taskId: string): str
  * it would let a settled batch block or be resumed by a later run.
  */
 export type BatchRecordLookup =
-	| { corrupt: true; path: string }
+	| { corrupt: true; path: string; newer_contract?: string }
 	| { corrupt: false; record: AnyBatchRunStateRecord }
 	| null;
 
 export function findExistingActiveBatch(root: string, initiativeSlug: string): BatchRecordLookup {
+	let found: BatchRecordLookup = null;
 	const batchesDir = join(root, ".imm", "state", "batches");
 	if (!existsSync(batchesDir)) return null;
 	for (const file of readdirSync(batchesDir)) {
@@ -152,7 +153,11 @@ export function findExistingActiveBatch(root: string, initiativeSlug: string): B
 			return { corrupt: true, path: file };
 		}
 		const candidate = record as AnyBatchRunStateRecord;
-		if (candidate?.contract !== "assurance_kernel/batch_run_state/v1" && candidate?.contract !== "assurance_kernel/batch_run_state/v2") continue;
+		const kind = classifyBatchRunStateContract(candidate?.contract);
+		if (kind === "foreign") continue;
+		if (typeof candidate.initiative_slug === "string" && candidate.initiative_slug !== initiativeSlug) continue;
+		if (kind === "newer") return { corrupt: true, path: join(batchesDir, file), newer_contract: candidate.contract };
+		if (kind === "unreadable") return { corrupt: true, path: file };
 		if (candidate.initiative_slug !== initiativeSlug) continue;
 		// Every state the state owner accepts, so a retired record reads as settled
 		// instead of failing this lookup closed as an unknown state.
@@ -168,13 +173,13 @@ export function findExistingActiveBatch(root: string, initiativeSlug: string): B
 		if (isTerminalBatchState(candidate.batch_state)) continue;
 		try {
 			const record = readAnyBatchRunState(root, file.slice(0, -5));
-			if (record) return { corrupt: false, record };
+			if (record) { found ??= { corrupt: false, record }; continue; }
 		} catch {
 			// Reuse the state owner's full validation before offering a renewal.
 		}
 		return { corrupt: true, path: file };
 	}
-	return null;
+	return found;
 }
 
 /**
@@ -196,7 +201,11 @@ export function findSettledBatchRecord(root: string, initiativeSlug: string): An
 			continue;
 		}
 		const candidate = record as AnyBatchRunStateRecord;
-		if (candidate?.contract !== "assurance_kernel/batch_run_state/v1" && candidate?.contract !== "assurance_kernel/batch_run_state/v2") continue;
+		const kind = classifyBatchRunStateContract(candidate?.contract);
+		if (kind === "foreign") continue;
+		if (typeof candidate.initiative_slug === "string" && candidate.initiative_slug !== initiativeSlug) continue;
+		if (kind === "newer") throw new BatchRuntimeTooOldError(join(batchesDir, file), candidate.contract);
+		if (kind === "unreadable") throw new Error(`batch run state is unreadable or invalid: ${join(batchesDir, file)}`);
 		if (candidate.initiative_slug !== initiativeSlug) continue;
 		if (!isTerminalBatchState(candidate.batch_state)) continue;
 		if (typeof candidate.batch_id !== "string" || typeof candidate.base_head !== "string") continue;
@@ -651,7 +660,9 @@ async function projectPreflight(
 	// Existing active/paused batch for this initiative: a terminal record is not active.
 	const found = findExistingActiveBatch(root, initiativeSlug);
 	if (found?.corrupt)
-		return reject("batch_state_unreadable", found.path);
+		return found.newer_contract
+			? reject("batch_runtime_too_old", new BatchRuntimeTooOldError(found.path, found.newer_contract).detail)
+			: reject("batch_state_unreadable", found.path);
 	// Settled records retain branch provenance; only active records are resumed.
 	const activeRecord: AnyBatchRunStateRecord | null = found ? found.record : null;
 	if (activeRecord && !isLaneBatchRecord(activeRecord)) return reject("batch_record_shape_retired");

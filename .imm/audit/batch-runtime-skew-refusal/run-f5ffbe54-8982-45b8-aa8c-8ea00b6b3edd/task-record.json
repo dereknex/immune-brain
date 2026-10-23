@@ -1,0 +1,174 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "batch-runtime-skew-refusal",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "batch-runtime-skew-refusal",
+    "goal": "A runtime that meets a batch record written under a newer assurance_kernel/batch_run_state contract refuses with batch_runtime_too_old, naming the record, its contract and the loaded runtime path, instead of skipping or misreading it; Claude status reports the loaded bundle path and a 12-hex sha256 prefix; ADR 0029 records that a change in record meaning requires a contract bump (Spec batch-runtime-skew-refusal, issue #289).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "With a matching-slug batch record whose contract is assurance_kernel/batch_run_state/v3 or /v9 on disk, prepareBatchPreflight refuses with BATCH_REASONS.batch_runtime_too_old (state blocked, reason naming the record path, its contract and the loaded runtime path, recovery naming reconnect or upgrade), creates no batch record or branch, and leaves the record byte-identical, and resolveLaneParallel does not treat it as a Lane record; controls: a v1 record still refuses with batch_record_shape_retired, a v2 Lane record still resumes, a v3 record of a different initiative_slug does not block, a file with a non-batch contract is still skipped, a batch_run_state/vnext or /v0 record refuses with batch_state_unreadable, and every pre-existing BATCH_REASONS key keeps its exact text (Spec D1, D2, D7; seams tests/batch-serial-retirement.test.ts and tests/unattended-batch-run.test.ts).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-serial-retirement.test.ts\",\n      \"tests/unattended-batch-run.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "With a matching-slug batch_run_state/v3 record on disk, readStaleBatchLookup reports it as corrupt with newer_contract, retireStaleBatch rejects with batch_runtime_too_old without opening its gate and leaves the record byte-identical, and findSettledBatchRecord throws the runtime-too-old error for a matching-slug newer record beside a terminal v2 record instead of returning the v2 record; control: a lone terminal v2 record is still returned (Spec D2, D3, D7; seam tests/batch-stale-disposition.test.ts).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-stale-disposition.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "observeParentCompletion throws an error whose message contains batch_runtime_too_old, the record contract and the loaded runtime path when a matching-slug batch_run_state/v3 record exists, and readAnyBatchRunState throws the same error for that record id; controls: a v2 Parent-branch record is still observed, and a v3 record of a different initiative_slug does not affect observeParentCompletion (Spec D5, D6; seam tests/batch-completion-verifier.test.ts).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-completion-verifier.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "The Claude MCP status result carries loaded_bundle with the watched bundle path and sha256_prefix equal to the first 12 lowercase hex characters of the bundle's sha256 at server startup; two servers watching bundle files with different bytes report different prefixes, the prefix stays the startup value after the file changes (alongside the existing plugin_bundle_stale warning), and a bundle path unreadable at startup reports sha256_prefix null (Spec D8; seam tests/claude-bundle-staleness.test.ts).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-bundle-staleness.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "docs/adr/0029-record-meaning-requires-contract-bump.md exists with status accepted and states that a change in a persisted record's meaning requires a new contract id and that readers refuse a newer id of their own record family, citing batch_run_state (Spec D10).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"f=docs/adr/0029-record-meaning-requires-contract-bump.md && grep -q '^status: accepted$' \\\"$f\\\" && grep -q 'batch_run_state' \\\"$f\\\" && grep -qi 'contract' \\\"$f\\\"\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 10000,\n    \"max_output_bytes\": 4096\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/batch-runtime-skew-refusal.md",
+      "docs/adr/0029-record-meaning-requires-contract-bump.md",
+      "docs/plans/batch-runtime-skew-refusal.intent.json",
+      "docs/specs/batch-runtime-skew-refusal.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/plugin_source_skew.ts",
+      "plugins/immune-brain/runtime/unattended/batch_disposition.ts",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "tests/batch-completion-verifier.test.ts",
+      "tests/batch-serial-retirement.test.ts",
+      "tests/batch-stale-disposition.test.ts",
+      "tests/claude-bundle-staleness.test.ts",
+      "tests/unattended-batch-run.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/batch-runtime-skew-refusal.intent.json",
+    "content_hash": "sha256:a1a611280420d451c2c2abbff6647a3ef0ae5c8adc897c537e243aeef99fc6eb"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:a1a611280420d451c2c2abbff6647a3ef0ae5c8adc897c537e243aeef99fc6eb",
+  "git_base_head": "1c4fbf6085d83fc63e135fa26bb1f0d53c32e0e6",
+  "attestations": [
+    {
+      "id": "approval-qa-505cae3c",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:a1a611280420d451c2c2abbff6647a3ef0ae5c8adc897c537e243aeef99fc6eb",
+      "diff_hash": "sha256:15c02fa3153a7c5dad7c8b2c96066964e627d0cbbd12b9723e2cefa9594a5340",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 project verification check(s) passed; execution=sha256:c94781c77e48b4ef8fe1e2a869cc6aaa1b9f9f9ee24c6c57fa42fa7a674f3598",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:c94781c77e48b4ef8fe1e2a869cc6aaa1b9f9f9ee24c6c57fa42fa7a674f3598"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:c94781c77e48b4ef8fe1e2a869cc6aaa1b9f9f9ee24c6c57fa42fa7a674f3598"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:c94781c77e48b4ef8fe1e2a869cc6aaa1b9f9f9ee24c6c57fa42fa7a674f3598"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:c94781c77e48b4ef8fe1e2a869cc6aaa1b9f9f9ee24c6c57fa42fa7a674f3598"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:c94781c77e48b4ef8fe1e2a869cc6aaa1b9f9f9ee24c6c57fa42fa7a674f3598"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-edd1a6e9",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:a1a611280420d451c2c2abbff6647a3ef0ae5c8adc897c537e243aeef99fc6eb",
+      "diff_hash": "sha256:15c02fa3153a7c5dad7c8b2c96066964e627d0cbbd12b9723e2cefa9594a5340",
+      "actor_id": "parent-mediated-review",
+      "summary": "Verified manifest digest, immutable commit parent/tree and all 17 changed blob identities; reviewed every per-file diff and affected reader/state-owner interactions. No blocking correctness or acceptance gaps found; test execution evidence was supplied by Kernel QA rather than rerun.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "1c4fbf6085d83fc63e135fa26bb1f0d53c32e0e6",
+        "review_commit": "c63083ecedfc456a11dd64c954368ef6c7391b83",
+        "review_tree": "ad516a1d438a795130d51189c72144a828da7940",
+        "manifest_digest": "sha256:b772d16d8134b9e138be3cec9a7fd3cd97d873ec2736e37b0c65e1f96b96bbeb"
+      },
+      "reviewer_verdict_sha256": "sha256:3583a272c9e4c83847ef3c43e1bfabb43c157d73c999b66da926207387e678f1"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:batch-runtime-skew-refusal:2026-10-23T04:45:03.638Z",
+      "at": "2026-10-23T04:45:03.638Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-runtime-skew-refusal.intent.json"
+    },
+    {
+      "id": "record_approval:batch-runtime-skew-refusal:2026-10-23T04:45:58.485Z",
+      "at": "2026-10-23T04:45:58.485Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-505cae3c\naction_v2_sha256:0f0dc60f16f79c4ddca1583737b6b7010e4d98c618e16cbc2c273d8e405f9187",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-438306c99124af70",
+        "issued_at": "2026-10-23T04:45:58.485Z"
+      }
+    },
+    {
+      "id": "record_approval:batch-runtime-skew-refusal:2026-10-23T04:49:15.853Z",
+      "at": "2026-10-23T04:49:15.853Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-edd1a6e9\naction_v2_sha256:60671a8411138290bfc506e8a29a0415e104ca6038eb13f94418f5cedcadb6ad",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-7f05aaf5e9ef37e2",
+        "issued_at": "2026-10-23T04:49:15.853Z"
+      }
+    },
+    {
+      "id": "complete:batch-runtime-skew-refusal:2026-10-23T04:49:17.743Z",
+      "at": "2026-10-23T04:49:17.743Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:d1dc9f7fea8867e29d199d4564c6d2f3e28a6dd6171195065b9b115e8f99e4d9"
+    }
+  ]
+}
