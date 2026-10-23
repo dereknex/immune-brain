@@ -314,7 +314,7 @@ describe("Claude phase entry gate: start_unattended_batch", () => {
 		const s = await session([`${slug}-c1`], b.options);
 		s.prompt(`/imm-run ${slug}`);
 		expect(s.hook(BATCH, "toolu_b")).toBeNull();
-		const reply = await s.call("start_unattended_batch", { initiative_slug: slug }, "toolu_b");
+		const reply = await s.call("start_unattended_batch", { initiative_slug: slug, final_verification: ["bun test"] }, "toolu_b");
 		expect(reply?.error).toBeUndefined();
 		expect(s.gateCalls()).toBe(1);
 		const result = JSON.parse((reply?.result as { content: Array<{ text: string }> }).content[0].text);

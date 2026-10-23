@@ -1041,7 +1041,7 @@ describe("plugin package runtime cutover parity", () => {
 			}, gh);
 
 			expect(published.status).toBe("created");
-			const body = gh.issues.find((issue) => issue.title === "[tracking] S1 Long acceptance")?.body ?? "";
+			const body = gh.issues.find((issue) => issue.title === "[tracking] long Long acceptance")?.body ?? "";
 			expect(body).toContain("`acc-long-acceptance`: Deliver the long acceptance result");
 			expect(body).not.toContain(assertion);
 			expect(body).not.toContain(".intent.json");

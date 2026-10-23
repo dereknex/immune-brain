@@ -93,7 +93,8 @@ describe("Roadmap Plan boundary authoring contract", () => {
 
 	it("keeps scope pressure advisory and session lifecycle user-owned", () => {
 		expectAll(PLANNER, [
-			"File count, tokens, compactions, elapsed time, and review rounds are evidence for judgment, not universal gates",
+			// branch-boundary-r2-followups D6: file count is capped by the Slice size rule; the rest stays advisory.
+			"Tokens, compactions, elapsed time, and review rounds are evidence for judgment, not universal gates; candidate file estimates follow the Slice size cap below",
 			"Session Lifecycle Ownership",
 			"The user chooses the current or a new session",
 			"Tokens, compactions, tool counts, elapsed time, and review rounds never trigger automatic session creation or termination",

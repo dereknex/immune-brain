@@ -17,7 +17,9 @@ describe("published goal-driven run contract", () => {
   expect(batch).toContain("Parent selection is the batch opt-in; it needs no separate chat question");
   // branch-boundary-r2 D18: every batch runs Lanes, so there is no serial mode to share commands with.
   expect(batch).toContain("Every new batch uses runtime-created Lanes");
-  expect(batch).toContain("The confirmed batch records `final_verification` commands");
+  // branch-boundary-r2-followups D1: a new batch must supply final verification.
+  expect(batch).toContain("new batch must supply a non-empty `final_verification` list");
+  expect(batch).toContain("The confirmed batch records these commands");
   expect(batch).toContain("whole-plan proof");
   expect(batch).toContain("fresh single-task native Enrollment");
  });

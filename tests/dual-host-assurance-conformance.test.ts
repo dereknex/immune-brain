@@ -543,7 +543,7 @@ function sharedKernel(
 			holder = token;
 			return projection({ lifecycle, artifactState, nextObligation, risk, recordRevision, contract });
 		},
-		readTaskRecord: async () => ({ record: { ...(contract ? { contract } : {}), findings: [] } }),
+		readTaskRecord: async () => ({ revision: recordRevision, record: { ...(contract ? { contract } : {}), findings: [] } }),
 		readTaskIntent: async () => ({ token: "intent-token" }),
 		buildAssurance: async (_root, _task, role) => ({
 			snapshot: snapshot(role, risk),

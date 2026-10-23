@@ -175,7 +175,7 @@ function session(root: string, identity: { getSessionId?: () => unknown } | null
 		settle: (outcome: string, canContinue: boolean) => emit("agent_before_settle", { type: "agent_before_settle", outcome, continue: false,
 			context: { canContinue, pendingMessages: [] } }),
 		enroll: () => failureOf(tool("imm_canary_enrollment").execute(randomUUID(), { action: "new", task_id: TASK }, undefined, undefined, ctx)),
-		batch: () => failureOf(tool("start_unattended_batch").execute(randomUUID(), { initiative_slug: SLUG }, undefined, undefined, ctx)),
+		batch: () => failureOf(tool("start_unattended_batch").execute(randomUUID(), { initiative_slug: SLUG, final_verification: ["bun test"] }, undefined, undefined, ctx)),
 		retire: () => failureOf(tool("retire_stale_batch").execute("toolu_retire", { initiative_slug: SLUG }, undefined, undefined, ctx)),
 		authorize: () => failureOf(tool("imm_kernel_canary").execute(randomUUID(), { task_id: TASK, action: { op: "request_authorization" } }, undefined, undefined, ctx)),
 	};
