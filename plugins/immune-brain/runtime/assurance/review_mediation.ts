@@ -31,6 +31,8 @@ function verdictFingerprint(raw: Record<string, unknown>): string {
 		decision: raw.decision ?? null,
 		approval: raw.approval ?? null,
 		findings: raw.findings ?? null,
+		inspected_paths: raw.inspected_paths ?? null,
+		reason: raw.reason ?? null,
 	});
 }
 

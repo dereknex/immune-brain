@@ -11,7 +11,9 @@ import {
 	parseHookStdin,
 	readAgentTranscriptResult,
 } from "../plugins/immune-brain/runtime/claude/review_host";
-import type { ReviewRequest } from "../plugins/immune-brain/runtime/assurance/host_port";
+import type { ReviewRequest, HostReviewReservation } from "../plugins/immune-brain/runtime/assurance/host_port";
+import { submitMediatedReview } from "../plugins/immune-brain/runtime/assurance/review_mediation";
+import { reviewIncompleteFixture } from "./fixtures/review-incomplete-fixture";
 
 /**
  * Conformance fixtures recorded from Claude Code 2.1.261, not reconstructed from
@@ -127,6 +129,32 @@ function reservedPrompt(): string {
 }
 
 describe("claude review host: dispatch envelope shape", () => {
+	test("Claude observed async incomplete receipt reaches durable non-verdict settlement", async () => {
+		const root = mkdtempSync(join(tmpdir(), "claude-incomplete-receipt-"));
+		const f = reviewIncompleteFixture();
+		try {
+			const host = new ClaudeReviewHost(new FileHookEventLog(root));
+			let reservation: HostReviewReservation;
+			const prepare = host.prepareReview.bind(host);
+			host.prepareReview = request => reservation = prepare(request);
+			f.ports.host = host;
+			const c = f.create();
+			for (let round = 0; round < 2; round++) {
+				expect((await c.advance(f.taskId, f.ctx)).state).toBe("review_ready");
+				const s = await f.snapshot(c), outcome = JSON.stringify(f.incomplete(s));
+				const agentId = `${RECORDED_AGENT_ID}-${round}`, file = join(root, `review-${round}.jsonl`);
+				writeFileSync(file, transcriptLine(agentId, outcome), { mode: 0o600 });
+				const prompt = (reservation!.dispatch as { prompt: string }).prompt;
+				observeDispatch(host, { sessionId: RECORDED_SESSION, agentId,
+					envelope: { ...RECORDED_LAUNCH_ENVELOPE, agentId, outputFile: file, prompt }, prompt });
+				const result = await submitMediatedReview(c, f.ctx, f.taskId, undefined, () => host.inspectReviewForTask(f.taskId));
+				expect(result).toMatchObject(round === 0 ? { state: "blocked", reason: "review_incomplete_retry", recovery_action: "advance_assurance" } : { state: "review_incomplete", recovery_action: expect.any(String) });
+			}
+			expect(f.record().record!.findings).toEqual([]);
+			expect(f.record().record!.attestations.map(a => a.kind)).toEqual(["qa"]);
+			expect((await c.advance(f.taskId, f.ctx)).state).toBe("review_incomplete");
+		} finally { f.cleanup(); rmSync(root, { recursive: true, force: true }); }
+	}, 60_000);
 	test("prepareReview carries only the parameters the Claude Agent tool accepts", () => {
 		const host = new ClaudeReviewHost();
 		const reservation = host.prepareReview(reviewRequest());

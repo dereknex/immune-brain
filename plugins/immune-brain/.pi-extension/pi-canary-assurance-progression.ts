@@ -15,6 +15,7 @@ export {
 	snapshotDigest,
 	buildReviewPrompt,
 	parseAssuranceVerdict,
+	parseChildVerdict,
 	invocationRegistry,
 	QA_MIN_JOB_TIMEOUT_SECONDS,
 	QA_MAX_JOB_TIMEOUT_SECONDS,
@@ -29,6 +30,8 @@ export {
 export type {
 	GithubTerminalProjectionInput,
 	AssuranceVerdict,
+	ReviewIncompleteOutcome,
+	ChildReviewResult,
 	ReviewRevisionIdentity,
 	SnapshotDescriptor,
 	QaVerificationProgress,

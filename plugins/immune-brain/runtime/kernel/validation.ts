@@ -726,6 +726,7 @@ export function assertKernelInvariantsV3(intentRaw: TaskIntentV1, recordRaw: Tas
 // ---------------------------------------------------------------------------
 
 const ACTION_V2_TYPES = [
+	"record_review_incomplete",
 	"record_finding",
 	"resolve_finding",
 	"refute_finding",
@@ -800,6 +801,15 @@ export function parseTaskAction(raw: unknown): TaskAction {
 
 	let action: TaskAction | null = null;
 	switch (base.type) {
+		case "record_review_incomplete": {
+			rejectUnknown(value, [...ACTION_BASE_FIELDS, "intent_content_hash", "turn_budget", "inspected_paths", "reason"], "action", violations);
+			if (typeof value.intent_content_hash !== "string" || !SHA256_HEX.test(value.intent_content_hash)) violations.push("invalid incomplete intent hash");
+			if (!Number.isSafeInteger(value.turn_budget) || Number(value.turn_budget) < 1 || Number(value.turn_budget) > 96) violations.push("invalid incomplete turn budget");
+			if (!Array.isArray(value.inspected_paths) || value.inspected_paths.some(p => typeof p !== "string" || !p.trim()) || new Set(value.inspected_paths).size !== value.inspected_paths.length) violations.push("invalid incomplete inspected_paths");
+			if (typeof value.reason !== "string" || !value.reason.trim() || /[\r\n\u2028\u2029]/.test(value.reason)) violations.push("incomplete reason must be a non-empty single line");
+			action = { ...base, type: "record_review_incomplete", intent_content_hash: value.intent_content_hash as string, turn_budget: value.turn_budget as number, inspected_paths: value.inspected_paths as string[], reason: value.reason as string };
+			break;
+		}
 		case "record_finding": {
 			rejectUnknown(
 				value,

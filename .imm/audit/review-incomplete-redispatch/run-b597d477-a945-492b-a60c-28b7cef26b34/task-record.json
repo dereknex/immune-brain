@@ -1,0 +1,168 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "review-incomplete-redispatch",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "review-incomplete-redispatch",
+    "goal": "A Reviewer that cannot cover the change within its turn budget returns `incomplete`, which is recorded as an execution outcome rather than a verdict; the next dispatch for the same snapshot gets twice the budget up to 96 turns, and a second incomplete round stops the run with `review_incomplete` (Spec branch-boundary-r2-followups D3).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "A Review child verdict with decision `incomplete`, `inspected_paths` and a one-line reason is accepted without recording a finding or consuming a rework round, releases the reservation, and the next Review dispatch for the same snapshot requests `min(96, 2 x previous)` turns; an `incomplete` carrying `approval` or `findings`, or submitted for the QA role, is rejected as malformed.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-incomplete-redispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "A second `incomplete` for the same snapshot stops the run with `review_incomplete` and one recovery action instead of redispatching, and the recorded incomplete count survives a coordinator restart so the dispatch after restart still uses the raised budget.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-incomplete-redispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Both Hosts carry an observed `incomplete` Reviewer result through `submit_review` to that non-verdict outcome, and the Review prompt shows the `incomplete` shape and tells the Reviewer to use it instead of a coverage finding.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-review-outcome-evidence.test.ts\",\n      \"tests/claude-review-host-async-agent.test.ts\",\n      \"tests/review-incomplete-redispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "The generated Claude MCP bundle matches the runtime source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/build-claude-plugin.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "The project typechecks.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/review-incomplete-redispatch.md",
+      "docs/plans/review-incomplete-redispatch.intent.json",
+      "docs/specs/branch-boundary-r2-followups.spec.md",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/agents/immune-brain-reviewer.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/assurance/host_port.ts",
+      "plugins/immune-brain/runtime/claude/review_host.ts",
+      "plugins/immune-brain/runtime/claude/run_continuation.ts",
+      "plugins/immune-brain/runtime/kernel/reducer.ts",
+      "tests/claude-review-host-async-agent.test.ts",
+      "tests/pi-canary-review-outcome-evidence.test.ts",
+      "tests/review-incomplete-redispatch.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/review-incomplete-redispatch.intent.json",
+    "content_hash": "sha256:0c072603d27587809050604e21e848c34c0cc870ce594c840a03d338e962a8fe"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:0c072603d27587809050604e21e848c34c0cc870ce594c840a03d338e962a8fe",
+  "git_base_head": "1c4fbf6085d83fc63e135fa26bb1f0d53c32e0e6",
+  "attestations": [
+    {
+      "id": "approval-qa-953bb301",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:0c072603d27587809050604e21e848c34c0cc870ce594c840a03d338e962a8fe",
+      "diff_hash": "sha256:e41d83214b92b8abcbc3a693c38cb2d13b615d1ca515655f63a821f7e05cd8cf",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 project verification check(s) passed; execution=sha256:aa569cba7f3158bee7c3a6e9ed5ecbf7b5bad16c5dc7486811ea21c925c241c2",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:aa569cba7f3158bee7c3a6e9ed5ecbf7b5bad16c5dc7486811ea21c925c241c2"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:aa569cba7f3158bee7c3a6e9ed5ecbf7b5bad16c5dc7486811ea21c925c241c2"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:aa569cba7f3158bee7c3a6e9ed5ecbf7b5bad16c5dc7486811ea21c925c241c2"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:aa569cba7f3158bee7c3a6e9ed5ecbf7b5bad16c5dc7486811ea21c925c241c2"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:aa569cba7f3158bee7c3a6e9ed5ecbf7b5bad16c5dc7486811ea21c925c241c2"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-08a2ac06",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:0c072603d27587809050604e21e848c34c0cc870ce594c840a03d338e962a8fe",
+      "diff_hash": "sha256:e41d83214b92b8abcbc3a693c38cb2d13b615d1ca515655f63a821f7e05cd8cf",
+      "actor_id": "parent-mediated-review",
+      "summary": "已验证 immutable revision 的单一 parent、tree、manifest digest 与全部 25 个文件的完整 diff；未发现阻断问题。AC1–AC5 使用 Kernel 提供的通过证据，未重跑测试或检查 live worktree。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "1c4fbf6085d83fc63e135fa26bb1f0d53c32e0e6",
+        "review_commit": "30ba02b489103ac15522d03ddc9447e0dff8a7dd",
+        "review_tree": "eb7344bf743b8a0da8eeb098b95d2fadcdeea826",
+        "manifest_digest": "sha256:a4787f2192dbd4a8b8cb3c54da87b27cdc1824313da884b314043419bb7c04be"
+      },
+      "reviewer_verdict_sha256": "sha256:27a7ef4167e88358cb07f1707f103cdf40350bb0dbcce642a3cda5b7b1af3085"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:review-incomplete-redispatch:2026-10-23T05:09:38.811Z",
+      "at": "2026-10-23T05:09:38.811Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-incomplete-redispatch.intent.json"
+    },
+    {
+      "id": "record_approval:review-incomplete-redispatch:2026-10-23T05:12:47.493Z",
+      "at": "2026-10-23T05:12:47.493Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-953bb301\naction_v2_sha256:522ddc04c1e01a4903e4fe61f17b7a332bd8f82bc44a980a722312aa79a079d0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-113ac0e35743c916",
+        "issued_at": "2026-10-23T05:12:47.494Z"
+      }
+    },
+    {
+      "id": "record_approval:review-incomplete-redispatch:2026-10-23T05:16:08.315Z",
+      "at": "2026-10-23T05:16:08.315Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-08a2ac06\naction_v2_sha256:6076067322b47b39826d0a8f0ab5fcbfd239fb18734d338a05ae61c2a8efbded",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-8f1a084ddd6794ac",
+        "issued_at": "2026-10-23T05:16:08.315Z"
+      }
+    },
+    {
+      "id": "complete:review-incomplete-redispatch:2026-10-23T05:16:11.027Z",
+      "at": "2026-10-23T05:16:11.027Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:69ac434ac102520b5bf40befd0e33d0e45b4421660de73105c3394c8842d8341"
+    }
+  ]
+}

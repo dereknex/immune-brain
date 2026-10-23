@@ -3,7 +3,7 @@
 // ReducedTaskMutation; the caller cannot construct or serialize it.
 
 import { createHash } from "node:crypto";
-import { completionDecision } from "./completion";
+import { completionDecision, projectTask } from "./completion";
 import { NO_RISK_FLOOR, type RiskFloor } from "./risk_floor";
 import { anchorForEvidence, isFreshPassingQaAttestation, refutationIdentity, refutationIsLive } from "./refutation";
 import {
@@ -226,6 +226,25 @@ export function effectiveReviewRoundBudget(record: TaskRecord): number {
 	return REVIEW_REWORK_ROUND_BUDGET + (record.review_round_budget_extension ?? 0);
 }
 
+/** Stable across factual history writes, manifest regeneration and coordinator restarts. */
+export function reviewIncompleteHistory(history: ReadonlyArray<{ type: string; reason: string }> = [], identity: { intent_content_hash: string; diff_hash: string }): { count: number; previous_budget: number | null } {
+	let count = 0, previous_budget: number | null = null;
+	for (const entry of history) {
+		if (entry.type !== "record_review_incomplete") continue;
+		const lines = entry.reason.split("\n");
+		if (lines.length !== 2) throw new KernelInvariantError(["invalid incomplete history"]);
+		let facts: Record<string, unknown>;
+		try { facts = JSON.parse(lines[0]!); } catch { throw new KernelInvariantError(["invalid incomplete history"]); }
+		if (!facts || Object.keys(facts).sort().join(",") !== "diff_hash,inspected_paths,intent_content_hash,reason,turn_budget" || !recordedActionFingerprint(entry.reason)) throw new KernelInvariantError(["invalid incomplete history"]);
+		const parsed = parseTaskAction({ ...facts, type: "record_review_incomplete", event_id: "history", at: "history", actor_id: "history", expected_record_hash: facts.diff_hash, expected_workspace_hash: facts.diff_hash });
+		if (parsed.type !== "record_review_incomplete") throw new KernelInvariantError(["invalid incomplete history"]);
+		if (parsed.intent_content_hash !== identity.intent_content_hash || parsed.diff_hash !== identity.diff_hash) continue;
+		if (count >= 2 || (previous_budget !== null && parsed.turn_budget !== Math.min(96, previous_budget * 2))) throw new KernelInvariantError(["invalid incomplete history sequence"]);
+		count++; previous_budget = parsed.turn_budget;
+	}
+	return { count, previous_budget };
+}
+
 export function reduceTask(
 	recordRaw: TaskRecord,
 	actionRaw: TaskAction,
@@ -286,6 +305,16 @@ export function reduceTask(
 		throw new KernelInvariantError(["diff_hash must be a canonical sha256 hash"]);
 
 	switch (action.type) {
+		case "record_review_incomplete": {
+			if (record.lifecycle !== "active" || record.artifact_state !== "frozen" || action.intent_content_hash !== record.intent_ref.content_hash)
+				throw new KernelInvariantError(["incomplete requires the current frozen active snapshot"]);
+			if (!changedPaths || action.inspected_paths.some(path => !changedPaths.includes(path))) throw new KernelInvariantError(["incomplete inspected_paths must be a subset of changed paths"]);
+			if (projectTask(record.intent_snapshot, record, action.diff_hash, action.intent_content_hash, changedPaths, floor).next_obligation !== "run_review") throw new KernelInvariantError(["incomplete requires fresh QA and a pending Review"]);
+			const prior = reviewIncompleteHistory(record.history, action);
+			if (prior.count >= 2 || (prior.previous_budget !== null && action.turn_budget !== Math.min(96, prior.previous_budget * 2))) throw new KernelInvariantError(["incomplete round budget exhausted or invalid"]);
+			appendHistory(record, action, from, JSON.stringify({ intent_content_hash: action.intent_content_hash, diff_hash: action.diff_hash, turn_budget: action.turn_budget, inspected_paths: action.inspected_paths, reason: action.reason }), null);
+			break;
+		}
 		case "record_finding": {
 			if (record.lifecycle !== "active")
 				throw new KernelInvariantError([

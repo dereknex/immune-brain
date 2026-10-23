@@ -322,7 +322,16 @@ export interface TaskActionBase {
 	diff_hash: string;
 }
 
+export interface ReviewIncompleteFacts {
+	intent_content_hash: string;
+	diff_hash: string;
+	turn_budget: number;
+	inspected_paths: string[];
+	reason: string;
+}
+
 export type TaskAction =
+	| (TaskActionBase & ReviewIncompleteFacts & { type: "record_review_incomplete" })
 	| (TaskActionBase & { type: "record_finding"; finding: TaskFinding })
 	| (TaskActionBase & { type: "resolve_finding"; finding_id: string })
 	| (TaskActionBase & {

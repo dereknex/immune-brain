@@ -242,8 +242,8 @@ describe("host-neutral assurance coordinator", () => {
 		// One build, two projections: a Host whose agent carries no instructions
 		// gets `prompt`; a Host whose definition carries them gets
 		// `snapshotPrompt`. They are the same facts, so the two cannot disagree.
-		expect(request.snapshotPrompt).toBe(buildReviewSnapshotPrompt(snapshot("review"), request.evidencePath));
-		expect(request.prompt).toBe(buildReviewPrompt(snapshot("review"), request.evidencePath));
+		expect(request.snapshotPrompt).toBe(buildReviewSnapshotPrompt(snapshot("review"), request.evidencePath, request.maxTurns));
+		expect(request.prompt).toBe(buildReviewPrompt(snapshot("review"), request.evidencePath, request.maxTurns));
 		expect(request.prompt.endsWith(request.snapshotPrompt)).toBe(true);
 		expect(request.snapshotPrompt.length).toBeLessThan(request.prompt.length);
 	});

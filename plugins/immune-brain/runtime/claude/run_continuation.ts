@@ -221,8 +221,14 @@ export async function runContinuationHookOutput(payload: Record<string, unknown>
 					metadata.reviewer_prompt = digestOfReviewerBytes(params.prompt); metadata.reviewer_call_id = null; metadata.reviewer_agent_id = null; metadata.review = "ready";
 				}
 			}
+			if (["advance_assurance", "submit_review"].includes(operation) && response?.state === "review_incomplete") {
+				pauseRun(metadata, sessionId, root, `review_incomplete: ${String(response.recovery_action)}`);
+				return null;
+			}
 			if (operation === "submit_review") {
-				if (["blocked", "rejected", "failed"].includes(String(response?.state))) {
+				if (response?.reason === "review_incomplete_retry") {
+					metadata.review = "unobserved"; metadata.reviewer_prompt = null; metadata.reviewer_call_id = null; metadata.recovery_action = null;
+				} else if (["blocked", "rejected", "failed"].includes(String(response?.state))) {
 					metadata.review = "rejected";
 					const recovery = response?.recovery_action ?? response?.next_action;
 					metadata.recovery_action = typeof recovery === "string" ? recovery : null;

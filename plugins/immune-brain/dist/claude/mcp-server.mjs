@@ -2202,6 +2202,19 @@ function parseTaskAction(raw) {
     violations.push("action.diff_hash must be sha256:<64 hex>");
   let action = null;
   switch (base.type) {
+    case "record_review_incomplete": {
+      rejectUnknown2(value, [...ACTION_BASE_FIELDS, "intent_content_hash", "turn_budget", "inspected_paths", "reason"], "action", violations);
+      if (typeof value.intent_content_hash !== "string" || !SHA256_HEX.test(value.intent_content_hash))
+        violations.push("invalid incomplete intent hash");
+      if (!Number.isSafeInteger(value.turn_budget) || Number(value.turn_budget) < 1 || Number(value.turn_budget) > 96)
+        violations.push("invalid incomplete turn budget");
+      if (!Array.isArray(value.inspected_paths) || value.inspected_paths.some((p) => typeof p !== "string" || !p.trim()) || new Set(value.inspected_paths).size !== value.inspected_paths.length)
+        violations.push("invalid incomplete inspected_paths");
+      if (typeof value.reason !== "string" || !value.reason.trim() || /[\r\n\u2028\u2029]/.test(value.reason))
+        violations.push("incomplete reason must be a non-empty single line");
+      action = { ...base, type: "record_review_incomplete", intent_content_hash: value.intent_content_hash, turn_budget: value.turn_budget, inspected_paths: value.inspected_paths, reason: value.reason };
+      break;
+    }
     case "record_finding": {
       rejectUnknown2(value, [...ACTION_BASE_FIELDS, "finding"], "action", violations);
       action = {
@@ -2440,6 +2453,7 @@ var init_validation = __esm(() => {
   ];
   SHA256_HEX = /^sha256:[a-f0-9]{64}$/;
   ACTION_V2_TYPES = [
+    "record_review_incomplete",
     "record_finding",
     "resolve_finding",
     "refute_finding",
@@ -2786,6 +2800,35 @@ function findingsDigestV2(findings) {
 function effectiveReviewRoundBudget(record) {
   return REVIEW_REWORK_ROUND_BUDGET + (record.review_round_budget_extension ?? 0);
 }
+function reviewIncompleteHistory(history = [], identity) {
+  let count = 0, previous_budget = null;
+  for (const entry of history) {
+    if (entry.type !== "record_review_incomplete")
+      continue;
+    const lines = entry.reason.split(`
+`);
+    if (lines.length !== 2)
+      throw new KernelInvariantError(["invalid incomplete history"]);
+    let facts;
+    try {
+      facts = JSON.parse(lines[0]);
+    } catch {
+      throw new KernelInvariantError(["invalid incomplete history"]);
+    }
+    if (!facts || Object.keys(facts).sort().join(",") !== "diff_hash,inspected_paths,intent_content_hash,reason,turn_budget" || !recordedActionFingerprint(entry.reason))
+      throw new KernelInvariantError(["invalid incomplete history"]);
+    const parsed = parseTaskAction({ ...facts, type: "record_review_incomplete", event_id: "history", at: "history", actor_id: "history", expected_record_hash: facts.diff_hash, expected_workspace_hash: facts.diff_hash });
+    if (parsed.type !== "record_review_incomplete")
+      throw new KernelInvariantError(["invalid incomplete history"]);
+    if (parsed.intent_content_hash !== identity.intent_content_hash || parsed.diff_hash !== identity.diff_hash)
+      continue;
+    if (count >= 2 || previous_budget !== null && parsed.turn_budget !== Math.min(96, previous_budget * 2))
+      throw new KernelInvariantError(["invalid incomplete history sequence"]);
+    count++;
+    previous_budget = parsed.turn_budget;
+  }
+  return { count, previous_budget };
+}
 function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths, floor = NO_RISK_FLOOR) {
   const previous = parseTaskRecord(recordRaw);
   assertKernelInvariantsV3(previous.intent_snapshot, previous);
@@ -2824,6 +2867,19 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths, f
   if (!/^sha256:[a-f0-9]{64}$/.test(diffHash))
     throw new KernelInvariantError(["diff_hash must be a canonical sha256 hash"]);
   switch (action.type) {
+    case "record_review_incomplete": {
+      if (record.lifecycle !== "active" || record.artifact_state !== "frozen" || action.intent_content_hash !== record.intent_ref.content_hash)
+        throw new KernelInvariantError(["incomplete requires the current frozen active snapshot"]);
+      if (!changedPaths || action.inspected_paths.some((path) => !changedPaths.includes(path)))
+        throw new KernelInvariantError(["incomplete inspected_paths must be a subset of changed paths"]);
+      if (projectTask(record.intent_snapshot, record, action.diff_hash, action.intent_content_hash, changedPaths, floor).next_obligation !== "run_review")
+        throw new KernelInvariantError(["incomplete requires fresh QA and a pending Review"]);
+      const prior = reviewIncompleteHistory(record.history, action);
+      if (prior.count >= 2 || prior.previous_budget !== null && action.turn_budget !== Math.min(96, prior.previous_budget * 2))
+        throw new KernelInvariantError(["incomplete round budget exhausted or invalid"]);
+      appendHistory(record, action, from, JSON.stringify({ intent_content_hash: action.intent_content_hash, diff_hash: action.diff_hash, turn_budget: action.turn_budget, inspected_paths: action.inspected_paths, reason: action.reason }), null);
+      break;
+    }
     case "record_finding": {
       if (record.lifecycle !== "active")
         throw new KernelInvariantError([
@@ -8071,6 +8127,13 @@ function createCanaryApplication(registry) {
     let action;
     let capability;
     switch (operation.op) {
+      case "record_review_incomplete": {
+        const expected = operation.snapshot;
+        if (expected.record_revision !== snapshot.record_revision || expected.workspace_revision !== snapshot.workspace_revision || expected.intent_content_hash !== snapshot.intent_content_hash || expected.diff_hash !== diffHash)
+          throw new KernelInvariantError(["Review incomplete snapshot changed"]);
+        action = { ...base, type: "record_review_incomplete", intent_content_hash: snapshot.intent_content_hash, turn_budget: operation.turn_budget, inspected_paths: operation.inspected_paths, reason: operation.reason };
+        break;
+      }
       case "record_finding":
         action = {
           ...base,
@@ -9134,6 +9197,7 @@ var init_role_prompt_bridge = __esm(() => {
     `Execution outcomes for every acceptance were verified deterministically by the Kernel QA layer before this review and are embedded in this bundle under outcomes (the immutable evidence file, acceptance_id -> {status, summary}); do not re-execute descriptors and do not treat the absence of local test runs as a finding. Your review covers evidence provenance, code correctness, regressions, security, and missing tests against the embedded assertions and code.`,
     "Reserve the final turn for exactly one strict JSON verdict. Reply with ONLY that object, without markdown fences or commentary.",
     `Every rework finding must carry machine-checkable provenance: evidence.trigger (the concrete inputs or state that reach the defect), a non-empty evidence.caller_chain (ordered repository paths or symbols), and evidence.violated {kind: "acceptance"|"security_boundary", ref}. The anchor is derived from that evidence; a finding without it is rejected and the correction must be resubmitted.`,
+    `If the turn budget cannot cover every changed path, return decision "incomplete" with inspected_paths (a unique subset of changed paths actually read) and a non-empty single-line reason. Omit approval and findings entirely. Incomplete coverage is an execution outcome, never a finding or an assurance verdict.`,
     `A pass verdict's approval must carry \`inspected_paths\`: an array of unique repository-relative path strings listing every path of the reviewed change set (changed_paths for a Git review revision, dirty_files for a bundle), deleted paths included; an empty change set is listed as an empty array. A path may be listed only after its diff was read. A pass that omits any changed path, lists a path outside the change set, or duplicates a path is rejected as a correctable invalid verdict.`
   ];
 });
@@ -9533,7 +9597,9 @@ function classifyReviewWorkload(snapshot, evidence) {
 function reviewChangedPathCount(evidence) {
   return "changed_paths" in evidence ? Object.keys(evidence.changed_paths).length : Object.keys(evidence.dirty_files).length;
 }
-function reviewTurnBudget(workload, changedPaths = 0) {
+function reviewTurnBudget(workload, changedPaths = 0, previousBudget = null) {
+  if (previousBudget !== null)
+    return Math.min(96, previousBudget * 2);
   if (workload === "quick")
     return 12;
   if (workload === "standard")
@@ -9553,7 +9619,7 @@ function reviewDeltaLines(delta) {
     `Changed paths outside delta_paths were inspected by earlier rounds at ${delta.prior_review_commit}; list them in approval.inspected_paths by carry-forward without re-reading their full diff. An unread or truncated read is not a defect and is never a blocking finding.`
   ];
 }
-function buildReviewSnapshotPrompt(snapshot, evidencePath) {
+function buildReviewSnapshotPrompt(snapshot, evidencePath, turnBudget) {
   if (snapshot.role !== "review")
     throw new Error("native review prompt requires review role");
   const acceptance = snapshot.acceptance.map((item) => `- ${item.id}: ${item.assertion}`).join(`
@@ -9573,6 +9639,7 @@ function buildReviewSnapshotPrompt(snapshot, evidencePath) {
   ];
   return [
     ...evidenceContract,
+    ...turnBudget === undefined ? [] : [`Review turn budget: ${turnBudget}. Reserve the final turn for the structured result; return incomplete if coverage cannot finish within this budget.`],
     `Snapshot digest: ${digest}`,
     `TaskRecord revision: ${snapshot.record_revision}`,
     revision ? `Intent revision ${snapshot.intent_revision} (hash ${snapshot.intent_content_hash}), diff ${snapshot.diff_hash}, review revision ${revision.review_commit} (base ${revision.base_head}, tree ${revision.review_tree}, manifest ${revision.manifest_digest}), state ${snapshot.lifecycle}:${snapshot.artifact_state}.` : `Intent revision ${snapshot.intent_revision} (hash ${snapshot.intent_content_hash}), diff ${snapshot.diff_hash}, review bundle ${snapshot.review_bundle_digest}, state ${snapshot.lifecycle}:${snapshot.artifact_state}.`,
@@ -9582,11 +9649,12 @@ function buildReviewSnapshotPrompt(snapshot, evidencePath) {
     `PASS shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>","inspected_paths":["<every changed path of the reviewed change set>"]}}`,
     `A pass verdict may carry non-blocking notes as findings, but every one of them must set kind "advisory"; a blocking finding is a rework verdict and must omit approval: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>","inspected_paths":["<every changed path of the reviewed change set>"]},"findings":[{"id":"review-1","kind":"advisory","acceptance_id":"<id|null>","summary":"<one line>","evidence":{"trigger":"<concrete inputs or state>","caller_chain":["<path-or-symbol>"],"violated":{"kind":"acceptance|security_boundary","ref":"<acceptance id or boundary>"}}}]}`,
     `REWORK shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"rework","findings":[{"id":"review-1","kind":"blocking","acceptance_id":"<id|null>","summary":"<one line>","evidence":{"trigger":"<concrete input or state → observable wrong result>","caller_chain":["<path-or-symbol>"],"violated":{"kind":"acceptance|security_boundary","ref":"<acceptance id or boundary>"}}}]}`,
+    `INCOMPLETE shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"incomplete","inspected_paths":["<only changed paths actually inspected>"],"reason":"<non-empty single line>"}. If coverage cannot finish within the turn budget, return incomplete, never a coverage finding. Omit approval and findings entirely; inspected_paths must be a unique subset of changed paths.`,
     `REWORK verdicts must omit the approval field entirely; do not emit "approval": null. A rework carries only blocking findings, at least one; a note that blocks nothing is an advisory finding on a pass verdict, never on rework.`
   ].join(`
 `);
 }
-function buildReviewPrompt(snapshot, evidencePath) {
+function buildReviewPrompt(snapshot, evidencePath, turnBudget) {
   if (snapshot.role !== "review")
     throw new Error("native review prompt requires review role");
   const digest = snapshotDigest(snapshot);
@@ -9602,7 +9670,7 @@ function buildReviewPrompt(snapshot, evidencePath) {
   return [
     rolePacket.prompt,
     ...STATIC_REVIEW_RULES,
-    buildReviewSnapshotPrompt(snapshot, evidencePath)
+    buildReviewSnapshotPrompt(snapshot, evidencePath, turnBudget)
   ].join(`
 `);
 }
@@ -9638,7 +9706,7 @@ function parseVerdictEvidence(value, index) {
     }
   };
 }
-function parseAssuranceVerdict(input, snapshot) {
+function readChildVerdict(input) {
   let raw;
   if (typeof input === "string") {
     const first = input.indexOf("{");
@@ -9656,6 +9724,28 @@ function parseAssuranceVerdict(input, snapshot) {
   } else {
     throw new Error("reviewer verdict must be a JSON object");
   }
+  return raw;
+}
+function parseChildVerdict(input, snapshot) {
+  const raw = readChildVerdict(input);
+  if (raw.decision !== "incomplete")
+    return parseAssuranceVerdict(raw, snapshot);
+  if (snapshot.role !== "review" || raw.role !== "review")
+    throw new Error("incomplete is only valid for Review");
+  if (raw.contract !== "assurance_kernel/assurance_verdict/v2" || raw.task_id !== snapshot.task_id || raw.snapshot_digest !== snapshotDigest(snapshot))
+    throw new Error("incomplete snapshot identity mismatch");
+  const unknown = Object.keys(raw).find((key) => !["contract", "role", "task_id", "snapshot_digest", "decision", "inspected_paths", "reason"].includes(key));
+  if (unknown)
+    throw new Error(`incomplete has unknown field: ${unknown}`);
+  if (typeof raw.reason !== "string" || !raw.reason.trim() || /[\r\n\u2028\u2029]/.test(raw.reason))
+    throw new Error("incomplete reason must be a non-empty single line");
+  const paths = raw.inspected_paths;
+  if (!Array.isArray(paths) || paths.some((path) => typeof path !== "string" || !snapshot.dirty_files.includes(path)) || new Set(paths).size !== paths.length)
+    throw new Error("incomplete inspected_paths must be a unique subset of changed paths");
+  return { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: snapshot.task_id, snapshot_digest: snapshotDigest(snapshot), decision: "incomplete", inspected_paths: paths, reason: raw.reason };
+}
+function parseAssuranceVerdict(input, snapshot) {
+  const raw = readChildVerdict(input);
   const allowed = ["contract", "role", "task_id", "snapshot_digest", "decision", "approval", "findings"];
   const unknown = Object.keys(raw).find((key) => !allowed.includes(key));
   if (unknown)
@@ -9844,12 +9934,12 @@ class AssuranceCoordinator {
     const operationId = this.activeOperations.get(taskId);
     if (operationId)
       return { state: "running", operation: "qa", operation_id: operationId, deadline_seconds: QA_JOB_TIMEOUT_SECONDS };
-    const reservation = this.reviewReservations.get(taskId);
-    if (reservation)
-      return { state: "review_ready", operation: "review", operation_id: reservation.operationId };
     const unknown = this.unknownOperations.get(taskId);
     if (unknown)
       return { state: "settlement_unknown", operation: unknown.operation, operation_id: unknown.operationId, reason: unknown.reason };
+    const reservation = this.reviewReservations.get(taskId);
+    if (reservation)
+      return { state: "review_ready", operation: "review", operation_id: reservation.operationId };
     return null;
   }
   openInvocation(taskId) {
@@ -10028,9 +10118,18 @@ class AssuranceCoordinator {
       if (projection.claim.task_id !== taskId)
         return { state: "blocked", reason: `backend claim belongs to ${projection.claim.task_id}, not ${taskId}`, recovery_error: "fresh_kernel_projection_unavailable" };
       initialProjectionAvailable = true;
-      if (projection.projection.lifecycle === "active")
-        this.unknownOperations.delete(taskId);
       const parked = await this.ports.readTaskRecord(ctx.cwd, taskId);
+      if (this.unknownOperations.has(taskId)) {
+        if (!parked.record || parked.revision !== projection.projection.record_revision)
+          throw new Error("cannot reconcile unknown settlement");
+        reviewIncompleteHistory(parked.record.history, projection.projection);
+        const pending = this.reviewReservations.get(taskId);
+        if (pending)
+          this.releaseReviewReservation(taskId, pending);
+        this.unknownOperations.delete(taskId);
+      }
+      if (reviewIncompleteHistory(parked.record?.history, projection.projection).count >= 2)
+        return { state: "review_incomplete", reason: "Review coverage remained incomplete after two rounds", recovery_action: REVIEW_INCOMPLETE_RECOVERY };
       ensureOperationLive();
       if (parked.record?.findings.some((finding) => finding.kind === "replan_required" && finding.status === "open"))
         return { state: "blocked", reason: "review requires a durable replan; the task is paused for a user decision" };
@@ -10217,17 +10316,25 @@ class AssuranceCoordinator {
         throw error;
       }
       let hostReservation;
+      let turnBudget;
       try {
+        const stored = await this.ports.readTaskRecord(ctx.cwd, taskId);
+        const rounds = reviewIncompleteHistory(stored.record?.history, review.snapshot);
+        if (rounds.count >= 2) {
+          evidence.remove();
+          return { state: "review_incomplete", reason: "Review coverage remained incomplete after two rounds", recovery_action: REVIEW_INCOMPLETE_RECOVERY };
+        }
         ensureOperationLive();
         const reviewEvidence = review.reviewManifest ?? review.reviewBundle;
         const workload = classifyReviewWorkload(review.snapshot, reviewEvidence);
+        turnBudget = reviewTurnBudget(workload, reviewChangedPathCount(reviewEvidence), rounds.previous_budget);
         hostReservation = this.ports.host.prepareReview({
           taskId,
           operationId,
-          prompt: buildReviewPrompt(review.snapshot, evidence.path),
-          snapshotPrompt: buildReviewSnapshotPrompt(review.snapshot, evidence.path),
+          prompt: buildReviewPrompt(review.snapshot, evidence.path, turnBudget),
+          snapshotPrompt: buildReviewSnapshotPrompt(review.snapshot, evidence.path, turnBudget),
           evidencePath: evidence.path,
-          maxTurns: reviewTurnBudget(workload, reviewChangedPathCount(reviewEvidence))
+          maxTurns: turnBudget
         });
         ensureOperationLive();
       } catch (error) {
@@ -10242,6 +10349,7 @@ class AssuranceCoordinator {
         correlation: { record_revision: review.snapshot.record_revision, intent_content_hash: review.snapshot.intent_content_hash, diff_hash: review.snapshot.diff_hash },
         snapshot: review.snapshot,
         hostReservation,
+        turnBudget,
         verdictCorrectionRequired: false,
         evidence
       };
@@ -10338,7 +10446,7 @@ class AssuranceCoordinator {
     }
     let verdict;
     try {
-      verdict = parseAssuranceVerdict(verdictInput, reservation.snapshot);
+      verdict = parseChildVerdict(verdictInput, reservation.snapshot);
     } catch (error) {
       reservation.verdictCorrectionRequired = true;
       return { state: "blocked", code: "verdict_invalid", reason: boundedAssuranceError(error) };
@@ -10346,6 +10454,28 @@ class AssuranceCoordinator {
     const receiptError = options?.validateReceipt?.();
     if (receiptError)
       return { state: "blocked", reason: receiptError, ...options?.receiptRecoveryAction ? { recovery_action: options.receiptRecoveryAction } : {} };
+    if (verdict.decision === "incomplete") {
+      try {
+        await this.ports.applyOrdinaryOperation(ctx, { taskId, operation: {
+          op: "record_review_incomplete",
+          actor_id: "parent-mediated-review",
+          snapshot: { ...reservation.correlation, workspace_revision: reservation.snapshot.workspace_revision },
+          turn_budget: reservation.turnBudget,
+          inspected_paths: verdict.inspected_paths,
+          reason: verdict.reason
+        } });
+        const stored = await this.ports.readTaskRecord(ctx.cwd, taskId);
+        const rounds = reviewIncompleteHistory(stored.record?.history, reservation.snapshot);
+        if (rounds.count === 0 || rounds.previous_budget !== reservation.turnBudget)
+          throw new Error("incomplete mutation is not observable");
+        this.releaseReviewReservation(taskId, reservation);
+        return rounds.count >= 2 ? { state: "review_incomplete", reason: verdict.reason, recovery_action: REVIEW_INCOMPLETE_RECOVERY } : { state: "blocked", reason: "review_incomplete_retry", recovery_action: "advance_assurance" };
+      } catch (error) {
+        if (await this.mutationProvablyRejected(ctx, taskId, reservation.snapshot.record_revision))
+          return { state: "blocked", reason: boundedAssuranceError(error) };
+        return this.unknownAfterCommit(taskId, "review", reservation.operationId, boundedAssuranceError(error));
+      }
+    }
     const invocation = this.openInvocation(taskId);
     this.releaseReviewReservation(taskId, reservation);
     try {
@@ -10394,7 +10524,7 @@ class AssuranceCoordinator {
     if (!reservation)
       return false;
     try {
-      parseAssuranceVerdict(verdictInput, reservation.snapshot);
+      parseChildVerdict(verdictInput, reservation.snapshot);
       return true;
     } catch {
       return false;
@@ -10465,9 +10595,10 @@ function boundedAssuranceError(error) {
   const normalized = raw.replace(/\s+/g, " ").trim() || "unknown error";
   return normalized.length <= 300 ? normalized : `${normalized.slice(0, 299)}...`;
 }
-var TRACKER_PROJECTION_FAILURE, QA_STAGES, QA_OUTCOMES, QA_DRIFT_PATH_LIMIT = 64, QA_PREPARE_STDERR_TAIL_BYTES = 2048, QA_PREPARE_REPRODUCTION_NOTE = "a reproduction in the live worktree is not equivalent: this run used an isolated delivery with no worktree node_modules", QA_DRIFT_NOTE = "in-scope tracked content of the working directory differs from the frozen snapshot; see prepare_observation.drift_paths", QA_PREPARE_REASONS, QA_TAIL_CONTROL, QaPreparationError, QA_MIN_JOB_TIMEOUT_SECONDS, QA_MAX_JOB_TIMEOUT_SECONDS, QA_JOB_OVERHEAD_SECONDS, QA_JOB_TIMEOUT_SECONDS, QA_MAX_IDENTICAL_FAILURES = 2, REVIEW_TIMING_PROFILES, QUICK_REVIEW_MAX_ACCEPTANCE = 3, QUICK_REVIEW_MAX_FILES = 5, QUICK_REVIEW_MAX_BYTES, HEAVY_REVIEW_MIN_ACCEPTANCE = 9, HEAVY_REVIEW_MIN_BYTES, HEAVY_REVIEW_MIN_FILES = 12, HEAVY_REVIEW_BASE_TURNS = 12, HEAVY_REVIEW_MIN_TURNS = 24, HEAVY_REVIEW_MAX_TURNS = 48, invocationRegistry;
+var TRACKER_PROJECTION_FAILURE, REVIEW_INCOMPLETE_RECOVERY = "Inspect the incomplete Review coverage, reduce the change or revise the TaskIntent, then enter imm-run explicitly; do not redispatch this snapshot.", QA_STAGES, QA_OUTCOMES, QA_DRIFT_PATH_LIMIT = 64, QA_PREPARE_STDERR_TAIL_BYTES = 2048, QA_PREPARE_REPRODUCTION_NOTE = "a reproduction in the live worktree is not equivalent: this run used an isolated delivery with no worktree node_modules", QA_DRIFT_NOTE = "in-scope tracked content of the working directory differs from the frozen snapshot; see prepare_observation.drift_paths", QA_PREPARE_REASONS, QA_TAIL_CONTROL, QaPreparationError, QA_MIN_JOB_TIMEOUT_SECONDS, QA_MAX_JOB_TIMEOUT_SECONDS, QA_JOB_OVERHEAD_SECONDS, QA_JOB_TIMEOUT_SECONDS, QA_MAX_IDENTICAL_FAILURES = 2, REVIEW_TIMING_PROFILES, QUICK_REVIEW_MAX_ACCEPTANCE = 3, QUICK_REVIEW_MAX_FILES = 5, QUICK_REVIEW_MAX_BYTES, HEAVY_REVIEW_MIN_ACCEPTANCE = 9, HEAVY_REVIEW_MIN_BYTES, HEAVY_REVIEW_MIN_FILES = 12, HEAVY_REVIEW_BASE_TURNS = 12, HEAVY_REVIEW_MIN_TURNS = 24, HEAVY_REVIEW_MAX_TURNS = 48, invocationRegistry;
 var init_coordinator = __esm(() => {
   init_git_integration_preference();
+  init_reducer();
   init_refutation();
   init_verification();
   init_verdict_authority();
@@ -16544,7 +16675,9 @@ function verdictFingerprint(raw) {
     snapshot_digest: raw.snapshot_digest ?? null,
     decision: raw.decision ?? null,
     approval: raw.approval ?? null,
-    findings: raw.findings ?? null
+    findings: raw.findings ?? null,
+    inspected_paths: raw.inspected_paths ?? null,
+    reason: raw.reason ?? null
   });
 }
 function digestOfReviewerBytes(bytes) {
@@ -16878,8 +17011,17 @@ async function runContinuationHookOutput(payload, root = tmpdir7()) {
           metadata.review = "ready";
         }
       }
+      if (["advance_assurance", "submit_review"].includes(operation) && response?.state === "review_incomplete") {
+        pauseRun(metadata, sessionId, root, `review_incomplete: ${String(response.recovery_action)}`);
+        return null;
+      }
       if (operation === "submit_review") {
-        if (["blocked", "rejected", "failed"].includes(String(response?.state))) {
+        if (response?.reason === "review_incomplete_retry") {
+          metadata.review = "unobserved";
+          metadata.reviewer_prompt = null;
+          metadata.reviewer_call_id = null;
+          metadata.recovery_action = null;
+        } else if (["blocked", "rejected", "failed"].includes(String(response?.state))) {
           metadata.review = "rejected";
           const recovery = response?.recovery_action ?? response?.next_action;
           metadata.recovery_action = typeof recovery === "string" ? recovery : null;

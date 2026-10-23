@@ -99,8 +99,8 @@ diff, including deletions. Page bounded reads until every hunk is visible; a
 truncated aggregate output or summary is incomplete coverage. Trace changed
 high-risk behavior through its callers and state owner, and inspect a concrete
 negative case against the embedded acceptance. If immutable evidence remains
-unavailable or incomplete, report the concrete acceptance coverage gap in a
-rework finding with required evidence. `inspected_paths` declares coverage; it
+unavailable or incomplete within the turn budget, return `incomplete` with
+`inspected_paths` and a single-line `reason`, without approval or findings. `inspected_paths` declares coverage; it
 does not itself prove tool reading. Judge quality by evidence, not elapsed time
 or tool-call count.
 

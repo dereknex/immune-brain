@@ -8,6 +8,8 @@ import {
 	verifyReviewBundle,
 } from "../plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts";
 import { buildReviewPrompt, reviewTurnBudget, type SnapshotDescriptor } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
+import { AssuranceProgression } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
+import { reviewIncompleteFixture } from "./fixtures/review-incomplete-fixture";
 import { classifyReviewWorkload, reviewChangedPathCount } from "../plugins/immune-brain/runtime/assurance/coordinator.ts";
 import { taskDiffHash } from "../plugins/immune-brain/runtime/workspace_scope.ts";
 
@@ -46,6 +48,25 @@ function snapshot(overrides: Partial<SnapshotDescriptor> = {}): SnapshotDescript
 }
 
 describe("review contract outcome evidence", () => {
+	test("Pi observed incomplete receipt reaches the non-verdict path and is bound to reason and paths", async () => {
+		const f = reviewIncompleteFixture();
+		try {
+			const c = new AssuranceProgression(f.ports);
+			const ready = await c.advance(f.taskId, f.ctx);
+			expect(ready.state).toBe("review_ready");
+			const params = (ready as { agent_params: { prompt: string; subagent_type: string } }).agent_params;
+			c.piReviewHost.observeReviewDispatch(params, "pi-review-incomplete");
+			const s = await f.snapshot(c), outcome = f.incomplete(s);
+			c.piReviewHost.observeReviewResult("pi-review-incomplete", JSON.stringify(outcome));
+			for (const override of [{ reason: "different reason" }, { inspected_paths: [f.paths[0]] }])
+				expect(await c.submitMediated(f.taskId, f.ctx, { ...outcome, ...override })).toMatchObject({ state: "blocked", reason: "parent verdict does not match reviewer receipt" });
+			expect(await c.submitMediated(f.taskId, f.ctx, undefined)).toEqual({ state: "blocked", reason: "review_incomplete_retry", recovery_action: "advance_assurance" });
+			expect(f.record().record!.findings).toEqual([]);
+			expect(f.record().record!.history.filter(e => e.type === "record_review_incomplete")).toHaveLength(1);
+			expect(c.active(f.taskId)).toBeNull();
+			expect((await c.advance(f.taskId, f.ctx)).state).toBe("review_ready");
+		} finally { f.cleanup(); }
+	}, 60_000);
 	test("bundle v4 embeds per-acceptance outcomes and freezes them against later mutation", () => {
 		const root = repo();
 		try {

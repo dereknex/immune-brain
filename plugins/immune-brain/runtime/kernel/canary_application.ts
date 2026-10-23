@@ -51,6 +51,7 @@ import type {
 } from "./types";
 
 export type CanaryOperation =
+	| { op: "record_review_incomplete"; actor_id: string; snapshot: { record_revision: string; workspace_revision: string; intent_content_hash: string; diff_hash: string }; turn_budget: number; inspected_paths: string[]; reason: string }
 	| { op: "freeze_artifacts"; actor_id: string }
 	| { op: "record_finding"; finding: Omit<TaskFinding, "status" | "source" | "review_round">; actor_id: string }
 	| { op: "resolve_finding"; finding_id: string; actor_id: string }
@@ -386,6 +387,13 @@ export function createCanaryApplication(
 		let action: unknown;
 		let capability: object | undefined;
 		switch (operation.op) {
+			case "record_review_incomplete": {
+				const expected = operation.snapshot;
+				if (expected.record_revision !== snapshot.record_revision || expected.workspace_revision !== snapshot.workspace_revision || expected.intent_content_hash !== snapshot.intent_content_hash || expected.diff_hash !== diffHash)
+					throw new KernelInvariantError(["Review incomplete snapshot changed"]);
+				action = { ...base, type: "record_review_incomplete", intent_content_hash: snapshot.intent_content_hash, turn_budget: operation.turn_budget, inspected_paths: operation.inspected_paths, reason: operation.reason };
+				break;
+			}
 			case "record_finding":
 				action = {
 					...base,

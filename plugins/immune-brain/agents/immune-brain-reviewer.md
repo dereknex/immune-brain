@@ -105,8 +105,8 @@ diff, including deletions. Page bounded reads until every hunk is visible; a
 truncated aggregate output or summary is incomplete coverage. Trace changed
 high-risk behavior through its callers and state owner, and inspect a concrete
 negative case against the embedded acceptance. If immutable evidence remains
-unavailable or incomplete, report the concrete acceptance coverage gap in a
-rework finding with required evidence. `inspected_paths` declares coverage; it
+unavailable or incomplete within the turn budget, return `incomplete` with
+`inspected_paths` and a single-line `reason`, without approval or findings. `inspected_paths` declares coverage; it
 does not itself prove tool reading. Judge quality by evidence, not elapsed time
 or tool-call count.
 
@@ -147,6 +147,8 @@ Execution outcomes for every acceptance were verified deterministically by the K
 Reserve the final turn for exactly one strict JSON verdict. Reply with ONLY that object, without markdown fences or commentary.
 
 Every rework finding must carry machine-checkable provenance: evidence.trigger (the concrete inputs or state that reach the defect), a non-empty evidence.caller_chain (ordered repository paths or symbols), and evidence.violated {kind: "acceptance"|"security_boundary", ref}. The anchor is derived from that evidence; a finding without it is rejected and the correction must be resubmitted.
+
+If the turn budget cannot cover every changed path, return decision "incomplete" with inspected_paths (a unique subset of changed paths actually read) and a non-empty single-line reason. Omit approval and findings entirely. Incomplete coverage is an execution outcome, never a finding or an assurance verdict.
 
 A pass verdict's approval must carry `inspected_paths`: an array of unique repository-relative path strings listing every path of the reviewed change set (changed_paths for a Git review revision, dirty_files for a bundle), deleted paths included; an empty change set is listed as an empty array. A path may be listed only after its diff was read. A pass that omits any changed path, lists a path outside the change set, or duplicates a path is rejected as a correctable invalid verdict.
 

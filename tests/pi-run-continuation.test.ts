@@ -44,6 +44,25 @@ function fixture() {
 }
 
 describe("Pi run continuation boundary", () => {
+	test("incomplete retries one new reservation, then pauses the run without a native gate", async () => {
+		const h = fixture(); try {
+			await h.enter();
+			const result = async (op: string, details: object, id: string) => {
+				await h.emit("tool_call", { toolName: "imm_kernel_canary", toolCallId: id, input: { task_id: "slice-a", action: { op } } });
+				await h.emit("tool_result", { toolName: "imm_kernel_canary", toolCallId: id, isError: false, details });
+			};
+			await result("advance_assurance", { state: "review_ready", agent_params: { prompt: "first prompt" } }, "advance-1");
+			const agent = (prompt: string, id: string) => h.emit("tool_call", { toolName: "Agent", toolCallId: id, input: { prompt, subagent_type: "Review", run_in_background: false } });
+			expect(await agent("first prompt", "review-1")).toBeUndefined();
+			await result("submit_review", { state: "blocked", reason: "review_incomplete_retry", recovery_action: "advance_assurance" }, "submit-1");
+			await result("advance_assurance", { state: "review_ready", agent_params: { prompt: "second prompt" } }, "advance-2");
+			expect(await agent("second prompt", "review-2")).toBeUndefined();
+			await result("submit_review", { state: "review_incomplete", reason: "unfinished", recovery_action: "reduce scope and enter imm-run" }, "submit-2");
+			expect(await h.settle()).toMatchObject({ entries: [{ customType: "immune-brain-run-paused" }] });
+			expect(h.revoked).toEqual(["session-a"]);
+			expect(await h.settle()).toBeUndefined();
+		} finally { h.dispose(); }
+	});
 	test("an active task never resumes without a literal run entry", async () => {
 		const h = fixture(); try {
 			await h.emit("input", { text: "How is the task?", source: "interactive" });

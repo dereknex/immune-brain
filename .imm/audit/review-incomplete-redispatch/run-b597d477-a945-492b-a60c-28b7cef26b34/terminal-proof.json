@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "review-incomplete-redispatch",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:review-incomplete-redispatch:2026-10-23T05:16:11.027Z",
+  "final_record_hash": "sha256:bdd19a3710cbbdd1c7f933b960ed6ae5e4429986f21cc1ab1f754518af87b646",
+  "terminalized_at": "2026-10-23T05:16:11.027Z"
+}

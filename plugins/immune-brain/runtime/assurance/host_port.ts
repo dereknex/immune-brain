@@ -23,6 +23,7 @@ export interface ReviewRequest {
 	 */
 	snapshotPrompt: string;
 	evidencePath: string;
+	/** Requested budget, also stated in the prompt for Hosts without a native turn-cap parameter. */
 	maxTurns: number;
 }
 

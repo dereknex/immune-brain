@@ -9,6 +9,7 @@
 import { readGitIntegrationPreference, type GitIntegrationMode, type GitIntegrationPreference } from "../git_integration_preference";
 import { createHash, randomUUID } from "node:crypto";
 import type { FindingEvidence, ReviewAdvisoryFindingV1, TaskFinding } from "../kernel/types";
+import { reviewIncompleteHistory } from "../kernel/reducer";
 import { anchorForEvidence } from "../kernel/refutation";
 import {
 	findingsDigest,
@@ -204,6 +205,19 @@ export function reviewAdvisoryRecords(verdict: AssuranceVerdict): ReviewAdvisory
 			evidence: finding.evidence ?? null,
 		}));
 }
+
+export interface ReviewIncompleteOutcome {
+	contract: "assurance_kernel/assurance_verdict/v2";
+	role: "review";
+	task_id: string;
+	snapshot_digest: string;
+	decision: "incomplete";
+	inspected_paths: string[];
+	reason: string;
+}
+export type ChildReviewResult = AssuranceVerdict | ReviewIncompleteOutcome;
+type ReviewIncompleteResult = { state: "review_incomplete"; reason: string; recovery_action: string };
+const REVIEW_INCOMPLETE_RECOVERY = "Inspect the incomplete Review coverage, reduce the change or revise the TaskIntent, then enter imm-run explicitly; do not redispatch this snapshot.";
 
 export interface ReviewRevisionIdentity {
 	contract: "assurance_kernel/review_revision_identity/v1";
@@ -475,6 +489,7 @@ type AssuranceRecoveryFields = {
 	recovery_error?: "fresh_kernel_projection_unavailable";
 };
 export type AssuranceAdvanceResult = AssuranceRecoveryFields & (
+	| ReviewIncompleteResult
 	| { state: "review_ready"; operation: "review"; operation_id: string; snapshot_digest: string; review_bundle_digest: string; agent_params: unknown }
 	| { state: "rework"; operation: "qa"; operation_id: string; summary: string }
 	| { state: "cancelled"; operation: "qa" | "review"; operation_id: string; reason: string }
@@ -507,6 +522,7 @@ export function deliveryOf(diffHash: string): AssuranceDelivery {
 }
 
 export type AssuranceSubmitReviewResult = AssuranceRecoveryFields & (
+	| ReviewIncompleteResult
 	| { state: "rework"; operation: "review"; operation_id: string; summary: string }
 	| { state: "review_preparation_failed"; operation: "review"; operation_id: string; reason: string }
 	| { state: "completed" }
@@ -543,7 +559,7 @@ export interface AssuranceCoordinatorPorts {
 		options: { signal?: AbortSignal; onProgress?: (progress: QaVerificationProgress) => void },
 	): Promise<AssuranceVerdict>;
 	writeReviewEvidence(input: { snapshot: SnapshotDescriptor; evidence: ReviewBundle | ReviewManifestV5 }): { path: string; remove(): void };
-	applyOrdinaryOperation(ctx: HostContext, input: { taskId: string; operation: { op: string; actor_id: string } }): Promise<unknown>;
+	applyOrdinaryOperation(ctx: HostContext, input: { taskId: string; operation: { op: string; actor_id: string; snapshot?: AssuranceCorrelation & { workspace_revision: string }; turn_budget?: number; inspected_paths?: string[]; reason?: string } }): Promise<unknown>;
 	advanceBeforeProjection?: () => Promise<void>;
 	qaBeforeProjection?: () => Promise<void>;
 	qaBeforeAuthorityCommit?: () => Promise<void>;
@@ -623,7 +639,8 @@ const HEAVY_REVIEW_MIN_TURNS = 24;
 const HEAVY_REVIEW_MAX_TURNS = 48;
 
 /** A heavy Review gets one extra turn per changed path, so a wide change is read in full. */
-export function reviewTurnBudget(workload: ReviewWorkload, changedPaths = 0): number {
+export function reviewTurnBudget(workload: ReviewWorkload, changedPaths = 0, previousBudget: number | null = null): number {
+	if (previousBudget !== null) return Math.min(96, previousBudget * 2);
 	if (workload === "quick") return 12;
 	if (workload === "standard") return 16;
 	return Math.min(HEAVY_REVIEW_MAX_TURNS, Math.max(HEAVY_REVIEW_MIN_TURNS, HEAVY_REVIEW_BASE_TURNS + changedPaths));
@@ -655,6 +672,7 @@ function reviewDeltaLines(delta: SnapshotDescriptor["review_delta"]): string[] {
 export function buildReviewSnapshotPrompt(
 	snapshot: SnapshotDescriptor,
 	evidencePath?: string,
+	turnBudget?: number,
 ): string {
 	if (snapshot.role !== "review") throw new Error("native review prompt requires review role");
 	const acceptance = snapshot.acceptance.map((item) => `- ${item.id}: ${item.assertion}`).join("\n");
@@ -675,6 +693,7 @@ export function buildReviewSnapshotPrompt(
 			];
 	return [
 		...evidenceContract,
+		...(turnBudget === undefined ? [] : [`Review turn budget: ${turnBudget}. Reserve the final turn for the structured result; return incomplete if coverage cannot finish within this budget.`]),
 		`Snapshot digest: ${digest}`,
 		`TaskRecord revision: ${snapshot.record_revision}`,
 		revision
@@ -685,6 +704,7 @@ export function buildReviewSnapshotPrompt(
 		`PASS shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>","inspected_paths":["<every changed path of the reviewed change set>"]}}`,
 		`A pass verdict may carry non-blocking notes as findings, but every one of them must set kind "advisory"; a blocking finding is a rework verdict and must omit approval: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>","inspected_paths":["<every changed path of the reviewed change set>"]},"findings":[{"id":"review-1","kind":"advisory","acceptance_id":"<id|null>","summary":"<one line>","evidence":{"trigger":"<concrete inputs or state>","caller_chain":["<path-or-symbol>"],"violated":{"kind":"acceptance|security_boundary","ref":"<acceptance id or boundary>"}}}]}`,
 		`REWORK shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"rework","findings":[{"id":"review-1","kind":"blocking","acceptance_id":"<id|null>","summary":"<one line>","evidence":{"trigger":"<concrete input or state → observable wrong result>","caller_chain":["<path-or-symbol>"],"violated":{"kind":"acceptance|security_boundary","ref":"<acceptance id or boundary>"}}}]}`,
+		`INCOMPLETE shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"incomplete","inspected_paths":["<only changed paths actually inspected>"],"reason":"<non-empty single line>"}. If coverage cannot finish within the turn budget, return incomplete, never a coverage finding. Omit approval and findings entirely; inspected_paths must be a unique subset of changed paths.`,
 		`REWORK verdicts must omit the approval field entirely; do not emit "approval": null. A rework carries only blocking findings, at least one; a note that blocks nothing is an advisory finding on a pass verdict, never on rework.`,
 	].join("\n");
 }
@@ -697,6 +717,7 @@ export function buildReviewSnapshotPrompt(
 export function buildReviewPrompt(
 	snapshot: SnapshotDescriptor,
 	evidencePath?: string,
+	turnBudget?: number,
 ): string {
 	if (snapshot.role !== "review") throw new Error("native review prompt requires review role");
 	const digest = snapshotDigest(snapshot);
@@ -712,7 +733,7 @@ export function buildReviewPrompt(
 	return [
 		rolePacket.prompt,
 		...STATIC_REVIEW_RULES,
-		buildReviewSnapshotPrompt(snapshot, evidencePath),
+		buildReviewSnapshotPrompt(snapshot, evidencePath, turnBudget),
 	].join("\n");
 }
 
@@ -760,7 +781,7 @@ function parseVerdictEvidence(value: unknown, index: number): FindingEvidence {
 	};
 }
 
-export function parseAssuranceVerdict(input: unknown, snapshot: SnapshotDescriptor): AssuranceVerdict {
+function readChildVerdict(input: unknown): Record<string, unknown> {
 	let raw: Record<string, unknown>;
 	if (typeof input === "string") {
 		// Agent transport prefixes a status line to the strict JSON verdict.
@@ -774,6 +795,24 @@ export function parseAssuranceVerdict(input: unknown, snapshot: SnapshotDescript
 	} else {
 		throw new Error("reviewer verdict must be a JSON object");
 	}
+	return raw;
+}
+
+export function parseChildVerdict(input: unknown, snapshot: SnapshotDescriptor): ChildReviewResult {
+	const raw = readChildVerdict(input);
+	if (raw.decision !== "incomplete") return parseAssuranceVerdict(raw, snapshot);
+	if (snapshot.role !== "review" || raw.role !== "review") throw new Error("incomplete is only valid for Review");
+	if (raw.contract !== "assurance_kernel/assurance_verdict/v2" || raw.task_id !== snapshot.task_id || raw.snapshot_digest !== snapshotDigest(snapshot)) throw new Error("incomplete snapshot identity mismatch");
+	const unknown = Object.keys(raw).find(key => !["contract", "role", "task_id", "snapshot_digest", "decision", "inspected_paths", "reason"].includes(key));
+	if (unknown) throw new Error(`incomplete has unknown field: ${unknown}`);
+	if (typeof raw.reason !== "string" || !raw.reason.trim() || /[\r\n\u2028\u2029]/.test(raw.reason)) throw new Error("incomplete reason must be a non-empty single line");
+	const paths = raw.inspected_paths;
+	if (!Array.isArray(paths) || paths.some(path => typeof path !== "string" || !snapshot.dirty_files.includes(path)) || new Set(paths).size !== paths.length) throw new Error("incomplete inspected_paths must be a unique subset of changed paths");
+	return { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: snapshot.task_id, snapshot_digest: snapshotDigest(snapshot), decision: "incomplete", inspected_paths: paths, reason: raw.reason };
+}
+
+export function parseAssuranceVerdict(input: unknown, snapshot: SnapshotDescriptor): AssuranceVerdict {
+	const raw = readChildVerdict(input);
 	const allowed = ["contract", "role", "task_id", "snapshot_digest", "decision", "approval", "findings"];
 	const unknown = Object.keys(raw).find((key) => !allowed.includes(key));
 	if (unknown) throw new Error(`child verdict has unknown field: ${unknown}`);
@@ -960,6 +999,7 @@ interface ReviewReservation {
 	correlation: AssuranceCorrelation;
 	snapshot: SnapshotDescriptor;
 	hostReservation: HostReviewReservation;
+	turnBudget: number;
 	verdictCorrectionRequired: boolean;
 	evidence: { path: string; remove(): void };
 }
@@ -1014,10 +1054,10 @@ export class AssuranceCoordinator {
 	active(taskId: string): ActiveAssuranceState | null {
 		const operationId = this.activeOperations.get(taskId);
 		if (operationId) return { state: "running", operation: "qa", operation_id: operationId, deadline_seconds: QA_JOB_TIMEOUT_SECONDS };
-		const reservation = this.reviewReservations.get(taskId);
-		if (reservation) return { state: "review_ready", operation: "review", operation_id: reservation.operationId };
 		const unknown = this.unknownOperations.get(taskId);
 		if (unknown) return { state: "settlement_unknown", operation: unknown.operation, operation_id: unknown.operationId, reason: unknown.reason };
+		const reservation = this.reviewReservations.get(taskId);
+		if (reservation) return { state: "review_ready", operation: "review", operation_id: reservation.operationId };
 		return null;
 	}
 
@@ -1185,8 +1225,16 @@ export class AssuranceCoordinator {
 			initialProjectionAvailable = true;
 			// A closed Kernel projection, not the lost host reply, decides what
 			// remains. Committed QA/Review is never replayed from local memory.
-			if (projection.projection.lifecycle === "active") this.unknownOperations.delete(taskId);
 			const parked = await this.ports.readTaskRecord(ctx.cwd, taskId);
+			if (this.unknownOperations.has(taskId)) {
+				if (!parked.record || parked.revision !== projection.projection.record_revision) throw new Error("cannot reconcile unknown settlement");
+				reviewIncompleteHistory(parked.record.history, projection.projection);
+				const pending = this.reviewReservations.get(taskId);
+				if (pending) this.releaseReviewReservation(taskId, pending);
+				this.unknownOperations.delete(taskId);
+			}
+			if (reviewIncompleteHistory(parked.record?.history, projection.projection).count >= 2)
+				return { state: "review_incomplete", reason: "Review coverage remained incomplete after two rounds", recovery_action: REVIEW_INCOMPLETE_RECOVERY };
 			ensureOperationLive();
 			if (parked.record?.findings.some((finding) => finding.kind === "replan_required" && finding.status === "open")) return { state: "blocked", reason: "review requires a durable replan; the task is paused for a user decision" };
 			if (projection.projection.artifact_state === "active") {
@@ -1368,17 +1416,25 @@ export class AssuranceCoordinator {
 				throw error;
 			}
 			let hostReservation: HostReviewReservation;
+			let turnBudget: number;
 			try {
+				const stored = await this.ports.readTaskRecord(ctx.cwd, taskId);
+				const rounds = reviewIncompleteHistory(stored.record?.history, review.snapshot);
+				if (rounds.count >= 2) {
+					evidence.remove();
+					return { state: "review_incomplete", reason: "Review coverage remained incomplete after two rounds", recovery_action: REVIEW_INCOMPLETE_RECOVERY };
+				}
 				ensureOperationLive();
 				const reviewEvidence = review.reviewManifest ?? review.reviewBundle!;
 				const workload = classifyReviewWorkload(review.snapshot, reviewEvidence);
+				turnBudget = reviewTurnBudget(workload, reviewChangedPathCount(reviewEvidence), rounds.previous_budget);
 				hostReservation = this.ports.host.prepareReview({
 					taskId,
 					operationId,
-					prompt: buildReviewPrompt(review.snapshot, evidence.path),
-					snapshotPrompt: buildReviewSnapshotPrompt(review.snapshot, evidence.path),
+					prompt: buildReviewPrompt(review.snapshot, evidence.path, turnBudget),
+					snapshotPrompt: buildReviewSnapshotPrompt(review.snapshot, evidence.path, turnBudget),
 					evidencePath: evidence.path,
-					maxTurns: reviewTurnBudget(workload, reviewChangedPathCount(reviewEvidence)),
+					maxTurns: turnBudget,
 				});
 				ensureOperationLive();
 			} catch (error) {
@@ -1391,6 +1447,7 @@ export class AssuranceCoordinator {
 				correlation: { record_revision: review.snapshot.record_revision, intent_content_hash: review.snapshot.intent_content_hash, diff_hash: review.snapshot.diff_hash },
 				snapshot: review.snapshot,
 				hostReservation,
+				turnBudget,
 				verdictCorrectionRequired: false,
 				evidence,
 			};
@@ -1475,14 +1532,32 @@ export class AssuranceCoordinator {
 				return this.reviewPreparationFailed(taskId, reservation.operationId, boundedAssuranceError(error));
 			}
 		}
-		let verdict: AssuranceVerdict;
-		try { verdict = parseAssuranceVerdict(verdictInput, reservation.snapshot); }
+		let verdict: ChildReviewResult;
+		try { verdict = parseChildVerdict(verdictInput, reservation.snapshot); }
 		catch (error) {
 			reservation.verdictCorrectionRequired = true;
 			return { state: "blocked", code: "verdict_invalid", reason: boundedAssuranceError(error) };
 		}
 		const receiptError = options?.validateReceipt?.();
 		if (receiptError) return { state: "blocked", reason: receiptError, ...(options?.receiptRecoveryAction ? { recovery_action: options.receiptRecoveryAction } : {}) };
+		if (verdict.decision === "incomplete") {
+			try {
+				await this.ports.applyOrdinaryOperation(ctx, { taskId, operation: {
+					op: "record_review_incomplete", actor_id: "parent-mediated-review", snapshot: { ...reservation.correlation, workspace_revision: reservation.snapshot.workspace_revision },
+					turn_budget: reservation.turnBudget, inspected_paths: verdict.inspected_paths, reason: verdict.reason,
+				} });
+				const stored = await this.ports.readTaskRecord(ctx.cwd, taskId);
+				const rounds = reviewIncompleteHistory(stored.record?.history, reservation.snapshot);
+				if (rounds.count === 0 || rounds.previous_budget !== reservation.turnBudget) throw new Error("incomplete mutation is not observable");
+				this.releaseReviewReservation(taskId, reservation);
+				return rounds.count >= 2
+					? { state: "review_incomplete", reason: verdict.reason, recovery_action: REVIEW_INCOMPLETE_RECOVERY }
+					: { state: "blocked", reason: "review_incomplete_retry", recovery_action: "advance_assurance" };
+			} catch (error) {
+				if (await this.mutationProvablyRejected(ctx, taskId, reservation.snapshot.record_revision)) return { state: "blocked", reason: boundedAssuranceError(error) };
+				return this.unknownAfterCommit(taskId, "review", reservation.operationId, boundedAssuranceError(error));
+			}
+		}
 		const invocation = this.openInvocation(taskId);
 		this.releaseReviewReservation(taskId, reservation);
 		try {
@@ -1533,7 +1608,7 @@ export class AssuranceCoordinator {
 		const reservation = this.reviewReservations.get(taskId);
 		if (!reservation) return false;
 		try {
-			parseAssuranceVerdict(verdictInput, reservation.snapshot);
+			parseChildVerdict(verdictInput, reservation.snapshot);
 			return true;
 		} catch {
 			return false;

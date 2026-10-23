@@ -51,6 +51,21 @@ function fixture() {
 }
 
 describe("Claude run continuation", () => {
+	test("second incomplete pauses and revokes the run entry, not Kernel authority", async () => {
+		const h = fixture(); try {
+			await h.enter();
+			const result = async (response: object) => {
+				const event = h.tool("submit_review");
+				await h.hook({ hook_event_name: "PreToolUse", ...event });
+				await h.hook({ hook_event_name: "PostToolUse", ...event, tool_response: response });
+			};
+			await result({ state: "blocked", reason: "review_incomplete_retry", recovery_action: "advance_assurance" });
+			expect(readPhaseEntryState("hook-session", h.root)?.run_live).toBe(true);
+			await result({ state: "review_incomplete", reason: "unfinished", recovery_action: "reduce scope and enter imm-run" });
+			expect(readPhaseEntryState("hook-session", h.root)?.run_live).toBe(false);
+			expect(JSON.parse((await h.stop())!)).toMatchObject({ systemMessage: expect.stringContaining("review_incomplete") });
+		} finally { h.dispose(); }
+	});
 	test("unbound Stop is silent; exact run entry, Hook and Kernel facts bind", async () => {
 		const h = fixture(); try {
 			expect(await h.stop()).toBeNull(); await h.enter();

@@ -112,8 +112,14 @@ export function registerPiRunContinuation(pi: ExtensionAPI, ports: {
 			}
 			reviewRecovery = undefined;
 		}
+		if (["advance_assurance", "submit_review"].includes(call.op ?? "") && details?.state === "review_incomplete") {
+			hostFailure = `review_incomplete: ${String(details.recovery_action)}`;
+			return;
+		}
 		if (call.op === "submit_review") {
-			if (event.isError) {
+			if (details?.reason === "review_incomplete_retry") {
+				review = "unobserved"; reviewerPrompt = undefined; reviewerCallId = undefined; reviewRecovery = undefined;
+			} else if (event.isError || details?.state === "blocked") {
 				review = "rejected";
 				const action = details?.recovery_action ?? details?.next_action;
 				reviewRecovery = typeof action === "string" ? action : undefined;
