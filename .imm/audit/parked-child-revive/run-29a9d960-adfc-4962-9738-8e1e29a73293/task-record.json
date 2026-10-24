@@ -1,0 +1,176 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "parked-child-revive",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "parked-child-revive",
+    "goal": "Resuming a parked Lane batch with a fresh confirmation revives a child whose run was stopped or whose Lane is unreadable or lost in a recreated Lane at the Parent tip under a redo grant, while children that cannot be revived stay parked and independent children resume, so the batch no longer has to be retired (Spec branch-boundary-r2-followups D5).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "On resume with a fresh literal-user confirmation, a parked child whose Lane run is terminal `stopped` gets its Lane recreated at the current Parent tip with an empty Lane store, consumes one redo grant and is enrolled fresh under the original authorization, while another parked child with a recoverable owned run resumes as before.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-parked-revive.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "A parked child whose Lane projection is unreadable (`batch_lane_unreadable`) or whose Lane path is gone (`batch_lane_lost`) is revived the same way on resume.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-parked-revive.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "A parked child with no redo grant left, or with an open user decision or replan, stays `needs_human` and its dependents stay `skipped_blocked`, while an independent parked child resumes; a resume without a fresh confirmation is still refused.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-parked-revive.test.ts\",\n      \"tests/batch-redo-slot.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "Packaged dist docs and role prompts match their canonical sources.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/sync-dist-docs.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "The generated Claude MCP bundle matches the runtime source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/build-claude-plugin.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC6",
+        "assertion": "The project typechecks.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/parked-child-revive.md",
+      "docs/plans/parked-child-revive.intent.json",
+      "docs/specs/branch-boundary-r2-followups.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run-batch.md",
+      "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+      "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_worktrees.ts",
+      "tests/batch-parked-revive.test.ts",
+      "tests/batch-redo-slot.test.ts",
+      "tests/unattended-batch-lanes.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/parked-child-revive.intent.json",
+    "content_hash": "sha256:f6906880b7daabe38805d3bf6c41c516793b2d486c77fd3d976f22674bfbaaa7"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:f6906880b7daabe38805d3bf6c41c516793b2d486c77fd3d976f22674bfbaaa7",
+  "git_base_head": "ef3be8fe6d0550bf4cfc2c5d559a9a0ce4504a7e",
+  "attestations": [
+    {
+      "id": "approval-qa-302dc2ad",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f6906880b7daabe38805d3bf6c41c516793b2d486c77fd3d976f22674bfbaaa7",
+      "diff_hash": "sha256:11fa2e4639ca998bd06b2830f3118d4b020ce2e82544223ed05d38b56332b578",
+      "actor_id": "deterministic-qa",
+      "summary": "all 7 project verification check(s) passed; execution=sha256:f6dee2bcd957f5384e285bbabe27f3d666e1dccb4409b982def8408f74ecdd77",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f6dee2bcd957f5384e285bbabe27f3d666e1dccb4409b982def8408f74ecdd77"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f6dee2bcd957f5384e285bbabe27f3d666e1dccb4409b982def8408f74ecdd77"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f6dee2bcd957f5384e285bbabe27f3d666e1dccb4409b982def8408f74ecdd77"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f6dee2bcd957f5384e285bbabe27f3d666e1dccb4409b982def8408f74ecdd77"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f6dee2bcd957f5384e285bbabe27f3d666e1dccb4409b982def8408f74ecdd77"
+        },
+        {
+          "acceptance_id": "AC6",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f6dee2bcd957f5384e285bbabe27f3d666e1dccb4409b982def8408f74ecdd77"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-8dc0c31e",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f6906880b7daabe38805d3bf6c41c516793b2d486c77fd3d976f22674bfbaaa7",
+      "diff_hash": "sha256:11fa2e4639ca998bd06b2830f3118d4b020ce2e82544223ed05d38b56332b578",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 manifest_digest、revision 单一父提交、tree 及全部变更对象，完整检查所有文件 diff、恢复状态机和授权边界，未发现阻断问题；测试执行采用 Kernel 提供的 AC1–AC6 通过证据，未重复运行。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "ef3be8fe6d0550bf4cfc2c5d559a9a0ce4504a7e",
+        "review_commit": "46247afccc064975eaa6002599df960dc66f418b",
+        "review_tree": "b419a169eb14aeb3a9fc370f1c27562fb9be6385",
+        "manifest_digest": "sha256:6f7fc44bba773893ba6d88853d9e5dafb1f4de6a043c9edd33bc77cc7767ae94"
+      },
+      "reviewer_verdict_sha256": "sha256:1a917b1302812b053dc1d2d14ea115c6b575ef84ded4c65a7f58a24c72165cc1"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:parked-child-revive:2026-10-24T14:40:22.589Z",
+      "at": "2026-10-24T14:40:22.589Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/parked-child-revive.intent.json"
+    },
+    {
+      "id": "record_approval:parked-child-revive:2026-10-24T14:41:23.973Z",
+      "at": "2026-10-24T14:41:23.973Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-302dc2ad\naction_v2_sha256:b1a33fad46f8ea0634537a5b8c6988ac355cec580dcadf74c7cd8422186311aa",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-fc35fa0a6f635ab2",
+        "issued_at": "2026-10-24T14:41:23.973Z"
+      }
+    },
+    {
+      "id": "record_approval:parked-child-revive:2026-10-24T14:46:04.883Z",
+      "at": "2026-10-24T14:46:04.883Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-8dc0c31e\naction_v2_sha256:bfd0881e9a0dfcce8ccb229971f9621e11f448d5810542c9d0b72da2500287f1",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-66f95c6cd676a149",
+        "issued_at": "2026-10-24T14:46:04.883Z"
+      }
+    },
+    {
+      "id": "complete:parked-child-revive:2026-10-24T14:46:06.184Z",
+      "at": "2026-10-24T14:46:06.184Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:7c61592e7c02e7c4a785221b53bc1f70a7f9e4b7c4720268e7621e33d4cf7f5a"
+    }
+  ]
+}

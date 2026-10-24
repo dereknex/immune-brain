@@ -803,7 +803,8 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 				throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid lane`);
 		}
 		if (child.redo_head !== undefined &&
-			(record.branch !== `refs/heads/imm/${record.initiative_slug}` || !lane?.run_id || !lane.lane_commit))
+			(record.branch !== `refs/heads/imm/${record.initiative_slug}` || !lane?.run_id ||
+				(child.state === "lane_committed" && !lane.lane_commit)))
 			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid redo_head binding`);
 		if (LANE_BOUND_STATES.has(child.state) && lane === null)
 			throw new Error(`batch run state ${batchId} child ${child.task_id} is ${child.state} without a lane`);

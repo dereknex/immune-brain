@@ -7,7 +7,7 @@ import { computeBatchPlanDigest, createBatchAuthorityRegistry } from "../plugins
 import { createEnrollmentAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { intentAuthorityHash, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { localRunId, readSettledRunEvidence, readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
-import { createBatchKernelPort, deriveChildRedoEnrollment } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
+import { createBatchKernelPort, deriveChildRedoEnrollment, deriveParkedChildRedoEnrollment } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
 import { rehydrateConsumption, type BatchLaneRedoChildRun } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
 import { prepareBatchLaneRunState, readBatchLaneRunState, writeBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { createLaneWorktree, recreateLaneWorktree } from "../plugins/immune-brain/runtime/unattended/batch_worktrees";
@@ -83,6 +83,20 @@ describe("redo enrollment under the original Batch Authorization", () => {
 		expect(localRunId(lane, "child")).not.toBe(fx.request.prior_run_id);
 		expect(readTaskRecordRaw(lane, "child").record).toMatchObject({ lifecycle: "active", git_base_head: fx.head, attestations: [] });
 		expect(fx.registry.isChildConsumed(fx.capability, "child")).toBe(true);
+	});
+
+	test("parked recovery checks capability confirmation, not a caller's new timestamp", async () => {
+		const fx = fixture("stopped");
+		await expect(deriveParkedChildRedoEnrollment(fx.root, fx.registry,
+			{ ...fx.request, now: "2027-01-01T00:00:00.000Z", parked_since: NOW })).rejects.toThrow("confirmation_required");
+		expect(fx.registry.redoGrants(fx.capability, "child")).toBe(0);
+	});
+
+	test("fresh parked recovery still refuses an active owned run", async () => {
+		const fx = fixture("active");
+		await expect(deriveParkedChildRedoEnrollment(fx.root, fx.registry,
+			{ ...fx.request, parked_since: "2026-01-01T00:00:00.000Z" })).rejects.toThrow("batch_child_redo_run_active");
+		expect(fx.registry.redoGrants(fx.capability, "child")).toBe(0);
 	});
 
 	test("a live prior run cannot spend a redo", () => {

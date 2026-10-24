@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "parked-child-revive",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:parked-child-revive:2026-10-24T14:46:06.184Z",
+  "final_record_hash": "sha256:ee8535daf346d080327fb594ac6ccb9eac76d7c5e65814810c429ad96fe767ec",
+  "terminalized_at": "2026-10-24T14:46:06.184Z"
+}

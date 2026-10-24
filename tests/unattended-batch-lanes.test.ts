@@ -1459,11 +1459,12 @@ describe("lane reader and guidance accuracy", () => {
 			expect(again.commits).toEqual(parked.commits);
 			kernel.reworking.delete("task-a");
 			kernel.frozen.delete("task-a");
-			const fresh = request(fx, children, kernel, { budget, confirmation_time: "2026-06-01T00:00:00.000Z" });
+			let fresh = request(fx, children, kernel, { budget, confirmation_time: "2026-06-01T00:00:00.000Z" });
 			const statePath = join(fx.repo, `.imm/state/batches/${BATCH_ID}.json`);
 			const parkedBytes = readFileSync(statePath, "utf8");
 			const project = kernel.projectTask;
 			for (const overrides of [{ run_id: "foreign-run" }, { open_user_decision_count: 1 }, { replan_required_ids: ["decision"] }, { lifecycle: "stopped" as const }]) {
+				writeFileSync(statePath, parkedBytes);
 				const blocked = lanes(await startBatch({ ...fresh, kernel: { ...kernel,
 					projectTask: async (root, id) => {
 						const result = await project(root, id);
@@ -1471,8 +1472,11 @@ describe("lane reader and guidance accuracy", () => {
 					},
 				} }));
 				expect(blocked.batch_state).toBe("needs_human");
-				expect(readFileSync(statePath, "utf8")).toBe(parkedBytes);
+				expect(blocked.children).toEqual(parked.children);
+				expect(JSON.parse(readFileSync(statePath, "utf8")).confirmation_time).toBe(fresh.confirmation_time);
 			}
+			writeFileSync(statePath, parkedBytes);
+			fresh = request(fx, children, kernel, { budget, confirmation_time: "2026-06-01T00:00:00.000Z" });
 			// Production ownership observes consumed slots on the new capability.
 			fresh.kernel = { ...fresh.kernel, ownsTaskClaim: id => fresh.registry.isChildConsumed(fresh.capability, id) };
 			expect(fresh.kernel.ownsTaskClaim("task-a")).toBe(false);
@@ -2242,7 +2246,7 @@ describe("Lane batch authority subject", () => {
 				expect(durable.children).toEqual(report.children);
 				expect(report.commits).toEqual([]);
 				expect(git(fx.repo, "rev-parse", "HEAD")).toBe(fx.base);
-				if (mode === "resume") expect(durable.confirmation_time).toBe(CONFIRMED_AT);
+				if (mode === "resume") expect(durable.confirmation_time).toBe(input.confirmation_time);
 			} else {
 				expect(report.children.map(c => c.state)).toEqual(["integrated", "pending"]);
 				expect(report.commits).toEqual([commit]);

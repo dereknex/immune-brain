@@ -6145,14 +6145,22 @@ function createLaneWorktree(root, slug, taskId, head) {
   git2(root, ["worktree", "add", "-b", branch, path, head]);
   return path;
 }
-function recreateLaneWorktree(root, slug, taskId, head, priorCommit) {
+function recreateLaneWorktree(root, slug, taskId, head, priorCommit, reviveUnreadable = false) {
   parentBranchRef(slug);
   parentBranchRef(taskId);
   const target = git2(root, ["rev-parse", "--verify", "--end-of-options", `${head}^{commit}`]);
   const path = join8(worktreeDirectory(root), slug, taskId);
   const branch = `imm-lane/${slug}/${taskId}`;
   if (existsSync4(path)) {
-    if (readBackendClaim(path))
+    let claim;
+    try {
+      claim = readBackendClaim(path);
+    } catch (error) {
+      if (!reviveUnreadable)
+        throw error;
+      claim = null;
+    }
+    if (claim)
       throw new Error("batch_worktree_failed: redo Lane still has an active claim");
     const current = git2(path, ["rev-parse", "HEAD"]);
     if (priorCommit && current !== priorCommit && current !== target || !removeLaneWorktree(root, path, branch, current))
@@ -6165,6 +6173,10 @@ function recreateLaneWorktree(root, slug, taskId, head, priorCommit) {
     if (found.status === 0) {
       if (found.stdout.trim() !== priorCommit)
         throw new Error("batch_worktree_failed: redo branch moved");
+      const listed = git2(root, ["worktree", "list", "--porcelain"]);
+      if (listed.split(`
+`).includes(`worktree ${path}`))
+        git2(root, ["worktree", "remove", path]);
       git2(root, ["update-ref", "-d", ref, priorCommit]);
     } else if (found.status !== 1)
       throw new Error("batch_worktree_failed: redo branch is unreadable");
@@ -6865,7 +6877,7 @@ function validateLaneRecordShape(value, batchId) {
       if (typeof lane !== "object" || typeof lane.path !== "string" || !lane.path || typeof lane.branch !== "string" || !lane.branch || typeof lane.base_head !== "string" || !lane.base_head || lane.lane_commit !== null && typeof lane.lane_commit !== "string" || lane.run_id !== undefined && lane.run_id !== null && (typeof lane.run_id !== "string" || !lane.run_id))
         throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid lane`);
     }
-    if (child.redo_head !== undefined && (record.branch !== `refs/heads/imm/${record.initiative_slug}` || !lane?.run_id || !lane.lane_commit))
+    if (child.redo_head !== undefined && (record.branch !== `refs/heads/imm/${record.initiative_slug}` || !lane?.run_id || child.state === "lane_committed" && !lane.lane_commit))
       throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid redo_head binding`);
     if (LANE_BOUND_STATES.has(child.state) && lane === null)
       throw new Error(`batch run state ${batchId} child ${child.task_id} is ${child.state} without a lane`);
@@ -15340,7 +15352,7 @@ var init_batch_preflight = __esm(() => {
 init_batch_preflight();
 init_batch_state();
 import { randomUUID as randomUUID12 } from "node:crypto";
-import { existsSync as existsSync18, readdirSync as readdirSync10, realpathSync as realpathSync20 } from "node:fs";
+import { existsSync as existsSync19, readdirSync as readdirSync10, realpathSync as realpathSync20 } from "node:fs";
 import { join as join31 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 import { createInterface } from "node:readline";
@@ -17235,7 +17247,7 @@ init_storage();
 init_intent();
 init_canary_application();
 init_authority_port();
-import { existsSync as existsSync17, readFileSync as readFileSync22, writeFileSync as writeFileSync12 } from "node:fs";
+import { existsSync as existsSync18, readFileSync as readFileSync22, writeFileSync as writeFileSync12 } from "node:fs";
 import { execFileSync as execFileSync12 } from "node:child_process";
 import { join as join30 } from "node:path";
 
@@ -17809,7 +17821,7 @@ init_batch_ref();
 init_batch_worktrees();
 import { spawnSync as spawnSync19 } from "node:child_process";
 import { createHash as createHash25 } from "node:crypto";
-import { existsSync as existsSync15, realpathSync as realpathSync19 } from "node:fs";
+import { existsSync as existsSync16, realpathSync as realpathSync19 } from "node:fs";
 import { isAbsolute as isAbsolute8, join as join28 } from "node:path";
 import { readFileSync as readFileSync21 } from "node:fs";
 
@@ -17817,6 +17829,7 @@ import { readFileSync as readFileSync21 } from "node:fs";
 init_batch_git();
 init_assurance_projection();
 init_batch_authority();
+import { existsSync as existsSync15 } from "node:fs";
 init_storage();
 init_batch_preflight();
 function deriveChildRedoEnrollment(root, registry, input) {
@@ -17828,6 +17841,26 @@ function deriveChildRedoEnrollment(root, registry, input) {
     throw new Error(`batch_child_redo_run_active: ${input.task_id}`);
   if (prior.run_id !== input.prior_run_id)
     throw new Error(`batch_child_redo_run_mismatch: ${input.task_id}`);
+  return reissueChildEnrollment(root, registry, input);
+}
+async function deriveParkedChildRedoEnrollment(root, registry, input) {
+  const authorized = registry.inspect(input.capability, input.binding);
+  if (!Number.isFinite(Date.parse(input.parked_since)) || !(Date.parse(authorized.issued_at) > Date.parse(input.parked_since)))
+    throw new Error("batch_child_redo_confirmation_required");
+  const fresh = await projectAssurance(input.prior_lane_root, input.task_id);
+  if (fresh.error === null && (existsSync15(input.prior_lane_root) || fresh.projection.run_id !== null)) {
+    if (fresh.projection.run_id !== input.prior_run_id)
+      throw new Error(`batch_child_redo_run_mismatch: ${input.task_id}`);
+    if (fresh.projection.open_user_decision_count || fresh.projection.replan_required_ids.length || fresh.projection.lifecycle !== "stopped")
+      throw new Error(`batch_child_redo_run_active: ${input.task_id}`);
+    const prior = readSettledRunEvidence(input.prior_lane_root, input.task_id);
+    if (!prior || prior.run_id !== input.prior_run_id)
+      throw new Error(`batch_child_redo_run_mismatch: ${input.task_id}`);
+    if (prior.record.findings.some((f) => f.status === "open" && (f.kind === "unresolved_user_decision" || f.kind === "replan_required")))
+      throw new Error(`batch_child_redo_decision_unresolved: ${input.task_id}`);
+  } else if (fresh.error !== null && /contract must equal|unknown field|schema version .* incompatible|unknown contract/i.test(fresh.error)) {
+    throw new Error(`batch_lane_contract_mismatch: ${input.task_id}`);
+  }
   return reissueChildEnrollment(root, registry, input);
 }
 function createBatchKernelPort(input) {
@@ -18062,7 +18095,7 @@ function createDefaultLaneGitPort() {
   return {
     resolveRoot: (root) => resolveRealPath(root) ?? root,
     inspectLane(coordinatorRoot, lanePath) {
-      const real = existsSync15(lanePath) ? resolveRealPath(lanePath) : null;
+      const real = existsSync16(lanePath) ? resolveRealPath(lanePath) : null;
       const absent = {
         exists: real !== null,
         real_path: real,
@@ -18396,6 +18429,7 @@ async function runLaneBatch(input, persisted) {
   const git = serialGitOf(input);
   const lanes = laneGitOf(input);
   let record;
+  const revive = new Set;
   if (persisted) {
     record = persisted;
     assertPlanMatches(input, record);
@@ -18418,30 +18452,49 @@ async function runLaneBatch(input, persisted) {
           resumed.push(child);
           continue;
         }
-        if (!child.lane?.run_id)
-          return laneReport(record, "parked Lane has no recorded run identity; inspect it without re-enrolling", LANE_NEEDS_HUMAN_NEXT_ACTION);
+        if (!child.lane?.run_id) {
+          resumed.push(child);
+          continue;
+        }
+        if (child.redo_head) {
+          resumed.push(child);
+          continue;
+        }
         const facts = lanes.inspectLane(input.root, child.lane.path);
         const fresh = await readLaneProjection(input, child.lane.path, child.task_id);
-        if (fresh.error !== null)
-          return laneReport(record, laneUnreadableReason(fresh.error, child.task_id, child.lane.run_id), LANE_NEEDS_HUMAN_NEXT_ACTION);
-        if (!facts.exists || !facts.same_repository || !facts.is_worktree_root || facts.branch !== child.lane.branch || fresh.projection.run_id !== child.lane.run_id || fresh.projection.open_user_decision_count > 0 || fresh.projection.replan_required_ids.length > 0)
-          return laneReport(record, "parked Lane identity or decision is unresolved", LANE_NEEDS_HUMAN_NEXT_ACTION);
+        const owned = !facts.exists || facts.same_repository && facts.is_worktree_root && facts.branch === child.lane.branch;
+        const readable = fresh.error === null;
+        const unreadable = !readable && laneUnreadableReason(fresh.error, child.task_id, child.lane.run_id).startsWith("batch_lane_unreadable:");
+        if (!owned || readable && facts.exists && (fresh.projection.run_id !== child.lane.run_id || fresh.projection.open_user_decision_count > 0 || fresh.projection.replan_required_ids.length > 0)) {
+          resumed.push(child);
+          continue;
+        }
+        if (isParentBranch(record.branch) && (!facts.exists || unreadable || readable && fresh.projection.lifecycle === "stopped")) {
+          if ((child.redo_grants ?? 0) < 2)
+            revive.add(child.task_id);
+          resumed.push(child);
+          continue;
+        }
+        if (!readable || !facts.exists) {
+          resumed.push(child);
+          continue;
+        }
         const state = fresh.projection.lifecycle === "done" && fresh.projection.completion_ready ? child.lane.lane_commit ? "lane_committed" : "settled" : fresh.projection.lifecycle === "active" && fresh.claim?.task_id === child.task_id && (facts.active_claim_task_id === null || facts.active_claim_task_id === child.task_id) ? "enrolled" : null;
-        if (!state)
-          return laneReport(record, "parked child has no recoverable owned run", LANE_NEEDS_HUMAN_NEXT_ACTION);
+        if (!state) {
+          resumed.push(child);
+          continue;
+        }
         const authorityChange = state === "lane_committed" ? laneAuthorityChange(record, child.task_id, child.lane.path) : null;
         if (authorityChange) {
-          park(record, child.task_id, authorityChange);
-          return laneReport(writeBatchLaneRunState(input.root, record), authorityChange, LANE_NEEDS_HUMAN_NEXT_ACTION);
+          resumed.push({ ...child, reason: authorityChange });
+          continue;
         }
         resumed.push({ ...child, state, reason: null, qa_failures: 0 });
       }
-      record = {
-        ...record,
-        batch_state: "running",
-        confirmation_time: input.confirmation_time,
-        children: resumed.map((child) => child.state === "skipped_blocked" ? { ...child, state: "pending", reason: null } : child)
-      };
+      record = { ...record, batch_state: "running", children: resumed.map((child) => child.state === "skipped_blocked" ? { ...child, state: "pending", reason: null } : child) };
+      for (const child of record.children)
+        if (child.state === "needs_human" && !revive.has(child.task_id) && !child.redo_head)
+          skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
     }
   } else {
     const invalid = validateNewAuthorization(input);
@@ -18530,7 +18583,7 @@ async function runLaneBatch(input, persisted) {
     record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "released" } : c);
     persist();
   }
-  const lineage = existsSync15(join28(input.root, ".git")) ? classifyBatchLineage({
+  const lineage = existsSync16(join28(input.root, ".git")) ? classifyBatchLineage({
     root: input.root,
     branch: record.branch ?? "",
     expectedHead: expectedBatchHead(record),
@@ -18550,8 +18603,51 @@ async function runLaneBatch(input, persisted) {
   } catch (error) {
     return failLineage(input.root, record, error instanceof Error ? error.message : String(error));
   }
-  if (resumedPark)
+  if (resumedPark) {
+    const parkedSince = record.confirmation_time;
+    record = { ...record, confirmation_time: input.confirmation_time };
     persist();
+    for (const taskId of revive) {
+      const child = record.children.find((c) => c.task_id === taskId);
+      try {
+        const head = expectedBatchHead(record);
+        const binding = input.kernel.validateBatchAuthorization({
+          registry: input.registry,
+          capability: input.capability,
+          binding: {
+            batch_id: record.batch_id,
+            plan_digest: record.plan_digest,
+            base_head: record.base_head,
+            initiative_slug: record.initiative_slug,
+            budget: record.budget
+          }
+        });
+        await withParentWorktree(input.root, head, async (root) => {
+          copyLanePlanningInput(input.root, root, taskId, "intent");
+          copyLanePlanningInput(input.root, root, taskId, "spec");
+          await deriveParkedChildRedoEnrollment(root, input.registry, {
+            capability: input.capability,
+            binding,
+            task_id: taskId,
+            expected_head: head,
+            now: input.now,
+            parked_since: parkedSince,
+            prior_lane_root: child.lane.path,
+            prior_run_id: child.lane.run_id
+          });
+          record.children = record.children.map((c) => c.task_id === taskId ? {
+            ...c,
+            redo_grants: input.registry.redoGrants(input.capability, taskId),
+            redo_head: head
+          } : c);
+          persist();
+        });
+      } catch (error) {
+        park(record, taskId, error instanceof Error ? error.message : String(error));
+        persist();
+      }
+    }
+  }
   let instruction;
   if (input.lane_instruction) {
     const request = input.lane_instruction;
@@ -18618,7 +18714,7 @@ async function runLaneBatch(input, persisted) {
   const settledAt = (child) => readTaskTombstone(child.lane.path, child.task_id)?.terminalized_at ?? input.now;
   const queue = () => [...record.children].sort((a, b) => (a.settled_at ?? record.created_at).localeCompare(b.settled_at ?? record.created_at));
   const resumeRedo = async (child) => {
-    const path = recreateLaneWorktree(input.root, record.initiative_slug, child.task_id, child.redo_head, child.lane.lane_commit);
+    const path = recreateLaneWorktree(input.root, record.initiative_slug, child.task_id, child.redo_head, child.lane.lane_commit ?? child.lane.base_head, child.state === "needs_human");
     record.children = record.children.map((c) => {
       if (c.task_id !== child.task_id)
         return c;
@@ -18633,9 +18729,16 @@ async function runLaneBatch(input, persisted) {
     });
     persist();
     await enrollInLane(child.task_id);
+    record.children = record.children.map((c) => c.state === "skipped_blocked" ? { ...c, state: "pending", reason: null } : c);
+    for (const c of record.children)
+      if (c.state === "needs_human")
+        skipDependents(record, c.task_id, `dependency ${c.task_id} parked`);
+    persist();
   };
   for (const child of record.children) {
-    if (child.state !== "lane_committed" || !child.redo_head)
+    if (child.state !== "lane_committed" && child.state !== "needs_human" || !child.redo_head)
+      continue;
+    if (child.state === "needs_human" && record.children.filter((c) => IN_FLIGHT.has(c.state)).length >= limit)
       continue;
     try {
       await resumeRedo(child);
@@ -19065,7 +19168,7 @@ init_storage_paths();
 init_batch_reasons();
 init_batch_preflight();
 init_batch_state();
-import { existsSync as existsSync16 } from "node:fs";
+import { existsSync as existsSync17 } from "node:fs";
 import { join as join29 } from "node:path";
 var SERIAL_IN_FLIGHT = new Set(["enrolled", "settled"]);
 var LANE_IN_FLIGHT = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
@@ -19086,7 +19189,7 @@ function laneChildLifecycleOf(root, child) {
   if (!lane)
     return kernelLifecycleOf(root, child.task_id);
   try {
-    if (!existsSync16(join29(lane.path, KERNEL_DB_RELATIVE)))
+    if (!existsSync17(join29(lane.path, KERNEL_DB_RELATIVE)))
       return null;
     if (readActiveClaimTaskId(lane.path) === child.task_id)
       return null;
@@ -19513,7 +19616,7 @@ class ClaudeRuntime {
     try {
       if (!selectedClaudeParent(meta.toolCallId, this.cwd, slug))
         return result;
-      if (existsSync17(join30(this.cwd, ".imm", "audit", taskId)))
+      if (existsSync18(join30(this.cwd, ".imm", "audit", taskId)))
         execFileSync12("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch, ...batch.state === "started" && batch.report?.tracker ? { tracker: batch.report.tracker } : {} };
@@ -20984,7 +21087,7 @@ async function runHook() {
   const cwd = typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
   if (!readActiveClaimTaskId(cwd)) {
     const batchesDir = join31(cwd, ".imm", "state", "batches");
-    const activeBatch = existsSync18(batchesDir) && readdirSync10(batchesDir).some((file) => {
+    const activeBatch = existsSync19(batchesDir) && readdirSync10(batchesDir).some((file) => {
       if (!file.endsWith(".json") || file.endsWith(".report.json"))
         return false;
       try {

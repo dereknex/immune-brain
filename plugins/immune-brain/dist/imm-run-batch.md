@@ -170,6 +170,16 @@ and reports the attempt in `tracker_observations`. A parked or lost child is
 never integrated, so its Issue stays open; an explicit stop inside a Lane still
 projects `not planned` at once.
 
+A fresh literal-user Batch Authorization resumes recoverable parked owned runs.
+In runtime-owned Parent Lanes, a stopped run or an unreadable/lost Lane may instead
+restart at the current Parent tip with an empty Authority Store, spending one of
+the child's two redo grants under the original child authorization. A child with
+an open user decision or replan, an identity/contract conflict, dirty Lane data,
+or no redo grant remains parked with its dependents; independent children resume.
+A repeated tick or a newer caller timestamp without a fresh confirmation grants
+no recovery authority. A durable redo resumes after interruption without spending
+another grant. Do not retire the batch just because one child cannot be revived.
+
 Frozen acceptance remains the authority subject (ADR 0026). A Lane child whose
 acceptance changes pauses for the literal user's native gate; the coordinator
 cannot approve revisions or reseal `plan_digest` (ADR 0028). There is no

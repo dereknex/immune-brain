@@ -33,7 +33,7 @@ import {
 } from "./batch_integration";
 import { isBatchRef, isParentBranch } from "./batch_ref";
 import { copyLanePlanningInput, createLaneWorktree, recreateLaneWorktree, removeLaneWorktree, withParentWorktree } from "./batch_worktrees";
-import { deriveChildRedoEnrollment } from "./batch_kernel_port";
+import { deriveChildRedoEnrollment, deriveParkedChildRedoEnrollment } from "./batch_kernel_port";
 import { classifyBatchLineage, expectedBatchHead, findExistingActiveBatch, porcelainEntries, readActiveClaimTaskId, unsettledChildScopes } from "./batch_preflight";
 import { restoreProvableLaneLeaks } from "./batch_leak_restore";
 import { withBatchEvidence } from "./batch_git";
@@ -764,6 +764,7 @@ export async function runLaneBatch(
 	const lanes = laneGitOf(input);
 
 	let record: BatchLaneRunStateRecord;
+	const revive = new Set<string>();
 	if (persisted) {
 		record = persisted;
 		assertPlanMatches(input, record);
@@ -785,30 +786,39 @@ export async function runLaneBatch(
 			const resumed: BatchLaneChildRun[] = [];
 			for (const child of record.children) {
 				if (child.state !== "needs_human") { resumed.push(child); continue; }
-				if (!child.lane?.run_id)
-					return laneReport(record, "parked Lane has no recorded run identity; inspect it without re-enrolling", LANE_NEEDS_HUMAN_NEXT_ACTION);
+				if (!child.lane?.run_id) { resumed.push(child); continue; }
+				// A durable grant already passed the fresh-confirmation boundary.
+				if (child.redo_head) { resumed.push(child); continue; }
 				const facts = lanes.inspectLane(input.root, child.lane.path);
 				const fresh = await readLaneProjection(input, child.lane.path, child.task_id);
-				if (fresh.error !== null)
-					return laneReport(record, laneUnreadableReason(fresh.error, child.task_id, child.lane.run_id), LANE_NEEDS_HUMAN_NEXT_ACTION);
-				if (!facts.exists || !facts.same_repository || !facts.is_worktree_root || facts.branch !== child.lane.branch ||
-					fresh.projection.run_id !== child.lane.run_id ||
-					fresh.projection.open_user_decision_count > 0 || fresh.projection.replan_required_ids.length > 0)
-					return laneReport(record, "parked Lane identity or decision is unresolved", LANE_NEEDS_HUMAN_NEXT_ACTION);
+				const owned = !facts.exists || (facts.same_repository && facts.is_worktree_root && facts.branch === child.lane.branch);
+				const readable = fresh.error === null;
+				const unreadable = !readable && laneUnreadableReason(fresh.error!, child.task_id, child.lane.run_id).startsWith("batch_lane_unreadable:");
+				if (!owned || (readable && facts.exists && (fresh.projection.run_id !== child.lane.run_id ||
+					fresh.projection.open_user_decision_count > 0 || fresh.projection.replan_required_ids.length > 0))) {
+					resumed.push(child); continue;
+				}
+				if (isParentBranch(record.branch) && (!facts.exists || unreadable || (readable && fresh.projection.lifecycle === "stopped"))) {
+					if ((child.redo_grants ?? 0) < 2) revive.add(child.task_id);
+					resumed.push(child); continue;
+				}
+				if (!readable || !facts.exists) { resumed.push(child); continue; }
 				const state = fresh.projection.lifecycle === "done" && fresh.projection.completion_ready ?
 					(child.lane.lane_commit ? "lane_committed" : "settled") :
 					fresh.projection.lifecycle === "active" && fresh.claim?.task_id === child.task_id &&
 					(facts.active_claim_task_id === null || facts.active_claim_task_id === child.task_id) ? "enrolled" : null;
-				if (!state) return laneReport(record, "parked child has no recoverable owned run", LANE_NEEDS_HUMAN_NEXT_ACTION);
+				if (!state) { resumed.push(child); continue; }
 				const authorityChange = state === "lane_committed" ? laneAuthorityChange(record, child.task_id, child.lane.path) : null;
 				if (authorityChange) {
-					park(record, child.task_id, authorityChange);
-					return laneReport(writeBatchLaneRunState(input.root, record), authorityChange, LANE_NEEDS_HUMAN_NEXT_ACTION);
+					resumed.push({ ...child, reason: authorityChange });
+					continue;
 				}
 				resumed.push({ ...child, state, reason: null, qa_failures: 0 });
 			}
-			record = { ...record, batch_state: "running", confirmation_time: input.confirmation_time,
-				children: resumed.map(child => child.state === "skipped_blocked" ? { ...child, state: "pending", reason: null } : child) };
+			record = { ...record, batch_state: "running", children: resumed.map(child =>
+				child.state === "skipped_blocked" ? { ...child, state: "pending", reason: null } : child) };
+			for (const child of record.children) if (child.state === "needs_human" && !revive.has(child.task_id) && !child.redo_head)
+				skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
 		}
 	} else {
 		const invalid = validateNewAuthorization(input);
@@ -920,7 +930,33 @@ export async function runLaneBatch(
 		return failLineage(input.root, record, error instanceof Error ? error.message : String(error));
 	}
 
-	if (resumedPark) persist();
+	if (resumedPark) {
+		const parkedSince = record.confirmation_time;
+		record = { ...record, confirmation_time: input.confirmation_time };
+		persist();
+		for (const taskId of revive) {
+			const child = record.children.find(c => c.task_id === taskId)!;
+			try {
+				const head = expectedBatchHead(record);
+				const binding = input.kernel.validateBatchAuthorization({ registry: input.registry, capability: input.capability,
+					binding: { batch_id: record.batch_id, plan_digest: record.plan_digest, base_head: record.base_head,
+						initiative_slug: record.initiative_slug, budget: record.budget } });
+				await withParentWorktree(input.root, head, async root => {
+					copyLanePlanningInput(input.root, root, taskId, "intent");
+					copyLanePlanningInput(input.root, root, taskId, "spec");
+					await deriveParkedChildRedoEnrollment(root, input.registry, { capability: input.capability, binding,
+						task_id: taskId, expected_head: head, now: input.now, parked_since: parkedSince,
+						prior_lane_root: child.lane!.path, prior_run_id: child.lane!.run_id! });
+					record.children = record.children.map(c => c.task_id === taskId ? { ...c,
+						redo_grants: input.registry.redoGrants(input.capability, taskId), redo_head: head } : c);
+					persist();
+				});
+			} catch (error) {
+				park(record, taskId, error instanceof Error ? error.message : String(error));
+				persist();
+			}
+		}
+	}
 	// A coordinator instruction is recorded before the Parent sends it, and only
 	// when it may be sent; the report tells the Parent which.
 	let instruction: BatchLaneRunReport["lane_instruction"];
@@ -992,7 +1028,8 @@ export async function runLaneBatch(
 	const queue = (): BatchLaneChildRun[] => [...record.children].sort((a, b) =>
 		(a.settled_at ?? record.created_at).localeCompare(b.settled_at ?? record.created_at));
 	const resumeRedo = async (child: BatchLaneChildRun): Promise<void> => {
-		const path = recreateLaneWorktree(input.root, record.initiative_slug, child.task_id, child.redo_head!, child.lane!.lane_commit!);
+		const path = recreateLaneWorktree(input.root, record.initiative_slug, child.task_id, child.redo_head!,
+			child.lane!.lane_commit ?? child.lane!.base_head, child.state === "needs_human");
 		record.children = record.children.map(c => {
 			if (c.task_id !== child.task_id) return c;
 			const { redo_head: head, settled_at: _settledAt, correction_due: _due, ...rest } = c;
@@ -1001,10 +1038,14 @@ export async function runLaneBatch(
 		});
 		persist();
 		await enrollInLane(child.task_id);
+		record.children = record.children.map(c => c.state === "skipped_blocked" ? { ...c, state: "pending", reason: null } : c);
+		for (const c of record.children) if (c.state === "needs_human") skipDependents(record, c.task_id, `dependency ${c.task_id} parked`);
+		persist();
 	};
 	// The grant and target survive a crash before recreation or enrollment.
 	for (const child of record.children) {
-		if (child.state !== "lane_committed" || !child.redo_head) continue;
+		if ((child.state !== "lane_committed" && child.state !== "needs_human") || !child.redo_head) continue;
+		if (child.state === "needs_human" && record.children.filter(c => IN_FLIGHT.has(c.state)).length >= limit) continue;
 		try { await resumeRedo(child); }
 		catch (error) { parkChild(child.task_id, error instanceof Error ? error.message : String(error)); }
 	}

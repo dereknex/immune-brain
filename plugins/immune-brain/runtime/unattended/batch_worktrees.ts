@@ -45,7 +45,7 @@ export function createLaneWorktree(root: string, slug: string, taskId: string, h
 }
 
 /** Recreate only the runtime-owned clean Lane; its ignored Authority Store is discarded. */
-export function recreateLaneWorktree(root: string, slug: string, taskId: string, head: string, priorCommit?: string): string {
+export function recreateLaneWorktree(root: string, slug: string, taskId: string, head: string, priorCommit?: string, reviveUnreadable = false): string {
 	parentBranchRef(slug);
 	parentBranchRef(taskId);
 	// Resolve the new base before deleting anything, including on a malformed ref.
@@ -53,7 +53,13 @@ export function recreateLaneWorktree(root: string, slug: string, taskId: string,
 	const path = join(worktreeDirectory(root), slug, taskId);
 	const branch = `imm-lane/${slug}/${taskId}`;
 	if (existsSync(path)) {
-		if (readBackendClaim(path)) throw new Error("batch_worktree_failed: redo Lane still has an active claim");
+		let claim: ReturnType<typeof readBackendClaim>;
+		try { claim = readBackendClaim(path); }
+		catch (error) {
+			if (!reviveUnreadable) throw error;
+			claim = null;
+		}
+		if (claim) throw new Error("batch_worktree_failed: redo Lane still has an active claim");
 		const current = git(path, ["rev-parse", "HEAD"]);
 		if ((priorCommit && current !== priorCommit && current !== target) || !removeLaneWorktree(root, path, branch, current))
 			throw new Error("batch_worktree_failed: redo requires the existing clean owned Lane");
@@ -64,6 +70,9 @@ export function recreateLaneWorktree(root: string, slug: string, taskId: string,
 		const found = spawnSync("git", ["-C", root, "rev-parse", "--verify", "--quiet", ref], { encoding: "utf8" });
 		if (found.status === 0) {
 			if (found.stdout.trim() !== priorCommit) throw new Error("batch_worktree_failed: redo branch moved");
+			// Remove only this missing Lane's stale registration, never prune other worktrees.
+			const listed = git(root, ["worktree", "list", "--porcelain"]);
+			if (listed.split("\n").includes(`worktree ${path}`)) git(root, ["worktree", "remove", path]);
 			git(root, ["update-ref", "-d", ref, priorCommit]);
 		} else if (found.status !== 1) throw new Error("batch_worktree_failed: redo branch is unreadable");
 	}
