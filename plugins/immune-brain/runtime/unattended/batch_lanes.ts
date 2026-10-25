@@ -52,7 +52,7 @@ import {
 } from "./batch_state";
 import { createDefaultBatchGitPort, type BatchRunnerGitPort } from "./batch_git";
 import { LANE_EXECUTOR_HOSTS } from "../role_prompt_bridge";
-import { pluginSourceSkewWarning } from "../plugin_source_skew";
+import { parentRuntimeSkew, pluginSourceSkewWarning } from "../plugin_source_skew";
 
 export { LANE_EXECUTOR_HOSTS };
 
@@ -815,8 +815,11 @@ export async function runLaneBatch(
 				}
 				resumed.push({ ...child, state, reason: null, qa_failures: 0 });
 			}
-			record = { ...record, batch_state: "running", children: resumed.map(child =>
-				child.state === "skipped_blocked" ? { ...child, state: "pending", reason: null } : child) };
+			record = { ...record, batch_state: "running", children: resumed.map(child => {
+				const next = child.state === "skipped_blocked" ? { ...child, state: "pending" as const, reason: null } : child;
+				// The fresh confirmation is the user's answer to a runtime reload pause.
+				return next.runtime_reload?.state === "required" ? { ...next, runtime_reload: { ...next.runtime_reload, state: "acknowledged" as const } } : next;
+			}) };
 			for (const child of record.children) if (child.state === "needs_human" && !revive.has(child.task_id) && !child.redo_head)
 				skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
 		}
@@ -1023,18 +1026,42 @@ export async function runLaneBatch(
 		}
 	};
 
+	// Spec branch-boundary-r2-followups D9: a child integrated a plugin build this
+	// coordinator, and every Lane Executor loading it, does not run. No new Lane is
+	// created until a fresh resume answers the pause; in-flight Lanes keep running.
+	let reloadRequired: string | null = null;
+	const runtimeAdmission = (taskId: string): { admit: boolean; acknowledged?: BatchLaneChildRun["runtime_skew_acknowledged"] } => {
+		if (!isParentBranch(record.branch)) return { admit: true };
+		const skew = parentRuntimeSkew(input.root, expectedBatchHead(record), record.commits);
+		if (!skew) return { admit: true };
+		// One acknowledged pause answers this build for every child of the batch.
+		if (record.children.some(c => c.runtime_reload?.state === "acknowledged" && c.runtime_reload.parent_bundle === skew.parent_bundle))
+			return { admit: true, acknowledged: skew };
+		const gate = record.children.find(c => c.task_id === taskId)?.runtime_reload;
+		if (gate?.state !== "required" || gate.parent_bundle !== skew.parent_bundle) {
+			record.children = record.children.map(c => c.task_id === taskId
+				? { ...c, runtime_reload: { commit: skew.commit, parent_bundle: skew.parent_bundle, state: "required" } } : c);
+			persist();
+		}
+		reloadRequired ??= `runtime_reload_required: integrated commit ${skew.commit} changed the plugin build that this coordinator and its Lane Executors load`;
+		return { admit: false };
+	};
 	const settledAt = (child: BatchLaneChildRun): string =>
 		readTaskTombstone(child.lane!.path, child.task_id)?.terminalized_at ?? input.now;
 	const queue = (): BatchLaneChildRun[] => [...record.children].sort((a, b) =>
 		(a.settled_at ?? record.created_at).localeCompare(b.settled_at ?? record.created_at));
 	const resumeRedo = async (child: BatchLaneChildRun): Promise<void> => {
+		// The durable grant and target wait for the resume; no Lane is recreated.
+		const runtime = runtimeAdmission(child.task_id);
+		if (!runtime.admit) return;
 		const path = recreateLaneWorktree(input.root, record.initiative_slug, child.task_id, child.redo_head!,
 			child.lane!.lane_commit ?? child.lane!.base_head, child.state === "needs_human");
 		record.children = record.children.map(c => {
 			if (c.task_id !== child.task_id) return c;
 			const { redo_head: head, settled_at: _settledAt, correction_due: _due, ...rest } = c;
 			return { ...rest, state: "lane_admitted", reason: null, qa_failures: 0,
-				lane: { path, branch: child.lane!.branch, base_head: head!, lane_commit: null } };
+				lane: { path, branch: child.lane!.branch, base_head: head!, lane_commit: null },
+				...(runtime.acknowledged ? { runtime_skew_acknowledged: runtime.acknowledged } : {}) };
 		});
 		persist();
 		await enrollInLane(child.task_id);
@@ -1281,10 +1308,16 @@ export async function runLaneBatch(
 	}
 	// 3. Admit runtime-created Lanes (or legacy offers), then enroll each child.
 	const offers = [...(input.lane_offers ?? [])];
+	let skewAcknowledged: BatchLaneChildRun["runtime_skew_acknowledged"];
 	if (isParentBranch(record.branch)) {
 		for (const taskId of startableChildren(scheduleView(input, record), limit)) {
 			if (consumedSlots(record) + offers.length >= record.budget.max_children) break;
 			if (input.kernel.canStartTask && !await input.kernel.canStartTask(taskId)) continue;
+			if (!offers.length) {
+				const runtime = runtimeAdmission(taskId);
+				if (!runtime.admit) break;
+				skewAcknowledged = runtime.acknowledged;
+			}
 			try { offers.push({ task_id: taskId, path: createLaneWorktree(input.root, record.initiative_slug, taskId, expectedBatchHead(record)) }); }
 			catch (error) { parkChild(taskId, error instanceof Error ? error.message : String(error)); }
 		}
@@ -1317,7 +1350,8 @@ export async function runLaneBatch(
 		// The child budget stops new admissions only; in-flight Lanes finish.
 		if (consumedSlots(record) >= record.budget.max_children) break;
 		const lane = { path: facts.real_path!, branch: laneBranchName(record.initiative_slug, child.task_id), base_head: head, lane_commit: null };
-		record.children = record.children.map((c) => (c.task_id === child.task_id ? { ...c, state: "lane_admitted", lane } : c));
+		record.children = record.children.map((c) => (c.task_id === child.task_id ? { ...c, state: "lane_admitted", lane,
+			...(skewAcknowledged ? { runtime_skew_acknowledged: skewAcknowledged } : {}) } : c));
 		persist();
 		const failed = await enrollInLane(child.task_id);
 		if (failed) return failed;
@@ -1392,6 +1426,17 @@ export async function runLaneBatch(
 	const inFlight = record.children.filter((c) => IN_FLIGHT.has(c.state));
 	const startable = startableChildren(scheduleView(input, record), limit);
 	const overBudget = consumedSlots(record) >= record.budget.max_children;
+	if (reloadRequired) {
+		// The pause holds admission and redo only; in-flight Executors keep running
+		// and their Lanes are integrated after the fresh resume.
+		record.batch_state = "needs_human";
+		record.final_report = await buildBatchFinalReport(input.root, record);
+		record.final_report.return_to_coordinator.reason = "children_not_integrated";
+		persist();
+		return finalizeLane(input.root, record, reloadRequired,
+			"Reload the Host so it loads the Parent tip's plugin build (Claude Code: /mcp reconnect; Pi: /reload), then resume the batch with a fresh literal-user confirmation. A resume without reload admits the child with runtime_skew_acknowledged recorded.",
+			{ handoffs, refusals, tracker, instruction });
+	}
 	if (!inFlight.length && (!startable.length || overBudget)) {
 		const parked = record.children.some((c) => c.state === "needs_human" || c.state === "skipped_blocked");
 		record.batch_state = parked ? "needs_human" : overBudget ? "budget_stopped" : "needs_human";

@@ -1,0 +1,184 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "lane-runtime-reload-gate",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "lane-runtime-reload-gate",
+    "goal": "When an integrated child changed the plugin build, the next Lane admission pauses with `runtime_reload_required` instead of running a stale runtime, and a confirmed resume admits it, recording `runtime_skew_acknowledged` when the build still differs (Spec branch-boundary-r2-followups D9).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In a plugin-source repository, after a child integrates a commit that changes `plugins/immune-brain/dist/claude/mcp-server.mjs` so the Parent tip bundle differs from the loaded build, the next admission or redo creates no Lane, the batch pauses `needs_human` with `runtime_reload_required` naming the integrated commit, and in-flight children keep running; with an equal build, or in a repository that is not the plugin source, admission proceeds without a pause.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-runtime-reload-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "A fresh literal-user resume admits the paused child; when the loaded build now equals the Parent tip bundle nothing is recorded, and when it still differs the child record and the final report carry `runtime_skew_acknowledged`.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-runtime-reload-gate.test.ts\",\n      \"tests/batch-final-report.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Packaged dist docs and role prompts match their canonical sources.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/sync-dist-docs.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "The generated Claude MCP bundle matches the runtime source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/build-claude-plugin.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "The project typechecks.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/lane-runtime-reload-gate.md",
+      "docs/plans/lane-runtime-reload-gate.intent.json",
+      "docs/specs/branch-boundary-r2-followups.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run-batch.md",
+      "plugins/immune-brain/runtime/plugin_source_skew.ts",
+      "plugins/immune-brain/runtime/unattended/batch_final_report.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "tests/batch-final-report.test.ts",
+      "tests/batch-runtime-reload-gate.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/lane-runtime-reload-gate.intent.json",
+    "content_hash": "sha256:639e33f3649cd0bf9044c0b6dceef4faeaf98d77ac0f0e5dfa51e85ae7fca6b8"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:639e33f3649cd0bf9044c0b6dceef4faeaf98d77ac0f0e5dfa51e85ae7fca6b8",
+  "git_base_head": "e180e918a03c6a05b09dec6a8e9880568342771f",
+  "attestations": [
+    {
+      "id": "approval-qa-669b73cc",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:639e33f3649cd0bf9044c0b6dceef4faeaf98d77ac0f0e5dfa51e85ae7fca6b8",
+      "diff_hash": "sha256:de1682273f204d5f0b3ff695dc78de1f422038aae8c6052eccbeb951ed8de123",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 project verification check(s) passed; execution=sha256:d78b0141d45f427faf880632cd3da783caf7cddccee4a049a5e5f2521a1cd92f",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:d78b0141d45f427faf880632cd3da783caf7cddccee4a049a5e5f2521a1cd92f"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:d78b0141d45f427faf880632cd3da783caf7cddccee4a049a5e5f2521a1cd92f"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:d78b0141d45f427faf880632cd3da783caf7cddccee4a049a5e5f2521a1cd92f"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:d78b0141d45f427faf880632cd3da783caf7cddccee4a049a5e5f2521a1cd92f"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:d78b0141d45f427faf880632cd3da783caf7cddccee4a049a5e5f2521a1cd92f"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-95e35f11",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:639e33f3649cd0bf9044c0b6dceef4faeaf98d77ac0f0e5dfa51e85ae7fca6b8",
+      "diff_hash": "sha256:de1682273f204d5f0b3ff695dc78de1f422038aae8c6052eccbeb951ed8de123",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (single parent e180e91, tree e9802e0); the runtime reload gate holds Lane admission and redo, records and validates runtime_reload/runtime_skew_acknowledged, the final report carries the acknowledgement, the MCP bundle mirrors the source apart from generated alias renumbering, and the tests cover the differs, equal, non-plugin, stale-resume, fresh-resume and caught-up-build cases.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "e180e918a03c6a05b09dec6a8e9880568342771f",
+        "review_commit": "0c592bb4c443c2af5cdd4567290a22700e52b6f7",
+        "review_tree": "e9802e0bbcc19dd8c84d817d59fe4393d75bd7b4",
+        "manifest_digest": "sha256:14574a592b6eaeb93fc02b33963b3141dfa3006cfad25fadf71fbb279e0dcf06"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-296cf5c27eee-1-review-1",
+          "acceptance_id": "AC1",
+          "summary": "The admission gate runs only when input.lane_offers is empty, so the legacy lane_offers admission path admits a child with no runtime_reload check and no test covers it.",
+          "anchor": "sha256:460bbfe84a92e018f1ba5413606f0f5df0d2078df833183c26d2b0f7c6620171",
+          "evidence": {
+            "trigger": "A plugin-source batch whose Parent tip bundle differs from the loaded build, resumed with non-empty input.lane_offers → the child is admitted into a Lane with no runtime_reload_required pause and no runtime_skew_acknowledged",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/unattended/batch_lanes.ts:runLaneBatch",
+              "plugins/immune-brain/runtime/unattended/batch_lanes.ts:runtimeAdmission"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:2e514525d9c6c027cdeb5632eb2ab42cddcafb19df80884c084be25215b0a79c"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:lane-runtime-reload-gate:2026-10-25T13:01:50.834Z",
+      "at": "2026-10-25T13:01:50.834Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/lane-runtime-reload-gate.intent.json"
+    },
+    {
+      "id": "record_approval:lane-runtime-reload-gate:2026-10-25T13:02:23.117Z",
+      "at": "2026-10-25T13:02:23.117Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-669b73cc\naction_v2_sha256:08a034fb10c79494daffbccc2b2c7ec61ad05c07a2a40e29f7e01c999c47a31d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-25T13:02:23.117Z"
+      }
+    },
+    {
+      "id": "record_approval:lane-runtime-reload-gate:2026-10-25T13:03:50.320Z",
+      "at": "2026-10-25T13:03:50.320Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-95e35f11\naction_v2_sha256:59ae41bd396e77f01bd5bfbda567f2b5f49cfa0bb1b5ddb71fe01c68fe544ae4",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-25T13:03:50.320Z"
+      }
+    },
+    {
+      "id": "complete:lane-runtime-reload-gate:2026-10-25T13:03:51.408Z",
+      "at": "2026-10-25T13:03:51.408Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:53d8098510a0502568447620fa6ff3b17c0c2dc3918f50bfd8fbc0e96db7eb4c"
+    }
+  ]
+}

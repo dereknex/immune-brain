@@ -5,7 +5,7 @@
 // not move during development, so the generated Claude bundle stands in for
 // the build: every runtime change regenerates it under the build parity check.
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
 import { runningRuntimeSource } from "./kernel/runtime_contracts";
@@ -66,6 +66,44 @@ export function pluginSourceSkewWarning(root: string, loadedFrom: string = runni
 		// An observation never blocks status.
 		return null;
 	}
+}
+
+const BUNDLE_GIT_PATH = "plugins/immune-brain/dist/claude/mcp-server.mjs";
+
+export interface ParentRuntimeSkew {
+	/** The latest integrated commit that changed the generated bundle. */
+	commit: string;
+	parent_bundle: string;
+	/** Null when the loaded build cannot be read; that counts as differing. */
+	loaded_bundle: string | null;
+}
+
+const bundleHash = (bytes: Buffer): string => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+
+/**
+ * Spec branch-boundary-r2-followups D9, T4: the Parent tip's generated bundle
+ * against the build this coordinator loaded, which its Lane Executors load too.
+ * Null outside the plugin source repository, when the bundles are equal, or
+ * when no integrated commit changed the bundle; a difference that predates the
+ * batch is refused at batch start instead.
+ */
+export function parentRuntimeSkew(root: string, head: string, integrated: readonly string[],
+	loadedFrom: string = runningRuntimeSource()): ParentRuntimeSkew | null {
+	if (!integrated.length || !existsSync(join(root, WORKSPACE_PLUGIN_DIR, PLUGIN_MANIFEST))) return null;
+	const parent = spawnSync("git", ["-C", root, "show", `${head}:${BUNDLE_GIT_PATH}`], { maxBuffer: 256 * 1024 * 1024 });
+	if (parent.status !== 0) return null;
+	const loadedRoot = pluginRootAbove(loadedFrom);
+	let loaded: Buffer | null = null;
+	try {
+		if (loadedRoot) loaded = readFileSync(join(loadedRoot, BUILD_PROXY));
+	} catch {
+		loaded = null;
+	}
+	if (loaded?.equals(parent.stdout)) return null;
+	const commit = [...integrated].reverse().find(candidate =>
+		spawnSync("git", ["-C", root, "diff", "--quiet", `${candidate}^`, candidate, "--", BUNDLE_GIT_PATH]).status === 1);
+	if (!commit) return null;
+	return { commit, parent_bundle: bundleHash(parent.stdout), loaded_bundle: loaded ? bundleHash(loaded) : null };
 }
 
 export interface BundleIdentityWatch {

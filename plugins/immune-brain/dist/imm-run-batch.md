@@ -180,6 +180,17 @@ A repeated tick or a newer caller timestamp without a fresh confirmation grants
 no recovery authority. A durable redo resumes after interruption without spending
 another grant. Do not retire the batch just because one child cannot be revived.
 
+In the Immune-Brain plugin source repository, a child that integrates a change to
+`plugins/immune-brain/dist/claude/mcp-server.mjs` leaves the Parent tip on a build
+the coordinator and its Lane Executors have not loaded. The next admission or
+redo then creates no Lane: the batch parks `needs_human` with
+`runtime_reload_required` naming that integrated commit, while in-flight
+Executors keep running and their `executor` handoffs remain. Reload the Host
+(Claude Code `/mcp` reconnect; Pi `/reload`), then resume with a fresh
+literal-user confirmation. If the loaded build then equals the Parent tip bundle,
+nothing is recorded; if it still differs, the admitted child and `final_report`
+carry `runtime_skew_acknowledged`.
+
 Frozen acceptance remains the authority subject (ADR 0026). A Lane child whose
 acceptance changes pauses for the literal user's native gate; the coordinator
 cannot approve revisions or reseal `plan_digest` (ADR 0028). There is no

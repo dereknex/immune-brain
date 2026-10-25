@@ -134,6 +134,14 @@ describe("D24 final report and coordinator return", () => {
 		await expect(buildBatchFinalReport(fx.root, fx.batch)).rejects.toThrow("planning evidence changed");
 	});
 
+	test("carries a child's runtime_skew_acknowledged and omits it otherwise", async () => {
+		const fx = fixture();
+		expect((await buildBatchFinalReport(fx.root, fx.batch)).children[0]).not.toHaveProperty("runtime_skew_acknowledged");
+		const skew = { commit: fx.head, parent_bundle: `sha256:${"3".repeat(64)}`, loaded_bundle: `sha256:${"4".repeat(64)}` };
+		fx.batch.children[0]!.runtime_skew_acknowledged = skew;
+		expect((await buildBatchFinalReport(fx.root, fx.batch)).children[0]!.runtime_skew_acknowledged).toEqual(skew);
+	});
+
 	test("missing committed audit is a failure, not a green final report", async () => {
 		const fx = fixture();
 		fx.batch.children[0]!.task_id = "missing";

@@ -11,7 +11,7 @@ import { pathMatchesScope, taskCommitRevisionIdentity } from "../workspace_scope
 import { expectedBatchHead } from "./batch_preflight";
 import { isParentBranch } from "./batch_ref";
 import { withParentWorktree } from "./batch_worktrees";
-import type { BatchLaneRunStateRecord } from "./batch_state";
+import type { BatchLaneRunStateRecord, RuntimeSkewAcknowledgement } from "./batch_state";
 import type { FinalVerificationReport } from "./batch_final_verification";
 
 export interface BatchFinalReport {
@@ -25,6 +25,8 @@ export interface BatchFinalReport {
 		projected_risk: TaskIntentV1["risk"] | null;
 		redo_count: number;
 		parked_reason: string | null;
+		/** Admitted on a fresh resume while the Parent tip's plugin build still differed from the loaded build. */
+		runtime_skew_acknowledged?: RuntimeSkewAcknowledgement;
 	}>;
 	final_verification: FinalVerificationReport | null;
 	return_to_coordinator: { mode: GitIntegrationMode; status: "manual" | "fast_forwarded" | "blocked"; reason: string | null };
@@ -90,6 +92,7 @@ export async function buildBatchFinalReport(root: string, record: BatchLaneRunSt
 				projected_risk: paths ? resolveProjectedRisk(intent, paths, floor) : null,
 				redo_count: child.redo_grants ?? 0,
 				parked_reason: integrated ? null : child.reason,
+				...(child.runtime_skew_acknowledged ? { runtime_skew_acknowledged: child.runtime_skew_acknowledged } : {}),
 			};
 		});
 	});

@@ -172,6 +172,26 @@ export interface BatchLaneChildRun {
 	 * correction is recorded.
 	 */
 	correction_due?: string;
+	/**
+	 * Admitted after a fresh resume while the Parent tip's plugin build still
+	 * differed from the coordinator's loaded build (Spec branch-boundary-r2-followups D9).
+	 */
+	runtime_skew_acknowledged?: RuntimeSkewAcknowledgement;
+	/** The integrated plugin build change that held this child's Lane admission or redo. */
+	runtime_reload?: RuntimeReloadGate;
+}
+
+export interface RuntimeSkewAcknowledgement {
+	commit: string;
+	parent_bundle: string;
+	loaded_bundle: string | null;
+}
+
+/** An integrated plugin build change that holds Lane admission until a fresh resume acknowledges it. */
+export interface RuntimeReloadGate {
+	commit: string;
+	parent_bundle: string;
+	state: "required" | "acknowledged";
 }
 
 export interface LaneIntervention {
@@ -300,6 +320,7 @@ function canonicalBytes(record: AnyBatchRunStateRecord): string {
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const isHash = (v: unknown) => typeof v === "string" && /^sha256:[0-9a-f]{64}$/.test(v);
 const isRevision = (v: unknown) => typeof v === "number" && Number.isSafeInteger(v) && v > 0;
+const isCommit = (v: unknown) => typeof v === "string" && /^[0-9a-f]{40}$/.test(v);
 
 /** The authorized identities of a plan's children, keyed by task id. */
 export function batchIntentIdentities(children: BatchPlanChild[]): Record<string, BatchIntentIdentity> {
@@ -787,6 +808,14 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid tracker_closed`);
 		if (child.tracker_closed === true && child.state !== "integrated" && child.state !== "released")
 			throw new Error(`batch run state ${batchId} child ${child.task_id} closed its tracker Issue before integration`);
+		const skew = child.runtime_skew_acknowledged;
+		if (skew !== undefined && (!isObject(skew) || !isCommit(skew.commit) || !isHash(skew.parent_bundle) ||
+			(skew.loaded_bundle !== null && !isHash(skew.loaded_bundle))))
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid runtime_skew_acknowledged`);
+		const gate = child.runtime_reload;
+		if (gate !== undefined && (!isObject(gate) || !isCommit(gate.commit) || !isHash(gate.parent_bundle) ||
+			(gate.state !== "required" && gate.state !== "acknowledged")))
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid runtime_reload`);
 		const lane = child.lane as BatchLaneBinding | null | undefined;
 		if (lane !== null) {
 			if (
