@@ -88,7 +88,7 @@ describe("redo enrollment under the original Batch Authorization", () => {
 	test("parked recovery checks capability confirmation, not a caller's new timestamp", async () => {
 		const fx = fixture("stopped");
 		await expect(deriveParkedChildRedoEnrollment(fx.root, fx.registry,
-			{ ...fx.request, now: "2027-01-01T00:00:00.000Z", parked_since: NOW })).rejects.toThrow("confirmation_required");
+			{ ...fx.request, now: "2099-01-01T00:00:00.000Z", parked_since: NOW })).rejects.toThrow("confirmation_required");
 		expect(fx.registry.redoGrants(fx.capability, "child")).toBe(0);
 	});
 
