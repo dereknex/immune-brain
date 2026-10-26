@@ -1,0 +1,126 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "review-dispatch-conflict-release-test-repair",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "review-dispatch-conflict-release-test-repair",
+    "goal": "The review-dispatch-handle batch (#303, commits 6626254, 2f45bf7, ebea34b) passes its final `bun test` again: the Pi foreground progression test that still expects a retained Review reservation after conflicting reviewer result bytes during an awaited submission asserts the release that Spec review-dispatch-handle T4 decided, while the S3 packet-integrity behavior stays unchanged.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "On Pi, conflicting result bytes for the bound reviewer call observed during an awaited submit_review (relayed and unrelayed verdict) return state blocked with a conflicting-result-bytes reason and the released-reservation recovery action, apply the Kernel at most once, and leave no active Review reservation (Spec review-dispatch-handle T4); the Pi Review dispatch resilience tests still pass. The assertion is updated only to that Spec decision, not deleted or weakened.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v2\",\"command\":{\"executable\":\"bun\",\"argv\":[\"test\",\"tests/pi-canary-assurance-progression.test.ts\",\"tests/pi-canary-review-dispatch-resilience.test.ts\"],\"cwd\":\".\",\"timeout_ms\":300000,\"max_output_bytes\":131072},\"environment\":{\"prepare\":null,\"writable_paths\":[]}}"
+      },
+      {
+        "id": "AC2",
+        "assertion": "The project typechecks.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v2\",\"command\":{\"executable\":\"bun\",\"argv\":[\"run\",\"typecheck\"],\"cwd\":\".\",\"timeout_ms\":180000,\"max_output_bytes\":131072},\"environment\":{\"prepare\":null,\"writable_paths\":[]}}"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/review-dispatch-conflict-release-test-repair.intent.json",
+      "tests/pi-canary-assurance-progression.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/review-dispatch-conflict-release-test-repair.intent.json",
+    "content_hash": "sha256:3c958a7d25810b2076a1823d43552e759d98d8b4364460363e431e936c7e8721"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:3c958a7d25810b2076a1823d43552e759d98d8b4364460363e431e936c7e8721",
+  "git_base_head": "ebea34b981202dd996f5c9ca2806697a9e64ed40",
+  "attestations": [
+    {
+      "id": "approval-qa-f5d3b2c2",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:3c958a7d25810b2076a1823d43552e759d98d8b4364460363e431e936c7e8721",
+      "diff_hash": "sha256:af1b51ae6ad7d47d3eb73799104fcf8d98a4559a35c2cff5de48485155abf772",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:af974a5731753cd916d26ef05e494c17ee4e929862e033e7eeb27e1d0881d72b",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:af974a5731753cd916d26ef05e494c17ee4e929862e033e7eeb27e1d0881d72b"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:af974a5731753cd916d26ef05e494c17ee4e929862e033e7eeb27e1d0881d72b"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-7fbd0383",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:3c958a7d25810b2076a1823d43552e759d98d8b4364460363e431e936c7e8721",
+      "diff_hash": "sha256:af1b51ae6ad7d47d3eb73799104fcf8d98a4559a35c2cff5de48485155abf772",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (single parent ebea34b, tree cdd6fe8); the Pi progression test now asserts Spec review-dispatch-handle T4 release (blocked with conflicting-result-bytes reason, RELEASED_REVIEW_RECOVERY from runtime/assurance/review_mediation.ts:50, applyCount 1, no active reservation) for relayed and unrelayed verdicts without weakening other assertions; the intent file matches the scope.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "ebea34b981202dd996f5c9ca2806697a9e64ed40",
+        "review_commit": "04d7262a83ea302c7360c54dae867863bef38ea8",
+        "review_tree": "cdd6fe829dcede605da76265f901a7032809250a",
+        "manifest_digest": "sha256:faa6e00b631d7d4d0267a10eaf6a2bb4fd63255f227280063e06001dffa4abdf"
+      },
+      "reviewer_verdict_sha256": "sha256:8de2969bd4e3f9e42c9d539146275dd06d47a46c10100f0ec43cfde9fb772617"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:review-dispatch-conflict-release-test-repair:2026-10-26T07:30:47.903Z",
+      "at": "2026-10-26T07:30:47.903Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-dispatch-conflict-release-test-repair.intent.json"
+    },
+    {
+      "id": "record_approval:review-dispatch-conflict-release-test-repair:2026-10-26T07:30:54.656Z",
+      "at": "2026-10-26T07:30:54.656Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-f5d3b2c2\naction_v2_sha256:7c7d70b8998af800790d7c8f7037e458d858ef0880613ea56acb7a1efc4b135d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-26T07:30:54.656Z"
+      }
+    },
+    {
+      "id": "record_approval:review-dispatch-conflict-release-test-repair:2026-10-26T07:31:33.390Z",
+      "at": "2026-10-26T07:31:33.390Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-7fbd0383\naction_v2_sha256:ac1aba83e3480e73aa9c49647960ff25c87cedb1ac531a409744c5a2b4e98e85",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-26T07:31:33.390Z"
+      }
+    },
+    {
+      "id": "complete:review-dispatch-conflict-release-test-repair:2026-10-26T07:31:34.300Z",
+      "at": "2026-10-26T07:31:34.300Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:b282800d6b98e5bae8dbe119d90d9b1106a859c2c149d1cf968c4f913ee3d0d2"
+    }
+  ]
+}
