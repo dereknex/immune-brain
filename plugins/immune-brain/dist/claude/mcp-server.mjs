@@ -15862,6 +15862,27 @@ function reservedDispatchPrompt(request) {
   return `<!-- immune-brain:operation_id=${request.operationId} task_id=${request.taskId} -->
 ${request.snapshotPrompt}`;
 }
+function parseReviewMarker(prompt) {
+  if (typeof prompt !== "string")
+    return;
+  const match = /<!-- immune-brain:operation_id=([^\s]+)\s+task_id=([^\s]+)\s+-->/.exec(prompt);
+  if (match)
+    return { operationId: match[1], taskId: match[2] };
+}
+function reviewDispatchHookOutput(payload) {
+  if (payload.hook_event_name !== "PreToolUse" || payload.tool_name !== AGENT_TOOL)
+    return;
+  const input = payload.tool_input;
+  if (!parseReviewMarker(input?.prompt))
+    return;
+  if (input?.subagent_type === REVIEWER_AGENT || input?.subagent_type === CLAUDE_REVIEWER_AGENT)
+    return;
+  return JSON.stringify({ hookSpecificOutput: {
+    hookEventName: "PreToolUse",
+    permissionDecision: "deny",
+    permissionDecisionReason: "Reserved Review dispatch requires subagent_type immune-brain:immune-brain-reviewer or immune-brain-reviewer."
+  } });
+}
 function bindsPrompt(prompt, pending) {
   return prompt === undefined || prompt === pending.dispatchPrompt;
 }
@@ -15902,7 +15923,7 @@ class ClaudeReviewHost {
     return {
       id: request.operationId,
       dispatch: {
-        name: CLAUDE_REVIEWER_AGENT,
+        subagent_type: CLAUDE_REVIEWER_AGENT,
         prompt: reservedDispatchPrompt(request)
       }
     };
@@ -16052,13 +16073,13 @@ class ClaudeReviewHost {
     this.drain();
     const state = this.pending.get(reservation.id);
     if (!state)
-      return { ok: false, reason: "reserved foreground Agent was not observed", release: false };
+      return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
     if (state.consumed)
       return { ok: false, reason: "review receipt already consumed", release: true };
     if (state.error)
       return { ok: false, reason: state.error, release: true };
     if (!state.startEvent)
-      return { ok: false, reason: "reserved foreground Agent was not observed", release: false };
+      return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
     if (!state.stopEvent || !state.postEvent?.result?.trim()) {
       return { ok: false, reason: "foreground Agent terminal event order is incomplete", release: false };
     }
@@ -16096,7 +16117,7 @@ class ClaudeReviewHost {
     this.drain();
     const entry = [...this.pending.entries()].find(([, state]) => state.request.taskId === taskId);
     if (!entry)
-      return { ok: false, reason: "reserved foreground Agent was not observed", release: false };
+      return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
     return this.inspectReview({ id: entry[0], dispatch: entry[1].request });
   }
   releaseReview(reservation) {
@@ -16154,14 +16175,14 @@ function parseHookStdin(raw) {
     }
   }
   if (prompt) {
-    const match = /<!-- immune-brain:operation_id=([^\s]+)\s+task_id=([^\s]+)\s+-->/.exec(prompt);
-    if (match) {
-      if (extractedOpId && extractedOpId !== match[1])
+    const marker = parseReviewMarker(prompt);
+    if (marker) {
+      if (extractedOpId && extractedOpId !== marker.operationId)
         return null;
-      if (extractedTaskId && extractedTaskId !== match[2])
+      if (extractedTaskId && extractedTaskId !== marker.taskId)
         return null;
-      extractedOpId = match[1];
-      extractedTaskId = match[2];
+      extractedOpId = marker.operationId;
+      extractedTaskId = marker.taskId;
     }
   }
   if (hookType === "SubagentStart" || hookType === "SubagentStop") {
@@ -21147,7 +21168,7 @@ async function runHook() {
     payload = null;
   }
   if (payload?.hook_event_name === "PreToolUse") {
-    const decision = laneGuardHookOutput(payload) ?? phaseEntryGateHookOutput(payload) ?? await runContinuationHookOutput(payload);
+    const decision = laneGuardHookOutput(payload) ?? phaseEntryGateHookOutput(payload) ?? reviewDispatchHookOutput(payload) ?? await runContinuationHookOutput(payload);
     if (decision)
       process.stdout.write(`${decision}
 `);

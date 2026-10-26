@@ -1,8 +1,11 @@
 ---
-status: accepted
+status: partially superseded
 ---
 
 # Receipt-Bound Review Verdict Submission
+
+[ADR 0030](0030-marker-keyed-review-dispatch.md) supersedes the reserved-prompt
+binding and unbound-recovery rules below; receipt-bound settlement remains unchanged.
 
 Accepted with the Issue #177 remaining work. The reviewer's verdict reaches the
 Kernel through a Parent transcription today; this ADR removes the transcription

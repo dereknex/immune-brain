@@ -9,6 +9,7 @@ import {
 	FileHookEventLog,
 	parseAsyncAgentLaunch,
 	parseHookStdin,
+	reviewDispatchHookOutput,
 	readAgentTranscriptResult,
 } from "../plugins/immune-brain/runtime/claude/review_host";
 import type { ReviewRequest, HostReviewReservation } from "../plugins/immune-brain/runtime/assurance/host_port";
@@ -163,8 +164,13 @@ describe("claude review host: dispatch envelope shape", () => {
 		// Exact key set, not a subset check: re-adding a receiver-less parameter
 		// must fail here. The Claude `Agent` tool has no turn cap and no
 		// background switch, so `max_turns` and `run_in_background` never had one.
-		expect(Object.keys(dispatch).sort()).toEqual(["name", "prompt"]);
-		expect(dispatch.name).toBe(CLAUDE_REVIEWER_AGENT);
+		expect(Object.keys(dispatch).sort()).toEqual(["prompt", "subagent_type"]);
+		expect(dispatch.subagent_type).toBe(CLAUDE_REVIEWER_AGENT);
+		expect(reviewDispatchHookOutput({ hook_event_name: "PreToolUse", tool_name: "Agent", tool_input: dispatch })).toBeUndefined();
+		for (const subagent_type of ["general-purpose", undefined]) {
+			const denied = reviewDispatchHookOutput({ hook_event_name: "PreToolUse", tool_name: "Agent", tool_input: { ...dispatch, subagent_type } });
+			expect(JSON.parse(denied!).hookSpecificOutput).toMatchObject({ permissionDecision: "deny", permissionDecisionReason: expect.stringContaining("subagent_type") });
+		}
 		// The envelope carries the marker plus the per-dispatch snapshot facts only,
 		// not the complete prompt: the static instructions live in the generated
 		// reviewer definition, so sending them again would fork the single source.
@@ -219,7 +225,7 @@ describe("claude review host: dispatch envelope shape", () => {
 
 			const host = new ClaudeReviewHost(new FileHookEventLog(root));
 			const reservation = host.prepareReview(reviewRequest());
-			const dispatch = reservation.dispatch as { name: string; prompt: string };
+			const dispatch = reservation.dispatch as { subagent_type: string; prompt: string };
 			// Dispatched verbatim: the envelope's own prompt, not a reconstructed one.
 			observeDispatch(host, {
 				sessionId: RECORDED_SESSION,
@@ -292,7 +298,7 @@ describe("claude review host: exact reserved prompt binding", () => {
 					result: {
 						ok: false,
 						reason: "reserved foreground Agent was not observed",
-						release: false,
+						release: true,
 					},
 				});
 			} finally {
@@ -309,7 +315,7 @@ describe("claude review host: exact reserved prompt binding", () => {
 			expect(host.consumeReview(reservation)).toMatchObject({
 				ok: false,
 				reason: "reserved foreground Agent was not observed",
-				release: false,
+				release: true,
 			});
 		} finally {
 			rmSync(root, { recursive: true, force: true });
@@ -335,7 +341,7 @@ describe("claude review host: exact reserved prompt binding", () => {
 			expect(host.consumeReview(reservation)).toEqual({
 				ok: false,
 				reason: "reserved foreground Agent was not observed",
-				release: false,
+				release: true,
 			});
 		} finally {
 			rmSync(root, { recursive: true, force: true });
@@ -511,7 +517,7 @@ describe("claude review host: recorded async Agent envelope", () => {
 			expect(host.consumeReview(reservation)).toMatchObject({
 				ok: false,
 				reason: "reserved foreground Agent was not observed",
-				release: false,
+				release: true,
 			});
 		} finally {
 			rmSync(root, { recursive: true, force: true });

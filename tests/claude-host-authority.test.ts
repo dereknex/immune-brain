@@ -14,7 +14,7 @@ import {
 } from "../plugins/immune-brain/runtime/assurance/coordinator";
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import { tmpdir } from "node:os";
-import { ClaudeReviewHost, FileHookEventLog, MemoryHookEventLog, hookEventPath, parseHookStdin, REVIEWER_AGENT, AGENT_TOOL } from "../plugins/immune-brain/runtime/claude/review_host";
+import { ClaudeReviewHost, FileHookEventLog, MemoryHookEventLog, hookEventPath, parseHookStdin, reviewDispatchHookOutput, REVIEWER_AGENT, AGENT_TOOL } from "../plugins/immune-brain/runtime/claude/review_host";
 import { createMcpRuntime as createMcpRuntimeUngated, handleJsonRpc, listMcpTools, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import { ClaudeRuntime, diffHashOf, diffSnapshotOf, submitClaudeReview, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
@@ -58,6 +58,19 @@ function withRunEntry(workspace?: string): { consumePhaseAdmission: (toolCallId:
 function createMcpRuntime(options: Parameters<typeof createMcpRuntimeUngated>[0] = {}) {
 	return createMcpRuntimeUngated({ ...withRunEntry(options.cwd), ...options });
 }
+
+test.each(["general-purpose", undefined, "immune-brain:immune-brain-reviewer", "immune-brain-reviewer"])("marker-targeted Claude dispatch validates subagent_type %s", (subagent_type) => {
+	const output = reviewDispatchHookOutput({ hook_event_name: "PreToolUse", tool_name: "Agent", tool_input: {
+		prompt: "<!-- immune-brain:operation_id=operation task_id=task -->\nreserved", subagent_type,
+	} });
+	if (subagent_type === undefined || subagent_type === "general-purpose") {
+		expect(JSON.parse(output!).hookSpecificOutput).toMatchObject({ permissionDecision: "deny", permissionDecisionReason: expect.stringContaining("subagent_type") });
+	} else expect(output).toBeUndefined();
+});
+
+test("marker-less general-purpose Claude dispatch is unaffected", () => {
+	expect(reviewDispatchHookOutput({ hook_event_name: "PreToolUse", tool_name: "Agent", tool_input: { prompt: "unrelated", subagent_type: "general-purpose" } })).toBeUndefined();
+});
 
 const TASK = "phase3-task";
 const ROOT = "/tmp/claude-host-authority";
@@ -850,7 +863,7 @@ describe("claude host authority", () => {
 		const blocked = await mcp.callTool("submit_review", { task_id: TASK }) as { state: string; reason: string; recovery_action?: string };
 		expect(blocked.state).toBe("blocked");
 		expect(blocked.reason).toBe("reserved foreground Agent was not observed");
-		expect(blocked.recovery_action).toContain("do not dispatch or continue another reviewer");
+		expect(blocked.recovery_action).toContain("Call advance_assurance");
 		expect(h.counts().applyCount).toBe(1);
 	});
 
@@ -1315,7 +1328,9 @@ describe("claude host authority", () => {
 		host.observe({ type: "PostToolUse", sessionId: "other", agentId: "x", toolName: AGENT_TOOL, result: JSON.stringify(passVerdict(snapshot("review"))) });
 		host.observe({ type: "SubagentStop", sessionId: "other", agent: REVIEWER_AGENT, agentId: "x" });
 		expect(await submitObservedReview(h)).toMatchObject({ reason: "reserved foreground Agent was not observed" });
-		completeReview(host, op, JSON.stringify(passVerdict(snapshot("review"))), "bound");
+		const fresh = await h.coordinator.advance(TASK, ctx) as { operation_id: string };
+		expect(fresh.operation_id).not.toBe(op);
+		completeReview(host, fresh.operation_id, JSON.stringify(passVerdict(snapshot("review"))), "bound");
 		expect(await submitObservedReview(h)).toEqual({ state: "completed" });
 	});
 
@@ -2035,8 +2050,8 @@ describe("claude host resolve_finding", () => {
 		const h = makeCoordinator({ host });
 		const ready = await h.coordinator.advance(TASK, ctx) as { operation_id: string };
 		const missing = await blocked(host, h, verdict());
-		expect(missing).toMatchObject({ reason: "reserved foreground Agent was not observed", recovery_action: retained });
-		expect((await h.coordinator.advance(TASK, ctx) as { operation_id: string }).operation_id).toBe(ready.operation_id);
+		expect(missing).toMatchObject({ reason: "reserved foreground Agent was not observed", recovery_action: released });
+		expect((await h.coordinator.advance(TASK, ctx) as { operation_id: string }).operation_id).not.toBe(ready.operation_id);
 
 		const incompleteHost = new ClaudeReviewHost();
 		const incomplete = makeCoordinator({ host: incompleteHost });

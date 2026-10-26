@@ -301,10 +301,28 @@ interface PendingReview {
  * deliberately absent: the dispatched reviewer definition carries them, and they
  * are generated from one source by the plugin build.
  */
-function reservedDispatchPrompt(
+export function reservedDispatchPrompt(
 	request: Pick<ReviewRequest, "operationId" | "taskId" | "snapshotPrompt">,
 ): string {
 	return `<!-- immune-brain:operation_id=${request.operationId} task_id=${request.taskId} -->\n${request.snapshotPrompt}`;
+}
+
+export function parseReviewMarker(prompt: unknown): { operationId: string; taskId: string } | undefined {
+	if (typeof prompt !== "string") return;
+	const match = /<!-- immune-brain:operation_id=([^\s]+)\s+task_id=([^\s]+)\s+-->/.exec(prompt);
+	if (match) return { operationId: match[1], taskId: match[2] };
+}
+
+/** The hook rejects a marker-targeted dispatch before the wrong reviewer runs. */
+export function reviewDispatchHookOutput(payload: Record<string, unknown>): string | undefined {
+	if (payload.hook_event_name !== "PreToolUse" || payload.tool_name !== AGENT_TOOL) return;
+	const input = payload.tool_input as Record<string, unknown> | undefined;
+	if (!parseReviewMarker(input?.prompt)) return;
+	if (input?.subagent_type === REVIEWER_AGENT || input?.subagent_type === CLAUDE_REVIEWER_AGENT) return;
+	return JSON.stringify({ hookSpecificOutput: {
+		hookEventName: "PreToolUse", permissionDecision: "deny",
+		permissionDecisionReason: "Reserved Review dispatch requires subagent_type immune-brain:immune-brain-reviewer or immune-brain-reviewer.",
+	} });
 }
 
 /**
@@ -359,7 +377,7 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 			// cap and no background switch, so `request.maxTurns` (which the Pi port
 			// forwards natively) has no receiver here and is not projected.
 			dispatch: {
-				name: CLAUDE_REVIEWER_AGENT,
+				subagent_type: CLAUDE_REVIEWER_AGENT,
 				prompt: reservedDispatchPrompt(request),
 			},
 		};
@@ -500,10 +518,10 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 	inspectReview(reservation: HostReviewReservation): ConsumeReviewResult {
 		this.drain();
 		const state = this.pending.get(reservation.id);
-		if (!state) return { ok: false, reason: "reserved foreground Agent was not observed", release: false };
+		if (!state) return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
 		if (state.consumed) return { ok: false, reason: "review receipt already consumed", release: true };
 		if (state.error) return { ok: false, reason: state.error, release: true };
-		if (!state.startEvent) return { ok: false, reason: "reserved foreground Agent was not observed", release: false };
+		if (!state.startEvent) return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
 		if (!state.stopEvent || !state.postEvent?.result?.trim()) {
 			return { ok: false, reason: "foreground Agent terminal event order is incomplete", release: false };
 		}
@@ -553,7 +571,7 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 	inspectReviewForTask(taskId: string): ConsumeReviewResult {
 		this.drain();
 		const entry = [...this.pending.entries()].find(([, state]) => state.request.taskId === taskId);
-		if (!entry) return { ok: false, reason: "reserved foreground Agent was not observed", release: false };
+		if (!entry) return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
 		return this.inspectReview({ id: entry[0], dispatch: entry[1].request });
 	}
 
@@ -609,12 +627,12 @@ export function parseHookStdin(raw: string): ClaudeHookEvent | null {
 		}
 	}
 	if (prompt) {
-		const match = /<!-- immune-brain:operation_id=([^\s]+)\s+task_id=([^\s]+)\s+-->/.exec(prompt);
-		if (match) {
-			if (extractedOpId && extractedOpId !== match[1]) return null;
-			if (extractedTaskId && extractedTaskId !== match[2]) return null;
-			extractedOpId = match[1];
-			extractedTaskId = match[2];
+		const marker = parseReviewMarker(prompt);
+		if (marker) {
+			if (extractedOpId && extractedOpId !== marker.operationId) return null;
+			if (extractedTaskId && extractedTaskId !== marker.taskId) return null;
+			extractedOpId = marker.operationId;
+			extractedTaskId = marker.taskId;
 		}
 	}
 	if (hookType === "SubagentStart" || hookType === "SubagentStop") {

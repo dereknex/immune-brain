@@ -117,11 +117,17 @@ describe("Managed native authority failure contract", () => {
 		expect(protocol).toContain("不得把多个 foreground Agent 假定为并发 batch");
 	});
 
-	test("the Loop contract states that editing the reserved prompt forfeits the reservation", () => {
+	test("the Loop contract blocks non-matching dispatches and releases unbound reservations", () => {
 		const loop = read("plugins/immune-brain/dist/imm-run.md").replace(/\s+/g, " ");
 		expect(loop).toContain("The reserved prompt is dispatched verbatim");
-		expect(loop).toContain("Any edit to it forfeits the reservation");
-		expect(loop).toContain("the Host binds a reviewer start only to a byte-identical prompt");
+		expect(loop).toContain("is blocked at dispatch before binding a reviewer");
+		expect(loop).toContain("an unbound reservation is released with recovery to `advance_assurance`");
+		expect(loop).not.toContain("Any edit to it forfeits the reservation");
+		const adr = read("docs/adr/0030-marker-keyed-review-dispatch.md");
+		expect(adr).toContain("branch-boundary-r2-followups");
+		expect(adr).toContain("D2");
+		expect(adr).toContain("0017");
+		expect(read("docs/adr/0017-receipt-bound-review-verdict-submission.md")).toContain("partially superseded");
 		expect(loop).toContain("Dispatch the same envelope unchanged");
 	});
 

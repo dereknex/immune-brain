@@ -1519,7 +1519,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
-	test.each(["different", "empty-array", "empty-text"])("conflicting tool_result (%s) retains reservation and evidence without authority writes", { timeout: 15000 }, async (variant) => {
+	test.each(["different", "empty-array", "empty-text"])("conflicting tool_result (%s) releases reservation and evidence without authority writes", { timeout: 15000 }, async (variant) => {
 		const root = makeEnrolledRoot();
 		try {
 			let review!: SnapshotDescriptor;
@@ -1543,10 +1543,11 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			const rewritten = await capturedToolFailure(tool.execute("rewritten", { task_id: TASK, action: { op: "submit_review", verdict } }, undefined, undefined, ctx));
 			expect(rewritten.message).toContain("reserved foreground Agent was not observed");
 			expect(JSON.stringify(readTaskRecordRaw(root, TASK))).toBe(beforeRewrite);
-			expect(removed).toBe(false);
+			expect(removed).toBe(true);
 			const unchanged = JSON.parse((await tool.execute("advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, ctx)).content[0].text);
-			expect(unchanged.operation_id).toBe(ready.operation_id);
-			surface.emit("tool_call", { toolName: "Agent", input: ready.agent_params, toolCallId: "conflict-call" });
+			expect(unchanged.operation_id).not.toBe(ready.operation_id);
+			removed = false;
+			surface.emit("tool_call", { toolName: "Agent", input: unchanged.agent_params, toolCallId: "conflict-call" });
 			const first = [{ type: "text", text: JSON.stringify(verdict) }];
 			const second = variant === "empty-array" ? [] : [{ type: "text", text: variant === "empty-text" ? "" : JSON.stringify({ ...verdict, approval: { ...verdict.approval, summary: "different" } }) }];
 			for (const content of [first, first, second]) {
@@ -1554,15 +1555,13 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 				surface.emit("tool_result", { toolName: "Agent", toolCallId: "conflict-call", content });
 			}
 			const before = JSON.stringify(readTaskRecordRaw(root, TASK));
-			for (const action of [{ op: "submit_review" }, { op: "submit_review", verdict }]) {
-				const failure = await capturedToolFailure(tool.execute("submit", { task_id: TASK, action }, undefined, undefined, ctx));
-				expect(failure.message).toContain("conflicting result bytes");
-				expect(failure.next_action).toBe("Wait for the dispatched reviewer to finish, then call submit_review again with its verdict; do not dispatch or continue another reviewer");
-				expect(JSON.stringify(readTaskRecordRaw(root, TASK))).toBe(before);
-			}
-			expect(removed).toBe(false);
+			const failure = await capturedToolFailure(tool.execute("submit", { task_id: TASK, action: { op: "submit_review" } }, undefined, undefined, ctx));
+			expect(failure.message).toContain("conflicting result bytes");
+			expect(failure.next_action).toContain("Call advance_assurance");
+			expect(JSON.stringify(readTaskRecordRaw(root, TASK))).toBe(before);
+			expect(removed).toBe(true);
 			const retry = JSON.parse((await tool.execute("advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, ctx)).content[0].text);
-			expect(retry.operation_id).toBe(ready.operation_id);
+			expect(retry.operation_id).not.toBe(unchanged.operation_id);
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
@@ -1589,13 +1588,13 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			// ADR 0017: the relayed verdict must fingerprint-match the observed
 			// receipt, so record the dispatch and result through the event seam.
 			const params = advanceResult.agent_params;
-			for (const input of [{ ...params, prompt: `${params.prompt}!` }, { ...params, description: "unreserved" }]) {
+			for (const input of [{ ...params, prompt: `${params.prompt}!` }, { ...params, subagent_type: "general-purpose" }, { ...params, run_in_background: undefined }, { ...params, isolated: false }]) {
 				const blocked = emitEvent("tool_call", { toolName: "Agent", input, toolCallId: "blocked-call" });
 				expect((blocked as { reason: string }).reason).toContain("reserved prompt verbatim");
-				expect(blocked).toMatchObject({ block: true, reason: expect.stringContaining(params.description) });
+				expect(blocked).toMatchObject({ block: true });
 			}
-			expect(emitEvent("tool_call", { toolName: "Agent", input: { ...params, subagent_type: "Explore" }, toolCallId: "explore" })).toBeUndefined();
-			expect(emitEvent("tool_call", { toolName: "Agent", input: params, toolCallId: "call-1" })).toBeUndefined();
+			expect(emitEvent("tool_call", { toolName: "Agent", input: { prompt: "unrelated", subagent_type: "general-purpose" }, toolCallId: "explore" })).toBeUndefined();
+			expect(emitEvent("tool_call", { toolName: "Agent", input: { ...params, description: "unreserved" }, toolCallId: "call-1" })).toBeUndefined();
 			emitEvent("tool_result", { toolName: "Agent", toolCallId: "call-1", content: [{ type: "text", text: JSON.stringify(verdict) }] });
 			// Missing-path control through the real extension surface: dropping a
 			// claimed path is a correctable invalid verdict that applies nothing.

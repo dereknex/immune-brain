@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { reservedDispatchPrompt } from "../runtime/claude/review_host";
 
 export interface ReservedAgentParams {
 	subagent_type: "Review";
@@ -44,7 +45,7 @@ export function reservedAgentParams(input: {
 	return {
 		subagent_type: "Review",
 		description: reservedAgentDescription(input.taskId, input.operationId),
-		prompt: semanticNeighborhoodReviewPrompt(input.prompt),
+		prompt: reservedDispatchPrompt({ operationId: input.operationId, taskId: input.taskId, snapshotPrompt: semanticNeighborhoodReviewPrompt(input.prompt) }),
 		name: "",
 		model: "",
 		thinking: "",
