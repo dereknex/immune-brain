@@ -1,3 +1,4 @@
+import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
 // Phase 3 foreground Tool and native Review bridge contract.
 
 import { afterAll, describe, expect, mock, setDefaultTimeout, spyOn, test } from "bun:test";
@@ -435,7 +436,7 @@ describe("registered request_stop settlement and UI", () => {
 						snapshot_digest: snapshotDigest(snapshot), decision: "pass",
 						approval: { kind: "qa", authority_role: "qa", summary: "passed" },
 					}),
-					writeReviewEvidence: () => ({ path: join(root, "review.json"), remove: () => { evidenceRemoved++; } }),
+					writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: join(root, "review.json"), remove: () => { evidenceRemoved++; } }),
 				});
 				const tool = tools[0];
 				const context = makeCtx(root, makeUI());
@@ -515,7 +516,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 				qaRuns += 1;
 				return { contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: TASK, snapshot_digest: snapshotDigest(snapshot), decision: "pass", approval: { kind: "qa", authority_role: "qa", summary: "passed" } };
 			},
-			writeReviewEvidence: () => ({ path: join(root, "review.json"), remove: () => {} }),
+			writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: join(root, "review.json"), remove: () => {} }),
 		};
 		try {
 			const first = loadSurface(dependencies);
@@ -1232,7 +1233,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		const foreignRoot = makeEnrolledRoot(enrolled);
 		try {
 			const ownTool = loadSurface({
-				writeReviewEvidence: () => ({ path: join(ownRoot, "review.json"), remove: () => {} }),
+				writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: join(ownRoot, "review.json"), remove: () => {} }),
 			}).tools[0];
 			await ownTool.execute("revise", {
 				task_id: TASK,
@@ -1263,7 +1264,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			execFileSync("git", ["add", "--", "docs/plans/other-task.intent.json"], { cwd: foreignRoot });
 			let foreignEvidence: unknown;
 			const foreignTool = loadSurface({
-				writeReviewEvidence: (payload) => { foreignEvidence = payload; return { path: join(foreignRoot, "review.json"), remove: () => {} }; },
+				writeReviewEvidence: (payload) => { foreignEvidence = payload; return { writePacket: writeTestReviewPacket, path: join(foreignRoot, "review.json"), remove: () => {} }; },
 			}).tools[0];
 			const foreign = await foreignTool.execute(
 				"advance",
@@ -1414,7 +1415,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 				options.onProgress?.({ index: 1, total: 1, acceptance_id: "A1", phase: "passed", elapsed_ms: 1 });
 				return { contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: TASK, snapshot_digest: snapshotDigest(snapshot), decision: "pass", approval: { kind: "qa", authority_role: "qa", summary: "passed" } };
 			},
-			writeReviewEvidence: () => ({ path: join(root, "review.json"), remove: () => {} }),
+			writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: join(root, "review.json"), remove: () => {} }),
 			applyVerdict: async (_ctx: unknown, input: { hooks?: { onCommit?: () => void } }) => input.hooks?.onCommit?.(),
 		});
 		const tool = tools[0];
@@ -1503,7 +1504,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 				}),
 				writeReviewEvidence: () => {
 					controller.abort();
-					return { path: evidencePath, remove: () => { removed = true; } };
+					return { writePacket: writeTestReviewPacket, path: evidencePath, remove: () => { removed = true; } };
 				},
 			});
 			const tool = tools[0];
@@ -1519,7 +1520,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
-	test.each(["different", "empty-array", "empty-text"])("conflicting tool_result (%s) retains reservation and evidence without authority writes", { timeout: 15000 }, async (variant) => {
+	test.each(["different", "empty-array", "empty-text"])("conflicting tool_result (%s) releases reservation and evidence without authority writes", { timeout: 15000 }, async (variant) => {
 		const root = makeEnrolledRoot();
 		try {
 			let review!: SnapshotDescriptor;
@@ -1531,7 +1532,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 					return { snapshot, descriptors: new Map(), reviewBundle: role === "review" ? ({ dirty_files: {}, outcomes: {}, bundle_digest: "sha256:bundle" } as never) : null };
 				},
 				runQa: async (snapshot: SnapshotDescriptor) => ({ contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: TASK, snapshot_digest: snapshotDigest(snapshot), decision: "pass", approval: { kind: "qa", authority_role: "qa", summary: "passed" } }),
-				writeReviewEvidence: () => ({ path: join(root, "review.json"), remove: () => { removed = true; } }),
+				writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: join(root, "review.json"), remove: () => { removed = true; } }),
 			});
 			const tool = surface.tools[0];
 			const ctx = makeCtx(root, makeUI());
@@ -1543,10 +1544,11 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			const rewritten = await capturedToolFailure(tool.execute("rewritten", { task_id: TASK, action: { op: "submit_review", verdict } }, undefined, undefined, ctx));
 			expect(rewritten.message).toContain("reserved foreground Agent was not observed");
 			expect(JSON.stringify(readTaskRecordRaw(root, TASK))).toBe(beforeRewrite);
-			expect(removed).toBe(false);
+			expect(removed).toBe(true);
 			const unchanged = JSON.parse((await tool.execute("advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, ctx)).content[0].text);
-			expect(unchanged.operation_id).toBe(ready.operation_id);
-			surface.emit("tool_call", { toolName: "Agent", input: ready.agent_params, toolCallId: "conflict-call" });
+			expect(unchanged.operation_id).not.toBe(ready.operation_id);
+			removed = false;
+			surface.emit("tool_call", { toolName: "Agent", input: unchanged.agent_params, toolCallId: "conflict-call" });
 			const first = [{ type: "text", text: JSON.stringify(verdict) }];
 			const second = variant === "empty-array" ? [] : [{ type: "text", text: variant === "empty-text" ? "" : JSON.stringify({ ...verdict, approval: { ...verdict.approval, summary: "different" } }) }];
 			for (const content of [first, first, second]) {
@@ -1554,15 +1556,13 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 				surface.emit("tool_result", { toolName: "Agent", toolCallId: "conflict-call", content });
 			}
 			const before = JSON.stringify(readTaskRecordRaw(root, TASK));
-			for (const action of [{ op: "submit_review" }, { op: "submit_review", verdict }]) {
-				const failure = await capturedToolFailure(tool.execute("submit", { task_id: TASK, action }, undefined, undefined, ctx));
-				expect(failure.message).toContain("conflicting result bytes");
-				expect(failure.next_action).toBe("Wait for the dispatched reviewer to finish, then call submit_review again with its verdict; do not dispatch or continue another reviewer");
-				expect(JSON.stringify(readTaskRecordRaw(root, TASK))).toBe(before);
-			}
-			expect(removed).toBe(false);
+			const failure = await capturedToolFailure(tool.execute("submit", { task_id: TASK, action: { op: "submit_review" } }, undefined, undefined, ctx));
+			expect(failure.message).toContain("conflicting result bytes");
+			expect(failure.next_action).toContain("Call advance_assurance");
+			expect(JSON.stringify(readTaskRecordRaw(root, TASK))).toBe(before);
+			expect(removed).toBe(true);
 			const retry = JSON.parse((await tool.execute("advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, ctx)).content[0].text);
-			expect(retry.operation_id).toBe(ready.operation_id);
+			expect(retry.operation_id).not.toBe(unchanged.operation_id);
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
@@ -1578,7 +1578,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 					return built;
 				},
 				runQa: async (snapshot: SnapshotDescriptor) => ({ contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: TASK, snapshot_digest: snapshotDigest(snapshot), decision: "pass", approval: { kind: "qa", authority_role: "qa", summary: "passed" } }),
-				writeReviewEvidence: () => ({ path: join(root, "review.json"), remove: () => { removed = true; } }),
+				writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: join(root, "review.json"), remove: () => { removed = true; } }),
 			});
 			const tool = tools[0];
 			const advanceResult = JSON.parse((await tool.execute("advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, makeCtx(root, makeUI()))).content[0].text);
@@ -1589,13 +1589,13 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			// ADR 0017: the relayed verdict must fingerprint-match the observed
 			// receipt, so record the dispatch and result through the event seam.
 			const params = advanceResult.agent_params;
-			for (const input of [{ ...params, prompt: `${params.prompt}!` }, { ...params, description: "unreserved" }]) {
+			for (const input of [{ ...params, prompt: `${params.prompt}!` }, { ...params, subagent_type: "general-purpose" }, { ...params, run_in_background: undefined }, { ...params, isolated: false }]) {
 				const blocked = emitEvent("tool_call", { toolName: "Agent", input, toolCallId: "blocked-call" });
 				expect((blocked as { reason: string }).reason).toContain("reserved prompt verbatim");
-				expect(blocked).toMatchObject({ block: true, reason: expect.stringContaining(params.description) });
+				expect(blocked).toMatchObject({ block: true });
 			}
-			expect(emitEvent("tool_call", { toolName: "Agent", input: { ...params, subagent_type: "Explore" }, toolCallId: "explore" })).toBeUndefined();
-			expect(emitEvent("tool_call", { toolName: "Agent", input: params, toolCallId: "call-1" })).toBeUndefined();
+			expect(emitEvent("tool_call", { toolName: "Agent", input: { prompt: "unrelated", subagent_type: "general-purpose" }, toolCallId: "explore" })).toBeUndefined();
+			expect(emitEvent("tool_call", { toolName: "Agent", input: { ...params, description: "unreserved" }, toolCallId: "call-1" })).toBeUndefined();
 			emitEvent("tool_result", { toolName: "Agent", toolCallId: "call-1", content: [{ type: "text", text: JSON.stringify(verdict) }] });
 			// Missing-path control through the real extension surface: dropping a
 			// claimed path is a correctable invalid verdict that applies nothing.
@@ -1631,7 +1631,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			const { tools } = loadSurface({
 				buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) => ({ snapshot: minimalSnapshot(role, rootPath, current), descriptors: new Map(), reviewBundle: role === "review" ? ({ dirty_files: {}, outcomes: {}, bundle_digest: "sha256:bundle" } as never) : null }),
 				runQa: async () => { await gate; throw new DOMException("aborted", "AbortError"); },
-				writeReviewEvidence: () => ({ path: join(root, "review.json"), remove: () => {} }),
+				writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: join(root, "review.json"), remove: () => {} }),
 				applyVerdict: async () => { applyCount += 1; },
 			});
 			const tool = tools[0];

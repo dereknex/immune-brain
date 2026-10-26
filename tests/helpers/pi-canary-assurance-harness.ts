@@ -1,3 +1,4 @@
+import { writeTestReviewPacket } from "../helpers/review-packet-fixture";
 import { mock } from "bun:test";
 import type { VerdictAuthority } from "../../plugins/immune-brain/runtime/assurance/verdict_authority";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -135,7 +136,7 @@ export function makeAssuranceHarness(overrides: Partial<{
 		}),
 		writeReviewEvidence: overrides.writeReviewEvidence ?? (() => {
 			evidenceCount += 1;
-			return { path: `${ROOT}/review-${evidenceCount}.json`, remove: () => { removeCount += 1; } };
+			return { writePacket: writeTestReviewPacket, path: `${ROOT}/review-${evidenceCount}.json`, remove: () => { removeCount += 1; } };
 		}),
 		applyVerdict: overrides.applyVerdict ?? (async (_ctx, input) => {
 			applyCount += 1;

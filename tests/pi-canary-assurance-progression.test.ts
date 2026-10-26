@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { parseReviewPacketHandle } from "../plugins/immune-brain/runtime/assurance/review_packet";
 import { resolve } from "node:path";
 import {
 	buildReviewPrompt,
@@ -30,7 +31,7 @@ async function submitObserved(progression: ReturnType<typeof makeHarness>["progr
 }
 
 describe("foreground assurance progression", () => {
-	test.each([true, false])("conflict during awaited submission retains reservation (relayed=%s)", async (relayed) => {
+	test.each([true, false])("conflict during awaited submission releases reservation (relayed=%s)", async (relayed) => {
 		const h = makeHarness();
 		const ready = await h.progression.advance(TASK, ctx);
 		const params = (ready as { agent_params: { prompt: string; description: string } }).agent_params;
@@ -47,9 +48,9 @@ describe("foreground assurance progression", () => {
 		await entry;
 		h.progression.piReviewHost.observeReviewResult("interleaved", "");
 		release();
-		expect(await submitting).toMatchObject({ state: "blocked", reason: expect.stringContaining("conflicting result bytes"), recovery_action: "Wait for the dispatched reviewer to finish, then call submit_review again with its verdict; do not dispatch or continue another reviewer" });
+		expect(await submitting).toMatchObject({ state: "blocked", reason: expect.stringContaining("conflicting result bytes"), recovery_action: "Call advance_assurance to obtain a new Review reservation, then dispatch one fresh reviewer with the returned envelope unchanged" });
 		expect(h.counts().applyCount).toBe(1);
-		expect(h.progression.active(TASK)).toMatchObject({ state: "review_ready", operation_id: (ready as { operation_id: string }).operation_id });
+		expect(h.progression.active(TASK)).toBeNull();
 	});
 	test("runs QA synchronously and returns one foreground Review reservation", async () => {
 		let released!: () => void;
@@ -64,13 +65,14 @@ describe("foreground assurance progression", () => {
 		const result = await advancing;
 		expect(result.state).toBe("review_ready");
 		expect((result as { agent_params: { run_in_background: boolean } }).agent_params.run_in_background).toBe(false);
-		// A Pi reviewer agent carries no instructions of its own, so this Host still
-		// dispatches the complete prompt: role contract plus every static rule.
+		// Pi packets carry the complete prompt: role contract plus every static rule.
 		const params = (result as { agent_params: { prompt: string } }).agent_params;
-		expect(params.prompt).toContain("internal role: code-review");
-		expect(params.prompt).toContain("Do not edit files, create files, run mutating commands, or change Git state");
-		expect(params.prompt).toContain("Reserve the final turn for exactly one strict JSON verdict");
-		expect(params.prompt).toContain("A1: the contract holds");
+		const packet = parseReviewPacketHandle(params.prompt)!.packet;
+		const prompt = readFileSync(packet.path, "utf8");
+		expect(prompt).toContain("internal role: code-review");
+		expect(prompt).toContain("Do not edit files, create files, run mutating commands, or change Git state");
+		expect(prompt).toContain("Reserve the final turn for exactly one strict JSON verdict");
+		expect(prompt).toContain("A1: the contract holds");
 		expect(updates.some((item) => JSON.stringify(item).includes("verifying"))).toBe(true);
 		expect(h.counts().applyCount).toBe(1);
 	});

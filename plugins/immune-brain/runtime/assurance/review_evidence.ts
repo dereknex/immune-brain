@@ -11,6 +11,8 @@ import {
 	realpathSync,
 	chmodSync,
 } from "node:fs";
+import type { ReviewEvidence } from "./host_port";
+import { packetDigest } from "./review_packet";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -629,7 +631,7 @@ export function deleteReviewRef(root: string, revision: ReviewRevisionCommit): v
 	gitEvidence(root, ["update-ref", "-d", revision.review_ref, revision.review_commit]);
 }
 
-export function writeNativeReviewEvidence(payload: unknown): { path: string; remove(): void } {
+export function writeNativeReviewEvidence(payload: unknown): ReviewEvidence {
 	const rawDirectory = mkdtempSync(join(tmpdir(), "imm-canary-native-review-"));
 	try {
 		const directory = realpathSync(rawDirectory);
@@ -641,6 +643,13 @@ export function writeNativeReviewEvidence(payload: unknown): { path: string; rem
 		assertReviewArtifact(path);
 		return {
 			path,
+			writePacket(name, content) {
+				if (!/^[A-Za-z0-9._-]+$/.test(name)) throw new Error("invalid review packet name");
+				const packetPath = join(directory, `review-packet-${name}.md`);
+				writeFileSync(packetPath, content, { encoding: "utf8", mode: 0o644, flag: "wx" });
+				assertReviewArtifact(packetPath);
+				return { path: packetPath, sha256: packetDigest(content) };
+			},
 			remove: () => rmSync(directory, { recursive: true, force: true }),
 		};
 	} catch (error) {

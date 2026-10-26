@@ -53,7 +53,9 @@ import { AssuranceCoordinator, type AssuranceAdvanceResult, type AssuranceCoordi
 import { withSettleCommit } from "../runtime/assurance/workflow_autocommit";
 import type { AssuranceHostPort, HostReviewReservation, ReviewRequest } from "../runtime/assurance/host_port";
 import { submitMediatedReview, type ReviewObservation } from "../runtime/assurance/review_mediation";
-import { reservedAgentParams, promptDigest } from "./pi-canary-native-review";
+import { reservedAgentParams, promptDigest, type ReservedAgentParams } from "./pi-canary-native-review";
+import { parseReviewMarker } from "../runtime/claude/review_host";
+import { reviewPacketError } from "../runtime/assurance/review_packet";
 
 import type { VerdictAuthority } from "../runtime/assurance/verdict_authority";
 
@@ -64,7 +66,7 @@ export type AssuranceProgressionPorts = Omit<AssuranceCoordinatorPorts, "host"> 
 
 interface RecordedReviewReceipt {
 	taskId: string;
-	description: string;
+	params: ReservedAgentParams;
 	promptDigest: string;
 	toolCallId?: string;
 	result?: string;
@@ -81,10 +83,11 @@ class PiReviewHost implements AssuranceHostPort {
 			taskId: request.taskId,
 			operationId: request.operationId,
 			prompt: request.prompt,
+			writePacket: request.writePacket,
 			max_turns: request.maxTurns,
 		});
 		this.pending.add(request.operationId);
-		this.receipts.set(request.operationId, { taskId: request.taskId, description: params.description, promptDigest: promptDigest(params.prompt) });
+		this.receipts.set(request.operationId, { taskId: request.taskId, params, promptDigest: promptDigest(params.prompt) });
 		return { id: request.operationId, dispatch: params };
 	}
 
@@ -94,19 +97,29 @@ class PiReviewHost implements AssuranceHostPort {
 	}
 
 	/** Extension event seam: correlate one observed `Agent` dispatch to its reservation (ADR 0017). */
-	observeReviewDispatch(input: { description?: unknown; prompt?: unknown; subagent_type?: unknown } | undefined, toolCallId: string | undefined): { block: true; reason: string } | undefined {
-		if (input?.subagent_type !== "Review" || this.pending.size === 0) return;
-		const records = [...this.receipts.values()];
-		const record = records.find((candidate) => candidate.description === input.description);
-		if (!record || typeof input.prompt !== "string" || record.promptDigest !== promptDigest(input.prompt)) {
-			const descriptions = records.map((candidate) => candidate.description).join(", ");
-			return { block: true, reason: `Review dispatch does not match reservation ${descriptions}; dispatch the reserved description and reserved prompt verbatim.` };
+	observeReviewDispatch(input: Partial<Record<keyof ReservedAgentParams, unknown>> | undefined, toolCallId: string | undefined): { block: true; reason: string } | undefined {
+		const marker = parseReviewMarker(input?.prompt);
+		if (!marker) {
+			if (input?.subagent_type === "Review" && this.pending.size > 0)
+				return { block: true, reason: "Review dispatch requires the reserved prompt verbatim, including its operation marker." };
+			return;
 		}
-		if (record.toolCallId !== undefined && record.toolCallId !== toolCallId) {
-			record.error = "the reserved reviewer was dispatched more than once";
-			return { block: true, reason: record.error };
+		const record = this.receipts.get(marker.operationId);
+		if (!record || record.taskId !== marker.taskId)
+			return { block: true, reason: "Unknown or released Review operation; call advance_assurance for a fresh reservation." };
+		const differing: string[] = [];
+		for (const field of ["subagent_type", "run_in_background", "isolated", "max_turns"] as const) {
+			if (input?.[field] !== record.params[field]) differing.push(field);
 		}
-		if (!toolCallId) return { block: true, reason: `Review reservation ${record.description} requires an observable tool call id.` };
+		if (input?.inherit_context !== undefined && input.inherit_context !== false) differing.push("inherit_context");
+		if (typeof input?.prompt !== "string" || record.promptDigest !== promptDigest(input.prompt)) differing.push("prompt");
+		if (differing.length)
+			return { block: true, reason: `Review dispatch differs in ${differing.join(", ")}; dispatch the reserved prompt verbatim and reserved Agent parameters.` };
+		const packetError = reviewPacketError(record.params.prompt);
+		if (packetError) return { block: true, reason: packetError };
+		if (record.toolCallId !== undefined)
+			return { block: true, reason: "the reserved reviewer was dispatched more than once" };
+		if (!toolCallId) return { block: true, reason: "Review reservation requires an observable tool call id." };
 		record.toolCallId = toolCallId;
 	}
 
@@ -124,9 +137,11 @@ class PiReviewHost implements AssuranceHostPort {
 	inspectReview(taskId: string): ReviewObservation {
 		for (const record of this.receipts.values()) {
 			if (record.taskId !== taskId) continue;
-			if (record.error) return { ok: false, release: false, reason: record.error };
+			const packetError = reviewPacketError(record.params.prompt);
+			if (packetError) return { ok: false, release: true, reason: packetError };
+			if (record.error) return { ok: false, release: true, reason: record.error };
 			if (record.toolCallId === undefined)
-				return { ok: false, release: false, reason: "the reserved foreground Agent was not observed in this session" };
+				return { ok: false, release: true, reason: "the reserved foreground Agent was not observed in this session" };
 			if (record.result === undefined)
 				return { ok: false, release: false, reason: "the reserved foreground reviewer has not returned its result yet; wait for it, then call submit_review again" };
 			return { ok: true, receipt: { actorId: "pi-review-agent", result: record.result } };

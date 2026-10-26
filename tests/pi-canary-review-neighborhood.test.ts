@@ -1,3 +1,6 @@
+import { readFileSync as readPacket } from "node:fs";
+import { parseReviewPacketHandle, packetDigest } from "../plugins/immune-brain/runtime/assurance/review_packet";
+import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
 import { execFileSync } from "node:child_process";
 import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -144,7 +147,9 @@ describe("review semantic neighborhood", () => {
 		expect(prompt).toContain("path_provenance is authoritative");
 		expect(prompt).toContain("terminal, cancellation, timeout, and race path");
 		expect(prompt).toContain("Reference a bundle path at the start of each finding summary");
-		const params = reservedAgentParams({ taskId: "task-1", operationId: "op-1", prompt: base });
-		expect(params.prompt).toBe(prompt);
+		const params = reservedAgentParams({ taskId: "task-1", operationId: "op-1", writePacket: writeTestReviewPacket, prompt: base });
+		const packet = parseReviewPacketHandle(params.prompt)!.packet;
+		expect(readPacket(packet.path, "utf8")).toBe(prompt);
+		expect(packet.sha256).toBe(packetDigest(prompt));
 	});
 });

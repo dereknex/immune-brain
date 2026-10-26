@@ -2,7 +2,8 @@ import { execFileSync } from "node:child_process";
 import { describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { packetDigest } from "../plugins/immune-brain/runtime/assurance/review_packet";
 import {
 	captureReviewBundle,
 	captureReviewManifest,
@@ -95,7 +96,15 @@ describe("native canary review evidence", () => {
 
 	test("writes canonical bounded session evidence outside the repository and removes it", () => {
 		const evidence = writeNativeReviewEvidence({ contract: "test", secret: "locked" });
+		const bytes = readFileSync(evidence.path);
+		const packet = evidence.writePacket("operation-1", "完整 review instructions\n");
 		try {
+			expect(packet.path).toBe(join(dirname(evidence.path), "review-packet-operation-1.md"));
+			expect(readFileSync(packet.path, "utf8")).toBe("完整 review instructions\n");
+			expect(packet.sha256).toBe(packetDigest(readFileSync(packet.path, "utf8")));
+			expect(readFileSync(evidence.path)).toEqual(bytes);
+			expect(() => evidence.writePacket("../escape", "no")).toThrow("invalid review packet name");
+			expect(() => evidence.writePacket("operation-1", "overwrite")).toThrow();
 			expect(evidence.path).toBe(realpathSync(evidence.path));
 			expect(statSync(evidence.path).mode & 0o777).toBe(0o644);
 			expect(statSync(realpathSync(evidence.path.replace(/\/evidence\.json$/, ""))).mode & 0o777).toBe(0o755);
@@ -105,6 +114,7 @@ describe("native canary review evidence", () => {
 			evidence.remove();
 		}
 		expect(existsSync(evidence.path)).toBe(false);
+		expect(existsSync(packet.path)).toBe(false);
 	});
 
 	test("v4 revision metadata is deterministic, scoped, and source-size independent", { timeout: 15000 }, () => {

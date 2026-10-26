@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { reviewPacketHandle } from "../runtime/assurance/review_packet";
+import type { ReviewEvidence } from "../runtime/assurance/host_port";
 
 export interface ReservedAgentParams {
 	subagent_type: "Review";
@@ -39,12 +41,13 @@ export function reservedAgentParams(input: {
 	taskId: string;
 	operationId: string;
 	prompt: string;
+	writePacket: ReviewEvidence["writePacket"];
 	max_turns?: number;
 }): ReservedAgentParams {
 	return {
 		subagent_type: "Review",
 		description: reservedAgentDescription(input.taskId, input.operationId),
-		prompt: semanticNeighborhoodReviewPrompt(input.prompt),
+		prompt: reviewPacketHandle({ operationId: input.operationId, taskId: input.taskId, packet: input.writePacket(input.operationId, semanticNeighborhoodReviewPrompt(input.prompt)) }),
 		name: "",
 		model: "",
 		thinking: "",

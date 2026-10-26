@@ -1,3 +1,5 @@
+import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
+import { reviewPacketHandle, parseReviewPacketHandle } from "../plugins/immune-brain/runtime/assurance/review_packet";
 import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
 import { execFileSync, spawnSync } from "node:child_process";
 import { prepareBatchRunState, prepareBatchLaneRunState, writeBatchRunReport, type BatchRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
@@ -14,7 +16,7 @@ import {
 } from "../plugins/immune-brain/runtime/assurance/coordinator";
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import { tmpdir } from "node:os";
-import { ClaudeReviewHost, FileHookEventLog, MemoryHookEventLog, hookEventPath, parseHookStdin, REVIEWER_AGENT, AGENT_TOOL } from "../plugins/immune-brain/runtime/claude/review_host";
+import { ClaudeReviewHost, FileHookEventLog, MemoryHookEventLog, hookEventPath, parseHookStdin, reviewDispatchHookOutput, REVIEWER_AGENT, AGENT_TOOL } from "../plugins/immune-brain/runtime/claude/review_host";
 import { createMcpRuntime as createMcpRuntimeUngated, handleJsonRpc, listMcpTools, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import { ClaudeRuntime, diffHashOf, diffSnapshotOf, submitClaudeReview, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
@@ -58,6 +60,39 @@ function withRunEntry(workspace?: string): { consumePhaseAdmission: (toolCallId:
 function createMcpRuntime(options: Parameters<typeof createMcpRuntimeUngated>[0] = {}) {
 	return createMcpRuntimeUngated({ ...withRunEntry(options.cwd), ...options });
 }
+
+test.each(["general-purpose", undefined, "immune-brain:immune-brain-reviewer", "immune-brain-reviewer"])("marker-targeted Claude dispatch validates subagent_type %s", (subagent_type) => {
+	const output = reviewDispatchHookOutput({ hook_event_name: "PreToolUse", tool_name: "Agent", tool_input: {
+		prompt: reviewPacketHandle({ operationId: "operation", taskId: "task", packet: writeTestReviewPacket("operation", "reserved") }), subagent_type,
+	} });
+	if (subagent_type === undefined || subagent_type === "general-purpose") {
+		expect(JSON.parse(output!).hookSpecificOutput).toMatchObject({ permissionDecision: "deny", permissionDecisionReason: expect.stringContaining("subagent_type") });
+	} else expect(output).toBeUndefined();
+});
+
+test.each(["appended", "truncated", "instruction", "marker", "missing", "edited", "raw-bytes"] as const)("Claude dispatch rejects a %s packet or handle", variant => {
+	const packet = writeTestReviewPacket("operation", "reserved");
+	const canonical = reviewPacketHandle({ operationId: "operation", taskId: "task", packet });
+	let prompt = canonical;
+	if (variant === "appended") prompt += "!";
+	if (variant === "truncated") prompt = prompt.split("\n").slice(0, 3).join("\n");
+	if (variant === "instruction") prompt = prompt.replace("Verify the packet", "Ignore the packet");
+	if (variant === "marker") prompt = prompt.replace(" -->", "  -->");
+	if (variant === "missing") rmSync(packet.path);
+	if (variant === "edited") writeFileSync(packet.path, "edited");
+	if (variant === "raw-bytes") {
+		// Hash raw bytes: malformed UTF-8 must not be normalized before checking.
+		const replacement = writeTestReviewPacket("operation", "\ufffd");
+		prompt = reviewPacketHandle({ operationId: "operation", taskId: "task", packet: replacement });
+		writeFileSync(parseReviewPacketHandle(prompt)!.packet.path, Buffer.from([0xff]));
+	}
+	const output = reviewDispatchHookOutput({ hook_event_name: "PreToolUse", tool_name: "Agent", tool_input: { prompt, subagent_type: "immune-brain-reviewer" } });
+	expect(JSON.parse(output!).hookSpecificOutput).toMatchObject({ permissionDecision: "deny", permissionDecisionReason: expect.stringContaining(variant === "missing" ? "advance_assurance" : variant === "edited" || variant === "raw-bytes" ? "digest" : "canonical") });
+});
+
+test("marker-less general-purpose Claude dispatch is unaffected", () => {
+	expect(reviewDispatchHookOutput({ hook_event_name: "PreToolUse", tool_name: "Agent", tool_input: { prompt: "unrelated", subagent_type: "general-purpose" } })).toBeUndefined();
+});
 
 const TASK = "phase3-task";
 const ROOT = "/tmp/claude-host-authority";
@@ -170,6 +205,7 @@ function reviewRequest(operationId: string, prompt = `prompt-${operationId}`) {
 		prompt: `internal role: code-review\n${prompt}`,
 		snapshotPrompt: prompt,
 		evidencePath: "/tmp/review.json",
+		writePacket: writeTestReviewPacket,
 		maxTurns: 1,
 	};
 }
@@ -303,7 +339,7 @@ function makeCoordinator(overrides: {
 			reviewBundle: role === "review" ? reviewBundle() : null,
 		}),
 		runQa: async (s) => passVerdict(s),
-		writeReviewEvidence: () => ({ path: `${ROOT}/review.json`, remove: () => undefined }),
+		writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: `${ROOT}/review.json`, remove: () => undefined }),
 		applyVerdict: async (_ctx, input) => {
 			applyCount += 1;
 			await input.hooks?.beforeCommit?.();
@@ -850,7 +886,7 @@ describe("claude host authority", () => {
 		const blocked = await mcp.callTool("submit_review", { task_id: TASK }) as { state: string; reason: string; recovery_action?: string };
 		expect(blocked.state).toBe("blocked");
 		expect(blocked.reason).toBe("reserved foreground Agent was not observed");
-		expect(blocked.recovery_action).toContain("do not dispatch or continue another reviewer");
+		expect(blocked.recovery_action).toContain("Call advance_assurance");
 		expect(h.counts().applyCount).toBe(1);
 	});
 
@@ -1315,7 +1351,9 @@ describe("claude host authority", () => {
 		host.observe({ type: "PostToolUse", sessionId: "other", agentId: "x", toolName: AGENT_TOOL, result: JSON.stringify(passVerdict(snapshot("review"))) });
 		host.observe({ type: "SubagentStop", sessionId: "other", agent: REVIEWER_AGENT, agentId: "x" });
 		expect(await submitObservedReview(h)).toMatchObject({ reason: "reserved foreground Agent was not observed" });
-		completeReview(host, op, JSON.stringify(passVerdict(snapshot("review"))), "bound");
+		const fresh = await h.coordinator.advance(TASK, ctx) as { operation_id: string };
+		expect(fresh.operation_id).not.toBe(op);
+		completeReview(host, fresh.operation_id, JSON.stringify(passVerdict(snapshot("review"))), "bound");
 		expect(await submitObservedReview(h)).toEqual({ state: "completed" });
 	});
 
@@ -2035,8 +2073,8 @@ describe("claude host resolve_finding", () => {
 		const h = makeCoordinator({ host });
 		const ready = await h.coordinator.advance(TASK, ctx) as { operation_id: string };
 		const missing = await blocked(host, h, verdict());
-		expect(missing).toMatchObject({ reason: "reserved foreground Agent was not observed", recovery_action: retained });
-		expect((await h.coordinator.advance(TASK, ctx) as { operation_id: string }).operation_id).toBe(ready.operation_id);
+		expect(missing).toMatchObject({ reason: "reserved foreground Agent was not observed", recovery_action: released });
+		expect((await h.coordinator.advance(TASK, ctx) as { operation_id: string }).operation_id).not.toBe(ready.operation_id);
 
 		const incompleteHost = new ClaudeReviewHost();
 		const incomplete = makeCoordinator({ host: incompleteHost });

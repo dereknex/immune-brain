@@ -493,8 +493,8 @@ export default function (
 		const laneRefusal = laneEditRefusal(event, ctx?.cwd ?? process.cwd());
 		if (laneRefusal) return { block: true, reason: laneRefusal };
 		if (event.toolName === "Agent") {
-			// ADR 0017: correlate a reserved reviewer dispatch to its reservation.
-			return progression.piReviewHost.observeReviewDispatch(event.input as { description?: unknown; prompt?: unknown; subagent_type?: unknown } | undefined, event.toolCallId);
+			// ADR 0030: validate marker-targeted dispatch before binding the reviewer.
+			return progression.piReviewHost.observeReviewDispatch(event.input as Parameters<typeof progression.piReviewHost.observeReviewDispatch>[0], event.toolCallId);
 		}
 		if (event.toolName === "imm_canary_enrollment" && ctx) {
 			const input = event.input as { task_id?: string } | undefined;

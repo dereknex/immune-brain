@@ -8693,22 +8693,72 @@ var init_authority_port = __esm(() => {
   init_types();
 });
 
+// plugins/immune-brain/runtime/assurance/review_packet.ts
+import { createHash as createHash14 } from "node:crypto";
+import { isAbsolute as isAbsolute6 } from "node:path";
+import { readFileSync as readFileSync14 } from "node:fs";
+function packetDigest(content) {
+  return createHash14("sha256").update(content, "utf8").digest("hex");
+}
+function reviewPacketHandle(input) {
+  if (!isAbsolute6(input.packet.path) || /[\r\n]/.test(input.packet.path) || !/^[a-f0-9]{64}$/.test(input.packet.sha256))
+    throw new Error("invalid review packet identity");
+  if (!/^[A-Za-z0-9._-]+$/.test(input.operationId) || !/^[A-Za-z0-9._-]+$/.test(input.taskId))
+    throw new Error("invalid review reservation identity");
+  return [
+    `<!-- immune-brain:operation_id=${input.operationId} task_id=${input.taskId} -->`,
+    `Review packet: ${input.packet.path}`,
+    `Packet sha256: ${input.packet.sha256}`,
+    REVIEW_PACKET_INSTRUCTION
+  ].join(`
+`);
+}
+function reviewPacketError(prompt) {
+  const handle = parseReviewPacketHandle(prompt);
+  if (!handle)
+    return "Review packet handle differs from its canonical form; dispatch the reserved prompt verbatim.";
+  let bytes;
+  try {
+    bytes = readFileSync14(handle.packet.path);
+  } catch {
+    return "Review packet is missing or unreadable; call advance_assurance for a fresh reservation.";
+  }
+  if (packetDigest(bytes) !== handle.packet.sha256)
+    return "Review packet digest mismatch; call advance_assurance for a fresh reservation.";
+}
+function parseReviewPacketHandle(prompt) {
+  const lines = prompt.split(`
+`);
+  if (lines.length !== 4)
+    return;
+  const marker = /^<!-- immune-brain:operation_id=([A-Za-z0-9._-]+) task_id=([A-Za-z0-9._-]+) -->$/.exec(lines[0]);
+  if (!marker || !lines[1].startsWith("Review packet: ") || !lines[2].startsWith("Packet sha256: "))
+    return;
+  const result = { operationId: marker[1], taskId: marker[2], packet: { path: lines[1].slice(15), sha256: lines[2].slice(15) } };
+  try {
+    if (reviewPacketHandle(result) === prompt)
+      return result;
+  } catch {}
+}
+var REVIEW_PACKET_INSTRUCTION = "Verify the packet sha256 before reading its instructions; on a mismatch reply exactly: review packet digest mismatch";
+var init_review_packet = () => {};
+
 // plugins/immune-brain/runtime/assurance/review_evidence.ts
 import { execFileSync as execFileSync6 } from "node:child_process";
-import { createHash as createHash14 } from "node:crypto";
+import { createHash as createHash15 } from "node:crypto";
 import {
   mkdtempSync as mkdtempSync4,
   rmSync as rmSync6,
   writeFileSync as writeFileSync7,
   statSync as statSync4,
-  readFileSync as readFileSync14,
+  readFileSync as readFileSync15,
   realpathSync as realpathSync11,
   chmodSync as chmodSync3
 } from "node:fs";
 import { tmpdir as tmpdir3 } from "node:os";
 import { join as join15 } from "node:path";
 function bundleDigest(bundle) {
-  return `sha256:${createHash14("sha256").update(JSON.stringify(bundle)).digest("hex")}`;
+  return `sha256:${createHash15("sha256").update(JSON.stringify(bundle)).digest("hex")}`;
 }
 function readIndexBlob(root, path, entry) {
   if (!entry.oid)
@@ -8871,7 +8921,7 @@ function reviewDeltaFields(root, delta, currentTree) {
   }
 }
 function manifestDigest(manifest) {
-  return `sha256:${createHash14("sha256").update(JSON.stringify(manifest)).digest("hex")}`;
+  return `sha256:${createHash15("sha256").update(JSON.stringify(manifest)).digest("hex")}`;
 }
 function gitEvidenceBytes(root, args, extraEnv = {}) {
   return execFileSync6("git", args, {
@@ -8920,7 +8970,7 @@ function reviewRefTaskSegment(taskId) {
   return `_${Buffer.from(taskId, "utf8").toString("base64url")}`;
 }
 function workspaceRefSegment(root) {
-  return createHash14("sha256").update(realpathSync11(root)).digest("hex").slice(0, 16);
+  return createHash15("sha256").update(realpathSync11(root)).digest("hex").slice(0, 16);
 }
 function reviewRef(root, taskId, reviewCommit) {
   const taskSegment = reviewRefTaskSegment(taskId);
@@ -9003,7 +9053,7 @@ function publishInput(root, input) {
   if (!REVISION_DIFF_HASH.test(input.expectedDiffHash))
     throw new Error("review task revision hash has invalid identity");
   const snapshot = captureGitTaskRevisionSnapshot(root, input.scopeHint, input.baseHead, input.taskId);
-  const recomputed = `sha256:${createHash14("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
+  const recomputed = `sha256:${createHash15("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
   if (recomputed !== input.expectedDiffHash)
     throw new Error("review task revision does not match assurance snapshot");
   if (Object.keys(snapshot.changed_paths).length === 0)
@@ -9048,6 +9098,14 @@ function writeNativeReviewEvidence(payload) {
     assertReviewArtifact(path);
     return {
       path,
+      writePacket(name, content) {
+        if (!/^[A-Za-z0-9._-]+$/.test(name))
+          throw new Error("invalid review packet name");
+        const packetPath = join15(directory, `review-packet-${name}.md`);
+        writeFileSync7(packetPath, content, { encoding: "utf8", mode: 420, flag: "wx" });
+        assertReviewArtifact(packetPath);
+        return { path: packetPath, sha256: packetDigest(content) };
+      },
       remove: () => rmSync6(directory, { recursive: true, force: true })
     };
   } catch (error) {
@@ -9065,12 +9123,13 @@ function assertReviewArtifact(path) {
   }
   if (!stat.isFile() || stat.size === 0)
     throw new Error(`review evidence artifact is missing or empty: ${path}`);
-  const read = readFileSync14(targetPath, { encoding: "utf8" });
+  const read = readFileSync15(targetPath, { encoding: "utf8" });
   if (read.trim().length === 0)
     throw new Error(`review evidence artifact is empty: ${path}`);
 }
 var MAX_REVIEW_BUNDLE_BYTES, reviewUtf8, GIT_OBJECT_ID5, REVIEW_MODES, GIT_COMMIT_ID2, REVIEW_TASK_ID, REVISION_DIFF_HASH, REVIEW_REF_NAMESPACE = "refs/immune-brain/reviews", SNAPSHOT_IDENTITY, REVIEW_DELTA_FROM_ROUND = 3;
 var init_review_evidence = __esm(() => {
+  init_review_packet();
   init_workspace_scope();
   init_storage();
   MAX_REVIEW_BUNDLE_BYTES = 2 * 1024 * 1024;
@@ -9361,8 +9420,8 @@ var init_verdict_authority = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/role_prompt_bridge.ts
-import { createHash as createHash15 } from "node:crypto";
-import { existsSync as existsSync8, readFileSync as readFileSync15 } from "node:fs";
+import { createHash as createHash16 } from "node:crypto";
+import { existsSync as existsSync8, readFileSync as readFileSync16 } from "node:fs";
 import { join as join17, dirname as dirname8 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 function roleSpec(role) {
@@ -9382,7 +9441,7 @@ function loadRolePrompt(role) {
   for (const dir of rolePromptSearchDirs(RUNTIME_DIR)) {
     const path = join17(dir, spec.file);
     if (existsSync8(path))
-      return readFileSync15(path, "utf8");
+      return readFileSync16(path, "utf8");
   }
   throw new Error(`internal role prompt is not packaged: ${role}`);
 }
@@ -9417,7 +9476,7 @@ function buildRoleDelegationPacket(input) {
   ].join(`
 
 `);
-  const promptDigest = `sha256:${createHash15("sha256").update(prompt).digest("hex")}`;
+  const promptDigest = `sha256:${createHash16("sha256").update(prompt).digest("hex")}`;
   return {
     contract: "immune_brain/role_delegation/v1",
     role: input.role,
@@ -9494,9 +9553,9 @@ var init_role_prompt_bridge = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/plugin_source_skew.ts
-import { createHash as createHash16 } from "node:crypto";
+import { createHash as createHash17 } from "node:crypto";
 import { execFileSync as execFileSync8, spawnSync as spawnSync10 } from "node:child_process";
-import { existsSync as existsSync9, readFileSync as readFileSync16, realpathSync as realpathSync12, statSync as statSync5 } from "node:fs";
+import { existsSync as existsSync9, readFileSync as readFileSync17, realpathSync as realpathSync12, statSync as statSync5 } from "node:fs";
 import { dirname as dirname9, join as join18, sep as sep6 } from "node:path";
 function pluginRootAbove(dir) {
   let current = dir;
@@ -9516,7 +9575,7 @@ function sameBuild(a, b) {
     return false;
   if (statSync5(left).size !== statSync5(right).size)
     return false;
-  return readFileSync16(left).equals(readFileSync16(right));
+  return readFileSync17(left).equals(readFileSync17(right));
 }
 function pluginSourceSkewWarning(root, loadedFrom = runningRuntimeSource()) {
   try {
@@ -9553,7 +9612,7 @@ function parentRuntimeSkew(root, head, integrated, loadedFrom = runningRuntimeSo
   let loaded = null;
   try {
     if (loadedRoot)
-      loaded = readFileSync16(join18(loadedRoot, BUILD_PROXY));
+      loaded = readFileSync17(join18(loadedRoot, BUILD_PROXY));
   } catch {
     loaded = null;
   }
@@ -9568,7 +9627,7 @@ function watchBundleIdentity(path) {
   const read = () => {
     try {
       const stat = statSync5(path);
-      return { stamp: { size: stat.size, mtimeMs: stat.mtimeMs }, hash: createHash16("sha256").update(readFileSync16(path)).digest("hex") };
+      return { stamp: { size: stat.size, mtimeMs: stat.mtimeMs }, hash: createHash17("sha256").update(readFileSync17(path)).digest("hex") };
     } catch {
       return null;
     }
@@ -9599,7 +9658,7 @@ function watchBundleIdentity(path) {
     }
   };
 }
-var WORKSPACE_PLUGIN_DIR, PLUGIN_MANIFEST, BUILD_PROXY, MAX_LEVELS = 8, BUNDLE_GIT_PATH = "plugins/immune-brain/dist/claude/mcp-server.mjs", bundleHash = (bytes) => `sha256:${createHash16("sha256").update(bytes).digest("hex")}`;
+var WORKSPACE_PLUGIN_DIR, PLUGIN_MANIFEST, BUILD_PROXY, MAX_LEVELS = 8, BUNDLE_GIT_PATH = "plugins/immune-brain/dist/claude/mcp-server.mjs", bundleHash = (bytes) => `sha256:${createHash17("sha256").update(bytes).digest("hex")}`;
 var init_plugin_source_skew = __esm(() => {
   init_runtime_contracts();
   WORKSPACE_PLUGIN_DIR = join18("plugins", "immune-brain");
@@ -9610,7 +9669,7 @@ var init_plugin_source_skew = __esm(() => {
 // plugins/immune-brain/runtime/unattended/lane_workspace.ts
 import { spawnSync as spawnSync11 } from "node:child_process";
 import { realpathSync as realpathSync13 } from "node:fs";
-import { basename, dirname as dirname10, isAbsolute as isAbsolute6, join as join19, relative as relative5, resolve as resolve12, sep as sep7 } from "node:path";
+import { basename, dirname as dirname10, isAbsolute as isAbsolute7, join as join19, relative as relative5, resolve as resolve12, sep as sep7 } from "node:path";
 function laneTaskOfWorkspace(root) {
   const branch = spawnSync11("git", ["-C", root, "symbolic-ref", "--quiet", "--short", "HEAD"], {
     encoding: "utf8",
@@ -9647,9 +9706,9 @@ function laneWriteRefusal(cwd, target) {
   if (top.status !== 0)
     return null;
   const laneRoot = realpathOfNearest((top.stdout ?? "").trim());
-  const resolved = realpathOfNearest(isAbsolute6(target) ? target : resolve12(cwd, target));
+  const resolved = realpathOfNearest(isAbsolute7(target) ? target : resolve12(cwd, target));
   const inside = relative5(laneRoot, resolved);
-  if (inside === "" || inside !== ".." && !inside.startsWith(`..${sep7}`) && !isAbsolute6(inside))
+  if (inside === "" || inside !== ".." && !inside.startsWith(`..${sep7}`) && !isAbsolute7(inside))
     return null;
   return `Lane write refused: ${resolved} is outside this Lane. In a batch Lane every edit and write stays under ${laneRoot}; use the same repository-relative path inside the Lane.`;
 }
@@ -9672,7 +9731,7 @@ __export(exports_coordinator, {
   reviewReworkFindings: () => reviewReworkFindings,
   snapshotDigest: () => snapshotDigest
 });
-import { createHash as createHash17, randomUUID as randomUUID5 } from "node:crypto";
+import { createHash as createHash18, randomUUID as randomUUID5 } from "node:crypto";
 function deriveGithubTerminalProjectionInput(taskId, projection, tombstone) {
   if (projection.error || projection.claim !== null || projection.projection.lifecycle !== "done" && projection.projection.lifecycle !== "stopped" || tombstone?.task_id !== taskId || tombstone.lifecycle_status !== "terminal" || tombstone.terminal_lifecycle !== projection.projection.lifecycle)
     return null;
@@ -9885,7 +9944,7 @@ function reviewTurnBudget(workload, changedPaths = 0, previousBudget = null) {
   return Math.min(HEAVY_REVIEW_MAX_TURNS, Math.max(HEAVY_REVIEW_MIN_TURNS, HEAVY_REVIEW_BASE_TURNS + changedPaths));
 }
 function snapshotDigest(snapshot) {
-  return `sha256:${createHash17("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
+  return `sha256:${createHash18("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
 }
 function reviewDeltaLines(delta) {
   if (!delta)
@@ -10612,6 +10671,7 @@ class AssuranceCoordinator {
           prompt: buildReviewPrompt(review.snapshot, evidence.path, turnBudget),
           snapshotPrompt: buildReviewSnapshotPrompt(review.snapshot, evidence.path, turnBudget),
           evidencePath: evidence.path,
+          writePacket: evidence.writePacket,
           maxTurns: turnBudget
         });
         ensureOperationLive();
@@ -10730,8 +10790,11 @@ class AssuranceCoordinator {
       return { state: "blocked", code: "verdict_invalid", reason: boundedAssuranceError(error) };
     }
     const receiptError = options?.validateReceipt?.();
-    if (receiptError)
-      return { state: "blocked", reason: receiptError, ...options?.receiptRecoveryAction ? { recovery_action: options.receiptRecoveryAction } : {} };
+    if (receiptError) {
+      if (receiptError.release)
+        this.releaseReviewReservation(taskId, reservation, receiptError.reason);
+      return { state: "blocked", reason: receiptError.reason, recovery_action: receiptError.recovery_action };
+    }
     if (verdict.decision === "incomplete") {
       try {
         await this.ports.applyOrdinaryOperation(ctx, { taskId, operation: {
@@ -10966,7 +11029,7 @@ var PRE_EXISTING_BASELINE_PREFIX = "pre-existing baseline failure:";
 var init_qa_findings = () => {};
 
 // plugins/immune-brain/runtime/assurance/qa.ts
-import { createHash as createHash18 } from "node:crypto";
+import { createHash as createHash19 } from "node:crypto";
 function recordForSnapshot(snapshot) {
   const record = readTaskRecordRaw(snapshot.root, snapshot.task_id).record;
   if (!record || record.contract !== "assurance_kernel/task_record/v4" || !record.git_base_head)
@@ -10978,7 +11041,7 @@ function deliveryTreeForSnapshot(snapshot) {
     return snapshot.review_revision.review_tree;
   const record = recordForSnapshot(snapshot);
   const captured = captureGitTaskRevisionSnapshot(snapshot.root, record.intent_snapshot.scope_hint, record.git_base_head, snapshot.task_id);
-  const digest = `sha256:${createHash18("sha256").update(JSON.stringify(captured)).digest("hex")}`;
+  const digest = `sha256:${createHash19("sha256").update(JSON.stringify(captured)).digest("hex")}`;
   if (digest !== snapshot.diff_hash)
     throw new Error("QA delivery identity does not match the frozen snapshot");
   return writeDeliveryTree(snapshot.root, captured);
@@ -11030,7 +11093,7 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
     const diagnostic = (reason, stage) => [{
       acceptance_id: item.id,
       descriptor_ref: `acceptance/${item.index}/verification/command`,
-      descriptor_digest: `sha256:${createHash18("sha256").update(JSON.stringify(item.descriptor)).digest("hex")}`,
+      descriptor_digest: `sha256:${createHash19("sha256").update(JSON.stringify(item.descriptor)).digest("hex")}`,
       stage,
       outcome: reason,
       elapsed_ms: 0,
@@ -11077,7 +11140,7 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
     const diagnostics = (stage, outcome, affected = group, commandStage = "check", elapsed = 0, result) => affected.map((item) => ({
       acceptance_id: item.id,
       descriptor_ref: `acceptance/${item.index}/verification/${commandStage === "prepare" ? "environment/prepare" : "command"}`,
-      descriptor_digest: `sha256:${createHash18("sha256").update(JSON.stringify(item.descriptor)).digest("hex")}`,
+      descriptor_digest: `sha256:${createHash19("sha256").update(JSON.stringify(item.descriptor)).digest("hex")}`,
       stage,
       outcome,
       elapsed_ms: elapsed,
@@ -11150,8 +11213,8 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
         allCommands.push({ frozen, diagnostics: diagnostics("integrity", "command_identity_changed", affected, stage, Math.round(performance.now() - started), result) });
       evidence.push({
         stage,
-        environment: createHash18("sha256").update(environmentKey).digest("hex"),
-        command: createHash18("sha256").update(JSON.stringify(command)).digest("hex"),
+        environment: createHash19("sha256").update(environmentKey).digest("hex"),
+        command: createHash19("sha256").update(JSON.stringify(command)).digest("hex"),
         entry: frozen?.entry?.content_hash ?? null,
         exit_code: result.exit_code,
         timed_out: result.timed_out,
@@ -11236,7 +11299,7 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
   if (findings.length)
     return { ...base, decision: "rework", findings };
   const disclosure = disclosed.length ? `; ${disclosed.map((item) => item.summary).join("; ")}` : "";
-  const executionDigest = createHash18("sha256").update(JSON.stringify({
+  const executionDigest = createHash19("sha256").update(JSON.stringify({
     tree,
     platform: process.platform,
     arch: process.arch,
@@ -11267,7 +11330,7 @@ var init_qa = __esm(() => {
 import { execFileSync as execFileSync9, spawnSync as spawnSync12 } from "node:child_process";
 import { accessSync as accessSync2, chmodSync as chmodSync4, constants as constants5, lstatSync as lstatSync13, mkdirSync as mkdirSync8, mkdtempSync as mkdtempSync5, readdirSync as readdirSync5, realpathSync as realpathSync14, rmSync as rmSync7, writeFileSync as writeFileSync8 } from "node:fs";
 import { tmpdir as tmpdir4 } from "node:os";
-import { isAbsolute as isAbsolute7, join as join20, resolve as resolve13 } from "node:path";
+import { isAbsolute as isAbsolute8, join as join20, resolve as resolve13 } from "node:path";
 function identityEnv(root) {
   const configured = (key) => {
     const result = spawnSync12("git", ["config", "--get", key], { cwd: root, encoding: "utf8" });
@@ -11307,7 +11370,7 @@ function git4(root, args, env = process.env) {
 }
 function assertListedPath(root, path) {
   const parts = path.split("/");
-  if (path.length === 0 || path.includes("\x00") || path.includes("\\") || isAbsolute7(path) || parts.some((part) => part === "" || part === "." || part === ".." || part === ".git"))
+  if (path.length === 0 || path.includes("\x00") || path.includes("\\") || isAbsolute8(path) || parts.some((part) => part === "" || part === "." || part === ".." || part === ".git"))
     throw new Error(`automatic commit refuses a path outside the repository: ${JSON.stringify(path)}`);
   let current = root;
   for (const part of parts.slice(0, -1)) {
@@ -11930,7 +11993,7 @@ var init_batch_final_report = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/local_initiative.ts
-import { lstatSync as lstatSync14, readFileSync as readFileSync17 } from "node:fs";
+import { lstatSync as lstatSync14, readFileSync as readFileSync18 } from "node:fs";
 import { resolve as resolve14 } from "node:path";
 function localInitiativePath(initiativeSlug) {
   return `docs/initiatives/${initiativeSlug}.md`;
@@ -11955,7 +12018,7 @@ function observeLocalInitiative(root, initiativeSlug) {
   const slices = [];
   let inTasks = false;
   let fence = false;
-  for (const raw of readFileSync17(resolve14(root, path), "utf8").split(/\r?\n/)) {
+  for (const raw of readFileSync18(resolve14(root, path), "utf8").split(/\r?\n/)) {
     const line = raw.trim();
     if (line.startsWith("```")) {
       fence = !fence;
@@ -12012,7 +12075,7 @@ var init_local_initiative = __esm(() => {
 
 // plugins/immune-brain/runtime/github_issue_tracker.ts
 import { spawn as spawn3, spawnSync as spawnSync15 } from "node:child_process";
-import { existsSync as existsSync10, readFileSync as readFileSync18, readdirSync as readdirSync6 } from "node:fs";
+import { existsSync as existsSync10, readFileSync as readFileSync19, readdirSync as readdirSync6 } from "node:fs";
 import { basename as basename2, relative as relative6, resolve as resolve15, sep as sep8 } from "node:path";
 function countLiteral(value, needle) {
   if (!needle)
@@ -12444,7 +12507,7 @@ async function readBlockedByIds(root, gh, operation, repository, childNumber) {
 }
 async function assertIsolatedTaskPrerequisites(root, taskId, transport) {
   const directory = resolve15(root, "docs/initiatives");
-  const local = existsSync10(directory) ? readdirSync6(directory, { withFileTypes: true }).filter((entry) => entry.isFile() && /^[A-Za-z0-9][A-Za-z0-9._-]*\.md$/.test(entry.name)).filter((entry) => readFileSync18(resolve15(directory, entry.name), "utf8").includes(taskId)).map((entry) => observeLocalInitiative(root, entry.name.slice(0, -3))).filter((parent) => parent.tasks.some((task) => task.task_id === taskId)) : [];
+  const local = existsSync10(directory) ? readdirSync6(directory, { withFileTypes: true }).filter((entry) => entry.isFile() && /^[A-Za-z0-9][A-Za-z0-9._-]*\.md$/.test(entry.name)).filter((entry) => readFileSync19(resolve15(directory, entry.name), "utf8").includes(taskId)).map((entry) => observeLocalInitiative(root, entry.name.slice(0, -3))).filter((parent) => parent.tasks.some((task) => task.task_id === taskId)) : [];
   if (local.length > 1)
     throw new Error("Slice has ambiguous Local Initiative ownership");
   if (local.length === 1) {
@@ -13347,7 +13410,7 @@ __export(exports_batch_plan, {
   observeInitiative: () => observeInitiative,
   projectBatchPlan: () => projectBatchPlan
 });
-import { createHash as createHash19 } from "node:crypto";
+import { createHash as createHash20 } from "node:crypto";
 function specBindingReason(inspection) {
   if (inspection.missing.length > 0)
     return `spec_binding_incomplete: ${inspection.missing.join(", ")}`;
@@ -13527,7 +13590,7 @@ async function projectBatchPlan(root, initiativeSlug, input, readInitiative = ob
   }));
   if (!enrollable.length)
     throw new Error("batch plan has no enrollable children; nothing to confirm");
-  const planDigest = `sha256:${createHash19("sha256").update(stableStringify(enrollable)).digest("hex")}`;
+  const planDigest = `sha256:${createHash20("sha256").update(stableStringify(enrollable)).digest("hex")}`;
   return {
     contract: "assurance_kernel/batch_plan/v1",
     initiative_slug: initiativeSlug,
@@ -13560,7 +13623,7 @@ var init_batch_plan = __esm(() => {
 
 // plugins/immune-brain/runtime/unattended/batch_git.ts
 import { spawnSync as spawnSync16 } from "node:child_process";
-import { createHash as createHash20, randomUUID as randomUUID7 } from "node:crypto";
+import { createHash as createHash21, randomUUID as randomUUID7 } from "node:crypto";
 import {
   constants as constants6,
   closeSync as closeSync6,
@@ -13861,7 +13924,7 @@ function assertReviewedDelivery(root, authoritative, scopeHint, taskId) {
     if (!record.git_base_head)
       throw new Error("batch commit requires a TaskRecord v4 git_base_head");
     const captured = captureGitTaskRevisionSnapshot(root, scopeHint, record.git_base_head, taskId);
-    const digest = `sha256:${createHash20("sha256").update(JSON.stringify(captured)).digest("hex")}`;
+    const digest = `sha256:${createHash21("sha256").update(JSON.stringify(captured)).digest("hex")}`;
     if (digest !== qa.diff_hash)
       throw new Error("batch commit drifted from the reviewed delivery identity");
   }
@@ -13908,7 +13971,7 @@ async function commitBatchChild(input) {
       throw scopeRefusal("unsupported_index_flags", flagged);
     assertReviewedDelivery(root, authoritative, scopeHint, taskId);
     const captured = captureGitTaskRevisionSnapshot(root, scopeHint, expectedHead, taskId);
-    const deliveryHash = `sha256:${createHash20("sha256").update(JSON.stringify(captured)).digest("hex")}`;
+    const deliveryHash = `sha256:${createHash21("sha256").update(JSON.stringify(captured)).digest("hex")}`;
     const paths = [...Object.keys(captured.changed_paths), auditPaths.record, auditPaths.proof];
     const message = `imm(${taskId}): ${goal.trim().split(/\r?\n/)[0]?.trim() || taskId}
 
@@ -14340,7 +14403,7 @@ async function observeNativeParent(root, initiativeSlug, readInitiative, blocked
     return null;
   const native = readNativeParentFinalReport(root, initiativeSlug);
   const proof = await observeParentCompletion(root, initiativeSlug, parent.tasks.map((task) => task.task_id));
-  const planDigest = `sha256:${createHash20("sha256").update(JSON.stringify(intents.map(({ task, intent }) => ({ task_id: task.task_id, blocked_by: task.blocked_by, intent: intent.content_hash })))).digest("hex")}`;
+  const planDigest = `sha256:${createHash21("sha256").update(JSON.stringify(intents.map(({ task, intent }) => ({ task_id: task.task_id, blocked_by: task.blocked_by, intent: intent.content_hash })))).digest("hex")}`;
   const activeTask = readActiveClaimTaskId(root);
   const action = activeTask ? "drive" : proof.complete ? "complete" : "enroll";
   const ready = parent.tasks.find((task) => !blockedNativeTasks.includes(task.task_id) && !readSettledTaskEvidence(root, task.task_id) && task.blocked_by.every((id) => proof.integrated_task_ids.includes(id)));
@@ -14678,7 +14741,7 @@ var init_batch_leak_restore = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/unattended/batch_preflight.ts
-import { existsSync as existsSync13, readdirSync as readdirSync8, readFileSync as readFileSync19 } from "node:fs";
+import { existsSync as existsSync13, readdirSync as readdirSync8, readFileSync as readFileSync20 } from "node:fs";
 import { randomUUID as randomUUID8 } from "node:crypto";
 import { dirname as dirname13, join as join23 } from "node:path";
 import { spawnSync as spawnSync18 } from "node:child_process";
@@ -14706,7 +14769,7 @@ function findResumableBatchSlugForTask(root, taskId) {
     if (!file.endsWith(".json"))
       continue;
     try {
-      const record = JSON.parse(readFileSync19(join23(batchesDir, file), "utf8"));
+      const record = JSON.parse(readFileSync20(join23(batchesDir, file), "utf8"));
       if (!["v1", "v2"].includes(classifyBatchRunStateContract(record?.contract)))
         continue;
       if (record.batch_state !== "running" && record.batch_state !== "needs_human")
@@ -14729,7 +14792,7 @@ function findExistingActiveBatch(root, initiativeSlug) {
       continue;
     let record;
     try {
-      record = JSON.parse(readFileSync19(join23(batchesDir, file), "utf8"));
+      record = JSON.parse(readFileSync20(join23(batchesDir, file), "utf8"));
     } catch {
       return { corrupt: true, path: file };
     }
@@ -14772,7 +14835,7 @@ function findSettledBatchRecord(root, initiativeSlug) {
       continue;
     let record;
     try {
-      record = JSON.parse(readFileSync19(join23(batchesDir, file), "utf8"));
+      record = JSON.parse(readFileSync20(join23(batchesDir, file), "utf8"));
     } catch {
       continue;
     }
@@ -15441,7 +15504,7 @@ function probeHost(env = process.env, platform = process.platform, hostVersion) 
 var PLUGIN_VERSION = "5.6.0";
 
 // plugins/immune-brain/runtime/claude/interaction.ts
-import { createHash as createHash21, randomUUID as randomUUID9 } from "node:crypto";
+import { createHash as createHash22, randomUUID as randomUUID9 } from "node:crypto";
 
 // plugins/immune-brain/runtime/assurance/phase_entry.ts
 var RUN_ENTRY_REQUIRED = "run_entry_required";
@@ -15616,14 +15679,15 @@ function entryTokenRequestId(token) {
 }
 function confirmationRef(input) {
   const kind = input.requestId.startsWith(ENTRY_TOKEN_REQUEST_PREFIX) ? "entry" : "confirm";
-  return `claude-${kind}-${createHash21("sha256").update(`${input.connectionId}\x00${input.toolCallId}\x00${input.requestId}\x00${input.operation}\x00${input.taskId ?? ""}\x00${input.initiativeSlug ?? ""}\x00${input.intentRevision ?? ""}\x00${input.intentContentHash ?? ""}\x00${input.bindingDigest ?? ""}\x00${input.planDigest ?? ""}`).digest("hex").slice(0, 16)}`;
+  return `claude-${kind}-${createHash22("sha256").update(`${input.connectionId}\x00${input.toolCallId}\x00${input.requestId}\x00${input.operation}\x00${input.taskId ?? ""}\x00${input.initiativeSlug ?? ""}\x00${input.intentRevision ?? ""}\x00${input.intentContentHash ?? ""}\x00${input.bindingDigest ?? ""}\x00${input.planDigest ?? ""}`).digest("hex").slice(0, 16)}`;
 }
 function enrollmentNonce() {
   return randomUUID9();
 }
 
 // plugins/immune-brain/runtime/claude/review_host.ts
-import { createHash as createHash22 } from "node:crypto";
+init_review_packet();
+import { createHash as createHash23 } from "node:crypto";
 import { constants as constants7, fstatSync as fstatSync4, lstatSync as lstatSync16, mkdirSync as mkdirSync11, openSync as openSync7, readdirSync as readdirSync9, readSync, realpathSync as realpathSync16, rmSync as rmSync9, writeSync, closeSync as closeSync7 } from "node:fs";
 import { dirname as dirname14, join as join24 } from "node:path";
 import { tmpdir as tmpdir5 } from "node:os";
@@ -15656,7 +15720,7 @@ class MemoryHookEventLog {
 }
 var CACHE_DIR = "immune-brain-claude";
 function sessionHash(sessionId) {
-  return createHash22("sha256").update(sessionId).digest("hex");
+  return createHash23("sha256").update(sessionId).digest("hex");
 }
 function cacheDir(root) {
   return join24(root, CACHE_DIR);
@@ -15858,9 +15922,27 @@ class FileHookEventLog {
     } catch {}
   }
 }
-function reservedDispatchPrompt(request) {
-  return `<!-- immune-brain:operation_id=${request.operationId} task_id=${request.taskId} -->
-${request.snapshotPrompt}`;
+function parseReviewMarker(prompt) {
+  if (typeof prompt !== "string")
+    return;
+  const match = /<!-- immune-brain:operation_id=([^\s]+)\s+task_id=([^\s]+)\s+-->/.exec(prompt);
+  if (match)
+    return { operationId: match[1], taskId: match[2] };
+}
+function reviewDispatchHookOutput(payload) {
+  if (payload.hook_event_name !== "PreToolUse" || payload.tool_name !== AGENT_TOOL)
+    return;
+  const input = payload.tool_input;
+  if (!parseReviewMarker(input?.prompt))
+    return;
+  const reason = input?.subagent_type !== REVIEWER_AGENT && input?.subagent_type !== CLAUDE_REVIEWER_AGENT ? "Reserved Review dispatch requires subagent_type immune-brain:immune-brain-reviewer or immune-brain-reviewer." : reviewPacketError(input.prompt);
+  if (!reason)
+    return;
+  return JSON.stringify({ hookSpecificOutput: {
+    hookEventName: "PreToolUse",
+    permissionDecision: "deny",
+    permissionDecisionReason: reason
+  } });
 }
 function bindsPrompt(prompt, pending) {
   return prompt === undefined || prompt === pending.dispatchPrompt;
@@ -15892,9 +15974,14 @@ class ClaudeReviewHost {
       initialCursors.set(sessionId, len);
       sessionCursors.set(sessionId, len);
     }
+    const dispatchPrompt = reviewPacketHandle({
+      taskId: request.taskId,
+      operationId: request.operationId,
+      packet: request.writePacket(request.operationId, request.snapshotPrompt)
+    });
     this.pending.set(request.operationId, {
       request,
-      dispatchPrompt: reservedDispatchPrompt(request),
+      dispatchPrompt,
       initialCursors,
       sessionCursors,
       consumed: false
@@ -15902,8 +15989,8 @@ class ClaudeReviewHost {
     return {
       id: request.operationId,
       dispatch: {
-        name: CLAUDE_REVIEWER_AGENT,
-        prompt: reservedDispatchPrompt(request)
+        subagent_type: CLAUDE_REVIEWER_AGENT,
+        prompt: dispatchPrompt
       }
     };
   }
@@ -16052,13 +16139,16 @@ class ClaudeReviewHost {
     this.drain();
     const state = this.pending.get(reservation.id);
     if (!state)
-      return { ok: false, reason: "reserved foreground Agent was not observed", release: false };
+      return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
+    const packetError = reviewPacketError(state.dispatchPrompt);
+    if (packetError)
+      return { ok: false, reason: packetError, release: true };
     if (state.consumed)
       return { ok: false, reason: "review receipt already consumed", release: true };
     if (state.error)
       return { ok: false, reason: state.error, release: true };
     if (!state.startEvent)
-      return { ok: false, reason: "reserved foreground Agent was not observed", release: false };
+      return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
     if (!state.stopEvent || !state.postEvent?.result?.trim()) {
       return { ok: false, reason: "foreground Agent terminal event order is incomplete", release: false };
     }
@@ -16096,7 +16186,7 @@ class ClaudeReviewHost {
     this.drain();
     const entry = [...this.pending.entries()].find(([, state]) => state.request.taskId === taskId);
     if (!entry)
-      return { ok: false, reason: "reserved foreground Agent was not observed", release: false };
+      return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
     return this.inspectReview({ id: entry[0], dispatch: entry[1].request });
   }
   releaseReview(reservation) {
@@ -16154,14 +16244,14 @@ function parseHookStdin(raw) {
     }
   }
   if (prompt) {
-    const match = /<!-- immune-brain:operation_id=([^\s]+)\s+task_id=([^\s]+)\s+-->/.exec(prompt);
-    if (match) {
-      if (extractedOpId && extractedOpId !== match[1])
+    const marker = parseReviewMarker(prompt);
+    if (marker) {
+      if (extractedOpId && extractedOpId !== marker.operationId)
         return null;
-      if (extractedTaskId && extractedTaskId !== match[2])
+      if (extractedTaskId && extractedTaskId !== marker.taskId)
         return null;
-      extractedOpId = match[1];
-      extractedTaskId = match[2];
+      extractedOpId = marker.operationId;
+      extractedTaskId = marker.taskId;
     }
   }
   if (hookType === "SubagentStart" || hookType === "SubagentStop") {
@@ -16262,7 +16352,7 @@ init_coordinator();
 init_batch_preflight();
 init_intent();
 init_storage();
-import { createHash as createHash23 } from "node:crypto";
+import { createHash as createHash24 } from "node:crypto";
 var UNCHANGED_CONTINUATION_LIMIT = 1;
 var USER_WAIT_GUIDANCE = "If the remaining step is an action only the user can perform, waiting for it is a valid stop: stop without repeating the request you already made.";
 function bindRun(binding) {
@@ -16285,7 +16375,7 @@ function releasesRunBinding(prompt, phase) {
   return phase === "planner" || phase === "brainstorm" || /^(?:stop|cancel|pause)(?:\s+(?:execution|the task|this run))?[.!\s]*$/i.test(prompt.trim()) || /^(?:请)?(?:停止|取消|暂停)(?:执行|任务|本次运行|这个任务)?[。！!\s]*$/.test(prompt.trim());
 }
 function digest(value) {
-  return createHash23("sha256").update(JSON.stringify(value)).digest("hex");
+  return createHash24("sha256").update(JSON.stringify(value)).digest("hex");
 }
 function scopedSourceDigest(root, scope) {
   const snapshot = captureGitWorkspaceSnapshot(root);
@@ -16800,7 +16890,7 @@ import { join as join26 } from "node:path";
 import { tmpdir as tmpdir7 } from "node:os";
 
 // plugins/immune-brain/runtime/assurance/review_mediation.ts
-import { createHash as createHash24 } from "node:crypto";
+import { createHash as createHash25 } from "node:crypto";
 function extractVerdictJson(input) {
   if (typeof input === "string") {
     const first = input.indexOf("{");
@@ -16832,7 +16922,7 @@ function verdictFingerprint(raw) {
   });
 }
 function digestOfReviewerBytes(bytes) {
-  return `sha256:${createHash24("sha256").update(bytes).digest("hex")}`;
+  return `sha256:${createHash25("sha256").update(bytes).digest("hex")}`;
 }
 var RELEASED_REVIEW_RECOVERY = "Call advance_assurance to obtain a new Review reservation, then dispatch one fresh reviewer with the returned envelope unchanged";
 var RETAINED_REVIEW_RECOVERY = "Wait for the dispatched reviewer to finish, then call submit_review again with its verdict; do not dispatch or continue another reviewer";
@@ -16854,13 +16944,16 @@ async function submitMediatedReview(coordinator, ctx, taskId, verdictInput, insp
   }
   const receiptBytes = observed.receipt.result;
   const options = {
-    receiptRecoveryAction: RETAINED_REVIEW_RECOVERY,
     reviewer_verdict_sha256: digestOfReviewerBytes(receiptBytes),
     validateReceipt: () => {
       const current = inspect();
       if (!current.ok)
-        return current.reason;
-      return current.receipt.actorId === observed.receipt.actorId && current.receipt.result === receiptBytes ? null : "reviewer receipt changed during submission";
+        return {
+          reason: current.reason,
+          release: current.release,
+          recovery_action: current.release ? RELEASED_REVIEW_RECOVERY : RETAINED_REVIEW_RECOVERY
+        };
+      return current.receipt.actorId === observed.receipt.actorId && current.receipt.result === receiptBytes ? null : { reason: "reviewer receipt changed during submission", release: true, recovery_action: RELEASED_REVIEW_RECOVERY };
     }
   };
   if (verdictInput === undefined) {
@@ -17291,7 +17384,7 @@ init_storage();
 init_intent();
 init_canary_application();
 init_authority_port();
-import { existsSync as existsSync18, readFileSync as readFileSync22, writeFileSync as writeFileSync12 } from "node:fs";
+import { existsSync as existsSync18, readFileSync as readFileSync23, writeFileSync as writeFileSync12 } from "node:fs";
 import { execFileSync as execFileSync12 } from "node:child_process";
 import { join as join30 } from "node:path";
 
@@ -17803,12 +17896,12 @@ init_actor_identity();
 
 // plugins/immune-brain/runtime/staged_intent.ts
 import { execFileSync as execFileSync11 } from "node:child_process";
-import { readFileSync as readFileSync20, writeFileSync as writeFileSync11 } from "node:fs";
+import { readFileSync as readFileSync21, writeFileSync as writeFileSync11 } from "node:fs";
 import { join as join27 } from "node:path";
 function captureStagedIntent(root, relativePath) {
   return {
     path: relativePath,
-    bytes: readFileSync20(join27(root, relativePath)),
+    bytes: readFileSync21(join27(root, relativePath)),
     index_state: execFileSync11("git", ["ls-files", "--stage", "-z", "--", relativePath], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"]
@@ -17828,7 +17921,7 @@ function restoreStagedIntent(root, snapshot) {
       stdio: ["pipe", "ignore", "pipe"]
     });
   }
-  const restoredBytes = readFileSync20(join27(root, snapshot.path));
+  const restoredBytes = readFileSync21(join27(root, snapshot.path));
   if (!restoredBytes.equals(snapshot.bytes)) {
     throw new Error("failed to restore prior intent bytes");
   }
@@ -17864,10 +17957,10 @@ init_batch_integration();
 init_batch_ref();
 init_batch_worktrees();
 import { spawnSync as spawnSync20 } from "node:child_process";
-import { createHash as createHash25 } from "node:crypto";
+import { createHash as createHash26 } from "node:crypto";
 import { existsSync as existsSync16, realpathSync as realpathSync19 } from "node:fs";
-import { isAbsolute as isAbsolute8, join as join28 } from "node:path";
-import { readFileSync as readFileSync21 } from "node:fs";
+import { isAbsolute as isAbsolute9, join as join28 } from "node:path";
+import { readFileSync as readFileSync22 } from "node:fs";
 
 // plugins/immune-brain/runtime/unattended/batch_kernel_port.ts
 init_batch_git();
@@ -18018,7 +18111,7 @@ function parseLaneOffers(value) {
       throw new Error("invalid lane_offers: unknown offer field");
     if (typeof taskId !== "string" || !TASK_ID_PATTERN2.test(taskId))
       throw new Error("invalid lane_offers: task_id is not a valid task id");
-    if (typeof path !== "string" || !path || path.length > MAX_PATH_LENGTH || path.includes("\x00") || !isAbsolute8(path))
+    if (typeof path !== "string" || !path || path.length > MAX_PATH_LENGTH || path.includes("\x00") || !isAbsolute9(path))
       throw new Error("invalid lane_offers: path must be an absolute path");
     if (seen.has(taskId))
       throw new Error(`invalid lane_offers: duplicate offer for ${taskId}`);
@@ -18074,7 +18167,7 @@ function laneRuntimeDir(root, explicit) {
   if (explicit)
     return explicit;
   try {
-    const manifest = JSON.parse(readFileSync21(join28(root, "package.json"), "utf8"));
+    const manifest = JSON.parse(readFileSync22(join28(root, "package.json"), "utf8"));
     return manifest.name === "immune-brain" ? root : null;
   } catch {
     return null;
@@ -18714,7 +18807,7 @@ async function runLaneBatch(input, persisted) {
         task_id: request.task_id,
         kind: request.kind,
         text: request.text,
-        text_digest: `sha256:${createHash25("sha256").update(request.text).digest("hex")}`
+        text_digest: `sha256:${createHash26("sha256").update(request.text).digest("hex")}`
       }];
       persist();
       instruction = { task_id: request.task_id, kind: request.kind, accepted: true, reason: null };
@@ -19937,7 +20030,7 @@ class ClaudeRuntime {
     const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
     const nextScope = operation.op === "revise_intent" ? operation.next_intent.scope_hint : undefined;
     const sidecar = join30(ctx.cwd, priorIntent.intent_ref.path);
-    const priorBytes = operation.op === "revise_intent" ? readFileSync22(sidecar) : null;
+    const priorBytes = operation.op === "revise_intent" ? readFileSync23(sidecar) : null;
     const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
     try {
       if (priorBytes) {
@@ -21147,7 +21240,7 @@ async function runHook() {
     payload = null;
   }
   if (payload?.hook_event_name === "PreToolUse") {
-    const decision = laneGuardHookOutput(payload) ?? phaseEntryGateHookOutput(payload) ?? await runContinuationHookOutput(payload);
+    const decision = laneGuardHookOutput(payload) ?? phaseEntryGateHookOutput(payload) ?? reviewDispatchHookOutput(payload) ?? await runContinuationHookOutput(payload);
     if (decision)
       process.stdout.write(`${decision}
 `);

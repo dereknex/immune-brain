@@ -16,7 +16,7 @@ import {
 	type NativeConfirmationInput,
 	type NativeConfirmationPort,
 } from "./interaction";
-import { ClaudeReviewHost, FileHookEventLog, parseHookStdin } from "./review_host";
+import { ClaudeReviewHost, FileHookEventLog, parseHookStdin, reviewDispatchHookOutput } from "./review_host";
 import { activeTaskHookOutput, consumePhaseAdmission, laneGuardHookOutput, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool, type PhaseAdmissionGrant } from "./lane_guard";
 import { readRunToolSession, runContinuationHookOutput } from "./run_continuation";
 import { ClaudeRuntime, type ToolMeta } from "./kernel_ports";
@@ -852,7 +852,7 @@ async function runHook(): Promise<void> {
 	let payload: Record<string, unknown> | null = null;
 	try { payload = JSON.parse(raw) as Record<string, unknown>; } catch { payload = null; }
 	if (payload?.hook_event_name === "PreToolUse") {
-		const decision = laneGuardHookOutput(payload) ?? phaseEntryGateHookOutput(payload) ?? await runContinuationHookOutput(payload);
+		const decision = laneGuardHookOutput(payload) ?? phaseEntryGateHookOutput(payload) ?? reviewDispatchHookOutput(payload) ?? await runContinuationHookOutput(payload);
 		if (decision) process.stdout.write(`${decision}\n`);
 		return;
 	}

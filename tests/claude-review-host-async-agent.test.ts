@@ -1,5 +1,7 @@
+import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
 import { describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, readFileSync } from "node:fs";
+import { parseReviewPacketHandle, packetDigest } from "../plugins/immune-brain/runtime/assurance/review_packet";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -9,6 +11,7 @@ import {
 	FileHookEventLog,
 	parseAsyncAgentLaunch,
 	parseHookStdin,
+	reviewDispatchHookOutput,
 	readAgentTranscriptResult,
 } from "../plugins/immune-brain/runtime/claude/review_host";
 import type { ReviewRequest, HostReviewReservation } from "../plugins/immune-brain/runtime/assurance/host_port";
@@ -82,6 +85,7 @@ function reviewRequest(): ReviewRequest {
 		prompt: "internal role: code-review\nDo not edit files.\nreview instructions",
 		snapshotPrompt: "review instructions",
 		evidencePath: "/tmp/evidence.json",
+		writePacket: stablePacket,
 		maxTurns: 24,
 	};
 }
@@ -124,11 +128,32 @@ function observeDispatch(
 
 const RESERVATION_MARKER = `<!-- immune-brain:operation_id=${OPERATION} task_id=${TASK} -->`;
 
+const packets = new Map<string, ReturnType<typeof writeTestReviewPacket>>();
+function stablePacket(name: string, content: string) {
+	const key = `${name}:${content}`;
+	if (!packets.has(key)) packets.set(key, writeTestReviewPacket(name, content));
+	return packets.get(key)!;
+}
 function reservedPrompt(): string {
-	return `${RESERVATION_MARKER}\nreview instructions`;
+	return (new ClaudeReviewHost().prepareReview(reviewRequest()).dispatch as { prompt: string }).prompt;
 }
 
 describe("claude review host: dispatch envelope shape", () => {
+	test("an edited packet releases even after a real async launch and transcript bind", () => {
+		const root = mkdtempSync(join(tmpdir(), "imm-review-integrity-"));
+		try {
+			const file = join(root, "review.jsonl");
+			writeFileSync(file, transcriptLine(RECORDED_AGENT_ID, VERDICT), { mode: 0o600 });
+			const host = new ClaudeReviewHost();
+			const reservation = host.prepareReview({ ...reviewRequest(), writePacket: writeTestReviewPacket });
+			const prompt = (reservation.dispatch as { prompt: string }).prompt;
+			observeDispatch(host, { sessionId: RECORDED_SESSION, agentId: RECORDED_AGENT_ID,
+				envelope: { ...RECORDED_LAUNCH_ENVELOPE, outputFile: file, prompt }, prompt });
+			expect(host.inspectReview(reservation)).toMatchObject({ ok: true, receipt: { result: VERDICT } });
+			writeFileSync(parseReviewPacketHandle(prompt)!.packet.path, "altered instructions");
+			expect(host.inspectReview(reservation)).toMatchObject({ ok: false, release: true, reason: expect.stringContaining("digest") });
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
 	test("Claude observed async incomplete receipt reaches durable non-verdict settlement", async () => {
 		const root = mkdtempSync(join(tmpdir(), "claude-incomplete-receipt-"));
 		const f = reviewIncompleteFixture();
@@ -163,13 +188,21 @@ describe("claude review host: dispatch envelope shape", () => {
 		// Exact key set, not a subset check: re-adding a receiver-less parameter
 		// must fail here. The Claude `Agent` tool has no turn cap and no
 		// background switch, so `max_turns` and `run_in_background` never had one.
-		expect(Object.keys(dispatch).sort()).toEqual(["name", "prompt"]);
-		expect(dispatch.name).toBe(CLAUDE_REVIEWER_AGENT);
-		// The envelope carries the marker plus the per-dispatch snapshot facts only,
-		// not the complete prompt: the static instructions live in the generated
-		// reviewer definition, so sending them again would fork the single source.
+		expect(Object.keys(dispatch).sort()).toEqual(["prompt", "subagent_type"]);
+		expect(dispatch.subagent_type).toBe(CLAUDE_REVIEWER_AGENT);
+		expect(reviewDispatchHookOutput({ hook_event_name: "PreToolUse", tool_name: "Agent", tool_input: dispatch })).toBeUndefined();
+		for (const subagent_type of ["general-purpose", undefined]) {
+			const denied = reviewDispatchHookOutput({ hook_event_name: "PreToolUse", tool_name: "Agent", tool_input: { ...dispatch, subagent_type } });
+			expect(JSON.parse(denied!).hookSpecificOutput).toMatchObject({ permissionDecision: "deny", permissionDecisionReason: expect.stringContaining("subagent_type") });
+		}
+		// Claude packets carry snapshot facts only; static rules live in the agent definition.
 		const request = reviewRequest();
-		expect(dispatch.prompt).toBe(`${RESERVATION_MARKER}\n${request.snapshotPrompt}`);
+		const handle = parseReviewPacketHandle(dispatch.prompt as string)!;
+		expect((dispatch.prompt as string).split("\n")).toHaveLength(4);
+		expect(handle).toMatchObject({ taskId: TASK, operationId: OPERATION });
+		const content = readFileSync(handle.packet.path, "utf8");
+		expect(content).toBe(request.snapshotPrompt);
+		expect(packetDigest(content)).toBe(handle.packet.sha256);
 		expect(dispatch.prompt).not.toContain(request.prompt);
 		expect(dispatch.prompt).not.toContain("internal role: code-review");
 		expect(dispatch.prompt).not.toContain("Do not edit files");
@@ -219,7 +252,7 @@ describe("claude review host: dispatch envelope shape", () => {
 
 			const host = new ClaudeReviewHost(new FileHookEventLog(root));
 			const reservation = host.prepareReview(reviewRequest());
-			const dispatch = reservation.dispatch as { name: string; prompt: string };
+			const dispatch = reservation.dispatch as { subagent_type: string; prompt: string };
 			// Dispatched verbatim: the envelope's own prompt, not a reconstructed one.
 			observeDispatch(host, {
 				sessionId: RECORDED_SESSION,
@@ -292,7 +325,7 @@ describe("claude review host: exact reserved prompt binding", () => {
 					result: {
 						ok: false,
 						reason: "reserved foreground Agent was not observed",
-						release: false,
+						release: true,
 					},
 				});
 			} finally {
@@ -309,7 +342,7 @@ describe("claude review host: exact reserved prompt binding", () => {
 			expect(host.consumeReview(reservation)).toMatchObject({
 				ok: false,
 				reason: "reserved foreground Agent was not observed",
-				release: false,
+				release: true,
 			});
 		} finally {
 			rmSync(root, { recursive: true, force: true });
@@ -335,7 +368,7 @@ describe("claude review host: exact reserved prompt binding", () => {
 			expect(host.consumeReview(reservation)).toEqual({
 				ok: false,
 				reason: "reserved foreground Agent was not observed",
-				release: false,
+				release: true,
 			});
 		} finally {
 			rmSync(root, { recursive: true, force: true });
@@ -511,7 +544,7 @@ describe("claude review host: recorded async Agent envelope", () => {
 			expect(host.consumeReview(reservation)).toMatchObject({
 				ok: false,
 				reason: "reserved foreground Agent was not observed",
-				release: false,
+				release: true,
 			});
 		} finally {
 			rmSync(root, { recursive: true, force: true });

@@ -142,6 +142,23 @@ Agent:
 
 Pi `Agent` has no `readonly` parameter; the empty tool policy, child type, and prompt contract enforce the read-only boundary. The Parent starts one foreground Agent at a time and consumes its direct result before deciding whether another child is needed. Advisory and discovery work does not poll for deferred results or depend on completion notifications or host `followUp`. Kernel Review uses `subagent_type: "Review"`; its structured verdict is submitted by the Parent and validated against the current immutable snapshot. Loop `arch-explorer` uses `subagent_type: "Explore"`; other advisory/discovery and Loop internal roles use `general-purpose`.
 
+Kernel Review dispatches the returned envelope unchanged. Its prompt is exactly a four-line handle:
+
+```text
+<!-- immune-brain:operation_id=<op> task_id=<task> -->
+Review packet: <absolute path>
+Packet sha256: <hex>
+Verify the packet sha256 before reading its instructions; on a mismatch reply exactly: review packet digest mismatch
+```
+
+The runtime writes `review-packet-<operation>.md` beside `evidence.json` without
+changing the manifest bytes. Pi packets carry the full Review prompt including
+semantic-neighborhood rules; Claude packets carry snapshot facts only, since the
+reviewer definition supplies static rules. The reviewer verifies the packet digest
+before following its instructions. Reservation release removes the packet with
+the evidence directory; a new reservation writes a new operation-named packet.
+The exact handle, not its marker alone, binds the reviewer.
+
 ## Scheduling And Visibility
 
 1. Planning、repository exploration、specialist advisory Review 和 work probe 必须 foreground 执行。Parent launches one child at a time，消费 direct terminal result，并在每个结果后 re-evaluates the remaining dispatch budget；不得把多个 foreground Agent 假定为并发 batch。

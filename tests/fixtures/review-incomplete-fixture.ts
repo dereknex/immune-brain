@@ -1,3 +1,4 @@
+import { writeTestReviewPacket } from "../helpers/review-packet-fixture";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -43,7 +44,7 @@ export function reviewIncompleteFixture(pathCount = 1) {
   projectTask: (r, t) => projectAssurance(r, t), readTaskRecord: async (r, t) => readTaskRecordRaw(r, t),
   readTaskIntent: async () => readTaskIntent(root, taskId, intentPath, intent),
   runQa: async s => { qaRuns++; return { contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: taskId, snapshot_digest: snapshotDigest(s), decision: "pass", approval: { kind: "qa", authority_role: "qa", summary: "passed" } }; },
-  writeReviewEvidence: () => ({ path: join(root, "review.json"), remove() {} }),
+  writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: join(root, "review.json"), remove() {} }),
   applyOrdinaryOperation: async (_ctx, input) => {
    const current = readTaskRecordRaw(root, taskId).record!;
    return app.execute({ root, task_id: taskId, operation: input.operation as CanaryOperation,

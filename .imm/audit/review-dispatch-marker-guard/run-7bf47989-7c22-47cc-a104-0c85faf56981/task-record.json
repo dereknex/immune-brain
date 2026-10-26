@@ -1,0 +1,318 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "review-dispatch-marker-guard",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "review-dispatch-marker-guard",
+    "goal": "A Review dispatch aimed at a pending reservation by its operation marker is blocked before the reviewer runs when its reviewer type or, on Pi, its Agent parameters differ from the reservation, on both Hosts, and a reservation that never bound a reviewer is released when its Review is submitted, with a recovery that requests a fresh Review, instead of an indefinite wait (Spec review-dispatch-handle S1, D1-D4, D7, D8).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "On Pi, the reserved prompt starts with the marker `<!-- immune-brain:operation_id=<op> task_id=<task> -->`. A dispatch carrying a pending marker is blocked, binding nothing, with a reason naming each differing field, for each of: `subagent_type` `general-purpose`; the prompt with one appended character; `run_in_background` omitted or `true`; `isolated` omitted or `false`; `max_turns` different from the reserved value; `inherit_context` `true`. A dispatch whose marker names a released or unknown operation is blocked with a reason naming `advance_assurance`. A second dispatch after a bound one is blocked and the first binding still settles. A `Review` dispatch without a marker while a reservation is pending stays blocked, and a marker-less `general-purpose` dispatch is not blocked. A differing `description` alone does not block.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-review-dispatch-resilience.test.ts\",\n      \"tests/pi-canary-work-extension.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "On Claude, a `PreToolUse` payload for `Agent` whose `tool_input.prompt` carries a marker and whose `tool_input.subagent_type` is `general-purpose` or absent returns a deny decision naming `subagent_type`; the same prompt with `immune-brain:immune-brain-reviewer` or `immune-brain-reviewer`, and a marker-less `general-purpose` dispatch, return no decision.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "`submit_review` on a reservation with no bound reviewer releases it with `RELEASED_REVIEW_RECOVERY`, and the next `advance_assurance` returns a reservation with a new operation id and an unchanged turn budget, on both Hosts. Covered unbound cases: nothing dispatched; on Pi a blocked dispatch; on Claude a reserved prompt whose only bound event is `PostToolUse` (no reviewer `SubagentStart`), an edited prompt, missing host state for the reservation, and no reservation for the task. A bound reviewer whose result has not returned still returns `RETAINED_REVIEW_RECOVERY`, and an unbound release records no incomplete round.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/claude-review-host-async-agent.test.ts\",\n      \"tests/pi-canary-review-dispatch-resilience.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "ADR 0030 records the marker-keyed dispatch check, the per-Host enforced fields and the release-on-unbound rule, and marks ADR 0017's verbatim reserved-prompt rule and Spec branch-boundary-r2-followups D2 superseded; ADR 0017 carries `partially superseded`; the Loop contract states that a non-matching dispatch is blocked at dispatch and an unbound reservation is released, and no longer says an edit forfeits the reservation.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/managed-authority-failure-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "Packaged dist docs and role prompts match their canonical sources.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/sync-dist-docs.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC6",
+        "assertion": "The generated Claude MCP bundle and reviewer definition match the runtime source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/build-claude-plugin.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC7",
+        "assertion": "The project typechecks.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/review-dispatch-marker-guard.md",
+      "docs/adr/0017-receipt-bound-review-verdict-submission.md",
+      "docs/adr/0030-marker-keyed-review-dispatch.md",
+      "docs/plans/review-dispatch-marker-guard.intent.json",
+      "docs/specs/review-dispatch-handle.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/assurance/review_mediation.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/claude/review_host.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/claude-review-host-async-agent.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/managed-authority-failure-contract.test.ts",
+      "tests/pi-canary-review-dispatch-resilience.test.ts",
+      "tests/pi-canary-work-extension.test.ts"
+    ],
+    "scope_size_reason": "Settlement-class: both Hosts' Review binding, the Claude hook route, mediation and the coordinator release owner are one reservation state machine, and the shared dual-host invariant fails if either Host changes alone.",
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/review-dispatch-marker-guard.intent.json",
+    "content_hash": "sha256:2bddcd09be03e97ffd2feb9f8636accbfb6771308ae3e6062fb35ab9fdf66f24"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:2bddcd09be03e97ffd2feb9f8636accbfb6771308ae3e6062fb35ab9fdf66f24",
+  "git_base_head": "93bcbe211d8594b71eab5f21e42d5c517b4d8a3c",
+  "attestations": [
+    {
+      "id": "approval-qa-eaa1327e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2bddcd09be03e97ffd2feb9f8636accbfb6771308ae3e6062fb35ab9fdf66f24",
+      "diff_hash": "sha256:6fe6dc61693e3283a5d266ff114ffe0c3558300a77fefdaea7f2fd82974462a5",
+      "actor_id": "deterministic-qa",
+      "summary": "all 8 project verification check(s) passed; execution=sha256:e07e21f4c9d39cc085efa4e6749bd67c62b856fa2097d083d62926ee185065f2",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:e07e21f4c9d39cc085efa4e6749bd67c62b856fa2097d083d62926ee185065f2"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:e07e21f4c9d39cc085efa4e6749bd67c62b856fa2097d083d62926ee185065f2"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:e07e21f4c9d39cc085efa4e6749bd67c62b856fa2097d083d62926ee185065f2"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:e07e21f4c9d39cc085efa4e6749bd67c62b856fa2097d083d62926ee185065f2"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:e07e21f4c9d39cc085efa4e6749bd67c62b856fa2097d083d62926ee185065f2"
+        },
+        {
+          "acceptance_id": "AC6",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:e07e21f4c9d39cc085efa4e6749bd67c62b856fa2097d083d62926ee185065f2"
+        },
+        {
+          "acceptance_id": "AC7",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:e07e21f4c9d39cc085efa4e6749bd67c62b856fa2097d083d62926ee185065f2"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-b1d73e41",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2bddcd09be03e97ffd2feb9f8636accbfb6771308ae3e6062fb35ab9fdf66f24",
+      "diff_hash": "sha256:09d5229efff646bc5b6a3125737a7a193b2c2a51223e46a0252f96cc8f047a44",
+      "actor_id": "deterministic-qa",
+      "summary": "all 8 project verification check(s) passed; execution=sha256:457b2f6473fd3f59358747e55f6c49f36b6275dd490e900e17e4210d0aa24a9d",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:457b2f6473fd3f59358747e55f6c49f36b6275dd490e900e17e4210d0aa24a9d"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:457b2f6473fd3f59358747e55f6c49f36b6275dd490e900e17e4210d0aa24a9d"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:457b2f6473fd3f59358747e55f6c49f36b6275dd490e900e17e4210d0aa24a9d"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:457b2f6473fd3f59358747e55f6c49f36b6275dd490e900e17e4210d0aa24a9d"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:457b2f6473fd3f59358747e55f6c49f36b6275dd490e900e17e4210d0aa24a9d"
+        },
+        {
+          "acceptance_id": "AC6",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:457b2f6473fd3f59358747e55f6c49f36b6275dd490e900e17e4210d0aa24a9d"
+        },
+        {
+          "acceptance_id": "AC7",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:457b2f6473fd3f59358747e55f6c49f36b6275dd490e900e17e4210d0aa24a9d"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-25b02df0",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2bddcd09be03e97ffd2feb9f8636accbfb6771308ae3e6062fb35ab9fdf66f24",
+      "diff_hash": "sha256:09d5229efff646bc5b6a3125737a7a193b2c2a51223e46a0252f96cc8f047a44",
+      "actor_id": "parent-mediated-review",
+      "summary": "已验证 immutable revision 的唯一 parent、tree、manifest_digest 及全部 18 个 changed paths 的 blob identity，完整审阅各文件 diff 并追踪双 Host 的 dispatch、binding、release 与 settlement 调用链；未发现阻断问题。验证结果采用 Kernel 提供的 AC1–AC7 passed evidence，未重新执行测试。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "93bcbe211d8594b71eab5f21e42d5c517b4d8a3c",
+        "review_commit": "c0557770a7af4a81b5556fb9b8f29789229ffde3",
+        "review_tree": "95fe6555c18ec85fd3d09e03c2a7e8c97820b580",
+        "manifest_digest": "sha256:cbcca9d2326e62725711d935d3083245af7d84d5c64bf064bcf17951573738b2"
+      },
+      "reviewer_verdict_sha256": "sha256:2083a81bbb79c898464d572fc810aae2f82a1127437ccbfca8901ceab55fd34b"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-d054a02fcac2-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/claude/review_host.ts:317-324：新 guard 会拒绝 Host 自己返回的合法 Review envelope。prepareReview 在 379-382 行仍仅返回 name 和 prompt，未提供 subagent_type；coordinator 原样返回该 dispatch。因此按契约不作修改地调用 Agent 时，guard 将其当作缺少 reviewer type 而 deny，Claude Review 无法启动。请让生成的 envelope 与 guard 使用一致的 reviewer selector，并增加将 prepareReview().dispatch 原样传入 PreToolUse guard、断言不拒绝的测试；更新现有仅允许 name/prompt 的 envelope 断言及生成 bundle。",
+      "anchor": "sha256:7a450c02416c64dec92cd50a1e93e67709022fd84501a6a2522e70b4a2fe1e37",
+      "evidence": {
+        "trigger": "Claude advance_assurance 返回 prepareReview 生成的 {name: \"immune-brain:immune-brain-reviewer\", prompt: <reserved marker-bearing prompt>}，Parent 原样作为 Agent tool_input 分派 → reviewDispatchHookOutput 读取到 subagent_type 为 undefined，返回 deny，正确的保留 reviewer 无法启动；submit_review 释放后重新 advance_assurance 仍生成同样被拒绝的 envelope。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:1463-1464",
+          "plugins/immune-brain/runtime/claude/review_host.ts:prepareReview",
+          "plugins/immune-brain/runtime/claude/mcp_server.ts:runHook",
+          "plugins/immune-brain/runtime/claude/review_host.ts:reviewDispatchHookOutput"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC2"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:review-dispatch-marker-guard:2026-10-26T03:36:50.275Z",
+      "at": "2026-10-26T03:36:50.275Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-dispatch-marker-guard.intent.json"
+    },
+    {
+      "id": "record_approval:review-dispatch-marker-guard:2026-10-26T03:39:36.484Z",
+      "at": "2026-10-26T03:39:36.484Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-eaa1327e\naction_v2_sha256:af5a7e256070828a74046e4fa2690d54c67cc6c5ed5288bf89fa514d094986e7",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-52bba3f5cc88f388",
+        "issued_at": "2026-10-26T03:39:36.484Z"
+      }
+    },
+    {
+      "id": "request_rework:review-dispatch-marker-guard:2026-10-26T03:43:06.721Z",
+      "at": "2026-10-26T03:43:06.721Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:396505b3accdae4cddd62677df47b1d7773930b15975c73c7e85f088ce7995d7",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-66dbd85654ac68bf",
+        "issued_at": "2026-10-26T03:43:06.721Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "93bcbe211d8594b71eab5f21e42d5c517b4d8a3c",
+        "review_commit": "d4bffd3329e7cb64563ffbbb3856f0d529abb3aa",
+        "review_tree": "bb5e75b191b119c3ecb0cfc359457f28b250a782",
+        "manifest_digest": "sha256:d4da1df420628ec8ca03fc6c53dde162ffff6c615fd7b09df37bf181d76da71b"
+      }
+    },
+    {
+      "id": "resolve_finding:review-dispatch-marker-guard:2026-10-26T03:44:27.984Z",
+      "at": "2026-10-26T03:44:27.984Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-d054a02fcac2-1-review-1\naction_v2_sha256:9e67dca60785241f5928878886ae46fb51d33d01755543887adf553402799cab"
+    },
+    {
+      "id": "freeze_artifacts:review-dispatch-marker-guard:2026-10-26T03:44:36.760Z",
+      "at": "2026-10-26T03:44:36.760Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-dispatch-marker-guard.intent.json"
+    },
+    {
+      "id": "record_approval:review-dispatch-marker-guard:2026-10-26T03:47:08.715Z",
+      "at": "2026-10-26T03:47:08.715Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-b1d73e41\naction_v2_sha256:38e6d84d6c4f1b03e1e55ad332e2ab3d66694d2df1d92b0a25c32285a69507fd",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-cb6e3dc110629897",
+        "issued_at": "2026-10-26T03:47:08.715Z"
+      }
+    },
+    {
+      "id": "record_approval:review-dispatch-marker-guard:2026-10-26T03:50:47.013Z",
+      "at": "2026-10-26T03:50:47.013Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-25b02df0\naction_v2_sha256:625a94721dd94f185dbddd82648825c82a05bc833b25f5f632744d21944ee188",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-850101ed9162ea4d",
+        "issued_at": "2026-10-26T03:50:47.014Z"
+      }
+    },
+    {
+      "id": "complete:review-dispatch-marker-guard:2026-10-26T03:50:48.809Z",
+      "at": "2026-10-26T03:50:48.809Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:20d44ba7e878c772e25f7cd9705f8eac577ade5120e2314b6747927601e71cfc"
+    }
+  ]
+}
