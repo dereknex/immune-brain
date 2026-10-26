@@ -1,5 +1,7 @@
+import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
 import { describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, readFileSync } from "node:fs";
+import { parseReviewPacketHandle, packetDigest } from "../plugins/immune-brain/runtime/assurance/review_packet";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -83,6 +85,7 @@ function reviewRequest(): ReviewRequest {
 		prompt: "internal role: code-review\nDo not edit files.\nreview instructions",
 		snapshotPrompt: "review instructions",
 		evidencePath: "/tmp/evidence.json",
+		writePacket: stablePacket,
 		maxTurns: 24,
 	};
 }
@@ -125,8 +128,14 @@ function observeDispatch(
 
 const RESERVATION_MARKER = `<!-- immune-brain:operation_id=${OPERATION} task_id=${TASK} -->`;
 
+const packets = new Map<string, ReturnType<typeof writeTestReviewPacket>>();
+function stablePacket(name: string, content: string) {
+	const key = `${name}:${content}`;
+	if (!packets.has(key)) packets.set(key, writeTestReviewPacket(name, content));
+	return packets.get(key)!;
+}
 function reservedPrompt(): string {
-	return `${RESERVATION_MARKER}\nreview instructions`;
+	return (new ClaudeReviewHost().prepareReview(reviewRequest()).dispatch as { prompt: string }).prompt;
 }
 
 describe("claude review host: dispatch envelope shape", () => {
@@ -171,11 +180,14 @@ describe("claude review host: dispatch envelope shape", () => {
 			const denied = reviewDispatchHookOutput({ hook_event_name: "PreToolUse", tool_name: "Agent", tool_input: { ...dispatch, subagent_type } });
 			expect(JSON.parse(denied!).hookSpecificOutput).toMatchObject({ permissionDecision: "deny", permissionDecisionReason: expect.stringContaining("subagent_type") });
 		}
-		// The envelope carries the marker plus the per-dispatch snapshot facts only,
-		// not the complete prompt: the static instructions live in the generated
-		// reviewer definition, so sending them again would fork the single source.
+		// Claude packets carry snapshot facts only; static rules live in the agent definition.
 		const request = reviewRequest();
-		expect(dispatch.prompt).toBe(`${RESERVATION_MARKER}\n${request.snapshotPrompt}`);
+		const handle = parseReviewPacketHandle(dispatch.prompt as string)!;
+		expect((dispatch.prompt as string).split("\n")).toHaveLength(4);
+		expect(handle).toMatchObject({ taskId: TASK, operationId: OPERATION });
+		const content = readFileSync(handle.packet.path, "utf8");
+		expect(content).toBe(request.snapshotPrompt);
+		expect(packetDigest(content)).toBe(handle.packet.sha256);
 		expect(dispatch.prompt).not.toContain(request.prompt);
 		expect(dispatch.prompt).not.toContain("internal role: code-review");
 		expect(dispatch.prompt).not.toContain("Do not edit files");

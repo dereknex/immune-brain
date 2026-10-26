@@ -1,3 +1,4 @@
+import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
 import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
 import { afterAll, describe, expect, mock, setDefaultTimeout, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -559,7 +560,7 @@ function sharedKernel(
 			if (hooks.holdQa) await hooks.holdQa(options?.signal);
 			return passVerdict(s);
 		},
-		writeReviewEvidence: () => ({ path: `${ROOT}/review.json`, remove: () => undefined }),
+		writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: `${ROOT}/review.json`, remove: () => undefined }),
 		applyVerdict: async (_ctx, input) => {
 			if (locked) throw new Error("concurrent continuation rejected");
 			locked = true;

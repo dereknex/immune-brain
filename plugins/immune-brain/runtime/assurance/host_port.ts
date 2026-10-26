@@ -1,4 +1,5 @@
 import type { SnapshotDescriptor } from "./coordinator";
+import type { ReviewPacket } from "./review_packet";
 
 export type ConfirmationReferenceSource = (input: {
 	snapshot: SnapshotDescriptor;
@@ -6,23 +7,30 @@ export type ConfirmationReferenceSource = (input: {
 	now: string;
 }) => string;
 
+export interface ReviewEvidence {
+	path: string;
+	writePacket(name: string, content: string): ReviewPacket;
+	remove(): void;
+}
+
 export interface ReviewRequest {
 	taskId: string;
 	operationId: string;
 	/**
 	 * The complete Review prompt: internal role contract, static review rules and
-	 * the per-dispatch facts. Dispatched by a Host whose reviewer agent carries no
-	 * instructions of its own.
+	 * the per-dispatch facts. Written into the packet by a Host whose reviewer
+	 * agent carries no instructions of its own.
 	 */
 	prompt: string;
 	/**
 	 * The per-dispatch facts alone, a strict suffix of `prompt`. A Host whose
 	 * reviewer definition already carries the role contract and the static rules
-	 * dispatches only this, so the static instructions stay generated from one
+	 * writes only this into the packet, so static instructions stay generated from one
 	 * source instead of being sent twice.
 	 */
 	snapshotPrompt: string;
 	evidencePath: string;
+	writePacket: ReviewEvidence["writePacket"];
 	/** Requested budget, also stated in the prompt for Hosts without a native turn-cap parameter. */
 	maxTurns: number;
 }

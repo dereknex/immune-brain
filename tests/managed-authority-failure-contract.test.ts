@@ -120,6 +120,14 @@ describe("Managed native authority failure contract", () => {
 	test("the Loop contract blocks non-matching dispatches and releases unbound reservations", () => {
 		const loop = read("plugins/immune-brain/dist/imm-run.md").replace(/\s+/g, " ");
 		expect(loop).toContain("The reserved prompt is dispatched verbatim");
+		for (const path of ["plugins/immune-brain/dist/imm-run.md", "docs/reference/subagent-dispatch-protocol.md"]) {
+			const contract = read(path);
+			for (const text of ["four-line handle", "Review packet: <absolute path>", "Packet sha256: <hex>", "review-packet-<operation>.md", "review packet digest mismatch"])
+				expect(contract, path).toContain(text);
+		}
+		const reviewer = read("plugins/immune-brain/agents/immune-brain-reviewer.md");
+		expect(reviewer).toContain("Read the packet for the per-dispatch snapshot facts");
+		expect(reviewer).toContain("Verify the named packet digest");
 		expect(loop).toContain("is blocked at dispatch before binding a reviewer");
 		expect(loop).toContain("an unbound reservation is released with recovery to `advance_assurance`");
 		expect(loop).not.toContain("Any edit to it forfeits the reservation");

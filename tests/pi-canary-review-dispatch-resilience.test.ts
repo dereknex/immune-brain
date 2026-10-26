@@ -1,3 +1,4 @@
+import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 
@@ -65,7 +66,7 @@ describe("foreground Review dispatch resilience", () => {
 
 	test("unknown and released operation markers require fresh assurance", async () => {
 		const h = makeAssuranceHarness();
-		const unknown = reservedAgentParams({ taskId: TASK, operationId: "unknown", prompt: "review" });
+		const unknown = reservedAgentParams({ taskId: TASK, operationId: "unknown", writePacket: writeTestReviewPacket, prompt: "review" });
 		expect(h.progression.piReviewHost.observeReviewDispatch(unknown, "unknown")).toMatchObject({ block: true, reason: expect.stringContaining("advance_assurance") });
 		const ready = await h.progression.advance(TASK, ctx);
 		if (ready.state !== "review_ready") throw new Error("expected Review reservation");
@@ -81,6 +82,7 @@ describe("foreground Review dispatch resilience", () => {
 
 	test("Review params never request background execution", () => {
 		const params = reservedAgentParams({
+			writePacket: writeTestReviewPacket,
 			taskId: "foreground-review-task",
 			operationId: "operation-1",
 			prompt: "review the immutable bundle",

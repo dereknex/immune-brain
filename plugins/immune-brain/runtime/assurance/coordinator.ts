@@ -25,7 +25,7 @@ import { projectAssurance, type AssuranceProjectionResult } from "../kernel/assu
 import { taskStatusIdentity } from "../workspace_scope";
 import { pluginSourceSkewWarning, type PluginSourceSkewWarning } from "../plugin_source_skew";
 import type { TaskIntentIdentityToken } from "../kernel/intent_token_registry";
-import type { AssuranceHostPort, HostReviewReservation } from "./host_port";
+import type { AssuranceHostPort, HostReviewReservation, ReviewEvidence } from "./host_port";
 import type { GithubTrackerResult as GithubTrackerProjectionResult } from "../github_issue_tracker";
 import { isLaneWorkspaceForTask } from "../unattended/lane_workspace";
 import { findExistingActiveBatch, findSettledBatchRecord, type BatchRecordLookup } from "../unattended/batch_preflight";
@@ -566,7 +566,7 @@ export interface AssuranceCoordinatorPorts {
 		descriptors: Map<string, VerificationDescriptor>,
 		options: { signal?: AbortSignal; onProgress?: (progress: QaVerificationProgress) => void },
 	): Promise<AssuranceVerdict>;
-	writeReviewEvidence(input: { snapshot: SnapshotDescriptor; evidence: ReviewBundle | ReviewManifestV5 }): { path: string; remove(): void };
+	writeReviewEvidence(input: { snapshot: SnapshotDescriptor; evidence: ReviewBundle | ReviewManifestV5 }): ReviewEvidence;
 	applyOrdinaryOperation(ctx: HostContext, input: { taskId: string; operation: { op: string; actor_id: string; snapshot?: AssuranceCorrelation & { workspace_revision: string }; turn_budget?: number; inspected_paths?: string[]; reason?: string } }): Promise<unknown>;
 	advanceBeforeProjection?: () => Promise<void>;
 	qaBeforeProjection?: () => Promise<void>;
@@ -1406,7 +1406,7 @@ export class AssuranceCoordinator {
 			if (aborted()) return this.reviewPreparationFailed(taskId, operationId, "host cancellation after QA authority settlement");
 			progress("preparing_review", "Preparing the reserved foreground Review evidence");
 			let review: Awaited<ReturnType<VerdictAuthority["buildAssurance"]>>;
-			let evidence: { path: string; remove(): void };
+			let evidence: ReviewEvidence;
 			try {
 				review = await this.authority.buildAssurance(ctx.cwd, taskId, "review", fresh);
 				const payload = review.reviewManifest ?? review.reviewBundle;
@@ -1442,6 +1442,7 @@ export class AssuranceCoordinator {
 					prompt: buildReviewPrompt(review.snapshot, evidence.path, turnBudget),
 					snapshotPrompt: buildReviewSnapshotPrompt(review.snapshot, evidence.path, turnBudget),
 					evidencePath: evidence.path,
+					writePacket: evidence.writePacket,
 					maxTurns: turnBudget,
 				});
 				ensureOperationLive();

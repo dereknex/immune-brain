@@ -1,0 +1,199 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "review-dispatch-packet-handle",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "review-dispatch-packet-handle",
+    "goal": "The Review envelope prompt becomes a four-line handle (marker, packet path, packet sha256, verify instruction) and the reviewer instructions move into a runtime-written `review-packet-<operation>.md` in the reservation's evidence directory, on both Hosts (Spec review-dispatch-handle S2, D5).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "On Pi and on Claude, the `review_ready` Agent envelope prompt is exactly four lines: the marker, `Review packet: <absolute path>`, `Packet sha256: <hex>`, and the fixed digest-verification instruction. The named file exists in the evidence directory, its sha256 equals the handle's, and its content equals the prompt each Host dispatched before this change: Pi's full prompt including the semantic-neighborhood rules, Claude's snapshot facts without the static rules.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-native-review.test.ts\",\n      \"tests/pi-canary-review-neighborhood.test.ts\",\n      \"tests/claude-review-host-async-agent.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Releasing a reservation (stop, snapshot change, unbound submit) removes the packet with its evidence directory, and a fresh reservation writes a new packet under a new operation name; the evidence manifest bytes are unchanged by the packet.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\",\n      \"tests/pi-canary-review-bundle.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "The exact handle dispatched under the reviewer type binds and settles on both Hosts; the handle with one edited character does not bind.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/pi-canary-review-dispatch-resilience.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "The Subagent Dispatch Protocol and the Loop contract describe the handle and packet instead of a verbatim inline prompt, and the generated Claude reviewer definition tells the reviewer to read the packet the handle names.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/managed-authority-failure-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "Packaged dist docs and role prompts match their canonical sources.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/sync-dist-docs.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC6",
+        "assertion": "The generated Claude MCP bundle and reviewer definition match the runtime source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/build-claude-plugin.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC7",
+        "assertion": "The project typechecks.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/review-dispatch-packet-handle.md",
+      "docs/plans/review-dispatch-packet-handle.intent.json",
+      "docs/reference/subagent-dispatch-protocol.md",
+      "docs/specs/review-dispatch-handle.spec.md",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
+      "plugins/immune-brain/agents/immune-brain-reviewer.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/assurance/host_port.ts",
+      "plugins/immune-brain/runtime/assurance/review_evidence.ts",
+      "plugins/immune-brain/runtime/assurance/review_packet.ts",
+      "plugins/immune-brain/runtime/claude/review_host.ts",
+      "plugins/immune-brain/runtime/role_prompt_bridge.ts",
+      "tests/claude-review-host-async-agent.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/host-neutral-assurance-coordinator.test.ts",
+      "tests/managed-authority-failure-contract.test.ts",
+      "tests/pi-canary-native-review.test.ts",
+      "tests/pi-canary-review-bundle.test.ts",
+      "tests/pi-canary-review-dispatch-resilience.test.ts",
+      "tests/pi-canary-review-neighborhood.test.ts"
+    ],
+    "scope_size_reason": "The handle replaces the dispatched prompt on both Hosts at once; the evidence port, both prepareReview paths, the generated reviewer definition and the protocol docs must change together or the reviewer receives an instruction it cannot follow.",
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/review-dispatch-packet-handle.intent.json",
+    "content_hash": "sha256:e0f5f55999fc164991f14ccdd1d069460ca4541b76b529292b99c82ae5572d13"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:e0f5f55999fc164991f14ccdd1d069460ca4541b76b529292b99c82ae5572d13",
+  "git_base_head": "66262549793ed8db7531ff018cc96c9dc17a6ca3",
+  "attestations": [
+    {
+      "id": "approval-qa-8d207299",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e0f5f55999fc164991f14ccdd1d069460ca4541b76b529292b99c82ae5572d13",
+      "diff_hash": "sha256:56ce03952a97c19b139dd279728b48350f017ee25fc6c7008dcb355835443cc9",
+      "actor_id": "deterministic-qa",
+      "summary": "all 8 project verification check(s) passed; execution=sha256:f6a1710551034408e48f7a1f83b6a4d2e5ef05f5151f1ddbbc31c21780f3be74",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:f6a1710551034408e48f7a1f83b6a4d2e5ef05f5151f1ddbbc31c21780f3be74"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:f6a1710551034408e48f7a1f83b6a4d2e5ef05f5151f1ddbbc31c21780f3be74"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:f6a1710551034408e48f7a1f83b6a4d2e5ef05f5151f1ddbbc31c21780f3be74"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:f6a1710551034408e48f7a1f83b6a4d2e5ef05f5151f1ddbbc31c21780f3be74"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:f6a1710551034408e48f7a1f83b6a4d2e5ef05f5151f1ddbbc31c21780f3be74"
+        },
+        {
+          "acceptance_id": "AC6",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:f6a1710551034408e48f7a1f83b6a4d2e5ef05f5151f1ddbbc31c21780f3be74"
+        },
+        {
+          "acceptance_id": "AC7",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:f6a1710551034408e48f7a1f83b6a4d2e5ef05f5151f1ddbbc31c21780f3be74"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-aca32fd6",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e0f5f55999fc164991f14ccdd1d069460ca4541b76b529292b99c82ae5572d13",
+      "diff_hash": "sha256:56ce03952a97c19b139dd279728b48350f017ee25fc6c7008dcb355835443cc9",
+      "actor_id": "parent-mediated-review",
+      "summary": "已验证 revision parent、tree、manifest digest 和全部 30 个文件的完整 diff；未发现 S2 范围内的阻断问题。采用 Kernel 的 AC1–AC7 通过证据，未重跑测试；Host 侧 packet integrity enforcement 属于后续 S3。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "66262549793ed8db7531ff018cc96c9dc17a6ca3",
+        "review_commit": "2a99410aef62b7232a399b628aeea597aa8defcb",
+        "review_tree": "3aa8d822e32066b1b8b4f89e9eb065e24d447219",
+        "manifest_digest": "sha256:1cbeafaa8c1427447063d4b23022076ac86e97363549b9f4557319bcce5ae7b4"
+      },
+      "reviewer_verdict_sha256": "sha256:fa942bd09bfc13bbbbdda943a3549b2bf622fde0580fa94f1f68ff70b207fb80"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:review-dispatch-packet-handle:2026-10-26T06:12:16.808Z",
+      "at": "2026-10-26T06:12:16.808Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-dispatch-packet-handle.intent.json"
+    },
+    {
+      "id": "record_approval:review-dispatch-packet-handle:2026-10-26T06:13:59.325Z",
+      "at": "2026-10-26T06:13:59.325Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-8d207299\naction_v2_sha256:0e1f045390ae6f9de691e014828718622c23b7b2b1fc1bbc1a59a59cff3be08c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-3f9c14dc12bb7e2b",
+        "issued_at": "2026-10-26T06:13:59.325Z"
+      }
+    },
+    {
+      "id": "record_approval:review-dispatch-packet-handle:2026-10-26T06:18:36.973Z",
+      "at": "2026-10-26T06:18:36.973Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-aca32fd6\naction_v2_sha256:0002b527abeade49354ef60969eb925e152fa9195ae9ba6b89445012c833ab82",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-ac7976a2d5bc81c8",
+        "issued_at": "2026-10-26T06:18:36.973Z"
+      }
+    },
+    {
+      "id": "complete:review-dispatch-packet-handle:2026-10-26T06:18:39.713Z",
+      "at": "2026-10-26T06:18:39.713Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:be20b8a05565229daa6da549ec4fd276c2e46027404e59ee203a3f809c7b2c64"
+    }
+  ]
+}

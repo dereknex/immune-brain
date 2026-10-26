@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { reviewPacketHandle } from "../assurance/review_packet";
 import { constants, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readSync, realpathSync, rmSync, writeSync, closeSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
@@ -292,21 +293,6 @@ interface PendingReview {
 	error?: string;
 }
 
-/**
- * The reserved dispatch prompt: the reservation marker line followed by the
- * per-dispatch snapshot facts, byte for byte.
- *
- * One place builds it and one place compares against it, so the marker format
- * cannot drift from what the binding rule accepts. The static instructions are
- * deliberately absent: the dispatched reviewer definition carries them, and they
- * are generated from one source by the plugin build.
- */
-export function reservedDispatchPrompt(
-	request: Pick<ReviewRequest, "operationId" | "taskId" | "snapshotPrompt">,
-): string {
-	return `<!-- immune-brain:operation_id=${request.operationId} task_id=${request.taskId} -->\n${request.snapshotPrompt}`;
-}
-
 export function parseReviewMarker(prompt: unknown): { operationId: string; taskId: string } | undefined {
 	if (typeof prompt !== "string") return;
 	const match = /<!-- immune-brain:operation_id=([^\s]+)\s+task_id=([^\s]+)\s+-->/.exec(prompt);
@@ -364,9 +350,11 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 			initialCursors.set(sessionId, len);
 			sessionCursors.set(sessionId, len);
 		}
+		const dispatchPrompt = reviewPacketHandle({ taskId: request.taskId, operationId: request.operationId,
+			packet: request.writePacket(request.operationId, request.snapshotPrompt) });
 		this.pending.set(request.operationId, {
 			request,
-			dispatchPrompt: reservedDispatchPrompt(request),
+			dispatchPrompt,
 			initialCursors,
 			sessionCursors,
 			consumed: false,
@@ -378,7 +366,7 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 			// forwards natively) has no receiver here and is not projected.
 			dispatch: {
 				subagent_type: CLAUDE_REVIEWER_AGENT,
-				prompt: reservedDispatchPrompt(request),
+				prompt: dispatchPrompt,
 			},
 		};
 	}

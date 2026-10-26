@@ -331,7 +331,16 @@ Pass the returned Agent envelope through unchanged. On the Claude Host an Agent
 call always returns an asynchronous launch receipt, which is normal and never a
 configuration fault; the Parent waits for the reviewer to finish before
 `submit_review`. A dispatched reviewer is never continued or re-prompted,
-including through SendMessage. The reserved prompt is dispatched verbatim. A marker-targeted dispatch with a
+including through SendMessage. The reserved prompt is dispatched verbatim as a four-line handle:
+operation marker, `Review packet: <absolute path>`, `Packet sha256: <hex>`, and
+the fixed digest-verification instruction. The runtime writes
+`review-packet-<operation>.md` beside the evidence manifest; the reviewer verifies
+its digest before following its instructions and replies exactly
+`review packet digest mismatch` on a difference. Pi packets contain the full
+Review prompt including semantic-neighborhood rules; Claude packets contain only
+snapshot facts because the reviewer definition supplies static rules. Releasing
+the reservation removes the packet with its evidence directory; the manifest
+bytes remain unchanged. A marker-targeted dispatch with a
 non-matching reviewer type or Pi Agent parameters is blocked at dispatch before
 binding a reviewer; prompt acceptance remains byte-identical. On `submit_review`,
 an unbound reservation is released with recovery to `advance_assurance`; a bound

@@ -82,6 +82,7 @@ class PiReviewHost implements AssuranceHostPort {
 			taskId: request.taskId,
 			operationId: request.operationId,
 			prompt: request.prompt,
+			writePacket: request.writePacket,
 			max_turns: request.maxTurns,
 		});
 		this.pending.add(request.operationId);

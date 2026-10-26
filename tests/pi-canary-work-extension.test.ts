@@ -1,3 +1,4 @@
+import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
 // Phase 3 foreground Tool and native Review bridge contract.
 
 import { afterAll, describe, expect, mock, setDefaultTimeout, spyOn, test } from "bun:test";
@@ -435,7 +436,7 @@ describe("registered request_stop settlement and UI", () => {
 						snapshot_digest: snapshotDigest(snapshot), decision: "pass",
 						approval: { kind: "qa", authority_role: "qa", summary: "passed" },
 					}),
-					writeReviewEvidence: () => ({ path: join(root, "review.json"), remove: () => { evidenceRemoved++; } }),
+					writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: join(root, "review.json"), remove: () => { evidenceRemoved++; } }),
 				});
 				const tool = tools[0];
 				const context = makeCtx(root, makeUI());
@@ -515,7 +516,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 				qaRuns += 1;
 				return { contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: TASK, snapshot_digest: snapshotDigest(snapshot), decision: "pass", approval: { kind: "qa", authority_role: "qa", summary: "passed" } };
 			},
-			writeReviewEvidence: () => ({ path: join(root, "review.json"), remove: () => {} }),
+			writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: join(root, "review.json"), remove: () => {} }),
 		};
 		try {
 			const first = loadSurface(dependencies);
@@ -1232,7 +1233,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		const foreignRoot = makeEnrolledRoot(enrolled);
 		try {
 			const ownTool = loadSurface({
-				writeReviewEvidence: () => ({ path: join(ownRoot, "review.json"), remove: () => {} }),
+				writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: join(ownRoot, "review.json"), remove: () => {} }),
 			}).tools[0];
 			await ownTool.execute("revise", {
 				task_id: TASK,
@@ -1263,7 +1264,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			execFileSync("git", ["add", "--", "docs/plans/other-task.intent.json"], { cwd: foreignRoot });
 			let foreignEvidence: unknown;
 			const foreignTool = loadSurface({
-				writeReviewEvidence: (payload) => { foreignEvidence = payload; return { path: join(foreignRoot, "review.json"), remove: () => {} }; },
+				writeReviewEvidence: (payload) => { foreignEvidence = payload; return { writePacket: writeTestReviewPacket, path: join(foreignRoot, "review.json"), remove: () => {} }; },
 			}).tools[0];
 			const foreign = await foreignTool.execute(
 				"advance",
@@ -1414,7 +1415,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 				options.onProgress?.({ index: 1, total: 1, acceptance_id: "A1", phase: "passed", elapsed_ms: 1 });
 				return { contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: TASK, snapshot_digest: snapshotDigest(snapshot), decision: "pass", approval: { kind: "qa", authority_role: "qa", summary: "passed" } };
 			},
-			writeReviewEvidence: () => ({ path: join(root, "review.json"), remove: () => {} }),
+			writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: join(root, "review.json"), remove: () => {} }),
 			applyVerdict: async (_ctx: unknown, input: { hooks?: { onCommit?: () => void } }) => input.hooks?.onCommit?.(),
 		});
 		const tool = tools[0];
@@ -1503,7 +1504,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 				}),
 				writeReviewEvidence: () => {
 					controller.abort();
-					return { path: evidencePath, remove: () => { removed = true; } };
+					return { writePacket: writeTestReviewPacket, path: evidencePath, remove: () => { removed = true; } };
 				},
 			});
 			const tool = tools[0];
@@ -1531,7 +1532,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 					return { snapshot, descriptors: new Map(), reviewBundle: role === "review" ? ({ dirty_files: {}, outcomes: {}, bundle_digest: "sha256:bundle" } as never) : null };
 				},
 				runQa: async (snapshot: SnapshotDescriptor) => ({ contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: TASK, snapshot_digest: snapshotDigest(snapshot), decision: "pass", approval: { kind: "qa", authority_role: "qa", summary: "passed" } }),
-				writeReviewEvidence: () => ({ path: join(root, "review.json"), remove: () => { removed = true; } }),
+				writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: join(root, "review.json"), remove: () => { removed = true; } }),
 			});
 			const tool = surface.tools[0];
 			const ctx = makeCtx(root, makeUI());
@@ -1577,7 +1578,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 					return built;
 				},
 				runQa: async (snapshot: SnapshotDescriptor) => ({ contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: TASK, snapshot_digest: snapshotDigest(snapshot), decision: "pass", approval: { kind: "qa", authority_role: "qa", summary: "passed" } }),
-				writeReviewEvidence: () => ({ path: join(root, "review.json"), remove: () => { removed = true; } }),
+				writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: join(root, "review.json"), remove: () => { removed = true; } }),
 			});
 			const tool = tools[0];
 			const advanceResult = JSON.parse((await tool.execute("advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, makeCtx(root, makeUI()))).content[0].text);
@@ -1630,7 +1631,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			const { tools } = loadSurface({
 				buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) => ({ snapshot: minimalSnapshot(role, rootPath, current), descriptors: new Map(), reviewBundle: role === "review" ? ({ dirty_files: {}, outcomes: {}, bundle_digest: "sha256:bundle" } as never) : null }),
 				runQa: async () => { await gate; throw new DOMException("aborted", "AbortError"); },
-				writeReviewEvidence: () => ({ path: join(root, "review.json"), remove: () => {} }),
+				writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: join(root, "review.json"), remove: () => {} }),
 				applyVerdict: async () => { applyCount += 1; },
 			});
 			const tool = tools[0];

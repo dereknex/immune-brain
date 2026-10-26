@@ -1,3 +1,4 @@
+import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
 import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
 import { execFileSync, spawnSync } from "node:child_process";
 import { prepareBatchRunState, prepareBatchLaneRunState, writeBatchRunReport, type BatchRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
@@ -183,6 +184,7 @@ function reviewRequest(operationId: string, prompt = `prompt-${operationId}`) {
 		prompt: `internal role: code-review\n${prompt}`,
 		snapshotPrompt: prompt,
 		evidencePath: "/tmp/review.json",
+		writePacket: writeTestReviewPacket,
 		maxTurns: 1,
 	};
 }
@@ -316,7 +318,7 @@ function makeCoordinator(overrides: {
 			reviewBundle: role === "review" ? reviewBundle() : null,
 		}),
 		runQa: async (s) => passVerdict(s),
-		writeReviewEvidence: () => ({ path: `${ROOT}/review.json`, remove: () => undefined }),
+		writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: `${ROOT}/review.json`, remove: () => undefined }),
 		applyVerdict: async (_ctx, input) => {
 			applyCount += 1;
 			await input.hooks?.beforeCommit?.();

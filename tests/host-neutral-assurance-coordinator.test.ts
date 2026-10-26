@@ -1,3 +1,4 @@
+import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { buildAssuranceSnapshot, createVerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
@@ -8,8 +9,11 @@ import { createMutationAuthorityRegistry } from "../plugins/immune-brain/runtime
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
 import { afterAll, describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { readdirSync, readFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { writeNativeReviewEvidence } from "../plugins/immune-brain/runtime/assurance/review_evidence";
+import { reviewPacketHandle, parseReviewPacketHandle } from "../plugins/immune-brain/runtime/assurance/review_packet";
+import { submitMediatedReview } from "../plugins/immune-brain/runtime/assurance/review_mediation";
 import {
 	AssuranceCoordinator,
 	buildReviewPrompt,
@@ -171,7 +175,7 @@ function makeCoordinator(overrides: {
 			return overrides.qa ? overrides.qa(s, descriptors, options) : passVerdict(s);
 		},
 		...(overrides.qaJobTimeoutMs !== undefined ? { qaJobTimeoutMs: overrides.qaJobTimeoutMs } : {}),
-		writeReviewEvidence: () => ({ path: `${ROOT}/review.json`, remove: () => undefined }),
+		writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: `${ROOT}/review.json`, remove: () => undefined }),
 		applyVerdict: async (_ctx, input) => {
 			applyCount += 1;
 			await input.hooks?.beforeCommit?.();
@@ -199,6 +203,47 @@ function makeCoordinator(overrides: {
 }
 
 describe("host-neutral assurance coordinator", () => {
+	for (const release of ["stop", "unbound submit", "snapshot change"] as const) {
+		test(`packet lifecycle follows evidence on ${release}`, async () => {
+			const h = makeCoordinator();
+			h.ports.writeReviewEvidence = ({ evidence }) => writeNativeReviewEvidence(evidence);
+			h.host.prepareReview = request => ({ id: request.operationId, dispatch: {
+				prompt: reviewPacketHandle({ taskId: request.taskId, operationId: request.operationId,
+					packet: request.writePacket(request.operationId, request.prompt) }),
+			} });
+			const first = await h.coordinator.advance(TASK, ctx);
+			expect(first.state).toBe("review_ready");
+			if (first.state !== "review_ready") throw new Error("expected Review");
+			const old = parseReviewPacketHandle((first.agent_params as { prompt: string }).prompt)!;
+			expect(existsSync(old.packet.path)).toBe(true);
+			const project = h.ports.projectTask;
+			try {
+				if (release === "stop") h.coordinator.releaseStoppedReview(TASK);
+				else if (release === "unbound submit") {
+					const result = await submitMediatedReview(h.coordinator, ctx, TASK, undefined,
+						() => ({ ok: false, release: true, reason: "not observed" }));
+					expect(result).toMatchObject({ state: "blocked" });
+				} else {
+					h.ports.projectTask = async (...args) => {
+						const current = await project(...args);
+						return { ...current, projection: { ...current.projection, record_revision: "changed" } };
+					};
+					expect(await h.coordinator.submitReview(TASK, ctx, passVerdict(snapshot("review"))))
+						.toMatchObject({ state: "blocked", reason: "assurance snapshot changed before Review submission" });
+				}
+				expect(existsSync(old.packet.path)).toBe(false);
+				expect(existsSync(dirname(old.packet.path))).toBe(false);
+				h.ports.projectTask = project;
+				const next = await h.coordinator.advance(TASK, ctx);
+				expect(next.state).toBe("review_ready");
+				if (next.state !== "review_ready") throw new Error("expected fresh Review");
+				const fresh = parseReviewPacketHandle((next.agent_params as { prompt: string }).prompt)!;
+				expect(fresh.operationId).not.toBe(old.operationId);
+				expect(existsSync(fresh.packet.path)).toBe(true);
+			} finally { h.coordinator.releaseStoppedReview(TASK); }
+		});
+	}
+
 	test("environment failure returns safe diagnostics and fresh obligations, not findings or authorization", async () => {
 		const diagnostic = { acceptance_id: "A1", descriptor_ref: "acceptance/0/verification/command", descriptor_digest: `sha256:${"a".repeat(64)}`,
 			stage: "resolution" as const, outcome: "process_launch_failed" as const, elapsed_ms: 2, exit_code: null, stdout_bytes: null, stderr_bytes: null };
