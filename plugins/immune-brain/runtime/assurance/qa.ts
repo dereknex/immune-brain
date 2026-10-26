@@ -41,6 +41,8 @@ export async function runDeterministicQa(
 		 * checked out, so there is no working directory to run in.
 		 */
 		delivery?: "materialized";
+		/** Directory the materialized delivery is created in; defaults to the OS temp dir. */
+		delivery_parent?: string;
 		// Coordination tests inject a fake executor without a real repository.
 		_runFixedVerification?: typeof runFixedVerification;
 		_resolveVerificationCommand?: typeof resolveVerificationCommand;
@@ -99,7 +101,7 @@ export async function runDeterministicQa(
 	const failsIdenticallyAtBase = async (item: QaItem, observed: { exit_code: number; timed_out: boolean; output_limited: boolean }, baseTree: string): Promise<boolean> => {
 		live();
 		let copy: ReturnType<typeof materializeDeliveryWorkspace>;
-		try { copy = (options._materializeDeliveryWorkspace ?? materializeDeliveryWorkspace)(snapshot.root, baseTree); }
+		try { copy = (options._materializeDeliveryWorkspace ?? materializeDeliveryWorkspace)(snapshot.root, baseTree, options.delivery_parent); }
 		catch { return false; }
 		const diagnostic = (reason: QaPreparationReason, stage: QaCheckDiagnostic["stage"]): QaCheckDiagnostic[] => [{ acceptance_id: item.id,
 			descriptor_ref: `acceptance/${item.index}/verification/command`,
@@ -146,7 +148,7 @@ export async function runDeterministicQa(
 			if (!materialized) return { root: snapshot.root, seal: undefined, cleanup: () => {} };
 			let copy: ReturnType<typeof materializeDeliveryWorkspace> | undefined;
 			try {
-				copy = (options._materializeDeliveryWorkspace ?? materializeDeliveryWorkspace)(snapshot.root, tree);
+				copy = (options._materializeDeliveryWorkspace ?? materializeDeliveryWorkspace)(snapshot.root, tree, options.delivery_parent);
 				return { root: copy.root, seal: copy.seal as string | undefined, cleanup: copy.cleanup };
 			} catch {
 				let reason: QaPreparationReason = "delivery_unavailable";

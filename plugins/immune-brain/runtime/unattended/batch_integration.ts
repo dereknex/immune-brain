@@ -17,6 +17,7 @@ import { commitWorkflowPaths, settleCommitSubject } from "../assurance/workflow_
 import { readGitIntegrationPreference } from "../git_integration_preference";
 import { parseVerificationDescriptor } from "../verification_descriptor";
 import { applyDeltaToWorkingTree, changedPaths, isBatchRef, isParentBranch, isProgressRef, moveBatchRef, readBatchRef } from "./batch_ref";
+import { worktreeDirectory } from "./batch_worktrees";
 
 export type BatchIntegrationReason =
 	| "no_touch_path_changed"
@@ -414,8 +415,10 @@ export async function verifyCandidateDescriptors(input: {
 	};
 	let verdict;
 	try {
-		// The candidate is a merge-tree commit that is never checked out.
-		verdict = await runDeterministicQa(snapshot, descriptors, { signal: input.signal, delivery: "materialized" });
+		// The candidate is a merge-tree commit that is never checked out. It is
+		// materialized beside the Lanes so descriptors resolve the same ancestor
+		// dependencies (node_modules, .bin) that passed in the Lane.
+		verdict = await runDeterministicQa(snapshot, descriptors, { signal: input.signal, delivery: "materialized", delivery_parent: worktreeDirectory(root) });
 	} catch (error) {
 		if (error instanceof VerificationAbortedError) throw error;
 		throw new BatchIntegrationError(

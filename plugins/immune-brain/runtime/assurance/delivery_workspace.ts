@@ -209,12 +209,17 @@ export function assertDeliveryClean(root: string, tree: string, seal?: string, w
 }
 
 
+/**
+ * `parent` places the copy; under a Lane's parent directory it resolves
+ * ancestor dependencies (node_modules, .bin) exactly as that Lane does.
+ */
 export function materializeDeliveryWorkspace(
 	sourceRoot: string,
 	tree: string,
+	parent = tmpdir(),
 ): DeliveryWorkspace {
 	assertTree(tree);
-	const dest = mkdtempSync(join(tmpdir(), "imm-delivery-"));
+	const dest = mkdtempSync(join(parent, "imm-delivery-"));
 	const cleanup = () => removeTaskOwnedTree(dest);
 	try {
 		mkdirSync(dest, { recursive: true });

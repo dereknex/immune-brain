@@ -284,8 +284,12 @@ is recorded as a separate follow-up rather than resolved here.
   differ from the frozen snapshot, to the direct Tool result only; restore or
   stage those paths before a fresh attempt. The Lane batch integration recheck
   is the one run that still uses an isolated copy with no worktree
-  `node_modules`, because its merge candidate is never checked out; a
-  reproduction in the live worktree is not equivalent to that run.
+  `node_modules`, because its merge candidate is never checked out. The copy is
+  created beside the Lanes, so it resolves the same ancestor dependencies, such
+  as the repository's installed `node_modules` and its `.bin`, that the Lane
+  resolved; a reproduction in the live worktree is still not equivalent to that
+  run. A redo that recreates a Lane first pins its unintegrated commit at
+  `refs/imm/retained/<slug>/<task_id>/<commit>`.
   A frozen child with `run_qa` pending returns to Parent; batch re-entry does not
   blindly retry an unchanged failure. Fix the environment before a fresh attempt.
   Scope/authority exceptions still use their existing native gates. A committed

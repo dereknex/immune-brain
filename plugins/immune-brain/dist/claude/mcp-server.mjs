@@ -6145,6 +6145,16 @@ function createLaneWorktree(root, slug, taskId, head) {
   git2(root, ["worktree", "add", "-b", branch, path, head]);
   return path;
 }
+function retainLaneCommit(root, slug, taskId, commit, target) {
+  if (commit === target)
+    return;
+  const contained = spawnSync7("git", ["-C", root, "merge-base", "--is-ancestor", commit, target], { encoding: "utf8" });
+  if (contained.status === 0)
+    return;
+  if (contained.status !== 1)
+    throw new Error("batch_worktree_failed: cannot compare the Lane commit with the redo base");
+  git2(root, ["update-ref", `${RETAINED_LANE_REF_PREFIX}${slug}/${taskId}/${commit}`, commit]);
+}
 function recreateLaneWorktree(root, slug, taskId, head, priorCommit, reviveUnreadable = false) {
   parentBranchRef(slug);
   parentBranchRef(taskId);
@@ -6163,7 +6173,10 @@ function recreateLaneWorktree(root, slug, taskId, head, priorCommit, reviveUnrea
     if (claim)
       throw new Error("batch_worktree_failed: redo Lane still has an active claim");
     const current = git2(path, ["rev-parse", "HEAD"]);
-    if (priorCommit && current !== priorCommit && current !== target || !removeLaneWorktree(root, path, branch, current))
+    if (priorCommit && current !== priorCommit && current !== target)
+      throw new Error("batch_worktree_failed: redo requires the existing clean owned Lane");
+    retainLaneCommit(root, slug, taskId, current, target);
+    if (!removeLaneWorktree(root, path, branch, current))
       throw new Error("batch_worktree_failed: redo requires the existing clean owned Lane");
   } else {
     if (!priorCommit)
@@ -6173,6 +6186,7 @@ function recreateLaneWorktree(root, slug, taskId, head, priorCommit, reviveUnrea
     if (found.status === 0) {
       if (found.stdout.trim() !== priorCommit)
         throw new Error("batch_worktree_failed: redo branch moved");
+      retainLaneCommit(root, slug, taskId, priorCommit, target);
       const listed = git2(root, ["worktree", "list", "--porcelain"]);
       if (listed.split(`
 `).includes(`worktree ${path}`))
@@ -6224,6 +6238,7 @@ async function withParentWorktree(root, head, use) {
     git2(root, ["worktree", "remove", "--force", path]);
   }
 }
+var RETAINED_LANE_REF_PREFIX = "refs/imm/retained/";
 var init_batch_worktrees = __esm(() => {
   init_intent();
   init_backend_claim();
@@ -7303,9 +7318,9 @@ function assertDeliveryClean(root, tree, seal, writablePaths = []) {
     }
   }
 }
-function materializeDeliveryWorkspace(sourceRoot, tree) {
+function materializeDeliveryWorkspace(sourceRoot, tree, parent = tmpdir2()) {
   assertTree(tree);
-  const dest = mkdtempSync3(join12(tmpdir2(), "imm-delivery-"));
+  const dest = mkdtempSync3(join12(parent, "imm-delivery-"));
   const cleanup = () => removeTaskOwnedTree(dest);
   try {
     mkdirSync7(dest, { recursive: true });
@@ -11008,7 +11023,7 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
     live();
     let copy;
     try {
-      copy = (options._materializeDeliveryWorkspace ?? materializeDeliveryWorkspace)(snapshot.root, baseTree);
+      copy = (options._materializeDeliveryWorkspace ?? materializeDeliveryWorkspace)(snapshot.root, baseTree, options.delivery_parent);
     } catch {
       return false;
     }
@@ -11075,7 +11090,7 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
         return { root: snapshot.root, seal: undefined, cleanup: () => {} };
       let copy;
       try {
-        copy = (options._materializeDeliveryWorkspace ?? materializeDeliveryWorkspace)(snapshot.root, tree);
+        copy = (options._materializeDeliveryWorkspace ?? materializeDeliveryWorkspace)(snapshot.root, tree, options.delivery_parent);
         return { root: copy.root, seal: copy.seal, cleanup: copy.cleanup };
       } catch {
         let reason = "delivery_unavailable";
@@ -11743,7 +11758,7 @@ async function verifyCandidateDescriptors(input) {
   };
   let verdict;
   try {
-    verdict = await runDeterministicQa(snapshot, descriptors, { signal: input.signal, delivery: "materialized" });
+    verdict = await runDeterministicQa(snapshot, descriptors, { signal: input.signal, delivery: "materialized", delivery_parent: worktreeDirectory(root) });
   } catch (error) {
     if (error instanceof VerificationAbortedError)
       throw error;
@@ -11811,6 +11826,7 @@ var init_batch_integration = __esm(() => {
   init_git_integration_preference();
   init_verification_descriptor();
   init_batch_ref();
+  init_batch_worktrees();
   BatchIntegrationError = class BatchIntegrationError extends Error {
     reason;
     constructor(reason, message) {

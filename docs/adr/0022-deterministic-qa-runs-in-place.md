@@ -36,7 +36,8 @@ one guarantee: the commands saw exactly the frozen snapshot.
    descriptor contract version does not change.
 6. **The Lane batch integration recheck keeps the materialized copy.** It
    verifies a merge candidate commit that is never checked out, so it has no
-   working directory to run in.
+   working directory to run in. The copy is created beside the Lanes, so it
+   resolves the same ancestor dependencies the Lane resolved (#301).
 7. **The Git repository-binding variables stay filtered** from the child
    environment.
 

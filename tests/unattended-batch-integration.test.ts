@@ -68,7 +68,7 @@ function fixture(scripts: Record<string, string>): Fixture {
 	const repo = join(dir, "repo");
 	mkdirSync(repo);
 	git(repo, "init", "-q", "-b", "main");
-	writeFileSync(join(repo, ".gitignore"), ".imm/\n");
+	writeFileSync(join(repo, ".gitignore"), ".imm/\nnode_modules/\n");
 	writeFileSync(join(repo, "base.txt"), "base\n");
 	mkdirSync(join(repo, "docs/plans"), { recursive: true });
 	for (const [taskId, script] of Object.entries(scripts)) writeFileSync(join(repo, intentPath(taskId)), intentJson(taskId, script));
@@ -141,6 +141,18 @@ describe("integration guard reruns descriptors on the candidate", () => {
 			expect(commit).toBe(lane);
 			expect(git(fx.repo, "rev-parse", BATCH_BRANCH)).toBe(lane);
 			expect(git(fx.repo, "rev-parse", "HEAD")).toBe(lane);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("resolves the repository's installed dependencies as the Lane does", async () => {
+		const fx = fixture({ "task-c": `require("lane-only-dependency")` });
+		try {
+			mkdirSync(join(fx.repo, "node_modules/lane-only-dependency"), { recursive: true });
+			writeFileSync(join(fx.repo, "node_modules/lane-only-dependency/index.js"), "module.exports = 1;\n");
+			const lane = fx.laneCommit("task-c", "task-c.txt", "c\n");
+			expect((await integrate(fx, { task: "task-c", lane_commit: lane })).commit).toBe(lane);
 		} finally {
 			fx.cleanup();
 		}
@@ -323,7 +335,7 @@ function hiddenFixture(scripts: Record<string, string>, mode: "manual" | "auto")
 	const repo = join(dir, "repo");
 	mkdirSync(repo);
 	git(repo, "init", "-q", "-b", "main");
-	writeFileSync(join(repo, ".gitignore"), ".imm/\n");
+	writeFileSync(join(repo, ".gitignore"), ".imm/\nnode_modules/\n");
 	writeFileSync(join(repo, "AGENTS.md"), `# Agent Instructions\n\n## Immune-Brain Preferences\n\n- Git integration: ${mode}\n`);
 	writeFileSync(join(repo, "base.txt"), "base\n");
 	writeFileSync(join(repo, "shared.txt"), "shared\n");

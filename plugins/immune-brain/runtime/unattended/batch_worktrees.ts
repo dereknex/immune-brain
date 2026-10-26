@@ -14,7 +14,8 @@ function git(root: string, args: string[]): string {
 	return result.stdout.trim();
 }
 
-function worktreeDirectory(root: string): string {
+/** Parent of every Lane; a checkout below it resolves dependencies as a Lane does. */
+export function worktreeDirectory(root: string): string {
 	const common = realpathSync(git(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]));
 	const directory = join(common, "imm", "worktrees");
 	mkdirSync(directory, { recursive: true });
@@ -44,6 +45,17 @@ export function createLaneWorktree(root: string, slug: string, taskId: string, h
 	return path;
 }
 
+export const RETAINED_LANE_REF_PREFIX = "refs/imm/retained/";
+
+/** Keep a Lane commit the new base does not contain reachable before its branch is deleted. */
+function retainLaneCommit(root: string, slug: string, taskId: string, commit: string, target: string): void {
+	if (commit === target) return;
+	const contained = spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", commit, target], { encoding: "utf8" });
+	if (contained.status === 0) return;
+	if (contained.status !== 1) throw new Error("batch_worktree_failed: cannot compare the Lane commit with the redo base");
+	git(root, ["update-ref", `${RETAINED_LANE_REF_PREFIX}${slug}/${taskId}/${commit}`, commit]);
+}
+
 /** Recreate only the runtime-owned clean Lane; its ignored Authority Store is discarded. */
 export function recreateLaneWorktree(root: string, slug: string, taskId: string, head: string, priorCommit?: string, reviveUnreadable = false): string {
 	parentBranchRef(slug);
@@ -61,7 +73,10 @@ export function recreateLaneWorktree(root: string, slug: string, taskId: string,
 		}
 		if (claim) throw new Error("batch_worktree_failed: redo Lane still has an active claim");
 		const current = git(path, ["rev-parse", "HEAD"]);
-		if ((priorCommit && current !== priorCommit && current !== target) || !removeLaneWorktree(root, path, branch, current))
+		if (priorCommit && current !== priorCommit && current !== target)
+			throw new Error("batch_worktree_failed: redo requires the existing clean owned Lane");
+		retainLaneCommit(root, slug, taskId, current, target);
+		if (!removeLaneWorktree(root, path, branch, current))
 			throw new Error("batch_worktree_failed: redo requires the existing clean owned Lane");
 	} else {
 		if (!priorCommit) throw new Error("batch_worktree_failed: redo requires the existing clean owned Lane");
@@ -70,6 +85,7 @@ export function recreateLaneWorktree(root: string, slug: string, taskId: string,
 		const found = spawnSync("git", ["-C", root, "rev-parse", "--verify", "--quiet", ref], { encoding: "utf8" });
 		if (found.status === 0) {
 			if (found.stdout.trim() !== priorCommit) throw new Error("batch_worktree_failed: redo branch moved");
+			retainLaneCommit(root, slug, taskId, priorCommit, target);
 			// Remove only this missing Lane's stale registration, never prune other worktrees.
 			const listed = git(root, ["worktree", "list", "--porcelain"]);
 			if (listed.split("\n").includes(`worktree ${path}`)) git(root, ["worktree", "remove", path]);

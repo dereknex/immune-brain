@@ -144,6 +144,19 @@ describe("Lane recreation", () => {
 		expect(localRunId(fx.lane, "child")).toBe(fx.request.prior_run_id);
 	});
 
+	test("keeps a committed Lane delivery reachable and pins nothing the new base contains", () => {
+		const fx = fixture();
+		const retained = () => git(fx.root, "for-each-ref", "--format=%(refname) %(objectname)", "refs/imm/retained/");
+		writeFileSync(join(fx.lane, "value.txt"), "settled work\n");
+		git(fx.lane, "commit", "-qam", "lane delivery");
+		const delivery = git(fx.lane, "rev-parse", "HEAD");
+		recreateLaneWorktree(fx.root, "redo", "child", fx.head, delivery);
+		expect(git(fx.lane, "rev-parse", "HEAD")).toBe(fx.head);
+		expect(retained()).toBe(`refs/imm/retained/redo/child/${delivery} ${delivery}`);
+		recreateLaneWorktree(fx.root, "redo", "child", fx.head);
+		expect(retained()).toBe(`refs/imm/retained/redo/child/${delivery} ${delivery}`);
+	});
+
 	test("an invalid new Parent tip leaves the old Lane intact", () => {
 		const fx = fixture();
 		expect(() => recreateLaneWorktree(fx.root, "redo", "child", "missing-tip")).toThrow("batch_worktree_failed");
