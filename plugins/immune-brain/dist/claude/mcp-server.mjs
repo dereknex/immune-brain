@@ -8696,6 +8696,7 @@ var init_authority_port = __esm(() => {
 // plugins/immune-brain/runtime/assurance/review_packet.ts
 import { createHash as createHash14 } from "node:crypto";
 import { isAbsolute as isAbsolute6 } from "node:path";
+import { readFileSync as readFileSync14 } from "node:fs";
 function packetDigest(content) {
   return createHash14("sha256").update(content, "utf8").digest("hex");
 }
@@ -8712,6 +8713,33 @@ function reviewPacketHandle(input) {
   ].join(`
 `);
 }
+function reviewPacketError(prompt) {
+  const handle = parseReviewPacketHandle(prompt);
+  if (!handle)
+    return "Review packet handle differs from its canonical form; dispatch the reserved prompt verbatim.";
+  let bytes;
+  try {
+    bytes = readFileSync14(handle.packet.path);
+  } catch {
+    return "Review packet is missing or unreadable; call advance_assurance for a fresh reservation.";
+  }
+  if (packetDigest(bytes) !== handle.packet.sha256)
+    return "Review packet digest mismatch; call advance_assurance for a fresh reservation.";
+}
+function parseReviewPacketHandle(prompt) {
+  const lines = prompt.split(`
+`);
+  if (lines.length !== 4)
+    return;
+  const marker = /^<!-- immune-brain:operation_id=([A-Za-z0-9._-]+) task_id=([A-Za-z0-9._-]+) -->$/.exec(lines[0]);
+  if (!marker || !lines[1].startsWith("Review packet: ") || !lines[2].startsWith("Packet sha256: "))
+    return;
+  const result = { operationId: marker[1], taskId: marker[2], packet: { path: lines[1].slice(15), sha256: lines[2].slice(15) } };
+  try {
+    if (reviewPacketHandle(result) === prompt)
+      return result;
+  } catch {}
+}
 var REVIEW_PACKET_INSTRUCTION = "Verify the packet sha256 before reading its instructions; on a mismatch reply exactly: review packet digest mismatch";
 var init_review_packet = () => {};
 
@@ -8723,7 +8751,7 @@ import {
   rmSync as rmSync6,
   writeFileSync as writeFileSync7,
   statSync as statSync4,
-  readFileSync as readFileSync14,
+  readFileSync as readFileSync15,
   realpathSync as realpathSync11,
   chmodSync as chmodSync3
 } from "node:fs";
@@ -9095,7 +9123,7 @@ function assertReviewArtifact(path) {
   }
   if (!stat.isFile() || stat.size === 0)
     throw new Error(`review evidence artifact is missing or empty: ${path}`);
-  const read = readFileSync14(targetPath, { encoding: "utf8" });
+  const read = readFileSync15(targetPath, { encoding: "utf8" });
   if (read.trim().length === 0)
     throw new Error(`review evidence artifact is empty: ${path}`);
 }
@@ -9393,7 +9421,7 @@ var init_verdict_authority = __esm(() => {
 
 // plugins/immune-brain/runtime/role_prompt_bridge.ts
 import { createHash as createHash16 } from "node:crypto";
-import { existsSync as existsSync8, readFileSync as readFileSync15 } from "node:fs";
+import { existsSync as existsSync8, readFileSync as readFileSync16 } from "node:fs";
 import { join as join17, dirname as dirname8 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 function roleSpec(role) {
@@ -9413,7 +9441,7 @@ function loadRolePrompt(role) {
   for (const dir of rolePromptSearchDirs(RUNTIME_DIR)) {
     const path = join17(dir, spec.file);
     if (existsSync8(path))
-      return readFileSync15(path, "utf8");
+      return readFileSync16(path, "utf8");
   }
   throw new Error(`internal role prompt is not packaged: ${role}`);
 }
@@ -9527,7 +9555,7 @@ var init_role_prompt_bridge = __esm(() => {
 // plugins/immune-brain/runtime/plugin_source_skew.ts
 import { createHash as createHash17 } from "node:crypto";
 import { execFileSync as execFileSync8, spawnSync as spawnSync10 } from "node:child_process";
-import { existsSync as existsSync9, readFileSync as readFileSync16, realpathSync as realpathSync12, statSync as statSync5 } from "node:fs";
+import { existsSync as existsSync9, readFileSync as readFileSync17, realpathSync as realpathSync12, statSync as statSync5 } from "node:fs";
 import { dirname as dirname9, join as join18, sep as sep6 } from "node:path";
 function pluginRootAbove(dir) {
   let current = dir;
@@ -9547,7 +9575,7 @@ function sameBuild(a, b) {
     return false;
   if (statSync5(left).size !== statSync5(right).size)
     return false;
-  return readFileSync16(left).equals(readFileSync16(right));
+  return readFileSync17(left).equals(readFileSync17(right));
 }
 function pluginSourceSkewWarning(root, loadedFrom = runningRuntimeSource()) {
   try {
@@ -9584,7 +9612,7 @@ function parentRuntimeSkew(root, head, integrated, loadedFrom = runningRuntimeSo
   let loaded = null;
   try {
     if (loadedRoot)
-      loaded = readFileSync16(join18(loadedRoot, BUILD_PROXY));
+      loaded = readFileSync17(join18(loadedRoot, BUILD_PROXY));
   } catch {
     loaded = null;
   }
@@ -9599,7 +9627,7 @@ function watchBundleIdentity(path) {
   const read = () => {
     try {
       const stat = statSync5(path);
-      return { stamp: { size: stat.size, mtimeMs: stat.mtimeMs }, hash: createHash17("sha256").update(readFileSync16(path)).digest("hex") };
+      return { stamp: { size: stat.size, mtimeMs: stat.mtimeMs }, hash: createHash17("sha256").update(readFileSync17(path)).digest("hex") };
     } catch {
       return null;
     }
@@ -10762,8 +10790,11 @@ class AssuranceCoordinator {
       return { state: "blocked", code: "verdict_invalid", reason: boundedAssuranceError(error) };
     }
     const receiptError = options?.validateReceipt?.();
-    if (receiptError)
-      return { state: "blocked", reason: receiptError, ...options?.receiptRecoveryAction ? { recovery_action: options.receiptRecoveryAction } : {} };
+    if (receiptError) {
+      if (receiptError.release)
+        this.releaseReviewReservation(taskId, reservation, receiptError.reason);
+      return { state: "blocked", reason: receiptError.reason, recovery_action: receiptError.recovery_action };
+    }
     if (verdict.decision === "incomplete") {
       try {
         await this.ports.applyOrdinaryOperation(ctx, { taskId, operation: {
@@ -11962,7 +11993,7 @@ var init_batch_final_report = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/local_initiative.ts
-import { lstatSync as lstatSync14, readFileSync as readFileSync17 } from "node:fs";
+import { lstatSync as lstatSync14, readFileSync as readFileSync18 } from "node:fs";
 import { resolve as resolve14 } from "node:path";
 function localInitiativePath(initiativeSlug) {
   return `docs/initiatives/${initiativeSlug}.md`;
@@ -11987,7 +12018,7 @@ function observeLocalInitiative(root, initiativeSlug) {
   const slices = [];
   let inTasks = false;
   let fence = false;
-  for (const raw of readFileSync17(resolve14(root, path), "utf8").split(/\r?\n/)) {
+  for (const raw of readFileSync18(resolve14(root, path), "utf8").split(/\r?\n/)) {
     const line = raw.trim();
     if (line.startsWith("```")) {
       fence = !fence;
@@ -12044,7 +12075,7 @@ var init_local_initiative = __esm(() => {
 
 // plugins/immune-brain/runtime/github_issue_tracker.ts
 import { spawn as spawn3, spawnSync as spawnSync15 } from "node:child_process";
-import { existsSync as existsSync10, readFileSync as readFileSync18, readdirSync as readdirSync6 } from "node:fs";
+import { existsSync as existsSync10, readFileSync as readFileSync19, readdirSync as readdirSync6 } from "node:fs";
 import { basename as basename2, relative as relative6, resolve as resolve15, sep as sep8 } from "node:path";
 function countLiteral(value, needle) {
   if (!needle)
@@ -12476,7 +12507,7 @@ async function readBlockedByIds(root, gh, operation, repository, childNumber) {
 }
 async function assertIsolatedTaskPrerequisites(root, taskId, transport) {
   const directory = resolve15(root, "docs/initiatives");
-  const local = existsSync10(directory) ? readdirSync6(directory, { withFileTypes: true }).filter((entry) => entry.isFile() && /^[A-Za-z0-9][A-Za-z0-9._-]*\.md$/.test(entry.name)).filter((entry) => readFileSync18(resolve15(directory, entry.name), "utf8").includes(taskId)).map((entry) => observeLocalInitiative(root, entry.name.slice(0, -3))).filter((parent) => parent.tasks.some((task) => task.task_id === taskId)) : [];
+  const local = existsSync10(directory) ? readdirSync6(directory, { withFileTypes: true }).filter((entry) => entry.isFile() && /^[A-Za-z0-9][A-Za-z0-9._-]*\.md$/.test(entry.name)).filter((entry) => readFileSync19(resolve15(directory, entry.name), "utf8").includes(taskId)).map((entry) => observeLocalInitiative(root, entry.name.slice(0, -3))).filter((parent) => parent.tasks.some((task) => task.task_id === taskId)) : [];
   if (local.length > 1)
     throw new Error("Slice has ambiguous Local Initiative ownership");
   if (local.length === 1) {
@@ -14710,7 +14741,7 @@ var init_batch_leak_restore = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/unattended/batch_preflight.ts
-import { existsSync as existsSync13, readdirSync as readdirSync8, readFileSync as readFileSync19 } from "node:fs";
+import { existsSync as existsSync13, readdirSync as readdirSync8, readFileSync as readFileSync20 } from "node:fs";
 import { randomUUID as randomUUID8 } from "node:crypto";
 import { dirname as dirname13, join as join23 } from "node:path";
 import { spawnSync as spawnSync18 } from "node:child_process";
@@ -14738,7 +14769,7 @@ function findResumableBatchSlugForTask(root, taskId) {
     if (!file.endsWith(".json"))
       continue;
     try {
-      const record = JSON.parse(readFileSync19(join23(batchesDir, file), "utf8"));
+      const record = JSON.parse(readFileSync20(join23(batchesDir, file), "utf8"));
       if (!["v1", "v2"].includes(classifyBatchRunStateContract(record?.contract)))
         continue;
       if (record.batch_state !== "running" && record.batch_state !== "needs_human")
@@ -14761,7 +14792,7 @@ function findExistingActiveBatch(root, initiativeSlug) {
       continue;
     let record;
     try {
-      record = JSON.parse(readFileSync19(join23(batchesDir, file), "utf8"));
+      record = JSON.parse(readFileSync20(join23(batchesDir, file), "utf8"));
     } catch {
       return { corrupt: true, path: file };
     }
@@ -14804,7 +14835,7 @@ function findSettledBatchRecord(root, initiativeSlug) {
       continue;
     let record;
     try {
-      record = JSON.parse(readFileSync19(join23(batchesDir, file), "utf8"));
+      record = JSON.parse(readFileSync20(join23(batchesDir, file), "utf8"));
     } catch {
       continue;
     }
@@ -15904,12 +15935,13 @@ function reviewDispatchHookOutput(payload) {
   const input = payload.tool_input;
   if (!parseReviewMarker(input?.prompt))
     return;
-  if (input?.subagent_type === REVIEWER_AGENT || input?.subagent_type === CLAUDE_REVIEWER_AGENT)
+  const reason = input?.subagent_type !== REVIEWER_AGENT && input?.subagent_type !== CLAUDE_REVIEWER_AGENT ? "Reserved Review dispatch requires subagent_type immune-brain:immune-brain-reviewer or immune-brain-reviewer." : reviewPacketError(input.prompt);
+  if (!reason)
     return;
   return JSON.stringify({ hookSpecificOutput: {
     hookEventName: "PreToolUse",
     permissionDecision: "deny",
-    permissionDecisionReason: "Reserved Review dispatch requires subagent_type immune-brain:immune-brain-reviewer or immune-brain-reviewer."
+    permissionDecisionReason: reason
   } });
 }
 function bindsPrompt(prompt, pending) {
@@ -16108,6 +16140,9 @@ class ClaudeReviewHost {
     const state = this.pending.get(reservation.id);
     if (!state)
       return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
+    const packetError = reviewPacketError(state.dispatchPrompt);
+    if (packetError)
+      return { ok: false, reason: packetError, release: true };
     if (state.consumed)
       return { ok: false, reason: "review receipt already consumed", release: true };
     if (state.error)
@@ -16909,13 +16944,16 @@ async function submitMediatedReview(coordinator, ctx, taskId, verdictInput, insp
   }
   const receiptBytes = observed.receipt.result;
   const options = {
-    receiptRecoveryAction: RETAINED_REVIEW_RECOVERY,
     reviewer_verdict_sha256: digestOfReviewerBytes(receiptBytes),
     validateReceipt: () => {
       const current = inspect();
       if (!current.ok)
-        return current.reason;
-      return current.receipt.actorId === observed.receipt.actorId && current.receipt.result === receiptBytes ? null : "reviewer receipt changed during submission";
+        return {
+          reason: current.reason,
+          release: current.release,
+          recovery_action: current.release ? RELEASED_REVIEW_RECOVERY : RETAINED_REVIEW_RECOVERY
+        };
+      return current.receipt.actorId === observed.receipt.actorId && current.receipt.result === receiptBytes ? null : { reason: "reviewer receipt changed during submission", release: true, recovery_action: RELEASED_REVIEW_RECOVERY };
     }
   };
   if (verdictInput === undefined) {
@@ -17346,7 +17384,7 @@ init_storage();
 init_intent();
 init_canary_application();
 init_authority_port();
-import { existsSync as existsSync18, readFileSync as readFileSync22, writeFileSync as writeFileSync12 } from "node:fs";
+import { existsSync as existsSync18, readFileSync as readFileSync23, writeFileSync as writeFileSync12 } from "node:fs";
 import { execFileSync as execFileSync12 } from "node:child_process";
 import { join as join30 } from "node:path";
 
@@ -17858,12 +17896,12 @@ init_actor_identity();
 
 // plugins/immune-brain/runtime/staged_intent.ts
 import { execFileSync as execFileSync11 } from "node:child_process";
-import { readFileSync as readFileSync20, writeFileSync as writeFileSync11 } from "node:fs";
+import { readFileSync as readFileSync21, writeFileSync as writeFileSync11 } from "node:fs";
 import { join as join27 } from "node:path";
 function captureStagedIntent(root, relativePath) {
   return {
     path: relativePath,
-    bytes: readFileSync20(join27(root, relativePath)),
+    bytes: readFileSync21(join27(root, relativePath)),
     index_state: execFileSync11("git", ["ls-files", "--stage", "-z", "--", relativePath], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"]
@@ -17883,7 +17921,7 @@ function restoreStagedIntent(root, snapshot) {
       stdio: ["pipe", "ignore", "pipe"]
     });
   }
-  const restoredBytes = readFileSync20(join27(root, snapshot.path));
+  const restoredBytes = readFileSync21(join27(root, snapshot.path));
   if (!restoredBytes.equals(snapshot.bytes)) {
     throw new Error("failed to restore prior intent bytes");
   }
@@ -17922,7 +17960,7 @@ import { spawnSync as spawnSync20 } from "node:child_process";
 import { createHash as createHash26 } from "node:crypto";
 import { existsSync as existsSync16, realpathSync as realpathSync19 } from "node:fs";
 import { isAbsolute as isAbsolute9, join as join28 } from "node:path";
-import { readFileSync as readFileSync21 } from "node:fs";
+import { readFileSync as readFileSync22 } from "node:fs";
 
 // plugins/immune-brain/runtime/unattended/batch_kernel_port.ts
 init_batch_git();
@@ -18129,7 +18167,7 @@ function laneRuntimeDir(root, explicit) {
   if (explicit)
     return explicit;
   try {
-    const manifest = JSON.parse(readFileSync21(join28(root, "package.json"), "utf8"));
+    const manifest = JSON.parse(readFileSync22(join28(root, "package.json"), "utf8"));
     return manifest.name === "immune-brain" ? root : null;
   } catch {
     return null;
@@ -19992,7 +20030,7 @@ class ClaudeRuntime {
     const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
     const nextScope = operation.op === "revise_intent" ? operation.next_intent.scope_hint : undefined;
     const sidecar = join30(ctx.cwd, priorIntent.intent_ref.path);
-    const priorBytes = operation.op === "revise_intent" ? readFileSync22(sidecar) : null;
+    const priorBytes = operation.op === "revise_intent" ? readFileSync23(sidecar) : null;
     const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
     try {
       if (priorBytes) {

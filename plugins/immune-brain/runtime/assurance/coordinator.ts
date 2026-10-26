@@ -545,8 +545,7 @@ export interface ReviewSubmissionOptions {
 	/** sha256 over the reviewer's own result bytes, bound into the review attestation. */
 	reviewer_verdict_sha256?: string;
 	/** Synchronous host check immediately before the reservation is consumed. */
-	validateReceipt?: () => string | null;
-	receiptRecoveryAction?: string;
+	validateReceipt?: () => { reason: string; release: boolean; recovery_action: string } | null;
 }
 
 export type ActiveAssuranceState =
@@ -1548,7 +1547,10 @@ export class AssuranceCoordinator {
 			return { state: "blocked", code: "verdict_invalid", reason: boundedAssuranceError(error) };
 		}
 		const receiptError = options?.validateReceipt?.();
-		if (receiptError) return { state: "blocked", reason: receiptError, ...(options?.receiptRecoveryAction ? { recovery_action: options.receiptRecoveryAction } : {}) };
+		if (receiptError) {
+			if (receiptError.release) this.releaseReviewReservation(taskId, reservation, receiptError.reason);
+			return { state: "blocked", reason: receiptError.reason, recovery_action: receiptError.recovery_action };
+		}
 		if (verdict.decision === "incomplete") {
 			try {
 				await this.ports.applyOrdinaryOperation(ctx, { taskId, operation: {

@@ -1,4 +1,5 @@
 import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
+import { parseReviewPacketHandle } from "../plugins/immune-brain/runtime/assurance/review_packet";
 import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
 import { afterAll, describe, expect, mock, setDefaultTimeout, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -518,6 +519,7 @@ function sharedKernel(
 	start: Obligation = "run_qa",
 	hooks: {
 		onQaStart?: () => void;
+		onProject?: () => Promise<void>;
 		holdQa?: (signal?: AbortSignal) => Promise<void>;
 		failQaCommit?: boolean;
 	} = {},
@@ -538,6 +540,7 @@ function sharedKernel(
 		host,
 		confirmationReference: ({ actorId }) => `fixture:${actorId}`,
 		projectTask: async () => {
+			await hooks.onProject?.();
 			if (holder && holder !== token) {
 				return { error: "concurrent continuation rejected", claim: null, projection: projection({ lifecycle, artifactState, nextObligation, risk, recordRevision, contract }).projection };
 			}
@@ -900,6 +903,73 @@ describe("dual-host assurance conformance", () => {
 		expect(kernel.appliedVerdicts).toHaveLength(1);
 		expect(kernel.appliedVerdicts[0].role).toBe("qa");
 		expect(kernel.executionCounts).toEqual({ qa: 1, completion: 0 });
+	});
+
+	test.each([
+		["pi", "edited"], ["claude", "edited"], ["pi", "missing"], ["claude", "missing"],
+		["pi", "unchanged"], ["claude", "unchanged"],
+	] as const)("a bound %s reviewer with a %s packet cannot settle altered instructions", async (host, variant) => {
+		const kernel = sharedKernel("material");
+		const claude = host === "claude" ? kernel.claude() : undefined;
+		const pi = host === "pi" ? kernel.pi() : undefined;
+		const coordinator = pi ?? claude!.coordinator;
+		const ready = await coordinator.advance(TASK, ctx);
+		if (ready.state !== "review_ready") throw new Error("expected Review reservation");
+		if (pi) {
+			expect(pi.piReviewHost.observeReviewDispatch(ready.agent_params as Record<string, unknown>, "bound")).toBeUndefined();
+			pi.piReviewHost.observeReviewResult("bound", JSON.stringify(passVerdict(snapshot("review"))));
+		} else completeClaudeReview(claude!.host, ready.operation_id, "material");
+		const packet = parseReviewPacketHandle((ready.agent_params as { prompt: string }).prompt)!.packet;
+		if (variant === "edited") writeFileSync(packet.path, "altered review instructions");
+		if (variant === "missing") rmSync(packet.path);
+		const result = pi ? await pi.submitMediated(TASK, ctx, undefined) : await submitClaudeReview(claude!.host, coordinator, ctx, TASK, undefined);
+		if (variant === "unchanged") {
+			expect(result).toEqual({ state: "completed" });
+			expect(kernel.executionCounts.completion).toBe(1);
+		} else {
+			expect(result).toMatchObject({ state: "blocked", reason: expect.stringContaining(variant === "edited" ? "digest" : "missing"), recovery_action: expect.stringContaining("Call advance_assurance") });
+			expect(coordinator.active(TASK)).toBeNull();
+			expect(kernel.executionCounts.completion).toBe(0);
+			expect(kernel.appliedVerdicts.map(v => v.role)).toEqual(["qa"]);
+			const next = await coordinator.advance(TASK, ctx);
+			if (next.state !== "review_ready") throw new Error("expected fresh Review reservation");
+			expect(next.operation_id).not.toBe(ready.operation_id);
+		}
+	});
+
+	test.each([
+		["pi", "edited"], ["claude", "edited"], ["pi", "missing"], ["claude", "missing"],
+	] as const)("a %s packet %s during submission releases in the same call", async (host, variant) => {
+		let packetPath: string | undefined;
+		const kernel = sharedKernel("material", "run_qa", { onProject: async () => {
+			if (!packetPath) return;
+			await Promise.resolve();
+			if (variant === "edited") writeFileSync(packetPath, "changed during projection");
+			else rmSync(packetPath);
+			packetPath = undefined;
+		} });
+		const claude = host === "claude" ? kernel.claude() : undefined;
+		const pi = host === "pi" ? kernel.pi() : undefined;
+		const coordinator = pi ?? claude!.coordinator;
+		const ready = await coordinator.advance(TASK, ctx);
+		if (ready.state !== "review_ready") throw new Error("expected Review reservation");
+		if (pi) {
+			expect(pi.piReviewHost.observeReviewDispatch(ready.agent_params as Record<string, unknown>, "bound")).toBeUndefined();
+			pi.piReviewHost.observeReviewResult("bound", JSON.stringify(passVerdict(snapshot("review"))));
+			expect(pi.piReviewHost.inspectReview(TASK)).toMatchObject({ ok: true });
+		} else {
+			completeClaudeReview(claude!.host, ready.operation_id, "material");
+			expect(claude!.host.inspectReviewForTask(TASK)).toMatchObject({ ok: true });
+		}
+		packetPath = parseReviewPacketHandle((ready.agent_params as { prompt: string }).prompt)!.packet.path;
+		const result = pi ? await pi.submitMediated(TASK, ctx, undefined) : await submitClaudeReview(claude!.host, coordinator, ctx, TASK, undefined);
+		expect(result).toMatchObject({ state: "blocked", reason: expect.stringContaining(variant === "edited" ? "digest" : "missing"), recovery_action: expect.stringContaining("Call advance_assurance") });
+		expect(coordinator.active(TASK)).toBeNull();
+		expect(kernel.appliedVerdicts.map(v => v.role)).toEqual(["qa"]);
+		expect(kernel.executionCounts.completion).toBe(0);
+		const next = await coordinator.advance(TASK, ctx);
+		if (next.state !== "review_ready") throw new Error("expected fresh Review reservation");
+		expect(next.operation_id).not.toBe(ready.operation_id);
 	});
 
 	test.each(["pi", "claude"] as const)("a bound %s reviewer awaiting its result retains the reservation", async (host) => {

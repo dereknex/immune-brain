@@ -55,6 +55,7 @@ import type { AssuranceHostPort, HostReviewReservation, ReviewRequest } from "..
 import { submitMediatedReview, type ReviewObservation } from "../runtime/assurance/review_mediation";
 import { reservedAgentParams, promptDigest, type ReservedAgentParams } from "./pi-canary-native-review";
 import { parseReviewMarker } from "../runtime/claude/review_host";
+import { reviewPacketError } from "../runtime/assurance/review_packet";
 
 import type { VerdictAuthority } from "../runtime/assurance/verdict_authority";
 
@@ -114,6 +115,8 @@ class PiReviewHost implements AssuranceHostPort {
 		if (typeof input?.prompt !== "string" || record.promptDigest !== promptDigest(input.prompt)) differing.push("prompt");
 		if (differing.length)
 			return { block: true, reason: `Review dispatch differs in ${differing.join(", ")}; dispatch the reserved prompt verbatim and reserved Agent parameters.` };
+		const packetError = reviewPacketError(record.params.prompt);
+		if (packetError) return { block: true, reason: packetError };
 		if (record.toolCallId !== undefined)
 			return { block: true, reason: "the reserved reviewer was dispatched more than once" };
 		if (!toolCallId) return { block: true, reason: "Review reservation requires an observable tool call id." };
@@ -134,6 +137,8 @@ class PiReviewHost implements AssuranceHostPort {
 	inspectReview(taskId: string): ReviewObservation {
 		for (const record of this.receipts.values()) {
 			if (record.taskId !== taskId) continue;
+			const packetError = reviewPacketError(record.params.prompt);
+			if (packetError) return { ok: false, release: true, reason: packetError };
 			if (record.error) return { ok: false, release: true, reason: record.error };
 			if (record.toolCallId === undefined)
 				return { ok: false, release: true, reason: "the reserved foreground Agent was not observed in this session" };

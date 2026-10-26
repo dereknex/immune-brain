@@ -1,4 +1,5 @@
 import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
+import { reviewPacketHandle, parseReviewPacketHandle } from "../plugins/immune-brain/runtime/assurance/review_packet";
 import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
 import { execFileSync, spawnSync } from "node:child_process";
 import { prepareBatchRunState, prepareBatchLaneRunState, writeBatchRunReport, type BatchRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
@@ -62,11 +63,31 @@ function createMcpRuntime(options: Parameters<typeof createMcpRuntimeUngated>[0]
 
 test.each(["general-purpose", undefined, "immune-brain:immune-brain-reviewer", "immune-brain-reviewer"])("marker-targeted Claude dispatch validates subagent_type %s", (subagent_type) => {
 	const output = reviewDispatchHookOutput({ hook_event_name: "PreToolUse", tool_name: "Agent", tool_input: {
-		prompt: "<!-- immune-brain:operation_id=operation task_id=task -->\nreserved", subagent_type,
+		prompt: reviewPacketHandle({ operationId: "operation", taskId: "task", packet: writeTestReviewPacket("operation", "reserved") }), subagent_type,
 	} });
 	if (subagent_type === undefined || subagent_type === "general-purpose") {
 		expect(JSON.parse(output!).hookSpecificOutput).toMatchObject({ permissionDecision: "deny", permissionDecisionReason: expect.stringContaining("subagent_type") });
 	} else expect(output).toBeUndefined();
+});
+
+test.each(["appended", "truncated", "instruction", "marker", "missing", "edited", "raw-bytes"] as const)("Claude dispatch rejects a %s packet or handle", variant => {
+	const packet = writeTestReviewPacket("operation", "reserved");
+	const canonical = reviewPacketHandle({ operationId: "operation", taskId: "task", packet });
+	let prompt = canonical;
+	if (variant === "appended") prompt += "!";
+	if (variant === "truncated") prompt = prompt.split("\n").slice(0, 3).join("\n");
+	if (variant === "instruction") prompt = prompt.replace("Verify the packet", "Ignore the packet");
+	if (variant === "marker") prompt = prompt.replace(" -->", "  -->");
+	if (variant === "missing") rmSync(packet.path);
+	if (variant === "edited") writeFileSync(packet.path, "edited");
+	if (variant === "raw-bytes") {
+		// Hash raw bytes: malformed UTF-8 must not be normalized before checking.
+		const replacement = writeTestReviewPacket("operation", "\ufffd");
+		prompt = reviewPacketHandle({ operationId: "operation", taskId: "task", packet: replacement });
+		writeFileSync(parseReviewPacketHandle(prompt)!.packet.path, Buffer.from([0xff]));
+	}
+	const output = reviewDispatchHookOutput({ hook_event_name: "PreToolUse", tool_name: "Agent", tool_input: { prompt, subagent_type: "immune-brain-reviewer" } });
+	expect(JSON.parse(output!).hookSpecificOutput).toMatchObject({ permissionDecision: "deny", permissionDecisionReason: expect.stringContaining(variant === "missing" ? "advance_assurance" : variant === "edited" || variant === "raw-bytes" ? "digest" : "canonical") });
 });
 
 test("marker-less general-purpose Claude dispatch is unaffected", () => {

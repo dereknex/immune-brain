@@ -79,13 +79,13 @@ export async function submitMediatedReview(
 	}
 	const receiptBytes = observed.receipt.result;
 	const options = {
-		receiptRecoveryAction: RETAINED_REVIEW_RECOVERY,
 		reviewer_verdict_sha256: digestOfReviewerBytes(receiptBytes),
 		validateReceipt: () => {
 			const current = inspect();
-			if (!current.ok) return current.reason;
+			if (!current.ok) return { reason: current.reason, release: current.release,
+				recovery_action: current.release ? RELEASED_REVIEW_RECOVERY : RETAINED_REVIEW_RECOVERY };
 			return current.receipt.actorId === observed.receipt.actorId && current.receipt.result === receiptBytes
-				? null : "reviewer receipt changed during submission";
+				? null : { reason: "reviewer receipt changed during submission", release: true, recovery_action: RELEASED_REVIEW_RECOVERY };
 		},
 	};
 	if (verdictInput === undefined) {

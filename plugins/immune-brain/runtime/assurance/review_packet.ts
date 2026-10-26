@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { isAbsolute } from "node:path";
+import { readFileSync } from "node:fs";
 
 export interface ReviewPacket {
 	path: string;
@@ -8,7 +9,7 @@ export interface ReviewPacket {
 
 export const REVIEW_PACKET_INSTRUCTION = "Verify the packet sha256 before reading its instructions; on a mismatch reply exactly: review packet digest mismatch";
 
-export function packetDigest(content: string): string {
+export function packetDigest(content: string | Uint8Array): string {
 	return createHash("sha256").update(content, "utf8").digest("hex");
 }
 
@@ -23,6 +24,15 @@ export function reviewPacketHandle(input: { taskId: string; operationId: string;
 		`Packet sha256: ${input.packet.sha256}`,
 		REVIEW_PACKET_INSTRUCTION,
 	].join("\n");
+}
+
+export function reviewPacketError(prompt: string): string | undefined {
+	const handle = parseReviewPacketHandle(prompt);
+	if (!handle) return "Review packet handle differs from its canonical form; dispatch the reserved prompt verbatim.";
+	let bytes: Buffer;
+	try { bytes = readFileSync(handle.packet.path); }
+	catch { return "Review packet is missing or unreadable; call advance_assurance for a fresh reservation."; }
+	if (packetDigest(bytes) !== handle.packet.sha256) return "Review packet digest mismatch; call advance_assurance for a fresh reservation.";
 }
 
 export function parseReviewPacketHandle(prompt: string): { taskId: string; operationId: string; packet: ReviewPacket } | undefined {

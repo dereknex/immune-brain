@@ -1,0 +1,298 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "review-dispatch-packet-integrity",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "review-dispatch-packet-integrity",
+    "goal": "An edited review packet or handle cannot produce a settled verdict: the dispatch is blocked or the submission releases the reservation, on both Hosts (Spec review-dispatch-handle S3, D6).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "On Pi, a dispatch of the exact handle after the packet file was edited is blocked naming the packet digest; a packet edited after binding makes `submit_review` release the reservation with `RELEASED_REVIEW_RECOVERY`.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-review-dispatch-resilience.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "On Claude, the `PreToolUse` guard denies a marker-bearing reviewer dispatch whose handle differs from the canonical handle for its marker, whose packet file is missing (reason names `advance_assurance`), or whose packet digest differs from the handle; the exact handle with an unchanged packet returns no decision.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "On both Hosts, a packet edited after the reviewer bound makes `submit_review` release the reservation instead of settling, and an unchanged packet still settles.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/claude-review-host-async-agent.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "Packaged dist docs and role prompts match their canonical sources.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/sync-dist-docs.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "The generated Claude MCP bundle and reviewer definition match the runtime source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/build-claude-plugin.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC6",
+        "assertion": "The project typechecks.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/review-dispatch-packet-integrity.md",
+      "docs/plans/review-dispatch-packet-integrity.intent.json",
+      "docs/specs/review-dispatch-handle.spec.md",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/assurance/review_mediation.ts",
+      "plugins/immune-brain/runtime/assurance/review_packet.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/claude/review_host.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/claude-review-host-async-agent.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/pi-canary-review-dispatch-resilience.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/review-dispatch-packet-integrity.intent.json",
+    "content_hash": "sha256:acb0a11a44b4ae001106e435cf49f4bc7b1473873f8c22e4c17e7237f514fe20"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:acb0a11a44b4ae001106e435cf49f4bc7b1473873f8c22e4c17e7237f514fe20",
+  "git_base_head": "2f45bf7e1964bbd3f61e9d9b949ce16f6515a3f4",
+  "attestations": [
+    {
+      "id": "approval-qa-e42213a8",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:acb0a11a44b4ae001106e435cf49f4bc7b1473873f8c22e4c17e7237f514fe20",
+      "diff_hash": "sha256:d89cf8ce0f80f2495ad59e2e696e0058873f52bf4758f3dff24de10de0c54149",
+      "actor_id": "deterministic-qa",
+      "summary": "all 7 project verification check(s) passed; execution=sha256:a51b9e32245187829c73bb333c4dcba6771498aa12179f4c8614fd2b4826efc7",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:a51b9e32245187829c73bb333c4dcba6771498aa12179f4c8614fd2b4826efc7"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:a51b9e32245187829c73bb333c4dcba6771498aa12179f4c8614fd2b4826efc7"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:a51b9e32245187829c73bb333c4dcba6771498aa12179f4c8614fd2b4826efc7"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:a51b9e32245187829c73bb333c4dcba6771498aa12179f4c8614fd2b4826efc7"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:a51b9e32245187829c73bb333c4dcba6771498aa12179f4c8614fd2b4826efc7"
+        },
+        {
+          "acceptance_id": "AC6",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:a51b9e32245187829c73bb333c4dcba6771498aa12179f4c8614fd2b4826efc7"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-895938eb",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:acb0a11a44b4ae001106e435cf49f4bc7b1473873f8c22e4c17e7237f514fe20",
+      "diff_hash": "sha256:5ac688d9b0c7656836ec711cac298baa028ec198412ccc79e1ff914f0e678e69",
+      "actor_id": "deterministic-qa",
+      "summary": "all 7 project verification check(s) passed; execution=sha256:9b01e4473c6b1dc3ddb739109ff4d5dc7e7adf0a0c3adc1952c3491c33925df1",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:9b01e4473c6b1dc3ddb739109ff4d5dc7e7adf0a0c3adc1952c3491c33925df1"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:9b01e4473c6b1dc3ddb739109ff4d5dc7e7adf0a0c3adc1952c3491c33925df1"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:9b01e4473c6b1dc3ddb739109ff4d5dc7e7adf0a0c3adc1952c3491c33925df1"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:9b01e4473c6b1dc3ddb739109ff4d5dc7e7adf0a0c3adc1952c3491c33925df1"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:9b01e4473c6b1dc3ddb739109ff4d5dc7e7adf0a0c3adc1952c3491c33925df1"
+        },
+        {
+          "acceptance_id": "AC6",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:9b01e4473c6b1dc3ddb739109ff4d5dc7e7adf0a0c3adc1952c3491c33925df1"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-f1c95b33",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:acb0a11a44b4ae001106e435cf49f4bc7b1473873f8c22e4c17e7237f514fe20",
+      "diff_hash": "sha256:5ac688d9b0c7656836ec711cac298baa028ec198412ccc79e1ff914f0e678e69",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 packet、manifest、Git revision、单一 parent、tree 及全部 12 个变更路径；双 Host 的完整性检查与释放路径未发现阻断问题。未重跑测试，验证结果采用 Kernel QA 的 AC1–AC6 通过证据；Claude forged handle 的非绑定边界符合 Spec T2。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "2f45bf7e1964bbd3f61e9d9b949ce16f6515a3f4",
+        "review_commit": "43be72ed586021bf0ebf097a08fb56ed732a4d54",
+        "review_tree": "7cb3eca9885fa0171205cc9dfe3e5c941cc59e0c",
+        "manifest_digest": "sha256:fde470306bb4b31a29a884f402598ac6b5005aa50764bfaa91bad6343ca21daa"
+      },
+      "reviewer_verdict_sha256": "sha256:172b29453dc120cacebe9be09b2f0e38ea020432935739c349d7c8d02ee8d4d8"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-273a813b7317-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "[P2] 提交期间检测到 packet 被修改时仍保留 reservation。两个 Host 新增的 inspectReview 检查均返回 release:true，但 unchanged 的 review_mediation.ts:84–86 在第二次检查时只返回 reason，丢失 release；coordinator.ts:1550–1551 因而返回 blocked 和 RETAINED_REVIEW_RECOVERY，不释放 reservation。这里读取 unchanged mediation/coordinator 是为了追踪新增检查的同一提交状态机。最小修复是让提交前复检保留并处理 release 标志，释放 reservation 并返回 RELEASED_REVIEW_RECOVERY；在 dual-host seam 增加首次 inspect 成功后、projectTask 等待期间修改 packet 的确定性测试，断言本次提交释放且下一次 advance 创建新 operation。",
+      "anchor": "sha256:2dd06a28f61b07fa007c830f482e0d7b2765a2a8baca16387ee8e5bf197ce32b",
+      "evidence": {
+        "trigger": "Pi 或 Claude reviewer 已绑定且已返回有效 verdict，submit_review 首次 inspect 通过；在 coordinator 等待 projectTask 或 ensureReviewRevision 期间修改 packet → validateReceipt 的第二次 inspect 检测 digest mismatch，但本次提交仍保留 active reservation，并错误要求等待已结束的 reviewer，而不是释放并获取新 reservation。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/review_mediation.ts:submitMediatedReview",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:submitReviewOnce",
+          "plugins/immune-brain/runtime/assurance/review_mediation.ts:options.validateReceipt",
+          "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts:PiReviewHost.inspectReview",
+          "plugins/immune-brain/runtime/claude/review_host.ts:ClaudeReviewHost.inspectReview",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:1550-1551"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC3"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:review-dispatch-packet-integrity:2026-10-26T06:36:02.596Z",
+      "at": "2026-10-26T06:36:02.596Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-dispatch-packet-integrity.intent.json"
+    },
+    {
+      "id": "record_approval:review-dispatch-packet-integrity:2026-10-26T06:38:09.145Z",
+      "at": "2026-10-26T06:38:09.145Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e42213a8\naction_v2_sha256:4c39a1eaa5217ebae287d870a477143c5a451a1d151670101dcc32d8786bc942",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-6b6257d28a81d443",
+        "issued_at": "2026-10-26T06:38:09.145Z"
+      }
+    },
+    {
+      "id": "request_rework:review-dispatch-packet-integrity:2026-10-26T06:41:47.446Z",
+      "at": "2026-10-26T06:41:47.446Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:d7db5cf5a1b3b64c0d6636caee4f1b7d2a46da6c403b65f4bd15677d3fd10be8",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-834fbd92993dce23",
+        "issued_at": "2026-10-26T06:41:47.446Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "2f45bf7e1964bbd3f61e9d9b949ce16f6515a3f4",
+        "review_commit": "b616f7bf625c95768bcfc3cc33b6efdd5a8cac9e",
+        "review_tree": "d857722d5b0bc7e8e4f1e86d6cc5af44d2187007",
+        "manifest_digest": "sha256:d0fbaf0847d3cf7e83c6d67ef5b64bcfd57df55c17473879f8b70d9d357d3e3b"
+      }
+    },
+    {
+      "id": "resolve_finding:review-dispatch-packet-integrity:2026-10-26T06:47:00.101Z",
+      "at": "2026-10-26T06:47:00.101Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-273a813b7317-1-review-1\naction_v2_sha256:4bd761fa5d59b90f930a542b314e7f5060beb504c00081bde4234e09d703e5c4"
+    },
+    {
+      "id": "freeze_artifacts:review-dispatch-packet-integrity:2026-10-26T06:47:07.954Z",
+      "at": "2026-10-26T06:47:07.954Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-dispatch-packet-integrity.intent.json"
+    },
+    {
+      "id": "record_approval:review-dispatch-packet-integrity:2026-10-26T06:48:49.746Z",
+      "at": "2026-10-26T06:48:49.746Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-895938eb\naction_v2_sha256:b287668a46120c358175ab61acd5662f011f701456d221a86173300380e2004a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-c92f3af149b13323",
+        "issued_at": "2026-10-26T06:48:49.746Z"
+      }
+    },
+    {
+      "id": "record_approval:review-dispatch-packet-integrity:2026-10-26T06:51:31.977Z",
+      "at": "2026-10-26T06:51:31.977Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-f1c95b33\naction_v2_sha256:62256ffb811ea98cf9b96d637d91722cb65a540954f3f1dacfe98e4cb622226c",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-d573b805cdd61eb0",
+        "issued_at": "2026-10-26T06:51:31.977Z"
+      }
+    },
+    {
+      "id": "complete:review-dispatch-packet-integrity:2026-10-26T06:51:33.390Z",
+      "at": "2026-10-26T06:51:33.390Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:96885d89c9a2ac996a9a1ea4c3c8ce96bdd64122234fd92a95c1b3bb135f8b96"
+    }
+  ]
+}

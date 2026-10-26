@@ -1,6 +1,7 @@
 import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { parseReviewPacketHandle } from "../plugins/immune-brain/runtime/assurance/review_packet";
 
 import {
 	reservedAgentParams,
@@ -30,6 +31,23 @@ describe("foreground Review dispatch resilience", () => {
 		expect(h.progression.piReviewHost.inspectReview(TASK)).toMatchObject({ ok: false, reason: expect.stringContaining("not observed") });
 		expect(h.progression.piReviewHost.observeReviewDispatch(params, "valid-call")).toBeUndefined();
 		h.progression.piReviewHost.observeReviewResult("valid-call", JSON.stringify(passVerdict(snapshot("review"))));
+		expect(await h.progression.submitMediated(TASK, ctx, undefined)).toEqual({ state: "completed" });
+	});
+
+	test.each(["edited", "missing"] as const)("blocks an exact handle with a %s packet without binding", async variant => {
+		const h = makeAssuranceHarness();
+		const ready = await h.progression.advance(TASK, ctx);
+		if (ready.state !== "review_ready") throw new Error("expected Review reservation");
+		const packet = parseReviewPacketHandle(ready.agent_params.prompt)!.packet;
+		const original = readFileSync(packet.path);
+		if (variant === "edited") writeFileSync(packet.path, "edited");
+		else rmSync(packet.path);
+		const blocked = h.progression.piReviewHost.observeReviewDispatch(ready.agent_params, "blocked");
+		expect(blocked).toMatchObject({ block: true, reason: expect.stringContaining(variant === "edited" ? "digest" : "advance_assurance") });
+		writeFileSync(packet.path, original);
+		expect(h.progression.piReviewHost.inspectReview(TASK)).toMatchObject({ ok: false, release: true, reason: expect.stringContaining("not observed") });
+		expect(h.progression.piReviewHost.observeReviewDispatch(ready.agent_params, "valid")).toBeUndefined();
+		h.progression.piReviewHost.observeReviewResult("valid", JSON.stringify(passVerdict(snapshot("review"))));
 		expect(await h.progression.submitMediated(TASK, ctx, undefined)).toEqual({ state: "completed" });
 	});
 

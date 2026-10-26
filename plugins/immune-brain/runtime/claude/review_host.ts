@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { reviewPacketHandle } from "../assurance/review_packet";
+import { reviewPacketHandle, reviewPacketError } from "../assurance/review_packet";
 import { constants, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readSync, realpathSync, rmSync, writeSync, closeSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
@@ -304,10 +304,13 @@ export function reviewDispatchHookOutput(payload: Record<string, unknown>): stri
 	if (payload.hook_event_name !== "PreToolUse" || payload.tool_name !== AGENT_TOOL) return;
 	const input = payload.tool_input as Record<string, unknown> | undefined;
 	if (!parseReviewMarker(input?.prompt)) return;
-	if (input?.subagent_type === REVIEWER_AGENT || input?.subagent_type === CLAUDE_REVIEWER_AGENT) return;
+	const reason = input?.subagent_type !== REVIEWER_AGENT && input?.subagent_type !== CLAUDE_REVIEWER_AGENT
+		? "Reserved Review dispatch requires subagent_type immune-brain:immune-brain-reviewer or immune-brain-reviewer."
+		: reviewPacketError(input!.prompt as string);
+	if (!reason) return;
 	return JSON.stringify({ hookSpecificOutput: {
 		hookEventName: "PreToolUse", permissionDecision: "deny",
-		permissionDecisionReason: "Reserved Review dispatch requires subagent_type immune-brain:immune-brain-reviewer or immune-brain-reviewer.",
+		permissionDecisionReason: reason,
 	} });
 }
 
@@ -507,6 +510,8 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 		this.drain();
 		const state = this.pending.get(reservation.id);
 		if (!state) return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
+		const packetError = reviewPacketError(state.dispatchPrompt);
+		if (packetError) return { ok: false, reason: packetError, release: true };
 		if (state.consumed) return { ok: false, reason: "review receipt already consumed", release: true };
 		if (state.error) return { ok: false, reason: state.error, release: true };
 		if (!state.startEvent) return { ok: false, reason: "reserved foreground Agent was not observed", release: true };

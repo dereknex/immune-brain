@@ -139,6 +139,21 @@ function reservedPrompt(): string {
 }
 
 describe("claude review host: dispatch envelope shape", () => {
+	test("an edited packet releases even after a real async launch and transcript bind", () => {
+		const root = mkdtempSync(join(tmpdir(), "imm-review-integrity-"));
+		try {
+			const file = join(root, "review.jsonl");
+			writeFileSync(file, transcriptLine(RECORDED_AGENT_ID, VERDICT), { mode: 0o600 });
+			const host = new ClaudeReviewHost();
+			const reservation = host.prepareReview({ ...reviewRequest(), writePacket: writeTestReviewPacket });
+			const prompt = (reservation.dispatch as { prompt: string }).prompt;
+			observeDispatch(host, { sessionId: RECORDED_SESSION, agentId: RECORDED_AGENT_ID,
+				envelope: { ...RECORDED_LAUNCH_ENVELOPE, outputFile: file, prompt }, prompt });
+			expect(host.inspectReview(reservation)).toMatchObject({ ok: true, receipt: { result: VERDICT } });
+			writeFileSync(parseReviewPacketHandle(prompt)!.packet.path, "altered instructions");
+			expect(host.inspectReview(reservation)).toMatchObject({ ok: false, release: true, reason: expect.stringContaining("digest") });
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
 	test("Claude observed async incomplete receipt reaches durable non-verdict settlement", async () => {
 		const root = mkdtempSync(join(tmpdir(), "claude-incomplete-receipt-"));
 		const f = reviewIncompleteFixture();
