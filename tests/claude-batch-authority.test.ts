@@ -270,11 +270,21 @@ describe("acc-claude-batch-fail-closed", () => {
 		expect(gates).toBe(0); expect(result.state).toBe("blocked"); expect(result.reason).toContain("foreign-task"); expect(result.recovery_action).toContain("resolve or stop the active task");
 		expect(readTaskRecordRaw(f.root, "foreign-task").revision).toBe(revision); expect(existsSync(join(f.root, ".imm/state/batches"))).toBe(false);
 	});
-	it("conflicting Parent branch fails before the gate with refs unchanged", async () => {
-		const f = fixture("branch-conflict"); git(f.root, "branch", `imm/${f.slug}`, "HEAD~1"); let gates = 0; const before = snapshot(f.root);
+	for (const tip of ["HEAD", "HEAD~1"]) it(`conflicting Parent at ${tip} fails before the gate with refs unchanged`, async () => {
+		const f = fixture("branch-conflict"); git(f.root, "branch", `imm/${f.slug}`, tip); let gates = 0; const before = snapshot(f.root);
 		const runtime = client(f, { requestConfirmation: async () => { gates++; return { decision: "accept", requestId: "branch" }; } });
 		const result = await runtime.callTool("start_unattended_batch", { initiative_slug: f.slug });
 		expect(gates).toBe(0); expect(result.state).toBe("rejected"); expect(result.reason).toContain("branch"); expect(result.recovery_action).toContain("branch"); expect(snapshot(f.root)).toEqual(before); noBatchWrites(f.root);
+	});
+	it("refuses a same-tip Parent created during confirmation without adopting it", async () => {
+		const f = fixture("branch-race"); let gates = 0; let afterCreation = snapshot(f.root);
+		const runtime = client(f, { requestConfirmation: async () => {
+			gates++; git(f.root, "branch", `imm/${f.slug}`); afterCreation = snapshot(f.root);
+			return { decision: "accept", requestId: "branch-race" };
+		} });
+		const result = await runtime.callTool("start_unattended_batch", { initiative_slug: f.slug });
+		expect(gates).toBe(1); expect(result.state).toBe("rejected"); expect(result.reason).toContain("recorded provenance");
+		expect(snapshot(f.root)).toEqual(afterCreation); noBatchWrites(f.root);
 	});
 	it("critical-only Parent opens the ordinary batch gate", async () => {
 		const f = fixture("critical-only"); let message = ""; const runtime = client(f, { readInitiative: async () => ({ ...f.observation, tasks: f.observation.tasks.slice(2) }),

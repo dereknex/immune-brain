@@ -15,7 +15,17 @@ verifies predecessor settlement and Git integration. Reading Parent context
 grants no authority to start predecessors or siblings. A standalone task id uses
 single-task Enrollment.
 
-Every new batch uses runtime-created Lanes. Before confirmation, select capacity
+Every new batch uses runtime-created Lanes. Fixed Parent/Lane names do not prove
+ownership: a same-tip Parent can be reused only with a validated matching batch
+record at its recorded delivery tip. A settled record proves resource provenance,
+not authorization for new work. Existing unbound Lane paths or branches are
+collisions, even when clean and at the requested base. Creation is exclusive;
+if interrupted before the binding is persisted, retain the orphan and refuse
+automatic adoption. After binding, resume revalidates the recorded Lane path,
+branch and Git lineage instead of treating its location as proof of ownership.
+No collision authorizes deletion, overwriting, renaming or resetting user resources.
+
+Before confirmation, select capacity
 from dependency readiness, scope conflicts, configured Lane capacity and available
 supervised Executor capability. Omitting `max_parallel` defaults to 1, as does
 explicitly passing 1; both run one Lane at a time. If no Executor can be supervised,

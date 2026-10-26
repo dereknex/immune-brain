@@ -259,6 +259,64 @@ function request(
 const lanes = (report: unknown) => report as BatchLaneRunReport;
 
 describe("runtime-owned Parent Lane lifecycle", () => {
+	function ownedFixture() {
+		const fx = fixture({}, { "task-a": ["a.txt"] });
+		git(fx.repo, "checkout", "-q", "main");
+		git(fx.repo, "branch", "-D", BATCH_BRANCH);
+		const args = request(fx, [child("task-a", "S1")], laneKernel(), {
+			git: Object.assign(laneGit(), { preflight: runBatchGitPreflight, lane: createDefaultLaneGitPort() }),
+		});
+		const snapshot = () => ({ refs: git(fx.repo, "show-ref"), worktrees: git(fx.repo, "worktree", "list", "--porcelain"),
+			head: git(fx.repo, "rev-parse", "HEAD"), index: readFileSync(join(fx.repo, ".git/index")),
+			intent: readFileSync(join(fx.repo, "docs/plans/task-a.intent.json")) });
+		return { fx, args, snapshot };
+	}
+
+	it("refuses an unbound matching Lane before creating a Parent or batch record", async () => {
+		const { fx, args, snapshot } = ownedFixture();
+		try {
+			const { createLaneWorktree } = await import("../plugins/immune-brain/runtime/unattended/batch_worktrees");
+			const lane = createLaneWorktree(fx.repo, SLUG, "task-a", fx.base);
+			const before = snapshot();
+			const bytes = readFileSync(join(lane, "docs/plans/task-a.intent.json"));
+			const report = lanes(await startBatch(args));
+			expect(report.batch_state).toBe("rejected");
+			expect(report.reason).toContain("recorded Lane binding");
+			expect(snapshot()).toEqual(before);
+			expect(readFileSync(join(lane, "docs/plans/task-a.intent.json"))).toEqual(bytes);
+			expect(readAnyBatchRunState(fx.repo, BATCH_ID)).toBeNull();
+		} finally { fx.cleanup(); }
+	});
+
+	for (const mismatch of ["none", "record-path", "record-branch", "live-branch", "live-head"] as const)
+	it(`resumes only the exact durable Lane binding (${mismatch})`, async () => {
+		const { fx, args, snapshot } = ownedFixture();
+		try {
+			const first = lanes(await startBatch(args));
+			expect(first.children[0]!.state).toBe("enrolled");
+			const lane = first.children[0]!.lane!.path;
+			const record = readAnyBatchRunState(fx.repo, BATCH_ID)!;
+			if (record.contract !== "assurance_kernel/batch_run_state/v2") throw new Error("expected Lane record");
+			if (mismatch === "record-path") record.children[0]!.lane!.path = fx.repo;
+			if (mismatch === "record-branch") record.children[0]!.lane!.branch = "imm-lane/foreign/task-a";
+			if (mismatch.startsWith("record-")) writeBatchLaneRunState(fx.repo, record);
+			if (mismatch === "live-branch") git(lane, "branch", "-m", "user-lane");
+			if (mismatch === "live-head") {
+				const other = git(lane, "commit-tree", `${fx.base}^{tree}`, "-m", "unrelated user history");
+				git(lane, "update-ref", `refs/heads/imm-lane/${SLUG}/task-a`, other);
+			}
+			const before = snapshot();
+			const bytes = readFileSync(join(lane, "docs/plans/task-a.intent.json"));
+			const stored = readAnyBatchRunState(fx.repo, BATCH_ID);
+			const resumed = lanes(await startBatch(args));
+			expect(resumed.batch_state).toBe(mismatch === "none" ? "running" : "rejected");
+			if (mismatch === "none") expect(resumed.children[0]!.lane!.path).toBe(lane);
+			else expect(resumed.reason).toContain("batch_lane_identity_mismatch");
+			expect(snapshot()).toEqual(before);
+			expect(readFileSync(join(lane, "docs/plans/task-a.intent.json"))).toEqual(bytes);
+			expect(readAnyBatchRunState(fx.repo, BATCH_ID)).toEqual(stored);
+		} finally { fx.cleanup(); }
+	});
 	for (const untracked of [false, true]) it(`enrolls real Lanes with ${untracked ? "untracked" : "modified"} coordinator planning inputs without copying implementation dirt`, async () => {
 		const specPath = "docs/specs/parent.spec.md";
 		const fx = fixture({}, { "task-a": ["a.txt", specPath] });

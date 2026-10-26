@@ -40,7 +40,7 @@ import {
 
 it("newer batch contracts block retirement and settled-lineage reuse without a gate or writes", async () => {
 	const r = repo();
-	const settled = { ...laneRecord(r), batch_state: "completed" as const };
+	const settled = { ...laneRecord(r), batch_id: "a-settled", batch_state: "budget_stopped" as const };
 	writeFileSync(join(r.root, ".imm/state/batches/a-settled.json"), JSON.stringify(settled));
 	expect(findSettledBatchRecord(r.root, SLUG)?.contract).toBe("assurance_kernel/batch_run_state/v2");
 	const path = join(r.root, ".imm/state/batches/z-newer.json");
