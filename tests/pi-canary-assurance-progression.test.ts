@@ -31,7 +31,7 @@ async function submitObserved(progression: ReturnType<typeof makeHarness>["progr
 }
 
 describe("foreground assurance progression", () => {
-	test.each([true, false])("conflict during awaited submission retains reservation (relayed=%s)", async (relayed) => {
+	test.each([true, false])("conflict during awaited submission releases reservation (relayed=%s)", async (relayed) => {
 		const h = makeHarness();
 		const ready = await h.progression.advance(TASK, ctx);
 		const params = (ready as { agent_params: { prompt: string; description: string } }).agent_params;
@@ -48,9 +48,9 @@ describe("foreground assurance progression", () => {
 		await entry;
 		h.progression.piReviewHost.observeReviewResult("interleaved", "");
 		release();
-		expect(await submitting).toMatchObject({ state: "blocked", reason: expect.stringContaining("conflicting result bytes"), recovery_action: "Wait for the dispatched reviewer to finish, then call submit_review again with its verdict; do not dispatch or continue another reviewer" });
+		expect(await submitting).toMatchObject({ state: "blocked", reason: expect.stringContaining("conflicting result bytes"), recovery_action: "Call advance_assurance to obtain a new Review reservation, then dispatch one fresh reviewer with the returned envelope unchanged" });
 		expect(h.counts().applyCount).toBe(1);
-		expect(h.progression.active(TASK)).toMatchObject({ state: "review_ready", operation_id: (ready as { operation_id: string }).operation_id });
+		expect(h.progression.active(TASK)).toBeNull();
 	});
 	test("runs QA synchronously and returns one foreground Review reservation", async () => {
 		let released!: () => void;

@@ -1,0 +1,24 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "review-dispatch-conflict-release-test-repair",
+  "goal": "The review-dispatch-handle batch (#303, commits 6626254, 2f45bf7, ebea34b) passes its final `bun test` again: the Pi foreground progression test that still expects a retained Review reservation after conflicting reviewer result bytes during an awaited submission asserts the release that Spec review-dispatch-handle T4 decided, while the S3 packet-integrity behavior stays unchanged.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "On Pi, conflicting result bytes for the bound reviewer call observed during an awaited submit_review (relayed and unrelayed verdict) return state blocked with a conflicting-result-bytes reason and the released-reservation recovery action, apply the Kernel at most once, and leave no active Review reservation (Spec review-dispatch-handle T4); the Pi Review dispatch resilience tests still pass. The assertion is updated only to that Spec decision, not deleted or weakened.",
+      "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v2\",\"command\":{\"executable\":\"bun\",\"argv\":[\"test\",\"tests/pi-canary-assurance-progression.test.ts\",\"tests/pi-canary-review-dispatch-resilience.test.ts\"],\"cwd\":\".\",\"timeout_ms\":300000,\"max_output_bytes\":131072},\"environment\":{\"prepare\":null,\"writable_paths\":[]}}"
+    },
+    {
+      "id": "AC2",
+      "assertion": "The project typechecks.",
+      "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v2\",\"command\":{\"executable\":\"bun\",\"argv\":[\"run\",\"typecheck\"],\"cwd\":\".\",\"timeout_ms\":180000,\"max_output_bytes\":131072},\"environment\":{\"prepare\":null,\"writable_paths\":[]}}"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/review-dispatch-conflict-release-test-repair.intent.json",
+    "tests/pi-canary-assurance-progression.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1,
+  "owner": "user"
+}
