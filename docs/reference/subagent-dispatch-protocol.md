@@ -45,6 +45,11 @@ listings, unrelated directories, and other projects' session logs are out of
 scope. Project-specific log or history searches stay inside the named project
 paths; do not scan external session directories unless the user explicitly asks.
 
+A scout probe carries an explicit read budget: at most 50,000 bytes per directory
+and 300 lines per file, reading interface, schema, and header files in full
+first, entry files next, and remaining source in alphabetical order. A probe that
+exceeds its budget stops and reports what it covered, not what it skipped.
+
 派发前依次执行：
 
 1. 从任务摘要、changed paths 和显式请求分类为 `trivial`、`single_domain`、`multi_domain` 或 `high_risk`。
@@ -185,5 +190,12 @@ Parent workflow role 必须：
 普通 advisory/discovery 的每次启动都消耗一个 candidate budget slot；失败、取消、timeout 或 result_untrusted 均丢弃该输出且不得自动重试。Parent 仅在剩余候选仍独立有用且 evidence budget 仍需要时继续，否则转 solo/fail-closed fallback，并记录 `dispatch_failed` 或 `child_timeout`。Read-only eligibility 与 Pi 的 one-foreground-child 调度限制是两回事：只读调查可同时存在多个待派发候选，但实际执行仍逐个 foreground child 串行消费，不得把多个 foreground Agent 假定为并发 batch。该规则不改变 Kernel authority Review 的显式恢复协议。Child 永远不获得实现、Plan write、workflow mutation 或 QA closure authority。
 
 If Kernel Review dispatch fails, the Parent does not call `submit_review`; the existing Review reservation and immutable evidence remain available for a later foreground retry. A malformed verdict may be corrected and resubmitted. A stale snapshot, explicit release, successful settlement, or session shutdown removes the reservation and evidence. There is no retry counter or provider-specific recovery path; the only dispatch record is the receipt a host adapter binds to the reservation for receipt-bound submission.
+
+Review isolation is a stop-rule, not a fallback: a Kernel Review runs only in a
+fresh reviewer session that carries no Parent conversation. If the host cannot
+start such a session (no subagent tool, or the dispatch cannot prove freshness),
+the review does not happen — never fall back to reviewing in the Parent's own
+session, and never treat the Parent's own judgment as a Review verdict. The
+reservation waits for a later foreground retry and fails closed on shutdown.
 
 This protocol is provider- and host-adapter-agnostic for local execution.

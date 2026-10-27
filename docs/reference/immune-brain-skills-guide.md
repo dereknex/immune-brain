@@ -95,6 +95,11 @@ Canary Work 和 Work 不再是用户工作流入口。相关 extension/tool sour
 八个 `dist/imm-*.md` 和 package manifest 必须保持一致。未注册的旧 `imm-*.md`
 entry files、旧 Skill directories 和兼容 aliases 必须不存在。
 
+新 skill 立约定（2026-10-27 采纳，源自 google/elephant-goldfish-model 每个 skill
+配 `TEST.md` 与 `test_scenarios.yaml`）：新 skill 随附行为场景——(双轮/多轮提示、
+期望行为、禁止行为）写成的场景文件，与 contract 测试并行在 CI 里跑；示例场景
+文件待后续补（与 E4 drift tooling 同批排期），约定本身先行。
+
 建议验证：
 
 ```bash

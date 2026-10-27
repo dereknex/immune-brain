@@ -105,7 +105,14 @@ interrogation. Exhaustive means every sourced current-goal branch, not a fixed
 question count. Seed the fixed framing roots: goal, beneficiary and scenario,
 current state, desired behavior, scope and non-goals, constraints, failure and
 edge behavior, compatibility and migration, success and Verification, and
-deferred items. Recompute the tree after every response and traverse newly
+deferred items. Before closing, check the concept against six lenses: contrarian
+/ YAGNI (should this exist; can a library solve 90% of it), cost and token
+economics (peak load, memory, token budget, quota ceiling — the lens with no
+existing root; estimate the cost of executing the work, not only of running
+it), UX and developer ergonomics, migration and backward compatibility,
+observability and debuggability (how does on-call diagnose this at 3 AM), and
+long-term tech debt and maintenance (is this still maintainable in two years).
+A lens that finds nothing is recorded as checked, not skipped. Recompute the tree after every response and traverse newly
 unlocked downstream branches. Adoption closes current nodes, not unexplored
 branches. Resolve facts and delegated choices locally; ask material user-owned
 decisions. Stop when the sourced tree is traversed and its material frontier is

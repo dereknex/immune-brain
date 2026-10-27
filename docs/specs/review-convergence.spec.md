@@ -120,6 +120,24 @@ Planner contract changes in `skills/imm-planner/SKILL.md` (and its `dist/imm-pla
 
 Retained design, not a candidate: a coordinator-dispatched read-only `review-verifier` role receives each blocking finding (summary + evidence), the immutable revision, and acceptance text — never the Reviewer's reasoning. Verdicts are two-valued: `refuted` (with a concrete counter-path) or kept. It can only weaken, never add. If every blocking finding is refuted, the Reviewer is re-dispatched once with the counter-evidence and must return `pass` with coverage or a new `rework` (verified again); non-convergence stops for the user. Verifier failure or timeout keeps the finding. Review records would carry optional `verifier` counts and refutation reasons for `imm-retro`. Revisit after S0–S3 ship, using refuted-finding and round-count data.
 
+Finding disposition (adopted 2026-10-27 from google/elephant-goldfish-model
+`egm-resolve`): a finding the executor believes is wrong gets exactly one of four
+dispositions, decided by where the refuting evidence lives. `CONTEST` — the finding
+is wrong and the evidence is readable to the Reviewer (a file, a symbol, or a
+decision recorded in the Spec or TaskIntent); the verifier refute is the instrument.
+`ESCALATE` — the finding is wrong but the evidence is outside everything the
+Reviewer can read (a team convention, a verbal user decision); do not force a
+refute and do not fix the code — route it to the literal user as an
+`unresolved_user_decision`. `PROPOSE FIX` — the finding is right; the executor
+reworks it. `DECLINE` — an advisory note; record it, do no work. Two rules bind the
+disposition: a contest must be checkable from the frozen snapshot and the Spec —
+"this is intentional" is not evidence, and without reviewer-readable evidence the
+disposition is ESCALATE or PROPOSE FIX, never CONTEST; and a comprehension gap is
+never contested — a fresh Reviewer who cannot understand the diff from the frozen
+snapshot alone has found missing context in the work, not made a reviewer error.
+Do not add context to the Spec or acceptance merely to satisfy a Reviewer; add it
+only when a human reader needs it, otherwise ESCALATE.
+
 ### Alternatives and compatibility
 
 - *Coordinator demotes non-conforming blocking to advisory* — rejected: rewrites Reviewer output and breaks the verdict receipt chain.

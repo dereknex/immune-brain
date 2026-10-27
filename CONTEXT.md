@@ -242,6 +242,7 @@ _Avoid_: current acceptance field, QA attestation
 - Initiative projection: `plugins/immune-brain/runtime/github_issue_tracker.ts` and `plugins/immune-brain/bin/imm-tracker` own the optional one-way GitHub Issues adapter, complete batch publication, Parent/Child relationship verification, and execution recommendations without reading or writing Kernel authority.
 - Packaging: root `package.json` is the Pi package manifest; `plugins/immune-brain/dist/` is checked-in generated output guarded by `bun scripts/sync-dist-docs.ts --check`.
 - Durable knowledge: `docs/solutions/` stores Learnings and `docs/adr/` stores qualifying architecture decisions. `CONTEXT.md` is vocabulary and navigation only, never runtime state.
+- Module documentation: when a module gains its own documentation, structure it as Interface / Invariants / Side Effects / Verification (the test command that proves it). Interface names what the module exposes, Invariants state what always holds, Side Effects name what it changes outside itself, Verification names the command — a module document without a Verification command is incomplete.
 
 ## Legacy Boundary
 
