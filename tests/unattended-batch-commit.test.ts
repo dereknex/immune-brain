@@ -297,10 +297,11 @@ describe("native Parent completion without ordinary grants", () => {
 		} finally { rmSync(repo.root, { recursive: true, force: true }); }
 	});
 	it.each([
-		{ history: false, command: "bun --version", passed: true },
-		{ history: true, command: "bun --version", passed: true },
-		{ history: true, command: "bun -e process.exitCode=7", passed: false },
-	])("verifies and replays delivered-only Parent without a commit: history=$history, passed=$passed", async ({ history, command, passed }) => {
+		{ history: false, repair: false, command: "bun --version", passed: true },
+		{ history: true, repair: false, command: "bun --version", passed: true },
+		{ history: true, repair: true, command: "bun --version", passed: true },
+		{ history: true, repair: false, command: "bun -e process.exitCode=7", passed: false },
+	])("verifies and replays delivered-only Parent without a commit: history=$history, repair=$repair, passed=$passed", async ({ history, repair, command, passed }) => {
 		const repo = initGitRepo();
 		try {
 			const paths = ["src/delivered.ts", "docs/plans/delivered.intent.json", "docs/plans/archive/delivered.intent.json"];
@@ -316,6 +317,17 @@ describe("native Parent completion without ordinary grants", () => {
 				{ task_id: "delivered", slice_id: "S1", blocked_by: [] },
 			] });
 			const historyBytes = history ? seedParentHistory(repo.root, baseline, intent, paths) : () => [];
+			if (repair) {
+				const repairIntentPath = writeTaskIntent(repo.root, "repair", "Repair delivery", ["src/repair.ts"]);
+				const repairIntent = JSON.parse(readFileSync(join(repo.root, repairIntentPath), "utf8"));
+				writeFileSync(join(repo.root, "docs/plans/archive/repair.intent.json"), JSON.stringify(repairIntent));
+				git(repo.root, ["add", repairIntentPath, "docs/plans/archive/repair.intent.json"]);
+				writeChildAudit(repo.root, "repair", "done", baseline, repairIntent);
+				writeFileSync(join(repo.root, "src/repair.ts"), "export const repaired = true;\n");
+				const prior = readBatchRunState(repo.root, "prior-parent")!;
+				prior.repair_tasks = [{ task_id: "repair", run_id: "repair-run" }];
+				writeBatchRunState(repo.root, prior);
+			}
 			const beforeHistory = historyBytes();
 			const disclosed: NativeParentEffects[] = [];
 			const gate: NativeParentGate = async (effects) => { disclosed.push(effects); return null; };
@@ -330,10 +342,32 @@ describe("native Parent completion without ordinary grants", () => {
 			expect(historyBytes()).toEqual(beforeHistory);
 			expect(readBatchRunState(repo.root, "native-parent")).toBeNull();
 			expect((await observeParentCompletion(repo.root, "native-parent", ["delivered"])).complete).toBe(passed);
+			if (history && !repair) {
+				const proof = await observeParentCompletion(repo.root, "native-parent", ["delivered"]);
+				const consolidationPath = join(repo.root, ".imm/state/batches/native-parent.consolidation.json");
+				writeFileSync(consolidationPath, JSON.stringify({ contract: "assurance_kernel/delivery_consolidation/v1", task_ids: ["missing-task"] }));
+				expect(await observeParentCompletion(repo.root, "native-parent", ["delivered"])).toEqual(proof);
+				const reportPath = join(repo.root, ".imm/state/batches/native-parent.native.report.json");
+				const report = JSON.parse(readFileSync(reportPath, "utf8"));
+				report.consolidation_digest = `sha256:${"f".repeat(64)}`;
+				writeFileSync(reportPath, JSON.stringify(report));
+				expect(await observeParentCompletion(repo.root, "native-parent", ["delivered"])).toEqual(proof);
+				rmSync(consolidationPath);
+				expect(await observeParentCompletion(repo.root, "native-parent", ["delivered"])).toEqual(proof);
+			}
 			// The user may carry the bytes in any history; equal scoped content keeps the verification (D3).
 			git(repo.root, ["checkout", "--orphan", "unrelated-history"]);
 			git(repo.root, ["add", "."]); git(repo.root, ["commit", "-m", "user-owned commit of the delivered bytes"]);
 			expect((await observeParentCompletion(repo.root, "native-parent", ["delivered"])).complete).toBe(passed);
+			if (repair) {
+				const observed = await observeNativeParent(repo.root, "native-parent", reader);
+				expect(observed?.native?.repair_tasks).toBeUndefined();
+				expect(observed?.proof).toMatchObject({ final_passed: true, missing_task_ids: [] });
+				writeFileSync(join(repo.root, "src/repair.ts"), "export const repaired = false;\n");
+				expect(await observeParentCompletion(repo.root, "native-parent", ["delivered"])).toMatchObject({
+					complete: false, final_passed: false, missing_task_ids: [],
+				});
+			}
 		} finally { rmSync(repo.root, { recursive: true, force: true }); }
 	});
 	it.each([false, true].flatMap(history => [false, true].flatMap(remainingCritical =>

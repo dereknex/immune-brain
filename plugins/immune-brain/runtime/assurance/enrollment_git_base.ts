@@ -96,6 +96,14 @@ export type EnrollmentPreconditionResult = WorkflowCommitResult | { committed: f
 
 /** Stage exactly the listed paths; no pathspec magic can widen the list. */
 function stagePaths(root: string, paths: readonly string[]): void {
+	// git add can stage other paths before rejecting an ignored Spec; check the whole set first.
+	const ignored = spawnSync("git", ["check-ignore", "-z", "--stdin"], {
+		cwd: root, encoding: "utf8", input: `${paths.join("\0")}\0`,
+	});
+	if (ignored.status === 0)
+		throw new Error(`enrollment_precondition_ignored_path: ${ignored.stdout.split("\0").filter(Boolean).join(", ")}; adjust Git ignore rules or explicitly track these planning files before retrying Enrollment`);
+	if (ignored.status !== 1)
+		throw new Error(`enrollment_precondition_ignore_check_failed: ${ignored.error?.message ?? ignored.stderr.trim()}`);
 	execFileSync("git", ["add", "--", ...paths], {
 		cwd: root, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, GIT_LITERAL_PATHSPECS: "1" },
 	});

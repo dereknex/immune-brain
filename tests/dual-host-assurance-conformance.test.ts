@@ -13,7 +13,7 @@ import {
 	type AssuranceVerdict,
 	type SnapshotDescriptor,
 } from "../plugins/immune-brain/runtime/assurance/coordinator";
-import { revisionForContent } from "../plugins/immune-brain/runtime/kernel/storage";
+import { readSettledTaskEvidence, revisionForContent } from "../plugins/immune-brain/runtime/kernel/storage";
 import { PassThrough } from "node:stream";
 import { ClaudeReviewHost, REVIEWER_AGENT, AGENT_TOOL } from "../plugins/immune-brain/runtime/claude/review_host";
 import { submitClaudeReview, ClaudeRuntime, settledKernelResult, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
@@ -44,6 +44,7 @@ import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { withKernelTransaction } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
+import { writeEnrollmentBaseline } from "../plugins/immune-brain/runtime/workspace_scope";
 
 // The phase entry gate (ADR 0019) sits in front of `enroll` and
 // `start_unattended_batch`. These tests exercise what lies behind it, so the
@@ -619,7 +620,8 @@ function sharedKernel(
 	};
 }
 
-function projectVerificationFixture(taskId: string, mode: "pass" | "prepare-fail" | "sleep" | "v1" | "drift"): string {
+function projectVerificationFixture(taskId: string, mode: "pass" | "prepare-fail" | "sleep" | "v1" | "drift",
+	options: { risk?: "routine" | "material"; gitIntegration?: "auto" | "manual" } = {}): string {
 	const root = mkdtempSync(join(tmpdir(), "imm-project-verification-"));
 	mkdirSync(join(root, ".imm/state"), { recursive: true });
 	mkdirSync(join(root, "docs/plans"), { recursive: true });
@@ -647,9 +649,10 @@ esac
 		contract: "assurance_kernel/task_intent/v1", task_id: taskId, owner: "user",
 		goal: "exercise project-owned verification through the real host port",
 		acceptance: [{ id: "acc-1", assertion: "project command passes", verification }],
-		scope_hint: [`docs/plans/${taskId}.intent.json`, "tools/future-pm", "tools/notes.txt"], risk: "material", revision: 1,
+		scope_hint: [`docs/plans/${taskId}.intent.json`, "tools/future-pm", "tools/notes.txt"], risk: options.risk ?? "material", revision: 1,
 	};
 	writeFileSync(join(root, "docs/plans", `${taskId}.intent.json`), `${JSON.stringify(intent, null, 2)}\n`);
+	if (options.gitIntegration) writeFileSync(join(root, "AGENTS.md"), `- Git integration: ${options.gitIntegration}\n`);
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "-m", "fixture"], { cwd: root });
@@ -682,6 +685,60 @@ function projectVerificationCoordinator(root: string, host: "pi" | "claude") {
 }
 
 describe("project-owned-verification", () => {
+	test.each([
+		["pi", "auto"], ["pi", "manual"], ["claude", "auto"], ["claude", "manual"],
+	] as const)("%s real routine completion respects Git integration %s and preserves unrelated work", async (host, gitIntegration) => {
+		const taskId = `routine-settle-${host}-${gitIntegration}`;
+		const root = projectVerificationFixture(taskId, "pass", { risk: "routine", gitIntegration });
+		const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+		const driver = host === "pi"
+			? new AssuranceProgression(createPiAssuranceProgressionPorts())
+			: new ClaudeRuntime({ cwd: root, env: HOST_ENV, host: new ClaudeReviewHost(), interactive: true });
+		try {
+			const baseHead = git("rev-parse", "HEAD");
+			const staged = `${readFileSync(join(root, "AGENTS.md"), "utf8")}# unrelated staged work\n`;
+			writeFileSync(join(root, "AGENTS.md"), staged);
+			git("add", "--", "AGENTS.md");
+			const unstaged = `${staged}# unrelated unstaged work\n`;
+			writeFileSync(join(root, "AGENTS.md"), unstaged);
+			writeFileSync(join(root, "unrelated.txt"), "untracked user content\n");
+			writeFileSync(join(root, ".git/info/exclude"), "generated/\n");
+			// Model unrelated dirt present at enrollment, without claiming the task's delivered change.
+			writeEnrollmentBaseline(root, ["tools/future-pm"]);
+			const outsideIndex = git("diff", "--cached", "--", "AGENTS.md");
+			const outsideWorktree = git("diff", "--", "AGENTS.md");
+			const result = driver instanceof ClaudeRuntime
+				? await driver.advance(taskId)
+				: await driver.advance(taskId, { cwd: root } as never);
+			expect(result).toMatchObject({ state: "completed" });
+			expect(readSettledTaskEvidence(root, taskId)).toMatchObject({
+				record: { lifecycle: "done" }, proof: { terminal_lifecycle: "done" },
+			});
+			expect(readFileSync(join(root, "generated/ready"), "utf8")).toBe("ready");
+			if (gitIntegration === "auto") {
+				const commit = git("rev-parse", "HEAD");
+				expect(commit).not.toBe(baseHead);
+				expect(result).toMatchObject({ settle_commit: { mode: "auto", committed: true, commit, paths: ["tools/future-pm"] } });
+				expect(git("rev-parse", "HEAD^")).toBe(baseHead);
+				expect(git("diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD")).toBe("tools/future-pm");
+				expect(git("diff", "--cached", "--name-only")).toBe("AGENTS.md");
+			} else {
+				expect(git("rev-parse", "HEAD")).toBe(baseHead);
+				expect(result).not.toHaveProperty("settle_commit");
+				expect(git("diff", "--cached", "--name-only").split("\n")).toEqual(["AGENTS.md", "tools/future-pm"]);
+			}
+			expect(git("diff", "--cached", "--", "AGENTS.md")).toBe(outsideIndex);
+			expect(git("diff", "--", "AGENTS.md")).toBe(outsideWorktree);
+			expect(readFileSync(join(root, "AGENTS.md"), "utf8")).toBe(unstaged);
+			expect(readFileSync(join(root, "unrelated.txt"), "utf8")).toBe("untracked user content\n");
+			expect(git("ls-files", "--others", "--exclude-standard", "--", "unrelated.txt")).toBe("unrelated.txt");
+		} finally {
+			if (driver instanceof ClaudeRuntime) await driver.shutdown();
+			else await driver.onSessionShutdown();
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	test("Pi and Claude actual ports execute the same unknown project command and record evidence", async () => {
 		for (const host of ["pi", "claude"] as const) {
 			const taskId = `project-command-${host}`, root = projectVerificationFixture(taskId, "pass");

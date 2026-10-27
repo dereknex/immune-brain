@@ -369,6 +369,29 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 			expect(record?.git_base_head).toBe(head);
 			expect(record?.lifecycle).toBe("active");
 		});
+		test(`${label}: an ignored bound Spec refuses before staging or opening the Enrollment gate`, async () => {
+			const root = scopedFixture("committed", taskId, declared);
+			writeFileSync(join(root, ".gitignore"), `${specPath}\n`);
+			writeFileSync(join(root, "other/staged.txt"), "user staged work\n");
+			git(root, "add", "--", "other/staged.txt");
+			const snapshot = () => ({
+				head: git(root, "rev-parse", "HEAD"), index: readFileSync(join(root, ".git/index")),
+				config: readFileSync(join(root, ".git/config")), outside: outsideScope(root),
+				planning: TASK_PATHS.map(path => readFileSync(join(root, path))),
+				ignore: readFileSync(join(root, ".gitignore")),
+			});
+			const before = snapshot();
+			const result = await enroll(root, "accept");
+			const terminal = result.result as { details?: { summary?: string } } | undefined;
+			expect(result.error || terminal?.details?.summary).toContain("enrollment_precondition_ignored_path");
+			expect(result.error || terminal?.details?.summary).toContain(specPath);
+			expect(result.prompts).toHaveLength(0);
+			expect(snapshot()).toEqual(before);
+			expect(readTaskRecordRaw(root, taskId).record).toBeNull();
+			const owners = preparePiCanary(root, { task_id: taskId, now: "2026-10-01T00:00:00.000Z" });
+			expect(owners.backend_claim.present).toBe(false);
+			expect(owners.workspace.current_working).toBeNull();
+		});
 		test(`${label}: an unborn HEAD gets only its confirmed empty root commit and planning files are staged`, async () => {
 			const root = scopedFixture("unborn", taskId, declared);
 			const result = await enroll(root, "accept");
