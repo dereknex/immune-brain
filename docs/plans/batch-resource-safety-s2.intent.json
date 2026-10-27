@@ -1,0 +1,55 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "batch-resource-safety-s2",
+  "owner": "user",
+  "goal": "Deliver S2 of Initiative batch-resource-safety after S1, per docs/specs/batch-resource-safety-s2.spec.md and user-approved option A: retain Executor Lanes and unknown ignored files, block destructive redo without trustworthy exit evidence, and report retained resources across completion/restart. Automatic lifecycle restoration is explicitly deferred; no new session-management subsystem is included.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Per user-approved option A and D1/D3 in docs/specs/batch-resource-safety-s2.spec.md: current Hosts provide no trusted Executor exit proof, so integrated Lanes and all their files remain intact for live, unknown, idle or done sessions, including unknown ignored sentinels and no-active-claim cases. Positive: ordinary creation, integration and passing final verification still complete with a retained Lane. Bound: user-provided Lanes remain untouched and detached Parent verification cleanup is not confused with Executor cleanup. Agreed seams: tests/batch-parent-branch.test.ts, tests/unattended-batch-lanes.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-parent-branch.test.ts\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Per D2 in docs/specs/batch-resource-safety-s2.spec.md: conflict redo, persisted redo-grant resume, parked revival and missing-path recovery refuse destructive Lane recreation without trusted exit evidence, preserving refs, worktree registrations, ignored bytes and prior delivery reachability. Positive: independent siblings continue. Bound: repeated ticks or confirmation do not spend additional grants for the same refusal, delete a branch, or duplicate integration. Agreed seams: tests/batch-merge-queue.test.ts, tests/batch-parked-revive.test.ts, tests/batch-redo-slot.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-merge-queue.test.ts\",\n      \"tests/batch-parked-revive.test.ts\",\n      \"tests/batch-redo-slot.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Per D4 in docs/specs/batch-resource-safety-s2.spec.md: ordinary, terminal replay and completedParentReport outputs identify retained Lane task/path and missing-exit-evidence reason while preserving delivery completion and audit identity. Negative: repeated terminal reporting cannot drop cleanup notices, reenroll completed children, or claim a present Lane released. Bound: external path disappearance is observation only and never authorizes automatic redo. Agreed seams: tests/batch-final-report.test.ts, tests/goal-driven-batch-run.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-final-report.test.ts\",\n      \"tests/goal-driven-batch-run.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "Per D5 in docs/specs/batch-resource-safety-s2.spec.md: affected runtime/packaged Lane lifecycle instructions consistently describe conservative retention and paused destructive redo, with the named restoration owner, capability milestone and exit conditions. Negative: Git-clean or Kernel-terminal alone is not described as permitting automatic Lane deletion. Bound: existing legacy ownership and user-dialog protections remain; maintained prompt mirrors agree. Agreed seams: tests/role-prompt-bridge.test.ts, tests/dist-docs-sync-contract.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/role-prompt-bridge.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/batch-resource-safety-s2.md",
+    "CONTEXT.md",
+    "docs/adr/0027-parent-branch-merge-queue.md",
+    "docs/plans/batch-resource-safety-s2.intent.json",
+    "docs/specs/batch-resource-safety-s2.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-run-batch.md",
+    "plugins/immune-brain/dist/role-prompts/lane-steward.md",
+    "plugins/immune-brain/runtime/prompts/lane-steward.md",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/unattended/batch_worktrees.ts",
+    "tests/batch-final-report.test.ts",
+    "tests/batch-merge-queue.test.ts",
+    "tests/batch-parent-branch.test.ts",
+    "tests/batch-parked-revive.test.ts",
+    "tests/batch-redo-slot.test.ts",
+    "tests/dist-docs-sync-contract.test.ts",
+    "tests/goal-driven-batch-run.test.ts",
+    "tests/role-prompt-bridge.test.ts",
+    "tests/unattended-batch-lanes.test.ts"
+  ],
+  "scope_size_reason": "One fail-closed Lane resource-lifecycle invariant spans release, redo/revival and terminal replay; its focused behavioral tests, source/mirror contracts and ADR must ship together so no destructive alternate path or contradictory cleanup promise remains. No new Host process subsystem or persistent schema is added.",
+  "risk": "material",
+  "revision": 1
+}

@@ -30,6 +30,7 @@ import { pathMatchesScope } from "../workspace_scope";
 import { observeInitiative, projectBatchPlan } from "./batch_plan";
 import { batchReason, type BatchReasonKey } from "./batch_reasons";
 import { BatchRuntimeTooOldError, classifyBatchRunStateContract, BATCH_RUN_STATES, batchTopologyDigest, isLaneBatchRecord, isTerminalBatchState, readAnyBatchRunState, recordedAuthorityHashes, type AnyBatchRunStateRecord } from "./batch_state";
+import { assertLaneWorktreeAvailable } from "./batch_worktrees";
 import { planLaneLeakRestore } from "./batch_leak_restore";
 import type {
 	BatchPlanBudget,
@@ -210,9 +211,22 @@ export function findSettledBatchRecord(root: string, initiativeSlug: string): An
 		if (!isTerminalBatchState(candidate.batch_state)) continue;
 		if (typeof candidate.batch_id !== "string" || typeof candidate.base_head !== "string") continue;
 		if (!Array.isArray(candidate.children)) continue;
-		if (!newest || Date.parse(candidate.updated_at) >= Date.parse(newest.updated_at)) newest = candidate;
+		const validated = readAnyBatchRunState(root, file.slice(0, -5));
+		if (validated && (!newest || Date.parse(validated.updated_at) >= Date.parse(newest.updated_at))) newest = validated;
 	}
 	return newest;
+}
+
+/** Existing records prove Parent provenance only at their recorded delivery tip. */
+export function parentBranchProvenance(root: string, slug: string, head: string, batchId?: string): AnyBatchRunStateRecord | null {
+	const found = findExistingActiveBatch(root, slug);
+	if (found?.corrupt) throw new Error(`batch_parent_branch_exists: unreadable provenance ${found.path}`);
+	if (found?.record && batchId && found.record.batch_id !== batchId) return null;
+	const record = found?.record ?? findSettledBatchRecord(root, slug);
+	const ref = parentBranchRef(slug);
+	if (!record || record.initiative_slug !== slug || record.branch !== ref || expectedBatchHead(record) !== head) return null;
+	const lineage = classifyBatchLineage({ root, branch: ref, expectedHead: head, childCommits: record.commits, batchId: record.batch_id });
+	return lineage.kind === "equal" ? record : null;
 }
 
 export type BatchLineage =
@@ -691,8 +705,14 @@ async function projectPreflight(
 		return reject("git_head_unreadable", err instanceof Error ? err.message : String(err));
 	}
 	if (!isResuming && isParentBranch(batchBranch)) {
-		const tip = readBatchRef(root, batchBranch);
-		if (tip && tip !== baseHead) return reject("batch_parent_branch_exists", batchBranch);
+		try {
+			const tip = readBatchRef(root, batchBranch);
+			if (tip && tip !== baseHead) return reject("batch_parent_branch_exists", batchBranch);
+			if (tip && !parentBranchProvenance(root, initiativeSlug, baseHead))
+				return reject("batch_resource_collision", `${batchBranch}: missing matching recorded provenance; resource retained`);
+		} catch (error) {
+			return reject("batch_resource_collision", error instanceof Error ? error.message : String(error));
+		}
 	} else {
 		const branchExists = spawnSync("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${batchBranch}`]);
 		if (branchExists.status === 0 && !existingBatch) return reject("branch_already_exists", batchBranch);
@@ -782,6 +802,13 @@ async function projectPreflight(
 	});
 	if (!planSurface.ok)
 		return reject(planSurface.key, planSurface.detail);
+	if (!isResuming && isParentBranch(batchBranch)) {
+		try {
+			for (const child of planSurface.surface.recovery_children) assertLaneWorktreeAvailable(root, initiativeSlug, child.task_id);
+		} catch (error) {
+			return reject("batch_resource_collision", error instanceof Error ? error.message : String(error));
+		}
+	}
 	if (activeRecord && activeRecord.plan_digest !== planSurface.surface.plan_digest)
 		return reject("plan_changed", "the recorded authorization cannot adopt a revised plan");
 	// Each child's commit carries its terminal audit pair; an ignored pair would be

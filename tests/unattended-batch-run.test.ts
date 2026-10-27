@@ -775,6 +775,7 @@ describe("shared batch preflight projection", () => {
 			git_head_unreadable: ["<detail>", "commit working changes and ensure a committed Git HEAD exists in the current Host"],
 			branch_already_exists: ["branch preflight failed: branch refs/heads/<detail> already exists", "delete or rename the conflicting branch, or commit working changes in the current Host"],
 			batch_parent_branch_exists: ["batch_parent_branch_exists: <detail> does not point at base_head", "inspect the existing Parent branch and retry with a reconciled base in the current Host"],
+			batch_resource_collision: ["batch_resource_collision: <detail>", "inspect the retained branch or Lane and its missing provenance in the current Host before retrying"],
 			batch_record_shape_retired: ["batch_record_shape_retired: v1 serial batch records are read-and-retire only", "Inspect the recorded batch, then use retire_stale_batch for this Initiative in the current Host."],
 			git_status_unreadable: ["branch preflight failed: git status is unreadable", "check the repository integrity and retry in the current Host"],
 			working_tree_dirty: ["branch preflight failed: working tree is dirty: <detail>", "resolve the listed remaining paths outside the batch committable set, then retry in the current Host"],

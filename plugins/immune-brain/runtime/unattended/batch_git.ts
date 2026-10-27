@@ -29,7 +29,7 @@ import { buildBatchFinalReport, returnBatchToCoordinator } from "./batch_final_r
 import { withParentWorktree } from "./batch_worktrees";
 import type { InitiativeObservationReader } from "./types";
 import { readTaskIntent, observeEnrollmentTaskIntent } from "../kernel/intent";
-import { classifyBatchLineage, expectedBatchHead, readActiveClaimTaskId as findActiveClaimForCriticalIntegration, findExistingActiveBatch, findSettledBatchRecord } from "./batch_preflight";
+import { classifyBatchLineage, expectedBatchHead, parentBranchProvenance, readActiveClaimTaskId as findActiveClaimForCriticalIntegration, findExistingActiveBatch, findSettledBatchRecord } from "./batch_preflight";
 import { batchRefName, buildScopedCommit, liveBatchHead, changedPaths as changedPathsBetween, createBatchRef, ignoredPaths, isProgressRef, moveBatchRef, pathsDirtyAgainst, readBatchRef, parentBranchRef, isParentBranch } from "./batch_ref";
 export { classifyBatchLineage, type BatchLineage } from "./batch_preflight";
 
@@ -179,7 +179,8 @@ export function runBatchGitPreflight(input: {
 	// 3. The batch's own hidden ref; the user's branch is never created or switched.
 	const ref = input.progress_mode === "parent_branch" ? parentBranchRef(input.initiative_slug) : batchRefName(input.batch_id);
 	try {
-		createBatchRef(root, ref, baseHead);
+		const provenance = isParentBranch(ref) ? parentBranchProvenance(root, input.initiative_slug, baseHead, input.batch_id) : null;
+		createBatchRef(root, ref, baseHead, provenance);
 	} catch (error) {
 		return {
 			ok: false,

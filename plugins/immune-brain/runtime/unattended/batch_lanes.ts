@@ -32,7 +32,7 @@ import {
 	type IntegrationCheckChild,
 } from "./batch_integration";
 import { isBatchRef, isParentBranch } from "./batch_ref";
-import { copyLanePlanningInput, createLaneWorktree, recreateLaneWorktree, removeLaneWorktree, withParentWorktree } from "./batch_worktrees";
+import { assertLaneWorktreeAvailable, copyLanePlanningInput, createLaneWorktree, recreateLaneWorktree, removeLaneWorktree, withParentWorktree } from "./batch_worktrees";
 import { deriveChildRedoEnrollment, deriveParkedChildRedoEnrollment } from "./batch_kernel_port";
 import { classifyBatchLineage, expectedBatchHead, findExistingActiveBatch, porcelainEntries, readActiveClaimTaskId, unsettledChildScopes } from "./batch_preflight";
 import { restoreProvableLaneLeaks } from "./batch_leak_restore";
@@ -768,6 +768,23 @@ export async function runLaneBatch(
 	if (persisted) {
 		record = persisted;
 		assertPlanMatches(input, record);
+		// A durable binding is provenance, not permission to adopt a different checkout.
+		if (isParentBranch(record.branch)) {
+			const common = commonDir(input.root);
+			for (const child of record.children) {
+				if (!child.lane || child.state === "released") continue;
+				const expectedPath = common ? join(common, "imm", "worktrees", record.initiative_slug, child.task_id) : null;
+				const facts = lanes.inspectLane(input.root, child.lane.path);
+				const bindingMatches = child.lane.path === expectedPath && child.lane.branch === laneBranchName(record.initiative_slug, child.task_id);
+				const headMatches = facts.head && (facts.head === child.redo_head || (child.lane.lane_commit
+					? facts.head === child.lane.lane_commit
+					: gitRead(input.root, ["merge-base", "--is-ancestor", child.lane.base_head, facts.head]).status === 0));
+				const checkoutMatches = facts.real_path === expectedPath && facts.same_repository && facts.is_worktree_root &&
+					facts.branch === child.lane.branch && headMatches;
+				if (!bindingMatches || (facts.exists && !checkoutMatches))
+					return refuse(input, record, "batch_lane_identity_mismatch", `${child.task_id}: ${child.lane.path}; recorded Lane identity does not match; resource retained`);
+			}
+		}
 		if (isTerminalBatchState(record.batch_state)) {
 			// A close that failed on the completing tick is retried here; a terminal
 			// record otherwise stays as it was.
@@ -830,6 +847,11 @@ export async function runLaneBatch(
 		if (contractRefusal) {
 			const [code, ...detail] = contractRefusal.split(": ");
 			return refuse(input, null, code!, detail.join(": "));
+		}
+		try {
+			for (const child of input.children) assertLaneWorktreeAvailable(input.root, input.initiative_slug, child.task_id);
+		} catch (error) {
+			return refuse(input, null, "batch_lane_collision", error instanceof Error ? error.message : String(error));
 		}
 		const preflight = await git.preflight({
 			root: input.root,

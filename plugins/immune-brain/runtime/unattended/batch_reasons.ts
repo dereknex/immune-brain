@@ -19,6 +19,7 @@ export type BatchReasonKey =
 	| "git_head_unreadable"
 	| "branch_already_exists"
 	| "batch_parent_branch_exists"
+	| "batch_resource_collision"
 	| "git_status_unreadable"
 	| "working_tree_dirty"
 	| "authorized_scope_underivable"
@@ -60,6 +61,11 @@ export const BATCH_REASONS: Readonly<Record<BatchReasonKey, BatchReasonSpec>> = 
 		state: "rejected",
 		reason: detail => `batch_parent_branch_exists: ${detail} does not point at base_head`,
 		recovery_action: "inspect the existing Parent branch and retry with a reconciled base in the current Host",
+	},
+	batch_resource_collision: {
+		state: "rejected",
+		reason: detail => `batch_resource_collision: ${detail}`,
+		recovery_action: "inspect the retained branch or Lane and its missing provenance in the current Host before retrying",
 	},
 	invalid_slug: {
 		state: "rejected",

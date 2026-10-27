@@ -23,25 +23,39 @@ export function worktreeDirectory(root: string): string {
 	return directory;
 }
 
-export function createLaneWorktree(root: string, slug: string, taskId: string, head: string): string {
+/** Read-only collision check, repeated immediately before exclusive creation. */
+export function assertLaneWorktreeAvailable(root: string, slug: string, taskId: string): void {
 	parentBranchRef(slug);
 	parentBranchRef(taskId);
+	const common = realpathSync(git(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]));
+	const path = join(common, "imm", "worktrees", slug, taskId);
+	const branch = `refs/heads/imm-lane/${slug}/${taskId}`;
+	const found = spawnSync("git", ["-C", root, "show-ref", "--verify", "--quiet", branch]);
+	const symbolic = spawnSync("git", ["-C", root, "symbolic-ref", "--quiet", branch]);
+	if (lstatSync(path, { throwIfNoEntry: false }) || found.status !== 1 || symbolic.status !== 1 ||
+		git(root, ["worktree", "list", "--porcelain", "-z"]).split("\0").includes(`worktree ${path}`))
+		throw new Error(`batch_worktree_failed: ${path} (${branch}) has no recorded Lane binding; resource retained`);
+}
+
+export function createLaneWorktree(root: string, slug: string, taskId: string, head: string): string {
+	assertLaneWorktreeAvailable(root, slug, taskId);
 	const branch = `imm-lane/${slug}/${taskId}`;
 	const directory = join(worktreeDirectory(root), slug);
 	mkdirSync(directory, { recursive: true });
 	if (realpathSync(directory) !== directory) throw new Error("batch_worktree_failed: Lane directory contains a symlink");
 	const path = join(directory, taskId);
-	if (existsSync(path)) {
-		// Recover only the exact clean Lane left between worktree creation and admission.
-		if (realpathSync(path) !== path ||
-			realpathSync(git(path, ["rev-parse", "--path-format=absolute", "--git-common-dir"])) !==
-			realpathSync(git(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"])) ||
-			git(path, ["symbolic-ref", "--short", "HEAD"]) !== branch || git(path, ["rev-parse", "HEAD"]) !== head ||
-			git(path, ["status", "--porcelain", "--untracked-files=all"]))
-			throw new Error("batch_worktree_failed: existing Lane does not match the requested clean base");
-		return path;
+	if (existsSync(path))
+		throw new Error(`batch_worktree_failed: ${path} (${branch}) has no recorded Lane binding; resource retained`);
+	// Git adopts existing empty directories, so reserve the path before creating any ref.
+	try { mkdirSync(path); }
+	catch (error) { throw new Error(`batch_worktree_failed: cannot exclusively reserve ${path}; resource retained`, { cause: error }); }
+	// Porcelain -b dereferences dangling symbolic refs; create the direct ref exclusively first.
+	try {
+		git(root, ["update-ref", "--no-deref", `refs/heads/${branch}`, head, "0".repeat(40)]);
+		git(root, ["worktree", "add", path, branch]);
+	} catch (error) {
+		throw new Error(`${error instanceof Error ? error.message : String(error)}; unbound Lane reservation retained at ${path}`, { cause: error });
 	}
-	git(root, ["worktree", "add", "-b", branch, path, head]);
 	return path;
 }
 

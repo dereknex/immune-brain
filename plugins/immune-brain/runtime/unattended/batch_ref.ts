@@ -19,6 +19,8 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { readAnyBatchRunState, type AnyBatchRunStateRecord } from "./batch_state";
+
 export const BATCH_REF_PREFIX = "refs/imm/batches/";
 
 /** Fully qualified Parent refs distinguish new records from legacy checked-out branches. */
@@ -74,8 +76,18 @@ function out(root: string, args: string[], failure: string, options?: { input?: 
 
 const splitZ = (text: string): string[] => text.split("\0").filter((entry) => entry.length > 0);
 
-/** The commit a hidden ref points at, or null when it does not exist. */
+function assertParentDirectRef(root: string, ref: string): void {
+	if (!isParentBranch(ref)) return;
+	const symbolic = run(root, ["symbolic-ref", "--quiet", ref]);
+	if (symbolic.status === 0)
+		throw new Error(`batch_ref_exists: ${ref} is a symbolic Parent ref; resource retained`);
+	if (symbolic.status !== 1)
+		throw new Error(`failed to inspect ${ref}: ${symbolic.stderr.trim() || "git symbolic-ref failed"}`);
+}
+
+/** The commit a progress ref points at, or null when it does not exist. */
 export function readBatchRef(root: string, ref: string): string | null {
+	assertParentDirectRef(root, ref);
 	const result = run(root, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
 	if (result.status === 0) return result.stdout.trim() || null;
 	if (result.status === 1) return null;
@@ -84,24 +96,30 @@ export function readBatchRef(root: string, ref: string): string | null {
 
 function assertParentNotCheckedOut(root: string, ref: string): void {
 	if (!isParentBranch(ref)) return;
+	assertParentDirectRef(root, ref);
 	const worktrees = out(root, ["worktree", "list", "--porcelain", "-z"], "failed to inspect Parent checkouts");
 	if (worktrees.split("\0").includes(`branch ${ref}`))
 		throw new Error(`batch_parent_branch_checked_out: ${ref} is checked out`);
 }
 
-/** Create the progress ref; an existing ref at the same commit is a retry. */
-export function createBatchRef(root: string, ref: string, base: string): void {
+/** Create exclusively; Parent reuse needs the validated record observed by preflight. */
+export function createBatchRef(root: string, ref: string, base: string, provenance: AnyBatchRunStateRecord | null = null): void {
 	assertParentNotCheckedOut(root, ref);
-	const created = run(root, ["update-ref", ref, base, NULL_OID]);
+	const created = run(root, ["update-ref", "--no-deref", ref, base, NULL_OID]);
 	if (created.status === 0) return;
-	if (readBatchRef(root, ref) === base) return;
-	throw new Error(`batch_ref_exists: ${ref} already exists at a different commit`);
+	if (!isParentBranch(ref) && readBatchRef(root, ref) === base) return;
+	if (isParentBranch(ref) && provenance?.branch === ref &&
+		JSON.stringify(readAnyBatchRunState(root, provenance.batch_id)) === JSON.stringify(provenance)) {
+		const verified = run(root, ["update-ref", "--no-deref", "--stdin"], { input: `verify ${ref} ${base}\n` });
+		if (verified.status === 0) return;
+	}
+	throw new Error(`batch_ref_exists: ${ref}: missing matching recorded provenance or expected tip; resource retained`);
 }
 
 /** Move the hidden ref only from the commit the caller expects it to hold. */
 export function moveBatchRef(root: string, ref: string, from: string, to: string): void {
 	assertParentNotCheckedOut(root, ref);
-	const moved = run(root, ["update-ref", ref, to, from]);
+	const moved = run(root, ["update-ref", "--no-deref", ref, to, from]);
 	if (moved.status !== 0)
 		throw new Error(`batch_head_lineage_broken: ${ref} did not move from ${from} to ${to}: ${moved.stderr.trim() || "git update-ref failed"}`);
 }

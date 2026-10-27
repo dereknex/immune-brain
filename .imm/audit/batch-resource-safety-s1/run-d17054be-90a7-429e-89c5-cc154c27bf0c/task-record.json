@@ -1,0 +1,336 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "batch-resource-safety-s1",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "batch-resource-safety-s1",
+    "goal": "Deliver S1 of Initiative batch-resource-safety per docs/specs/batch-resource-safety-s1.spec.md: reject unproven same-name Parent/Lane adoption while preserving record-backed creation and recovery. S2 cleanup and Executor lifecycle safety remain separate and are not delivered by S1.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Per D1 and AC1 in docs/specs/batch-resource-safety-s1.spec.md: absent Parent/Lane resources can be created, while a foreign same-tip or different-tip Parent, foreign matching Lane path/branch, or competing ref created between observation and mutation is refused without changing refs, worktree registrations, user checkout/index or fixture bytes. Positive bound control: validated record-backed same-tip reuse remains possible. Agreed seams: tests/batch-parent-branch.test.ts and tests/unattended-batch-commit.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-parent-branch.test.ts\",\n      \"tests/unattended-batch-commit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Per D3 and AC2 in docs/specs/batch-resource-safety-s1.spec.md: active record-backed resume and validated settled-Parent continuation remain possible; creation-before-binding interruption preserves the orphan and refuses automatic adoption, while interruption after binding resumes without duplicate resources. Mismatched recorded Lane identity and divergent Parent tip refuse without destructive recovery. Existing supported legacy safeguards remain. Agreed seams: tests/unattended-batch-lanes.test.ts and tests/batch-parent-branch.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\",\n      \"tests/batch-parent-branch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/batch-resource-safety-s1.md",
+      "docs/plans/batch-resource-safety-s1.intent.json",
+      "docs/specs/batch-resource-safety-s1.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run-batch.md",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_ref.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/batch_worktrees.ts",
+      "tests/batch-parent-branch.test.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/unattended-batch-commit.test.ts",
+      "tests/unattended-batch-lanes.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/batch-resource-safety-s1.intent.json",
+    "content_hash": "sha256:ad970e153bedeb44a96565b6cd41465546b53a260f493dcd2163f84cd03eb30e"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:ad970e153bedeb44a96565b6cd41465546b53a260f493dcd2163f84cd03eb30e",
+  "git_base_head": "64c2d713e32aaad6fbedbfeb3a1f273fe8a54f74",
+  "attestations": [
+    {
+      "id": "approval-qa-a0847395",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ad970e153bedeb44a96565b6cd41465546b53a260f493dcd2163f84cd03eb30e",
+      "diff_hash": "sha256:c75d3770a451ca967136b3c286b0e63740329c8ca8dce766d8766c4308eab9f5",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:a54a7e28529e7cda749a2fd70aea5a50abfb2688c3d0534a3059b1c66dbbecfc",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:a54a7e28529e7cda749a2fd70aea5a50abfb2688c3d0534a3059b1c66dbbecfc"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:a54a7e28529e7cda749a2fd70aea5a50abfb2688c3d0534a3059b1c66dbbecfc"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-127f6798",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ad970e153bedeb44a96565b6cd41465546b53a260f493dcd2163f84cd03eb30e",
+      "diff_hash": "sha256:4971f6318647e434d2fd91b585b112b0205a76f67b70dc1f7711962e5e6b0b64",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:eca3ed0d7cce690bdc0d959f2fd750e6b4a13eb690eaf4aa990b3d8261579c47",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:eca3ed0d7cce690bdc0d959f2fd750e6b4a13eb690eaf4aa990b3d8261579c47"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:eca3ed0d7cce690bdc0d959f2fd750e6b4a13eb690eaf4aa990b3d8261579c47"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-9cfe4c04",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ad970e153bedeb44a96565b6cd41465546b53a260f493dcd2163f84cd03eb30e",
+      "diff_hash": "sha256:8647750d712296ffdf0b8e4680f9aa4b29004cc3746f16ed7460ccd2201705c8",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:e27e512d9914374c1167847adf571badc106b2b54b4dd54d90a447f700ea4ac7",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:e27e512d9914374c1167847adf571badc106b2b54b4dd54d90a447f700ea4ac7"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:e27e512d9914374c1167847adf571badc106b2b54b4dd54d90a447f700ea4ac7"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-50ab9cd7",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ad970e153bedeb44a96565b6cd41465546b53a260f493dcd2163f84cd03eb30e",
+      "diff_hash": "sha256:8647750d712296ffdf0b8e4680f9aa4b29004cc3746f16ed7460ccd2201705c8",
+      "actor_id": "parent-mediated-review",
+      "summary": "已验证 packet、manifest digest 及 Git revision 的 parent/tree；本轮 delta 的独占目录预留、竞争资源拒绝、失败保留及生成 bundle 一致，未发现阻断问题。其余路径沿用前轮覆盖；按要求采用 Kernel QA 结果而未重跑测试，未绑定的预留资源仍需人工处理。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "64c2d713e32aaad6fbedbfeb3a1f273fe8a54f74",
+        "review_commit": "3307216476d343ed0586a731832d60c89854762d",
+        "review_tree": "350bd31e1b4e6e13d4cc2dea82c7ccb9a5201213",
+        "manifest_digest": "sha256:18a96a481fd10664716cec42a0a773d85484aa769e616a737115fd0c27fd52c6"
+      },
+      "reviewer_verdict_sha256": "sha256:6287133c866e22294c923fcd5753d4baf4e94c3c576240631d6af28db38c9eda"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-6d96a60274ae-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "P1 — plugins/immune-brain/runtime/unattended/batch_ref.ts:96–99：exclusive creation 仍会解引用 foreign symbolic Parent ref。用户已有 refs/heads/imm/parent → refs/heads/user-new，且目标尚不存在时，readBatchRef 将其视为 absent，update-ref 的 zero-old-value CAS 随后创建 user-new 并返回成功，违反碰撞时不得修改用户 refs 的要求。应拒绝 symbolic Parent refs，并确保 mutation-boundary 操作不会解引用它们；在 tests/batch-parent-branch.test.ts 增加 dangling symbolic Parent 的拒绝与 refs 保持不变断言。",
+      "anchor": "sha256:ee608bec74d21442c6c91750409a22e673a4ad34e8eda0f47072f8f3661b669a",
+      "evidence": {
+        "trigger": "用户预先创建 dangling symbolic ref refs/heads/imm/parent → refs/heads/user-new，且没有 batch provenance → runBatchGitPreflight 调用 createBatchRef；git update-ref 默认解引用 symbolic ref，在 user-new 上成功执行 zero-old-value CAS，创建用户命名的目标分支并错误报告 Parent 创建成功，而不是保留资源并拒绝。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:runBatchGitPreflight",
+          "plugins/immune-brain/runtime/unattended/batch_preflight.ts:parentBranchProvenance",
+          "plugins/immune-brain/runtime/unattended/batch_ref.ts:createBatchRef"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-98b1d85c6d47-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_worktrees.ts:47–51 的 Lane 路径创建仍不具备排他性：existsSync 检查后，并发创建的空目录会被 git worktree add 接管并写入 checkout；若目录非空，则 worktree add 拒绝，但此前创建的 Lane ref 已遗留。应在创建 ref 前排他地预留目标目录，拒绝接管他人先创建的路径，并在 tests/batch-parent-branch.test.ts 增加确定性的并发路径碰撞回归，断言外来目录内容、refs 和 worktree registrations 不变。",
+      "anchor": "sha256:3d43793ffdae417768e1b647bf891525d58b00380a2d47d8324946b4b6cc5b50",
+      "evidence": {
+        "trigger": "目标 Lane 路径和 branch 初始均不存在；另一进程在第 47 行 existsSync 返回 false 后、第 51 行 worktree add 前创建目标目录 → 空目录被自动采用并填入 checkout，随后可被保存为合法 Lane binding；非空目录导致创建失败，但第 50 行已创建的 Lane ref 仍保留。两种结果都违反碰撞应拒绝且不改变资源的约束。现有静态碰撞检查只覆盖检查前已存在的资源，未覆盖这一 observation-to-mutation 排他性缺口。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:runLaneBatch",
+          "plugins/immune-brain/runtime/unattended/batch_worktrees.ts:createLaneWorktree",
+          "plugins/immune-brain/runtime/unattended/batch_worktrees.ts:assertLaneWorktreeAvailable"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:batch-resource-safety-s1:2026-10-26T10:39:15.381Z",
+      "at": "2026-10-26T10:39:15.381Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-resource-safety-s1.intent.json"
+    },
+    {
+      "id": "record_approval:batch-resource-safety-s1:2026-10-26T10:40:43.983Z",
+      "at": "2026-10-26T10:40:43.983Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-a0847395\naction_v2_sha256:50bf16c1867265da3a00dcc6009513c66b8359819bab2a255a1e99af55505640",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-e477f91fd0f3a9cd",
+        "issued_at": "2026-10-26T10:40:43.983Z"
+      }
+    },
+    {
+      "id": "request_rework:batch-resource-safety-s1:2026-10-26T13:05:31.563Z",
+      "at": "2026-10-26T13:05:31.563Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:730e0120a1d338b15603e73133c66683b28e9124866617e626c23b829dd7221c",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-f84f913f4669faac",
+        "issued_at": "2026-10-26T13:05:31.563Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "64c2d713e32aaad6fbedbfeb3a1f273fe8a54f74",
+        "review_commit": "04d57ee353bb1487a2165f373891bc11a876648d",
+        "review_tree": "4a84f52d328c297d4465285a8e72f8b2b37933d1",
+        "manifest_digest": "sha256:63d89cc6af8804c703fa1bcf5545089098fa85a11ef7d1c93bf246895ba91777"
+      }
+    },
+    {
+      "id": "resolve_finding:batch-resource-safety-s1:2026-10-26T13:24:20.158Z",
+      "at": "2026-10-26T13:24:20.158Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-6d96a60274ae-1-review-1\naction_v2_sha256:88f60ad23a651c2a4636c622220425cc91964be07874a23feea632b31143a274"
+    },
+    {
+      "id": "freeze_artifacts:batch-resource-safety-s1:2026-10-26T13:24:32.045Z",
+      "at": "2026-10-26T13:24:32.045Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-resource-safety-s1.intent.json"
+    },
+    {
+      "id": "record_approval:batch-resource-safety-s1:2026-10-26T13:26:07.927Z",
+      "at": "2026-10-26T13:26:07.927Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-127f6798\naction_v2_sha256:043ed5e340440920d66437f74f9c0e5c1fc30583833254d3897b788398ee00ab",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-28f5f06839589fc7",
+        "issued_at": "2026-10-26T13:26:07.927Z"
+      }
+    },
+    {
+      "id": "request_rework:batch-resource-safety-s1:2026-10-26T13:31:44.771Z",
+      "at": "2026-10-26T13:31:44.771Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:180180339717957cb973a49a7fa53e904a3fcdb29c0fd74c83eb0d617a930ae9",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-cc5dd9081c7cda13",
+        "issued_at": "2026-10-26T13:31:44.771Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "64c2d713e32aaad6fbedbfeb3a1f273fe8a54f74",
+        "review_commit": "e423ea38ded7b005fb688297b91d568d12a028f6",
+        "review_tree": "faeb27e585a58657f500515b2c1257894cc2b365",
+        "manifest_digest": "sha256:d4f1c7fa766d559e2dc7e723e22900860bc238075affff257eafd3ee2b84da7d"
+      }
+    },
+    {
+      "id": "resolve_finding:batch-resource-safety-s1:2026-10-26T13:40:31.463Z",
+      "at": "2026-10-26T13:40:31.463Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-98b1d85c6d47-1-review-1\naction_v2_sha256:eaeb0753256bc2871d8044407d90b9f2c86c0ff222c9e55cb85534ac91be3fab"
+    },
+    {
+      "id": "freeze_artifacts:batch-resource-safety-s1:2026-10-26T13:40:41.682Z",
+      "at": "2026-10-26T13:40:41.682Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-resource-safety-s1.intent.json"
+    },
+    {
+      "id": "record_approval:batch-resource-safety-s1:2026-10-26T13:42:11.631Z",
+      "at": "2026-10-26T13:42:11.631Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-9cfe4c04\naction_v2_sha256:40f29ad6a7970712a68ade23d67acace01a557e5d2784138aefd698192bdd82b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-c6d52c7f0555c4d4",
+        "issued_at": "2026-10-26T13:42:11.631Z"
+      }
+    },
+    {
+      "id": "record_approval:batch-resource-safety-s1:2026-10-26T13:45:35.715Z",
+      "at": "2026-10-26T13:45:35.715Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-50ab9cd7\naction_v2_sha256:6b6588eb533a54b612675f83073a101bb6e3e7c6b136671cc8c6a70072ca0724",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-4a46542671e3ca18",
+        "issued_at": "2026-10-26T13:45:35.715Z"
+      }
+    },
+    {
+      "id": "complete:batch-resource-safety-s1:2026-10-26T13:45:37.280Z",
+      "at": "2026-10-26T13:45:37.280Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:e24b9349230a23d51ae029b63e6663e6a84ff88deea8956c2198381d5389ef0c"
+    }
+  ]
+}

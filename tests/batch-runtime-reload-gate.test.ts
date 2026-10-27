@@ -86,7 +86,7 @@ function fixture(integrated: Integrated = "differs", waiting: Waiting = "pending
 
 	record.commits = [commit];
 	record.children = record.children.map(c => c.task_id === "a"
-		? { ...c, state: "integrated", commit, lane: { path: join(root, "removed-lane-a"), branch: "imm-lane/reload/a", base_head: base, lane_commit: commit } }
+		? { ...c, state: "integrated", commit, lane: { path: join(root, ".git/imm/worktrees/reload/a"), branch: "imm-lane/reload/a", base_head: base, lane_commit: commit } }
 		: c.task_id === "c"
 			? { ...c, state: "enrolled", lane: { path: laneC, branch: "imm-lane/reload/c", base_head: base, lane_commit: null, run_id: seeded.run_id } }
 			: waiting === "redo"

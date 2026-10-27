@@ -1,0 +1,41 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "batch-resource-safety-s1",
+  "owner": "user",
+  "goal": "Deliver S1 of Initiative batch-resource-safety per docs/specs/batch-resource-safety-s1.spec.md: reject unproven same-name Parent/Lane adoption while preserving record-backed creation and recovery. S2 cleanup and Executor lifecycle safety remain separate and are not delivered by S1.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Per D1 and AC1 in docs/specs/batch-resource-safety-s1.spec.md: absent Parent/Lane resources can be created, while a foreign same-tip or different-tip Parent, foreign matching Lane path/branch, or competing ref created between observation and mutation is refused without changing refs, worktree registrations, user checkout/index or fixture bytes. Positive bound control: validated record-backed same-tip reuse remains possible. Agreed seams: tests/batch-parent-branch.test.ts and tests/unattended-batch-commit.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-parent-branch.test.ts\",\n      \"tests/unattended-batch-commit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Per D3 and AC2 in docs/specs/batch-resource-safety-s1.spec.md: active record-backed resume and validated settled-Parent continuation remain possible; creation-before-binding interruption preserves the orphan and refuses automatic adoption, while interruption after binding resumes without duplicate resources. Mismatched recorded Lane identity and divergent Parent tip refuse without destructive recovery. Existing supported legacy safeguards remain. Agreed seams: tests/unattended-batch-lanes.test.ts and tests/batch-parent-branch.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\",\n      \"tests/batch-parent-branch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/batch-resource-safety-s1.md",
+    "docs/plans/batch-resource-safety-s1.intent.json",
+    "docs/specs/batch-resource-safety-s1.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-run-batch.md",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "plugins/immune-brain/runtime/unattended/batch_ref.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/unattended/batch_worktrees.ts",
+    "tests/batch-parent-branch.test.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/unattended-batch-commit.test.ts",
+    "tests/unattended-batch-lanes.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

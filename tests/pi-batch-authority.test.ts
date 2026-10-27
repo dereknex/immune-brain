@@ -188,11 +188,18 @@ describe("acc-pi-batch-gate", () => {
 		expect(result.state).toBe("blocked"); expect(result.reason).toContain("foreign-task"); expect(gates).toBe(0);
 		expect(snapshot(f.root)).toEqual(before); expect(existsSync(join(f.root, ".imm/state/batches"))).toBe(false);
 	});
-	it("conflicting Parent branch rejects before the gate and preserves all refs", async () => {
-		const f = fixture("branch-conflict"); git(f.root, "branch", `imm/${f.slug}`, "HEAD~1"); const before = snapshot(f.root); let gates = 0;
+	for (const tip of ["HEAD", "HEAD~1"]) it(`conflicting Parent at ${tip} rejects before the gate and preserves all refs`, async () => {
+		const f = fixture("branch-conflict"); git(f.root, "branch", `imm/${f.slug}`, tip); const before = snapshot(f.root); let gates = 0;
 		const result = await runBatch({ root: f.root, initiativeSlug: f.slug, readInitiative: async () => f.observation, confirmBatch: async () => { gates++; return "accept"; } });
 		expect(result.state).toBe("rejected"); expect(result.reason).toContain("branch"); expect(result.recovery_action).toContain("branch");
 		expect(gates).toBe(0); expect(snapshot(f.root)).toEqual(before); noBatchWrites(f.root);
+	});
+	it("refuses a same-tip Parent created during confirmation without adopting it", async () => {
+		const f = fixture("branch-race"); let gates = 0; let afterCreation = snapshot(f.root);
+		const result = await runBatch({ root: f.root, initiativeSlug: f.slug, readInitiative: async () => f.observation,
+			confirmBatch: async () => { gates++; git(f.root, "branch", `imm/${f.slug}`); afterCreation = snapshot(f.root); return "accept"; } });
+		expect(gates).toBe(1); expect(result.state).toBe("rejected"); expect(result.reason).toContain("recorded provenance");
+		expect(snapshot(f.root)).toEqual(afterCreation); noBatchWrites(f.root);
 	});
 	it("critical-only Parent uses the ordinary batch gate", async () => {
 		const f = fixture("critical-only"); let details = "";
