@@ -333,6 +333,22 @@ never rewrite" invariant is preserved — see Architecture invariants).
    counted as zero. The timestamps are observations only: no gate,
    budget, or admission reads them. When S3 lands, verifier rounds get
    the same pair on the verification history event.
+9. **Per-model breakdown (added 2026-10-27).** Item 3's record report
+   aggregates all reviewers into one number, so a model upgrade has no
+   evidence behind it: a stronger model and a weaker one are
+   indistinguishable in the report. The coordinator records the reviewer
+   model identity on the review history entry at verdict submission — the
+   model the host reports it dispatched, never inferred from session logs —
+   and the verifier model on the verification history event once S3 lands.
+   The record report (item 3) additionally breaks recall, clean-case FP
+   rate, and rounds-to-pass down by reviewer model; the retro analyzer
+   (item 4) already reports per author model from session logs, and the
+   record-based breakdown is the new part. Records written before this
+   change carry no model and are excluded from the per-model series, never
+   counted as a model. The breakdown is a dimension of the item 5 gate
+   comparison (a configuration is a prompt + model pair), never a gate by
+   itself. This item also implements the model-identity recording the
+   review-model formalization proposed: the host reports what it used.
 
 ### S2: verifier role
 

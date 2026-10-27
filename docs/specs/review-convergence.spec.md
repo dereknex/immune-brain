@@ -71,6 +71,13 @@ Related contracts: `docs/specs/review-round-replan-boundary.spec.md` (the bounda
 4. **No invented threat model.** Reviewers judge against the threat model and supported environment declared in the Spec or TaskIntent goal. A defect that requires an attacker, input source, repository format, encoding, or platform outside that declaration is advisory. When nothing is declared, assume inputs come from the repository's own tooling and the user's trusted workspace. `security_boundary` is defined as security, data-loss, or authority boundaries the change actually crosses.
 5. **Standards entry.** Add a thin root `CODING_STANDARDS.md` that points to `docs/reference/code-quality-guard.md` and states the repository rule verbatim: a code smell or maintainability heuristic is reported only when it creates a concrete correctness, regression, security, or significant maintenance risk in the reviewed change. It contains no other rules (single source of truth).
 6. Regenerate `dist/role-prompts/code-review.md`, `dist/docs/reference/code-quality-guard.md`, and `dist/claude/mcp-server.mjs`.
+7. **Blast radius in the approval summary (added 2026-10-27).** The Reviewer
+   states the blast radius of the diff in the approval `summary`: a tier
+   (`low` / `medium` / `high`) and the load-bearing paths — central files,
+   migrations, persisted shape. The summary is already recorded on the
+   attestation, so this needs no schema change; `imm-retro` and the eval
+   read it as text. The tier never gates anything. A structured field is a
+   later slice if querying needs it.
 
 ### S1: delta review from round three
 

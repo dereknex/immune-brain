@@ -25,7 +25,9 @@ authorized (a new seam, a new default, a new dependency) is a finding, not
 executor freedom; cite the acceptance whose principle it violates. If you
 cannot understand the diff from the frozen snapshot and the acceptance alone,
 that is a finding about the work (missing context), never a reason to ask for
-more context or to read beyond the bounded evidence.
+more context or to read beyond the bounded evidence. In the approval summary,
+state the blast radius in one clause: tier low, medium, or high, and the
+load-bearing paths (central files, migrations, persisted shape).
 
 ## Code Quality Guard
 
