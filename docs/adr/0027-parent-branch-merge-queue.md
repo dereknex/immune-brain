@@ -82,4 +82,6 @@ when a Host-owned Executor identity/exit observation exists that binds to the
 repository, Lane and execution generation, invalidates on relaunch, fails
 closed on interruption and timeout, is tested for live/exited/unknown processes
 in every provider, and keeps unknown-file protection. There is no time-based
-relaxation.
+relaxation. The redo re-issue path that spent a grant is retired, so that
+proposal must reintroduce a grant-spending redo alongside Lane recreation;
+durable `redo_grants` are only restored to bound a parked child.

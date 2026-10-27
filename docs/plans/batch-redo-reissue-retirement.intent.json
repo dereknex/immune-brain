@@ -1,0 +1,31 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "batch-redo-reissue-retirement",
+  "owner": "user",
+  "goal": "Retire the dormant batch redo re-issue path left without a production caller by batch-resource-safety S2 (PR #313; S2 Review advisory review-1): delete deriveChildRedoEnrollment and deriveParkedChildRedoEnrollment from runtime/unattended/batch_kernel_port.ts, and reissueChildEnrollment, the registry reissueChild member and prepareChildEnrollment's redo branch from runtime/kernel/batch_authority.ts, so no code path can spend a redo grant while Lane recreation is disallowed. Durable redo_grants restoration (restoreChild/rehydrateConsumption) and S2's park-without-spend behavior stay. ADR 0027's restoration paragraph notes that restoring automatic cleanup must reintroduce a grant-spending redo path. No user-visible change: the removed functions have no production caller, so batch behavior and reports are unchanged.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Per the S2 Review advisory and the Retirement Completion Contract: the redo re-issue source is deleted, so no file under plugins/immune-brain/runtime or tests, and not the generated Claude bundle, names reissueChild, reissueChildEnrollment, deriveChildRedoEnrollment or deriveParkedChildRedoEnrollment, and the checked-in mcp-server.mjs matches a fresh generate. Negative: a surviving export, test caller or stale bundle copy of any of these names fails the check. Agreed seams: absence git grep over those paths, tests/claude-host-package.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! git grep -n -E 'reissueChild|deriveChildRedoEnrollment|deriveParkedChildRedoEnrollment' -- plugins/immune-brain/runtime plugins/immune-brain/dist/claude/mcp-server.mjs tests && bun test tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Per repository evidence (batch_lanes.ts rehydrateConsumption and S2 D2 in docs/specs/batch-resource-safety-s2.spec.md): grants recorded before S2 still restore and still bound redo. Positive: a durable Lane record with 0, 1 or 2 redo_grants rehydrates to that count without resetting it, and a durably granted redo parks needs_human with batch_lane_redo_retained leaving branch, worktree registration, Lane presence and grant count unchanged across repeated ticks. Negative: restoreChild rejects -1, 3, 0.5, NaN and a decreasing count without altering consumption. Bound: first-time child enrollment still refuses an already consumed slot (batch_child_slot_consumed) and a non-descendant head (batch_head_lineage_broken). Agreed seams: tests/batch-redo-slot.test.ts, tests/kernel-batch-authority.test.ts, tests/batch-merge-queue.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-redo-slot.test.ts\",\n      \"tests/kernel-batch-authority.test.ts\",\n      \"tests/batch-merge-queue.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/batch-redo-reissue-retirement.md",
+    "docs/adr/0027-parent-branch-merge-queue.md",
+    "docs/plans/batch-redo-reissue-retirement.intent.json",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+    "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts",
+    "tests/batch-merge-queue.test.ts",
+    "tests/batch-redo-slot.test.ts",
+    "tests/kernel-batch-authority.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

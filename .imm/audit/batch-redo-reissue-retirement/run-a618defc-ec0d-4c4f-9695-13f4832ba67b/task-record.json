@@ -1,0 +1,133 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "batch-redo-reissue-retirement",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "batch-redo-reissue-retirement",
+    "goal": "Retire the dormant batch redo re-issue path left without a production caller by batch-resource-safety S2 (PR #313; S2 Review advisory review-1): delete deriveChildRedoEnrollment and deriveParkedChildRedoEnrollment from runtime/unattended/batch_kernel_port.ts, and reissueChildEnrollment, the registry reissueChild member and prepareChildEnrollment's redo branch from runtime/kernel/batch_authority.ts, so no code path can spend a redo grant while Lane recreation is disallowed. Durable redo_grants restoration (restoreChild/rehydrateConsumption) and S2's park-without-spend behavior stay. ADR 0027's restoration paragraph notes that restoring automatic cleanup must reintroduce a grant-spending redo path. No user-visible change: the removed functions have no production caller, so batch behavior and reports are unchanged.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Per the S2 Review advisory and the Retirement Completion Contract: the redo re-issue source is deleted, so no file under plugins/immune-brain/runtime or tests, and not the generated Claude bundle, names reissueChild, reissueChildEnrollment, deriveChildRedoEnrollment or deriveParkedChildRedoEnrollment, and the checked-in mcp-server.mjs matches a fresh generate. Negative: a surviving export, test caller or stale bundle copy of any of these names fails the check. Agreed seams: absence git grep over those paths, tests/claude-host-package.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! git grep -n -E 'reissueChild|deriveChildRedoEnrollment|deriveParkedChildRedoEnrollment' -- plugins/immune-brain/runtime plugins/immune-brain/dist/claude/mcp-server.mjs tests && bun test tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Per repository evidence (batch_lanes.ts rehydrateConsumption and S2 D2 in docs/specs/batch-resource-safety-s2.spec.md): grants recorded before S2 still restore and still bound redo. Positive: a durable Lane record with 0, 1 or 2 redo_grants rehydrates to that count without resetting it, and a durably granted redo parks needs_human with batch_lane_redo_retained leaving branch, worktree registration, Lane presence and grant count unchanged across repeated ticks. Negative: restoreChild rejects -1, 3, 0.5, NaN and a decreasing count without altering consumption. Bound: first-time child enrollment still refuses an already consumed slot (batch_child_slot_consumed) and a non-descendant head (batch_head_lineage_broken). Agreed seams: tests/batch-redo-slot.test.ts, tests/kernel-batch-authority.test.ts, tests/batch-merge-queue.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-redo-slot.test.ts\",\n      \"tests/kernel-batch-authority.test.ts\",\n      \"tests/batch-merge-queue.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/batch-redo-reissue-retirement.md",
+      "docs/adr/0027-parent-branch-merge-queue.md",
+      "docs/plans/batch-redo-reissue-retirement.intent.json",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+      "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts",
+      "tests/batch-merge-queue.test.ts",
+      "tests/batch-redo-slot.test.ts",
+      "tests/kernel-batch-authority.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/batch-redo-reissue-retirement.intent.json",
+    "content_hash": "sha256:f7fe496498008be276abd604368cfd7cf5d48ca4503fd8e36cf0c709a81b8377"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:f7fe496498008be276abd604368cfd7cf5d48ca4503fd8e36cf0c709a81b8377",
+  "git_base_head": "8dbdcc512383d4509a3de54f7baef54daefb1a1f",
+  "attestations": [
+    {
+      "id": "approval-qa-a3cde430",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f7fe496498008be276abd604368cfd7cf5d48ca4503fd8e36cf0c709a81b8377",
+      "diff_hash": "sha256:0b01d2b00c4771994f505f57e6091aa5dc334c0a7604a241527a871b9b99a465",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:fbe267dc9da20d1f00efe296856c11003ea0cd3abffb36b4fa399efc4e5f202e",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:fbe267dc9da20d1f00efe296856c11003ea0cd3abffb36b4fa399efc4e5f202e"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:fbe267dc9da20d1f00efe296856c11003ea0cd3abffb36b4fa399efc4e5f202e"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-0994d617",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f7fe496498008be276abd604368cfd7cf5d48ca4503fd8e36cf0c709a81b8377",
+      "diff_hash": "sha256:0b01d2b00c4771994f505f57e6091aa5dc334c0a7604a241527a871b9b99a465",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance checks out: the review commit has one parent (the base) and the expected tree. The change deletes reissueChild, reissueChildEnrollment, deriveChildRedoEnrollment and deriveParkedChildRedoEnrollment from runtime, tests and the bundle, and none of those names is left. First-time enrollment still refuses an already consumed slot (batch_child_slot_consumed) and a head that does not descend from the base (batch_head_lineage_broken). Restoring 0, 1 or 2 grants, rejecting -1, 3, 0.5, NaN and a lower count, and parking with batch_lane_redo_retained without changing resources are still asserted at the agreed seams.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "8dbdcc512383d4509a3de54f7baef54daefb1a1f",
+        "review_commit": "ca11b039a9bac49f8091f3745e812ec2ebfb26c4",
+        "review_tree": "99d663f51ca057d448d8234df86ed16281580bd5",
+        "manifest_digest": "sha256:33a14fcdd003f4869c24da44977fad6ae43f9e3d35cd4132721b96f7103ff426"
+      },
+      "reviewer_verdict_sha256": "sha256:77ae03cd42558c980584c4ff0af6a5a582c084a7fe825326610ffbad1658fa66"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:batch-redo-reissue-retirement:2026-10-27T05:49:14.631Z",
+      "at": "2026-10-27T05:49:14.631Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-redo-reissue-retirement.intent.json"
+    },
+    {
+      "id": "record_approval:batch-redo-reissue-retirement:2026-10-27T05:49:52.099Z",
+      "at": "2026-10-27T05:49:52.099Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-a3cde430\naction_v2_sha256:9a421ada991fac0df06678af6ee17bc3b7b70c7936f6022d9940d90de318b6c3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-27T05:49:52.099Z"
+      }
+    },
+    {
+      "id": "record_approval:batch-redo-reissue-retirement:2026-10-27T05:50:51.754Z",
+      "at": "2026-10-27T05:50:51.754Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-0994d617\naction_v2_sha256:4a6fa145af10808ab9bfdce1fa926013a805b0094485d386b7f9bd227e960ac6",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-27T05:50:51.754Z"
+      }
+    },
+    {
+      "id": "complete:batch-redo-reissue-retirement:2026-10-27T05:50:53.234Z",
+      "at": "2026-10-27T05:50:53.234Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:bb813004aee9a90757325af6981c9cf1bd6211f0d23aaadec0ca50d490f547ac"
+    }
+  ]
+}

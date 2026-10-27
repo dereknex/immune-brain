@@ -3,66 +3,16 @@
 // Kernel-facing member; a Host supplies only advanceTask, its own progression
 // seam. Git operations are not Kernel-port members: the runner drives them
 // through BatchRunnerGitPort alone.
-import { existsSync } from "node:fs";
 import { observeParentCompletion } from "./batch_git";
 import type { InitiativeObservation } from "./types";
 import { projectAssurance } from "../kernel/assurance_projection";
-import { deriveChildEnrollment, reissueChildEnrollment, type DeriveChildEnrollmentInput, type BatchAuthorizationBinding, type BatchAuthorityRegistry } from "../kernel/batch_authority";
+import { deriveChildEnrollment, type BatchAuthorizationBinding, type BatchAuthorityRegistry } from "../kernel/batch_authority";
 import { enrollTask } from "../kernel/enrollment";
 import type { EnrollmentAuthorityRegistry } from "../kernel/enrollment_authority";
-import { localRunId, readSettledRunEvidence, readTaskRecordRaw } from "../kernel/storage";
+import { readTaskRecordRaw } from "../kernel/storage";
 import { readActiveClaimTaskId, isOwnBatchClaim } from "./batch_preflight";
 import type { AnyBatchRunStateRecord } from "./batch_state";
 import { batchQaFailureFacts, type BatchChildAdvanceResult, type BatchRunnerKernelPort } from "./batch_runner";
-
-/**
- * Prove the recorded prior Lane run settled before spending a redo grant.
- * `root` is the new enrollment checkout; the old Lane must still be readable.
- */
-export function deriveChildRedoEnrollment(
-	root: string,
-	registry: BatchAuthorityRegistry,
-	input: DeriveChildEnrollmentInput & { prior_lane_root: string; prior_run_id: string },
-) {
-	registry.inspect(input.capability, input.binding);
-	if (!input.prior_run_id || localRunId(input.prior_lane_root, input.task_id) !== input.prior_run_id)
-		throw new Error(`batch_child_redo_run_mismatch: ${input.task_id}`);
-	const prior = readSettledRunEvidence(input.prior_lane_root, input.task_id);
-	if (!prior) throw new Error(`batch_child_redo_run_active: ${input.task_id}`);
-	if (prior.run_id !== input.prior_run_id)
-		throw new Error(`batch_child_redo_run_mismatch: ${input.task_id}`);
-	return reissueChildEnrollment(root, registry, input);
-}
-
-/** A fresh resume may replace a stopped, lost or unreadable run, never a live owned run. */
-export async function deriveParkedChildRedoEnrollment(
-	root: string,
-	registry: BatchAuthorityRegistry,
-	input: DeriveChildEnrollmentInput & { prior_lane_root: string; prior_run_id: string; parked_since: string },
-) {
-	const authorized = registry.inspect(input.capability, input.binding);
-	if (!Number.isFinite(Date.parse(input.parked_since)) ||
-		!(Date.parse(authorized.issued_at) > Date.parse(input.parked_since)))
-		throw new Error("batch_child_redo_confirmation_required");
-	const fresh = await projectAssurance(input.prior_lane_root, input.task_id);
-	if (fresh.error === null && (existsSync(input.prior_lane_root) || fresh.projection.run_id !== null)) {
-		if (fresh.projection.run_id !== input.prior_run_id)
-			throw new Error(`batch_child_redo_run_mismatch: ${input.task_id}`);
-		if (fresh.projection.open_user_decision_count || fresh.projection.replan_required_ids.length ||
-			fresh.projection.lifecycle !== "stopped")
-			throw new Error(`batch_child_redo_run_active: ${input.task_id}`);
-		const prior = readSettledRunEvidence(input.prior_lane_root, input.task_id);
-		if (!prior || prior.run_id !== input.prior_run_id)
-			throw new Error(`batch_child_redo_run_mismatch: ${input.task_id}`);
-		// Terminal projections omit open findings; settlement must not erase a user boundary.
-		if (prior.record.findings.some(f => f.status === "open" &&
-			(f.kind === "unresolved_user_decision" || f.kind === "replan_required")))
-			throw new Error(`batch_child_redo_decision_unresolved: ${input.task_id}`);
-	} else if (fresh.error !== null && /contract must equal|unknown field|schema version .* incompatible|unknown contract/i.test(fresh.error)) {
-		throw new Error(`batch_lane_contract_mismatch: ${input.task_id}`);
-	}
-	return reissueChildEnrollment(root, registry, input);
-}
 
 /** Inputs the shared port closes over. Only advanceTask is Host-owned. */
 export interface BatchKernelPortInput {

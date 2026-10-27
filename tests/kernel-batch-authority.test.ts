@@ -547,43 +547,7 @@ describe("batch child authority subject", () => {
 	});
 });
 
-describe("batch child redo slots", () => {
-	test("reissues exactly two consumed slots under the original binding", () => {
-		const root = makeRoot(["t1", "t2"]);
-		const children = [childFor(root, "t1"), childFor(root, "t2")];
-		const binding = bindingFor(root, children);
-		const registry = createBatchAuthorityRegistry();
-		const capability = registry.issue(binding, children, NOW);
-		for (const count of [1, 2]) {
-			registry.consumeChild(capability, binding, "t1");
-			expect(registry.reissueChild(capability, binding, "t1")).toBe(count);
-			expect(registry.redoGrants(capability, "t1")).toBe(count);
-			expect(registry.isChildConsumed(capability, "t1")).toBe(false);
-			expect(registry.redoGrants(capability, "t2")).toBe(0);
-		}
-		registry.consumeChild(capability, binding, "t1");
-		expect(() => registry.reissueChild(capability, binding, "t1")).toThrow("batch_child_redo_exhausted");
-		expect(registry.isChildConsumed(capability, "t1")).toBe(true);
-		expect(registry.redoGrants(capability, "t1")).toBe(2);
-	});
-
-	test("refuses unconsumed, absent, foreign and mismatched requests without spending a grant", () => {
-		const root = makeRoot(["t1"]);
-		const children = [childFor(root, "t1")];
-		const binding = bindingFor(root, children);
-		const registry = createBatchAuthorityRegistry();
-		const capability = registry.issue(binding, children, NOW);
-		expect(() => registry.reissueChild(capability, binding, "t1")).toThrow("batch_child_slot_not_consumed");
-		expect(() => registry.reissueChild(capability, binding, "absent")).toThrow("batch_child_not_in_plan");
-		registry.consumeChild(capability, binding, "t1");
-		for (const patch of [{ plan_digest: "changed" }, { nonce: "changed" }, { base_head: "0".repeat(40) }])
-			expect(() => registry.reissueChild(capability, { ...binding, ...patch }, "t1")).toThrow("mismatch");
-		const foreign = createBatchAuthorityRegistry().issue(binding, children, NOW);
-		expect(() => registry.reissueChild(foreign, binding, "t1")).toThrow("not recognized");
-		expect(registry.redoGrants(capability, "t1")).toBe(0);
-		expect(registry.isChildConsumed(capability, "t1")).toBe(true);
-	});
-
+describe("batch child redo grant restoration", () => {
 	test("restoration rejects invalid or decreasing counts without altering consumption", () => {
 		const root = makeRoot(["t1"]);
 		const children = [childFor(root, "t1")];

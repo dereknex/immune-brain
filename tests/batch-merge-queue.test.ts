@@ -10,8 +10,7 @@ import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { projectAssurance } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 import { localRunId, readTaskRecordRaw, recoverKernelStoreFollowUps } from "../plugins/immune-brain/runtime/kernel/storage";
 import { readRunRowByTask, readWorkspaceRow, updateRunTerminal, withKernelTransaction, writeWorkspaceRow } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
-import { createBatchKernelPort, deriveChildRedoEnrollment } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
-import { withParentWorktree } from "../plugins/immune-brain/runtime/unattended/batch_worktrees";
+import { createBatchKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
 import { runBatchGitPreflight, type BatchRunnerGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import { createDefaultLaneGitPort, runLaneBatch } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
 import { readBatchLaneRunState, writeBatchLaneRunState, type BatchLaneRunReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
@@ -227,16 +226,12 @@ if(process.argv.includes('--check')) process.exit(fs.readFileSync('bundle.txt','
 		const first = await fx.tick();
 		const head = first.commits[0]!;
 		const oldLane = fx.laneOf("b");
-		const oldRun = localRunId(oldLane, "b")!;
 		fx.settle("b");
 		const { commit } = await fx.input.git!.commitChild(oldLane, "b", "queue", fx.base);
 		const binding = fx.input.kernel.validateBatchAuthorization({ registry: fx.input.registry, capability: fx.input.capability,
 			binding: { batch_id: "queue", plan_digest: fx.input.plan_digest, base_head: fx.base, initiative_slug: "queue", budget: fx.input.budget } });
-		// A grant recorded before retention: its target stays durable.
-		await withParentWorktree(fx.root, head, async root => {
-			deriveChildRedoEnrollment(root, fx.input.registry, { capability: fx.input.capability, binding,
-				task_id: "b", expected_head: head, now: NOW, prior_lane_root: oldLane, prior_run_id: oldRun });
-		});
+		// A grant recorded before retention: it reaches the registry only through durable restoration.
+		fx.input.registry.restoreChild(fx.input.capability, binding, "b", 1);
 		const record = readBatchLaneRunState(fx.root, "queue")!;
 		record.children[1] = { ...record.children[1]!, state: "lane_committed", redo_grants: 1, redo_head: head,
 			lane: { ...record.children[1]!.lane!, lane_commit: commit } };
