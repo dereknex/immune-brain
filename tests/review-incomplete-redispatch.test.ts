@@ -38,7 +38,7 @@ describe("Review incomplete is a durable non-verdict outcome", () => {
    const after = f.record().record!;
    expect(after.findings).toEqual(before.findings); expect(after.attestations).toEqual(before.attestations);
    expect(after.lifecycle).toBe("active"); expect(after.artifact_state).toBe("frozen");
-   expect(reviewIncompleteHistory(after.history, s)).toEqual({ count: 1, previous_budget: initial });
+   expect(reviewIncompleteHistory(after.history, s)).toMatchObject({ count: 1, previous_budget: initial, round_limit: 2, retry_authorized: false });
    await c.onSessionShutdown(); c = f.create();
    expect((await c.advance(f.taskId, f.ctx)).state).toBe("review_ready");
    expect(f.requests[1]!.maxTurns).toBe(Math.min(96, initial * 2));

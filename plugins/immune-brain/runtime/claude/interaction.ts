@@ -86,6 +86,7 @@ export interface NativeConfirmationInput {
 	planDigest?: string;
 	/** Present only for a replan boundary: the exits the user chooses between. */
 	reworkExits?: ReworkExitsReadiness;
+	reviewRetryNotice?: string;
 	batchDetails?: {
 		initiative_slug: string;
 		batch_branch: string;

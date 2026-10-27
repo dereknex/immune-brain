@@ -324,6 +324,8 @@ export interface TaskActionBase {
 }
 
 export interface ReviewIncompleteFacts {
+	/** Optional only for reading history; live writes require the current contract. */
+	review_contract_hash?: string;
 	intent_content_hash: string;
 	diff_hash: string;
 	turn_budget: number;
@@ -332,6 +334,7 @@ export interface ReviewIncompleteFacts {
 }
 
 export type TaskAction =
+	| (TaskActionBase & { type: "authorize_review_retry"; intent_content_hash: string; review_contract_hash: string })
 	| (TaskActionBase & ReviewIncompleteFacts & { type: "record_review_incomplete" })
 	| (TaskActionBase & { type: "record_finding"; finding: TaskFinding })
 	| (TaskActionBase & { type: "resolve_finding"; finding_id: string })

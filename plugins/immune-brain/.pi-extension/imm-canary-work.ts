@@ -132,6 +132,7 @@ import {
 	type ReworkChoice,
 } from "../runtime/kernel/assurance_projection";
 import type { TaskRecord } from "../runtime/kernel/types";
+import { currentReviewContractHash } from "../runtime/role_prompt_bridge";
 import type { RoleDelegationContext } from "../runtime/role_prompt_bridge";
 import { buildLoopAction, buildLoopRoleDispatch } from "../runtime/loop_contract";
 import {
@@ -201,6 +202,7 @@ export type { AssuranceRole } from "./pi-canary-assurance";
 export type AuthorizeOperation =
 	| "approve-breaking-intent-revision"
 	| "resolve-user-decision"
+	| "authorize-review-retry"
 	| "authorize-rework"
 	| "stop";
 
@@ -973,6 +975,9 @@ export default function (
 			}
 		}
 		// Only a replan boundary offers exits; both Hosts render the same ones.
+		const reviewRetry = operation === "authorize-review-retry" ? projection.projection.authorization.review_retry : undefined;
+		if (operation === "authorize-review-retry" && (!reviewRetry || reviewRetry.review_contract_hash !== currentReviewContractHash()))
+			throw new Error("Review retry readiness or contract changed");
 		const reworkExits = operation === "authorize-rework" ? projection.projection.authorization.exits : undefined;
 		let reworkChoice: ReworkChoice | undefined;
 		const dialogSummary = [
@@ -992,6 +997,7 @@ export default function (
 				]
 			: [];
 		const dialogDetails = [
+			...(reviewRetry ? [reviewRetryNotice(reviewRetry)] : []),
 			`Operation: ${operation}`,
 			...(userDecisionOperation
 				? [
@@ -1089,7 +1095,8 @@ export default function (
 			if (
 				operation !== "stop" &&
 				operation !== "approve-breaking-intent-revision" &&
-				operation !== "authorize-rework"
+				operation !== "authorize-rework" &&
+				operation !== "authorize-review-retry"
 			)
 				await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
 			progression.closeInvocation(invocation);
@@ -1105,7 +1112,8 @@ export default function (
 			if (
 				operation !== "stop" &&
 				operation !== "approve-breaking-intent-revision" &&
-				operation !== "authorize-rework"
+				operation !== "authorize-rework" &&
+				operation !== "authorize-review-retry"
 			)
 				await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
 			progression.closeInvocation(invocation);
@@ -1153,6 +1161,8 @@ export default function (
 							next_intent: nextIntent!,
 							next_intent_ref: nextIntentRef!,
 						}
+					: reviewRetry
+						? { op: "authorize_review_retry" as const, review_contract_hash: reviewRetry.review_contract_hash, intent_content_hash: projection.projection.intent_content_hash }
 					: operation === "authorize-rework"
 						? reworkChoice?.exit === "accept_residual_risk"
 							? { op: "accept_residual_risk" as const, reason: reworkChoice.reason }
@@ -1187,6 +1197,7 @@ export default function (
 						intent_content_hash: nextIntentHash ?? projection.projection.intent_content_hash,
 						diff_hash: operationDiffHash,
 						actor_id: LITERAL_USER_ACTOR_ID,
+						...(exactOperation.op === "authorize_review_retry" ? { review_contract_hash: exactOperation.review_contract_hash } : {}),
 						...(exactOperation.op === "approve_breaking_intent_revision"
 							? { next_intent: exactOperation.next_intent, next_intent_ref: exactOperation.next_intent_ref }
 							: {}),
@@ -1200,6 +1211,7 @@ export default function (
 					const result = (await app.execute({
 						root: ctx.cwd,
 						task_id: taskId,
+						reviewContractHash: currentReviewContractHash(),
 						operation: { ...exactOperation, capability, actor_id: LITERAL_USER_ACTOR_ID } as never,
 						prior_intent_token: priorIntent.token,
 						diffProvider: (root: string, record: TaskRecord) =>
@@ -1265,6 +1277,7 @@ export default function (
 // Hosts; this module re-exports it for its existing callers and tests.
 import {
 	deriveAuthorizationOperation,
+	reviewRetryNotice,
 	type DerivedAuthorizationOperation,
 } from "../runtime/authorization_operation";
 
@@ -1556,6 +1569,7 @@ async function mintCapability(
 		next_intent_ref?: unknown;
 		reason?: string;
 		rounds?: number;
+		review_contract_hash?: string;
 		finding_id?: string;
 		resolution?: string;
 		now: string;
@@ -1572,6 +1586,7 @@ async function mintCapability(
 		actor_id: input.actor_id,
 		...(input.reason !== undefined ? { reason: input.reason } : {}),
 		...(input.rounds !== undefined ? { rounds: input.rounds } : {}),
+		...(input.review_contract_hash ? { review_contract_hash: input.review_contract_hash, intent_content_hash: input.intent_content_hash } : {}),
 		...(input.findings !== undefined ? { findings: input.findings } : {}),
 		...(input.approval !== undefined ? { approval: input.approval } : {}),
 		...(input.next_intent !== undefined ? { next_intent: input.next_intent } : {}),
@@ -1644,6 +1659,7 @@ async function executeOrdinaryOperation(
 			root: ctx.cwd,
 			task_id: input.taskId,
 			operation: operation as never,
+			reviewContractHash: currentReviewContractHash(),
 			prior_intent_token: priorIntent.token,
 			diffProvider: (root: string, record: TaskRecord) =>
 				diffSnapshotOf(root, nextScope ? withNextScope(record, nextScope) : record),

@@ -162,6 +162,7 @@ export function applyTaskAction(
 			action.type === "approve_breaking_intent_revision" ||
 			action.type === "request_rework" ||
 			action.type === "authorize_rework" ||
+			action.type === "authorize_review_retry" ||
 			action.type === "accept_residual_risk" ||
 			action.type === "stop" ||
 			action.type === "resolve_user_decision";
@@ -233,6 +234,9 @@ export function applyTaskAction(
 			throw new KernelInvariantError([
 				`workspace is already owned by ${workspace.state.current_working}`,
 			]);
+
+		if (action.type === "authorize_review_retry" && workspace.state.current_working !== task_id)
+			throw new KernelInvariantError(["review retry requires the current workspace owner"]);
 
 		// All preflight passed: consume tokens and authority, then commit.
 		consumeIntentToken(prior_intent_token);
@@ -322,6 +326,7 @@ export function applyTaskAction(
 			nextWorkspaceState,
 			input.artifact_transition?.relocations,
 			authorityRunId,
+			action.type === "authorize_review_retry",
 		);
 	});
 }

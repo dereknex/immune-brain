@@ -3,6 +3,7 @@
 // and the confirmed begin-drain path with capability-bound application.
 
 import { describe, expect, mock, test } from "bun:test";
+import { reviewIncompleteFixture, exhaustReviewForRetry } from "./fixtures/review-incomplete-fixture";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -482,6 +483,40 @@ describe("pi canary user authority", () => {
 			readiness: { state: "none", blocked: null },
 		}).blocked).toMatch(/no unique host-derived authorization operation/);
 	});
+
+	for (const accepted of [false, true]) test(`Review retry native confirmation (${accepted}) preserves history and QA`, async () => {
+		const f = reviewIncompleteFixture();
+		const surface = loadSurface();
+		try {
+			await exhaustReviewForRetry(f);
+			const before = f.record().record!, revision = f.record().revision;
+			const ui = makeUI();
+			const result = await surface.tool.execute("retry", { task_id: f.taskId, action: { op: "request_authorization" } }, undefined, undefined, ctxFor(f.root, ui, accepted ? true : { downs: 1 }));
+			const state = parseToolState(result);
+			expect(ui.confirmCalls).toHaveLength(1);
+			expect(ui.confirmCalls[0]!.body).toContain("exactly one additional Review");
+			const after = f.record().record!;
+			expect(after.attestations).toEqual(before.attestations);
+			expect(after.artifact_state).toBe("frozen");
+			if (accepted) {
+				expect(state).toMatchObject({ state: "applied", operation: "authorize-review-retry" });
+				expect(after.history.slice(0, -1)).toEqual(before.history);
+				expect(after.history.at(-1)!.type).toBe("authorize_review_retry");
+				const c = f.create();
+				expect((await c.advance(f.taskId, f.ctx)).state).toBe("review_ready");
+				expect(f.counts().qaRuns).toBe(1);
+				const s = await f.snapshot(c);
+				const { snapshotDigest } = await import("../plugins/immune-brain/runtime/assurance/coordinator");
+				expect(await c.submitReview(f.taskId, f.ctx, { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: f.taskId, snapshot_digest: snapshotDigest(s), decision: "pass", approval: { kind: "review", authority_role: "reviewer", summary: "complete coverage passed", inspected_paths: s.dirty_files } })).toEqual({ state: "completed" });
+				expect(f.counts().qaRuns).toBe(1);
+				await c.onSessionShutdown();
+			} else {
+				expect(state).toMatchObject({ state: "cancelled" });
+				expect(after).toEqual(before);
+				expect(f.record().revision).toBe(revision);
+			}
+		} finally { await surface.shutdown(); f.cleanup(); }
+	}, 60_000);
 
 	test("request_authorization derives resolve-user-decision and applies through the shared confirm path", async () => {
 		const root = makeEnrolledRoot();

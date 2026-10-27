@@ -177,6 +177,8 @@ not bypass them. Do not poll or create detached jobs.
 
 ## Decisions and Recovery
 
+A snapshot exhausted by two `incomplete` Reviews must not be redispatched automatically. When Kernel exposes `authorization.state: authorize_review_retry`, call `request_authorization` directly: the Host confirms exactly one extra attempt, bound to the current run, record, intent, diff and loaded Review contract. Preserve all history, QA evidence and frozen artifacts. A known previous contract must differ; legacy history without a contract hash requires an explicit “previous contract unknown; change cannot be verified” notice in the native gate. This legacy reader is drain-only (owner: runtime; remove when hash-less active tasks have drained). A grant cannot be repeated for the same snapshot, reused after content/intent changes, or treated as a Review approval. If the grant is exhausted or unavailable, stop and report the remaining constraint; do not clear counters or manufacture a TaskIntent change.
+
 - Resume from authority facts, not prose. After an uncertain interruption, bind
 the exact `task_id`, `run_id`, record revision, lifecycle, artifact state,
 obligation, and claim from the Kernel projection before acting. A compaction

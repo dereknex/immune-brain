@@ -20,7 +20,7 @@ import { createInvocationRegistry, type InvocationState, type InvocationToken } 
 import type { ReviewBundle, ReviewManifestV5 } from "./review_evidence";
 import { createVerdictAuthority, type VerdictAuthority } from "./verdict_authority";
 import type { ConfirmationReferenceSource } from "./host_port";
-import { buildRoleDelegationPacket, STATIC_REVIEW_RULES } from "../role_prompt_bridge";
+import { buildRoleDelegationPacket, STATIC_REVIEW_RULES, currentReviewContractHash } from "../role_prompt_bridge";
 import { projectAssurance, type AssuranceProjectionResult } from "../kernel/assurance_projection";
 import { taskStatusIdentity } from "../workspace_scope";
 import { pluginSourceSkewWarning, type PluginSourceSkewWarning } from "../plugin_source_skew";
@@ -217,7 +217,7 @@ export interface ReviewIncompleteOutcome {
 }
 export type ChildReviewResult = AssuranceVerdict | ReviewIncompleteOutcome;
 type ReviewIncompleteResult = { state: "review_incomplete"; reason: string; recovery_action: string };
-const REVIEW_INCOMPLETE_RECOVERY = "Inspect the incomplete Review coverage, reduce the change or revise the TaskIntent, then enter imm-run explicitly; do not redispatch this snapshot.";
+const REVIEW_INCOMPLETE_RECOVERY = "Inspect the incomplete Review coverage, request_authorization may offer one snapshot-bound retry under a changed Review contract (legacy unknown contract requires explicit disclosure); otherwise reduce the change or revise the TaskIntent. Never redispatch without Kernel authorization.";
 
 export interface ReviewRevisionIdentity {
 	contract: "assurance_kernel/review_revision_identity/v1";
@@ -509,7 +509,7 @@ export type AssuranceAdvanceResult = AssuranceRecoveryFields & (
 	 */
 	| { state: "review_preparation_failed"; operation: "review"; operation_id: string; reason: string }
 	| { state: "settlement_unknown"; operation: "qa" | "review"; operation_id: string; reason: string }
-	| { state: "blocked"; reason: string; code?: "verdict_invalid" }
+	| { state: "blocked"; reason: string; code?: "verdict_invalid"; recovery_action?: string }
 	| { state: "completed" }
 	| { state: "stopped" });
 
@@ -566,7 +566,7 @@ export interface AssuranceCoordinatorPorts {
 		options: { signal?: AbortSignal; onProgress?: (progress: QaVerificationProgress) => void },
 	): Promise<AssuranceVerdict>;
 	writeReviewEvidence(input: { snapshot: SnapshotDescriptor; evidence: ReviewBundle | ReviewManifestV5 }): ReviewEvidence;
-	applyOrdinaryOperation(ctx: HostContext, input: { taskId: string; operation: { op: string; actor_id: string; snapshot?: AssuranceCorrelation & { workspace_revision: string }; turn_budget?: number; inspected_paths?: string[]; reason?: string } }): Promise<unknown>;
+	applyOrdinaryOperation(ctx: HostContext, input: { taskId: string; operation: { op: string; actor_id: string; snapshot?: AssuranceCorrelation & { workspace_revision: string }; turn_budget?: number; review_contract_hash?: string; inspected_paths?: string[]; reason?: string } }): Promise<unknown>;
 	advanceBeforeProjection?: () => Promise<void>;
 	qaBeforeProjection?: () => Promise<void>;
 	qaBeforeAuthorityCommit?: () => Promise<void>;
@@ -1007,6 +1007,7 @@ interface ReviewReservation {
 	snapshot: SnapshotDescriptor;
 	hostReservation: HostReviewReservation;
 	turnBudget: number;
+	reviewContractHash: string;
 	verdictCorrectionRequired: boolean;
 	evidence: { path: string; remove(): void };
 }
@@ -1240,7 +1241,12 @@ export class AssuranceCoordinator {
 				if (pending) this.releaseReviewReservation(taskId, pending);
 				this.unknownOperations.delete(taskId);
 			}
-			if (reviewIncompleteHistory(parked.record?.history, projection.projection).count >= 2)
+			if (projection.projection.authorization.state === "authorize_review_retry")
+				return { state: "blocked", reason: "review_retry_requires_authorization", recovery_action: "request_authorization" };
+			const incomplete = reviewIncompleteHistory(parked.record?.history, projection.projection);
+			if (incomplete.retry_authorized && incomplete.authorized_contract_hash !== currentReviewContractHash())
+				return { state: "blocked", reason: "authorized Review contract changed; restore the confirmed contract before dispatch" };
+			if (incomplete.count >= incomplete.round_limit)
 				return { state: "review_incomplete", reason: "Review coverage remained incomplete after two rounds", recovery_action: REVIEW_INCOMPLETE_RECOVERY };
 			ensureOperationLive();
 			if (parked.record?.findings.some((finding) => finding.kind === "replan_required" && finding.status === "open")) return { state: "blocked", reason: "review requires a durable replan; the task is paused for a user decision" };
@@ -1427,7 +1433,8 @@ export class AssuranceCoordinator {
 			try {
 				const stored = await this.ports.readTaskRecord(ctx.cwd, taskId);
 				const rounds = reviewIncompleteHistory(stored.record?.history, review.snapshot);
-				if (rounds.count >= 2) {
+				if (rounds.retry_authorized && rounds.authorized_contract_hash !== currentReviewContractHash()) throw new Error("authorized Review contract changed before dispatch");
+				if (rounds.count >= rounds.round_limit) {
 					evidence.remove();
 					return { state: "review_incomplete", reason: "Review coverage remained incomplete after two rounds", recovery_action: REVIEW_INCOMPLETE_RECOVERY };
 				}
@@ -1456,6 +1463,7 @@ export class AssuranceCoordinator {
 				snapshot: review.snapshot,
 				hostReservation,
 				turnBudget,
+				reviewContractHash: currentReviewContractHash(),
 				verdictCorrectionRequired: false,
 				evidence,
 			};
@@ -1551,17 +1559,21 @@ export class AssuranceCoordinator {
 			if (receiptError.release) this.releaseReviewReservation(taskId, reservation, receiptError.reason);
 			return { state: "blocked", reason: receiptError.reason, recovery_action: receiptError.recovery_action };
 		}
+		if (reservation.reviewContractHash !== currentReviewContractHash()) {
+			this.releaseReviewReservation(taskId, reservation);
+			return { state: "blocked", reason: "Review contract changed during dispatch", recovery_action: "advance_assurance" };
+		}
 		if (verdict.decision === "incomplete") {
 			try {
 				await this.ports.applyOrdinaryOperation(ctx, { taskId, operation: {
 					op: "record_review_incomplete", actor_id: "parent-mediated-review", snapshot: { ...reservation.correlation, workspace_revision: reservation.snapshot.workspace_revision },
-					turn_budget: reservation.turnBudget, inspected_paths: verdict.inspected_paths, reason: verdict.reason,
+					turn_budget: reservation.turnBudget, review_contract_hash: reservation.reviewContractHash, inspected_paths: verdict.inspected_paths, reason: verdict.reason,
 				} });
 				const stored = await this.ports.readTaskRecord(ctx.cwd, taskId);
 				const rounds = reviewIncompleteHistory(stored.record?.history, reservation.snapshot);
 				if (rounds.count === 0 || rounds.previous_budget !== reservation.turnBudget) throw new Error("incomplete mutation is not observable");
 				this.releaseReviewReservation(taskId, reservation);
-				return rounds.count >= 2
+				return rounds.count >= rounds.round_limit
 					? { state: "review_incomplete", reason: verdict.reason, recovery_action: REVIEW_INCOMPLETE_RECOVERY }
 					: { state: "blocked", reason: "review_incomplete_retry", recovery_action: "advance_assurance" };
 			} catch (error) {

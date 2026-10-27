@@ -609,6 +609,7 @@ export function elicitationParams(input: NativeConfirmationInput) {
 		input.intentContentHash ? `Intent hash: ${input.intentContentHash}` : null,
 		input.bindingDigest ? `Binding digest: ${input.bindingDigest}` : null,
 		input.gitBaseNotice,
+		input.reviewRetryNotice,
 	].filter(Boolean);
 	return {
 		mode: "form",

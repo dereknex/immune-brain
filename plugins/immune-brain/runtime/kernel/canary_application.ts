@@ -51,7 +51,8 @@ import type {
 } from "./types";
 
 export type CanaryOperation =
-	| { op: "record_review_incomplete"; actor_id: string; snapshot: { record_revision: string; workspace_revision: string; intent_content_hash: string; diff_hash: string }; turn_budget: number; inspected_paths: string[]; reason: string }
+	| { op: "authorize_review_retry"; capability: object; actor_id: string; intent_content_hash: string; review_contract_hash: string }
+	| { op: "record_review_incomplete"; actor_id: string; snapshot: { record_revision: string; workspace_revision: string; intent_content_hash: string; diff_hash: string }; turn_budget: number; inspected_paths: string[]; reason: string; review_contract_hash?: string }
 	| { op: "freeze_artifacts"; actor_id: string }
 	| { op: "record_finding"; finding: Omit<TaskFinding, "status" | "source" | "review_round">; actor_id: string }
 	| { op: "resolve_finding"; finding_id: string; actor_id: string }
@@ -78,6 +79,8 @@ export interface CanaryExecuteInput {
 	task_id: string;
 	operation: CanaryOperation;
 	prior_intent_token: TaskIntentIdentityToken;
+	/** Trusted host-computed current Review contract; required for retry and incomplete writes. */
+	reviewContractHash?: string;
 	/** Trusted injected diff provider; the application derives the diff identity.
 	 * Defaults to the shared delivery identity selector when omitted. */
 	diffProvider?: (root: string, record: TaskRecord) => string | { diff_hash: string; changed_paths?: readonly string[] };
@@ -150,6 +153,8 @@ export function capabilityActionFor(input: {
 	finding_id?: string;
 	resolution?: unknown;
 	review_revision?: ReviewRevisionIdentityV1;
+	intent_content_hash?: string;
+	review_contract_hash?: string;
 	/** authorize_rework only: further Review rounds granted, 1-5. */
 	rounds?: number;
 }): TaskAction {
@@ -169,6 +174,8 @@ export function capabilityActionFor(input: {
 		diff_hash: "sha256:" + "0".repeat(64),
 	};
 	switch (input.op) {
+		case "authorize_review_retry":
+			return { ...base, type: "authorize_review_retry", intent_content_hash: input.intent_content_hash, review_contract_hash: input.review_contract_hash } as TaskAction;
 		case "record_approval":
 			return { ...base, approval: input.approval } as TaskAction;
 		case "request_rework":
@@ -303,6 +310,10 @@ export function createCanaryApplication(
 			throw new KernelInvariantError(["task id is not a safe file identity"]);
 		const now = input.now ?? new Date().toISOString();
 		const operation = input.operation;
+		if (operation.op === "authorize_review_retry" || operation.op === "record_review_incomplete") {
+			if (!input.reviewContractHash || !/^sha256:[a-f0-9]{64}$/.test(input.reviewContractHash) || operation.review_contract_hash !== input.reviewContractHash)
+				throw new KernelInvariantError(["operation requires the trusted current Review contract hash"]);
+		}
 		const at = now;
 		// A settled run clears the active record, so a lost settlement response can
 		// only be answered from the committed operation — and only with the
@@ -387,11 +398,15 @@ export function createCanaryApplication(
 		let action: unknown;
 		let capability: object | undefined;
 		switch (operation.op) {
+			case "authorize_review_retry":
+				capability = operation.capability;
+				action = { ...base, type: "authorize_review_retry", intent_content_hash: operation.intent_content_hash, review_contract_hash: operation.review_contract_hash };
+				break;
 			case "record_review_incomplete": {
 				const expected = operation.snapshot;
 				if (expected.record_revision !== snapshot.record_revision || expected.workspace_revision !== snapshot.workspace_revision || expected.intent_content_hash !== snapshot.intent_content_hash || expected.diff_hash !== diffHash)
 					throw new KernelInvariantError(["Review incomplete snapshot changed"]);
-				action = { ...base, type: "record_review_incomplete", intent_content_hash: snapshot.intent_content_hash, turn_budget: operation.turn_budget, inspected_paths: operation.inspected_paths, reason: operation.reason };
+				action = { ...base, type: "record_review_incomplete", intent_content_hash: snapshot.intent_content_hash, turn_budget: operation.turn_budget, inspected_paths: operation.inspected_paths, reason: operation.reason, review_contract_hash: operation.review_contract_hash };
 				break;
 			}
 			case "record_finding":

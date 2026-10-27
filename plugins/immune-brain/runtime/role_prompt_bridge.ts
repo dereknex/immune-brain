@@ -149,6 +149,11 @@ export function rolePromptSearchDirs(moduleDir: string): string[] {
  * Read the packaged prompt so the runtime follows the bytes shipped to a
  * consumer. The canonical source is synced into this dist-local directory.
  */
+/** Binds retry authority to the exact shared instructions loaded by this Host. */
+export function currentReviewContractHash(): string {
+	return `sha256:${createHash("sha256").update(JSON.stringify([loadRolePrompt("code-review"), STATIC_REVIEW_RULES])).digest("hex")}`;
+}
+
 export function loadRolePrompt(role: InternalRole): string {
 	const spec = roleSpec(role);
 	for (const dir of rolePromptSearchDirs(RUNTIME_DIR)) {

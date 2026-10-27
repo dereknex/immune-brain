@@ -1430,6 +1430,7 @@ export function commitTaskRecordLocked(
 	nextWorkspace: WorkspaceState,
 	artifactRelocations: ArtifactRelocationV1[] = [],
 	capabilityRunId?: string,
+	preserveWorkspace = false,
 ): StoredTaskMutationV3 {
 	validateTaskId(taskId);
 	const nextRecordContent = `${JSON.stringify(nextRecord, null, 2)}\n`;
@@ -1451,7 +1452,9 @@ export function commitTaskRecordLocked(
 		if (artifactRelocations.length > 0)
 			setPendingRelocations(db, run.run_id, JSON.stringify(artifactRelocations));
 		const workspaceRevision = assertWorkspaceExpectation(db, expectedWorkspaceHash, "workspace");
-		const workspaceRevisionAfter = writeWorkspaceRow(
+		if (preserveWorkspace && readWorkspaceRow(db).current_run_id !== run.run_id)
+			throw new KernelStoreConflictError("history-only mutation requires the current workspace owner");
+		const workspaceRevisionAfter = preserveWorkspace ? workspaceRevision : writeWorkspaceRow(
 			db,
 			workspaceRevision,
 			run.run_id,

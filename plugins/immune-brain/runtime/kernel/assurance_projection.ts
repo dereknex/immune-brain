@@ -25,6 +25,8 @@ import { readRiskFloor, type RiskFloor } from "./risk_floor";
 import { inspectSpecBinding } from "./spec_binding";
 import { MAX_REWORK_GRANT_ROUNDS } from "./validation";
 import { taskDeliveryIdentity } from "../workspace_scope";
+import { currentReviewContractHash } from "../role_prompt_bridge";
+import { reviewIncompleteHistory } from "./reducer";
 import type { AssuranceObligation, TaskIntentV1, TaskRecord, TaskRecordV3 } from "./types";
 import type { TaskRecordV2 } from "./legacy_task_record";
 
@@ -40,7 +42,8 @@ export interface AssuranceAuthorizationReadiness {
 	 * - "authorize_rework": an open replan boundary can be overridden by the user;
 	 * - "none": nothing uniquely decidable from Kernel facts.
 	 */
-	state: "resolve_user_decision" | "authorize_rework" | "none";
+	state: "resolve_user_decision" | "authorize_rework" | "authorize_review_retry" | "none";
+	review_retry?: { review_contract_hash: string; previous_contract_hash: string | null };
 	/** Non-null only when Kernel facts prove the authorization is blocked. */
 	blocked: string | null;
 	/**
@@ -306,6 +309,13 @@ function projectFromRecord(
 		floor,
 	);
 	const approvalKinds = freshApprovalKinds(record, record.intent_ref.content_hash, snapshot.diff_hash);
+	const incomplete = decision.next_obligation === "run_review" && record.artifact_state === "frozen"
+		? reviewIncompleteHistory(record.history, { intent_content_hash: record.intent_ref.content_hash, diff_hash: snapshot.diff_hash })
+		: null;
+	const retryContract = incomplete?.count === 2 && !incomplete.retry_authorized ? currentReviewContractHash() : null;
+	const retryAuthorization: AssuranceAuthorizationReadiness | null = retryContract && retryContract !== incomplete?.last_contract_hash
+		? { state: "authorize_review_retry", blocked: null, review_retry: { review_contract_hash: retryContract, previous_contract_hash: incomplete?.last_contract_hash ?? null } }
+		: null;
 	const openUserDecisionCount = record.findings.filter(
 		(finding) => finding.kind === "unresolved_user_decision" && finding.status === "open",
 	).length;
@@ -334,7 +344,7 @@ function projectFromRecord(
 		completion_ready: decision.complete,
 		authorization: !inspectSpecBinding(intent).ok
 			? { state: "none", blocked: "invalid Spec binding requires a valid breaking intent revision" }
-			: deriveAssuranceAuthorization({
+			: retryAuthorization ?? deriveAssuranceAuthorization({
 			next_obligation: decision.next_obligation,
 			open_user_decision_count: openUserDecisionCount,
 			exits: deriveReworkExits(record),

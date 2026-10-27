@@ -51,7 +51,8 @@ import { preparePiCanary, revalidatePiCanary } from "../kernel/pi_canary_prepare
 import { runDeterministicQa } from "../assurance/qa";
 import { taskDeliveryIdentity } from "../workspace_scope";
 import { batchReason } from "../unattended/batch_reasons";
-import { deriveAuthorizationOperation } from "../authorization_operation";
+import { deriveAuthorizationOperation, reviewRetryNotice } from "../authorization_operation";
+import { currentReviewContractHash } from "../role_prompt_bridge";
 import { LITERAL_USER_ACTOR_ID, canonicalActorId } from "../kernel/actor_identity";
 import {
 	captureStagedIntent,
@@ -205,6 +206,7 @@ async function mintCapability(
 		next_intent_ref?: unknown;
 		reason?: string;
 		rounds?: number;
+		review_contract_hash?: string;
 		finding_id?: string;
 		resolution?: string;
 		now: string;
@@ -218,6 +220,7 @@ async function mintCapability(
 		actor_id: input.actor_id,
 		...(input.reason !== undefined ? { reason: input.reason } : {}),
 		...(input.rounds !== undefined ? { rounds: input.rounds } : {}),
+		...(input.review_contract_hash ? { review_contract_hash: input.review_contract_hash, intent_content_hash: input.intent_content_hash } : {}),
 		...(input.findings !== undefined ? { findings: input.findings } : {}),
 		...(input.approval !== undefined ? { approval: input.approval } : {}),
 		...(input.next_intent !== undefined ? { next_intent: input.next_intent } : {}),
@@ -395,6 +398,7 @@ export class ClaudeRuntime {
 		bindingDigest?: string;
 		gitBaseNotice?: string;
 		reworkExits?: ReworkExitsReadiness;
+		reviewRetryNotice?: string;
 	} = {}): Promise<{ confirmation_ref: string; reworkChoice?: ReworkChoice }> {
 		throwIfCancelled(meta.signal);
 		const probe = probeHost(this.env, process.platform, this.hostVersion);
@@ -645,11 +649,12 @@ export class ClaudeRuntime {
 			return repairKernelAuthority(this.cwd, taskId, authority.revision);
 		}
 		if (!isPrivilegedOperation(operation) && operation !== "request_authorization") throw new Error(`unsupported privileged operation ${operation}`);
-		let op: PrivilegedOperation | "request_authorization" | "resolve_user_decision" | "authorize_rework" | "accept_residual_risk" = operation;
+		let op: PrivilegedOperation | "request_authorization" | "resolve_user_decision" | "authorize_rework" | "authorize_review_retry" | "accept_residual_risk" = operation;
 		let decisionOp: { finding_id: string; resolution: string } | undefined;
 		// Set only at a replan boundary: the exits the literal user chooses between.
 		let reworkExits: ReworkExitsReadiness | undefined;
 		let reworkChoice: ReworkChoice | undefined;
+		let reviewRetry: { review_contract_hash: string; previous_contract_hash: string | null } | undefined;
 		const nextIntent = extra.next_intent ? parseProjectTaskIntent(this.cwd, extra.next_intent) : undefined;
 		// The whole operation is judged against the scope it asks for (D6).
 		const nextScope = nextIntent?.scope_hint;
@@ -671,6 +676,10 @@ export class ClaudeRuntime {
 				if (open.length !== 1) throw new Error(`resolve-user-decision requires exactly one open user decision; found ${open.length}`);
 				op = "resolve_user_decision";
 				decisionOp = { finding_id: open[0].id, resolution: `resume after literal-user decision: ${open[0].summary}` };
+			} else if (derived.operation === "authorize-review-retry") {
+				op = "authorize_review_retry";
+				reviewRetry = projection.projection.authorization.review_retry;
+				if (!reviewRetry || reviewRetry.review_contract_hash !== currentReviewContractHash()) throw new Error("Review retry contract changed");
 			} else {
 				op = "authorize_rework";
 				reworkExits = projection.projection.authorization.exits;
@@ -722,6 +731,7 @@ export class ClaudeRuntime {
 				intentContentHash: nextIntentHash ?? projection.projection.intent_content_hash,
 				bindingDigest: `${preparedDiffHash}:${nextIntentHash ?? ""}`,
 				...(reworkExits ? { reworkExits } : {}),
+				...(reviewRetry ? { reviewRetryNotice: reviewRetryNotice(reviewRetry) } : {}),
 			});
 			reworkChoice = gate.reworkChoice;
 		} catch (error) {
@@ -773,7 +783,7 @@ export class ClaudeRuntime {
 				actor_id: canonicalActorId(actorId),
 				now,
 				confirmation_ref: confirmation,
-				...(op === "approve_breaking_intent_revision" ? { next_intent: nextIntent, next_intent_ref: nextIntentRef } : {}),
+				...(op === "authorize_review_retry" && reviewRetry ? { review_contract_hash: reviewRetry.review_contract_hash } : {}),				...(op === "approve_breaking_intent_revision" ? { next_intent: nextIntent, next_intent_ref: nextIntentRef } : {}),
 				...(op === "resolve_user_decision" && decisionOp ? decisionOp : {}),
 				...(op === "stop" ? { reason: stopReason(extra.reason) } : {}),
 				...(op === "authorize_rework" && reworkChoice?.exit === "grant_rounds" ? { rounds: reworkChoice.rounds } : {}),
@@ -786,6 +796,7 @@ export class ClaudeRuntime {
 				operation: {
 					op,
 					capability,
+					...(op === "authorize_review_retry" && reviewRetry ? { review_contract_hash: reviewRetry.review_contract_hash, intent_content_hash: projection.projection.intent_content_hash } : {}),
 					actor_id: canonicalActorId(actorId),
 					...(op === "approve_breaking_intent_revision" ? { next_intent: nextIntent, next_intent_ref: nextIntentRef } : {}),
 					...(op === "resolve_user_decision" && decisionOp ? decisionOp : {}),
@@ -794,6 +805,7 @@ export class ClaudeRuntime {
 					...(op === "accept_residual_risk" && reworkChoice?.exit === "accept_residual_risk" ? { reason: reworkChoice.reason } : {}),
 				} as never,
 				prior_intent_token: priorIntent.token,
+				reviewContractHash: currentReviewContractHash(),
 				diffProvider,
 				now,
 			});
@@ -847,6 +859,7 @@ export class ClaudeRuntime {
 				root: ctx.cwd,
 				task_id: input.taskId,
 				operation: operation as never,
+				reviewContractHash: currentReviewContractHash(),
 				prior_intent_token: priorIntent.token,
 				diffProvider: nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf,
 				now: new Date().toISOString(),

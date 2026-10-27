@@ -3,6 +3,7 @@
 // ReducedTaskMutation; the caller cannot construct or serialize it.
 
 import { createHash } from "node:crypto";
+import { isLiteralUserActor } from "./actor_identity";
 import { completionDecision, projectTask } from "./completion";
 import { NO_RISK_FLOOR, type RiskFloor } from "./risk_floor";
 import { anchorForEvidence, isFreshPassingQaAttestation, refutationIdentity, refutationIsLive } from "./refutation";
@@ -186,6 +187,7 @@ function hasPrivilegedKind(action: TaskAction): boolean {
 		action.type === "approve_breaking_intent_revision" ||
 		action.type === "request_rework" ||
 		action.type === "authorize_rework" ||
+		action.type === "authorize_review_retry" ||
 		action.type === "accept_residual_risk" ||
 		action.type === "stop" ||
 		action.type === "resolve_user_decision"
@@ -227,22 +229,40 @@ export function effectiveReviewRoundBudget(record: TaskRecord): number {
 }
 
 /** Stable across factual history writes, manifest regeneration and coordinator restarts. */
-export function reviewIncompleteHistory(history: ReadonlyArray<{ type: string; reason: string }> = [], identity: { intent_content_hash: string; diff_hash: string }): { count: number; previous_budget: number | null } {
-	let count = 0, previous_budget: number | null = null;
+export function reviewIncompleteHistory(history: ReadonlyArray<{ type: string; reason: string }> = [], identity: { intent_content_hash: string; diff_hash: string }) {
+	type Rounds = { count: number; previous_budget: number | null; round_limit: 2 | 3; last_contract_hash: string | null; retry_authorized: boolean; authorized_contract_hash: string | null };
+	const empty = (): Rounds => ({ count: 0, previous_budget: null, round_limit: 2, last_contract_hash: null, retry_authorized: false, authorized_contract_hash: null });
+	const snapshots = new Map<string, Rounds>();
 	for (const entry of history) {
-		if (entry.type !== "record_review_incomplete") continue;
+		if (entry.type !== "record_review_incomplete" && entry.type !== "authorize_review_retry") continue;
 		const lines = entry.reason.split("\n");
-		if (lines.length !== 2) throw new KernelInvariantError(["invalid incomplete history"]);
+		if (lines.length !== 2 || !recordedActionFingerprint(entry.reason)) throw new KernelInvariantError(["invalid incomplete history"]);
 		let facts: Record<string, unknown>;
 		try { facts = JSON.parse(lines[0]!); } catch { throw new KernelInvariantError(["invalid incomplete history"]); }
-		if (!facts || Object.keys(facts).sort().join(",") !== "diff_hash,inspected_paths,intent_content_hash,reason,turn_budget" || !recordedActionFingerprint(entry.reason)) throw new KernelInvariantError(["invalid incomplete history"]);
-		const parsed = parseTaskAction({ ...facts, type: "record_review_incomplete", event_id: "history", at: "history", actor_id: "history", expected_record_hash: facts.diff_hash, expected_workspace_hash: facts.diff_hash });
-		if (parsed.type !== "record_review_incomplete") throw new KernelInvariantError(["invalid incomplete history"]);
-		if (parsed.intent_content_hash !== identity.intent_content_hash || parsed.diff_hash !== identity.diff_hash) continue;
-		if (count >= 2 || (previous_budget !== null && parsed.turn_budget !== Math.min(96, previous_budget * 2))) throw new KernelInvariantError(["invalid incomplete history sequence"]);
-		count++; previous_budget = parsed.turn_budget;
+		if (!facts || typeof facts !== "object" || Array.isArray(facts)) throw new KernelInvariantError(["invalid incomplete history"]);
+		const fields = entry.type === "authorize_review_retry"
+			? "diff_hash,intent_content_hash,review_contract_hash"
+			: ("review_contract_hash" in facts ? "diff_hash,inspected_paths,intent_content_hash,reason,review_contract_hash,turn_budget" : "diff_hash,inspected_paths,intent_content_hash,reason,turn_budget");
+		if (Object.keys(facts).sort().join(",") !== fields) throw new KernelInvariantError(["invalid incomplete history"]);
+		// Drain-only legacy reader: remove hash-less history support once old active tasks drain; owner: runtime.
+		const parsed = parseTaskAction({ ...facts, type: entry.type, event_id: "history", at: "history", actor_id: "history", expected_record_hash: facts.diff_hash, expected_workspace_hash: facts.diff_hash });
+		if (parsed.type !== "record_review_incomplete" && parsed.type !== "authorize_review_retry") throw new KernelInvariantError(["invalid incomplete history"]);
+		const key = `${parsed.intent_content_hash}:${parsed.diff_hash}`;
+		const rounds = snapshots.get(key) ?? empty();
+		if (parsed.type === "authorize_review_retry") {
+			if (rounds.count !== 2 || rounds.retry_authorized || rounds.last_contract_hash === parsed.review_contract_hash) throw new KernelInvariantError(["invalid review retry grant history"]);
+			rounds.retry_authorized = true;
+			rounds.round_limit = 3;
+			rounds.authorized_contract_hash = parsed.review_contract_hash;
+		} else {
+			if (rounds.count >= rounds.round_limit || (rounds.previous_budget !== null && parsed.turn_budget !== Math.min(96, rounds.previous_budget * 2)) || (rounds.count === 2 && parsed.review_contract_hash !== rounds.authorized_contract_hash)) throw new KernelInvariantError(["invalid incomplete history sequence"]);
+			rounds.count++;
+			rounds.previous_budget = parsed.turn_budget;
+			rounds.last_contract_hash = parsed.review_contract_hash ?? null;
+		}
+		snapshots.set(key, rounds);
 	}
-	return { count, previous_budget };
+	return snapshots.get(`${identity.intent_content_hash}:${identity.diff_hash}`) ?? empty();
 }
 
 export function reduceTask(
@@ -305,14 +325,25 @@ export function reduceTask(
 		throw new KernelInvariantError(["diff_hash must be a canonical sha256 hash"]);
 
 	switch (action.type) {
+		case "authorize_review_retry": {
+			if (authorityAudit?.authority_kind !== "user" || !isLiteralUserActor(authorityAudit.actor_id)) throw new KernelInvariantError(["authorize_review_retry requires literal-user authority"]);
+			if (record.lifecycle !== "active" || record.artifact_state !== "frozen" || action.intent_content_hash !== record.intent_ref.content_hash) throw new KernelInvariantError(["review retry requires the current frozen active snapshot"]);
+			if (!changedPaths || projectTask(record.intent_snapshot, record, action.diff_hash, action.intent_content_hash, changedPaths, floor).next_obligation !== "run_review") throw new KernelInvariantError(["review retry requires fresh QA and a pending Review"]);
+			const prior = reviewIncompleteHistory(record.history, action);
+			if (prior.count !== 2 || prior.retry_authorized || prior.last_contract_hash === action.review_contract_hash) throw new KernelInvariantError(["review retry requires two incompletes, no prior grant, and a changed or legacy-unknown contract"]);
+			appendHistory(record, action, from, JSON.stringify({ intent_content_hash: action.intent_content_hash, diff_hash: action.diff_hash, review_contract_hash: action.review_contract_hash }), authorityAudit);
+			break;
+		}
 		case "record_review_incomplete": {
 			if (record.lifecycle !== "active" || record.artifact_state !== "frozen" || action.intent_content_hash !== record.intent_ref.content_hash)
 				throw new KernelInvariantError(["incomplete requires the current frozen active snapshot"]);
 			if (!changedPaths || action.inspected_paths.some(path => !changedPaths.includes(path))) throw new KernelInvariantError(["incomplete inspected_paths must be a subset of changed paths"]);
 			if (projectTask(record.intent_snapshot, record, action.diff_hash, action.intent_content_hash, changedPaths, floor).next_obligation !== "run_review") throw new KernelInvariantError(["incomplete requires fresh QA and a pending Review"]);
 			const prior = reviewIncompleteHistory(record.history, action);
-			if (prior.count >= 2 || (prior.previous_budget !== null && action.turn_budget !== Math.min(96, prior.previous_budget * 2))) throw new KernelInvariantError(["incomplete round budget exhausted or invalid"]);
-			appendHistory(record, action, from, JSON.stringify({ intent_content_hash: action.intent_content_hash, diff_hash: action.diff_hash, turn_budget: action.turn_budget, inspected_paths: action.inspected_paths, reason: action.reason }), null);
+			if (!action.review_contract_hash) throw new KernelInvariantError(["live incomplete requires review_contract_hash"]);
+			if (prior.count >= prior.round_limit || (prior.previous_budget !== null && action.turn_budget !== Math.min(96, prior.previous_budget * 2))) throw new KernelInvariantError(["incomplete round budget exhausted or invalid"]);
+			if (prior.retry_authorized && action.review_contract_hash !== prior.authorized_contract_hash) throw new KernelInvariantError(["incomplete contract must match retry grant"]);
+			appendHistory(record, action, from, JSON.stringify({ intent_content_hash: action.intent_content_hash, diff_hash: action.diff_hash, turn_budget: action.turn_budget, inspected_paths: action.inspected_paths, reason: action.reason, review_contract_hash: action.review_contract_hash }), null);
 			break;
 		}
 		case "record_finding": {

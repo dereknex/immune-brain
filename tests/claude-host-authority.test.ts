@@ -1,3 +1,4 @@
+import { reviewIncompleteFixture, exhaustReviewForRetry } from "./fixtures/review-incomplete-fixture";
 import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
 import { reviewPacketHandle, parseReviewPacketHandle } from "../plugins/immune-brain/runtime/assurance/review_packet";
 import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
@@ -916,6 +917,31 @@ describe("claude host authority", () => {
 		expect(confirmations).toBe(0);
 		expect(withKernelRead(fixture.root, (db) => readRunRowByTask(db, taskId))!.record_json).toBe(bytes);
 	});
+
+	for (const accepted of [false, true]) test(`Review retry requires native authorization (${accepted})`, async () => {
+		const f = reviewIncompleteFixture();
+		try {
+			await exhaustReviewForRetry(f);
+			const before = f.record().record!, revision = f.record().revision;
+			let confirmations = 0;
+			const runtime = new ClaudeRuntime({ cwd: f.root, env: ENV, interactive: true, permissionMode: "manual", requestConfirmation: async input => {
+				confirmations++;
+				expect(input.reviewRetryNotice).toContain("exactly one additional Review");
+				return { decision: accepted ? "accept" : "decline", requestId: "review-retry" };
+			} });
+			const meta: ToolMeta = { taskId: f.taskId, sessionId: "s", toolCallId: "retry", requiresUserInteraction: true, interactive: true, permissionMode: "manual" };
+			const request = runtime.authorize(f.taskId, "request_authorization", meta);
+			if (accepted) await request; else await expect(request).rejects.toThrow();
+			expect(confirmations).toBe(1);
+			const after = f.record().record!;
+			expect(after.attestations).toEqual(before.attestations);
+			expect(after.artifact_state).toBe("frozen");
+			if (accepted) {
+				expect(after.history.slice(0, -1)).toEqual(before.history);
+				expect(after.history.at(-1)!.type).toBe("authorize_review_retry");
+			} else expect(f.record().revision).toBe(revision);
+		} finally { f.cleanup(); }
+	}, 60_000);
 
 	test("request_authorization resolves the single bound user decision", async () => {
 		const taskId = "user-decision";

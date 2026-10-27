@@ -10,7 +10,26 @@ import { createMutationAuthorityRegistry } from "../../plugins/immune-brain/runt
 import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../../plugins/immune-brain/runtime/kernel/intent";
 import { projectAssurance } from "../../plugins/immune-brain/runtime/kernel/assurance_projection";
 import { readTaskRecordRaw } from "../../plugins/immune-brain/runtime/kernel/storage";
+import { currentReviewContractHash } from "../../plugins/immune-brain/runtime/role_prompt_bridge";
 import { seedKernelRunForTest } from "./mutation-authority-test-seam";
+
+/** Build exhausted evidence under an older Host contract without changing production prompts. */
+export async function exhaustReviewForRetry(f: ReturnType<typeof reviewIncompleteFixture>) {
+ const c = f.create();
+ await c.advance(f.taskId, f.ctx);
+ const budget = f.requests[0]!.maxTurns;
+ await c.onSessionShutdown();
+ const oldHash = `sha256:${"a".repeat(64)}`;
+ const app = createCanaryApplication(createMutationAuthorityRegistry());
+ for (const turn_budget of [budget, Math.min(96, budget * 2)]) {
+  const s = (await projectAssurance(f.root, f.taskId)).projection;
+  const record = f.record().record!;
+  app.execute({ root: f.root, task_id: f.taskId, reviewContractHash: oldHash,
+   operation: { op: "record_review_incomplete", actor_id: "old-host-review", snapshot: s, turn_budget,
+    review_contract_hash: oldHash, inspected_paths: [], reason: "coverage exhausted under previous contract" },
+   prior_intent_token: readTaskIntent(f.root, f.taskId, record.intent_ref.path, record.intent_snapshot).token });
+ }
+}
 
 /** Real Kernel/CAS/history and Review evidence; only deterministic QA execution is stubbed. */
 export function reviewIncompleteFixture(pathCount = 1) {
@@ -47,7 +66,7 @@ export function reviewIncompleteFixture(pathCount = 1) {
   writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: join(root, "review.json"), remove() {} }),
   applyOrdinaryOperation: async (_ctx, input) => {
    const current = readTaskRecordRaw(root, taskId).record!;
-   return app.execute({ root, task_id: taskId, operation: input.operation as CanaryOperation,
+   return app.execute({ root, task_id: taskId, reviewContractHash: currentReviewContractHash(), operation: input.operation as CanaryOperation,
     prior_intent_token: readTaskIntent(root, taskId, current.intent_ref.path, current.intent_snapshot).token });
   },
  };
