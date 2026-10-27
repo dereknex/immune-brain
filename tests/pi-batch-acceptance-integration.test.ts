@@ -233,7 +233,7 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 		expect(f.commits()).toEqual([]);
 		const second = await f.batch();
 		expect(second).toMatchObject({ state: "started", batch_id: first.batch_id, report: { batch_state: "running",
-			children: [{ task_id: f.tasks[0], state: "released" }, { task_id: f.tasks[1], state: "enrolled", commit: null }],
+			children: [{ task_id: f.tasks[0], state: "integrated" }, { task_id: f.tasks[1], state: "enrolled", commit: null }],
 			handoffs: [{ role: "executor", task_id: f.tasks[1], next_obligation: "submit_assurance" }] } });
 		expect(f.commits()).toEqual(second.report.commits);
 		expect(f.commits()).toHaveLength(1);
@@ -248,7 +248,7 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 		await settle(f, 2);
 		const third = await f.batch();
 		expect(third).toMatchObject({ batch_id: first.batch_id, report: { batch_state: "completed",
-			children: [{ task_id: f.tasks[0], state: "released" }, { task_id: f.tasks[1], state: "released" }] } });
+			children: [{ task_id: f.tasks[0], state: "integrated" }, { task_id: f.tasks[1], state: "integrated" }] } });
 		expect(third.report.handoffs).toEqual([]);
 		expect(f.commits()).toEqual(third.report.commits);
 		expect(f.commits()).toHaveLength(2);
@@ -310,7 +310,7 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 
 		expect(fresh).not.toHaveProperty("batch");
 		const second = await f.batch();
-		expect(second).toMatchObject({ batch_id: first.batch_id, report: { children: [{ state: "released" }, { state: "enrolled" }], handoffs: [{ task_id: f.tasks[1] }] } });
+		expect(second).toMatchObject({ batch_id: first.batch_id, report: { children: [{ state: "integrated" }, { state: "enrolled" }], handoffs: [{ task_id: f.tasks[1] }] } });
 		expect(second.report.recovery).toBeUndefined();
 		f.restart();
 		// Re-select the Parent from its persisted batch receipt in the recreated adapter.
@@ -339,7 +339,7 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 		f.answer(() => { throw new Error("a clockless resume must not open a gate"); });
 		const resumed = await f.batch();
 		expect(resumed).toMatchObject({ state: "started", batch_id: first.batch_id, report: { batch_state: "running", commits: second.report.commits,
-			children: [{ state: "released" }, { state: "enrolled" }], handoffs: second.report.handoffs } });
+			children: [{ state: "integrated" }, { state: "enrolled" }], handoffs: second.report.handoffs } });
 		expect(f.gates()).toBe(1);
 		expect(evidence()).toEqual(kept);
 		expect(await f.kernel(f.tasks[1]!, { op: "status" })).toMatchObject({ run_id: second.report.handoffs[0].run_id, lifecycle: "active", next_obligation: "submit_assurance" });

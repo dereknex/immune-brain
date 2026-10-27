@@ -11,7 +11,7 @@ import { projectAssurance } from "../plugins/immune-brain/runtime/kernel/assuran
 import { localRunId, readTaskRecordRaw, recoverKernelStoreFollowUps } from "../plugins/immune-brain/runtime/kernel/storage";
 import { readRunRowByTask, readWorkspaceRow, updateRunTerminal, withKernelTransaction, writeWorkspaceRow } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 import { createBatchKernelPort, deriveChildRedoEnrollment } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
-import { createLaneWorktree, recreateLaneWorktree, removeLaneWorktree, withParentWorktree } from "../plugins/immune-brain/runtime/unattended/batch_worktrees";
+import { withParentWorktree } from "../plugins/immune-brain/runtime/unattended/batch_worktrees";
 import { runBatchGitPreflight, type BatchRunnerGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import { createDefaultLaneGitPort, runLaneBatch } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
 import { readBatchLaneRunState, writeBatchLaneRunState, type BatchLaneRunReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
@@ -167,45 +167,60 @@ if(process.argv.includes('--check')) process.exit(fs.readFileSync('bundle.txt','
 		expect(git(fx.root, "rev-parse", "HEAD")).toBe(fx.base);
 	}, 30000);
 
-	test("AC2/AC3: failing merged acceptance leaves Parent unmoved and reenrolls a fresh run on its new tip", async () => {
-		const fx = fixture({ a: pass, b: mergedCheck });
+	// Spec batch-resource-safety-s2 AC2: no Host reports a trusted Executor exit, so a conflict
+	// parks the child with its Lane intact instead of replacing the Lane for a redo.
+	test("AC2: failing merged acceptance parks only that child with its Lane retained and no grant spent", async () => {
+		const fx = fixture({ a: pass, b: mergedCheck, dependent: pass, independent: pass }, { dependent: ["b"] },
+			root => writeFileSync(join(root, ".gitignore"), ".imm/state/\n*.local\n"));
 		await fx.tick();
-		const oldRun = localRunId(fx.laneOf("b"), "b");
+		const laneB = fx.laneOf("b");
+		const oldRun = localRunId(laneB, "b");
+		writeFileSync(join(laneB, "notes.local"), "ignored user bytes\n");
 		fx.settle("a", "a\n", 1); fx.settle("b", "old\n", 2);
-		const redo = await fx.tick();
-		expect(redo.children.map(c => c.state)).toEqual(["released", "enrolled"]);
-		expect(redo.children[1]).toMatchObject({ redo_grants: 1, lane: { base_head: redo.commits[0], lane_commit: null } });
-		expect(git(fx.root, "rev-parse", "refs/heads/imm/queue")).toBe(redo.commits[0]!);
-		expect(git(fx.laneOf("b"), "rev-parse", "HEAD")).toBe(redo.commits[0]!);
-		expect(existsSync(join(fx.laneOf("b"), "b.txt"))).toBe(false);
-		const fresh = readTaskRecordRaw(fx.laneOf("b"), "b").record!;
-		expect(fresh).toMatchObject({ lifecycle: "active", artifact_state: "active", attestations: [] });
-		expect(localRunId(fx.laneOf("b"), "b")).not.toBe(oldRun);
-		expect(redo.handoffs).toContainEqual(expect.objectContaining({ role: "executor", task_id: "b", next_obligation: "submit_assurance" }));
-		// Without a new implementation/QA/Review terminal fact it cannot integrate.
-		expect((await fx.tick()).commits).toEqual(redo.commits);
-		fx.settle("b", "fixed\n", 3);
+		const parked = await fx.tick();
+		expect(parked.children.map(c => c.state)).toEqual(["integrated", "needs_human", "skipped_blocked", "enrolled"]);
+		expect(parked.children[1]!.reason).toStartWith("batch_lane_redo_retained: ");
+		expect(parked.children[1]!.reason).toContain("batch_integration_check_failed");
+		expect(parked.children[1]!.redo_grants ?? 0).toBe(0);
+		expect(git(fx.root, "rev-parse", "refs/heads/imm/queue")).toBe(parked.commits[0]!);
+		const resources = () => ({ refs: git(fx.root, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads/imm-lane/queue/b", "refs/imm/"),
+			registered: git(fx.root, "worktree", "list", "--porcelain").includes(`worktree ${laneB}\n`), head: git(laneB, "rev-parse", "HEAD"),
+			delivered: readFileSync(join(laneB, "b.txt"), "utf8"), ignored: readFileSync(join(laneB, "notes.local"), "utf8"), run: localRunId(laneB, "b") });
+		const kept = resources();
+		expect(kept).toEqual({ refs: `refs/heads/imm-lane/queue/b ${parked.children[1]!.lane!.lane_commit}`, registered: true,
+			head: parked.children[1]!.lane!.lane_commit!, delivered: "old\n", ignored: "ignored user bytes\n", run: oldRun });
+		// A repeated tick neither retries the redo nor spends a grant.
+		const again = await fx.tick();
+		expect(again.children).toEqual(parked.children);
+		expect(resources()).toEqual(kept);
+		fx.settle("independent", "independent\n", 3);
 		const done = await fx.tick();
-		expect(done.batch_state).toBe("completed");
-		expect(done.children[1]!.redo_grants).toBe(1);
-		expect(git(fx.root, "show", `${done.commits[1]}:b.txt`)).toBe("fixed");
+		expect(done.batch_state).toBe("needs_human");
+		expect(done.children.map(c => c.state)).toEqual(["integrated", "needs_human", "skipped_blocked", "integrated"]);
+		expect(done.commits).toHaveLength(2);
+		expect(git(fx.root, "show", "refs/heads/imm/queue:independent.txt")).toBe("independent");
+		expect(resources()).toEqual(kept);
+		expect(fx.input.registry.redoGrants(fx.input.capability, "b")).toBe(0);
+		const summary = JSON.parse(readFileSync(join(fx.root, ".imm/state/batches/queue.report.json"), "utf8"));
+		expect(summary.children[1]).toMatchObject({ task_id: "b", state: "needs_human", reason: expect.stringContaining("batch_lane_redo_retained: ") });
 	}, 30000);
 
-	test("AC3: a textual conflict recreates the Lane, and its reimplementation integrates", async () => {
+	test("AC2: a textual conflict parks the child and keeps its Lane content", async () => {
 		const fx = fixture({ a: pass, b: pass });
 		await fx.tick();
 		writeFileSync(join(fx.laneOf("a"), "shared.txt"), "from a\n");
 		writeFileSync(join(fx.laneOf("b"), "shared.txt"), "from b\n");
 		fx.settle("a", "a\n", 1); fx.settle("b", "b\n", 2);
-		const redo = await fx.tick();
-		expect(redo.children[1]).toMatchObject({ state: "enrolled", redo_grants: 1 });
-		expect(readFileSync(join(fx.laneOf("b"), "shared.txt"), "utf8")).toBe("from a\n");
-		fx.settle("b", "reimplemented\n", 3);
-		expect((await fx.tick()).batch_state).toBe("completed");
+		const parked = await fx.tick();
+		expect(parked.children[1]!.state).toBe("needs_human");
+		expect(parked.children[1]!.reason).toStartWith("batch_lane_redo_retained: ");
+		expect(parked.children[1]!.reason).toContain("batch_integration_conflict");
+		expect(readFileSync(join(fx.laneOf("b"), "shared.txt"), "utf8")).toBe("from b\n");
+		expect(fx.input.registry.redoGrants(fx.input.capability, "b")).toBe(0);
 	}, 30000);
 
-	for (const interruption of ["before-removal", "after-removal", "after-recreation"] as const)
-	test(`resumes a granted redo ${interruption} without spending another grant`, async () => {
+	for (const lane of ["present", "externally-removed"] as const)
+	test(`parks a durably granted redo with its Lane ${lane}, recreating nothing and spending no further grant`, async () => {
 		const fx = fixture({ a: pass, b: pass });
 		await fx.tick();
 		fx.settle("a");
@@ -217,6 +232,7 @@ if(process.argv.includes('--check')) process.exit(fs.readFileSync('bundle.txt','
 		const { commit } = await fx.input.git!.commitChild(oldLane, "b", "queue", fx.base);
 		const binding = fx.input.kernel.validateBatchAuthorization({ registry: fx.input.registry, capability: fx.input.capability,
 			binding: { batch_id: "queue", plan_digest: fx.input.plan_digest, base_head: fx.base, initiative_slug: "queue", budget: fx.input.budget } });
+		// A grant recorded before retention: its target stays durable.
 		await withParentWorktree(fx.root, head, async root => {
 			deriveChildRedoEnrollment(root, fx.input.registry, { capability: fx.input.capability, binding,
 				task_id: "b", expected_head: head, now: NOW, prior_lane_root: oldLane, prior_run_id: oldRun });
@@ -225,23 +241,21 @@ if(process.argv.includes('--check')) process.exit(fs.readFileSync('bundle.txt','
 		record.children[1] = { ...record.children[1]!, state: "lane_committed", redo_grants: 1, redo_head: head,
 			lane: { ...record.children[1]!.lane!, lane_commit: commit } };
 		writeBatchLaneRunState(fx.root, record);
-		if (interruption !== "before-removal") {
-			expect(removeLaneWorktree(fx.root, oldLane, "imm-lane/queue/b", commit)).toBe(true);
-			if (interruption === "after-recreation") createLaneWorktree(fx.root, "queue", "b", head);
-		}
-		const resumed = await fx.tick();
-		expect(resumed.children[1]).toMatchObject({ state: "enrolled", redo_grants: 1, lane: { base_head: head } });
-		expect(localRunId(fx.laneOf("b"), "b")).not.toBe(oldRun);
+		// A user's own removal is not trusted Executor exit evidence.
+		if (lane === "externally-removed") git(fx.root, "worktree", "remove", "--force", oldLane);
+		const resources = () => ({ branch: git(fx.root, "rev-parse", "refs/heads/imm-lane/queue/b"), worktrees: git(fx.root, "worktree", "list", "--porcelain"),
+			present: existsSync(oldLane), run: lane === "present" ? localRunId(oldLane, "b") : null });
+		const before = resources();
+		expect(before).toMatchObject({ branch: commit, present: lane === "present" });
+		const parked = await fx.tick();
+		expect(parked.children[1]).toMatchObject({ state: "needs_human", redo_grants: 1, redo_head: head, lane: { lane_commit: commit } });
+		expect(parked.children[1]!.reason).toStartWith("batch_lane_redo_retained: ");
+		expect(parked.commits).toEqual([head]);
+		expect(resources()).toEqual(before);
+		const again = await fx.tick();
+		expect(again.children).toEqual(parked.children);
+		expect(resources()).toEqual(before);
 		expect(fx.input.registry.redoGrants(fx.input.capability, "b")).toBe(1);
-		expect(resumed.commits).toEqual([head]);
-	}, 30000);
-
-	test("never recreates a Lane with a live claim", async () => {
-		const fx = fixture({ a: pass });
-		await fx.tick();
-		const run = localRunId(fx.laneOf("a"), "a");
-		expect(() => recreateLaneWorktree(fx.root, "queue", "a", fx.base, fx.base)).toThrow("active claim");
-		expect(localRunId(fx.laneOf("a"), "a")).toBe(run);
 	}, 30000);
 
 	test("keeps dirty settled Lane data instead of discarding it for an automatic redo", async () => {
@@ -254,7 +268,7 @@ if(process.argv.includes('--check')) process.exit(fs.readFileSync('bundle.txt','
 			return integrate(input);
 		};
 		const report = await fx.tick();
-		expect(report.children[1]).toMatchObject({ state: "needs_human", reason: expect.stringContaining("clean owned Lane") });
+		expect(report.children[1]).toMatchObject({ state: "needs_human", reason: expect.stringContaining("batch_lane_redo_retained: ") });
 		expect(readFileSync(join(fx.laneOf("b"), "keep.txt"), "utf8")).toBe("user data\n");
 	}, 30000);
 
@@ -265,33 +279,5 @@ if(process.argv.includes('--check')) process.exit(fs.readFileSync('bundle.txt','
 		for (const fields of [{ redo_grants: -1 }, { redo_grants: 3 }, { settled_at: "not-a-time" }, { redo_head: fx.base }]) {
 			expect(() => writeBatchLaneRunState(fx.root, { ...record, children: [{ ...record.children[0]!, ...fields }] })).toThrow(/invalid (redo|settled)/);
 		}
-	}, 30000);
-
-	test("AC4: third conflict parks only that child, skips its dependents and reports redo count 2", async () => {
-		const fx = fixture({ a: pass, b: mergedCheck, dependent: pass, independent: pass }, { dependent: ["b"] });
-		await fx.tick();
-		fx.settle("a", "a\n", 1); fx.settle("b", "old\n", 2);
-		for (let attempt = 1; attempt <= 2; attempt++) {
-			const redo = await fx.tick();
-			expect(redo.children[1]).toMatchObject({ state: "enrolled", redo_grants: attempt });
-			// The redo passes its own frozen acceptance; a newer Parent change then conflicts.
-			writeFileSync(join(fx.laneOf("b"), "shared.txt"), `lane attempt ${attempt}\n`);
-			fx.settle("b", "fixed\n", 2 + attempt);
-			const head = git(fx.root, "rev-parse", "refs/heads/imm/queue");
-			await withParentWorktree(fx.root, head, async root => {
-				writeFileSync(join(root, "shared.txt"), `new Parent ${attempt}\n`);
-				git(root, "add", "--", "shared.txt"); git(root, "commit", "-qm", `Parent advances ${attempt}`);
-				git(fx.root, "update-ref", "refs/heads/imm/queue", git(root, "rev-parse", "HEAD"), head);
-			});
-		}
-		fx.settle("independent", "independent\n", 5);
-		const done = await fx.tick();
-		expect(done.batch_state).toBe("needs_human");
-		expect(done.children.map(c => c.state)).toEqual(["released", "needs_human", "skipped_blocked", "released"]);
-		expect(done.children[1]).toMatchObject({ redo_grants: 2, reason: expect.stringContaining("batch_integration_redo_exhausted") });
-		expect(done.commits).toHaveLength(2);
-		expect(git(fx.root, "show", `refs/heads/imm/queue:independent.txt`)).toBe("independent");
-		const summary = JSON.parse(readFileSync(join(fx.root, ".imm/state/batches/queue.report.json"), "utf8"));
-		expect(summary.children[1]).toMatchObject({ task_id: "b", redo_grants: 2, reason: expect.stringContaining("batch_integration_redo_exhausted") });
 	}, 30000);
 });

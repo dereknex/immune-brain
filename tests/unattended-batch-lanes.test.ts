@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -368,14 +368,18 @@ describe("runtime-owned Parent Lane lifecycle", () => {
 			expect(readFileSync(join(fx.repo, "a.txt"), "utf8")).toBe("coordinator dirt must not reach Lane\n");
 		} finally { fx.cleanup(); }
 	});
-	for (const mode of ["clean", "dirty"] as const) it(`runtime-owned lifecycle: ${mode}`, async () => {
-		const dirty = mode === "dirty";
+	// Spec batch-resource-safety-s2 AC1/AC3: no Host reports a trusted Executor exit, so a
+	// delivered Lane stays whether its Executor looks idle, left files behind or still runs.
+	for (const mode of ["clean", "untracked", "ignored", "live"] as const) it(`retains a delivered runtime-owned Lane: ${mode}`, async () => {
 		const fx = fixture({},
 			{ "task-a": ["a.txt"], "task-b": ["b.txt"] });
+		let executor: ReturnType<typeof spawn> | null = null;
 		try {
 			// The Parent branch must not already be checked out by the coordinator.
 			git(fx.repo, "checkout", "-q", "main");
 			git(fx.repo, "branch", "-D", BATCH_BRANCH);
+			// Ignored for every worktree; Git status never lists it.
+			writeFileSync(join(fx.repo, ".git/info/exclude"), "*.local\n");
 			const kernel = laneKernel();
 			const advance = kernel.advanceTask;
 			kernel.advanceTask = async (root, taskId) => {
@@ -395,11 +399,12 @@ describe("runtime-owned Parent Lane lifecycle", () => {
 				closed.push(request.task_id);
 				return { status: "updated" as const, message: "closed" };
 			} };
-			if (dirty) {
+			const sentinel = mode === "ignored" ? "scratch.local" : mode === "untracked" ? "keep.txt" : null;
+			if (sentinel) {
 				const integrate = port.integrate;
 				port.integrate = async input => {
 					const result = await integrate(input);
-					writeFileSync(join(kernel.enrolled.get(input.child.task_id)!, "keep.txt"), "uncommitted\n");
+					if (input.child.task_id === "task-a") writeFileSync(join(kernel.enrolled.get("task-a")!, sentinel), "user bytes\n");
 					return result;
 				};
 			}
@@ -411,18 +416,35 @@ describe("runtime-owned Parent Lane lifecycle", () => {
 			expect(first.handoffs).toContainEqual(expect.objectContaining({ role: "executor", task_id: "task-a" }));
 			const laneA = kernel.enrolled.get("task-a")!;
 			expect(laneA).toContain("/.git/imm/worktrees/");
+			if (mode === "live") {
+				// A fixture-owned Executor stand-in: ready before the tick, exits only on release.
+				const child = spawn("bun", ["-e", "process.stdout.write('ready'); process.stdin.resume(); process.stdin.on('end', () => process.exit(0));"],
+					{ cwd: laneA, stdio: ["pipe", "pipe", "inherit"] });
+				executor = child;
+				await new Promise<void>((resolve, reject) => {
+					child.once("error", reject);
+					child.stdout!.once("data", () => resolve());
+				});
+			}
 			writeFileSync(join(laneA, "a.txt"), "a\n");
 			kernel.frozen.add("task-a");
+			const branchA = `refs/heads/imm-lane/${SLUG}/task-a`;
 			const second = lanes(await startBatch(args));
-			expect(second.children.map(c => c.state)).toEqual([dirty ? "integrated" : "released", "enrolled"]);
-			expect(existsSync(laneA)).toBe(dirty);
-			if (dirty) expect(second.lane_refusals).toContainEqual({ task_id: "task-a", path: laneA, reason: "batch_lane_kept: Lane is dirty or its release evidence is incomplete" });
+			expect(second.children.map(c => c.state)).toEqual(["integrated", "enrolled"]);
+			const retainedA = { task_id: "task-a", path: laneA, reason: expect.stringContaining("batch_lane_retained: ") };
+			expect(second.lane_refusals).toContainEqual(retainedA);
+			const resources = () => ({ ref: git(fx.repo, "rev-parse", branchA), registered: git(fx.repo, "worktree", "list", "--porcelain").includes(`worktree ${laneA}\n`),
+				bytes: sentinel ? readFileSync(join(laneA, sentinel), "utf8") : null });
+			const kept = resources();
+			expect(kept).toEqual({ ref: second.children[0]!.lane!.lane_commit!, registered: true, bytes: sentinel ? "user bytes\n" : null });
+			if (mode === "ignored") expect(git(laneA, "status", "--porcelain")).toBe("");
 			const laneB = kernel.enrolled.get("task-b")!;
 			expect(git(laneB, "rev-parse", "HEAD")).toBe(second.commits[0]!);
 			writeFileSync(join(laneB, "b.txt"), "b\n");
 			kernel.frozen.add("task-b");
 			const done = lanes(await startBatch(args));
 			expect(done.batch_state).toBe("completed");
+			expect(done.children.map(c => c.state)).toEqual(["integrated", "integrated"]);
 			expect(done.commits).toHaveLength(2);
 			expect(done.final_verification).toMatchObject({ passed: true, head: done.commits[1] });
 			expect(done.final_report).toMatchObject({
@@ -430,7 +452,18 @@ describe("runtime-owned Parent Lane lifecycle", () => {
 				children: [{ task_id: "task-a", redo_count: 0 }, { task_id: "task-b", redo_count: 0 }],
 				return_to_coordinator: { mode: "manual", status: "manual", reason: null },
 			});
-			expect(lanes(await startBatch(args)).final_report).toEqual(done.final_report);
+			const retainedB = { task_id: "task-b", path: laneB, reason: expect.stringContaining("batch_lane_retained: ") };
+			expect(done.lane_refusals).toEqual([retainedA, retainedB]);
+			expect(done.next_action).toContain("Cleanup was not performed: 2 runtime-created Lane(s) are kept");
+			// Terminal replay keeps the notice and re-enrolls nothing.
+			const replay = lanes(await startBatch(args));
+			expect(replay.final_report).toEqual(done.final_report);
+			expect(replay.children).toEqual(done.children);
+			expect(replay.lane_refusals).toEqual(done.lane_refusals);
+			expect(replay.handoffs.filter(h => h.role === "executor")).toEqual([]);
+			expect(resources()).toEqual(kept);
+			expect(existsSync(laneB)).toBe(true);
+			if (executor) expect(executor.exitCode).toBeNull();
 			expect(git(fx.repo, "rev-parse", "HEAD")).toBe(fx.base);
 			expect(git(fx.repo, "diff", "HEAD")).toBe("");
 			expect(existsSync(join(fx.repo, "a.txt"))).toBe(false);
@@ -440,10 +473,20 @@ describe("runtime-owned Parent Lane lifecycle", () => {
 			const reader = async () => ({ contract: "immune_brain/github_initiative_observation/v1" as const,
 				initiative_id: SLUG, initiative_slug: SLUG, carrier: "local" as const,
 				tasks: [{ task_id: "task-a", slice_id: "S1", blocked_by: [] }, { task_id: "task-b", slice_id: "S2", blocked_by: ["task-a"] }] });
-			expect(await completedParentReport(fx.repo, SLUG, reader, tracker)).toMatchObject({ batch_state: "completed" });
+			const reopened = await completedParentReport(fx.repo, SLUG, reader, tracker) as unknown as BatchLaneRunReport;
+			expect(reopened).toMatchObject({ batch_state: "completed", lane_refusals: [retainedA, retainedB] });
+			expect(reopened.next_action).toStartWith("Parent delivery and final verification passed. Cleanup was not performed");
+			expect(resources()).toEqual(kept);
 			git(fx.repo, "update-ref", `refs/heads/${BATCH_BRANCH}`, fx.base);
 			expect(await completedParentReport(fx.repo, SLUG, reader, tracker)).toBeNull();
-		} finally { fx.cleanup(); }
+		} finally {
+			if (executor && executor.exitCode === null) {
+				const exited = new Promise(resolve => executor!.once("exit", resolve));
+				executor.stdin!.end();
+				await exited;
+			}
+			fx.cleanup();
+		}
 	});
 });
 

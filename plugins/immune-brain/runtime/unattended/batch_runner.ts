@@ -7,7 +7,7 @@ import type { QaCheckDiagnostic } from "../assurance/qa";
 import type { BatchPlanChild, InitiativeObservationReader } from "./types";
 import type { BatchRunnerGitPort } from "./batch_git";
 import { expectedBatchHead, findSettledBatchRecord } from "./batch_preflight";
-import { laneRejectionReport, runLaneBatch, createBatchTrackerPort, type LaneOffer } from "./batch_lanes";
+import { laneRejectionReport, retainedLaneAction, retainedLaneNotices, runLaneBatch, createBatchTrackerPort, type LaneOffer } from "./batch_lanes";
 import { isLaneBatchRecord, readAnyBatchRunState, writeBatchRunReport, type BatchRunReport } from "./batch_state";
 import { readTaskTombstone } from "../kernel/backend_claim";
 import { observeInitiative } from "./batch_plan";
@@ -38,13 +38,16 @@ export async function completedParentReport(root: string, initiativeSlug: string
 		try { sync = await tracker.markTerminal(root, { task_id: last.task_id, phase: "done", terminal_event_id: tombstone.terminal_event_id }); }
 		catch { sync = { status: "failed", message: "Local Parent completion proved; retry tracker synchronization on this Host" }; }
 	}
+	// Rebuilt from durable facts, so a reopened report keeps every cleanup notice.
+	const retained = isLaneBatchRecord(batch) ? retainedLaneNotices(root, batch) : [];
 	const report = {
 		contract: "assurance_kernel/batch_run_report/v1" as const,
 		batch_id: batch.batch_id, initiative_slug: initiativeSlug, batch_state: batch.batch_state,
 		children: batch.children, commits: batch.commits, final_verification: batch.final_verification_result,
 		...(sync ? { tracker: sync } : {}),
+		...(retained.length ? { lane_refusals: retained } : {}),
 		reason: sync?.status === "failed" ? "Local Parent completion proved; tracker synchronization failed" : null,
-		next_action: sync?.status === "failed" ? sync.message : "Parent delivery and final verification passed",
+		next_action: (sync?.status === "failed" ? sync.message : "Parent delivery and final verification passed") + (retained.length ? "." : "") + retainedLaneAction(retained),
 		created_at: new Date().toISOString(), ...(isLaneBatchRecord(batch) ? { max_parallel: batch.max_parallel, handoffs: [] } : {}),
 	};
 	// The first terminal report is historical; return this HEAD's freshly proved observation.

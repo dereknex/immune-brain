@@ -1,0 +1,297 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "batch-resource-safety-s2",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "batch-resource-safety-s2",
+    "goal": "Deliver S2 of Initiative batch-resource-safety after S1, per docs/specs/batch-resource-safety-s2.spec.md and user-approved option A: retain Executor Lanes and unknown ignored files, block destructive redo without trustworthy exit evidence, and report retained resources across completion/restart. Automatic lifecycle restoration is explicitly deferred; no new session-management subsystem is included.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Per user-approved option A and D1/D3 in docs/specs/batch-resource-safety-s2.spec.md: current Hosts provide no trusted Executor exit proof, so integrated Lanes and all their files remain intact for live, unknown, idle or done sessions, including unknown ignored sentinels and no-active-claim cases. Positive: ordinary creation, integration and passing final verification still complete with a retained Lane. Bound: user-provided Lanes remain untouched and detached Parent verification cleanup is not confused with Executor cleanup. Agreed seams: tests/batch-parent-branch.test.ts, tests/unattended-batch-lanes.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-parent-branch.test.ts\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Per D2 in docs/specs/batch-resource-safety-s2.spec.md: conflict redo, persisted redo-grant resume, parked revival and missing-path recovery refuse destructive Lane recreation without trusted exit evidence, preserving refs, worktree registrations, ignored bytes and prior delivery reachability. Positive: independent siblings continue. Bound: repeated ticks or confirmation do not spend additional grants for the same refusal, delete a branch, or duplicate integration. Agreed seams: tests/batch-merge-queue.test.ts, tests/batch-parked-revive.test.ts, tests/batch-redo-slot.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-merge-queue.test.ts\",\n      \"tests/batch-parked-revive.test.ts\",\n      \"tests/batch-redo-slot.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Per D4 in docs/specs/batch-resource-safety-s2.spec.md: ordinary, terminal replay and completedParentReport outputs identify retained Lane task/path and missing-exit-evidence reason while preserving delivery completion and audit identity. Negative: repeated terminal reporting cannot drop cleanup notices, reenroll completed children, or claim a present Lane released. Bound: external path disappearance is observation only and never authorizes automatic redo. Agreed seams: tests/batch-final-report.test.ts, tests/goal-driven-batch-run.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-final-report.test.ts\",\n      \"tests/goal-driven-batch-run.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "Per D5 in docs/specs/batch-resource-safety-s2.spec.md: affected runtime/packaged Lane lifecycle instructions consistently describe conservative retention and paused destructive redo, with the named restoration owner, capability milestone and exit conditions. Negative: Git-clean or Kernel-terminal alone is not described as permitting automatic Lane deletion. Bound: existing legacy ownership and user-dialog protections remain; maintained prompt mirrors agree. Agreed seams: tests/role-prompt-bridge.test.ts, tests/dist-docs-sync-contract.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/role-prompt-bridge.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/batch-resource-safety-s2.md",
+      "CONTEXT.md",
+      "docs/adr/0027-parent-branch-merge-queue.md",
+      "docs/plans/batch-resource-safety-s2.intent.json",
+      "docs/specs/batch-resource-safety-s2.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run-batch.md",
+      "plugins/immune-brain/dist/role-prompts/lane-steward.md",
+      "plugins/immune-brain/runtime/prompts/lane-steward.md",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/batch_worktrees.ts",
+      "tests/batch-final-report.test.ts",
+      "tests/batch-merge-queue.test.ts",
+      "tests/batch-parent-branch.test.ts",
+      "tests/batch-parked-revive.test.ts",
+      "tests/batch-redo-slot.test.ts",
+      "tests/dist-docs-sync-contract.test.ts",
+      "tests/goal-driven-batch-run.test.ts",
+      "tests/role-prompt-bridge.test.ts",
+      "tests/unattended-batch-lanes.test.ts"
+    ],
+    "scope_size_reason": "One fail-closed Lane resource-lifecycle invariant spans release, redo/revival and terminal replay; its focused behavioral tests, source/mirror contracts and ADR must ship together so no destructive alternate path or contradictory cleanup promise remains. No new Host process subsystem or persistent schema is added.",
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/batch-resource-safety-s2.intent.json",
+    "content_hash": "sha256:3146793b20ab6d98350942f294b0ca5d002516dff9af39b758108ec83c4dca5c"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:3146793b20ab6d98350942f294b0ca5d002516dff9af39b758108ec83c4dca5c",
+  "git_base_head": "9f1aff11d2c9c663d7616e90d5031d907c500a3a",
+  "attestations": [
+    {
+      "id": "approval-qa-21b6b625",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:3146793b20ab6d98350942f294b0ca5d002516dff9af39b758108ec83c4dca5c",
+      "diff_hash": "sha256:c1bf4d2fd59fb9409ca7e18fea1d94760db18e07432c323fbf285002af6aae9a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:860f4b81efc772702f290abf375104d13611bf8fe50c733528fd609b15a10565",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:860f4b81efc772702f290abf375104d13611bf8fe50c733528fd609b15a10565"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:860f4b81efc772702f290abf375104d13611bf8fe50c733528fd609b15a10565"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:860f4b81efc772702f290abf375104d13611bf8fe50c733528fd609b15a10565"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:860f4b81efc772702f290abf375104d13611bf8fe50c733528fd609b15a10565"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-0c53426f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:3146793b20ab6d98350942f294b0ca5d002516dff9af39b758108ec83c4dca5c",
+      "diff_hash": "sha256:02c8e73e5f90b171d3bc6b0737be4d2449ec1bf167295a06de497334892ba323",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:aac3a76679ac7c0f538980bac2f045ba8589bdf6e8422815d8a9230760312dff",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:aac3a76679ac7c0f538980bac2f045ba8589bdf6e8422815d8a9230760312dff"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:aac3a76679ac7c0f538980bac2f045ba8589bdf6e8422815d8a9230760312dff"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:aac3a76679ac7c0f538980bac2f045ba8589bdf6e8422815d8a9230760312dff"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:aac3a76679ac7c0f538980bac2f045ba8589bdf6e8422815d8a9230760312dff"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-16e6c5b1",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:3146793b20ab6d98350942f294b0ca5d002516dff9af39b758108ec83c4dca5c",
+      "diff_hash": "sha256:02c8e73e5f90b171d3bc6b0737be4d2449ec1bf167295a06de497334892ba323",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (commit 33b4d36 has single parent 9f1aff1, tree 1c08186). Runtime removes all Lane delete/recreate paths, parks conflict, redo-grant, revival and missing-path cases with batch_lane_redo_retained without spending grants, and reports batch_lane_retained in ordinary, terminal-replay and completedParentReport outputs. Docs and prompt mirrors agree, and the seam tests cover AC1-AC4.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "9f1aff11d2c9c663d7616e90d5031d907c500a3a",
+        "review_commit": "33b4d36a800952fbd38f1124a99f7743c147cdcc",
+        "review_tree": "1c08186be54a6aa52edbae58cc89919fab5cdaf5",
+        "manifest_digest": "sha256:e46e7fd17fb59d7e54903fe4d16dc8c882d865d7e44b774c46dd70ca565a322f"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-c747e950ea3f-1-review-1",
+          "acceptance_id": "AC2",
+          "summary": "deriveChildRedoEnrollment and deriveParkedChildRedoEnrollment in batch_kernel_port.ts no longer have a production caller (batch_lanes.ts dropped its imports) but are still exported and only tests call them. They are a dormant grant-spending path that the restoration proposal should remove or re-gate.",
+          "anchor": "sha256:d9f1db850954944740d16bb664635193dff52d5e6d463c4a6b5bda177f1b18a9",
+          "evidence": {
+            "trigger": "A future caller imports the still-exported deriveChildRedoEnrollment → it spends a redo grant even though no Lane recreation is allowed. No current production path reaches it, so there is no observable wrong result today.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+              "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts:deriveChildRedoEnrollment",
+              "tests/batch-redo-slot.test.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:64018b0a4e160ed4419d606ac1da515980b089384f055255bfb8d41403325dfa"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-646b5c1dc331-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "AC3 names tests/batch-final-report.test.ts and tests/goal-driven-batch-run.test.ts as its agreed seams, but neither file changed. The retained-Lane report behavior and SCN-6 (a reopened completed report still identifies retained Lanes and does not claim cleanup or re-enroll the child) are asserted only in tests/unattended-batch-lanes.test.ts, so the agreed seams were replaced without saying so.",
+      "anchor": "sha256:36a6c577eca554eaead46db5efc7a8c16d5a17d9d8174984d3c0393e0230c6de",
+      "evidence": {
+        "trigger": "At revision e64c0bb, AC3's agreed seam files contain no assertion on batch_lane_retained, lane_refusals, completedParentReport or retained-Lane next_action (a grep finds no match in either file). A regression in how retainedLaneNotices or retainedLaneAction feed completedParentReport, a terminal replay or an ordinary report would therefore pass both agreed seams. AC3's bound (an already absent integrated Lane path is only observed as released and never authorizes a redo) is also not pinned for an integrated Lane at any seam.",
+        "caller_chain": [
+          "tests/unattended-batch-lanes.test.ts",
+          "plugins/immune-brain/runtime/unattended/batch_runner.ts:completedParentReport",
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:retainedLaneNotices",
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:retainedLaneAction",
+          "tests/batch-final-report.test.ts",
+          "tests/goal-driven-batch-run.test.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC3"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:batch-resource-safety-s2:2026-10-27T02:16:53.626Z",
+      "at": "2026-10-27T02:16:53.626Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-resource-safety-s2.intent.json"
+    },
+    {
+      "id": "record_approval:batch-resource-safety-s2:2026-10-27T02:18:45.283Z",
+      "at": "2026-10-27T02:18:45.283Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-21b6b625\naction_v2_sha256:46885f7e2d26ff252b53763b3decd655fe4d038280c28e41d5217c817d4b7680",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-27T02:18:45.283Z"
+      }
+    },
+    {
+      "id": "request_rework:batch-resource-safety-s2:2026-10-27T02:20:36.017Z",
+      "at": "2026-10-27T02:20:36.017Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:ba995a57b5fec7a3fd78fecc32ff3fe14c95629a3a060c5a861f6b214c767d8a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-27T02:20:36.018Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "9f1aff11d2c9c663d7616e90d5031d907c500a3a",
+        "review_commit": "e64c0bb0309850c74ba07a0dbedc3f765e09aa48",
+        "review_tree": "b29310c90e8c9ad63bbea8f8bf87bf087fb86ea4",
+        "manifest_digest": "sha256:bb5c4b515f67fe19bd670ba70f0fcfc5c043cdc6ef54bf3f909cbec065bf4511"
+      }
+    },
+    {
+      "id": "resolve_finding:batch-resource-safety-s2:2026-10-27T02:22:35.749Z",
+      "at": "2026-10-27T02:22:35.749Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-646b5c1dc331-1-review-1\naction_v2_sha256:b62adc1ff6b84e9b830b59c66f28812bf7db00eef303f9405d2b75394fded481"
+    },
+    {
+      "id": "freeze_artifacts:batch-resource-safety-s2:2026-10-27T02:22:39.197Z",
+      "at": "2026-10-27T02:22:39.197Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-resource-safety-s2.intent.json"
+    },
+    {
+      "id": "record_approval:batch-resource-safety-s2:2026-10-27T02:24:38.416Z",
+      "at": "2026-10-27T02:24:38.416Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-0c53426f\naction_v2_sha256:fa203bfff93f879ae8c933e3a159c7235e67d819ce634e29551e8e4de8c27895",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-27T02:24:38.416Z"
+      }
+    },
+    {
+      "id": "record_approval:batch-resource-safety-s2:2026-10-27T02:26:41.903Z",
+      "at": "2026-10-27T02:26:41.903Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-16e6c5b1\naction_v2_sha256:ddb6aa9dbecbc4eef3beabb54c595105b32a1251da44cc75ed9df5b13ed26117",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-27T02:26:41.903Z"
+      }
+    },
+    {
+      "id": "complete:batch-resource-safety-s2:2026-10-27T02:26:43.662Z",
+      "at": "2026-10-27T02:26:43.662Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:a7c7febc3df1f9a34d677ddc3dd4b5c939b174b5fc14cfb08698c28654d3ed04"
+    }
+  ]
+}

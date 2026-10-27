@@ -94,25 +94,29 @@ function fixture(mode = "stopped", grants = 0) {
 	return { root, record, paths, runs, head, input };
 }
 
-for (const mode of ["stopped", "unreadable", "lost"]) test(`fresh resume revives ${mode} child at Parent tip while retaining the independent owned run`, async () => {
+// Spec batch-resource-safety-s2 AC2: a stopped, unreadable or missing Lane is not trusted
+// Executor exit evidence, so parked revival keeps the Lane and spends no redo grant.
+for (const mode of ["stopped", "unreadable", "lost"]) test(`fresh resume keeps ${mode} child parked with its Lane retained while the independent run continues`, async () => {
 	const fx = fixture(mode);
 	const args = fx.input();
+	const present = mode !== "lost";
+	const lane = () => ({ present: existsSync(fx.paths.a!), branch: git(fx.root, "rev-parse", "refs/heads/imm-lane/revive/a"),
+		head: present ? git(fx.paths.a!, "rev-parse", "HEAD") : null });
+	const before = lane();
 	const report = await runLaneBatch(args, fx.record);
-	expect(report.children.map(c => c.state)).toEqual(["enrolled", "pending", "enrolled"]);
-	expect(report.batch_state).toBe("running");
+	expect(report.children.map(c => c.state)).toEqual(["needs_human", "skipped_blocked", "enrolled"]);
 	const child = report.children[0]!;
-	expect(child.lane!.base_head).toBe(fx.head);
-	expect(child.redo_grants).toBe(1);
-	expect(child.lane!.run_id).not.toBe(fx.runs.a);
+	expect(child.reason).toStartWith("batch_lane_redo_retained: ");
+	expect(child.redo_grants ?? 0).toBe(0);
+	expect(child.lane!).toMatchObject({ base_head: fx.record.base_head, run_id: fx.runs.a });
 	expect(report.children[2]!.lane!.run_id).toBe(fx.runs.c);
-	expect(git(fx.paths.a!, "rev-parse", "HEAD")).toBe(fx.head);
-	expect(readTaskRecordRaw(fx.paths.a!, "a").record).toMatchObject({ lifecycle: "active", attestations: [], git_base_head: fx.head });
-	expect(localRunId(fx.paths.a!, "a")).toBe(child.lane!.run_id);
-	expect(args.registry.redoGrants(args.capability, "a")).toBe(1);
-	expect(args.registry.isChildConsumed(args.capability, "a")).toBe(true);
+	expect(lane()).toEqual(before);
+	expect(before).toMatchObject({ present, head: present ? fx.record.base_head : null });
+	if (mode === "stopped") expect(localRunId(fx.paths.a!, "a")).toBe(fx.runs.a);
+	expect(args.registry.redoGrants(args.capability, "a")).toBe(0);
 	const next = await runLaneBatch(args, readBatchLaneRunState(fx.root, fx.record.batch_id)!);
-	expect(next.children[0]!.redo_grants).toBe(1);
-	expect(next.children[0]!.lane!.run_id).toBe(child.lane!.run_id);
+	expect(next.children[0]).toEqual(child);
+	expect(lane()).toEqual(before);
 });
 
 for (const mode of ["decision", "replan", "stopped-decision", "stopped-replan", "exhausted", "dirty"]) test(`${mode} child remains parked without blocking the independent run`, async () => {
@@ -125,27 +129,31 @@ for (const mode of ["decision", "replan", "stopped-decision", "stopped-replan", 
 	if (mode === "dirty") expect(readFileSync(join(fx.paths.a!, "scratch.txt"), "utf8")).toBe("preserve me");
 });
 
-for (const removed of [false, true]) test(`a durable parked redo waits for capacity and resumes ${removed ? "after" : "before"} Lane removal without a second grant`, async () => {
+for (const removed of [false, true]) test(`a durable parked redo target stays parked ${removed ? "after" : "before"} Lane removal without recreating the Lane or spending a second grant`, async () => {
 	const fx = fixture();
 	fx.record.max_parallel = 1;
+	// A redo target granted before retention remains durable state.
+	fx.record.children[0] = { ...fx.record.children[0]!, redo_grants: 1, redo_head: fx.head };
 	writeBatchLaneRunState(fx.root, fx.record);
-	const first = await runLaneBatch({ ...fx.input(), max_parallel: 1 }, fx.record);
-	expect(first.children.map(c => c.state)).toEqual(["needs_human", "skipped_blocked", "enrolled"]);
-	expect(first.children[0]!.redo_grants).toBe(1);
-	expect(first.children[0]!.redo_head).toBe(fx.head);
-	expect(localRunId(fx.paths.a!, "a")).toBe(fx.runs.a);
-	const pending = readBatchLaneRunState(fx.root, fx.record.batch_id)!;
-	// The independent Executor parked between ticks, freeing its one running slot.
-	pending.children[2] = { ...pending.children[2]!, state: "needs_human", reason: "Executor parked" };
-	writeBatchLaneRunState(fx.root, pending);
 	if (removed) rmSync(fx.paths.a!, { recursive: true, force: true });
 	const args = { ...fx.input(), max_parallel: 1 };
-	const resumed = await runLaneBatch(args, pending);
-	expect(resumed.children.map(c => c.state)).toEqual(["enrolled", "pending", "needs_human"]);
-	expect(resumed.children[0]!.redo_grants).toBe(1);
-	expect(resumed.children[0]!.redo_head).toBeUndefined();
+	const pending = readBatchLaneRunState(fx.root, fx.record.batch_id)!;
+	// The independent Executor parked, freeing the one running slot the redo would need.
+	pending.children[2] = { ...pending.children[2]!, state: "needs_human", reason: "Executor parked" };
+	writeBatchLaneRunState(fx.root, pending);
+	const report = await runLaneBatch(args, pending);
+	// The free slot goes to the independent active run, never to a recreated redo Lane.
+	expect(report.children.map(c => c.state)).toEqual(["needs_human", "skipped_blocked", "enrolled"]);
+	expect(report.children[2]!.lane!.run_id).toBe(fx.runs.c);
+	expect(report.children[0]).toMatchObject({ redo_grants: 1, redo_head: fx.head, lane: { run_id: fx.runs.a } });
+	expect(report.children[0]!.reason).toStartWith("batch_lane_redo_retained: ");
+	// The prior grant is restored from durable state; no second grant is spent.
 	expect(args.registry.redoGrants(args.capability, "a")).toBe(1);
-	expect(git(fx.paths.a!, "rev-parse", "HEAD")).toBe(fx.head);
+	expect(existsSync(fx.paths.a!)).toBe(!removed);
+	if (!removed) {
+		expect(git(fx.paths.a!, "rev-parse", "HEAD")).toBe(fx.record.base_head);
+		expect(localRunId(fx.paths.a!, "a")).toBe(fx.runs.a);
+	}
 });
 
 test("resume without a new confirmation has no effect", async () => {

@@ -143,7 +143,7 @@ The single dedicated branch `imm/<initiative-slug>` that a batch run creates fro
 _Avoid_: feature branch, worktree, trunk
 
 **Lane**:
-An already-existing Git worktree on the coordinator repository's common directory, on a branch `imm-lane/<initiative-slug>/<task-id>` cut from the batch head, that a lane-mode batch adopts to run one child in isolation. The runner admits, never creates, switches or deletes a Lane. Lane mode exists only when `max_parallel` is passed.
+A Git worktree on the coordinator repository's common directory, on a branch `imm-lane/<initiative-slug>/<task-id>` cut from the batch head, that runs one child of a lane-mode batch in isolation. A new Parent-branch batch creates its Lanes but never removes or recreates one without trusted Executor exit evidence, which no Host supplies, so an integrated Lane is retained until the user removes it; legacy records admit offered Lanes and never create, switch or delete them. Lane mode exists only when `max_parallel` is passed.
 _Avoid_: workspace, clone, feature branch
 
 **Lane Steward**:

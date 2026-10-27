@@ -10,7 +10,7 @@ import { runBatchGitPreflight } from "../plugins/immune-brain/runtime/unattended
 import { changeIdentity, identitiesEqual, integrateLaneCommit } from "../plugins/immune-brain/runtime/unattended/batch_integration";
 import { runFinalVerification } from "../plugins/immune-brain/runtime/unattended/batch_final_verification";
 import { resolveLaneParallel } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
-import { createLaneWorktree, removeLaneWorktree } from "../plugins/immune-brain/runtime/unattended/batch_worktrees";
+import { createLaneWorktree } from "../plugins/immune-brain/runtime/unattended/batch_worktrees";
 
 const ref = "refs/heads/imm/parent";
 function git(root: string, ...args: string[]): string {
@@ -198,7 +198,7 @@ describe("Parent branch batches", () => {
 		} finally { fx.cleanup(); }
 	});
 
-	for (const dirty of [false, true]) it(`integrates exactly one child commit without coordinator writes and ${dirty ? "keeps a dirty" : "removes a clean"} Lane`, () => {
+	it("integrates exactly one child commit without coordinator writes and leaves the Lane in place", () => {
 		const fx = fixture();
 		try {
 			expect(fx.start().ok).toBe(true);
@@ -215,11 +215,8 @@ describe("Parent branch batches", () => {
 			expect(git(fx.root, "rev-parse", ref)).toBe(result.commit);
 			expect(git(fx.root, "rev-list", "--count", `${fx.base}..${ref}`)).toBe("1");
 			expect(identitiesEqual(changeIdentity(fx.root, fx.base, commit), changeIdentity(fx.root, fx.base, result.commit))).toBe(true);
-			if (dirty) writeFileSync(join(lane, "uncommitted.txt"), "keep me\n");
-			expect(removeLaneWorktree(fx.root, lane, "imm-lane/parent/child", commit)).toBe(!dirty);
-			expect(existsSync(lane)).toBe(dirty);
-			expect(Boolean(git(fx.root, "branch", "--list", "imm-lane/parent/child"))).toBe(dirty);
-			if (dirty) expect(readFileSync(join(lane, "uncommitted.txt"), "utf8")).toBe("keep me\n");
+			expect(existsSync(lane)).toBe(true);
+			expect(git(fx.root, "rev-parse", "imm-lane/parent/child")).toBe(commit);
 			expect(fx.snapshot()).toEqual(before);
 		} finally { fx.cleanup(); }
 	});

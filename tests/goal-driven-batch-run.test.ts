@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { advanceNativeParent, observeParentCompletion, type NativeParentGate } from "../plugins/immune-brain/runtime/unattended/batch_git";
@@ -18,6 +18,8 @@ import { recognizePhaseEntry } from "../plugins/immune-brain/runtime/assurance/p
 import { recordPhaseEntryPrompt } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import { runContinuationHookOutput } from "../plugins/immune-brain/runtime/claude/run_continuation";
 import { runFinalVerification, parseFinalVerificationReport } from "../plugins/immune-brain/runtime/unattended/batch_final_verification";
+import { completedParentReport } from "../plugins/immune-brain/runtime/unattended/batch_runner";
+import type { BatchLaneRunReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
 
 function repository() {
  const root = mkdtempSync(join(tmpdir(), "gdr-parent-"));
@@ -235,6 +237,49 @@ describe("Parent completion and final verification", () => {
    expect(report.results[0]!.exit_code).not.toBe(0);
    expect(await Bun.file(join(root, "base.txt")).text()).toBe("base\n");
   } finally { rmSync(root, { recursive: true, force: true }); }
+ });
+});
+
+// Spec batch-resource-safety-s2 D4, SCN-6: a reopened completed Parent report is
+// rebuilt from durable facts, so it keeps every retained-Lane notice.
+describe("retained Lanes in a completed Parent report", () => {
+ it("identifies a present Lane on every reopen, re-enrolls nothing, and only observes an absent Lane", async () => {
+  const f = settledDeliveryFixture();
+  try {
+   f.settle("s5"); f.settle("s6"); f.git("add", "-A"); f.git("commit", "-qm", "deliver");
+   const head = f.git("rev-parse", "HEAD");
+   const branch = "refs/heads/imm/parent";
+   f.git("update-ref", branch, head);
+   const kept = join(f.root, ".imm/state/lanes/s5"), absent = join(f.root, ".imm/state/lanes/s6");
+   f.git("worktree", "add", "-q", "-b", "imm-lane/parent/s5", kept, head);
+   writeFileSync(join(kept, "scratch.local"), "user bytes\n");
+   const now = new Date().toISOString();
+   const state = prepareBatchLaneRunState({ batch_id: "retained-batch", initiative_slug: "parent", plan_digest: `sha256:${"d".repeat(64)}`,
+    base_head: f.baseHead, branch, confirmation_time: now, now, budget: { max_children: 2, qa_failure_limit: 2 }, max_parallel: 2,
+    children: (["s5", "s6"] as const).map(id => ({ task_id: id, slice_id: id.toUpperCase(), blocked_by: id === "s6" ? ["s5"] : [],
+     status: "enrollable" as const, risk: f.intents[id].risk, intent_path: `docs/plans/${id}.intent.json`, intent_revision: 1,
+     intent_content_hash: canonicalIntentHash(f.intents[id]), scope_hint: f.intents[id].scope_hint, reason: null, exclusion: null })) });
+   state.batch_state = "completed"; state.commits = [head];
+   for (const child of state.children) Object.assign(child, { state: "integrated", commit: head,
+    lane: { path: child.task_id === "s5" ? kept : absent, branch: `imm-lane/parent/${child.task_id}`, base_head: f.baseHead, lane_commit: head } });
+   state.final_verification_result = await runFinalVerification(f.root, ["bun --version"], { parent_head: head });
+   writeBatchLaneRunState(f.root, state);
+   const durable = readBatchLaneRunState(f.root, state.batch_id);
+   const reports = [await completedParentReport(f.root, "parent", f.reader), await completedParentReport(f.root, "parent", f.reader)]
+    .map(report => report as unknown as BatchLaneRunReport);
+   for (const report of reports) {
+    expect(report).toMatchObject({ batch_state: "completed", commits: [head], children: durable!.children,
+     final_verification: state.final_verification_result, handoffs: [] });
+    expect(report.lane_refusals).toEqual([{ task_id: "s5", path: kept, reason: expect.stringContaining("batch_lane_retained: ") }]);
+    expect(report.next_action).toStartWith("Parent delivery and final verification passed. Cleanup was not performed: 1 runtime-created Lane(s) are kept");
+    expect(JSON.stringify(report.lane_refusals)).not.toContain("released");
+   }
+   expect(readBatchLaneRunState(f.root, state.batch_id)).toEqual(durable);
+   expect(f.git("worktree", "list", "--porcelain")).toContain(`worktree ${realpathSync(kept)}\n`);
+   expect(readFileSync(join(kept, "scratch.local"), "utf8")).toBe("user bytes\n");
+   expect(existsSync(absent)).toBe(false);
+   expect(f.git("rev-parse", branch)).toBe(head);
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
  });
 });
 

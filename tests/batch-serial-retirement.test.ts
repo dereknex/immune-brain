@@ -142,14 +142,18 @@ describe("serial runner retirement", () => {
 				const report = await tick();
 				expect(report.commits, JSON.stringify(report)).toHaveLength(index + 1);
 				expect(git(f.root, "show", `${report.commits[index]}:${task}.txt`)).toBe("delivered");
-				expect(existsSync(lane)).toBe(false);
+				// Spec batch-resource-safety-s2 D1: an integrated Lane is retained, never removed.
+				expect(existsSync(lane)).toBe(true);
 				if (!index) {
-					expect(report.children.map(c => c.state)).toEqual(["released", "enrolled"]);
+					expect(report.children.map(c => c.state)).toEqual(["integrated", "enrolled"]);
 					expect(report.handoffs).toMatchObject([{ role: "executor", task_id: "second" }]);
-				} else expect(report).toMatchObject({ batch_state: "completed", children: [{ state: "released" }, { state: "released" }], handoffs: [] });
+				} else expect(report).toMatchObject({ batch_state: "completed", children: [{ state: "integrated" }, { state: "integrated" }], handoffs: [] });
 			}
 			const after = f.snapshot();
-			for (const key of ["head", "branch", "index", "status", "worktrees"] as const) expect(after[key]).toEqual(before[key]);
+			for (const key of ["head", "branch", "index", "status"] as const) expect(after[key]).toEqual(before[key]);
+			// The user's checkout registration is unchanged; each retained Lane stays registered.
+			expect(after.worktrees.startsWith(before.worktrees)).toBe(true);
+			for (const task of ["first", "second"]) expect(after.worktrees).toContain(`worktree ${join(f.root, ".git/imm/worktrees/retirement", task)}\n`);
 			expect(git(f.root, "log", "--format=%P", `${f.base}..refs/heads/imm/retirement`).split("\n")).toHaveLength(2);
 		} finally { f.cleanup(); }
 	}, 60000);

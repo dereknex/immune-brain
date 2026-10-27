@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { canonicalIntentHash, intentAuthorityHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { buildBatchFinalReport, returnBatchToCoordinator } from "../plugins/immune-brain/runtime/unattended/batch_final_report";
+import { retainedLaneAction, retainedLaneNotices } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
 import { runFinalVerification } from "../plugins/immune-brain/runtime/unattended/batch_final_verification";
 import { writeBatchLaneRunState, readBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import type { BatchLaneRunStateRecord } from "../plugins/immune-brain/runtime/unattended/batch_state";
@@ -68,6 +69,33 @@ describe("D24 final report and coordinator return", () => {
 		fx.batch.batch_state = "completed";
 		writeBatchLaneRunState(fx.root, fx.batch);
 		expect(readBatchLaneRunState(fx.root, fx.batch.batch_id)?.final_report).toEqual(report);
+	});
+
+	// Spec batch-resource-safety-s2 D4: delivery and cleanup are reported apart.
+	test("a present Lane is reported retained on every read without changing delivery evidence; an absent one is only observed", async () => {
+		const fx = fixture();
+		await fx.verify();
+		const lane = fx.batch.children[0]!.lane!;
+		const delivered = await buildBatchFinalReport(fx.root, fx.batch);
+		const durable = structuredClone(fx.batch);
+		// Already absent: observation only, no notice, no redo, no claimed cleanup.
+		expect(retainedLaneNotices(fx.root, fx.batch)).toEqual([]);
+		expect(retainedLaneAction([])).toBe("");
+		expect(fx.batch).toEqual(durable);
+		git(fx.root, "worktree", "add", "-q", "-b", lane.branch, lane.path, fx.head);
+		writeFileSync(join(lane.path, "scratch.local"), "user bytes\n");
+		const before = fx.snapshot();
+		const notices = [retainedLaneNotices(fx.root, fx.batch), retainedLaneNotices(fx.root, fx.batch)];
+		for (const notice of notices) expect(notice).toEqual([{ task_id: "child", path: lane.path, reason: expect.stringContaining("batch_lane_retained: ") }]);
+		expect(notices[0]![0]!.reason).not.toContain("released");
+		expect(retainedLaneAction(notices[0])).toContain("Cleanup was not performed: 1 runtime-created Lane(s) are kept");
+		expect(await buildBatchFinalReport(fx.root, fx.batch)).toEqual(delivered);
+		expect(fx.batch).toEqual(durable);
+		expect(fx.batch.children[0]).toMatchObject({ state: "integrated", commit: fx.head, redo_grants: 2 });
+		expect(fx.snapshot()).toEqual(before);
+		expect(readFileSync(join(lane.path, "scratch.local"), "utf8")).toBe("user bytes\n");
+		// Outside a Parent branch the runtime created no Lane to report.
+		expect(retainedLaneNotices(fx.root, { ...fx.batch, branch: "main" })).toEqual([]);
 	});
 
 	test("manual leaves the Parent branch, coordinator tree and index unchanged", async () => {
