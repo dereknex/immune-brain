@@ -1,13 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { computeBatchPlanDigest, createBatchAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/batch_authority";
-import { createEnrollmentAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
-import { intentAuthorityHash, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
-import { localRunId, readSettledRunEvidence, readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
-import { createBatchKernelPort, deriveChildRedoEnrollment, deriveParkedChildRedoEnrollment } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
+import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { rehydrateConsumption, type BatchLaneRedoChildRun } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
 import { prepareBatchLaneRunState, readBatchLaneRunState, writeBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { createLaneWorktree } from "../plugins/immune-brain/runtime/unattended/batch_worktrees";
@@ -20,7 +17,7 @@ afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: 
 function git(root: string, ...args: string[]): string {
 	return execFileSync("git", ["-C", root, "-c", "user.name=Test", "-c", "user.email=test@local", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
-function fixture(lifecycle: "active" | "done" | "stopped" = "done", subjectBinding = false) {
+function fixture() {
 	const root = realpathSync(mkdtempSync(join(tmpdir(), "batch-redo-")));
 	roots.push(root);
 	git(root, "init", "-q", "-b", "main");
@@ -37,17 +34,16 @@ function fixture(lifecycle: "active" | "done" | "stopped" = "done", subjectBindi
 	const base = git(root, "rev-parse", "HEAD");
 	const read = readTaskIntent(root, "child");
 	const children = [{ task_id: "child", slice_id: "S1", status: "enrollable" as const, reason: null, blocked_by: [],
-		intent_path: read.intent_ref.path, intent_revision: 1, intent_content_hash: read.content_hash,
-		...(subjectBinding ? { intent_authority_hash: intentAuthorityHash(read.intent) } : {}) }];
+		intent_path: read.intent_ref.path, intent_revision: 1, intent_content_hash: read.content_hash }];
 	const binding = { batch_id: "batch-redo", initiative_slug: "redo", plan_digest: computeBatchPlanDigest(children),
 		branch: "refs/heads/imm/redo", base_head: base, budget: { max_children: 1, qa_failure_limit: 2 },
 		actor_id: "user", confirmation_ref: "confirm-redo", nonce: "nonce-redo" };
 	const registry = createBatchAuthorityRegistry();
 	const capability = registry.issue(binding, children, NOW);
 	const lane = createLaneWorktree(root, "redo", "child", base);
-	const seeded = seedKernelRunForTest(lane, { task_id: "child", ...(lifecycle !== "active" ? { terminal: { lifecycle } } : {}), record: {
+	const seeded = seedKernelRunForTest(lane, { task_id: "child", terminal: { lifecycle: "done" }, record: {
 		contract: "assurance_kernel/task_record/v4", task_id: "child", intent_snapshot: read.intent,
-		intent_ref: { path: read.intent_ref.path, content_hash: read.content_hash }, lifecycle, artifact_state: "frozen",
+		intent_ref: { path: read.intent_ref.path, content_hash: read.content_hash }, lifecycle: "done", artifact_state: "frozen",
 		baseline: read.content_hash, git_base_head: base, findings: [], history: [],
 		attestations: ["qa", "review"].map(kind => ({ id: `old-${kind}`, kind, authority_role: kind === "qa" ? "qa" : "reviewer", task_revision: 1,
 			intent_content_hash: read.content_hash, diff_hash: `sha256:${"f".repeat(64)}`, actor_id: `old-${kind}`, summary: "prior approval",
@@ -55,80 +51,17 @@ function fixture(lifecycle: "active" | "done" | "stopped" = "done", subjectBindi
 			...(kind === "review" ? { review_revision: { contract: "assurance_kernel/review_revision_identity/v1", base_head: base,
 				review_commit: base, review_tree: git(lane, "rev-parse", "HEAD^{tree}"), manifest_digest: `sha256:${"f".repeat(64)}` } } : {}) })),
 	} });
-	registry.consumeChild(capability, binding, "child");
-	writeFileSync(join(root, "parent.txt"), "new parent tip\n");
-	git(root, "add", "--", "parent.txt"); git(root, "commit", "-qm", "advance parent");
-	const head = git(root, "rev-parse", "HEAD");
-	const request = { capability, binding, task_id: "child", expected_head: head, now: NOW, prior_lane_root: lane, prior_run_id: seeded.run_id };
-	return { root, lane, head, base, children, binding, registry, capability, request };
+	return { root, lane, base, children, binding, run_id: seeded.run_id };
 }
 
-describe("redo enrollment under the original Batch Authorization", () => {
-	// Spec batch-resource-safety-s2 D1/D2: the grant check stays, but no Lane is recreated
-	// from it; the prior Lane and its run are left for the user.
-	for (const lifecycle of ["done", "stopped"] as const) test(`${lifecycle} run grants a redo with no inherited approvals and leaves the prior Lane intact`, () => {
-		const fx = fixture(lifecycle);
-		expect(readSettledRunEvidence(fx.lane, "child")?.record.attestations).toHaveLength(2);
-		const derived = deriveChildRedoEnrollment(fx.root, fx.registry, fx.request);
-		expect(derived.binding.intent_content_hash).toBe(fx.children[0]!.intent_content_hash);
-		expect(fx.registry.redoGrants(fx.capability, "child")).toBe(1);
-		expect(fx.registry.isChildConsumed(fx.capability, "child")).toBe(false);
-		expect(git(fx.lane, "rev-parse", "HEAD")).toBe(fx.base);
-		expect(localRunId(fx.lane, "child")).toBe(fx.request.prior_run_id);
-		expect(readSettledRunEvidence(fx.lane, "child")?.record.attestations.map(a => a.id)).toEqual(["old-qa", "old-review"]);
-	});
-
-	test("parked recovery checks capability confirmation, not a caller's new timestamp", async () => {
-		const fx = fixture("stopped");
-		await expect(deriveParkedChildRedoEnrollment(fx.root, fx.registry,
-			{ ...fx.request, now: "2099-01-01T00:00:00.000Z", parked_since: NOW })).rejects.toThrow("confirmation_required");
-		expect(fx.registry.redoGrants(fx.capability, "child")).toBe(0);
-	});
-
-	test("fresh parked recovery still refuses an active owned run", async () => {
-		const fx = fixture("active");
-		await expect(deriveParkedChildRedoEnrollment(fx.root, fx.registry,
-			{ ...fx.request, parked_since: "2026-01-01T00:00:00.000Z" })).rejects.toThrow("batch_child_redo_run_active");
-		expect(fx.registry.redoGrants(fx.capability, "child")).toBe(0);
-	});
-
-	test("a live prior run cannot spend a redo", () => {
-		const fx = fixture("active");
-		expect(() => deriveChildRedoEnrollment(fx.root, fx.registry, fx.request)).toThrow("batch_child_redo_run_active");
-		expect(fx.registry.redoGrants(fx.capability, "child")).toBe(0);
-		expect(fx.registry.isChildConsumed(fx.capability, "child")).toBe(true);
-	});
-
-	test.each(["different-run", ""])("a recorded run id %j cannot substitute for the local run", prior_run_id => {
-		const fx = fixture();
-		expect(() => deriveChildRedoEnrollment(fx.root, fx.registry, { ...fx.request, prior_run_id })).toThrow("batch_child_redo_run_mismatch");
-		expect(fx.registry.redoGrants(fx.capability, "child")).toBe(0);
-	});
-
-	for (const subjectBinding of [false, true]) test(`changed intent content cannot spend a redo (subject binding: ${subjectBinding})`, () => {
-		const fx = fixture("done", subjectBinding);
-		const path = join(fx.root, "docs/plans/child.intent.json");
-		const intent = JSON.parse(readFileSync(path, "utf8"));
-		intent.revision++;
-		writeFileSync(path, JSON.stringify(intent));
-		git(fx.root, "add", "--", "docs/plans/child.intent.json"); git(fx.root, "commit", "-qm", "changed intent");
-		expect(() => deriveChildRedoEnrollment(fx.root, fx.registry, { ...fx.request, expected_head: git(fx.root, "rev-parse", "HEAD") })).toThrow("batch_child_intent_changed");
-		expect(fx.registry.redoGrants(fx.capability, "child")).toBe(0);
-	});
-
-	test("a failed preparation leaves the grant available", () => {
-		const fx = fixture();
-		expect(() => deriveChildRedoEnrollment(fx.root, fx.registry, { ...fx.request, expected_head: fx.base })).toThrow("batch_head_lineage_broken");
-		expect(fx.registry.redoGrants(fx.capability, "child")).toBe(0);
-	});
-});
-
-describe("resume consumption and redo spend", () => {
+// The redo re-issue path is retired (batch-redo-reissue-retirement): a grant recorded
+// before batch-resource-safety S2 only bounds the parked child and is never spent again.
+describe("resume consumption and redo grants", () => {
 	for (const grants of [0, 1, 2]) test(`restores ${grants} grants through the durable Lane record without resetting the limit`, () => {
 		const fx = fixture();
 		const record = prepareBatchLaneRunState({ ...fx.binding, children: fx.children, confirmation_time: NOW, now: NOW, max_parallel: 1 });
 		record.children[0] = { ...record.children[0]!, state: "settled", redo_grants: grants,
-			lane: { path: fx.lane, branch: "imm-lane/redo/child", base_head: fx.base, lane_commit: null, run_id: fx.request.prior_run_id } } as BatchLaneRedoChildRun;
+			lane: { path: fx.lane, branch: "imm-lane/redo/child", base_head: fx.base, lane_commit: null, run_id: fx.run_id } } as BatchLaneRedoChildRun;
 		writeBatchLaneRunState(fx.root, record);
 		const persisted = readBatchLaneRunState(fx.root, record.batch_id)!;
 		const registry = createBatchAuthorityRegistry();
@@ -138,11 +71,8 @@ describe("resume consumption and redo spend", () => {
 		rehydrateConsumption(input, persisted);
 		expect(registry.isChildConsumed(capability, "child")).toBe(true);
 		expect(registry.redoGrants(capability, "child")).toBe(grants);
-		for (let count = grants + 1; count <= 2; count++) {
-			expect(registry.reissueChild(capability, fx.binding, "child")).toBe(count);
-			registry.consumeChild(capability, fx.binding, "child");
-		}
-		expect(() => registry.reissueChild(capability, fx.binding, "child")).toThrow("batch_child_redo_exhausted");
+		expect(() => registry.consumeChild(capability, fx.binding, "child")).toThrow("batch_child_slot_consumed");
+		expect(registry.redoGrants(capability, "child")).toBe(grants);
 	});
 
 	test("restores an already granted redo awaiting enrollment without consuming it", () => {
@@ -155,6 +85,6 @@ describe("resume consumption and redo spend", () => {
 		expect(registry.redoGrants(capability, "child")).toBe(1);
 		expect(registry.isChildConsumed(capability, "child")).toBe(false);
 		registry.consumeChild(capability, fx.binding, "child");
-		expect(registry.reissueChild(capability, fx.binding, "child")).toBe(2);
+		expect(registry.redoGrants(capability, "child")).toBe(1);
 	});
 });

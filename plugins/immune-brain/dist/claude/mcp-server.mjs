@@ -5004,19 +5004,6 @@ function createBatchAuthorityRegistry() {
     releaseChild(capability, taskId) {
       slotsOf(capability).delete(taskId);
     },
-    reissueChild(capability, expected, taskId) {
-      this.inspect(capability, expected);
-      if (!planOf(capability).some((child) => child.task_id === taskId))
-        throw new Error(`batch_child_not_in_plan: ${taskId}`);
-      if (!slotsOf(capability).has(taskId))
-        throw new Error(`batch_child_slot_not_consumed: ${taskId}`);
-      const count = this.redoGrants(capability, taskId);
-      if (count >= 2)
-        throw new Error(`batch_child_redo_exhausted: ${taskId}`);
-      redos.get(capability).set(taskId, count + 1);
-      slotsOf(capability).delete(taskId);
-      return count + 1;
-    },
     redoGrants(capability, taskId) {
       if (!planOf(capability).some((child) => child.task_id === taskId))
         throw new Error(`batch_child_not_in_plan: ${taskId}`);
@@ -5045,17 +5032,11 @@ function assertBatchLineageOrigin(root, baseHead, expectedHead) {
     throw new Error(`batch_head_lineage_broken: the first child must enroll on the confirmed base_head ${baseHead} or a fast-forward of it, not ${expectedHead}`);
 }
 function deriveChildEnrollment(root, registry, input) {
-  return prepareChildEnrollment(root, registry, input, false);
-}
-function prepareChildEnrollment(root, registry, input, redo) {
   const validated = registry.inspect(input.capability, input.binding);
   const child = registry.children(input.capability).find((entry) => entry.task_id === input.task_id);
   if (!child)
     throw new Error(`batch_child_not_in_plan: ${input.task_id}`);
-  const consumed = registry.isChildConsumed(input.capability, input.task_id);
-  if (redo && !consumed)
-    throw new Error(`batch_child_slot_not_consumed: ${input.task_id}`);
-  if (!redo && consumed)
+  if (registry.isChildConsumed(input.capability, input.task_id))
     throw new Error(`batch_child_slot_consumed: ${input.task_id}`);
   if (!GIT_COMMIT_ID.test(input.expected_head))
     throw new Error("batch_head_lineage_broken: expected_head is not a commit id");
@@ -5066,8 +5047,6 @@ function prepareChildEnrollment(root, registry, input, redo) {
     throw new Error(`batch_head_lineage_broken: expected ${input.expected_head}, found ${preparation.git_base_head}`);
   if (!preparation.intent)
     throw new Error(`batch_child_intent_changed: ${input.task_id} intent sidecar is unreadable`);
-  if (redo && preparation.intent.content_hash !== child.intent_content_hash)
-    throw new Error(`batch_child_intent_changed: ${input.task_id}`);
   if (child.intent_authority_hash) {
     let live = null;
     try {
