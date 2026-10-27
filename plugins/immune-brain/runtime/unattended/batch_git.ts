@@ -967,14 +967,8 @@ export function deliveryScopes(root: string, taskIds: readonly string[]): string
 	return [...scopes].sort();
 }
 
-/** Remote closure and batch `completed` are observations; neither proves delivery. */
-export async function observeParentCompletion(root: string, initiativeSlug: string,
-	requiredTaskIds: readonly string[]): Promise<ParentCompletionObservation> {
-	if (!requiredTaskIds.length || new Set(requiredTaskIds).size !== requiredTaskIds.length)
-		throw new Error("Parent completion requires a non-empty, unique required Task list");
-	const headResult = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
-	if (headResult.status !== 0) throw new Error("Parent completion requires a Git HEAD");
-	const head = headResult.stdout.trim();
+/** Writers and readers bind the same delivery set, including repairs retained in batch history. */
+function parentDeliveryTasks(root: string, initiativeSlug: string, requiredTaskIds: readonly string[]) {
 	const directory = join(root, ".imm", "state", "batches");
 	const records: AnyBatchRunStateRecord[] = [];
 	if (existsSync(directory)) for (const file of readdirSync(directory).sort()) {
@@ -991,6 +985,18 @@ export async function observeParentCompletion(root: string, initiativeSlug: stri
 	const native = readNativeParentFinalReport(root, initiativeSlug);
 	const allTaskIds = [...new Set([...requiredTaskIds, ...records.flatMap(record => record.repair_tasks?.map(task => task.task_id) ?? []),
 		...(native?.repair_tasks?.map(task => task.task_id) ?? [])])];
+	return { records, native, allTaskIds };
+}
+
+/** Remote closure and batch `completed` are observations; neither proves delivery. */
+export async function observeParentCompletion(root: string, initiativeSlug: string,
+	requiredTaskIds: readonly string[]): Promise<ParentCompletionObservation> {
+	if (!requiredTaskIds.length || new Set(requiredTaskIds).size !== requiredTaskIds.length)
+		throw new Error("Parent completion requires a non-empty, unique required Task list");
+	const headResult = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
+	if (headResult.status !== 0) throw new Error("Parent completion requires a Git HEAD");
+	const head = headResult.stdout.trim();
+	const { records, native, allTaskIds } = parentDeliveryTasks(root, initiativeSlug, requiredTaskIds);
 	const parent = records.filter(record => isParentBranch(record.branch)).sort((a, b) => a.updated_at.localeCompare(b.updated_at)).at(-1);
 	const deliveryHead = parent ? readBatchRef(root, parent.branch!) : head;
 	if (!deliveryHead) throw new Error("Parent evidence requires an existing Parent ref");
@@ -1082,8 +1088,8 @@ export async function advanceNativeParent(root: string, initiativeSlug: string, 
 					recovery_action: "retry through a fresh native gate in the current Host" };
 			if (refused) return refused;
 		}
-		const taskIds = [...facts.parent.tasks.map(task => task.task_id), ...(facts.native?.repair_tasks?.map(task => task.task_id) ?? [])];
-		const final = await runFinalVerification(root, finalCommands, { scopes: deliveryScopes(root, taskIds) });
+		const { allTaskIds } = parentDeliveryTasks(root, initiativeSlug, facts.parent.tasks.map(task => task.task_id));
+		const final = await runFinalVerification(root, finalCommands, { scopes: deliveryScopes(root, allTaskIds) });
 		writeNativeParentFinalReport(root, { contract: "assurance_kernel/parent_final_report/v1", initiative_slug: initiativeSlug,
 			task_ids: facts.parent.tasks.map(task => task.task_id), final_verification: final, repair_tasks: facts.native?.repair_tasks });
 		facts = await observeNativeParent(root, initiativeSlug, readInitiative);

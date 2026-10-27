@@ -9914,10 +9914,10 @@ function deriveAssuranceRecovery(taskId, fresh, result, findings = []) {
     next_action: scope ? "Reconcile the listed paths with the TaskIntent scope: unstage unrelated changes or submit the required native Intent revision." : migration ? "route Planner for the verification descriptor v2 Intent revision and native gate" : category === "authorization" ? p.authorization.blocked ? "inspect authority state" : p.next_obligation === "revise_intent" ? "route Planner for the required Intent revision and native gate" : "request_authorization" : unstaged ? "Stage only the scoped implementation changes, then call advance_assurance." : category === "repair" ? "Route foreground Executor to repair and verify the identified findings; dispose each by resolve_finding or evidence-bound refute_finding, then run fresh advance_assurance." : reviewPreparation ? "Repair the Review evidence environment, then call advance_assurance to resume run_review; retain fresh QA and do not re-confirm the batch." : "Repair the identified verification environment, then call advance_assurance; a local check is non-attesting."
   };
 }
-function deliveryOf(diffHash) {
+function deliveryOf(diffHash, settleCommit) {
   return {
     content_hash: diffHash,
-    note: `Changes are in the working tree with scoped content hash ${diffHash}; commit however you prefer.`
+    note: settleCommit ? `Scoped content hash ${diffHash} was committed in settle commit ${settleCommit} (Git integration: auto).` : `Changes are in the working tree with scoped content hash ${diffHash}; commit however you prefer.`
   };
 }
 function declaredQaJobTimeoutMs(descriptors) {
@@ -14362,13 +14362,7 @@ function deliveryScopes(root, taskIds) {
   }
   return [...scopes].sort();
 }
-async function observeParentCompletion(root, initiativeSlug, requiredTaskIds) {
-  if (!requiredTaskIds.length || new Set(requiredTaskIds).size !== requiredTaskIds.length)
-    throw new Error("Parent completion requires a non-empty, unique required Task list");
-  const headResult = spawnSync16("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
-  if (headResult.status !== 0)
-    throw new Error("Parent completion requires a Git HEAD");
-  const head = headResult.stdout.trim();
+function parentDeliveryTasks(root, initiativeSlug, requiredTaskIds) {
   const directory = join21(root, ".imm", "state", "batches");
   const records = [];
   if (existsSync11(directory))
@@ -14394,6 +14388,16 @@ async function observeParentCompletion(root, initiativeSlug, requiredTaskIds) {
     ...records.flatMap((record) => record.repair_tasks?.map((task) => task.task_id) ?? []),
     ...native?.repair_tasks?.map((task) => task.task_id) ?? []
   ])];
+  return { records, native, allTaskIds };
+}
+async function observeParentCompletion(root, initiativeSlug, requiredTaskIds) {
+  if (!requiredTaskIds.length || new Set(requiredTaskIds).size !== requiredTaskIds.length)
+    throw new Error("Parent completion requires a non-empty, unique required Task list");
+  const headResult = spawnSync16("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
+  if (headResult.status !== 0)
+    throw new Error("Parent completion requires a Git HEAD");
+  const head = headResult.stdout.trim();
+  const { records, native, allTaskIds } = parentDeliveryTasks(root, initiativeSlug, requiredTaskIds);
   const parent = records.filter((record) => isParentBranch(record.branch)).sort((a, b) => a.updated_at.localeCompare(b.updated_at)).at(-1);
   const deliveryHead = parent ? readBatchRef(root, parent.branch) : head;
   if (!deliveryHead)
@@ -14477,8 +14481,8 @@ async function advanceNativeParent(root, initiativeSlug, commands, readInitiativ
       if (refused)
         return refused;
     }
-    const taskIds = [...facts.parent.tasks.map((task) => task.task_id), ...facts.native?.repair_tasks?.map((task) => task.task_id) ?? []];
-    const final = await runFinalVerification(root, finalCommands, { scopes: deliveryScopes(root, taskIds) });
+    const { allTaskIds } = parentDeliveryTasks(root, initiativeSlug, facts.parent.tasks.map((task) => task.task_id));
+    const final = await runFinalVerification(root, finalCommands, { scopes: deliveryScopes(root, allTaskIds) });
     writeNativeParentFinalReport(root, {
       contract: "assurance_kernel/parent_final_report/v1",
       initiative_slug: initiativeSlug,
@@ -17856,6 +17860,15 @@ function freshEnrollmentAdmitted(root, taskId) {
   }
 }
 function stagePaths(root, paths) {
+  const ignored = spawnSync19("git", ["check-ignore", "-z", "--stdin"], {
+    cwd: root,
+    encoding: "utf8",
+    input: `${paths.join("\x00")}\x00`
+  });
+  if (ignored.status === 0)
+    throw new Error(`enrollment_precondition_ignored_path: ${ignored.stdout.split("\x00").filter(Boolean).join(", ")}; adjust Git ignore rules or explicitly track these planning files before retrying Enrollment`);
+  if (ignored.status !== 1)
+    throw new Error(`enrollment_precondition_ignore_check_failed: ${ignored.error?.message ?? ignored.stderr.trim()}`);
   execFileSync10("git", ["add", "--", ...paths], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"],
@@ -20484,7 +20497,8 @@ function withCompletionDelivery(taskId, result, root = process.cwd()) {
   try {
     const record = readSettledTaskEvidence(root, taskId)?.record;
     const diffHash = record?.attestations?.at(-1)?.diff_hash;
-    return typeof diffHash === "string" ? { ...result, delivery: deliveryOf(diffHash) } : result;
+    const settle = result.settle_commit;
+    return typeof diffHash === "string" ? { ...result, delivery: deliveryOf(diffHash, settle?.committed ? settle.commit : undefined) } : result;
   } catch {
     return result;
   }

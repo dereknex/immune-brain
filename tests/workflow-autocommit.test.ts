@@ -4,6 +4,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, w
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { commitSettledDelivery, commitWorkflowPaths, settleCommitSubject, withSettleCommit } from "../plugins/immune-brain/runtime/assurance/workflow_autocommit";
+import { withCompletionDelivery } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { recoverKernelStoreFollowUps } from "../plugins/immune-brain/runtime/kernel/storage";
 import { taskStatusIdentity } from "../plugins/immune-brain/runtime/workspace_scope";
@@ -379,8 +380,10 @@ describe("settle commit under the Git integration preference (ADR 0024, SCN-4)",
 	test("auto commits exactly the settled scoped paths and leaves every other path untouched", () => {
 		const { root, base } = settled("auto");
 		const outside = [observed(root, "other/staged.ts"), observed(root, "other/loose.ts")];
-		const result = commitSettledDelivery(root, taskId);
-		expect(result).toMatchObject({ mode: "auto", committed: true, paths: ["src/a.ts"] });
+		const result = withCompletionDelivery(taskId, withSettleCommit(root, taskId, { state: "completed" }), root);
+		expect(result).toMatchObject({ settle_commit: { mode: "auto", committed: true, paths: ["src/a.ts"] },
+			delivery: { note: expect.stringContaining(git(root, "rev-parse", "HEAD")) } });
+		expect(JSON.stringify(result)).not.toContain("commit however you prefer");
 		expect(git(root, "rev-parse", "HEAD^")).toBe(base);
 		expect(git(root, "log", "-1", "--format=%s")).toBe(settleCommitSubject(taskId));
 		expect(git(root, "show", "--name-only", "--format=", "HEAD")).toBe("src/a.ts");
@@ -396,6 +399,9 @@ describe("settle commit under the Git integration preference (ADR 0024, SCN-4)",
 		const status = statusLines(root);
 		expect(commitSettledDelivery(root, taskId)).toBeNull();
 		expect(withSettleCommit(root, taskId, { state: "completed" })).toEqual({ state: "completed" });
+		expect(withCompletionDelivery(taskId, { state: "completed" }, root)).toMatchObject({
+			delivery: { note: expect.stringContaining("commit however you prefer") },
+		});
 		expect(git(root, "rev-parse", "HEAD")).toBe(base);
 		expect(statusLines(root)).toEqual(status);
 	});

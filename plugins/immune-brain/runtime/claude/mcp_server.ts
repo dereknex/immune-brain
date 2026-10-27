@@ -132,7 +132,7 @@ export interface McpRuntimeOptions {
 
 /**
  * Content-delivery-authority D7: a completed Task names the scoped content hash
- * its final attestation bound, and leaves committing to the user. Read from
+ * its final attestation bound, and reports any auto settle commit. Read from
  * settled evidence after completion, so the shared coordinator result is unchanged.
  */
 export function withCompletionDelivery<T>(taskId: string, result: T, root = process.cwd()): T {
@@ -140,7 +140,8 @@ export function withCompletionDelivery<T>(taskId: string, result: T, root = proc
 	try {
 		const record = readSettledTaskEvidence(root, taskId)?.record as { attestations?: Array<{ diff_hash?: unknown }> } | undefined;
 		const diffHash = record?.attestations?.at(-1)?.diff_hash;
-		return typeof diffHash === "string" ? { ...result, delivery: deliveryOf(diffHash) } : result;
+		const settle = (result as { settle_commit?: import("../assurance/workflow_autocommit").SettleCommitResult }).settle_commit;
+		return typeof diffHash === "string" ? { ...result, delivery: deliveryOf(diffHash, settle?.committed ? settle.commit : undefined) } : result;
 	} catch {
 		return result;
 	}

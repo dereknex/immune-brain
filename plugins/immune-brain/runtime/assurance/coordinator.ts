@@ -515,17 +515,19 @@ export type AssuranceAdvanceResult = AssuranceRecoveryFields & (
 
 /**
  * D7: a settled Task is delivered by its scoped content, not by a commit. A
- * Host's completion report names that content identity and leaves Git to the user.
+ * Host's completion report names that content identity and any auto settle commit.
  */
 export interface AssuranceDelivery {
 	content_hash: string;
 	note: string;
 }
 
-export function deliveryOf(diffHash: string): AssuranceDelivery {
+export function deliveryOf(diffHash: string, settleCommit?: string): AssuranceDelivery {
 	return {
 		content_hash: diffHash,
-		note: `Changes are in the working tree with scoped content hash ${diffHash}; commit however you prefer.`,
+		note: settleCommit
+			? `Scoped content hash ${diffHash} was committed in settle commit ${settleCommit} (Git integration: auto).`
+			: `Changes are in the working tree with scoped content hash ${diffHash}; commit however you prefer.`,
 	};
 }
 
