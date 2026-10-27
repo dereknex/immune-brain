@@ -101,7 +101,8 @@ finding. This adds no finding kind and no verdict branch: it is the same
 `acceptance` finding the seam rule above already defines.
 
 Before pass, enumerate the immutable change set and read each complete per-file
-diff, including deletions. Page bounded reads until every hunk is visible; a
+diff, including deletions, or complete the generated snapshot proof below. Page
+bounded reads until every required hunk or structural difference is visible; a
 truncated aggregate output or summary is incomplete coverage. Trace changed
 high-risk behavior through its callers and state owner, and inspect a concrete
 negative case against the embedded acceptance. If immutable evidence remains
@@ -109,6 +110,36 @@ unavailable or incomplete within the turn budget, return `incomplete` with
 `inspected_paths` and a single-line `reason`, without approval or findings. `inspected_paths` declares coverage; it
 does not itself prove tool reading. Judge quality by evidence, not elapsed time
 or tool-call count.
+
+### Generated snapshot proof
+
+For a newly added Drizzle `migrations/meta/*_snapshot.json` in a Git review
+revision, a complete structural comparison may replace reading its full added
+text. This exception does not cover modified/deleted snapshots, other JSON,
+SQL migrations, schema source, or legacy bundles. The reviewer must run and
+inspect a read-only program against the immutable Git objects that:
+
+1. Verifies the added path's blob OID and regular-file mode against
+   `changed_paths`. Resolves its immediate predecessor in the same metadata
+   directory from `base_head`, proves that predecessor has the same blob OID
+   and mode in `review_commit`, and verifies new `prevId` equals predecessor
+   `id`, with matching `version` and `dialect`.
+2. Strictly parses both complete blobs, rejecting duplicate keys, non-finite
+   numbers, or lossy numeric conversion. Compares the entire JSON trees with
+   type-sensitive equality: object key order and whitespace are immaterial;
+   array order, unknown fields, IDs, additions and deletions are retained.
+3. Prints both paths and blob OIDs, the identity-chain checks, and every
+   difference as an unambiguous JSON path with full before/after values.
+   Identical subtrees may be omitted only after programmatic equality proves
+   them unchanged. Counts, hashes alone, selected-key comparisons, or a
+   Parent-provided summary do not establish coverage.
+
+Read the comparison program and its complete output, then check all changed
+schema values against the delivered SQL migration and schema source. List the
+snapshot in `approval.inspected_paths` only after this proof is complete, and
+name the snapshot proof in `approval.summary`. If provenance, parsing, equality,
+or output coverage cannot be proved, read the full diff or return `incomplete`;
+never discard metadata, truncate values, or infer approval from generation.
 
 A required check that is skipped, that matches zero tests, or whose prerequisite
 is absent does not prove the acceptance; do not accept it as evidence. Full
@@ -150,7 +181,7 @@ Every rework finding must carry machine-checkable provenance: evidence.trigger (
 
 If the turn budget cannot cover every changed path, return decision "incomplete" with inspected_paths (a unique subset of changed paths actually read) and a non-empty single-line reason. Omit approval and findings entirely. Incomplete coverage is an execution outcome, never a finding or an assurance verdict.
 
-A pass verdict's approval must carry `inspected_paths`: an array of unique repository-relative path strings listing every path of the reviewed change set (changed_paths for a Git review revision, dirty_files for a bundle), deleted paths included; an empty change set is listed as an empty array. A path may be listed only after its diff was read. A pass that omits any changed path, lists a path outside the change set, or duplicates a path is rejected as a correctable invalid verdict.
+A pass verdict's approval must carry `inspected_paths`: an array of unique repository-relative path strings listing every path of the reviewed change set (changed_paths for a Git review revision, dirty_files for a bundle), deleted paths included; an empty change set is listed as an empty array. A path may be listed only after its diff was read, or the code-review role's generated snapshot proof was completed for an eligible added Drizzle snapshot. A pass that omits any changed path, lists a path outside the change set, or duplicates a path is rejected as a correctable invalid verdict.
 
 A dispatched reviewer is never continued or re-prompted, including through SendMessage. The reserved prompt is dispatched verbatim as a four-line handle: operation marker, absolute Review packet path, Packet sha256, and digest-verification instruction. Verify the named packet digest before following its instructions; on a mismatch reply exactly `review packet digest mismatch`. Read the packet for the per-dispatch snapshot facts. The host binds this reviewer's final result bytes to the reservation, so a Parent may submit them without transcribing them. A blocked `submit_review` is recovered only through its returned `recovery_action`.
 

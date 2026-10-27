@@ -320,7 +320,9 @@ Use the returned verdict schema exactly, including omission of unsupported field
 A Review pass verdict's approval must carry `inspected_paths`: an array of
 unique repository-relative path strings listing every path of the reviewed
 change set, deleted paths included; an empty change set is listed as an empty
-array. A path may be listed only after its diff was read. A pass that omits any
+array. A path may be listed only after its diff was read, or the
+[code-review role's generated snapshot proof](role-prompts/code-review.md#generated-snapshot-proof)
+was completed for an eligible added Drizzle snapshot. A pass that omits any
 changed path, lists a path outside the change set, or duplicates a path is
 rejected as a correctable invalid verdict.
 
