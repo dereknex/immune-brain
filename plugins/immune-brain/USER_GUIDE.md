@@ -78,7 +78,7 @@ Host agent 直接完成 explanation、inspection 或 review，不创建 workflow
 6. `routine` 在 QA 后完成；`material` 与 `critical` 追加单一 host native Review，Review 通过后自动完成。
 7. completion predicate 满足后，Kernel 将 `lifecycle` 转为 `done` 并释放 owner。
 
-只有 projection 暴露唯一 unresolved user decision 时，Parent 才调用 `request_authorization`。显式 stop 与 breaking Intent revision 使用各自的单次 current-Host native authority gate；QA、Review 和 normal completion 不经过该入口。任何 Managed native authority failure 都必须 fail closed，只返回稳定原因和一个当前 Host 恢复动作；不得建议切换 Pi、Direct Path、其他 Host/worktree、unmanaged implementation 或自动重试。
+只有 Kernel projection 暴露唯一可授权操作时，Parent 才调用 `request_authorization`：解决未决用户决策、处理 replan boundary，或确认 `authorize_review_retry`。后者只为已耗尽两次 `incomplete` 的冻结 snapshot 追加一次 Review，不清历史、不重跑有效 QA、不批准 Review。新契约必须不同于已知旧契约；旧历史没有契约哈希时，原生确认须明确提示无法验证这一变化。取消不写入，授权不可跨 snapshot 复用。显式 stop 与 breaking Intent revision 使用各自的单次 current-Host native authority gate；QA、Review 和 normal completion 不经过该入口。任何 Managed native authority failure 都必须 fail closed，只返回稳定原因和一个当前 Host 恢复动作；不得建议切换 Pi、Direct Path、其他 Host/worktree、unmanaged implementation 或自动重试。
 
 Immune-Brain 不创建、切换或删除 Git worktree。需要文件系统隔离时，用户应在启动 Pi 或 Enrollment 前自行创建并进入 worktree；主工作区仍可直接使用。由于 TaskRecord 与 workspace claim 是 worktree-local，任务结算前必须保留该 worktree。
 
