@@ -3,7 +3,6 @@ import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, rmdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { observeEnrollmentTaskIntent } from "../kernel/intent";
-import { readBackendClaim } from "../kernel/backend_claim";
 import { readBoundActiveSpec } from "../kernel/spec_binding";
 import { readSecureProjectFile } from "../kernel/storage";
 import { parentBranchRef } from "./batch_ref";
@@ -59,56 +58,6 @@ export function createLaneWorktree(root: string, slug: string, taskId: string, h
 	return path;
 }
 
-export const RETAINED_LANE_REF_PREFIX = "refs/imm/retained/";
-
-/** Keep a Lane commit the new base does not contain reachable before its branch is deleted. */
-function retainLaneCommit(root: string, slug: string, taskId: string, commit: string, target: string): void {
-	if (commit === target) return;
-	const contained = spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", commit, target], { encoding: "utf8" });
-	if (contained.status === 0) return;
-	if (contained.status !== 1) throw new Error("batch_worktree_failed: cannot compare the Lane commit with the redo base");
-	git(root, ["update-ref", `${RETAINED_LANE_REF_PREFIX}${slug}/${taskId}/${commit}`, commit]);
-}
-
-/** Recreate only the runtime-owned clean Lane; its ignored Authority Store is discarded. */
-export function recreateLaneWorktree(root: string, slug: string, taskId: string, head: string, priorCommit?: string, reviveUnreadable = false): string {
-	parentBranchRef(slug);
-	parentBranchRef(taskId);
-	// Resolve the new base before deleting anything, including on a malformed ref.
-	const target = git(root, ["rev-parse", "--verify", "--end-of-options", `${head}^{commit}`]);
-	const path = join(worktreeDirectory(root), slug, taskId);
-	const branch = `imm-lane/${slug}/${taskId}`;
-	if (existsSync(path)) {
-		let claim: ReturnType<typeof readBackendClaim>;
-		try { claim = readBackendClaim(path); }
-		catch (error) {
-			if (!reviveUnreadable) throw error;
-			claim = null;
-		}
-		if (claim) throw new Error("batch_worktree_failed: redo Lane still has an active claim");
-		const current = git(path, ["rev-parse", "HEAD"]);
-		if (priorCommit && current !== priorCommit && current !== target)
-			throw new Error("batch_worktree_failed: redo requires the existing clean owned Lane");
-		retainLaneCommit(root, slug, taskId, current, target);
-		if (!removeLaneWorktree(root, path, branch, current))
-			throw new Error("batch_worktree_failed: redo requires the existing clean owned Lane");
-	} else {
-		if (!priorCommit) throw new Error("batch_worktree_failed: redo requires the existing clean owned Lane");
-		// Recover a crash after removal, but never delete an unrelated branch tip.
-		const ref = `refs/heads/${branch}`;
-		const found = spawnSync("git", ["-C", root, "rev-parse", "--verify", "--quiet", ref], { encoding: "utf8" });
-		if (found.status === 0) {
-			if (found.stdout.trim() !== priorCommit) throw new Error("batch_worktree_failed: redo branch moved");
-			retainLaneCommit(root, slug, taskId, priorCommit, target);
-			// Remove only this missing Lane's stale registration, never prune other worktrees.
-			const listed = git(root, ["worktree", "list", "--porcelain"]);
-			if (listed.split("\n").includes(`worktree ${path}`)) git(root, ["worktree", "remove", path]);
-			git(root, ["update-ref", "-d", ref, priorCommit]);
-		} else if (found.status !== 1) throw new Error("batch_worktree_failed: redo branch is unreadable");
-	}
-	return createLaneWorktree(root, slug, taskId, target);
-}
-
 /** Carry only planning inputs, never arbitrary coordinator edits or its index. */
 export function copyLanePlanningInput(root: string, lane: string, taskId: string, kind: "intent" | "spec"): void {
 	const read = observeEnrollmentTaskIntent(root, taskId);
@@ -130,21 +79,6 @@ export function copyLanePlanningInput(root: string, lane: string, taskId: string
 		throw new Error("batch_worktree_failed: planning input is not a regular file");
 	writeFileSync(target, input.content);
 	git(lane, ["add", "--", input.path]);
-}
-
-/** Refuses dirty/unowned paths; no --force on a child Lane. */
-export function removeLaneWorktree(root: string, path: string, branch: string, commit: string): boolean {
-	if (!existsSync(path)) return false;
-	const directory = worktreeDirectory(root);
-	if (!path.startsWith(`${directory}/`) || realpathSync(path) !== path ||
-		realpathSync(git(path, ["rev-parse", "--path-format=absolute", "--git-common-dir"])) !==
-		realpathSync(git(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"])) ||
-		git(path, ["symbolic-ref", "--short", "HEAD"]) !== branch ||
-		git(path, ["rev-parse", "HEAD"]) !== commit ||
-		git(path, ["status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none"])) return false;
-	git(root, ["worktree", "remove", path]);
-	git(root, ["update-ref", "-d", `refs/heads/${branch}`, commit]);
-	return true;
 }
 
 /** The detached checkout is disposable, including files produced by verification. */

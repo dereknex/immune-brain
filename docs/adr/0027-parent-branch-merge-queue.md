@@ -30,9 +30,10 @@ result, and nothing returns the work to main.
    `imm/<slug>`, written with `update-ref` at `base_head` and never checked out
    by the runtime. Hidden-ref and legacy branch records keep their mode.
 2. **Runtime-owned worktrees.** The runtime creates each child's worktree on
-   `imm-lane/<slug>/<task_id>` at the Parent tip under the Git common directory,
-   resets it for a redo, and removes it with its branch once integrated and
-   clean. Offered Lanes are retired for new batches. Serial is a Lane batch
+   `imm-lane/<slug>/<task_id>` at the Parent tip under the Git common directory.
+   It never removes or recreates that Lane without trusted Executor exit
+   evidence, which no Host supplies yet (amendment below). Offered Lanes are
+   retired for new batches. Serial is a Lane batch
    with `max_parallel` 1.
 3. **Merge queue.** Settled children integrate one at a time as one rebuilt
    commit each; ADR 0013's rejection of merge commits stands. The child's
@@ -56,6 +57,29 @@ result, and nothing returns the work to main.
 ## Consequences
 
 - The user's checkout is never written by a new batch until the return step.
-- The runtime now owns worktree lifecycle; a crash can leave a worktree under
+- The runtime now owns worktree creation; a crash can leave a worktree under
   the Git common directory, which `retire_stale_batch` reports.
-- Integration conflicts cost redo runs instead of an immediate stop.
+- An integration conflict parks only that child (see amendment) instead of
+  stopping the batch.
+
+## Amendment: retained Lanes (batch-resource-safety S2)
+
+Neither supported Host reports a trusted Executor exit, and Git cleanliness,
+Kernel-terminal proof, a missing claim, a missing directory or a UI `idle`/`done`
+do not prove one. Until such evidence exists the runtime keeps every Lane it
+created: an integrated Lane keeps its directory, branch and all tracked,
+untracked and ignored files, and the report carries a `batch_lane_retained`
+`lane_refusals` notice that delivery completed but cleanup was not performed.
+A conflict redo, a durable redo grant, parked revival and missing-path recovery
+park the child `needs_human` with `batch_lane_redo_retained` and spend no grant;
+independent children keep integrating. Detached Parent verification worktrees
+keep their own cleanup. `released` remains only the observation that the user
+removed the Lane, never exit proof and never permission for a redo.
+
+Restoring automatic cleanup is a separate proposal owned by the runtime/Host
+lifecycle maintainer (prioritized by the project owner). It is revisited only
+when a Host-owned Executor identity/exit observation exists that binds to the
+repository, Lane and execution generation, invalidates on relaunch, fails
+closed on interruption and timeout, is tested for live/exited/unknown processes
+in every provider, and keeps unknown-file protection. There is no time-based
+relaxation.

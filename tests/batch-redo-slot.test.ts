@@ -10,7 +10,7 @@ import { localRunId, readSettledRunEvidence, readTaskRecordRaw } from "../plugin
 import { createBatchKernelPort, deriveChildRedoEnrollment, deriveParkedChildRedoEnrollment } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
 import { rehydrateConsumption, type BatchLaneRedoChildRun } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
 import { prepareBatchLaneRunState, readBatchLaneRunState, writeBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
-import { createLaneWorktree, recreateLaneWorktree } from "../plugins/immune-brain/runtime/unattended/batch_worktrees";
+import { createLaneWorktree } from "../plugins/immune-brain/runtime/unattended/batch_worktrees";
 import type { StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_runner";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 
@@ -64,25 +64,18 @@ function fixture(lifecycle: "active" | "done" | "stopped" = "done", subjectBindi
 }
 
 describe("redo enrollment under the original Batch Authorization", () => {
-	for (const lifecycle of ["done", "stopped"] as const) test(`${lifecycle} run permits a fresh Lane enrollment with no inherited approvals`, async () => {
+	// Spec batch-resource-safety-s2 D1/D2: the grant check stays, but no Lane is recreated
+	// from it; the prior Lane and its run are left for the user.
+	for (const lifecycle of ["done", "stopped"] as const) test(`${lifecycle} run grants a redo with no inherited approvals and leaves the prior Lane intact`, () => {
 		const fx = fixture(lifecycle);
 		expect(readSettledRunEvidence(fx.lane, "child")?.record.attestations).toHaveLength(2);
 		const derived = deriveChildRedoEnrollment(fx.root, fx.registry, fx.request);
 		expect(derived.binding.intent_content_hash).toBe(fx.children[0]!.intent_content_hash);
 		expect(fx.registry.redoGrants(fx.capability, "child")).toBe(1);
-		const lane = recreateLaneWorktree(fx.root, "redo", "child", fx.head);
-		expect(lane).toBe(fx.lane);
-		expect(git(lane, "symbolic-ref", "--short", "HEAD")).toBe("imm-lane/redo/child");
-		expect(git(lane, "rev-parse", "HEAD")).toBe(fx.head);
-		expect(localRunId(lane, "child")).toBeNull();
-		expect(readTaskRecordRaw(lane, "child").record).toBeNull();
-		const port = createBatchKernelPort({ root: fx.root, enrollmentRegistry: createEnrollmentAuthorityRegistry(),
-			registry: fx.registry, capability: fx.capability, binding: fx.binding,
-			advanceTask: async () => ({ state: "completed" }), resume: { isResuming: false, existingBatch: null, batchBranch: fx.binding.branch } });
-		await port.enrollTask({ root: lane, task_id: "child", batch: { registry: fx.registry, capability: fx.capability, binding: { batch_id: fx.binding.batch_id, expected_head: fx.head } } });
-		expect(localRunId(lane, "child")).not.toBe(fx.request.prior_run_id);
-		expect(readTaskRecordRaw(lane, "child").record).toMatchObject({ lifecycle: "active", git_base_head: fx.head, attestations: [] });
-		expect(fx.registry.isChildConsumed(fx.capability, "child")).toBe(true);
+		expect(fx.registry.isChildConsumed(fx.capability, "child")).toBe(false);
+		expect(git(fx.lane, "rev-parse", "HEAD")).toBe(fx.base);
+		expect(localRunId(fx.lane, "child")).toBe(fx.request.prior_run_id);
+		expect(readSettledRunEvidence(fx.lane, "child")?.record.attestations.map(a => a.id)).toEqual(["old-qa", "old-review"]);
 	});
 
 	test("parked recovery checks capability confirmation, not a caller's new timestamp", async () => {
@@ -127,41 +120,6 @@ describe("redo enrollment under the original Batch Authorization", () => {
 		const fx = fixture();
 		expect(() => deriveChildRedoEnrollment(fx.root, fx.registry, { ...fx.request, expected_head: fx.base })).toThrow("batch_head_lineage_broken");
 		expect(fx.registry.redoGrants(fx.capability, "child")).toBe(0);
-	});
-});
-
-describe("Lane recreation", () => {
-	for (const dirty of ["tracked", "staged", "untracked"] as const) test(`refuses ${dirty} edits without touching the old Lane or store`, () => {
-		const fx = fixture();
-		const path = join(fx.lane, dirty === "untracked" ? "scratch.txt" : "value.txt");
-		writeFileSync(path, "keep me\n");
-		if (dirty === "staged") git(fx.lane, "add", "--", "value.txt");
-		const status = git(fx.lane, "status", "--porcelain");
-		expect(() => recreateLaneWorktree(fx.root, "redo", "child", fx.head)).toThrow("existing clean owned Lane");
-		expect(readFileSync(path, "utf8")).toBe("keep me\n");
-		expect(git(fx.lane, "status", "--porcelain")).toBe(status);
-		expect(git(fx.lane, "rev-parse", "HEAD")).toBe(fx.base);
-		expect(localRunId(fx.lane, "child")).toBe(fx.request.prior_run_id);
-	});
-
-	test("keeps a committed Lane delivery reachable and pins nothing the new base contains", () => {
-		const fx = fixture();
-		const retained = () => git(fx.root, "for-each-ref", "--format=%(refname) %(objectname)", "refs/imm/retained/");
-		writeFileSync(join(fx.lane, "value.txt"), "settled work\n");
-		git(fx.lane, "commit", "-qam", "lane delivery");
-		const delivery = git(fx.lane, "rev-parse", "HEAD");
-		recreateLaneWorktree(fx.root, "redo", "child", fx.head, delivery);
-		expect(git(fx.lane, "rev-parse", "HEAD")).toBe(fx.head);
-		expect(retained()).toBe(`refs/imm/retained/redo/child/${delivery} ${delivery}`);
-		recreateLaneWorktree(fx.root, "redo", "child", fx.head);
-		expect(retained()).toBe(`refs/imm/retained/redo/child/${delivery} ${delivery}`);
-	});
-
-	test("an invalid new Parent tip leaves the old Lane intact", () => {
-		const fx = fixture();
-		expect(() => recreateLaneWorktree(fx.root, "redo", "child", "missing-tip")).toThrow("batch_worktree_failed");
-		expect(existsSync(fx.lane)).toBe(true);
-		expect(localRunId(fx.lane, "child")).toBe(fx.request.prior_run_id);
 	});
 });
 

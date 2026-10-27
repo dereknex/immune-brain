@@ -324,6 +324,33 @@ describe("internal role-prompt bridge", () => {
 		for (const row of ["| Claude Code |", "| Pi |", "| Any Host without one |"]) expect(loop).toContain(row);
 		expect(read("plugins/immune-brain/skills/imm-run/SKILL.md")).toContain("../../dist/imm-run-batch.md#lane-executor-supervision");
 	});
+	// Spec batch-resource-safety-s2 AC4: without trusted Executor exit evidence no contract
+	// promises automatic Lane deletion or recreation, and the restoration gate stays recorded.
+	it("aligns Lane lifecycle contracts with conservative retention", () => {
+		const loop = read("plugins/immune-brain/dist/imm-run-batch.md").replace(/\s+/g, " ");
+		for (const fragment of [
+			"the runtime never removes or recreates a Lane it created",
+			"`lane_refusals` reports `batch_lane_retained`",
+			"Delivery is complete; cleanup is the user's",
+			"never enables an automatic redo",
+			"the child parks `needs_human` with `batch_lane_redo_retained`",
+			"no redo grant is spent",
+		]) expect(loop).toContain(fragment);
+		expect(loop).not.toContain("the runtime removes a clean, unoccupied Lane");
+		expect(loop).not.toContain("spending one of the child's two redo grants");
+		const steward = read("plugins/immune-brain/runtime/prompts/lane-steward.md").replace(/\s+/g, " ");
+		expect(steward).toContain("keep them after integration until the user removes them");
+		expect(steward).not.toContain("create and remove their own worktrees");
+		const adr = read("docs/adr/0027-parent-branch-merge-queue.md").replace(/\s+/g, " ");
+		expect(adr).toContain("## Amendment: retained Lanes (batch-resource-safety S2)");
+		expect(adr).toContain("There is no time-based relaxation");
+		expect(adr).not.toContain("resets it for a redo, and removes it with its branch");
+		const context = read("CONTEXT.md").replace(/\s+/g, " ");
+		expect(context).toContain("never removes or recreates one without trusted Executor exit evidence");
+		// Legacy external-Lane ownership is unchanged.
+		expect(context).toContain("legacy records admit offered Lanes and never create, switch or delete them");
+		expect(loop).toContain("the Parent removes no Lane and dispatches no one to remove it");
+	});
 	it("launches Lane Executors in Herdr tabs without asking, and never answers their dialogs", () => {
 		const loop = read("plugins/immune-brain/dist/imm-run-batch.md").replace(/\s+/g, " ");
 		for (const fragment of [

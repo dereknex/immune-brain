@@ -162,8 +162,12 @@ The runner then commits the settled delivery on the Lane branch and fast-forward
 the recorded progress ref only to a candidate whose changed paths and per-path content equal
 that commit; a mismatch or conflict moves nothing and parks the child. New
 Parent-branch batches do not copy the integrated delta into the coordinator
-checkout. After integration, the runtime removes a clean, unoccupied Lane and
-its branch; a dirty Lane is kept and reported. Final verification runs in a
+checkout. No Host reports a trusted Executor exit, so the runtime never removes
+or recreates a Lane it created: after integration the Lane, its branch and all
+its files are kept, and `lane_refusals` reports `batch_lane_retained` for it,
+also in a completed report. Delivery is complete; cleanup is the user's: stop
+the Lane's Executor, keep the files needed, then remove the Lane. Removing it
+records `released` and never enables an automatic redo. Final verification runs in a
 detached worktree at the Parent tip and removes that worktree afterwards; a
 failure is reported without moving the Parent ref.
 With `max_parallel` above 1 the reconcile tick keeps up to that many Lanes in
@@ -181,19 +185,19 @@ never integrated, so its Issue stays open; an explicit stop inside a Lane still
 projects `not planned` at once.
 
 A fresh literal-user Batch Authorization resumes recoverable parked owned runs.
-In runtime-owned Parent Lanes, a stopped run or an unreadable/lost Lane may instead
-restart at the current Parent tip with an empty Authority Store, spending one of
-the child's two redo grants under the original child authorization. A child with
-an open user decision or replan, an identity/contract conflict, dirty Lane data,
-or no redo grant remains parked with its dependents; independent children resume.
-A repeated tick or a newer caller timestamp without a fresh confirmation grants
-no recovery authority. A durable redo resumes after interruption without spending
-another grant. Do not retire the batch just because one child cannot be revived.
+In runtime-owned Parent Lanes, a stopped run, an unreadable or missing Lane, an
+integration conflict or a durable redo grant is not exit evidence: the child
+parks `needs_human` with `batch_lane_redo_retained`, its Lane is neither deleted
+nor recreated, and no redo grant is spent. A child with an open user decision or
+replan, an identity/contract conflict or dirty Lane data also remains parked with
+its dependents; independent children resume. A repeated tick or a newer caller
+timestamp without a fresh confirmation grants no recovery authority. Do not
+retire the batch just because one child stays parked.
 
 In the Immune-Brain plugin source repository, a child that integrates a change to
 `plugins/immune-brain/dist/claude/mcp-server.mjs` leaves the Parent tip on a build
-the coordinator and its Lane Executors have not loaded. The next admission or
-redo then creates no Lane: the batch parks `needs_human` with
+the coordinator and its Lane Executors have not loaded. The next admission then
+creates no Lane: the batch parks `needs_human` with
 `runtime_reload_required` naming that integrated commit, while in-flight
 Executors keep running and their `executor` handoffs remain. Reload the Host
 (Claude Code `/mcp` reconnect; Pi `/reload`), then resume with a fresh

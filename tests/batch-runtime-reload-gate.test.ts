@@ -34,9 +34,8 @@ function write(root: string, path: string, content: string | Buffer) {
 }
 
 type Integrated = "differs" | "equal" | "not_plugin_source";
-type Waiting = "pending" | "redo";
 
-function fixture(integrated: Integrated = "differs", waiting: Waiting = "pending") {
+function fixture(integrated: Integrated = "differs") {
 	const root = realpathSync(mkdtempSync(join(tmpdir(), "reload-gate-")));
 	roots.push(root);
 	git(root, "init", "-q", "-b", "main");
@@ -89,11 +88,7 @@ function fixture(integrated: Integrated = "differs", waiting: Waiting = "pending
 		? { ...c, state: "integrated", commit, lane: { path: join(root, ".git/imm/worktrees/reload/a"), branch: "imm-lane/reload/a", base_head: base, lane_commit: commit } }
 		: c.task_id === "c"
 			? { ...c, state: "enrolled", lane: { path: laneC, branch: "imm-lane/reload/c", base_head: base, lane_commit: null, run_id: seeded.run_id } }
-			: waiting === "redo"
-				// b holds a durable redo grant whose Lane was removed while parked.
-				? { ...c, state: "needs_human", reason: "parked", redo_grants: 1, redo_head: commit,
-					lane: { path: join(root, ".git/imm/worktrees/reload/b"), branch: "imm-lane/reload/b", base_head: base, lane_commit: null, run_id: "run-old" } }
-				: c);
+			: c);
 	writeBatchLaneRunState(root, record);
 	function input(confirmation_time = NOW, existing: BatchLaneRunStateRecord = record): StartBatchInput {
 		const registry = createBatchAuthorityRegistry();
@@ -108,16 +103,15 @@ function fixture(integrated: Integrated = "differs", waiting: Waiting = "pending
 
 const laneB = (root: string) => join(root, ".git/imm/worktrees/reload/b");
 
-for (const waiting of ["pending", "redo"] as const) test(`an integrated build change creates no Lane for ${waiting} b, pauses naming the commit and keeps c running`, async () => {
-	const fx = fixture("differs", waiting);
+test("an integrated build change creates no Lane for pending b, pauses naming the commit and keeps c running", async () => {
+	const fx = fixture("differs");
 	const report = await runLaneBatch(fx.input(), fx.record);
 	expect(report.batch_state).toBe("needs_human");
 	expect(report.reason).toContain("runtime_reload_required");
 	expect(report.reason).toContain(fx.commit);
 	expect(existsSync(laneB(fx.root))).toBe(false);
 	const b = report.children.find(c => c.task_id === "b")!;
-	expect(b.state).toBe(waiting === "redo" ? "needs_human" : "pending");
-	if (waiting === "redo") expect(b.redo_head).toBe(fx.commit);
+	expect(b.state).toBe("pending");
 	expect(report.children.find(c => c.task_id === "c")).toMatchObject({ state: "enrolled", lane: { run_id: fx.runC } });
 	expect(report.handoffs).toContainEqual(expect.objectContaining({ role: "executor", task_id: "c", lane_path: fx.laneC }));
 	expect(localRunId(fx.laneC, "c")).toBe(fx.runC);
@@ -142,8 +136,8 @@ test("a resume without a fresh confirmation keeps the pause", async () => {
 	expect(existsSync(laneB(fx.root))).toBe(false);
 });
 
-for (const waiting of ["pending", "redo"] as const) test(`a fresh resume while the build still differs admits ${waiting} b with runtime_skew_acknowledged`, async () => {
-	const fx = fixture("differs", waiting);
+test("a fresh resume while the build still differs admits pending b with runtime_skew_acknowledged", async () => {
+	const fx = fixture("differs");
 	await runLaneBatch(fx.input(), fx.record);
 	const paused = readBatchLaneRunState(fx.root, fx.record.batch_id)!;
 	const resumed = await runLaneBatch(fx.input(LATER, paused), paused);

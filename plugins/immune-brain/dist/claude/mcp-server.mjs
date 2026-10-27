@@ -5001,11 +5001,6 @@ function assertBatchLineageOrigin(root, baseHead, expectedHead) {
 function deriveChildEnrollment(root, registry, input) {
   return prepareChildEnrollment(root, registry, input, false);
 }
-function reissueChildEnrollment(root, registry, input) {
-  const derived = prepareChildEnrollment(root, registry, input, true);
-  registry.reissueChild(input.capability, input.binding, input.task_id);
-  return derived;
-}
 function prepareChildEnrollment(root, registry, input, redo) {
   const validated = registry.inspect(input.capability, input.binding);
   const child = registry.children(input.capability).find((entry) => entry.task_id === input.task_id);
@@ -5929,58 +5924,6 @@ function createLaneWorktree(root, slug, taskId, head) {
   }
   return path;
 }
-function retainLaneCommit(root, slug, taskId, commit, target) {
-  if (commit === target)
-    return;
-  const contained = spawnSync6("git", ["-C", root, "merge-base", "--is-ancestor", commit, target], { encoding: "utf8" });
-  if (contained.status === 0)
-    return;
-  if (contained.status !== 1)
-    throw new Error("batch_worktree_failed: cannot compare the Lane commit with the redo base");
-  git2(root, ["update-ref", `${RETAINED_LANE_REF_PREFIX}${slug}/${taskId}/${commit}`, commit]);
-}
-function recreateLaneWorktree(root, slug, taskId, head, priorCommit, reviveUnreadable = false) {
-  parentBranchRef(slug);
-  parentBranchRef(taskId);
-  const target = git2(root, ["rev-parse", "--verify", "--end-of-options", `${head}^{commit}`]);
-  const path = join7(worktreeDirectory(root), slug, taskId);
-  const branch = `imm-lane/${slug}/${taskId}`;
-  if (existsSync4(path)) {
-    let claim;
-    try {
-      claim = readBackendClaim(path);
-    } catch (error) {
-      if (!reviveUnreadable)
-        throw error;
-      claim = null;
-    }
-    if (claim)
-      throw new Error("batch_worktree_failed: redo Lane still has an active claim");
-    const current = git2(path, ["rev-parse", "HEAD"]);
-    if (priorCommit && current !== priorCommit && current !== target)
-      throw new Error("batch_worktree_failed: redo requires the existing clean owned Lane");
-    retainLaneCommit(root, slug, taskId, current, target);
-    if (!removeLaneWorktree(root, path, branch, current))
-      throw new Error("batch_worktree_failed: redo requires the existing clean owned Lane");
-  } else {
-    if (!priorCommit)
-      throw new Error("batch_worktree_failed: redo requires the existing clean owned Lane");
-    const ref = `refs/heads/${branch}`;
-    const found = spawnSync6("git", ["-C", root, "rev-parse", "--verify", "--quiet", ref], { encoding: "utf8" });
-    if (found.status === 0) {
-      if (found.stdout.trim() !== priorCommit)
-        throw new Error("batch_worktree_failed: redo branch moved");
-      retainLaneCommit(root, slug, taskId, priorCommit, target);
-      const listed = git2(root, ["worktree", "list", "--porcelain"]);
-      if (listed.split(`
-`).includes(`worktree ${path}`))
-        git2(root, ["worktree", "remove", path]);
-      git2(root, ["update-ref", "-d", ref, priorCommit]);
-    } else if (found.status !== 1)
-      throw new Error("batch_worktree_failed: redo branch is unreadable");
-  }
-  return createLaneWorktree(root, slug, taskId, target);
-}
 function copyLanePlanningInput(root, lane, taskId, kind) {
   const read = observeEnrollmentTaskIntent(root, taskId);
   const input = kind === "intent" ? { path: read.intent_ref.path, content: readSecureProjectFile(root, read.intent_ref.path) } : readBoundActiveSpec(root, read.intent);
@@ -6002,16 +5945,6 @@ function copyLanePlanningInput(root, lane, taskId, kind) {
   writeFileSync4(target, input.content);
   git2(lane, ["add", "--", input.path]);
 }
-function removeLaneWorktree(root, path, branch, commit) {
-  if (!existsSync4(path))
-    return false;
-  const directory = worktreeDirectory(root);
-  if (!path.startsWith(`${directory}/`) || realpathSync8(path) !== path || realpathSync8(git2(path, ["rev-parse", "--path-format=absolute", "--git-common-dir"])) !== realpathSync8(git2(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"])) || git2(path, ["symbolic-ref", "--short", "HEAD"]) !== branch || git2(path, ["rev-parse", "HEAD"]) !== commit || git2(path, ["status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none"]))
-    return false;
-  git2(root, ["worktree", "remove", path]);
-  git2(root, ["update-ref", "-d", `refs/heads/${branch}`, commit]);
-  return true;
-}
 async function withParentWorktree(root, head, use) {
   const path = mkdtempSync(join7(worktreeDirectory(root), "verify-"));
   rmdirSync(path);
@@ -6022,10 +5955,8 @@ async function withParentWorktree(root, head, use) {
     git2(root, ["worktree", "remove", "--force", path]);
   }
 }
-var RETAINED_LANE_REF_PREFIX = "refs/imm/retained/";
 var init_batch_worktrees = __esm(() => {
   init_intent();
-  init_backend_claim();
   init_spec_binding();
   init_storage();
   init_batch_ref();
@@ -15529,7 +15460,7 @@ var init_batch_preflight = __esm(() => {
 init_batch_preflight();
 init_batch_state();
 import { randomUUID as randomUUID12 } from "node:crypto";
-import { existsSync as existsSync19, readdirSync as readdirSync10, realpathSync as realpathSync20 } from "node:fs";
+import { existsSync as existsSync18, readdirSync as readdirSync10, realpathSync as realpathSync20 } from "node:fs";
 import { join as join31 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 import { createInterface } from "node:readline";
@@ -17454,7 +17385,7 @@ init_storage();
 init_intent();
 init_canary_application();
 init_authority_port();
-import { existsSync as existsSync18, readFileSync as readFileSync23, writeFileSync as writeFileSync12 } from "node:fs";
+import { existsSync as existsSync17, readFileSync as readFileSync23, writeFileSync as writeFileSync12 } from "node:fs";
 import { execFileSync as execFileSync12 } from "node:child_process";
 import { join as join30 } from "node:path";
 
@@ -18026,118 +17957,6 @@ init_local_initiative();
 init_batch_integration();
 init_batch_ref();
 init_batch_worktrees();
-import { spawnSync as spawnSync20 } from "node:child_process";
-import { createHash as createHash26 } from "node:crypto";
-import { existsSync as existsSync16, realpathSync as realpathSync19 } from "node:fs";
-import { isAbsolute as isAbsolute9, join as join28 } from "node:path";
-import { readFileSync as readFileSync22 } from "node:fs";
-
-// plugins/immune-brain/runtime/unattended/batch_kernel_port.ts
-init_batch_git();
-init_assurance_projection();
-init_batch_authority();
-import { existsSync as existsSync15 } from "node:fs";
-init_storage();
-init_batch_preflight();
-function deriveChildRedoEnrollment(root, registry, input) {
-  registry.inspect(input.capability, input.binding);
-  if (!input.prior_run_id || localRunId(input.prior_lane_root, input.task_id) !== input.prior_run_id)
-    throw new Error(`batch_child_redo_run_mismatch: ${input.task_id}`);
-  const prior = readSettledRunEvidence(input.prior_lane_root, input.task_id);
-  if (!prior)
-    throw new Error(`batch_child_redo_run_active: ${input.task_id}`);
-  if (prior.run_id !== input.prior_run_id)
-    throw new Error(`batch_child_redo_run_mismatch: ${input.task_id}`);
-  return reissueChildEnrollment(root, registry, input);
-}
-async function deriveParkedChildRedoEnrollment(root, registry, input) {
-  const authorized = registry.inspect(input.capability, input.binding);
-  if (!Number.isFinite(Date.parse(input.parked_since)) || !(Date.parse(authorized.issued_at) > Date.parse(input.parked_since)))
-    throw new Error("batch_child_redo_confirmation_required");
-  const fresh = await projectAssurance(input.prior_lane_root, input.task_id);
-  if (fresh.error === null && (existsSync15(input.prior_lane_root) || fresh.projection.run_id !== null)) {
-    if (fresh.projection.run_id !== input.prior_run_id)
-      throw new Error(`batch_child_redo_run_mismatch: ${input.task_id}`);
-    if (fresh.projection.open_user_decision_count || fresh.projection.replan_required_ids.length || fresh.projection.lifecycle !== "stopped")
-      throw new Error(`batch_child_redo_run_active: ${input.task_id}`);
-    const prior = readSettledRunEvidence(input.prior_lane_root, input.task_id);
-    if (!prior || prior.run_id !== input.prior_run_id)
-      throw new Error(`batch_child_redo_run_mismatch: ${input.task_id}`);
-    if (prior.record.findings.some((f) => f.status === "open" && (f.kind === "unresolved_user_decision" || f.kind === "replan_required")))
-      throw new Error(`batch_child_redo_decision_unresolved: ${input.task_id}`);
-  } else if (fresh.error !== null && /contract must equal|unknown field|schema version .* incompatible|unknown contract/i.test(fresh.error)) {
-    throw new Error(`batch_lane_contract_mismatch: ${input.task_id}`);
-  }
-  return reissueChildEnrollment(root, registry, input);
-}
-function createBatchKernelPort(input) {
-  const project = input.deps?.projectAssurance ?? projectAssurance;
-  const readRecord = input.deps?.readTaskRecordRaw ?? readTaskRecordRaw;
-  const deriveEnrollment = input.deps?.deriveChildEnrollment ?? deriveChildEnrollment;
-  const enrollKernelTask = input.deps?.enrollTask ?? enrollTask;
-  const base = {
-    canStartTask: async (taskId) => {
-      if (!input.parent)
-        return true;
-      const task = input.parent.tasks.find((child) => child.task_id === taskId);
-      if (!task)
-        throw new Error("authorized child absent from confirmed Parent topology");
-      const authorizedIds = new Set(input.registry.children(input.capability).map((child) => child.task_id));
-      const external = task.blocked_by.filter((id) => !authorizedIds.has(id));
-      if (!external.length)
-        return true;
-      const observation = await observeParentCompletion(input.root, input.parent.initiative_id, external);
-      return observation.missing_task_ids.length === 0;
-    },
-    enrollTask: async ({ root, task_id, batch }) => {
-      const now = new Date().toISOString();
-      const derived = deriveEnrollment(root, batch.registry, {
-        capability: batch.capability,
-        binding: input.binding,
-        task_id,
-        expected_head: batch.binding.expected_head,
-        now
-      });
-      await enrollKernelTask(root, input.enrollmentRegistry, {
-        binding: derived.binding,
-        batch: {
-          registry: batch.registry,
-          capability: batch.capability,
-          binding: input.binding,
-          expected_head: batch.binding.expected_head
-        },
-        now
-      });
-      const recordRaw = readRecord(root, task_id);
-      return { record_revision: recordRaw.revision };
-    },
-    advanceTask: input.advanceTask,
-    projectTask: async (root, taskId) => {
-      const fresh = await project(root, taskId);
-      if (!fresh.claim || fresh.projection.lifecycle !== "active" || fresh.error !== null)
-        return fresh;
-      const { record, revision } = readRecord(root, taskId);
-      if (!record || revision !== fresh.projection.record_revision)
-        throw new Error(`Kernel recovery projection changed for ${taskId}`);
-      return { ...fresh, ...batchQaFailureFacts(record) };
-    },
-    ownsTaskClaim: (taskId) => input.registry.isChildConsumed(input.capability, taskId),
-    validateBatchAuthorization: (request) => request.registry.inspect(request.capability, request.binding)
-  };
-  const port = { ...base, ...input.overrides ?? {} };
-  const overriddenOwnsTaskClaim = port.ownsTaskClaim;
-  return {
-    ...port,
-    ownsTaskClaim: (taskId) => {
-      if (input.resume.isResuming && taskId === readActiveClaimTaskId(input.root)) {
-        return isOwnBatchClaim(input.root, input.resume.existingBatch, taskId, input.resume.batchBranch);
-      }
-      return overriddenOwnsTaskClaim(taskId);
-    }
-  };
-}
-
-// plugins/immune-brain/runtime/unattended/batch_lanes.ts
 init_batch_preflight();
 init_batch_leak_restore();
 init_batch_git();
@@ -18146,6 +17965,11 @@ init_batch_state();
 init_batch_git();
 init_role_prompt_bridge();
 init_plugin_source_skew();
+import { spawnSync as spawnSync20 } from "node:child_process";
+import { createHash as createHash26 } from "node:crypto";
+import { existsSync as existsSync15, realpathSync as realpathSync19 } from "node:fs";
+import { isAbsolute as isAbsolute9, join as join28 } from "node:path";
+import { readFileSync as readFileSync22 } from "node:fs";
 var PARALLEL_MISMATCH = "batch_parallel_mismatch";
 var TASK_ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var MAX_LANE_OFFERS = 64;
@@ -18302,7 +18126,7 @@ function createDefaultLaneGitPort() {
   return {
     resolveRoot: (root) => resolveRealPath(root) ?? root,
     inspectLane(coordinatorRoot, lanePath) {
-      const real = existsSync16(lanePath) ? resolveRealPath(lanePath) : null;
+      const real = existsSync15(lanePath) ? resolveRealPath(lanePath) : null;
       const absent = {
         exists: real !== null,
         real_path: real,
@@ -18452,6 +18276,27 @@ var TERMINAL_NEXT_ACTIONS = {
   running: "The batch is still running; no terminal report is due yet.",
   prepared: "The batch is prepared but not started."
 };
+var LANE_RETAINED = "batch_lane_retained";
+var LANE_REDO_RETAINED = "batch_lane_redo_retained";
+var NO_EXIT_EVIDENCE = "no Host reports a trusted Executor exit";
+function redoRetained(cause) {
+  if (cause?.startsWith(`${LANE_REDO_RETAINED}:`))
+    return cause;
+  return `${LANE_REDO_RETAINED}: ${NO_EXIT_EVIDENCE}, so the Lane, its branch and its files are kept and no redo Lane is created${cause ? ` (${cause})` : ""}`;
+}
+function retainedLaneNotices(root, record, lanes = createDefaultLaneGitPort()) {
+  if (!isParentBranch(record.branch))
+    return [];
+  return record.children.filter((child) => child.state === "integrated" && child.lane && lanes.inspectLane(root, child.lane.path).exists).map((child) => ({
+    task_id: child.task_id,
+    path: child.lane.path,
+    reason: `${LANE_RETAINED}: ${NO_EXIT_EVIDENCE}; the delivered Lane and every file in it are kept`
+  }));
+}
+function retainedLaneAction(refusals) {
+  const count = refusals?.filter((r) => r.reason.startsWith(`${LANE_RETAINED}:`)).length ?? 0;
+  return count ? ` Cleanup was not performed: ${count} runtime-created Lane(s) are kept because ${NO_EXIT_EVIDENCE}. Stop each Lane's Executor, keep the files you need, then remove the Lane yourself; removing it does not enable an automatic redo.` : "";
+}
 function laneAuthorityChange(record, taskId, lanePath) {
   const recorded = record.intent_identities?.[taskId];
   if (!recorded?.intent_authority_hash)
@@ -18518,13 +18363,14 @@ function laneReport(record, reason, nextAction, extra = {}) {
     ...extra.instruction ? { lane_instruction: extra.instruction } : {},
     ...record.delegated_revisions?.length ? { delegated_revisions: record.delegated_revisions } : {},
     ...record.reseals?.length ? { reseals: record.reseals } : {},
-    next_action: nextAction || (record.final_report?.return_to_coordinator.status === "blocked" ? `Review the final report; coordinator return stopped: ${record.final_report.return_to_coordinator.reason}. The Parent branch is retained.` : TERMINAL_NEXT_ACTIONS[record.batch_state] ?? "Inspect the batch run state."),
+    next_action: (nextAction || (record.final_report?.return_to_coordinator.status === "blocked" ? `Review the final report; coordinator return stopped: ${record.final_report.return_to_coordinator.reason}. The Parent branch is retained.` : TERMINAL_NEXT_ACTIONS[record.batch_state] ?? "Inspect the batch run state.")) + retainedLaneAction(extra.refusals),
     created_at: record.updated_at
   };
 }
 function laneRejectionReport(input, record, reason, nextAction) {
-  const handoffs = releaseHandoffs(input, record, laneGitOf(input));
-  return laneReport({ ...record, batch_state: "rejected" }, reason, handoffs.length ? `${nextAction}. Check each release handoff with the Lane Steward.` : nextAction, { handoffs });
+  const lanes = laneGitOf(input);
+  const handoffs = releaseHandoffs(input, record, lanes);
+  return laneReport({ ...record, batch_state: "rejected" }, reason, handoffs.length ? `${nextAction}. Check each release handoff with the Lane Steward.` : nextAction, { handoffs, refusals: retainedLaneNotices(input.root, record, lanes) });
 }
 function finalizeLane(root, record, reason, nextAction, extra = {}) {
   const report = laneReport(record, reason, nextAction, extra);
@@ -18636,7 +18482,6 @@ async function runLaneBatch(input, persisted) {
   const git = serialGitOf(input);
   const lanes = laneGitOf(input);
   let record;
-  const revive = new Set;
   if (persisted) {
     record = persisted;
     assertPlanMatches(input, record);
@@ -18660,6 +18505,7 @@ async function runLaneBatch(input, persisted) {
       }) : [];
       return finalizeLane(input.root, record, `terminal state already reached: ${record.batch_state}`, "", {
         handoffs: record.batch_state === "completed" ? releaseHandoffs(input, record, lanes) : [],
+        refusals: retainedLaneNotices(input.root, record, lanes),
         tracker
       });
     }
@@ -18691,9 +18537,7 @@ async function runLaneBatch(input, persisted) {
           continue;
         }
         if (isParentBranch(record.branch) && (!facts.exists || unreadable || readable && fresh.projection.lifecycle === "stopped")) {
-          if ((child.redo_grants ?? 0) < 2)
-            revive.add(child.task_id);
-          resumed.push(child);
+          resumed.push({ ...child, reason: redoRetained(child.reason) });
           continue;
         }
         if (!readable || !facts.exists) {
@@ -18717,7 +18561,7 @@ async function runLaneBatch(input, persisted) {
         return next.runtime_reload?.state === "required" ? { ...next, runtime_reload: { ...next.runtime_reload, state: "acknowledged" } } : next;
       }) };
       for (const child of record.children)
-        if (child.state === "needs_human" && !revive.has(child.task_id) && !child.redo_head)
+        if (child.state === "needs_human")
           skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
     }
   } else {
@@ -18813,7 +18657,7 @@ async function runLaneBatch(input, persisted) {
     record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "released" } : c);
     persist();
   }
-  const lineage = existsSync16(join28(input.root, ".git")) ? classifyBatchLineage({
+  const lineage = existsSync15(join28(input.root, ".git")) ? classifyBatchLineage({
     root: input.root,
     branch: record.branch ?? "",
     expectedHead: expectedBatchHead(record),
@@ -18834,49 +18678,8 @@ async function runLaneBatch(input, persisted) {
     return failLineage(input.root, record, error instanceof Error ? error.message : String(error));
   }
   if (resumedPark) {
-    const parkedSince = record.confirmation_time;
     record = { ...record, confirmation_time: input.confirmation_time };
     persist();
-    for (const taskId of revive) {
-      const child = record.children.find((c) => c.task_id === taskId);
-      try {
-        const head = expectedBatchHead(record);
-        const binding = input.kernel.validateBatchAuthorization({
-          registry: input.registry,
-          capability: input.capability,
-          binding: {
-            batch_id: record.batch_id,
-            plan_digest: record.plan_digest,
-            base_head: record.base_head,
-            initiative_slug: record.initiative_slug,
-            budget: record.budget
-          }
-        });
-        await withParentWorktree(input.root, head, async (root) => {
-          copyLanePlanningInput(input.root, root, taskId, "intent");
-          copyLanePlanningInput(input.root, root, taskId, "spec");
-          await deriveParkedChildRedoEnrollment(root, input.registry, {
-            capability: input.capability,
-            binding,
-            task_id: taskId,
-            expected_head: head,
-            now: input.now,
-            parked_since: parkedSince,
-            prior_lane_root: child.lane.path,
-            prior_run_id: child.lane.run_id
-          });
-          record.children = record.children.map((c) => c.task_id === taskId ? {
-            ...c,
-            redo_grants: input.registry.redoGrants(input.capability, taskId),
-            redo_head: head
-          } : c);
-          persist();
-        });
-      } catch (error) {
-        park(record, taskId, error instanceof Error ? error.message : String(error));
-        persist();
-      }
-    }
   }
   let instruction;
   if (input.lane_instruction) {
@@ -18960,42 +18763,12 @@ async function runLaneBatch(input, persisted) {
   };
   const settledAt = (child) => readTaskTombstone(child.lane.path, child.task_id)?.terminalized_at ?? input.now;
   const queue = () => [...record.children].sort((a, b) => (a.settled_at ?? record.created_at).localeCompare(b.settled_at ?? record.created_at));
-  const resumeRedo = async (child) => {
-    const runtime = runtimeAdmission(child.task_id);
-    if (!runtime.admit)
-      return;
-    const path = recreateLaneWorktree(input.root, record.initiative_slug, child.task_id, child.redo_head, child.lane.lane_commit ?? child.lane.base_head, child.state === "needs_human");
-    record.children = record.children.map((c) => {
-      if (c.task_id !== child.task_id)
-        return c;
-      const { redo_head: head, settled_at: _settledAt, correction_due: _due, ...rest } = c;
-      return {
-        ...rest,
-        state: "lane_admitted",
-        reason: null,
-        qa_failures: 0,
-        lane: { path, branch: child.lane.branch, base_head: head, lane_commit: null },
-        ...runtime.acknowledged ? { runtime_skew_acknowledged: runtime.acknowledged } : {}
-      };
-    });
-    persist();
-    await enrollInLane(child.task_id);
-    record.children = record.children.map((c) => c.state === "skipped_blocked" ? { ...c, state: "pending", reason: null } : c);
-    for (const c of record.children)
-      if (c.state === "needs_human")
-        skipDependents(record, c.task_id, `dependency ${c.task_id} parked`);
-    persist();
-  };
   for (const child of record.children) {
     if (child.state !== "lane_committed" && child.state !== "needs_human" || !child.redo_head)
       continue;
-    if (child.state === "needs_human" && record.children.filter((c) => IN_FLIGHT.has(c.state)).length >= limit)
+    if (child.state === "needs_human" && child.reason?.startsWith(`${LANE_REDO_RETAINED}:`))
       continue;
-    try {
-      await resumeRedo(child);
-    } catch (error) {
-      parkChild(child.task_id, error instanceof Error ? error.message : String(error));
-    }
+    parkChild(child.task_id, redoRetained(child.reason));
   }
   for (const child of [...record.children]) {
     if (child.state !== "lane_admitted" && child.state !== "enrolled" || !child.lane)
@@ -19144,42 +18917,7 @@ async function runLaneBatch(input, persisted) {
       const reason = error instanceof BatchIntegrationError ? error.reason : "batch_integration_conflict";
       const conflict = error instanceof BatchIntegrationError && (reason === "batch_integration_conflict" || reason === "batch_integration_check_failed");
       if (isParentBranch(record.branch) && conflict) {
-        if ((child.redo_grants ?? 0) >= 2) {
-          parkChild(child.task_id, `batch_integration_redo_exhausted: ${message}`);
-          continue;
-        }
-        try {
-          const head = expectedBatchHead(record);
-          const binding = input.kernel.validateBatchAuthorization({
-            registry: input.registry,
-            capability: input.capability,
-            binding: {
-              batch_id: record.batch_id,
-              plan_digest: record.plan_digest,
-              base_head: record.base_head,
-              initiative_slug: record.initiative_slug,
-              budget: record.budget
-            }
-          });
-          await withParentWorktree(input.root, head, async (root) => {
-            copyLanePlanningInput(input.root, root, child.task_id, "intent");
-            copyLanePlanningInput(input.root, root, child.task_id, "spec");
-            deriveChildRedoEnrollment(root, input.registry, {
-              capability: input.capability,
-              binding,
-              task_id: child.task_id,
-              expected_head: head,
-              now: input.now,
-              prior_lane_root: child.lane.path,
-              prior_run_id: child.lane.run_id ?? ""
-            });
-            record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, redo_grants: input.registry.redoGrants(input.capability, child.task_id), redo_head: head, reason: message } : c);
-            persist();
-          });
-          await resumeRedo(record.children.find((c) => c.task_id === child.task_id));
-        } catch (redoError) {
-          parkChild(child.task_id, redoError instanceof Error ? redoError.message : String(redoError));
-        }
+        parkChild(child.task_id, redoRetained(message.startsWith(`${reason}:`) ? message : `${reason}: ${message}`));
         continue;
       }
       parkChild(child.task_id, isLineageBreak(message) || message.startsWith(`${reason}:`) ? message : `${reason}: ${message}`);
@@ -19191,20 +18929,7 @@ async function runLaneBatch(input, persisted) {
     }
   }
   const tracker = await closeIntegratedIssues(input, record, persist);
-  if (isParentBranch(record.branch)) {
-    for (const child of record.children) {
-      if (child.state !== "integrated" || !child.lane?.lane_commit)
-        continue;
-      const facts = lanes.inspectLane(input.root, child.lane.path);
-      if (!facts.exists)
-        continue;
-      if (facts.same_repository && facts.is_worktree_root && facts.clean && facts.branch === child.lane.branch && facts.head === child.lane.lane_commit && facts.active_claim_task_id === null && lanes.auditReachable({ root: input.root, head: expectedBatchHead(record), task_id: child.task_id }) && removeLaneWorktree(input.root, child.lane.path, child.lane.branch, child.lane.lane_commit)) {
-        record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "released" } : c);
-        persist();
-      } else
-        refusals.push({ task_id: child.task_id, path: child.lane.path, reason: "batch_lane_kept: Lane is dirty or its release evidence is incomplete" });
-    }
-  }
+  refusals.push(...retainedLaneNotices(input.root, record, lanes));
   const offers = [...input.lane_offers ?? []];
   let skewAcknowledged;
   if (isParentBranch(record.branch)) {
@@ -19387,6 +19112,7 @@ async function completedParentReport(root, initiativeSlug, readInitiative, track
       sync = { status: "failed", message: "Local Parent completion proved; retry tracker synchronization on this Host" };
     }
   }
+  const retained = isLaneBatchRecord(batch) ? retainedLaneNotices(root, batch) : [];
   const report = {
     contract: "assurance_kernel/batch_run_report/v1",
     batch_id: batch.batch_id,
@@ -19396,8 +19122,9 @@ async function completedParentReport(root, initiativeSlug, readInitiative, track
     commits: batch.commits,
     final_verification: batch.final_verification_result,
     ...sync ? { tracker: sync } : {},
+    ...retained.length ? { lane_refusals: retained } : {},
     reason: sync?.status === "failed" ? "Local Parent completion proved; tracker synchronization failed" : null,
-    next_action: sync?.status === "failed" ? sync.message : "Parent delivery and final verification passed",
+    next_action: (sync?.status === "failed" ? sync.message : "Parent delivery and final verification passed") + (retained.length ? "." : "") + retainedLaneAction(retained),
     created_at: new Date().toISOString(),
     ...isLaneBatchRecord(batch) ? { max_parallel: batch.max_parallel, handoffs: [] } : {}
   };
@@ -19432,13 +19159,86 @@ async function startBatch(input) {
   }
 }
 
+// plugins/immune-brain/runtime/unattended/batch_kernel_port.ts
+init_batch_git();
+init_assurance_projection();
+init_batch_authority();
+init_storage();
+init_batch_preflight();
+function createBatchKernelPort(input) {
+  const project = input.deps?.projectAssurance ?? projectAssurance;
+  const readRecord = input.deps?.readTaskRecordRaw ?? readTaskRecordRaw;
+  const deriveEnrollment = input.deps?.deriveChildEnrollment ?? deriveChildEnrollment;
+  const enrollKernelTask = input.deps?.enrollTask ?? enrollTask;
+  const base = {
+    canStartTask: async (taskId) => {
+      if (!input.parent)
+        return true;
+      const task = input.parent.tasks.find((child) => child.task_id === taskId);
+      if (!task)
+        throw new Error("authorized child absent from confirmed Parent topology");
+      const authorizedIds = new Set(input.registry.children(input.capability).map((child) => child.task_id));
+      const external = task.blocked_by.filter((id) => !authorizedIds.has(id));
+      if (!external.length)
+        return true;
+      const observation = await observeParentCompletion(input.root, input.parent.initiative_id, external);
+      return observation.missing_task_ids.length === 0;
+    },
+    enrollTask: async ({ root, task_id, batch }) => {
+      const now = new Date().toISOString();
+      const derived = deriveEnrollment(root, batch.registry, {
+        capability: batch.capability,
+        binding: input.binding,
+        task_id,
+        expected_head: batch.binding.expected_head,
+        now
+      });
+      await enrollKernelTask(root, input.enrollmentRegistry, {
+        binding: derived.binding,
+        batch: {
+          registry: batch.registry,
+          capability: batch.capability,
+          binding: input.binding,
+          expected_head: batch.binding.expected_head
+        },
+        now
+      });
+      const recordRaw = readRecord(root, task_id);
+      return { record_revision: recordRaw.revision };
+    },
+    advanceTask: input.advanceTask,
+    projectTask: async (root, taskId) => {
+      const fresh = await project(root, taskId);
+      if (!fresh.claim || fresh.projection.lifecycle !== "active" || fresh.error !== null)
+        return fresh;
+      const { record, revision } = readRecord(root, taskId);
+      if (!record || revision !== fresh.projection.record_revision)
+        throw new Error(`Kernel recovery projection changed for ${taskId}`);
+      return { ...fresh, ...batchQaFailureFacts(record) };
+    },
+    ownsTaskClaim: (taskId) => input.registry.isChildConsumed(input.capability, taskId),
+    validateBatchAuthorization: (request) => request.registry.inspect(request.capability, request.binding)
+  };
+  const port = { ...base, ...input.overrides ?? {} };
+  const overriddenOwnsTaskClaim = port.ownsTaskClaim;
+  return {
+    ...port,
+    ownsTaskClaim: (taskId) => {
+      if (input.resume.isResuming && taskId === readActiveClaimTaskId(input.root)) {
+        return isOwnBatchClaim(input.root, input.resume.existingBatch, taskId, input.resume.batchBranch);
+      }
+      return overriddenOwnsTaskClaim(taskId);
+    }
+  };
+}
+
 // plugins/immune-brain/runtime/unattended/batch_disposition.ts
 init_storage();
 init_storage_paths();
 init_batch_reasons();
 init_batch_preflight();
 init_batch_state();
-import { existsSync as existsSync17 } from "node:fs";
+import { existsSync as existsSync16 } from "node:fs";
 import { join as join29 } from "node:path";
 var SERIAL_IN_FLIGHT = new Set(["enrolled", "settled"]);
 var LANE_IN_FLIGHT = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
@@ -19459,7 +19259,7 @@ function laneChildLifecycleOf(root, child) {
   if (!lane)
     return kernelLifecycleOf(root, child.task_id);
   try {
-    if (!existsSync17(join29(lane.path, KERNEL_DB_RELATIVE)))
+    if (!existsSync16(join29(lane.path, KERNEL_DB_RELATIVE)))
       return null;
     if (readActiveClaimTaskId(lane.path) === child.task_id)
       return null;
@@ -19886,7 +19686,7 @@ class ClaudeRuntime {
     try {
       if (!selectedClaudeParent(meta.toolCallId, this.cwd, slug))
         return result;
-      if (existsSync18(join30(this.cwd, ".imm", "audit", taskId)))
+      if (existsSync17(join30(this.cwd, ".imm", "audit", taskId)))
         execFileSync12("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch, ...batch.state === "started" && batch.report?.tracker ? { tracker: batch.report.tracker } : {} };
@@ -21357,7 +21157,7 @@ async function runHook() {
   const cwd = typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
   if (!readActiveClaimTaskId(cwd)) {
     const batchesDir = join31(cwd, ".imm", "state", "batches");
-    const activeBatch = existsSync19(batchesDir) && readdirSync10(batchesDir).some((file) => {
+    const activeBatch = existsSync18(batchesDir) && readdirSync10(batchesDir).some((file) => {
       if (!file.endsWith(".json") || file.endsWith(".report.json"))
         return false;
       try {

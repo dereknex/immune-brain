@@ -32,8 +32,7 @@ import {
 	type IntegrationCheckChild,
 } from "./batch_integration";
 import { isBatchRef, isParentBranch } from "./batch_ref";
-import { assertLaneWorktreeAvailable, copyLanePlanningInput, createLaneWorktree, recreateLaneWorktree, removeLaneWorktree, withParentWorktree } from "./batch_worktrees";
-import { deriveChildRedoEnrollment, deriveParkedChildRedoEnrollment } from "./batch_kernel_port";
+import { assertLaneWorktreeAvailable, copyLanePlanningInput, createLaneWorktree } from "./batch_worktrees";
 import { classifyBatchLineage, expectedBatchHead, findExistingActiveBatch, porcelainEntries, readActiveClaimTaskId, unsettledChildScopes } from "./batch_preflight";
 import { restoreProvableLaneLeaks } from "./batch_leak_restore";
 import { withBatchEvidence } from "./batch_git";
@@ -502,6 +501,32 @@ const TERMINAL_NEXT_ACTIONS: Record<string, string> = {
 	prepared: "The batch is prepared but not started.",
 };
 
+// Spec batch-resource-safety-s2 D1: no Host reports a trusted Executor exit, so
+// the runtime never deletes or recreates a Lane it created.
+export const LANE_RETAINED = "batch_lane_retained";
+export const LANE_REDO_RETAINED = "batch_lane_redo_retained";
+const NO_EXIT_EVIDENCE = "no Host reports a trusted Executor exit";
+
+function redoRetained(cause: string | null | undefined): string {
+	if (cause?.startsWith(`${LANE_REDO_RETAINED}:`)) return cause;
+	return `${LANE_REDO_RETAINED}: ${NO_EXIT_EVIDENCE}, so the Lane, its branch and its files are kept and no redo Lane is created${cause ? ` (${cause})` : ""}`;
+}
+
+/** Integrated children whose runtime-created Lane is still present; delivery never implies cleanup. */
+export function retainedLaneNotices(root: string, record: BatchLaneRunStateRecord, lanes: BatchLaneGitPort = createDefaultLaneGitPort()): NonNullable<BatchLaneRunReport["lane_refusals"]> {
+	if (!isParentBranch(record.branch)) return [];
+	return record.children
+		.filter(child => child.state === "integrated" && child.lane && lanes.inspectLane(root, child.lane.path).exists)
+		.map(child => ({ task_id: child.task_id, path: child.lane!.path,
+			reason: `${LANE_RETAINED}: ${NO_EXIT_EVIDENCE}; the delivered Lane and every file in it are kept` }));
+}
+
+/** Delivery and cleanup are reported apart; only the user removes a retained Lane. */
+export function retainedLaneAction(refusals: BatchLaneRunReport["lane_refusals"]): string {
+	const count = refusals?.filter(r => r.reason.startsWith(`${LANE_RETAINED}:`)).length ?? 0;
+	return count ? ` Cleanup was not performed: ${count} runtime-created Lane(s) are kept because ${NO_EXIT_EVIDENCE}. Stop each Lane's Executor, keep the files you need, then remove the Lane yourself; removing it does not enable an automatic redo.` : "";
+}
+
 /**
  * Spec branch-boundary D8: under a record that binds each child's authority
  * subject, a Lane whose sidecar now carries a different subject parks that
@@ -594,9 +619,9 @@ function laneReport(
 		...(extra.instruction ? { lane_instruction: extra.instruction } : {}),
 		...(record.delegated_revisions?.length ? { delegated_revisions: record.delegated_revisions } : {}),
 		...(record.reseals?.length ? { reseals: record.reseals } : {}),
-		next_action: nextAction || (record.final_report?.return_to_coordinator.status === "blocked"
+		next_action: (nextAction || (record.final_report?.return_to_coordinator.status === "blocked"
 			? `Review the final report; coordinator return stopped: ${record.final_report.return_to_coordinator.reason}. The Parent branch is retained.`
-			: TERMINAL_NEXT_ACTIONS[record.batch_state] ?? "Inspect the batch run state."),
+			: TERMINAL_NEXT_ACTIONS[record.batch_state] ?? "Inspect the batch run state.")) + retainedLaneAction(extra.refusals),
 		created_at: record.updated_at,
 	};
 }
@@ -605,10 +630,11 @@ function laneReport(
 export function laneRejectionReport(input: StartBatchInput, record: BatchLaneRunStateRecord, reason: string, nextAction: string): BatchLaneRunReport {
 	// A rejected tick grants no execution or admission authority. Only already
 	// integrated, unoccupied Lanes with surviving audit evidence may be released.
-	const handoffs = releaseHandoffs(input, record, laneGitOf(input));
+	const lanes = laneGitOf(input);
+	const handoffs = releaseHandoffs(input, record, lanes);
 	return laneReport({ ...record, batch_state: "rejected" }, reason,
 		handoffs.length ? `${nextAction}. Check each release handoff with the Lane Steward.` : nextAction,
-		{ handoffs });
+		{ handoffs, refusals: retainedLaneNotices(input.root, record, lanes) });
 }
 
 function finalizeLane(
@@ -764,7 +790,6 @@ export async function runLaneBatch(
 	const lanes = laneGitOf(input);
 
 	let record: BatchLaneRunStateRecord;
-	const revive = new Set<string>();
 	if (persisted) {
 		record = persisted;
 		assertPlanMatches(input, record);
@@ -793,6 +818,7 @@ export async function runLaneBatch(
 				: [];
 			return finalizeLane(input.root, record, `terminal state already reached: ${record.batch_state}`, "", {
 				handoffs: record.batch_state === "completed" ? releaseHandoffs(input, record, lanes) : [],
+				refusals: retainedLaneNotices(input.root, record, lanes),
 				tracker,
 			});
 		}
@@ -815,9 +841,9 @@ export async function runLaneBatch(
 					fresh.projection.open_user_decision_count > 0 || fresh.projection.replan_required_ids.length > 0))) {
 					resumed.push(child); continue;
 				}
+				// A missing, unreadable or stopped Lane is not exit evidence: it is never revived in place.
 				if (isParentBranch(record.branch) && (!facts.exists || unreadable || (readable && fresh.projection.lifecycle === "stopped"))) {
-					if ((child.redo_grants ?? 0) < 2) revive.add(child.task_id);
-					resumed.push(child); continue;
+					resumed.push({ ...child, reason: redoRetained(child.reason) }); continue;
 				}
 				if (!readable || !facts.exists) { resumed.push(child); continue; }
 				const state = fresh.projection.lifecycle === "done" && fresh.projection.completion_ready ?
@@ -837,7 +863,7 @@ export async function runLaneBatch(
 				// The fresh confirmation is the user's answer to a runtime reload pause.
 				return next.runtime_reload?.state === "required" ? { ...next, runtime_reload: { ...next.runtime_reload, state: "acknowledged" as const } } : next;
 			}) };
-			for (const child of record.children) if (child.state === "needs_human" && !revive.has(child.task_id) && !child.redo_head)
+			for (const child of record.children) if (child.state === "needs_human")
 				skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
 		}
 	} else {
@@ -956,31 +982,8 @@ export async function runLaneBatch(
 	}
 
 	if (resumedPark) {
-		const parkedSince = record.confirmation_time;
 		record = { ...record, confirmation_time: input.confirmation_time };
 		persist();
-		for (const taskId of revive) {
-			const child = record.children.find(c => c.task_id === taskId)!;
-			try {
-				const head = expectedBatchHead(record);
-				const binding = input.kernel.validateBatchAuthorization({ registry: input.registry, capability: input.capability,
-					binding: { batch_id: record.batch_id, plan_digest: record.plan_digest, base_head: record.base_head,
-						initiative_slug: record.initiative_slug, budget: record.budget } });
-				await withParentWorktree(input.root, head, async root => {
-					copyLanePlanningInput(input.root, root, taskId, "intent");
-					copyLanePlanningInput(input.root, root, taskId, "spec");
-					await deriveParkedChildRedoEnrollment(root, input.registry, { capability: input.capability, binding,
-						task_id: taskId, expected_head: head, now: input.now, parked_since: parkedSince,
-						prior_lane_root: child.lane!.path, prior_run_id: child.lane!.run_id! });
-					record.children = record.children.map(c => c.task_id === taskId ? { ...c,
-						redo_grants: input.registry.redoGrants(input.capability, taskId), redo_head: head } : c);
-					persist();
-				});
-			} catch (error) {
-				park(record, taskId, error instanceof Error ? error.message : String(error));
-				persist();
-			}
-		}
 	}
 	// A coordinator instruction is recorded before the Parent sends it, and only
 	// when it may be sent; the report tells the Parent which.
@@ -1072,31 +1075,11 @@ export async function runLaneBatch(
 		readTaskTombstone(child.lane!.path, child.task_id)?.terminalized_at ?? input.now;
 	const queue = (): BatchLaneChildRun[] => [...record.children].sort((a, b) =>
 		(a.settled_at ?? record.created_at).localeCompare(b.settled_at ?? record.created_at));
-	const resumeRedo = async (child: BatchLaneChildRun): Promise<void> => {
-		// The durable grant and target wait for the resume; no Lane is recreated.
-		const runtime = runtimeAdmission(child.task_id);
-		if (!runtime.admit) return;
-		const path = recreateLaneWorktree(input.root, record.initiative_slug, child.task_id, child.redo_head!,
-			child.lane!.lane_commit ?? child.lane!.base_head, child.state === "needs_human");
-		record.children = record.children.map(c => {
-			if (c.task_id !== child.task_id) return c;
-			const { redo_head: head, settled_at: _settledAt, correction_due: _due, ...rest } = c;
-			return { ...rest, state: "lane_admitted", reason: null, qa_failures: 0,
-				lane: { path, branch: child.lane!.branch, base_head: head!, lane_commit: null },
-				...(runtime.acknowledged ? { runtime_skew_acknowledged: runtime.acknowledged } : {}) };
-		});
-		persist();
-		await enrollInLane(child.task_id);
-		record.children = record.children.map(c => c.state === "skipped_blocked" ? { ...c, state: "pending", reason: null } : c);
-		for (const c of record.children) if (c.state === "needs_human") skipDependents(record, c.task_id, `dependency ${c.task_id} parked`);
-		persist();
-	};
-	// The grant and target survive a crash before recreation or enrollment.
+	// A redo target recorded before retention stays durable; its Lane is never recreated.
 	for (const child of record.children) {
 		if ((child.state !== "lane_committed" && child.state !== "needs_human") || !child.redo_head) continue;
-		if (child.state === "needs_human" && record.children.filter(c => IN_FLIGHT.has(c.state)).length >= limit) continue;
-		try { await resumeRedo(child); }
-		catch (error) { parkChild(child.task_id, error instanceof Error ? error.message : String(error)); }
+		if (child.state === "needs_human" && child.reason?.startsWith(`${LANE_REDO_RETAINED}:`)) continue;
+		parkChild(child.task_id, redoRetained(child.reason));
 	}
 
 	// 1. Observe every in-flight Lane and drive each frozen child's QA and Review.
@@ -1273,30 +1256,9 @@ export async function runLaneBatch(
 			const reason = error instanceof BatchIntegrationError ? error.reason : "batch_integration_conflict";
 			const conflict = error instanceof BatchIntegrationError &&
 				(reason === "batch_integration_conflict" || reason === "batch_integration_check_failed");
+			// Spec batch-resource-safety-s2 D2: a conflict redo would replace this Lane; park it, spending no grant.
 			if (isParentBranch(record.branch) && conflict) {
-				if ((child.redo_grants ?? 0) >= 2) {
-					parkChild(child.task_id, `batch_integration_redo_exhausted: ${message}`);
-					continue;
-				}
-				try {
-					const head = expectedBatchHead(record);
-					const binding = input.kernel.validateBatchAuthorization({ registry: input.registry, capability: input.capability,
-						binding: { batch_id: record.batch_id, plan_digest: record.plan_digest, base_head: record.base_head,
-							initiative_slug: record.initiative_slug, budget: record.budget } });
-					await withParentWorktree(input.root, head, async root => {
-						copyLanePlanningInput(input.root, root, child.task_id, "intent");
-						copyLanePlanningInput(input.root, root, child.task_id, "spec");
-						deriveChildRedoEnrollment(root, input.registry, { capability: input.capability, binding,
-							task_id: child.task_id, expected_head: head, now: input.now,
-							prior_lane_root: child.lane!.path, prior_run_id: child.lane!.run_id ?? "" });
-						record.children = record.children.map(c => c.task_id === child.task_id
-							? { ...c, redo_grants: input.registry.redoGrants(input.capability, child.task_id), redo_head: head, reason: message } : c);
-						persist();
-					});
-					await resumeRedo(record.children.find(c => c.task_id === child.task_id)!);
-				} catch (redoError) {
-					parkChild(child.task_id, redoError instanceof Error ? redoError.message : String(redoError));
-				}
+				parkChild(child.task_id, redoRetained(message.startsWith(`${reason}:`) ? message : `${reason}: ${message}`));
 				continue;
 			}
 			parkChild(child.task_id, isLineageBreak(message) || message.startsWith(`${reason}:`) ? message : `${reason}: ${message}`);
@@ -1313,21 +1275,8 @@ export async function runLaneBatch(
 	// Close each integrated child's Issue now that its commit is on the batch branch.
 	const tracker = await closeIntegratedIssues(input, record, persist);
 
-	// New records own Lane lifecycle; legacy records still admit offered paths.
-	if (isParentBranch(record.branch)) {
-		for (const child of record.children) {
-			if (child.state !== "integrated" || !child.lane?.lane_commit) continue;
-			const facts = lanes.inspectLane(input.root, child.lane.path);
-			if (!facts.exists) continue;
-			if (facts.same_repository && facts.is_worktree_root && facts.clean && facts.branch === child.lane.branch &&
-				facts.head === child.lane.lane_commit && facts.active_claim_task_id === null &&
-				lanes.auditReachable({ root: input.root, head: expectedBatchHead(record), task_id: child.task_id }) &&
-				removeLaneWorktree(input.root, child.lane.path, child.lane.branch, child.lane.lane_commit)) {
-				record.children = record.children.map(c => c.task_id === child.task_id ? { ...c, state: "released" } : c);
-				persist();
-			} else refusals.push({ task_id: child.task_id, path: child.lane.path, reason: "batch_lane_kept: Lane is dirty or its release evidence is incomplete" });
-		}
-	}
+	// New records create their Lanes but never remove them; legacy records still admit offered paths.
+	refusals.push(...retainedLaneNotices(input.root, record, lanes));
 	// 3. Admit runtime-created Lanes (or legacy offers), then enroll each child.
 	const offers = [...(input.lane_offers ?? [])];
 	let skewAcknowledged: BatchLaneChildRun["runtime_skew_acknowledged"];

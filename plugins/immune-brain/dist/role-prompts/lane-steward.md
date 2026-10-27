@@ -2,8 +2,8 @@
 
 # Internal Lane Steward
 
-New Parent-branch batches create and remove their own worktrees. They return
-Executor handoffs directly and refuse `lane_offers` with `lane_offers_retired`.
+New Parent-branch batches create their own worktrees and keep them after
+integration until the user removes them. They return Executor handoffs directly and refuse `lane_offers` with `lane_offers_retired`.
 Do not provision or release a Lane for those batches. The instructions below
 apply only to provision/release handoffs from existing hidden-ref or legacy
 branch records; they retire when those records are drained (runtime owner).
