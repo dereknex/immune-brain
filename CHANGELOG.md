@@ -1,5 +1,27 @@
 # Changelog
 
+## 6.0.0
+
+### Major Changes
+
+- [`068f969`](https://github.com/dereknex/immune-brain/commit/068f9697cc52038186d3e233d17452d7d0bd55fd) Thanks [@dereknex](https://github.com/dereknex)! - Rename the packaged skills to bare verbs (ADR 0031): `imm-brainstorm` → `clarify`, `imm-planner` → `draw-up`, `imm-run` → `drive`, `imm-retro` → `revisit`, `imm-doc-slim` → `slim`, `imm-doc-prune` → `prune-docs`, `imm-test-prune` → `prune-tests`, `imm-pr-fix` → `fix-pr`; `dist/imm-run-batch.md` is now `dist/drive-batch.md`.
+
+  Breaking: old names are not aliased and no longer enter a phase, including `imm-loop` in a user alias. Edit your own commands (`.claude/commands`, `~/.claude/commands`) and Pi prompt templates by hand; an alias enters a phase only through a marked mention such as `/drive`, `/immune-brain:drive` or `/skill:drive`. After upgrading, refresh the Claude Code plugin cache and run `/reload` in Pi. Enter runs with `/drive`, `/immune-brain:drive` (Claude Code) or `/skill:drive` (Pi). If you have a skill of your own named `drive`, the bare `/drive` (and on Pi `/skill:drive`) no longer enters a run; use `/immune-brain:drive` on Claude Code.
+
+### Patch Changes
+
+- [#314](https://github.com/dereknex/immune-brain/pull/314) [`3f4b506`](https://github.com/dereknex/immune-brain/commit/3f4b5061712fe172c7f67e70397fa5c5a5752078) Thanks [@dereknex](https://github.com/dereknex)! - Retire the batch redo re-issue path that no runtime caller used after Lanes became retained: a durable redo grant is still restored and still bounds a parked child, but nothing can spend one while Lane recreation is disallowed.
+
+- [#312](https://github.com/dereknex/immune-brain/pull/312) [`8f75d4b`](https://github.com/dereknex/immune-brain/commit/8f75d4bd31576b9639af2b6c0f34bf17b55a413d) Thanks [@dereknex](https://github.com/dereknex)! - Require validated batch provenance before reusing a same-tip Parent branch, reject unbound Lane collisions, and revalidate recorded Lane identities on resume. Preserve orphaned resources after interrupted creation rather than automatically adopting them.
+
+- [#313](https://github.com/dereknex/immune-brain/pull/313) [`8fbd5f9`](https://github.com/dereknex/immune-brain/commit/8fbd5f9e66b86148e2ae0570cc38359f2e58d895) Thanks [@dereknex](https://github.com/dereknex)! - Keep runtime-created batch Lanes when no Host reports a trusted Executor exit: an integrated Lane retains its directory, branch and ignored files with a `batch_lane_retained` notice that survives completed reports, and conflict redo, granted redo, parked revival and missing-path recovery park the child without deleting or recreating the Lane or spending a redo grant.
+
+- [#307](https://github.com/dereknex/immune-brain/pull/307) [`6626254`](https://github.com/dereknex/immune-brain/commit/66262549793ed8db7531ff018cc96c9dc17a6ca3) Thanks [@dereknex](https://github.com/dereknex)! - Block marker-targeted Review dispatches with the wrong reviewer type or Pi Agent parameters before execution. Release unbound Review reservations with fresh-review recovery instead of waiting indefinitely, without poisoning an already-bound reviewer.
+
+- [#307](https://github.com/dereknex/immune-brain/pull/307) [`2f45bf7`](https://github.com/dereknex/immune-brain/commit/2f45bf7e1964bbd3f61e9d9b949ce16f6515a3f4) Thanks [@dereknex](https://github.com/dereknex)! - Dispatch Review through a four-line packet handle on Pi and Claude. Keep the full reviewer instructions in an operation-named evidence packet, removed with its reservation, without changing the evidence manifest.
+
+- [#307](https://github.com/dereknex/immune-brain/pull/307) [`ebea34b`](https://github.com/dereknex/immune-brain/commit/ebea34b981202dd996f5c9ca2806697a9e64ed40) Thanks [@dereknex](https://github.com/dereknex)! - Verify Review packet bytes at dispatch and submission on both Hosts, blocking altered handles or packets and releasing invalid reservations without settling their verdicts.
+
 ## 5.6.0
 
 ### Minor Changes
