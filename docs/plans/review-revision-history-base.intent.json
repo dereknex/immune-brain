@@ -1,0 +1,39 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "review-revision-history-base",
+  "owner": "user",
+  "goal": "Parsing a TaskRecord v4 rejects a history review_revision whose base_head differs from git_base_head, as it already does for attestations, and one end-to-end test proves a round-2 Review rework persists its revision and the round-3 Review snapshot receives prior_review_commit and delta_paths (#244; Spec docs/specs/review-revision-history-base.spec.md D1-D4). no user-visible change: internal parse invariant on Kernel-written state plus test coverage.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "In tests/kernel-record-v4.test.ts, parseTaskRecordV4 throws, naming record.history[<i>].review_revision.base_head, for a v4 record whose review-authored request_rework history entry carries review_revision.base_head different from git_base_head; the same entry with a matching base parses and keeps review_revision; a v4 history entry without review_revision parses; a v3 record carrying a review-authored history review_revision still parses (Spec D1, D2; BR-REQ-1, BR-REQ-2, BR-REQ-4).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-record-v4.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "In tests/host-neutral-assurance-coordinator.test.ts, over authorityFixture, a Review rework verdict applied through createVerdictAuthority at round 2 persists a review_round_2 request_rework history entry whose review_revision equals the round-2 snapshot revision; after staging an edit to exactly one in-scope path and returning to Review, buildAssuranceSnapshot yields review_delta with round 3, prior_review_commit equal to the round-2 review_commit, delta_paths equal to exactly that path (an unchanged path absent), and no skipped field (Spec D3; BR-REQ-3).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "The existing write-time revision and manifest delta cases in tests/kernel-canary-rework-authority.test.ts, including rounds 1-2 digest stability, pass with unchanged assertions (Spec D2; BR-OUT-1, BR-OUT-2).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-canary-rework-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "The generated Claude bundle matches its sources and .changeset/review-revision-history-base.md declares a patch release (Spec D4).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && grep -Eq \\\"^['\\\\\\\"]?immune-brain['\\\\\\\"]?: patch$\\\" .changeset/review-revision-history-base.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/review-revision-history-base.md",
+    "docs/plans/review-revision-history-base.intent.json",
+    "docs/specs/review-revision-history-base.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/kernel/validation.ts",
+    "tests/host-neutral-assurance-coordinator.test.ts",
+    "tests/kernel-record-v4.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
