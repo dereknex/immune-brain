@@ -1,0 +1,44 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "isolated-prereq-published-plan",
+  "owner": "user",
+  "goal": "On the GitHub carrier, isolated Slice Enrollment takes its prerequisite set from the Parent Issue's published Slice line '(blocked by: ...)' annotation instead of native blocked_by relations, so adding or removing an edge no longer changes which prerequisites are verified (#285; Spec docs/specs/isolated-prereq-published-plan.spec.md D1-D6). Local carrier and batch plan projection are unchanged.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "In tests/goal-driven-batch-run.test.ts, assertIsolatedTaskPrerequisites with a scripted GhTransport over the settled-delivery Git fixture: a Parent Slice line declaring '(blocked by: T-a)' with the native edge removed rejects naming T-a when T-a is not content-settled and resolves when it is; with the edge present and matching, settled resolves and unsettled rejects with the existing 'Isolated Slice prerequisites are not integrated' message; a native edge to T-a with no Parent annotation resolves without verifying T-a (Spec D1, D3; BR-SCN-1, BR-SCN-2).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/goal-driven-batch-run.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "In tests/goal-driven-batch-run.test.ts, GitHub-carrier Enrollment rejects naming the Slice for each of: Parent body without the Slice marker line, Parent body with the marker duplicated, an empty '(blocked by: )' annotation, an annotation naming a Task outside the Initiative's Sub-issue topology, and an annotation naming the Task itself (Spec D2).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/goal-driven-batch-run.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "The existing Local-carrier cases in tests/goal-driven-batch-run.test.ts (unsettled 'Blocked by:' rejects, unrelated or malformed Initiative files do not block, a malformed file naming the Task rejects) pass with unchanged assertions (Spec D5).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/goal-driven-batch-run.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "plugins/immune-brain/runtime/unattended/batch_plan.ts has no diff against HEAD and tests/unattended-batch-plan.test.ts still projects the GitHub batch plan from native blocked_by relations (Spec D4).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"git diff --quiet HEAD -- plugins/immune-brain/runtime/unattended/batch_plan.ts && bun test tests/unattended-batch-plan.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC5",
+      "assertion": "The generated Claude bundle matches its sources and .changeset/isolated-prereq-published-plan.md declares a patch release (Spec D6).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && grep -Eq \\\"^['\\\\\\\"]?immune-brain['\\\\\\\"]?: patch$\\\" .changeset/isolated-prereq-published-plan.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/isolated-prereq-published-plan.md",
+    "docs/plans/isolated-prereq-published-plan.intent.json",
+    "docs/specs/isolated-prereq-published-plan.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/github_issue_tracker.ts",
+    "tests/fixtures/settled-delivery.ts",
+    "tests/goal-driven-batch-run.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
